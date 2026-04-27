@@ -57,6 +57,10 @@ class GameAuditEntry:
     media: MediaStatus = field(default_factory=MediaStatus)
     missing_metadata: list[str] = field(default_factory=list)
     ignored: bool = False
+    # Optional MAME -listxml enrichment.  None means "not checked"; True/False
+    # are populated only when config.mame_executable is set and the system
+    # routes through MAME.
+    has_mame_input: Optional[bool] = None
 
     @property
     def needs_attention(self) -> bool:
@@ -153,6 +157,7 @@ def audit_system(
     config: Config,
     check_media_flag: bool = True,
     fuzzy: bool = True,
+    check_mame_controls: bool = True,
 ) -> SystemAuditResult:
     """Full audit of one system: ROMs vs database vs media, with fuzzy matching."""
     result = SystemAuditResult(system_name=system_name)
@@ -160,6 +165,18 @@ def audit_system(
     roms = scan_roms(system_name, Path(config.roms_dir))
     db = load_database(system_name, config.databases_dir)
     db_games = db.games()
+
+    # Optional: load MAME -listxml input data when configured + system is arcade-ish.
+    listxml_lookup: dict[str, bool] = {}
+    if check_mame_controls and config.mame_executable and _is_mame_system(system_name):
+        try:
+            from .ledblinky import load_listxml_for_system
+            info_map = load_listxml_for_system(config, system_name)
+            listxml_lookup = {
+                name: info.has_input for name, info in info_map.items()
+            }
+        except Exception:
+            listxml_lookup = {}
 
     result.total_roms = len(roms)
     result.total_db_entries = len(db_games)
@@ -187,6 +204,10 @@ def audit_system(
         )
         missing_meta = db_entry.missing_fields() if db_entry else []
 
+        controls_state: Optional[bool] = None
+        if listxml_lookup:
+            controls_state = listxml_lookup.get(name)
+
         entry = GameAuditEntry(
             rom_name=name,
             in_database=in_database,
@@ -195,6 +216,7 @@ def audit_system(
             media=media,
             missing_metadata=missing_meta,
             ignored=is_ignored,
+            has_mame_input=controls_state,
         )
         result.entries.append(entry)
 
@@ -238,3 +260,11 @@ def build_stub_entry(rom_name: str, strip_variants: bool = False) -> GameEntry:
     """Create a minimal stub GameEntry from a ROM filename stem."""
     description = clean_display_name(rom_name, strip_variants=strip_variants)
     return GameEntry(name=rom_name, description=description)
+
+
+_MAME_SYSTEM_HINTS = ("mame", "arcade", "neogeo", "neo geo", "cps1", "cps2", "cps3")
+
+
+def _is_mame_system(system_name: str) -> bool:
+    s = system_name.lower()
+    return any(h in s for h in _MAME_SYSTEM_HINTS)

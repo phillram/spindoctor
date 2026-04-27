@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import shutil
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Iterable, Optional
 from urllib.parse import urlparse
 
 import requests
@@ -75,6 +76,7 @@ class MediaDownloader:
         media_type: str,
         url: str,
         overwrite: bool = False,
+        max_retries: int = 3,
     ) -> DownloadResult:
         if not url:
             return DownloadResult(game_name=game_name, media_type=media_type,
@@ -82,7 +84,6 @@ class MediaDownloader:
 
         dest = self.media_path(system_name, game_name, media_type)
 
-        # Honour the actual file extension from the URL when it differs
         parsed = urlparse(url)
         url_ext = Path(parsed.path).suffix.lower()
         if url_ext and url_ext != dest.suffix:
@@ -93,27 +94,55 @@ class MediaDownloader:
                                   success=True, path=dest, skipped=True)
 
         dest.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            resp = self._session.get(url, timeout=30, stream=True)
-            resp.raise_for_status()
-            with open(dest, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    f.write(chunk)
-            return DownloadResult(game_name=game_name, media_type=media_type,
-                                  success=True, path=dest)
-        except requests.RequestException as e:
-            return DownloadResult(game_name=game_name, media_type=media_type,
-                                  success=False, error=str(e))
 
-    def download_from_metadata(
+        # Retry with exponential backoff on 429 (Too Many Requests) and 503.
+        # Other 4xx/5xx fail fast.
+        attempt = 0
+        backoff = 1.0
+        last_error = ""
+        while attempt < max_retries:
+            attempt += 1
+            try:
+                resp = self._session.get(url, timeout=30, stream=True)
+                if resp.status_code in (429, 503):
+                    retry_after = float(resp.headers.get("Retry-After", backoff))
+                    last_error = f"HTTP {resp.status_code}; retry after {retry_after:.1f}s"
+                    resp.close()
+                    time.sleep(min(retry_after, 30.0))
+                    backoff *= 2
+                    continue
+                resp.raise_for_status()
+                with open(dest, "wb") as f:
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                return DownloadResult(
+                    game_name=game_name, media_type=media_type,
+                    success=True, path=dest,
+                )
+            except requests.RequestException as e:
+                last_error = str(e)
+                # Network blip — back off and retry
+                if attempt < max_retries:
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                return DownloadResult(
+                    game_name=game_name, media_type=media_type,
+                    success=False, error=last_error,
+                )
+
+        return DownloadResult(
+            game_name=game_name, media_type=media_type,
+            success=False, error=f"Gave up after {max_retries} attempts: {last_error}",
+        )
+
+    def jobs_for_metadata(
         self,
         game_name: str,
-        system_name: str,
         metadata,
         media_types: Optional[list[str]] = None,
-        overwrite: bool = False,
-        dry_run: bool = False,
-    ) -> list[DownloadResult]:
+    ) -> list[tuple[str, str, str]]:
+        """Return ``[(game_name, media_type, url), ...]`` for downloadable assets."""
         from .config import MEDIA_TYPES
         types = media_types or MEDIA_TYPES
 
@@ -126,24 +155,83 @@ class MediaDownloader:
             "video":      getattr(metadata, "video_url", ""),
             "trailer":    getattr(metadata, "trailer_url", ""),
             "sound":      getattr(metadata, "sound_url", ""),
-            # Themes are not provided by metadata APIs; must be added manually.
-            "theme":      "",
+            "theme":      "",  # not provided by APIs
         }
+        return [(game_name, mt, url_map.get(mt, "")) for mt in types]
 
+    def download_from_metadata(
+        self,
+        game_name: str,
+        system_name: str,
+        metadata,
+        media_types: Optional[list[str]] = None,
+        overwrite: bool = False,
+        dry_run: bool = False,
+    ) -> list[DownloadResult]:
+        """Sequential download for one game (kept for backwards-compat)."""
         results = []
-        for media_type in types:
-            url = url_map.get(media_type, "")
+        for game, media_type, url in self.jobs_for_metadata(
+            game_name, metadata, media_types
+        ):
             if dry_run:
-                dest = self.media_path(system_name, game_name, media_type)
+                dest = self.media_path(system_name, game, media_type)
                 note = "[dry-run]" if url else "[no URL available]"
-                results.append(DownloadResult(game_name=game_name, media_type=media_type,
-                                              success=True, path=dest, skipped=True, error=note))
+                results.append(DownloadResult(
+                    game_name=game, media_type=media_type,
+                    success=True, path=dest, skipped=True, error=note,
+                ))
             elif url:
-                results.append(self.download(game_name, system_name, media_type, url, overwrite))
-                time.sleep(0.2)
+                results.append(self.download(game, system_name, media_type, url, overwrite))
             else:
-                results.append(DownloadResult(game_name=game_name, media_type=media_type,
-                                              success=False, error="No URL from metadata source"))
+                results.append(DownloadResult(
+                    game_name=game, media_type=media_type,
+                    success=False, error="No URL from metadata source",
+                ))
+        return results
+
+    def download_many(
+        self,
+        jobs: Iterable[tuple[str, str, str]],
+        system_name: str,
+        overwrite: bool = False,
+        max_workers: int = 4,
+        on_complete: Optional[Callable[[DownloadResult], None]] = None,
+    ) -> list[DownloadResult]:
+        """Download many assets concurrently.
+
+        ``jobs`` is an iterable of ``(game_name, media_type, url)``.  Empty URLs
+        produce a failed ``DownloadResult`` without hitting the network.
+        ``on_complete`` (if provided) is called from the main thread for each
+        finished job — useful for advancing a progress bar.
+        """
+        jobs_list = list(jobs)
+        if not jobs_list:
+            return []
+
+        results: list[DownloadResult] = []
+        with ThreadPoolExecutor(max_workers=max(1, max_workers)) as ex:
+            future_to_job = {}
+            for game_name, media_type, url in jobs_list:
+                if not url:
+                    r = DownloadResult(
+                        game_name=game_name, media_type=media_type,
+                        success=False, error="No URL from metadata source",
+                    )
+                    results.append(r)
+                    if on_complete:
+                        on_complete(r)
+                    continue
+                fut = ex.submit(
+                    self.download, game_name, system_name, media_type, url, overwrite,
+                )
+                future_to_job[fut] = (game_name, media_type)
+
+            for fut in as_completed(future_to_job):
+                r = fut.result()
+                results.append(r)
+                if on_complete:
+                    on_complete(r)
+
         return results
 
     # ── add local file ─────────────────────────────────────────────────────────
