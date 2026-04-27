@@ -41,6 +41,20 @@ SCREENSCRAPER_API = "https://www.screenscraper.fr/api2"
 THEGAMESDB_API = "https://api.thegamesdb.net/v1"
 
 
+DEFAULT_LEDBLINKY_COLORS: dict[str, str] = {
+    # Standard 6-button arcade panel palette (hex RGB)
+    "button1": "FF0000",  # red
+    "button2": "FFFF00",  # yellow
+    "button3": "00FF00",  # green
+    "button4": "0000FF",  # blue
+    "button5": "FF00FF",  # magenta
+    "button6": "00FFFF",  # cyan
+    "joystick": "FFFFFF",  # white
+    "start": "FFFFFF",
+    "coin": "FF8000",  # orange
+}
+
+
 @dataclass
 class Config:
     # Directories
@@ -52,6 +66,9 @@ class Config:
     output_dir: str = ""
     auto_audit_export_dir: str = ""
 
+    # External binaries
+    mame_executable: str = ""
+
     # Metadata API credentials
     screenscraper_user: str = ""
     screenscraper_pass: str = ""
@@ -60,10 +77,19 @@ class Config:
 
     # Behaviour
     backup_before_modify: bool = True
-    max_concurrent_downloads: int = 3
+    max_concurrent_downloads: int = 4
     match_threshold: float = 0.80
     interactive_matching: bool = True
     strip_variant_tags_in_display_name: bool = False
+
+    # Caching
+    metadata_cache_ttl_days: int = 30
+    metadata_cache_enabled: bool = True
+
+    # LEDBlinky default per-button color palette (hex RGB strings)
+    ledblinky_default_colors: dict[str, str] = field(
+        default_factory=lambda: dict(DEFAULT_LEDBLINKY_COLORS)
+    )
 
     # Per-system ignore lists  {system_name: [rom_name, ...], "_global": [...]}
     ignore_lists: dict[str, list[str]] = field(default_factory=dict)
