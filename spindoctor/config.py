@@ -62,6 +62,7 @@ class Config:
     max_concurrent_downloads: int = 3
     match_threshold: float = 0.80
     interactive_matching: bool = True
+    strip_variant_tags_in_display_name: bool = False
 
     # Per-system ignore lists  {system_name: [rom_name, ...], "_global": [...]}
     ignore_lists: dict[str, list[str]] = field(default_factory=dict)

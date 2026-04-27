@@ -7,7 +7,7 @@ from typing import Optional
 
 from .config import Config, MEDIA_TYPES, get_rom_extensions
 from .database import GameEntry, load_database
-from .romutils import find_best_match
+from .romutils import clean_display_name, find_best_match
 
 
 @dataclass
@@ -234,8 +234,7 @@ def audit_system(
     return result
 
 
-def build_stub_entry(rom_name: str) -> GameEntry:
+def build_stub_entry(rom_name: str, strip_variants: bool = False) -> GameEntry:
     """Create a minimal stub GameEntry from a ROM filename stem."""
-    from .romutils import clean_display_name
-    description = clean_display_name(rom_name)
+    description = clean_display_name(rom_name, strip_variants=strip_variants)
     return GameEntry(name=rom_name, description=description)

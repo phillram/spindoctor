@@ -138,16 +138,45 @@ def find_all_matches(
     )[:max_results]
 
 
-def clean_display_name(rom_name: str) -> str:
-    """Return a human-readable display name from a ROM filename."""
-    info = parse_variant(rom_name)
-    name = info["clean"]
-    # Title-case words, preserving known acronyms
-    words = name.split()
+_VARIANT_SEGMENT = re.compile(r'(\([^)]*\)|\[[^\]]*\])')
+_ROMAN = ("II", "III", "IV", "VI", "VII", "VIII", "IX", "XI")
+
+
+def _title_case_base(text: str) -> str:
+    words = re.split(r'[\s_]+', text.strip())
     titled = []
     for w in words:
-        if len(w) <= 3 and w.upper() in ("II", "III", "IV", "VI", "VII", "VIII", "IX", "XI"):
+        if not w:
+            continue
+        if len(w) <= 3 and w.upper() in _ROMAN:
             titled.append(w.upper())
         else:
             titled.append(w.capitalize())
     return " ".join(titled)
+
+
+def clean_display_name(rom_name: str, strip_variants: bool = False) -> str:
+    """Return a human-readable display name from a ROM filename.
+
+    When ``strip_variants`` is False (default), region/revision/version tags
+    inside ``(...)`` or ``[...]`` are preserved verbatim so e.g.
+    ``1942 (Japan)`` and ``1942 (USA)`` stay distinguishable.
+
+    When ``strip_variants`` is True, all variant tags are removed and the
+    name is collapsed to its base form (``1942 (Japan)`` → ``1942``).
+    """
+    if strip_variants:
+        return _title_case_base(parse_variant(rom_name)["clean"])
+
+    parts = _VARIANT_SEGMENT.split(rom_name)
+    rebuilt = []
+    for i, part in enumerate(parts):
+        if i % 2 == 1:
+            # Parenthetical/bracket segment — keep verbatim
+            rebuilt.append(part)
+        else:
+            titled = _title_case_base(part)
+            if titled:
+                rebuilt.append(titled)
+    out = " ".join(s for s in rebuilt if s)
+    return _SPACE.sub(' ', out).strip()
