@@ -10,6 +10,7 @@ from typing import Optional
 import click
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
@@ -129,6 +130,10 @@ def config_set(key: str, value: str):
       match_threshold           0.0–1.0 fuzzy match confidence (default 0.80)
       interactive_matching      true | false
       max_concurrent_downloads  Integer
+      strip_variant_tags_in_display_name
+                                true | false (default false; when true,
+                                strips '(Japan)' / '(Rev A)' tags from
+                                stub display names)
     """
     config = _cfg()
     if not hasattr(config, key) or key in ("ignore_lists", "databases_dir", "media_dir"):
@@ -547,7 +552,8 @@ def inspect(system, game, all_games, fmt, output, no_path):
     # Footer summary
     total_rom = sum(1 for r in reports if r.rom and r.rom.exists)
     total_size = sum(r.total_size_bytes for r in reports)
-    size_str = _human_size(total_size)
+    from .fileinfo import human_size
+    size_str = human_size(total_size)
     missing_counts: dict[str, int] = {mt: 0 for mt in MEDIA_TYPES}
     for r in reports:
         for mt in r.missing_media():
@@ -645,11 +651,6 @@ def _write_inspect_csv(reports, path) -> None:
         writer.writeheader()
         writer.writerows(rows)
         console.print(buf.getvalue())
-
-
-def _human_size(n: int) -> str:
-    from .fileinfo import human_size
-    return human_size(n)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
@@ -881,7 +882,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
                     f"({meta.year}, {meta.manufacturer})"
                 )
             else:
-                if not game.description or game.description == game.name:
+                if not game.description:
                     game.description = meta.name or game.name
                 if meta.manufacturer:
                     game.manufacturer = meta.manufacturer
@@ -1079,7 +1080,15 @@ def media_add(system, game, media_type, source_file, move, overwrite, output_dir
 @click.option("--remove-orphans", is_flag=True)
 @click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
-def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_dir):
+@click.option(
+    "--strip-variant-tags/--keep-variant-tags",
+    "strip_variants_cli",
+    default=None,
+    help="Strip region/revision tags from stub display names "
+         "(default: keep, e.g. '1942 (Japan)').",
+)
+def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
+              output_dir, strip_variants_cli):
     """Sync Hyperspin XML databases to match ROM directories.
 
     Adds stub entries for ROMs not in the database; optionally removes entries
@@ -1090,6 +1099,12 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
+
+    strip_variants = (
+        strip_variants_cli
+        if strip_variants_cli is not None
+        else config.strip_variant_tags_in_display_name
+    )
 
     if dry_run:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
@@ -1109,10 +1124,11 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
             if roms_to_add:
                 console.print(f"  Adding [cyan]{len(roms_to_add)}[/cyan] stub entries…")
                 for entry in roms_to_add:
-                    stub = build_stub_entry(entry.rom_name)
+                    stub = build_stub_entry(entry.rom_name, strip_variants=strip_variants)
                     if dry_run:
                         console.print(
-                            f"  [yellow]+[/yellow] {entry.rom_name} → \"{stub.description}\""
+                            f"  [yellow]+[/yellow] {escape(entry.rom_name)} "
+                            f"→ \"{escape(stub.description)}\""
                         )
                     else:
                         db.add_game(stub)
@@ -1127,7 +1143,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
                 console.print(f"  Removing [cyan]{len(orphans)}[/cyan] orphan entries…")
                 for entry in orphans:
                     if dry_run:
-                        console.print(f"  [red]−[/red] {entry.rom_name}")
+                        console.print(f"  [red]−[/red] {escape(entry.rom_name)}")
                     else:
                         db.remove_game(entry.rom_name)
                     removed += 1
