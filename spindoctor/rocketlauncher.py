@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config, get_rom_extensions, get_systems
+from .database import _set_text as _set
 from .database import load_database
 
 
@@ -203,8 +204,3 @@ def generate_all(
             results["db_stubs"] = [str(p) for p in created]
 
     return results
-
-
-def _set(parent: ET.Element, tag: str, text: str) -> None:
-    el = ET.SubElement(parent, tag)
-    el.text = text

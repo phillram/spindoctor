@@ -108,6 +108,7 @@ spindoctor config set <key> <value>
 | `match_threshold` | Fuzzy confidence for auto-accept, `0.0`–`1.0` (default `0.80`) |
 | `interactive_matching` | `true` / `false` — prompt on ambiguous matches |
 | `max_concurrent_downloads` | Integer |
+| `strip_variant_tags_in_display_name` | `true` / `false` — when `true`, strips `(Japan)` / `(Rev A)` etc. from stub display names (default `false`, i.e. tags are kept) |
 
 ---
 
@@ -260,8 +261,12 @@ spindoctor update-db --all [options]
 | `--remove-orphans` | Remove DB entries with no matching ROM |
 | `--dry-run` | Show what would change |
 | `--output-dir PATH` | Write XMLs here instead of in-place |
+| `--keep-variant-tags` | Keep `(Japan)` / `(Rev A)` tags in display names (default) |
+| `--strip-variant-tags` | Strip variant tags so all regions/revisions share a base display name |
 
-Every ROM variant (`Mario (v1.2)`, `Mario (USA)`, `Mario (patched)`) is treated as its own independent database entry with its own display name.  The stub name is cleaned — `Super Mario Bros (USA, Rev B)` becomes `Super Mario Bros` as the display name.
+Every ROM variant (`Mario (v1.2)`, `Mario (USA)`, `Mario (patched)`) is treated as its own independent database entry with its own display name.
+
+By default, the display name keeps the variant tag, so `1942 (Japan).zip` shows as **`1942 (Japan)`** and `1942 (USA).zip` shows as **`1942 (USA)`** — the two are easy to tell apart in HyperSpin / RocketLauncher menus. Pass `--strip-variant-tags` (or set `strip_variant_tags_in_display_name true` in your config) if you'd rather have both render as just **`1942`**.
 
 Backups: a `.YYYYMMDD_HHMMSS.bak` copy is saved before in-place overwrites unless `backup_before_modify` is `false`.
 
@@ -271,6 +276,12 @@ Backups: a `.YYYYMMDD_HHMMSS.bak` copy is saved before in-place overwrites unles
 spindoctor update-db --system MAME --dry-run
 spindoctor update-db --all --remove-orphans --output-dir D:\Output
 spindoctor update-db --system "Nintendo Entertainment System"
+
+rem strip region/revision tags from display names for one run
+spindoctor update-db --system SNES --strip-variant-tags
+
+rem make stripping the persistent default
+spindoctor config set strip_variant_tags_in_display_name true
 ```
 
 ---
@@ -534,16 +545,23 @@ spindoctor report --all --format csv --output D:\arcade_report.csv
 
 SpinDoctor treats every ROM file as an independent entry. A ROM named `Super Mario Bros (USA, Rev 1).nes` is a distinct game from `Super Mario Bros (USA).nes` — each gets its own database entry with its own display name, its own metadata fetch, and its own media slot.
 
-The **display name** used as `<description>` in the XML is cleaned automatically:
+By default, the **display name** used as `<description>` in the XML keeps the region / revision tag so that multiple variants of the same game stay distinguishable in HyperSpin / RocketLauncher menus. The base name still gets light cleanup (underscores → spaces, title-case):
 
-| ROM filename | Display name in DB |
-|---|---|
-| `1942 (Japan, Rev B)` | `1942` |
-| `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros` |
-| `Earthbound (USA) [patched]` | `Earthbound` |
-| `Mega Man 2 (USA)` | `Mega Man 2` |
+| ROM filename | Display name (default) | With `--strip-variant-tags` |
+|---|---|---|
+| `1942 (Japan)` | `1942 (Japan)` | `1942` |
+| `1942 (USA)` | `1942 (USA)` | `1942` |
+| `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros` |
+| `Earthbound (USA) [patched]` | `Earthbound (USA) [patched]` | `Earthbound` |
+| `super_mario_bros` | `Super Mario Bros` | `Super Mario Bros` |
 
-The `name` attribute (used by HyperSpin as the key) is always the exact ROM filename stem, preserving all variant tags.
+If you'd rather have both `1942 (Japan)` and `1942 (USA)` appear as just `1942`, pass `--strip-variant-tags` to `update-db` for a single run, or set it as the default:
+
+```bat
+spindoctor config set strip_variant_tags_in_display_name true
+```
+
+The `name` attribute (used by HyperSpin as the key) is always the exact ROM filename stem, preserving all variant tags regardless of the display-name setting.
 
 ---
 
@@ -866,7 +884,7 @@ Yes. SpinDoctor strips region/version/revision tags before searching (e.g., `Sup
 
 **I have `1942 (Japan).zip` and `1942 (USA).zip` — will they both get entries?**
 
-Yes. Each ROM file gets its own individual database entry. The DB `name` is the exact stem (`1942 (Japan)`, `1942 (USA)`), and the display name is the stripped clean version (`1942`). They are never merged.
+Yes. Each ROM file gets its own individual database entry. The DB `name` is the exact stem (`1942 (Japan)`, `1942 (USA)`), and by default the display name keeps the variant tag too (`1942 (Japan)`, `1942 (USA)`) so the two stay distinguishable in your menus. If you'd rather both appear as just `1942`, pass `--strip-variant-tags` to `update-db` or run `spindoctor config set strip_variant_tags_in_display_name true`. They are never merged either way.
 
 **Will SpinDoctor overwrite my existing data?**
 
