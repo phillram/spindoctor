@@ -107,6 +107,44 @@ class MetadataError(Exception):
     pass
 
 
+class _FetchWithSearchMixin:
+    """Shared fetch_with_search logic for all metadata clients."""
+
+    def fetch_with_search(
+        self,
+        game_name: str,
+        system_name: str,
+        threshold: float = 0.80,
+    ) -> "list[GameMetadata]":
+        """Try direct fetch first; fall back to search if no result.
+
+        Returns a scored, sorted list (best first). May return multiple
+        candidates when the name is ambiguous.
+        """
+        try:
+            direct = self.fetch(game_name, system_name)
+        except MetadataError:
+            direct = None
+
+        if direct and direct.match_score >= threshold:
+            return [direct]
+
+        try:
+            candidates = self.search(game_name, system_name)
+        except MetadataError:
+            candidates = []
+
+        # Merge direct result in if it wasn't already found in search results.
+        # Guard against empty source_id causing false dedup matches.
+        if direct and direct.source_id and not any(
+            c.source_id == direct.source_id for c in candidates
+        ):
+            candidates.append(direct)
+            candidates.sort(key=lambda m: m.match_score, reverse=True)
+
+        return candidates
+
+
 class RateLimiter:
     def __init__(self, calls_per_second: float = 1.0):
         self._interval = 1.0 / calls_per_second
@@ -122,7 +160,7 @@ class RateLimiter:
 
 # ─── ScreenScraper ────────────────────────────────────────────────────────────
 
-class ScreenScraperClient:
+class ScreenScraperClient(_FetchWithSearchMixin):
     def __init__(self, username: str, password: str, rate_limit: float = 1.0):
         self.username = username
         self.password = password
@@ -189,41 +227,10 @@ class ScreenScraperClient:
         results.sort(key=lambda m: m.match_score, reverse=True)
         return results
 
-    def fetch_with_search(
-        self,
-        game_name: str,
-        system_name: str,
-        threshold: float = 0.80,
-    ) -> list[GameMetadata]:
-        """Try direct fetch first; fall back to search if no result.
-
-        Returns a scored, sorted list (best first).  May return multiple
-        candidates when the name is ambiguous.
-        """
-        try:
-            direct = self.fetch(game_name, system_name)
-        except MetadataError:
-            direct = None
-
-        if direct and direct.match_score >= threshold:
-            return [direct]
-
-        try:
-            candidates = self.search(game_name, system_name)
-        except MetadataError:
-            candidates = []
-
-        # Merge direct result in if it wasn't good enough on its own
-        if direct and not any(c.source_id == direct.source_id for c in candidates):
-            candidates.append(direct)
-            candidates.sort(key=lambda m: m.match_score, reverse=True)
-
-        return candidates
-
 
 # ─── TheGamesDB ───────────────────────────────────────────────────────────────
 
-class TheGamesDBClient:
+class TheGamesDBClient(_FetchWithSearchMixin):
     def __init__(self, api_key: str, rate_limit: float = 1.0):
         self.api_key = api_key
         self._limiter = RateLimiter(rate_limit)
@@ -286,31 +293,6 @@ class TheGamesDBClient:
             results.append(meta)
         results.sort(key=lambda m: m.match_score, reverse=True)
         return results
-
-    def fetch_with_search(
-        self,
-        game_name: str,
-        system_name: str,
-        threshold: float = 0.80,
-    ) -> list[GameMetadata]:
-        try:
-            direct = self.fetch(game_name, system_name)
-        except MetadataError:
-            direct = None
-
-        if direct and direct.match_score >= threshold:
-            return [direct]
-
-        try:
-            candidates = self.search(game_name, system_name)
-        except MetadataError:
-            candidates = []
-
-        if direct and not any(c.source_id == direct.source_id for c in candidates):
-            candidates.append(direct)
-            candidates.sort(key=lambda m: m.match_score, reverse=True)
-
-        return candidates
 
 
 # ─── factory ──────────────────────────────────────────────────────────────────

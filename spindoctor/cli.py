@@ -295,13 +295,13 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
             "fuzzy_match_to", "fuzzy_score",
             "missing_metadata", "missing_media",
         ] + MEDIA_TYPES)
-        fuzzy_by_rom: dict[str, tuple] = {}
+        fuzzy_by_rom: dict[tuple, tuple] = {}
         for result in results:
             for fm in result.fuzzy_matches:
-                fuzzy_by_rom[fm.rom_name] = (fm.db_name, f"{fm.score:.2f}")
+                fuzzy_by_rom[(result.system_name, fm.rom_name)] = (fm.db_name, f"{fm.score:.2f}")
         for result in results:
             for entry in result.entries:
-                fm_info = fuzzy_by_rom.get(entry.rom_name, ("", ""))
+                fm_info = fuzzy_by_rom.get((result.system_name, entry.rom_name), ("", ""))
                 writer.writerow([
                     result.system_name,
                     entry.rom_name,
@@ -458,8 +458,6 @@ def _print_detailed_section(
               help="Single game (ROM stem) to inspect.")
 @click.option("--all", "all_games", is_flag=True,
               help="Inspect every game in the system.")
-@click.option("--needs-attention", "needs_attn", is_flag=True, default=True,
-              help="Only show games with missing ROM, metadata, or media (default: on).")
 @click.option("--format", "fmt", default="table",
               type=click.Choice(["table", "csv"]),
               help="Output format.")
@@ -467,7 +465,7 @@ def _print_detailed_section(
               help="Write CSV output to this file.")
 @click.option("--no-path", is_flag=True,
               help="Show only filenames rather than full paths (less wide).")
-def inspect(system, game, all_games, needs_attn, fmt, output, no_path):
+def inspect(system, game, all_games, fmt, output, no_path):
     """Show detailed per-file information for one game or a whole system.
 
     \b
@@ -650,12 +648,8 @@ def _write_inspect_csv(reports, path) -> None:
 
 
 def _human_size(n: int) -> str:
-    nb = float(n)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if nb < 1024.0:
-            return f"{nb:.1f} {unit}"
-        nb /= 1024.0
-    return f"{nb:.1f} PB"
+    from .fileinfo import human_size
+    return human_size(n)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
@@ -745,7 +739,7 @@ def match_group():
 @click.option("--system", "-s", default=None)
 def match_list(system: Optional[str]):
     """Show cached match selections."""
-    from .matcher import list_cache, _SKIP
+    from .matcher import list_cache, SKIP_SENTINEL
     cached = list_cache(system)
     if not cached:
         console.print("[dim]No cached match decisions.[/dim]")
@@ -756,7 +750,7 @@ def match_list(system: Optional[str]):
     tbl.add_column("Chosen ID / Action", style="cyan")
     for sys_name, entries in sorted(cached.items()):
         for rom_name, chosen in sorted(entries.items()):
-            action = "[dim]skip[/dim]" if chosen == _SKIP else chosen
+            action = "[dim]skip[/dim]" if chosen == SKIP_SENTINEL else chosen
             tbl.add_row(sys_name, rom_name, action)
     console.print(tbl)
 
@@ -777,8 +771,6 @@ def match_clear(system: Optional[str]):
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
-@click.option("--missing-only", "missing_only", is_flag=True, default=True,
-              help="Only update games with incomplete metadata (default: on).")
 @click.option("--all-games", "fetch_all", is_flag=True,
               help="Refresh metadata for every game, even complete ones.")
 @click.option("--interactive/--auto-best", "interactive", default=None,
@@ -787,7 +779,7 @@ def match_clear(system: Optional[str]):
               help="Fuzzy confidence required for auto-accept (default: from config).")
 @click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
-def fetch_meta(system, all_systems, source, missing_only, fetch_all,
+def fetch_meta(system, all_systems, source, fetch_all,
                interactive, threshold, dry_run, output_dir):
     """Fetch and update game metadata in the Hyperspin XML databases.
 
@@ -977,9 +969,10 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
             continue
 
         if not overwrite:
+            media_base = downloader._media_base()
             games = [
                 g for g in games
-                if check_media(g.name, sys_name, config.media_dir).missing()
+                if check_media(g.name, sys_name, media_base).missing()
             ]
         if not games:
             console.print("  [green]All media present.[/green]")
@@ -1159,8 +1152,8 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
 # ─── generate-config ──────────────────────────────────────────────────────────
 
 @cli.command("generate-config")
-@click.option("--all", "all_systems", is_flag=True, default=True, show_default=True,
-              help="Generate config for all detected systems (default: on).")
+@click.option("--all", "all_systems", is_flag=True, default=False,
+              help="Generate config for all detected systems.")
 @click.option("--system", "-s", default=None, help="Target a single system.")
 @click.option("--rl/--no-rl", "gen_rl", default=True,
               help="Generate RocketLauncher system INI files (default: on).")
@@ -1201,6 +1194,9 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, o
         guess_emulator,
     )
 
+    # Default to all systems when neither --system nor --all is given
+    if not system and not all_systems:
+        all_systems = True
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
 

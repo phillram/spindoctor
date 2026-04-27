@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from .scraper import GameMetadata
 
 CACHE_DIR = Path.home() / ".spindoctor" / "match_cache"
-_SKIP = "__skip__"
+SKIP_SENTINEL = "__skip__"  # stored in cache to record a deliberate skip decision
 
 _console = Console()
 _err = Console(stderr=True)
@@ -97,7 +97,7 @@ def choose_match(
 
     if rom_name in cache:
         cached_id = cache[rom_name]
-        if cached_id == _SKIP:
+        if cached_id == SKIP_SENTINEL:
             return None
         for c in candidates:
             if str(c.source_id) == cached_id:
@@ -166,7 +166,7 @@ def _prompt(
             idx = 0
         else:
             if n == 0:
-                cache[rom_name] = _SKIP
+                cache[rom_name] = SKIP_SENTINEL
                 save_cache(system_name, cache)
                 _console.print(f"  [dim]Skipped {rom_name}[/dim]")
                 return None

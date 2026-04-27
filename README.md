@@ -170,8 +170,11 @@ Show detailed per-file information for a game or an entire system — the full p
 
 ```
 spindoctor inspect --system <name> --game <rom-name>
-spindoctor inspect --system <name> [--all | --needs-attention]
+spindoctor inspect --system <name> --all
+spindoctor inspect --system <name>
 ```
+
+With no `--game` or `--all`, inspect defaults to showing only games that need attention (missing ROM, metadata, or media).
 
 For every game inspected, two tables are shown:
 
@@ -207,7 +210,6 @@ A footer summary shows total on-disk size and missing-media counts across all in
 | `--system NAME` | System to inspect (required) |
 | `--game NAME` | Single game to inspect |
 | `--all` | Every game in the database |
-| `--needs-attention` | Only games with missing ROM, metadata, or media (default) |
 | `--format table\|csv` | Output format |
 | `--output PATH` | Write CSV output to file |
 | `--no-path` | Show only filenames instead of full paths (narrower output) |
@@ -228,8 +230,8 @@ spindoctor inspect --system SNES --no-path
 rem Full file manifest for all MAME games as CSV
 spindoctor inspect --system MAME --all --format csv --output D:\mame_manifest.csv
 
-rem Audit is already done — show detail for games needing attention in SNES
-spindoctor inspect --system "Nintendo Entertainment System" --needs-attention
+rem Show only games needing attention in NES (default when no --game or --all)
+spindoctor inspect --system "Nintendo Entertainment System"
 ```
 
 You can also get this same per-file detail appended to the regular `audit` output:
@@ -287,8 +289,7 @@ spindoctor fetch-meta --all [options]
 | Flag | Description |
 |------|-------------|
 | `--source` | `screenscraper` or `thegamesdb` |
-| `--missing-only` | Only update games with incomplete metadata (default: on) |
-| `--all-games` | Refresh every game, even complete ones |
+| `--all-games` | Refresh every game, even complete ones (default: only updates games with incomplete metadata) |
 | `--interactive` / `--auto-best` | Prompt on ambiguous matches / always pick best |
 | `--threshold FLOAT` | Minimum confidence for auto-accept (overrides config) |
 | `--dry-run` | Show what would be updated, write nothing |
@@ -411,7 +412,7 @@ spindoctor generate-config [options]
 
 | Flag | Description |
 |------|-------------|
-| `--all` | All systems (default: on) |
+| `--all` | All systems (default when neither `--all` nor `--system` is given) |
 | `--system NAME` | Single system only |
 | `--rl / --no-rl` | Generate RocketLauncher INI files (default: on) |
 | `--main-menu / --no-main-menu` | Generate `Main Menu.xml` (default: on) |
@@ -890,3 +891,19 @@ Then re-run `fetch-meta`. Your previous XML changes won't be rolled back — onl
 **A game I added to the ignore list still shows up in the audit CSV.**
 
 The game will still appear in the CSV with `ignored=True` but won't be counted in the "needs attention" totals or flagged as a problem.
+
+---
+
+## Ideas & Suggested Additions
+
+Potential future commands that would complement the current feature set:
+
+| Command | What it would do |
+|---------|-----------------|
+| `sync` | One-shot: `update-db` + `fetch-meta` + `fetch-media` in a single command |
+| `clean` | Find and optionally delete orphaned media files that have no matching ROM or DB entry |
+| `verify-roms` | Check ZIP/7z integrity and report corrupt archives before you discover them mid-session |
+| `stats` | Library statistics dashboard — total ROMs, coverage percentages, media completeness per system |
+| `export-list` | Export a printable / shareable game list (HTML or text) with artwork thumbnails |
+
+To request a feature or report a bug: open an issue at the project repository.

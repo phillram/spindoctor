@@ -15,7 +15,20 @@ from pathlib import Path
 from typing import Optional
 
 from .config import MEDIA_TYPES
+from .database import GameEntry
 from .media import MEDIA_DIR_MAP
+
+
+def human_size(n: int) -> str:
+    """Convert a byte count to a human-readable string."""
+    nb = float(n)
+    if nb == 0:
+        return "—"
+    for unit in ("B", "KB", "MB", "GB"):
+        if nb < 1024.0:
+            return f"{nb:.1f} {unit}"
+        nb /= 1024.0
+    return f"{nb:.1f} TB"
 
 
 # Extensions to try per media type when scanning for existing files
@@ -65,14 +78,7 @@ class FileDetail:
 
     @property
     def size_human(self) -> str:
-        n = float(self.size_bytes)
-        if n == 0:
-            return "—"
-        for unit in ("B", "KB", "MB", "GB"):
-            if n < 1024.0:
-                return f"{n:.1f} {unit}"
-            n /= 1024.0
-        return f"{n:.1f} TB"
+        return human_size(self.size_bytes)
 
     @property
     def duration_human(self) -> str:
@@ -129,14 +135,7 @@ class GameFileReport:
 
     @property
     def total_size_human(self) -> str:
-        n = float(self.total_size_bytes)
-        if n == 0:
-            return "—"
-        for unit in ("B", "KB", "MB", "GB"):
-            if n < 1024.0:
-                return f"{n:.1f} {unit}"
-            n /= 1024.0
-        return f"{n:.1f} TB"
+        return human_size(self.total_size_bytes)
 
     def missing_media(self) -> list[str]:
         return [t for t in MEDIA_TYPES if not self.media.get(t, FileDetail(path=Path())).exists]
@@ -259,7 +258,7 @@ def scan_game(
     system_name: str,
     roms_base: Path,
     media_base: Path,
-    db_entry=None,
+    db_entry: Optional["GameEntry"] = None,
     media_types: Optional[list[str]] = None,
 ) -> GameFileReport:
     """Build a full GameFileReport for one game."""
@@ -286,7 +285,7 @@ def scan_system(
     system_name: str,
     roms_base: Path,
     media_base: Path,
-    db_games: dict,
+    db_games: "dict[str, GameEntry]",
     game_names: Optional[list[str]] = None,
     media_types: Optional[list[str]] = None,
 ) -> list[GameFileReport]:
@@ -415,9 +414,6 @@ def _parse_mvhd(box: bytes) -> Optional[float]:
         return None
     version = box[8]
     if version == 0:
-        # 4-byte fields: ctime, mtime, timescale, duration
-        if len(box) < 28:
-            return None
         timescale = struct.unpack(">I", box[20:24])[0]
         duration = struct.unpack(">I", box[24:28])[0]
     else:

@@ -151,9 +151,13 @@ def save_config(config: Config) -> None:
 
 def get_rom_extensions(system_name: str) -> list[str]:
     key = system_name.lower().replace(" ", "")
-    for k, exts in ROM_EXTENSIONS.items():
-        if k in key or key in k:
-            return exts
+    # Exact match first
+    if key in ROM_EXTENSIONS:
+        return ROM_EXTENSIONS[key]
+    # Longest-key-first partial match to avoid "nes" matching "genesis"
+    for k in sorted(ROM_EXTENSIONS, key=len, reverse=True):
+        if k != "default" and (k in key or key in k):
+            return ROM_EXTENSIONS[k]
     return ROM_EXTENSIONS["default"]
 
 

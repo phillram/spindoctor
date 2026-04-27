@@ -126,6 +126,8 @@ class MediaDownloader:
             "video":      getattr(metadata, "video_url", ""),
             "trailer":    getattr(metadata, "trailer_url", ""),
             "sound":      getattr(metadata, "sound_url", ""),
+            # Themes are not provided by metadata APIs; must be added manually.
+            "theme":      "",
         }
 
         results = []
