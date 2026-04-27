@@ -20,6 +20,7 @@ Audit your ROM collection, sync Hyperspin XML databases, automatically fill in m
   - [fetch-media](#fetch-media)
   - [media-add](#media-add)
   - [generate-config](#generate-config)
+  - [ledblinky](#ledblinky)
   - [ignore](#ignore)
   - [match](#match)
   - [report](#report)
@@ -98,6 +99,7 @@ spindoctor config set <key> <value>
 | `hyperspin_dir` | Root HyperSpin folder (contains `Databases/` and `Media/`) |
 | `emulators_dir` | Root folder with one sub-folder per emulator |
 | `rocketlauncher_dir` | Root RocketLauncher folder |
+| `ledblinky_dir` | LedBlinky install directory (contains `LEDBlinky.exe` and `LEDBlinkyControls.xml`) |
 | `output_dir` | Default output folder (blank = write in-place) |
 | `auto_audit_export_dir` | Auto-export audit CSV here after any write operation |
 | `screenscraper_user` | ScreenScraper username |
@@ -459,6 +461,66 @@ spindoctor generate-config --no-rl
 rem Generate everything including empty database XMLs for new systems
 spindoctor generate-config --db-stubs --output-dir D:\Output
 ```
+
+---
+
+### `ledblinky`
+
+Audit and patch your HyperSpin + LedBlinky setup so the **Search** special menu (and optionally **Genre** / **Favorites**) coexists with LedBlinky without crashing.
+
+**Why this exists.** When LedBlinky is installed alongside HyperSpin's Search overlay, two known conflicts cause the Search menu to crash or hang:
+
+1. LedBlinky injects `Start_Hyperspin_Process=…LEDBlinky.exe HyperspinStart` / `Exit_Hyperspin_Process=…LEDBlinky.exe HyperspinQuit` lines into the per-menu `Settings.ini`. Search's overlay launcher doesn't tolerate those hooks and crashes when it fires.
+2. `LEDBlinkyControls.xml` has no entry for the Search special menu, so LedBlinky's lookup fails on menu-change.
+
+This command patches both conditions while keeping LedBlinky fully functional during gameplay.
+
+```
+spindoctor ledblinky check
+spindoctor ledblinky fix [options]
+```
+
+**`check`** is read-only and reports whether either conflict is present.
+
+**`fix` flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--menus LIST` | Comma-separated list of special menus to patch. Default: `Search`. Other valid values: `Genre`, `Favorites`. |
+| `--dry-run` | Show what would change without writing anything |
+| `--output-dir PATH` | Write patched copies here instead of in-place |
+| `--no-backup` | Skip `.YYYYMMDD_HHMMSS.bak` backups (in-place only) |
+
+**What it patches:**
+
+- `<ledblinky_dir>/LEDBlinkyControls.xml` — adds a stub `<game name="Search">` entry (idempotent: re-runs are no-ops once the entry exists). The stub uses LedBlinky's default control profile.
+- `<hyperspin_dir>/Menu/<MenuName>/Settings.ini` — comments out (does not delete) any `Start_Hyperspin_Process` / `Exit_Hyperspin_Process` lines that reference `LEDBlinky.exe`. Each disabled line is tagged `; disabled by spindoctor ledblinky fix` so you can find and revert them later.
+
+The global `<hyperspin_dir>/Settings/Settings.ini` is **never** modified — LedBlinky needs those hooks to drive LEDs during regular menu transitions and gameplay.
+
+**Examples:**
+
+```bat
+rem Configure once
+spindoctor config set ledblinky_dir "D:\LEDBlinky"
+
+rem Audit current state
+spindoctor ledblinky check
+
+rem Preview the patch
+spindoctor ledblinky fix --dry-run
+
+rem Apply the patch (creates .bak backups)
+spindoctor ledblinky fix
+
+rem Patch all three special menus at once
+spindoctor ledblinky fix --menus Search,Genre,Favorites
+
+rem Patch into a staging folder for review
+spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput
+```
+
+To revert: open each `.bak` file alongside the patched file, or simply uncomment the `;`-prefixed lines tagged with `disabled by spindoctor ledblinky fix`.
 
 ---
 
@@ -909,6 +971,10 @@ Then re-run `fetch-meta`. Your previous XML changes won't be rolled back — onl
 **A game I added to the ignore list still shows up in the audit CSV.**
 
 The game will still appear in the CSV with `ignored=True` but won't be counted in the "needs attention" totals or flagged as a problem.
+
+**HyperSpin's Search menu crashes when I have LedBlinky enabled. Why?**
+
+Two known conflicts: LedBlinky's process hooks leak into the Search menu's `Settings.ini`, and `LEDBlinkyControls.xml` has no entry for the Search special menu — so the menu-change lookup fails and the overlay crashes. Run `spindoctor ledblinky check` to confirm, then `spindoctor ledblinky fix` to patch both. The fix is reversible: timestamped `.bak` backups are saved next to every modified file, and disabled lines are commented out (not deleted) and tagged so you can find them later. See [`ledblinky`](#ledblinky) for details.
 
 ---
 
