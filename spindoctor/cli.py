@@ -181,14 +181,20 @@ def list_systems():
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--no-media", is_flag=True, help="Skip media checks (faster).")
 @click.option("--no-fuzzy", is_flag=True, help="Skip fuzzy ROM/DB matching.")
+@click.option("--detailed", is_flag=True,
+              help="Show per-file details (size, dimensions, video length) "
+                   "for every game that needs attention.")
 @click.option("--report", "-r", type=click.Path(), default=None,
               help="Write CSV report to this path.")
 @click.option("--show-matched", is_flag=True)
-def audit(system, all_systems, no_media, no_fuzzy, report, show_matched):
+def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matched):
     """Audit ROM files against the Hyperspin database and media assets.
 
     Reports ROMs missing from the database, orphan DB entries, incomplete
     metadata, missing media, fuzzy-matched variants, and ignored games.
+
+    Add --detailed to append a per-file breakdown (path, size, dimensions,
+    video length) for every game that needs attention.
     """
     config = _cfg()
     _check_config(config)
@@ -209,6 +215,9 @@ def audit(system, all_systems, no_media, no_fuzzy, report, show_matched):
 
     for result in all_results:
         _print_audit_result(result, show_matched)
+
+    if detailed:
+        _print_detailed_section(all_results, config)
 
     if report:
         _write_audit_csv(all_results, Path(report))
@@ -304,6 +313,349 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
                     ";".join(entry.missing_metadata),
                     ";".join(entry.media.missing()),
                 ] + [str(getattr(entry.media, t, False)) for t in MEDIA_TYPES])
+
+
+# ─── detailed file display helpers ───────────────────────────────────────────
+
+def _print_game_detail(report, *, verbose_path: bool = True) -> None:
+    """Print a rich per-game file-detail panel to the console."""
+    from .fileinfo import GameFileReport
+
+    # ── DB info header ────────────────────────────────────────────────────────
+    db_lines: list[str] = []
+    if report.db_description:
+        db_lines.append(f"[bold]{report.db_description}[/bold]")
+    meta_parts = []
+    if report.db_year:
+        meta_parts.append(f"Year [cyan]{report.db_year}[/cyan]")
+    if report.db_manufacturer:
+        meta_parts.append(f"Publisher [cyan]{report.db_manufacturer}[/cyan]")
+    if report.db_genre:
+        meta_parts.append(f"Genre [cyan]{report.db_genre}[/cyan]")
+    if report.db_rating:
+        meta_parts.append(f"Rating [cyan]{report.db_rating}[/cyan]")
+    if meta_parts:
+        db_lines.append("  ·  ".join(meta_parts))
+    db_lines.append(
+        f"Total on-disk: [green]{report.total_size_human}[/green]  ·  "
+        f"Media present: [green]{len(report.present_media())}[/green]/"
+        f"{len(report.media)}  ·  "
+        f"Missing: [red]{len(report.missing_media())}[/red]"
+    )
+
+    header = "\n".join(db_lines) if db_lines else "(no DB entry)"
+    console.print(Panel(header, title=f"[bold cyan]{report.game_name}[/bold cyan]  "
+                                      f"[dim]{report.system_name}[/dim]",
+                        border_style="blue", padding=(0, 1)))
+
+    # ── ROM file ──────────────────────────────────────────────────────────────
+    rom = report.rom
+    rom_tbl = Table(box=box.SIMPLE, show_header=True, padding=(0, 1))
+    rom_tbl.add_column("", width=3)
+    rom_tbl.add_column("File", style="cyan")
+    rom_tbl.add_column("Size", justify="right")
+    rom_tbl.add_column("Ext", style="dim")
+    rom_tbl.add_column("Modified", style="dim")
+    rom_tbl.add_column("Path", style="dim", no_wrap=False)
+
+    if rom and rom.exists:
+        path_str = str(rom.path) if verbose_path else rom.path.name
+        rom_tbl.add_row("[green]✓[/green]", rom.path.name, rom.size_human,
+                        rom.extension, rom.modified_str, path_str)
+    else:
+        expected = str(rom.path) if rom else "—"
+        rom_tbl.add_row("[red]✗[/red]", "[dim]not found[/dim]", "—", "—", "—",
+                        f"[dim]{expected}[/dim]")
+
+    console.print("[bold]ROM[/bold]")
+    console.print(rom_tbl)
+
+    # ── media files ───────────────────────────────────────────────────────────
+    media_tbl = Table(box=box.SIMPLE, show_header=True, padding=(0, 1))
+    media_tbl.add_column("Type", style="cyan", width=12)
+    media_tbl.add_column("", width=3)
+    media_tbl.add_column("Size", justify="right", width=10)
+    media_tbl.add_column("Dim / Length", width=16)
+    media_tbl.add_column("Ext", style="dim", width=6)
+    media_tbl.add_column("Modified", style="dim", width=17)
+    media_tbl.add_column("Path", style="dim", no_wrap=False)
+
+    for mt in MEDIA_TYPES:
+        detail = report.media.get(mt)
+        if detail and detail.exists:
+            path_str = str(detail.path) if verbose_path else detail.path.name
+            media_tbl.add_row(
+                mt,
+                "[green]✓[/green]",
+                detail.size_human,
+                detail.detail_str,
+                detail.extension,
+                detail.modified_str,
+                path_str,
+            )
+        else:
+            expected = str(detail.path) if detail else "—"
+            media_tbl.add_row(
+                mt,
+                "[red]✗[/red]",
+                "—", "—", "—", "—",
+                f"[dim]{expected}[/dim]",
+            )
+
+    console.print("[bold]MEDIA[/bold]")
+    console.print(media_tbl)
+
+
+def _print_detailed_section(
+    all_results: "list[SystemAuditResult]",
+    config: Config,
+) -> None:
+    """Print per-file detail for all games that need attention."""
+    from .fileinfo import scan_game
+
+    needs_attention = [
+        (result.system_name, entry)
+        for result in all_results
+        for entry in result.entries
+        if entry.needs_attention
+    ]
+
+    if not needs_attention:
+        console.print("\n[green]No games need attention.[/green]")
+        return
+
+    console.print(
+        f"\n[bold]Detailed file report[/bold] — "
+        f"[cyan]{len(needs_attention)}[/cyan] game(s) needing attention\n"
+    )
+
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  BarColumn(), console=console) as prog:
+        task = prog.add_task("Scanning files...", total=len(needs_attention))
+        reports = []
+        for sys_name, entry in needs_attention:
+            prog.update(task, description=f"[dim]{entry.rom_name[:40]}[/dim]")
+            report = scan_game(
+                entry.rom_name,
+                sys_name,
+                Path(config.roms_dir),
+                config.media_dir,
+                db_entry=entry.db_entry,
+            )
+            reports.append(report)
+            prog.advance(task)
+
+    for report in reports:
+        _print_game_detail(report)
+        console.print()
+
+
+# ─── inspect ──────────────────────────────────────────────────────────────────
+
+@cli.command("inspect")
+@click.option("--system", "-s", required=True, help="System to inspect.")
+@click.option("--game", "-g", default=None,
+              help="Single game (ROM stem) to inspect.")
+@click.option("--all", "all_games", is_flag=True,
+              help="Inspect every game in the system.")
+@click.option("--needs-attention", "needs_attn", is_flag=True, default=True,
+              help="Only show games with missing ROM, metadata, or media (default: on).")
+@click.option("--format", "fmt", default="table",
+              type=click.Choice(["table", "csv"]),
+              help="Output format.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write CSV output to this file.")
+@click.option("--no-path", is_flag=True,
+              help="Show only filenames rather than full paths (less wide).")
+def inspect(system, game, all_games, needs_attn, fmt, output, no_path):
+    """Show detailed per-file information for one game or a whole system.
+
+    \b
+    For every game, shows:
+      ROM    — path, file size, extension, last modified
+      MEDIA  — per type: exists, size, image dimensions, video length,
+               extension, last modified, full path
+
+    \b
+    Examples:
+      # Single game deep-dive
+      spindoctor inspect --system MAME --game 1942
+
+      # All games missing something in SNES
+      spindoctor inspect --system SNES --needs-attention
+
+      # Export full file manifest to CSV
+      spindoctor inspect --system MAME --all --format csv --output D:\\mame_files.csv
+    """
+    config = _cfg()
+    _check_config(config)
+
+    from .fileinfo import scan_game, scan_system
+
+    db = load_database(system, config.databases_dir)
+    db_games = db.games()
+
+    # Determine which games to inspect
+    if game:
+        game_names = [game]
+    elif all_games:
+        game_names = sorted(db_games.keys())
+    else:
+        # needs-attention: run a quick audit, pick games with issues
+        result = audit_system(system, config, check_media_flag=True)
+        game_names = [e.rom_name for e in result.entries if e.needs_attention]
+        if not game_names:
+            console.print("[green]No games need attention in this system.[/green]")
+            return
+
+    if not game_names:
+        console.print("[yellow]No games to inspect.[/yellow]")
+        return
+
+    console.print(
+        f"Scanning [cyan]{len(game_names)}[/cyan] game(s) in "
+        f"[bold]{system}[/bold]…"
+    )
+
+    reports = []
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  BarColumn(), TextColumn("{task.completed}/{task.total}"),
+                  console=console) as prog:
+        task = prog.add_task("Reading files...", total=len(game_names))
+        for name in game_names:
+            prog.update(task, description=f"[dim]{name[:45]}[/dim]")
+            reports.append(
+                scan_game(
+                    name, system,
+                    Path(config.roms_dir),
+                    config.media_dir,
+                    db_entry=db_games.get(name),
+                )
+            )
+            prog.advance(task)
+
+    if fmt == "csv":
+        path = Path(output) if output else None
+        _write_inspect_csv(reports, path)
+        if path:
+            console.print(f"[green]Saved:[/green] {path}")
+        return
+
+    # Table output
+    for report in reports:
+        _print_game_detail(report, verbose_path=not no_path)
+        console.print()
+
+    # Footer summary
+    total_rom = sum(1 for r in reports if r.rom and r.rom.exists)
+    total_size = sum(r.total_size_bytes for r in reports)
+    size_str = _human_size(total_size)
+    missing_counts: dict[str, int] = {mt: 0 for mt in MEDIA_TYPES}
+    for r in reports:
+        for mt in r.missing_media():
+            missing_counts[mt] += 1
+
+    summary_tbl = Table(title="Inspect Summary", box=box.ROUNDED)
+    summary_tbl.add_column("Stat", style="cyan")
+    summary_tbl.add_column("Value", justify="right")
+    summary_tbl.add_row("Games inspected", str(len(reports)))
+    summary_tbl.add_row("ROMs on disk", str(total_rom))
+    summary_tbl.add_row("Total on-disk size", size_str)
+    for mt, n in missing_counts.items():
+        if n:
+            summary_tbl.add_row(f"Missing {mt}", f"[red]{n}[/red]")
+    console.print(summary_tbl)
+
+
+def _write_inspect_csv(reports, path) -> None:
+    """Write a detailed per-file CSV from a list of GameFileReport objects."""
+    rows = []
+    for r in reports:
+        base = {
+            "system": r.system_name,
+            "game": r.game_name,
+            "db_name": r.db_name,
+            "db_description": r.db_description,
+            "db_year": r.db_year,
+            "db_manufacturer": r.db_manufacturer,
+            "db_genre": r.db_genre,
+            "db_rating": r.db_rating,
+        }
+        # ROM row
+        rom = r.rom
+        rows.append({
+            **base,
+            "file_category": "rom",
+            "media_type": "rom",
+            "exists": rom.exists if rom else False,
+            "path": str(rom.path) if rom else "",
+            "filename": rom.path.name if rom else "",
+            "extension": rom.extension if rom else "",
+            "size_bytes": rom.size_bytes if rom and rom.exists else "",
+            "size_human": rom.size_human if rom and rom.exists else "",
+            "width": "",
+            "height": "",
+            "dimensions": "",
+            "duration_seconds": "",
+            "duration_human": "",
+            "modified": rom.modified_str if rom else "",
+        })
+        # Media rows
+        for mt in MEDIA_TYPES:
+            d = r.media.get(mt)
+            rows.append({
+                **base,
+                "file_category": "media",
+                "media_type": mt,
+                "exists": d.exists if d else False,
+                "path": str(d.path) if d else "",
+                "filename": d.path.name if d else "",
+                "extension": d.extension if d else "",
+                "size_bytes": d.size_bytes if d and d.exists else "",
+                "size_human": d.size_human if d and d.exists else "",
+                "width": d.width if d and d.width else "",
+                "height": d.height if d and d.height else "",
+                "dimensions": d.dimensions if d and d.exists else "",
+                "duration_seconds": (
+                    f"{d.duration_seconds:.2f}"
+                    if d and d.duration_seconds is not None else ""
+                ),
+                "duration_human": d.duration_human if d and d.exists else "",
+                "modified": d.modified_str if d and d.exists else "",
+            })
+
+    columns = [
+        "system", "game", "db_name", "db_year", "db_manufacturer",
+        "db_genre", "db_rating", "file_category", "media_type", "exists",
+        "filename", "extension", "size_bytes", "size_human",
+        "width", "height", "dimensions",
+        "duration_seconds", "duration_human",
+        "modified", "path",
+    ]
+
+    if path:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+    else:
+        # Print CSV to stdout
+        import io
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=columns, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+        console.print(buf.getvalue())
+
+
+def _human_size(n: int) -> str:
+    nb = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if nb < 1024.0:
+            return f"{nb:.1f} {unit}"
+        nb /= 1024.0
+    return f"{nb:.1f} PB"
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────

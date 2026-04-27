@@ -5,6 +5,7 @@ spindoctor/audit.py
 spindoctor/cli.py
 spindoctor/config.py
 spindoctor/database.py
+spindoctor/fileinfo.py
 spindoctor/matcher.py
 spindoctor/media.py
 spindoctor/rocketlauncher.py

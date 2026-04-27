@@ -14,6 +14,7 @@ Audit your ROM collection, sync Hyperspin XML databases, automatically fill in m
   - [config](#config)
   - [systems](#systems)
   - [audit](#audit)
+  - [inspect](#inspect)
   - [update-db](#update-db)
   - [fetch-meta](#fetch-meta)
   - [fetch-media](#fetch-media)
@@ -139,6 +140,7 @@ spindoctor audit --all
 | `--all` | Audit all systems |
 | `--no-media` | Skip media checks (much faster) |
 | `--no-fuzzy` | Skip fuzzy ROM/DB variant matching |
+| `--detailed` | After the summary, print per-file detail (size, dimensions, video length) for every game that needs attention |
 | `--report PATH` | Write full CSV report |
 | `--show-matched` | Also list matched games |
 
@@ -158,6 +160,83 @@ spindoctor audit --all
 spindoctor audit --system MAME
 spindoctor audit --all --no-media
 spindoctor audit --all --report D:\audit_report.csv
+```
+
+---
+
+### `inspect`
+
+Show detailed per-file information for a game or an entire system — the full picture of what's on disk.
+
+```
+spindoctor inspect --system <name> --game <rom-name>
+spindoctor inspect --system <name> [--all | --needs-attention]
+```
+
+For every game inspected, two tables are shown:
+
+**ROM** — one row per ROM file on disk:
+
+| Column | Description |
+|--------|-------------|
+| ✓ / ✗ | File found on disk |
+| File | Filename |
+| Size | Human-readable file size |
+| Ext | File extension |
+| Modified | Last modified date/time |
+| Path | Full path on disk |
+
+**MEDIA** — one row per media type:
+
+| Column | Description |
+|--------|-------------|
+| Type | wheel, background, artwork, title, snap, video, trailer, sound, theme |
+| ✓ / ✗ | File exists |
+| Size | File size |
+| Dim / Length | Image dimensions (e.g. `1920×1080`) or video duration (e.g. `0:43`) |
+| Ext | Extension of the actual file found |
+| Modified | Last modified |
+| Path | Full path (or expected path if missing) |
+
+A footer summary shows total on-disk size and missing-media counts across all inspected games.
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--system NAME` | System to inspect (required) |
+| `--game NAME` | Single game to inspect |
+| `--all` | Every game in the database |
+| `--needs-attention` | Only games with missing ROM, metadata, or media (default) |
+| `--format table\|csv` | Output format |
+| `--output PATH` | Write CSV output to file |
+| `--no-path` | Show only filenames instead of full paths (narrower output) |
+
+**Video length** is read using `ffprobe` (if FFmpeg is installed) or by parsing the MP4 file header directly — no extra Python packages required.
+
+**Image dimensions** (width × height) are read from PNG and JPEG file headers directly — no Pillow required.
+
+**Examples:**
+
+```bat
+rem Single game deep-dive
+spindoctor inspect --system MAME --game 1942
+
+rem All games with issues in SNES (compact paths)
+spindoctor inspect --system SNES --no-path
+
+rem Full file manifest for all MAME games as CSV
+spindoctor inspect --system MAME --all --format csv --output D:\mame_manifest.csv
+
+rem Audit is already done — show detail for games needing attention in SNES
+spindoctor inspect --system "Nintendo Entertainment System" --needs-attention
+```
+
+You can also get this same per-file detail appended to the regular `audit` output:
+
+```bat
+spindoctor audit --system MAME --detailed
+spindoctor audit --all --detailed --no-media   rem skip media scan for speed, then detailed fills it in
 ```
 
 ---
