@@ -9,6 +9,12 @@ setup(
         "rich>=13.0",
         "requests>=2.28",
     ],
+    extras_require={
+        # Lossless XML round-trip (preserves comments, attribute order).
+        # Strongly recommended when sharing a HyperSpin install with HyperHQ.
+        "xml": ["lxml>=4.9"],
+        "dev": ["pytest>=7.0", "lxml>=4.9"],
+    },
     entry_points={
         "console_scripts": [
             "spindoctor=spindoctor.cli:cli",
