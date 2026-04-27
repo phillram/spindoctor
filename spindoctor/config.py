@@ -62,9 +62,9 @@ class Config:
     hyperspin_dir: str = ""
     emulators_dir: str = ""
     rocketlauncher_dir: str = ""
+    ledblinky_dir: str = ""
     output_dir: str = ""
     auto_audit_export_dir: str = ""
-    ledblinky_dir: str = ""
 
     # External binaries
     mame_executable: str = ""
