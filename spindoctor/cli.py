@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -12,20 +13,21 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich.text import Text
 
 from . import __app_name__, __version__
 from .audit import GameAuditEntry, SystemAuditResult, audit_system, build_stub_entry
-from .config import Config, MEDIA_TYPES, get_systems, load_config, save_config
+from .config import (
+    Config, MEDIA_TYPES, get_systems, load_config, save_config,
+)
 from .database import load_database
 
 console = Console()
 err_console = Console(stderr=True)
 
 
-# ─── helpers ──────────────────────────────────────────────────────────────────
+# ─── shared helpers ───────────────────────────────────────────────────────────
 
-def _load_cfg() -> Config:
+def _cfg() -> Config:
     return load_config()
 
 
@@ -33,7 +35,7 @@ def _resolve_systems(config: Config, system: Optional[str], all_systems: bool) -
     if all_systems:
         systems = get_systems(config)
         if not systems:
-            err_console.print("[red]No systems found. Check your roms_dir and hyperspin_dir.[/red]")
+            err_console.print("[red]No systems found. Check roms_dir and hyperspin_dir.[/red]")
             sys.exit(1)
         return systems
     if system:
@@ -51,18 +53,31 @@ def _check_config(config: Config) -> None:
         sys.exit(1)
 
 
-def _status_icon(value: bool) -> str:
+def _status(value: bool) -> str:
     return "[green]✓[/green]" if value else "[red]✗[/red]"
 
 
-# ─── root group ───────────────────────────────────────────────────────────────
+def _auto_export_audit(config: Config, systems: list[str]) -> None:
+    """If auto_audit_export_dir is configured, write an audit CSV there."""
+    if not config.auto_audit_export_dir:
+        return
+    export_dir = Path(config.auto_audit_export_dir)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_path = export_dir / f"audit_{stamp}.csv"
+    results = [audit_system(s, config, check_media_flag=True) for s in systems]
+    _write_audit_csv(results, report_path)
+    console.print(f"\n[dim]Auto-audit export:[/dim] {report_path}")
+
+
+# ─── root command ─────────────────────────────────────────────────────────────
 
 @click.group()
 @click.version_option(__version__, prog_name=__app_name__)
 def cli():
     """SpinDoctor — Hyperspin arcade library manager.
 
-    Audit ROMs, sync databases, and fetch metadata & media for your arcade cabinet.
+    Audit ROMs, sync databases, fetch metadata & media, and generate
+    RocketLauncher / RocketUI config files for your arcade cabinet.
     """
 
 
@@ -76,19 +91,20 @@ def config_group():
 @config_group.command("show")
 def config_show():
     """Display current configuration."""
-    config = _load_cfg()
-    table = Table(title="SpinDoctor Configuration", box=box.ROUNDED)
-    table.add_column("Key", style="cyan")
-    table.add_column("Value")
+    config = _cfg()
+    tbl = Table(title="SpinDoctor Configuration", box=box.ROUNDED)
+    tbl.add_column("Key", style="cyan")
+    tbl.add_column("Value")
 
     sensitive = {"screenscraper_pass", "thegamesdb_key"}
     for key, val in config.to_dict().items():
-        if key in ("ignore_lists",):
+        if key == "ignore_lists":
+            n = sum(len(v) for v in val.values())
+            tbl.add_row(key, f"[dim]{n} entries across {len(val)} system(s)[/dim]")
             continue
         display = "***" if key in sensitive and val else (str(val) or "[dim]<not set>[/dim]")
-        table.add_row(key, display)
-
-    console.print(table)
+        tbl.add_row(key, display)
+    console.print(tbl)
 
 
 @config_group.command("set")
@@ -99,30 +115,34 @@ def config_set(key: str, value: str):
 
     \b
     Keys:
-      roms_dir            Directory containing system ROM folders
-      hyperspin_dir       Root HyperSpin directory (contains Databases/ and Media/)
-      emulators_dir       Directory containing emulator folders
-      output_dir          Default output directory (leave blank to modify in-place)
-      screenscraper_user  ScreenScraper username
-      screenscraper_pass  ScreenScraper password
-      thegamesdb_key      TheGamesDB API key
-      default_metadata_source  screenscraper or thegamesdb
-      backup_before_modify     true/false
-      max_concurrent_downloads Integer
+      roms_dir                  Directory containing one sub-folder per system
+      hyperspin_dir             Root HyperSpin folder (has Databases/ and Media/)
+      emulators_dir             Emulator root directory
+      rocketlauncher_dir        RocketLauncher root directory
+      output_dir                Default output directory (blank = write in-place)
+      auto_audit_export_dir     Auto-export audit CSV here after write operations
+      screenscraper_user        ScreenScraper username
+      screenscraper_pass        ScreenScraper password
+      thegamesdb_key            TheGamesDB API key
+      default_metadata_source   screenscraper | thegamesdb
+      backup_before_modify      true | false
+      match_threshold           0.0–1.0 fuzzy match confidence (default 0.80)
+      interactive_matching      true | false
+      max_concurrent_downloads  Integer
     """
-    config = _load_cfg()
-    if not hasattr(config, key):
+    config = _cfg()
+    if not hasattr(config, key) or key in ("ignore_lists", "databases_dir", "media_dir"):
         err_console.print(f"[red]Unknown config key:[/red] {key}")
         sys.exit(1)
-
     current = getattr(config, key)
     if isinstance(current, bool):
         setattr(config, key, value.lower() in ("1", "true", "yes"))
     elif isinstance(current, int):
         setattr(config, key, int(value))
+    elif isinstance(current, float):
+        setattr(config, key, float(value))
     else:
         setattr(config, key, value)
-
     save_config(config)
     console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {value!r}")
 
@@ -132,69 +152,60 @@ def config_set(key: str, value: str):
 @cli.command("systems")
 def list_systems():
     """List all detected systems."""
-    config = _load_cfg()
+    config = _cfg()
     _check_config(config)
     systems = get_systems(config)
     if not systems:
         console.print("[yellow]No systems found.[/yellow]")
         return
-
-    table = Table(title="Detected Systems", box=box.ROUNDED)
-    table.add_column("#", style="dim")
-    table.add_column("System", style="cyan")
-    table.add_column("ROMs dir", style="dim")
-    table.add_column("Database", style="dim")
-
-    roms_base = Path(config.roms_dir)
-    db_base = config.databases_dir
-
+    tbl = Table(title="Detected Systems", box=box.ROUNDED)
+    tbl.add_column("#", style="dim")
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("ROMs", justify="center")
+    tbl.add_column("Database", justify="center")
+    tbl.add_column("Ignored", justify="right", style="dim")
     for i, sys_name in enumerate(systems, 1):
-        has_roms = (roms_base / sys_name).exists()
-        has_db = any((db_base / sys_name).glob("*.xml")) if (db_base / sys_name).exists() else False
-        table.add_row(
-            str(i),
-            sys_name,
-            _status_icon(has_roms),
-            _status_icon(has_db),
-        )
-
-    console.print(table)
+        has_roms = (Path(config.roms_dir) / sys_name).exists()
+        db_dir = config.databases_dir / sys_name
+        has_db = bool(list(db_dir.glob("*.xml"))) if db_dir.exists() else False
+        ignored = len(config.ignore_lists.get(sys_name, []))
+        tbl.add_row(str(i), sys_name, _status(has_roms), _status(has_db),
+                    str(ignored) if ignored else "—")
+    console.print(tbl)
 
 
 # ─── audit ────────────────────────────────────────────────────────────────────
 
 @cli.command("audit")
-@click.option("--system", "-s", default=None, help="System name to audit.")
-@click.option("--all", "all_systems", is_flag=True, help="Audit all systems.")
-@click.option("--no-media", is_flag=True, help="Skip media file checks (faster).")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+@click.option("--no-media", is_flag=True, help="Skip media checks (faster).")
+@click.option("--no-fuzzy", is_flag=True, help="Skip fuzzy ROM/DB matching.")
 @click.option("--report", "-r", type=click.Path(), default=None,
               help="Write CSV report to this path.")
-@click.option("--show-matched", is_flag=True, help="Also show matched games (verbose).")
-def audit(system, all_systems, no_media, report, show_matched):
-    """Audit ROM files against Hyperspin database entries and media.
+@click.option("--show-matched", is_flag=True)
+def audit(system, all_systems, no_media, no_fuzzy, report, show_matched):
+    """Audit ROM files against the Hyperspin database and media assets.
 
-    Reports ROMs missing from the database, database entries with no ROM,
-    incomplete metadata, and missing media assets.
+    Reports ROMs missing from the database, orphan DB entries, incomplete
+    metadata, missing media, fuzzy-matched variants, and ignored games.
     """
-    config = _load_cfg()
+    config = _cfg()
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
     all_results: list[SystemAuditResult] = []
-
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task("Auditing systems...", total=len(systems))
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  BarColumn(), TimeElapsedColumn(), console=console) as prog:
+        task = prog.add_task("Auditing...", total=len(systems))
         for sys_name in systems:
-            progress.update(task, description=f"Auditing [cyan]{sys_name}[/cyan]...")
-            result = audit_system(sys_name, config, check_media_flag=not no_media)
-            all_results.append(result)
-            progress.advance(task)
+            prog.update(task, description=f"Auditing [cyan]{sys_name}[/cyan]...")
+            all_results.append(
+                audit_system(sys_name, config,
+                             check_media_flag=not no_media,
+                             fuzzy=not no_fuzzy)
+            )
+            prog.advance(task)
 
     for result in all_results:
         _print_audit_result(result, show_matched)
@@ -202,65 +213,68 @@ def audit(system, all_systems, no_media, report, show_matched):
     if report:
         _write_audit_csv(all_results, Path(report))
         console.print(f"\n[green]Report saved:[/green] {report}")
+    else:
+        _auto_export_audit(config, systems)
 
 
 def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
-    title = f" {result.system_name} "
-    console.print(Panel(title, style="bold blue"))
+    console.print(Panel(f" {result.system_name} ", style="bold blue"))
 
-    summary = Table.grid(padding=(0, 2))
-    summary.add_row("[cyan]Total ROMs:[/cyan]", str(result.total_roms))
-    summary.add_row("[cyan]Total DB entries:[/cyan]", str(result.total_db_entries))
-    summary.add_row(
-        "[green]ROMs matched in DB:[/green]",
-        str(result.roms_in_db),
-    )
-    summary.add_row(
-        "[yellow]ROMs NOT in DB:[/yellow]",
-        str(result.roms_not_in_db),
-    )
-    summary.add_row(
-        "[red]DB entries with no ROM:[/red]",
-        str(result.db_entries_no_rom),
-    )
-    summary.add_row(
-        "[magenta]Entries with incomplete metadata:[/magenta]",
-        str(len(result.missing_metadata_entries)),
-    )
-    summary.add_row(
-        "[magenta]Entries with missing media:[/magenta]",
-        str(len(result.missing_media_entries)),
-    )
-    console.print(summary)
+    grid = Table.grid(padding=(0, 2))
+    grid.add_row("[cyan]Total ROMs:[/cyan]", str(result.total_roms))
+    grid.add_row("[cyan]Total DB entries:[/cyan]", str(result.total_db_entries))
+    grid.add_row("[green]Exact matches:[/green]", str(result.roms_in_db))
+    grid.add_row("[yellow]ROMs not in DB:[/yellow]", str(result.roms_not_in_db))
+    grid.add_row("[blue]Fuzzy matches (ROM↔DB variants):[/blue]", str(len(result.fuzzy_matches)))
+    grid.add_row("[red]DB entries with no ROM:[/red]", str(result.db_entries_no_rom))
+    grid.add_row("[magenta]Incomplete metadata:[/magenta]", str(len(result.missing_metadata_entries)))
+    grid.add_row("[magenta]Missing media:[/magenta]", str(len(result.missing_media_entries)))
+    grid.add_row("[dim]Ignored:[/dim]", str(result.ignored_count))
+    console.print(grid)
+
+    if result.fuzzy_matches:
+        console.print("\n[blue bold]Fuzzy-matched ROM variants:[/blue bold]")
+        tbl = Table(box=box.SIMPLE, show_header=True)
+        tbl.add_column("ROM file", style="yellow")
+        tbl.add_column("DB entry", style="cyan")
+        tbl.add_column("Conf.", width=6)
+        tbl.add_column("DB description", style="dim")
+        for f in result.fuzzy_matches[:30]:
+            desc = f.db_entry.description if f.db_entry else ""
+            tbl.add_row(f.rom_name, f.db_name, f"{f.score:.0%}", desc)
+        if len(result.fuzzy_matches) > 30:
+            console.print(f"  [dim]... and {len(result.fuzzy_matches) - 30} more[/dim]")
+        console.print(tbl)
 
     if result.roms_only:
         console.print("\n[yellow bold]ROMs not in database:[/yellow bold]")
-        for entry in result.roms_only[:50]:
-            console.print(f"  [yellow]•[/yellow] {entry.rom_name}")
+        for e in result.roms_only[:50]:
+            console.print(f"  [yellow]•[/yellow] {e.rom_name}")
         if len(result.roms_only) > 50:
             console.print(f"  [dim]... and {len(result.roms_only) - 50} more[/dim]")
 
     if result.db_only:
-        console.print("\n[red bold]Database entries with no ROM:[/red bold]")
-        for entry in result.db_only[:50]:
-            desc = entry.db_entry.description if entry.db_entry else ""
-            console.print(f"  [red]•[/red] {entry.rom_name}" + (f" ({desc})" if desc else ""))
+        console.print("\n[red bold]DB entries with no ROM:[/red bold]")
+        for e in result.db_only[:50]:
+            desc = e.db_entry.description if e.db_entry else ""
+            label = f" ({desc})" if desc and desc != e.rom_name else ""
+            console.print(f"  [red]•[/red] {e.rom_name}{label}")
         if len(result.db_only) > 50:
             console.print(f"  [dim]... and {len(result.db_only) - 50} more[/dim]")
 
     if result.missing_metadata_entries:
-        console.print("\n[magenta bold]Entries with incomplete metadata:[/magenta bold]")
+        console.print("\n[magenta bold]Incomplete metadata:[/magenta bold]")
         tbl = Table(box=box.SIMPLE)
         tbl.add_column("Game")
-        tbl.add_column("Missing Fields")
-        for entry in result.missing_metadata_entries[:30]:
-            tbl.add_row(entry.rom_name, ", ".join(entry.missing_metadata))
+        tbl.add_column("Missing")
+        for e in result.missing_metadata_entries[:30]:
+            tbl.add_row(e.rom_name, ", ".join(e.missing_metadata))
         console.print(tbl)
         if len(result.missing_metadata_entries) > 30:
             console.print(f"  [dim]... and {len(result.missing_metadata_entries) - 30} more[/dim]")
 
     if show_matched and result.matched:
-        console.print(f"\n[green]Matched games: {len(result.matched)}[/green]")
+        console.print(f"\n[green]Matched games:[/green] {len(result.matched)}")
 
 
 def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
@@ -268,52 +282,178 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "system", "rom_name", "in_database", "rom_exists",
+            "system", "rom_name", "in_database", "rom_exists", "ignored",
+            "fuzzy_match_to", "fuzzy_score",
             "missing_metadata", "missing_media",
-            "wheel", "background", "artwork", "video", "sound",
-        ])
+        ] + MEDIA_TYPES)
+        fuzzy_by_rom: dict[str, tuple] = {}
+        for result in results:
+            for fm in result.fuzzy_matches:
+                fuzzy_by_rom[fm.rom_name] = (fm.db_name, f"{fm.score:.2f}")
         for result in results:
             for entry in result.entries:
+                fm_info = fuzzy_by_rom.get(entry.rom_name, ("", ""))
                 writer.writerow([
                     result.system_name,
                     entry.rom_name,
                     entry.in_database,
                     entry.rom_exists,
+                    entry.ignored,
+                    fm_info[0],
+                    fm_info[1],
                     ";".join(entry.missing_metadata),
                     ";".join(entry.media.missing()),
-                    entry.media.wheel,
-                    entry.media.background,
-                    entry.media.artwork,
-                    entry.media.video,
-                    entry.media.sound,
-                ])
+                ] + [str(getattr(entry.media, t, False)) for t in MEDIA_TYPES])
+
+
+# ─── ignore ───────────────────────────────────────────────────────────────────
+
+@cli.group("ignore")
+def ignore_group():
+    """Manage per-system and global ignore lists.
+
+    Ignored games are skipped by audit, fetch-meta, fetch-media, and update-db.
+    """
+
+
+@ignore_group.command("add")
+@click.argument("game_name")
+@click.option("--system", "-s", default="_global",
+              help="System name, or _global for all systems (default: _global).")
+def ignore_add(game_name: str, system: str):
+    """Add a game to the ignore list."""
+    config = _cfg()
+    config.add_ignore(game_name, system)
+    save_config(config)
+    label = "globally" if system == "_global" else f"for [cyan]{system}[/cyan]"
+    console.print(f"[green]✓[/green] Ignoring [yellow]{game_name}[/yellow] {label}.")
+
+
+@ignore_group.command("remove")
+@click.argument("game_name")
+@click.option("--system", "-s", default="_global")
+def ignore_remove(game_name: str, system: str):
+    """Remove a game from the ignore list."""
+    config = _cfg()
+    if config.remove_ignore(game_name, system):
+        save_config(config)
+        console.print(f"[green]✓[/green] Removed [yellow]{game_name}[/yellow] from ignore list.")
+    else:
+        console.print(f"[yellow]{game_name}[/yellow] not found in ignore list for {system}.")
+
+
+@ignore_group.command("list")
+@click.option("--system", "-s", default=None, help="Filter by system.")
+def ignore_list(system: Optional[str]):
+    """List all ignored games."""
+    config = _cfg()
+    lists = config.ignore_lists
+
+    if not lists:
+        console.print("[dim]No games are currently ignored.[/dim]")
+        return
+
+    tbl = Table(title="Ignored Games", box=box.ROUNDED)
+    tbl.add_column("System")
+    tbl.add_column("Game name", style="yellow")
+
+    for sys_name, games in sorted(lists.items()):
+        if system and sys_name != system:
+            continue
+        for g in sorted(games):
+            label = "[dim]global[/dim]" if sys_name == "_global" else sys_name
+            tbl.add_row(label, g)
+
+    console.print(tbl)
+
+
+@ignore_group.command("clear")
+@click.option("--system", "-s", default=None, help="Clear only this system's list.")
+@click.confirmation_option(prompt="Clear all ignore entries?")
+def ignore_clear(system: Optional[str]):
+    """Clear ignore list entries."""
+    config = _cfg()
+    if system:
+        config.ignore_lists.pop(system, None)
+        console.print(f"[green]✓[/green] Cleared ignore list for {system}.")
+    else:
+        config.ignore_lists.clear()
+        console.print("[green]✓[/green] All ignore lists cleared.")
+    save_config(config)
+
+
+# ─── match ────────────────────────────────────────────────────────────────────
+
+@cli.group("match")
+def match_group():
+    """Manage cached metadata match decisions."""
+
+
+@match_group.command("list")
+@click.option("--system", "-s", default=None)
+def match_list(system: Optional[str]):
+    """Show cached match selections."""
+    from .matcher import list_cache, _SKIP
+    cached = list_cache(system)
+    if not cached:
+        console.print("[dim]No cached match decisions.[/dim]")
+        return
+    tbl = Table(title="Cached Match Decisions", box=box.ROUNDED)
+    tbl.add_column("System")
+    tbl.add_column("ROM name", style="yellow")
+    tbl.add_column("Chosen ID / Action", style="cyan")
+    for sys_name, entries in sorted(cached.items()):
+        for rom_name, chosen in sorted(entries.items()):
+            action = "[dim]skip[/dim]" if chosen == _SKIP else chosen
+            tbl.add_row(sys_name, rom_name, action)
+    console.print(tbl)
+
+
+@match_group.command("clear")
+@click.option("--system", "-s", default=None, help="Clear only this system.")
+@click.confirmation_option(prompt="Clear cached match decisions?")
+def match_clear(system: Optional[str]):
+    """Delete cached match selections so games are re-evaluated."""
+    from .matcher import clear_cache
+    n = clear_cache(system)
+    console.print(f"[green]✓[/green] Cleared {n} cache file(s).")
 
 
 # ─── fetch-meta ───────────────────────────────────────────────────────────────
 
 @cli.command("fetch-meta")
-@click.option("--system", "-s", default=None, help="System name.")
+@click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]),
-              help="Metadata source (default: from config).")
-@click.option("--missing-only", is_flag=True, default=True,
-              help="Only fetch for entries with incomplete metadata (default: on).")
+@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--missing-only", "missing_only", is_flag=True, default=True,
+              help="Only update games with incomplete metadata (default: on).")
 @click.option("--all-games", "fetch_all", is_flag=True,
-              help="Fetch metadata for all games, even complete ones.")
-@click.option("--dry-run", is_flag=True, help="Show what would be updated without writing.")
-@click.option("--output-dir", type=click.Path(), default=None,
-              help="Write updated databases here instead of in-place.")
-def fetch_meta(system, all_systems, source, missing_only, fetch_all, dry_run, output_dir):
-    """Download and update game metadata in Hyperspin database XML files.
+              help="Refresh metadata for every game, even complete ones.")
+@click.option("--interactive/--auto-best", "interactive", default=None,
+              help="Prompt when multiple matches exist (default: from config).")
+@click.option("--threshold", default=None, type=float,
+              help="Fuzzy confidence required for auto-accept (default: from config).")
+@click.option("--dry-run", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def fetch_meta(system, all_systems, source, missing_only, fetch_all,
+               interactive, threshold, dry_run, output_dir):
+    """Fetch and update game metadata in the Hyperspin XML databases.
 
-    Fetches description, year, manufacturer, genre, and rating from the
-    configured metadata source and writes them into the database XML.
+    For each game with missing fields, SpinDoctor queries the metadata source.
+    When a ROM name contains variant tags (region, version, revision) those are
+    normalised before searching so each ROM variant is looked up individually.
+    If multiple candidates are found you can select the correct one interactively;
+    your choice is saved to ~/.spindoctor/match_cache/ and reused on future runs.
     """
-    config = _load_cfg()
+    config = _cfg()
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
+    from .matcher import choose_match, partition_by_confidence
     from .scraper import MetadataError, build_client
+
+    do_interactive = config.interactive_matching if interactive is None else interactive
+    match_thresh = threshold if threshold is not None else config.match_threshold
 
     try:
         client = build_client(config, source)
@@ -330,66 +470,103 @@ def fetch_meta(system, all_systems, source, missing_only, fetch_all, dry_run, ou
         db = load_database(sys_name, config.databases_dir)
 
         if fetch_all:
-            targets = list(db.games().values())
+            targets = [g for g in db.games().values()
+                       if not config.is_ignored(g.name, sys_name)]
         else:
-            targets = list(db.iter_incomplete())
+            targets = [g for g in db.iter_incomplete()
+                       if not config.is_ignored(g.name, sys_name)]
 
         if not targets:
-            console.print("  [green]All metadata complete. Nothing to do.[/green]")
+            console.print("  [green]All metadata complete (or all ignored).[/green]")
             continue
 
-        console.print(f"  Fetching metadata for [cyan]{len(targets)}[/cyan] games...")
+        console.print(f"  Looking up metadata for [cyan]{len(targets)}[/cyan] games…")
 
-        updated = 0
-        failed = 0
+        # ── Phase 1: collect all candidates ──────────────────────────────────
+        candidates_map: dict[str, list] = {}
+        fetch_errors: list[str] = []
 
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("", total=len(targets))
-
+        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                      BarColumn(), TextColumn("{task.completed}/{task.total}"),
+                      console=console) as prog:
+            task = prog.add_task("Searching…", total=len(targets))
             for game in targets:
-                progress.update(task, description=f"[dim]{game.name[:40]}[/dim]")
+                prog.update(task, description=f"[dim]{game.name[:40]}[/dim]")
                 try:
-                    meta = client.fetch(game.name, sys_name)
-                    if meta:
-                        if not dry_run:
-                            game.description = meta.name or game.description
-                            if meta.manufacturer:
-                                game.manufacturer = meta.manufacturer
-                            if meta.year:
-                                game.year = meta.year
-                            if meta.genre:
-                                game.genre = meta.genre
-                            if meta.rating:
-                                game.rating = meta.rating
-                            if not game.description:
-                                game.description = game.name
-                            db.update_game(game)
-                        updated += 1
+                    cands = client.fetch_with_search(game.name, sys_name,
+                                                     threshold=match_thresh)
+                    if cands:
+                        candidates_map[game.name] = cands
                     else:
-                        failed += 1
+                        fetch_errors.append(game.name)
                 except MetadataError as e:
-                    console.print(f"  [red]Error fetching {game.name}:[/red] {e}")
-                    failed += 1
-                progress.advance(task)
+                    fetch_errors.append(game.name)
+                    console.print(f"  [red]Error [{game.name}]:[/red] {e}")
+                prog.advance(task)
+
+        # ── Phase 2: resolve ambiguous matches ────────────────────────────────
+        auto_resolved, ambiguous = partition_by_confidence(
+            candidates_map, auto_threshold=match_thresh
+        )
+
+        if ambiguous and do_interactive:
+            console.print(
+                f"\n[yellow]{len(ambiguous)}[/yellow] game(s) need manual selection "
+                f"(confidence < {match_thresh:.0%}):"
+            )
+            for rom_name, cands in ambiguous.items():
+                chosen = choose_match(rom_name, cands, sys_name,
+                                      auto_best=False, interactive=True)
+                if chosen:
+                    auto_resolved[rom_name] = chosen
+        elif ambiguous:
+            # Non-interactive: auto-pick best candidate
+            for rom_name, cands in ambiguous.items():
+                if cands:
+                    auto_resolved[rom_name] = cands[0]
+
+        # ── Phase 3: apply updates ────────────────────────────────────────────
+        updated = 0
+        for game in targets:
+            meta = auto_resolved.get(game.name)
+            if not meta:
+                continue
+            if dry_run:
+                console.print(
+                    f"  [dim]+[/dim] {game.name} → {meta.name!r} "
+                    f"({meta.year}, {meta.manufacturer})"
+                )
+            else:
+                if not game.description or game.description == game.name:
+                    game.description = meta.name or game.name
+                if meta.manufacturer:
+                    game.manufacturer = meta.manufacturer
+                if meta.year:
+                    game.year = meta.year
+                if meta.genre:
+                    game.genre = meta.genre
+                if meta.rating:
+                    game.rating = meta.rating
+                db.update_game(game)
+            updated += 1
 
         console.print(
             f"  Updated: [green]{updated}[/green]  "
-            f"Not found: [yellow]{failed}[/yellow]"
+            f"Ambiguous: [yellow]{len(ambiguous)}[/yellow]  "
+            f"Not found: [red]{len(fetch_errors)}[/red]"
         )
 
         if not dry_run and updated > 0:
             if out_base:
-                out_path = out_base / "Databases" / sys_name / f"{sys_name}.xml"
-                saved = db.save(output_path=out_path, backup=False)
+                saved = db.save(
+                    output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
+                    backup=False,
+                )
             else:
                 saved = db.save(backup=config.backup_before_modify)
             console.print(f"  [green]Saved:[/green] {saved}")
+
+    _auto_export_audit(config, systems)
 
 
 # ─── fetch-media ──────────────────────────────────────────────────────────────
@@ -398,21 +575,18 @@ def fetch_meta(system, all_systems, source, missing_only, fetch_all, dry_run, ou
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--types", default=",".join(MEDIA_TYPES),
-              help=f"Comma-separated media types. Options: {', '.join(MEDIA_TYPES)}")
+              help=f"Comma-separated types. Options: {', '.join(MEDIA_TYPES)}")
 @click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
-@click.option("--missing-only", is_flag=True, default=True,
-              help="Only download media that doesn't already exist (default: on).")
-@click.option("--overwrite", is_flag=True, help="Overwrite existing media files.")
+@click.option("--overwrite", is_flag=True)
 @click.option("--dry-run", is_flag=True)
-@click.option("--output-dir", type=click.Path(), default=None,
-              help="Save media here instead of inside hyperspin_dir.")
-def fetch_media(system, all_systems, types, source, missing_only, overwrite, dry_run, output_dir):
-    """Download media assets (wheel art, backgrounds, videos, sounds, etc.).
+@click.option("--output-dir", type=click.Path(), default=None)
+def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_dir):
+    """Download media assets for games in the database.
 
-    Fetches media URLs from the metadata source then saves them into the
-    correct Hyperspin Media directory structure.
+    Only downloads media that is missing unless --overwrite is passed.
+    Media types: wheel, background, artwork, title, snap, video, trailer, sound, theme.
     """
-    config = _load_cfg()
+    config = _cfg()
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
@@ -422,7 +596,9 @@ def fetch_media(system, all_systems, types, source, missing_only, overwrite, dry
 
     media_types = [t.strip() for t in types.split(",") if t.strip() in MEDIA_TYPES]
     if not media_types:
-        err_console.print(f"[red]No valid media types specified. Choose from: {', '.join(MEDIA_TYPES)}[/red]")
+        err_console.print(
+            f"[red]No valid types. Choose from:[/red] {', '.join(MEDIA_TYPES)}"
+        )
         sys.exit(1)
 
     try:
@@ -440,44 +616,41 @@ def fetch_media(system, all_systems, types, source, missing_only, overwrite, dry
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         db = load_database(sys_name, config.databases_dir)
-        games = list(db.games().values())
-
+        games = [
+            g for g in db.games().values()
+            if not config.is_ignored(g.name, sys_name)
+        ]
         if not games:
-            console.print("  [yellow]No games in database.[/yellow]")
+            console.print("  [yellow]No games in database (or all ignored).[/yellow]")
             continue
 
-        if missing_only and not overwrite:
+        if not overwrite:
             games = [
                 g for g in games
                 if check_media(g.name, sys_name, config.media_dir).missing()
             ]
-
         if not games:
-            console.print("  [green]All media present. Nothing to download.[/green]")
+            console.print("  [green]All media present.[/green]")
             continue
 
-        console.print(f"  Processing [cyan]{len(games)}[/cyan] games for types: {', '.join(media_types)}")
+        console.print(
+            f"  Processing [cyan]{len(games)}[/cyan] games · "
+            f"types: {', '.join(media_types)}"
+        )
 
         total_ok = total_skip = total_fail = 0
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("{task.description}"),
-            BarColumn(),
-            TextColumn("{task.completed}/{task.total}"),
-            console=console,
-        ) as progress:
-            task = progress.add_task("", total=len(games))
-
+        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                      BarColumn(), TextColumn("{task.completed}/{task.total}"),
+                      console=console) as prog:
+            task = prog.add_task("", total=len(games))
             for game in games:
-                progress.update(task, description=f"[dim]{game.name[:40]}[/dim]")
+                prog.update(task, description=f"[dim]{game.name[:40]}[/dim]")
                 try:
-                    meta = client.fetch(game.name, sys_name)
-                    if meta:
+                    meta = client.fetch_with_search(game.name, sys_name)
+                    chosen = meta[0] if meta else None
+                    if chosen:
                         results = downloader.download_from_metadata(
-                            game.name,
-                            sys_name,
-                            meta,
+                            game.name, sys_name, chosen,
                             media_types=media_types,
                             overwrite=overwrite,
                             dry_run=dry_run,
@@ -492,9 +665,9 @@ def fetch_media(system, all_systems, types, source, missing_only, overwrite, dry
                     else:
                         total_fail += len(media_types)
                 except MetadataError as e:
-                    console.print(f"  [red]Error for {game.name}:[/red] {e}")
+                    console.print(f"  [red]Error [{game.name}]:[/red] {e}")
                     total_fail += len(media_types)
-                progress.advance(task)
+                prog.advance(task)
 
         console.print(
             f"  Downloaded: [green]{total_ok}[/green]  "
@@ -502,29 +675,77 @@ def fetch_media(system, all_systems, types, source, missing_only, overwrite, dry
             f"Failed: [red]{total_fail}[/red]"
         )
 
+    _auto_export_audit(config, systems)
+
+
+# ─── media add ────────────────────────────────────────────────────────────────
+
+@cli.command("media-add")
+@click.option("--system", "-s", required=True, help="System name.")
+@click.option("--game", "-g", required=True, help="ROM/game name (no extension).")
+@click.option("--type", "media_type", required=True,
+              type=click.Choice(MEDIA_TYPES), help="Media type.")
+@click.option("--file", "source_file", required=True, type=click.Path(exists=True),
+              help="Local file to add.")
+@click.option("--move", is_flag=True, help="Move instead of copy.")
+@click.option("--overwrite", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def media_add(system, game, media_type, source_file, move, overwrite, output_dir):
+    """Manually add a local media file for a specific game.
+
+    Copies (or moves) the file into the correct HyperSpin Media directory.
+
+    \b
+    Example:
+      spindoctor media-add --system MAME --game 1942 --type trailer \\
+          --file C:\\Downloads\\1942_trailer.mp4
+    """
+    config = _cfg()
+    _check_config(config)
+
+    from .media import MediaDownloader
+    out_path = Path(output_dir) if output_dir else None
+    downloader = MediaDownloader(config, output_dir_override=out_path)
+    result = downloader.add_local_file(
+        source_path=Path(source_file),
+        game_name=game,
+        system_name=system,
+        media_type=media_type,
+        move=move,
+        overwrite=overwrite,
+    )
+
+    action = "Moved" if move else "Copied"
+    if result.success and not result.skipped:
+        console.print(f"[green]✓[/green] {action} → {result.path}")
+    elif result.skipped:
+        console.print(f"[yellow]Skipped:[/yellow] {result.error}")
+    else:
+        err_console.print(f"[red]Failed:[/red] {result.error}")
+        sys.exit(1)
+
 
 # ─── update-db ────────────────────────────────────────────────────────────────
 
 @cli.command("update-db")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--add-missing", is_flag=True, default=True,
-              help="Add ROMs that are missing from the database (default: on).")
-@click.option("--remove-orphans", is_flag=True,
-              help="Remove database entries that have no corresponding ROM.")
-@click.option("--dry-run", is_flag=True, help="Show changes without writing.")
+@click.option("--add-missing", "add_missing", is_flag=True, default=True)
+@click.option("--remove-orphans", is_flag=True)
+@click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
 def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_dir):
-    """Sync database XML files to match the ROM directory.
+    """Sync Hyperspin XML databases to match ROM directories.
 
-    By default, adds stub entries for ROMs not in the database.
-    Use --remove-orphans to also remove database entries with no ROM file.
+    Adds stub entries for ROMs not in the database; optionally removes entries
+    with no matching ROM.  Variant ROM names (region, version, revision) are
+    each written as their own individual database entry.
     """
-    config = _load_cfg()
+    config = _cfg()
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
-
     out_base = Path(output_dir) if output_dir else None
+
     if dry_run:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
 
@@ -535,38 +756,151 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
 
         added = removed = 0
 
-        if add_missing and result.roms_only:
-            console.print(f"  Adding [cyan]{len(result.roms_only)}[/cyan] stub entries...")
-            for entry in result.roms_only:
-                stub = build_stub_entry(entry.rom_name)
-                if dry_run:
-                    console.print(f"  [yellow]+[/yellow] {entry.rom_name} → \"{stub.description}\"")
-                else:
-                    db.add_game(stub)
-                added += 1
+        if add_missing:
+            roms_to_add = [
+                e for e in result.roms_only
+                if not config.is_ignored(e.rom_name, sys_name)
+            ]
+            if roms_to_add:
+                console.print(f"  Adding [cyan]{len(roms_to_add)}[/cyan] stub entries…")
+                for entry in roms_to_add:
+                    stub = build_stub_entry(entry.rom_name)
+                    if dry_run:
+                        console.print(
+                            f"  [yellow]+[/yellow] {entry.rom_name} → \"{stub.description}\""
+                        )
+                    else:
+                        db.add_game(stub)
+                    added += 1
 
-        if remove_orphans and result.db_only:
-            console.print(f"  Removing [cyan]{len(result.db_only)}[/cyan] orphan entries...")
-            for entry in result.db_only:
-                if dry_run:
-                    console.print(f"  [red]−[/red] {entry.rom_name}")
-                else:
-                    db.remove_game(entry.rom_name)
-                removed += 1
+        if remove_orphans:
+            orphans = [
+                e for e in result.db_only
+                if not config.is_ignored(e.rom_name, sys_name)
+            ]
+            if orphans:
+                console.print(f"  Removing [cyan]{len(orphans)}[/cyan] orphan entries…")
+                for entry in orphans:
+                    if dry_run:
+                        console.print(f"  [red]−[/red] {entry.rom_name}")
+                    else:
+                        db.remove_game(entry.rom_name)
+                    removed += 1
 
-        console.print(
-            f"  Added: [green]{added}[/green]  Removed: [red]{removed}[/red]"
-        )
+        console.print(f"  Added: [green]{added}[/green]  Removed: [red]{removed}[/red]")
 
         if not dry_run and (added or removed):
             if out_base:
-                out_path = out_base / "Databases" / sys_name / f"{sys_name}.xml"
-                saved = db.save(output_path=out_path, backup=False)
+                saved = db.save(
+                    output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
+                    backup=False,
+                )
             else:
                 saved = db.save(backup=config.backup_before_modify)
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
+
+    _auto_export_audit(config, systems)
+
+
+# ─── generate-config ──────────────────────────────────────────────────────────
+
+@cli.command("generate-config")
+@click.option("--all", "all_systems", is_flag=True, default=True, show_default=True,
+              help="Generate config for all detected systems (default: on).")
+@click.option("--system", "-s", default=None, help="Target a single system.")
+@click.option("--rl/--no-rl", "gen_rl", default=True,
+              help="Generate RocketLauncher system INI files (default: on).")
+@click.option("--main-menu/--no-main-menu", "gen_menu", default=True,
+              help="Generate HyperSpin Main Menu.xml (default: on).")
+@click.option("--db-stubs/--no-db-stubs", "gen_stubs", default=False,
+              help="Create empty database XMLs for systems without one.")
+@click.option("--dry-run", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write all output here instead of in-place.")
+def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, output_dir):
+    """Generate RocketLauncher INI files and the HyperSpin Main Menu database.
+
+    \b
+    What gets generated:
+      - RocketLauncher Settings/<SystemName>.ini  (one per system)
+      - Databases/Main Menu/Main Menu.xml         (lists all systems)
+      - Databases/<SystemName>/<SystemName>.xml   (stubs, with --db-stubs)
+
+    \b
+    Examples:
+      # Dry run — see what would be created
+      spindoctor generate-config --dry-run
+
+      # Write into a staging folder, review, then copy
+      spindoctor generate-config --output-dir D:\\Output
+
+      # Write in-place (requires rocketlauncher_dir to be configured)
+      spindoctor generate-config
+    """
+    config = _cfg()
+    _check_config(config)
+
+    from .rocketlauncher import (
+        generate_hs_main_menu,
+        generate_rl_system_ini,
+        generate_system_db_stubs,
+        guess_emulator,
+    )
+
+    systems = _resolve_systems(config, system, all_systems)
+    out_base = Path(output_dir) if output_dir else None
+
+    if dry_run:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+
+    if gen_rl:
+        console.print(f"\n[blue bold]RocketLauncher system INIs[/blue bold] ({len(systems)} systems)")
+        tbl = Table(box=box.SIMPLE, show_header=True)
+        tbl.add_column("System", style="cyan")
+        tbl.add_column("Emulator")
+        tbl.add_column("Path" if not dry_run else "Would write")
+
+        for sys_name in systems:
+            emulator = guess_emulator(sys_name)
+            if dry_run:
+                rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
+                path_str = (
+                    str(rl_base / "Settings" / f"{sys_name}.ini")
+                    if rl_base else "[dim]rocketlauncher_dir not configured[/dim]"
+                )
+                tbl.add_row(sys_name, emulator, path_str)
+            else:
+                try:
+                    p = generate_rl_system_ini(sys_name, config, out_base)
+                    tbl.add_row(sys_name, emulator, str(p))
+                except ValueError as e:
+                    tbl.add_row(sys_name, emulator, f"[red]{e}[/red]")
+        console.print(tbl)
+
+    if gen_menu:
+        console.print(f"\n[blue bold]HyperSpin Main Menu[/blue bold]")
+        if dry_run:
+            db_base = out_base / "Databases" if out_base else config.databases_dir
+            console.print(f"  [dim]Would write:[/dim] {db_base / 'Main Menu' / 'Main Menu.xml'}")
+            console.print(f"  Listing {len(systems)} systems: {', '.join(systems[:8])}"
+                          + (f" …+{len(systems)-8}" if len(systems) > 8 else ""))
+        else:
+            p = generate_hs_main_menu(systems, config, out_base)
+            console.print(f"  [green]✓[/green] {p}")
+
+    if gen_stubs:
+        console.print(f"\n[blue bold]Database stubs[/blue bold]")
+        if dry_run:
+            console.print(f"  [dim]Would create stubs for:[/dim] {', '.join(systems)}")
+        else:
+            created = generate_system_db_stubs(systems, config, out_base)
+            if created:
+                for p in created:
+                    console.print(f"  [green]+[/green] {p}")
+            else:
+                console.print("  [dim]All system databases already exist.[/dim]")
 
 
 # ─── report ───────────────────────────────────────────────────────────────────
@@ -574,23 +908,27 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run, output_
 @cli.command("report")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--format", "fmt", default="table",
+@click.option("--format", "fmt", default="summary",
               type=click.Choice(["table", "csv", "summary"]))
-@click.option("--output", "-o", type=click.Path(), default=None,
-              help="Write report to file (required for CSV).")
+@click.option("--output", "-o", type=click.Path(), default=None)
 @click.option("--no-media", is_flag=True)
-def report(system, all_systems, fmt, output, no_media):
-    """Generate an audit report without making any changes."""
-    config = _load_cfg()
+@click.option("--no-fuzzy", is_flag=True)
+def report(system, all_systems, fmt, output, no_media, no_fuzzy):
+    """Generate a read-only audit report without making any changes."""
+    config = _cfg()
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
-    all_results = []
+    all_results: list[SystemAuditResult] = []
     with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
-        task = prog.add_task("Scanning...", total=len(systems))
+        task = prog.add_task("Scanning…", total=len(systems))
         for sys_name in systems:
-            prog.update(task, description=f"Scanning [cyan]{sys_name}[/cyan]...")
-            all_results.append(audit_system(sys_name, config, check_media_flag=not no_media))
+            prog.update(task, description=f"Scanning [cyan]{sys_name}[/cyan]…")
+            all_results.append(
+                audit_system(sys_name, config,
+                             check_media_flag=not no_media,
+                             fuzzy=not no_fuzzy)
+            )
             prog.advance(task)
 
     if fmt == "csv":
@@ -606,30 +944,33 @@ def report(system, all_systems, fmt, output, no_media):
         tbl.add_column("System", style="cyan")
         tbl.add_column("ROMs", justify="right")
         tbl.add_column("DB", justify="right")
-        tbl.add_column("Matched", justify="right", style="green")
+        tbl.add_column("Match", justify="right", style="green")
+        tbl.add_column("Fuzzy", justify="right", style="blue")
         tbl.add_column("ROM only", justify="right", style="yellow")
         tbl.add_column("DB only", justify="right", style="red")
         tbl.add_column("No meta", justify="right", style="magenta")
         tbl.add_column("No media", justify="right", style="magenta")
+        tbl.add_column("Ignored", justify="right", style="dim")
         for r in all_results:
             tbl.add_row(
                 r.system_name,
-                str(r.total_roms),
-                str(r.total_db_entries),
-                str(r.roms_in_db),
-                str(r.roms_not_in_db),
-                str(r.db_entries_no_rom),
+                str(r.total_roms), str(r.total_db_entries),
+                str(r.roms_in_db), str(len(r.fuzzy_matches)),
+                str(r.roms_not_in_db), str(r.db_entries_no_rom),
                 str(len(r.missing_metadata_entries)),
                 str(len(r.missing_media_entries)),
+                str(r.ignored_count),
             )
         console.print(tbl)
         if output:
             with open(output, "w", encoding="utf-8") as f:
                 from rich.console import Console as RC
-                file_console = RC(file=f, no_color=True)
-                file_console.print(tbl)
+                RC(file=f, no_color=True).print(tbl)
             console.print(f"[green]Report written:[/green] {output}")
         return
 
     for r in all_results:
         _print_audit_result(r, show_matched=False)
+    if output:
+        _write_audit_csv(all_results, Path(output))
+        console.print(f"[green]Report written:[/green] {output}")

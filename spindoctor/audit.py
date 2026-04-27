@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config, MEDIA_TYPES, get_rom_extensions
-from .database import GameEntry, HyperspinDatabase, load_database
+from .database import GameEntry, load_database
+from .romutils import find_best_match
 
 
 @dataclass
@@ -21,7 +22,10 @@ class MediaStatus:
     wheel: bool = False
     background: bool = False
     artwork: bool = False
+    title: bool = False
+    snap: bool = False
     video: bool = False
+    trailer: bool = False
     sound: bool = False
     theme: bool = False
 
@@ -30,6 +34,18 @@ class MediaStatus:
 
     def has_all(self) -> bool:
         return all(getattr(self, t, False) for t in MEDIA_TYPES)
+
+    def present(self) -> list[str]:
+        return [t for t in MEDIA_TYPES if getattr(self, t, False)]
+
+
+@dataclass
+class FuzzyMatchEntry:
+    """A ROM that has no exact DB entry but closely resembles one."""
+    rom_name: str
+    db_name: str
+    score: float
+    db_entry: Optional[GameEntry]
 
 
 @dataclass
@@ -40,14 +56,18 @@ class GameAuditEntry:
     db_entry: Optional[GameEntry]
     media: MediaStatus = field(default_factory=MediaStatus)
     missing_metadata: list[str] = field(default_factory=list)
+    ignored: bool = False
 
     @property
     def needs_attention(self) -> bool:
         return (
-            not self.in_database
-            or not self.rom_exists
-            or bool(self.missing_metadata)
-            or not self.media.has_all()
+            not self.ignored
+            and (
+                not self.in_database
+                or not self.rom_exists
+                or bool(self.missing_metadata)
+                or not self.media.has_all()
+            )
         )
 
 
@@ -59,23 +79,25 @@ class SystemAuditResult:
     roms_in_db: int = 0
     roms_not_in_db: int = 0
     db_entries_no_rom: int = 0
+    ignored_count: int = 0
     entries: list[GameAuditEntry] = field(default_factory=list)
+    fuzzy_matches: list[FuzzyMatchEntry] = field(default_factory=list)
 
     @property
     def roms_only(self) -> list[GameAuditEntry]:
-        return [e for e in self.entries if e.rom_exists and not e.in_database]
+        return [e for e in self.entries if e.rom_exists and not e.in_database and not e.ignored]
 
     @property
     def db_only(self) -> list[GameAuditEntry]:
-        return [e for e in self.entries if e.in_database and not e.rom_exists]
+        return [e for e in self.entries if e.in_database and not e.rom_exists and not e.ignored]
 
     @property
     def missing_metadata_entries(self) -> list[GameAuditEntry]:
-        return [e for e in self.entries if e.missing_metadata]
+        return [e for e in self.entries if e.missing_metadata and not e.ignored]
 
     @property
     def missing_media_entries(self) -> list[GameAuditEntry]:
-        return [e for e in self.entries if e.in_database and e.media.missing()]
+        return [e for e in self.entries if e.in_database and e.media.missing() and not e.ignored]
 
     @property
     def matched(self) -> list[GameAuditEntry]:
@@ -83,14 +105,11 @@ class SystemAuditResult:
 
 
 def scan_roms(system_name: str, roms_dir: Path) -> dict[str, RomFileInfo]:
-    """Scan the ROM directory for a system and return a dict keyed by stem name."""
     system_rom_dir = roms_dir / system_name
     if not system_rom_dir.exists():
         return {}
-
     extensions = get_rom_extensions(system_name)
     roms: dict[str, RomFileInfo] = {}
-
     for rom_path in system_rom_dir.iterdir():
         if rom_path.is_file() and rom_path.suffix.lower() in extensions:
             roms[rom_path.stem] = RomFileInfo(
@@ -101,53 +120,41 @@ def scan_roms(system_name: str, roms_dir: Path) -> dict[str, RomFileInfo]:
     return roms
 
 
-def check_media(
-    game_name: str,
-    system_name: str,
-    media_base: Path,
-) -> MediaStatus:
-    """Check which media assets exist for a game."""
-    media_system_dir = media_base / system_name
+def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStatus:
+    sys_dir = media_base / system_name
     status = MediaStatus()
 
-    wheel_dir = media_system_dir / "Images" / "Wheel"
-    bg_dir = media_system_dir / "Images" / "Backgrounds"
-    artwork_dir = media_system_dir / "Images" / "Artwork1"
-    video_dir = media_system_dir / "Video"
-    sound_dir = media_system_dir / "Sound"
-    theme_dir = media_system_dir / "Themes"
-
     img_exts = {".png", ".jpg", ".jpeg"}
-    video_exts = {".mp4", ".avi", ".flv"}
+    video_exts = {".mp4", ".avi", ".flv", ".mkv"}
     sound_exts = {".mp3", ".wav", ".ogg"}
 
-    status.wheel = _file_exists(wheel_dir, game_name, img_exts)
-    status.background = _file_exists(bg_dir, game_name, img_exts)
-    status.artwork = _file_exists(artwork_dir, game_name, img_exts)
-    status.video = _file_exists(video_dir, game_name, video_exts)
-    status.sound = _file_exists(sound_dir, game_name, sound_exts)
-    status.theme = (theme_dir / game_name).exists() or _file_exists(
-        theme_dir, game_name, {".zip", ".swf"}
+    status.wheel = _exists(sys_dir / "Images" / "Wheel", game_name, img_exts)
+    status.background = _exists(sys_dir / "Images" / "Backgrounds", game_name, img_exts)
+    status.artwork = _exists(sys_dir / "Images" / "Artwork1", game_name, img_exts)
+    status.title = _exists(sys_dir / "Images" / "Artwork2", game_name, img_exts)
+    status.snap = _exists(sys_dir / "Images" / "Artwork3", game_name, img_exts)
+    status.video = _exists(sys_dir / "Video", game_name, video_exts)
+    status.trailer = _exists(sys_dir / "Video" / "Trailers", game_name, video_exts)
+    status.sound = _exists(sys_dir / "Sound", game_name, sound_exts)
+    status.theme = (sys_dir / "Themes" / game_name).exists() or _exists(
+        sys_dir / "Themes", game_name, {".zip", ".swf"}
     )
-
     return status
 
 
-def _file_exists(directory: Path, stem: str, extensions: set[str]) -> bool:
+def _exists(directory: Path, stem: str, extensions: set[str]) -> bool:
     if not directory.exists():
         return False
-    for ext in extensions:
-        if (directory / f"{stem}{ext}").exists():
-            return True
-    return False
+    return any((directory / f"{stem}{ext}").exists() for ext in extensions)
 
 
 def audit_system(
     system_name: str,
     config: Config,
     check_media_flag: bool = True,
+    fuzzy: bool = True,
 ) -> SystemAuditResult:
-    """Full audit of a system: ROMs vs database vs media."""
+    """Full audit of one system: ROMs vs database vs media, with fuzzy matching."""
     result = SystemAuditResult(system_name=system_name)
 
     roms = scan_roms(system_name, Path(config.roms_dir))
@@ -157,18 +164,27 @@ def audit_system(
     result.total_roms = len(roms)
     result.total_db_entries = len(db_games)
 
+    # Build exact-match union
     all_names = set(roms.keys()) | set(db_games.keys())
+    db_name_list = list(db_games.keys())
+
+    # Track which DB entries have been claimed by a ROM (exact or fuzzy)
+    claimed_db_names: set[str] = set()
 
     for name in all_names:
         rom_exists = name in roms
         in_database = name in db_games
         db_entry = db_games.get(name)
+        is_ignored = config.is_ignored(name, system_name)
 
-        if check_media_flag and config.hyperspin_dir:
-            media = check_media(name, system_name, config.media_dir)
-        else:
-            media = MediaStatus()
+        if in_database:
+            claimed_db_names.add(name)
 
+        media = (
+            check_media(name, system_name, config.media_dir)
+            if check_media_flag and config.hyperspin_dir
+            else MediaStatus()
+        )
         missing_meta = db_entry.missing_fields() if db_entry else []
 
         entry = GameAuditEntry(
@@ -178,20 +194,48 @@ def audit_system(
             db_entry=db_entry,
             media=media,
             missing_metadata=missing_meta,
+            ignored=is_ignored,
         )
         result.entries.append(entry)
 
-    result.roms_in_db = sum(1 for e in result.entries if e.rom_exists and e.in_database)
-    result.roms_not_in_db = sum(1 for e in result.entries if e.rom_exists and not e.in_database)
-    result.db_entries_no_rom = sum(1 for e in result.entries if e.in_database and not e.rom_exists)
+        if is_ignored:
+            result.ignored_count += 1
 
+    # Fuzzy pass: for ROMs with no exact DB match, find near-matches
+    if fuzzy and db_name_list:
+        for entry in result.entries:
+            if entry.rom_exists and not entry.in_database and not entry.ignored:
+                match = find_best_match(
+                    entry.rom_name,
+                    [n for n in db_name_list if n not in claimed_db_names],
+                    threshold=config.match_threshold,
+                )
+                if match:
+                    db_name, score = match
+                    result.fuzzy_matches.append(
+                        FuzzyMatchEntry(
+                            rom_name=entry.rom_name,
+                            db_name=db_name,
+                            score=score,
+                            db_entry=db_games.get(db_name),
+                        )
+                    )
+                    claimed_db_names.add(db_name)
+
+    result.roms_in_db = sum(1 for e in result.entries if e.rom_exists and e.in_database)
+    result.roms_not_in_db = sum(
+        1 for e in result.entries if e.rom_exists and not e.in_database and not e.ignored
+    )
+    result.db_entries_no_rom = sum(
+        1 for e in result.entries if e.in_database and not e.rom_exists and not e.ignored
+    )
     result.entries.sort(key=lambda e: e.rom_name.lower())
+    result.fuzzy_matches.sort(key=lambda f: f.score, reverse=True)
     return result
 
 
 def build_stub_entry(rom_name: str) -> GameEntry:
-    """Create a minimal stub GameEntry from a ROM filename."""
-    description = rom_name.replace("_", " ").replace("-", " ")
-    parts = description.split("(")
-    clean_name = parts[0].strip()
-    return GameEntry(name=rom_name, description=clean_name)
+    """Create a minimal stub GameEntry from a ROM filename stem."""
+    from .romutils import clean_display_name
+    description = clean_display_name(rom_name)
+    return GameEntry(name=rom_name, description=description)

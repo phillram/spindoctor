@@ -5,7 +5,10 @@ spindoctor/audit.py
 spindoctor/cli.py
 spindoctor/config.py
 spindoctor/database.py
+spindoctor/matcher.py
 spindoctor/media.py
+spindoctor/rocketlauncher.py
+spindoctor/romutils.py
 spindoctor/scraper.py
 spindoctor.egg-info/PKG-INFO
 spindoctor.egg-info/SOURCES.txt
