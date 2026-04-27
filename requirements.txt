@@ -1,3 +1,6 @@
 click>=8.0
 rich>=13.0
 requests>=2.28
+# Optional but strongly recommended: preserves XML comments + attribute order
+# when round-tripping HyperSpin databases edited by HyperHQ or Don's tools.
+lxml>=4.9

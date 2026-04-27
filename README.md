@@ -20,9 +20,12 @@ Audit your ROM collection, sync Hyperspin XML databases, automatically fill in m
   - [fetch-media](#fetch-media)
   - [media-add](#media-add)
   - [generate-config](#generate-config)
+  - [ledblinky](#ledblinky)
+  - [doctor](#doctor)
   - [ignore](#ignore)
   - [match](#match)
   - [report](#report)
+- [Tool Compatibility](#tool-compatibility)
 - [ROM Variant Handling](#rom-variant-handling)
 - [Fuzzy Matching](#fuzzy-matching)
 - [Interactive Match Selection](#interactive-match-selection)
@@ -44,6 +47,13 @@ Audit your ROM collection, sync Hyperspin XML databases, automatically fill in m
 ```bat
 cd C:\path\to\spindoctor
 pip install -e .
+```
+
+**Recommended optional dependency:** `lxml` — preserves XML comments and
+attribute order so HyperHQ-edited fields survive a SpinDoctor save round-trip.
+
+```bat
+pip install -e .[xml]
 ```
 
 Verify:
@@ -303,8 +313,15 @@ spindoctor fetch-meta --all [options]
 | `--all-games` | Refresh every game, even complete ones (default: only updates games with incomplete metadata) |
 | `--interactive` / `--auto-best` | Prompt on ambiguous matches / always pick best |
 | `--threshold FLOAT` | Minimum confidence for auto-accept (overrides config) |
+| `--no-cache` | Force-refresh — ignore the disk-cached API responses |
+| `--clear-cache` | Delete cached API responses (for the targeted system or all) and exit |
 | `--dry-run` | Show what would be updated, write nothing |
 | `--output-dir PATH` | Write updated XMLs here |
+
+**Disk cache:** Successful API responses are cached to
+`~/.spindoctor/metadata_cache/<source>/<system>/<rom>.json`. Re-runs are
+near-instant and don't burn through TheGamesDB's monthly query quota.
+TTL is configurable via `metadata_cache_ttl_days` (default 30).
 
 **How matching works** (see also [Fuzzy Matching](#fuzzy-matching) and [Interactive Match Selection](#interactive-match-selection)):
 
@@ -353,6 +370,11 @@ spindoctor fetch-media --all [options]
 | `--output-dir PATH` | Save media here instead of inside `hyperspin_dir` |
 
 See [Media Types](#media-types) for the full list.
+
+**Concurrency:** Media downloads run in a thread pool sized by
+`max_concurrent_downloads` (default 4). The downloader retries with
+exponential backoff on HTTP 429 / 503, honouring `Retry-After`. Metadata
+lookups stay rate-limited at 1 req/s per the API providers' terms.
 
 **Examples:**
 
@@ -428,6 +450,8 @@ spindoctor generate-config [options]
 | `--rl / --no-rl` | Generate RocketLauncher INI files (default: on) |
 | `--main-menu / --no-main-menu` | Generate `Main Menu.xml` (default: on) |
 | `--db-stubs / --no-db-stubs` | Create empty DB XMLs for systems that have none |
+| `--global-emulators / --no-global-emulators` | Write `Settings/Global Emulators.ini` if missing (default: on) |
+| `--overwrite-global` | Overwrite an existing `Global Emulators.ini` (default: leave it alone) |
 | `--dry-run` | Show what would be written |
 | `--output-dir PATH` | Write here instead of in-place |
 
@@ -436,6 +460,7 @@ spindoctor generate-config [options]
 | File | Description |
 |------|-------------|
 | `RocketLauncher/Settings/<System>.ini` | Per-system emulator and ROM path settings |
+| `RocketLauncher/Settings/Global Emulators.ini` | Cross-system emulator paths (skipped if file exists) |
 | `Databases/Main Menu/Main Menu.xml` | HyperSpin system list (RocketUI reads this) |
 | `Databases/<System>/<System>.xml` | Empty database stubs (with `--db-stubs`) |
 
@@ -459,6 +484,60 @@ spindoctor generate-config --no-rl
 rem Generate everything including empty database XMLs for new systems
 spindoctor generate-config --db-stubs --output-dir D:\Output
 ```
+
+---
+
+### `ledblinky`
+
+Generate or merge LEDBlinky `controls.ini` and `colors.ini` from MAME's
+`-listxml` output. Preserves any existing community-maintained entries
+(under `<ledblinky_dir>`) and only synthesizes ROMs that aren't already
+covered.
+
+```
+spindoctor ledblinky generate [options]
+spindoctor ledblinky audit    [options]
+```
+
+**Setup:**
+
+```bat
+spindoctor config set ledblinky_dir   "C:\LEDBlinky"
+spindoctor config set mame_executable "C:\Emulators\MAME\mame.exe"
+```
+
+**`generate` flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--system NAME` | System name (default: `MAME`) |
+| `--overwrite` | Replace existing entries (default: keep them) |
+| `--dry-run` | Show what would be written |
+| `--output-dir PATH` | Write to a staging directory instead of `ledblinky_dir` |
+
+**`audit`** prints a coverage table per ROM: covered / would-synth / no-input
+/ missing, so you can spot ROMs that LEDBlinky can't drive yet.
+
+The default per-button color palette is configurable via the
+`ledblinky_default_colors` field in `~/.spindoctor/config.json`.
+
+---
+
+### `doctor`
+
+Self-diagnose your install: paths, configured binaries, XML DB integrity,
+match-cache hygiene, RocketLauncher / LEDBlinky files, optional `lxml`,
+and `ffprobe`. Each check renders ✓ / ⚠ / ✗ in a tree view.
+
+```
+spindoctor doctor          # report only
+spindoctor doctor --fix    # apply safe, idempotent repairs
+```
+
+`--fix` only does things that are safe: prunes stale entries from the
+metadata-match cache, creates missing media-folder skeletons, and
+generates a missing `Global Emulators.ini`. It will never delete ROMs,
+DB XMLs, media files, or your real configuration.
 
 ---
 
@@ -873,6 +952,29 @@ All commands that write files accept these options:
 | `--output-dir PATH` | Write all output here (mirrors HyperSpin folder structure) |
 
 When `--output-dir` is used, the tool mirrors the exact folder structure so you can inspect results and manually copy them over to your live cabinet.
+
+---
+
+## Tool Compatibility
+
+SpinDoctor is designed to coexist with the rest of the HyperSpin / RocketLauncher
+ecosystem. Where it overlaps, here's how it behaves:
+
+| Tool | What it touches | SpinDoctor behaviour |
+|------|-----------------|----------------------|
+| **HyperHQ** | `Main Menu.xml`, per-system `Settings.ini`, `LEDBlinky.ini` | Install with `[xml]` extra (`pip install spindoctor[xml]`) so XML round-trips preserve HyperHQ's comments and custom attributes. Without `lxml`, comments are dropped on save. |
+| **RocketLauncher UI (RLUI)** | `Settings/<System>.ini`, `Settings/Global Emulators.ini` | `generate-config` writes per-system INIs; `--global-emulators` writes `Global Emulators.ini` only if missing (your edits are safe). Pass `--overwrite-global` to force-rewrite. |
+| **Don's HyperSpin Tools** | Per-system XML DBs (GUI editor) | Orthogonal — Don's tools edit one game at a time via GUI; SpinDoctor automates audits and bulk metadata. With `lxml` installed, your manual edits survive `update-db` round-trips. |
+| **LEDBlinky** | `controls.ini`, `colors.ini` | `spindoctor ledblinky generate` synthesizes per-ROM entries from MAME's `-listxml`, but never overwrites entries already present in `<ledblinky_dir>` (community data is trusted). |
+
+**Recommended order of operations** when working in the same area as HyperHQ:
+
+1. `spindoctor update-db` / `fetch-meta` (writes XML)
+2. HyperHQ — apply any cabinet-specific tweaks
+3. (Don't re-run SpinDoctor against the same DB without `lxml` — comments will be lost.)
+
+Run `spindoctor doctor` any time to see whether `lxml` is installed and whether
+each integration is configured.
 
 ---
 

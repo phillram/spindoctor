@@ -134,9 +134,15 @@ def config_set(key: str, value: str):
                                 true | false (default false; when true,
                                 strips '(Japan)' / '(Rev A)' tags from
                                 stub display names)
+      ledblinky_dir             LEDBlinky install directory (controls.ini etc.)
+      mame_executable           Path to MAME binary (used for -listxml)
+      metadata_cache_ttl_days   Days to keep cached API responses (default 30)
+      metadata_cache_enabled    true | false (default true)
     """
     config = _cfg()
-    if not hasattr(config, key) or key in ("ignore_lists", "databases_dir", "media_dir"):
+    if not hasattr(config, key) or key in (
+        "ignore_lists", "databases_dir", "media_dir", "ledblinky_default_colors",
+    ):
         err_console.print(f"[red]Unknown config key:[/red] {key}")
         sys.exit(1)
     current = getattr(config, key)
@@ -244,6 +250,19 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
     grid.add_row("[magenta]Incomplete metadata:[/magenta]", str(len(result.missing_metadata_entries)))
     grid.add_row("[magenta]Missing media:[/magenta]", str(len(result.missing_media_entries)))
     grid.add_row("[dim]Ignored:[/dim]", str(result.ignored_count))
+
+    # MAME -listxml enrichment, if available
+    listxml_checked = [e for e in result.entries if e.has_mame_input is not None]
+    if listxml_checked:
+        with_input = sum(1 for e in listxml_checked if e.has_mame_input)
+        no_input = sum(1 for e in listxml_checked if e.has_mame_input is False)
+        not_listed = len(result.entries) - len(listxml_checked)
+        grid.add_row(
+            "[cyan]MAME controls (-listxml):[/cyan]",
+            f"[green]{with_input}[/green] with input · "
+            f"[yellow]{no_input}[/yellow] no-input · "
+            f"[red]{not_listed}[/red] not listed",
+        )
     console.print(grid)
 
     if result.fuzzy_matches:
@@ -778,10 +797,15 @@ def match_clear(system: Optional[str]):
               help="Prompt when multiple matches exist (default: from config).")
 @click.option("--threshold", default=None, type=float,
               help="Fuzzy confidence required for auto-accept (default: from config).")
+@click.option("--no-cache", is_flag=True,
+              help="Force-refresh: ignore the disk-cached API responses.")
+@click.option("--clear-cache", is_flag=True,
+              help="Delete cached API responses (for the targeted system or all) and exit.")
 @click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
 def fetch_meta(system, all_systems, source, fetch_all,
-               interactive, threshold, dry_run, output_dir):
+               interactive, threshold, no_cache, clear_cache,
+               dry_run, output_dir):
     """Fetch and update game metadata in the Hyperspin XML databases.
 
     For each game with missing fields, SpinDoctor queries the metadata source.
@@ -792,16 +816,30 @@ def fetch_meta(system, all_systems, source, fetch_all,
     """
     config = _cfg()
     _check_config(config)
-    systems = _resolve_systems(config, system, all_systems)
 
     from .matcher import choose_match, partition_by_confidence
-    from .scraper import MetadataError, build_client
+    from .scraper import MetadataError, build_client, build_metadata_cache
+
+    if clear_cache:
+        cache = build_metadata_cache(config)
+        src = source or None
+        sys_name = system if system else None
+        n = cache.clear(source=src, system=sys_name)
+        scope = (
+            f"all systems for {src}" if src and not sys_name else
+            f"{sys_name} ({src or 'all sources'})" if sys_name else
+            "all sources"
+        )
+        console.print(f"[green]✓[/green] Cleared {n} cache file(s) for {scope}.")
+        return
+
+    systems = _resolve_systems(config, system, all_systems)
 
     do_interactive = config.interactive_matching if interactive is None else interactive
     match_thresh = threshold if threshold is not None else config.match_threshold
 
     try:
-        client = build_client(config, source)
+        client = build_client(config, source, use_cache=not no_cache)
     except MetadataError as e:
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
@@ -954,6 +992,7 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
 
     out_path = Path(output_dir) if output_dir else None
     downloader = MediaDownloader(config, output_dir_override=out_path)
+    workers = max(1, config.max_concurrent_downloads)
 
     if dry_run:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
@@ -981,39 +1020,68 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
 
         console.print(
             f"  Processing [cyan]{len(games)}[/cyan] games · "
-            f"types: {', '.join(media_types)}"
+            f"types: {', '.join(media_types)} · "
+            f"[dim]workers={workers}[/dim]"
         )
 
-        total_ok = total_skip = total_fail = 0
+        # ── Phase 1: gather metadata + flatten download jobs ────────────────
+        all_jobs: list[tuple[str, str, str]] = []
+        total_fail = 0
         with Progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
-            task = prog.add_task("", total=len(games))
+            task = prog.add_task("Resolving metadata…", total=len(games))
             for game in games:
-                prog.update(task, description=f"[dim]{game.name[:40]}[/dim]")
+                prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
                 try:
                     meta = client.fetch_with_search(game.name, sys_name)
                     chosen = meta[0] if meta else None
                     if chosen:
-                        results = downloader.download_from_metadata(
-                            game.name, sys_name, chosen,
-                            media_types=media_types,
-                            overwrite=overwrite,
-                            dry_run=dry_run,
+                        all_jobs.extend(
+                            downloader.jobs_for_metadata(
+                                game.name, chosen, media_types=media_types,
+                            )
                         )
-                        for r in results:
-                            if r.skipped:
-                                total_skip += 1
-                            elif r.success:
-                                total_ok += 1
-                            else:
-                                total_fail += 1
                     else:
                         total_fail += len(media_types)
                 except MetadataError as e:
                     console.print(f"  [red]Error [{game.name}]:[/red] {e}")
                     total_fail += len(media_types)
                 prog.advance(task)
+
+        # ── Phase 2: parallel downloads ──────────────────────────────────────
+        total_ok = total_skip = 0
+        if dry_run:
+            for game_name, mt, url in all_jobs:
+                dest = downloader.media_path(sys_name, game_name, mt)
+                note = "[dry-run]" if url else "[no URL available]"
+                console.print(f"  [dim]+[/dim] {game_name} · {mt}  {note}  → {dest}")
+                if url:
+                    total_ok += 1
+                else:
+                    total_skip += 1
+        elif all_jobs:
+            with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                          BarColumn(), TextColumn("{task.completed}/{task.total}"),
+                          console=console) as prog:
+                task = prog.add_task("Downloading…", total=len(all_jobs))
+
+                def _on_done(r):
+                    nonlocal total_ok, total_skip, total_fail
+                    if r.skipped:
+                        total_skip += 1
+                    elif r.success:
+                        total_ok += 1
+                    else:
+                        total_fail += 1
+                    prog.advance(task)
+
+                downloader.download_many(
+                    all_jobs, sys_name,
+                    overwrite=overwrite,
+                    max_workers=workers,
+                    on_complete=_on_done,
+                )
 
         console.print(
             f"  Downloaded: [green]{total_ok}[/green]  "
@@ -1177,10 +1245,16 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
               help="Generate HyperSpin Main Menu.xml (default: on).")
 @click.option("--db-stubs/--no-db-stubs", "gen_stubs", default=False,
               help="Create empty database XMLs for systems without one.")
+@click.option("--global-emulators/--no-global-emulators", "gen_global", default=True,
+              help="Write Settings/Global Emulators.ini if missing (default: on).")
+@click.option("--overwrite-global", is_flag=True,
+              help="Overwrite an existing Global Emulators.ini "
+                   "(default: leave user customisations alone).")
 @click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write all output here instead of in-place.")
-def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, output_dir):
+def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
+                    gen_global, overwrite_global, dry_run, output_dir):
     """Generate RocketLauncher INI files and the HyperSpin Main Menu database.
 
     \b
@@ -1204,6 +1278,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, o
     _check_config(config)
 
     from .rocketlauncher import (
+        generate_global_emulators_ini,
         generate_hs_main_menu,
         generate_rl_system_ini,
         generate_system_db_stubs,
@@ -1254,6 +1329,33 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, o
             p = generate_hs_main_menu(systems, config, out_base)
             console.print(f"  [green]✓[/green] {p}")
 
+    if gen_global:
+        console.print(f"\n[blue bold]Global Emulators.ini[/blue bold]")
+        if dry_run:
+            rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
+            if rl_base:
+                target = rl_base / "Settings" / "Global Emulators.ini"
+                action = "would overwrite" if (target.exists() and overwrite_global) else (
+                    "exists — would skip" if target.exists() else "would create"
+                )
+                console.print(f"  [dim]{action}:[/dim] {target}")
+            else:
+                console.print("  [dim]rocketlauncher_dir not configured — skipping.[/dim]")
+        else:
+            try:
+                p, status = generate_global_emulators_ini(
+                    config, out_base, overwrite=overwrite_global
+                )
+                if status == "skipped-exists":
+                    console.print(
+                        f"  [dim]Skipped (exists):[/dim] {p}  "
+                        f"[dim](use --overwrite-global to replace)[/dim]"
+                    )
+                else:
+                    console.print(f"  [green]✓[/green] {status}: {p}")
+            except ValueError as e:
+                console.print(f"  [red]{e}[/red]")
+
     if gen_stubs:
         console.print(f"\n[blue bold]Database stubs[/blue bold]")
         if dry_run:
@@ -1265,6 +1367,182 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs, dry_run, o
                     console.print(f"  [green]+[/green] {p}")
             else:
                 console.print("  [dim]All system databases already exist.[/dim]")
+
+
+# ─── doctor ───────────────────────────────────────────────────────────────────
+
+@cli.command("doctor")
+@click.option("--fix", is_flag=True,
+              help="Apply safe fixes: prune stale match cache, create missing "
+                   "media folders, regen Global Emulators.ini if missing.")
+def doctor(fix):
+    """Self-diagnose: paths, binaries, DB integrity, cache hygiene, integrations.
+
+    Pass --fix to apply safe, idempotent repairs (never deletes ROMs/DBs/media).
+    """
+    from rich.tree import Tree
+    from .health import Status, run_health_checks
+
+    config = _cfg()
+    report = run_health_checks(config, fix=fix)
+
+    icon_for = {
+        Status.OK: "[green]✓[/green]",
+        Status.WARN: "[yellow]⚠[/yellow]",
+        Status.FAIL: "[red]✗[/red]",
+        Status.INFO: "[dim]i[/dim]",
+    }
+
+    tree = Tree("[bold]SpinDoctor health[/bold]")
+
+    def render(check, parent):
+        label = f"{icon_for[check.status]} [bold]{check.name}[/bold]"
+        if check.detail:
+            label += f"  [dim]·[/dim] {check.detail}"
+        node = parent.add(label)
+        if check.fix and not fix:
+            node.add(f"[dim]fix:[/dim] {check.fix}")
+        for ch in check.children:
+            render(ch, node)
+
+    for c in report.checks:
+        render(c, tree)
+
+    console.print(tree)
+
+    if report.fixes_applied:
+        console.print("\n[green bold]Fixes applied:[/green bold]")
+        for f in report.fixes_applied:
+            console.print(f"  [green]+[/green] {f}")
+
+    overall = report.overall()
+    console.print(
+        f"\nOverall: {icon_for[overall]} "
+        f"[bold]{overall.value.upper()}[/bold]"
+    )
+    if overall == Status.FAIL:
+        sys.exit(2)
+
+
+# ─── ledblinky ────────────────────────────────────────────────────────────────
+
+@cli.group("ledblinky")
+def ledblinky_group():
+    """Generate and audit LEDBlinky controls.ini / colors.ini."""
+
+
+@ledblinky_group.command("generate")
+@click.option("--system", "-s", default="MAME",
+              help="System to generate for (default: MAME).")
+@click.option("--overwrite", is_flag=True,
+              help="Overwrite existing entries (default: keep community-maintained ones).")
+@click.option("--dry-run", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write to this directory instead of <ledblinky_dir>.")
+def ledblinky_generate(system, overwrite, dry_run, output_dir):
+    """Generate / merge LEDBlinky controls.ini and colors.ini.
+
+    Strategy: existing entries from <ledblinky_dir> are preserved verbatim;
+    ROMs not yet covered get synthesized entries derived from
+    `mame -listxml`.
+    """
+    config = _cfg()
+    _check_config(config)
+
+    if not config.mame_executable:
+        err_console.print(
+            "[red]mame_executable is not configured.[/red]  "
+            "Run: spindoctor config set mame_executable /path/to/mame"
+        )
+        sys.exit(1)
+
+    from .audit import scan_roms
+    from .ledblinky import generate_for_roms
+
+    roms = scan_roms(system, Path(config.roms_dir))
+    if not roms:
+        console.print(f"[yellow]No ROMs found for system {system}.[/yellow]")
+        return
+
+    out_path = Path(output_dir) if output_dir else None
+    try:
+        result = generate_for_roms(
+            config,
+            rom_names=sorted(roms.keys()),
+            output_dir=out_path,
+            overwrite_existing=overwrite,
+            dry_run=dry_run,
+        )
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    label = "[yellow]would write[/yellow]" if dry_run else "[green]wrote[/green]"
+    console.print(f"\n{label} controls.ini → {result.controls_path}")
+    console.print(f"{label} colors.ini   → {result.colors_path}")
+    console.print(
+        f"  Synthesised: [cyan]{result.controls_synthesised}[/cyan] controls, "
+        f"[cyan]{result.colors_synthesised}[/cyan] colors"
+    )
+    console.print(
+        f"  Kept existing: [dim]{result.controls_existing_kept}[/dim] controls, "
+        f"[dim]{result.colors_existing_kept}[/dim] colors"
+    )
+    if result.skipped_no_input:
+        console.print(
+            f"  Skipped (no -listxml input data): [yellow]{result.skipped_no_input}[/yellow]"
+        )
+
+
+@ledblinky_group.command("audit")
+@click.option("--system", "-s", default="MAME")
+def ledblinky_audit(system):
+    """Show LEDBlinky coverage per ROM (covered / would-synth / no-input / missing)."""
+    config = _cfg()
+    _check_config(config)
+
+    from .audit import scan_roms
+    from .ledblinky import audit_coverage
+
+    roms = scan_roms(system, Path(config.roms_dir))
+    if not roms:
+        console.print(f"[yellow]No ROMs found for system {system}.[/yellow]")
+        return
+
+    rows = audit_coverage(config, sorted(roms.keys()))
+
+    counts = {"covered": 0, "would-synth": 0, "no-input": 0, "missing": 0}
+    for r in rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+
+    summary = Table(title=f"LEDBlinky coverage — {system}", box=box.ROUNDED)
+    summary.add_column("Status", style="cyan")
+    summary.add_column("Count", justify="right")
+    summary.add_row("[green]Covered (controls.ini + colors.ini)[/green]", str(counts["covered"]))
+    summary.add_row("[yellow]Would synthesise from -listxml[/yellow]", str(counts["would-synth"]))
+    summary.add_row("[dim]Game has no input[/dim]", str(counts["no-input"]))
+    summary.add_row("[red]Not in -listxml[/red]", str(counts["missing"]))
+    console.print(summary)
+
+    missing_or_synth = [r for r in rows if r.status in ("would-synth", "missing")]
+    if missing_or_synth:
+        tbl = Table(box=box.SIMPLE, show_header=True)
+        tbl.add_column("ROM", style="cyan")
+        tbl.add_column("In -listxml", justify="center")
+        tbl.add_column("controls.ini", justify="center")
+        tbl.add_column("colors.ini", justify="center")
+        tbl.add_column("Status")
+        for r in missing_or_synth[:60]:
+            tbl.add_row(
+                r.rom_name,
+                _status(r.in_listxml),
+                _status(r.in_controls_ini),
+                _status(r.in_colors_ini),
+                r.status,
+            )
+        console.print(tbl)
+        if len(missing_or_synth) > 60:
+            console.print(f"  [dim]... and {len(missing_or_synth) - 60} more[/dim]")
 
 
 # ─── report ───────────────────────────────────────────────────────────────────
