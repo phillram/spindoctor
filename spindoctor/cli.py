@@ -120,6 +120,7 @@ def config_set(key: str, value: str):
       hyperspin_dir             Root HyperSpin folder (has Databases/ and Media/)
       emulators_dir             Emulator root directory
       rocketlauncher_dir        RocketLauncher root directory
+      ledblinky_dir             LedBlinky install directory (contains LEDBlinky.exe)
       output_dir                Default output directory (blank = write in-place)
       auto_audit_export_dir     Auto-export audit CSV here after write operations
       screenscraper_user        ScreenScraper username
@@ -1338,3 +1339,159 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
     if output:
         _write_audit_csv(all_results, Path(output))
         console.print(f"[green]Report written:[/green] {output}")
+
+
+# ─── ledblinky ────────────────────────────────────────────────────────────────
+
+@cli.group("ledblinky")
+def ledblinky_group():
+    """LedBlinky integration: audit and fix HyperSpin Search compatibility."""
+
+
+@ledblinky_group.command("check")
+@click.option("--menus", default="Search",
+              help="Comma-separated special menus to check. Default: Search.")
+def ledblinky_check(menus):
+    """Scan HyperSpin + LedBlinky configs for known Search-menu conflicts."""
+    from . import ledblinky as lb
+
+    config = _cfg()
+    menu_list = [m.strip() for m in menus.split(",") if m.strip()]
+    result = lb.scan(config, menus=menu_list)
+
+    tbl = Table(title="LedBlinky compatibility scan", box=box.ROUNDED)
+    tbl.add_column("Check", style="cyan")
+    tbl.add_column("Result")
+
+    tbl.add_row(
+        "ledblinky_dir",
+        f"{_status(result['ledblinky_dir_exists'])} "
+        f"{config.ledblinky_dir or '[dim]<not set>[/dim]'}",
+    )
+    tbl.add_row(
+        "LEDBlinkyControls.xml",
+        f"{_status(result['controls_xml_exists'])} "
+        f"{result['controls_xml_path'] or '[dim]—[/dim]'}",
+    )
+
+    for info in result["menu_inis"]:
+        hooks = info["has_hooks"]
+        in_xml = info["has_controls_entry"]
+        tbl.add_row(
+            f"{info['menu']} menu INI",
+            f"exists={_status(info['exists'])}  "
+            f"hooks={'[red]yes[/red]' if hooks else '[green]no[/green]'}  "
+            f"in controls.xml={_status(in_xml)}",
+        )
+
+    if result["global_settings_ini"]:
+        tbl.add_row(
+            "HyperSpin Settings.ini hooks",
+            "[dim]present (expected — left untouched)[/dim]"
+            if result["global_settings_has_hooks"]
+            else "[dim]absent[/dim]",
+        )
+
+    console.print(tbl)
+
+    if result["ok"]:
+        console.print("[green]✓ No issues detected.[/green]")
+        return
+
+    console.print("\n[yellow bold]Issues:[/yellow bold]")
+    for issue in result["issues"]:
+        console.print(f"  • {issue}")
+    console.print(
+        "\nRun [cyan]spindoctor ledblinky fix --dry-run[/cyan] to preview the patch."
+    )
+
+
+@ledblinky_group.command("fix")
+@click.option("--dry-run", is_flag=True,
+              help="Show what would change without writing anything.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write patched files here instead of in-place.")
+@click.option("--no-backup", is_flag=True,
+              help="Skip .bak backups when writing in-place.")
+@click.option("--menus", default="Search",
+              help="Comma-separated special menus to patch. Default: Search. "
+                   "Other options: Genre, Favorites.")
+def ledblinky_fix(dry_run, output_dir, no_backup, menus):
+    """Patch LEDBlinkyControls.xml + HyperSpin Search Settings.ini for compatibility.
+
+    \b
+    Two patches are applied:
+      1. Add a stub entry to LEDBlinkyControls.xml for each requested menu
+         so LedBlinky's lookup succeeds when the special menu activates.
+      2. Comment out the Start_Hyperspin_Process / Exit_Hyperspin_Process
+         lines in the per-menu Settings.ini that point at LEDBlinky.exe.
+
+    \b
+    Examples:
+      spindoctor ledblinky fix --dry-run
+      spindoctor ledblinky fix
+      spindoctor ledblinky fix --menus Search,Genre,Favorites
+      spindoctor ledblinky fix --output-dir D:\\Output
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+    out_base = config.effective_output_dir(output_dir)
+    menu_list = [m.strip() for m in menus.split(",") if m.strip()]
+
+    if dry_run:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+
+    result = lb.apply_fix(
+        config,
+        output_base=out_base,
+        dry_run=dry_run,
+        backup=not no_backup,
+        menus=menu_list,
+    )
+
+    cx = result["controls_xml"]
+    console.print("\n[blue bold]LEDBlinkyControls.xml[/blue bold]")
+    if cx is None:
+        console.print("  [dim]skipped (ledblinky_dir not set)[/dim]")
+    elif cx["added"]:
+        verb = "Would add" if dry_run or not cx["wrote"] else "Added"
+        console.print(f"  [green]{verb}[/green] entries: {', '.join(cx['added'])}")
+        console.print(f"  Path: {cx['path']}")
+    else:
+        console.print("  [green]✓ Already contains all requested menu entries.[/green]")
+
+    console.print("\n[blue bold]HyperSpin per-menu INIs[/blue bold]")
+    tbl = Table(box=box.SIMPLE, show_header=True)
+    tbl.add_column("Menu", style="cyan")
+    tbl.add_column("Path")
+    tbl.add_column("Hook lines", justify="right")
+    tbl.add_column("Status")
+    for info in result["menu_inis"]:
+        if info.get("error"):
+            tbl.add_row(info["menu"], str(info["src"]), "—", f"[dim]{info['error']}[/dim]")
+            continue
+        if info["lines_changed"] == 0:
+            status = "[green]nothing to do[/green]"
+        elif dry_run or not info["wrote"]:
+            status = "[yellow]would patch[/yellow]"
+        else:
+            status = "[green]patched[/green]"
+        tbl.add_row(
+            info["menu"],
+            str(info["path"]),
+            str(info["lines_changed"]),
+            status,
+        )
+    console.print(tbl)
+
+    if result["errors"]:
+        console.print("\n[red]Errors:[/red]")
+        for e in result["errors"]:
+            console.print(f"  • {e}")
+
+    if not dry_run and result["backup"]:
+        console.print(
+            "\n[dim]Backups saved as <file>.YYYYMMDD_HHMMSS.bak next to each modified file.[/dim]"
+        )
