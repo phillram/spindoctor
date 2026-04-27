@@ -1,0 +1,402 @@
+"""Health-check / `spindoctor doctor` logic.
+
+A self-contained module that inspects the local install — paths, configured
+binaries, API credentials, XML DBs, match cache, RocketLauncher INIs,
+LEDBlinky files — and reports each check as ✓ / ⚠ / ✗.
+
+The companion ``--fix`` flag performs only safe, idempotent repairs:
+prunes stale match-cache entries, creates missing media folder skeletons,
+and regenerates a missing ``Global Emulators.ini``.
+"""
+from __future__ import annotations
+
+import json
+import shutil
+from dataclasses import dataclass, field
+from enum import Enum
+from pathlib import Path
+from typing import Optional
+
+from .config import Config, get_systems
+from .database import find_database, load_database
+
+
+class Status(str, Enum):
+    OK = "ok"
+    WARN = "warn"
+    FAIL = "fail"
+    INFO = "info"
+
+
+@dataclass
+class Check:
+    name: str
+    status: Status
+    detail: str = ""
+    fix: Optional[str] = None
+    children: list["Check"] = field(default_factory=list)
+
+
+@dataclass
+class HealthReport:
+    checks: list[Check] = field(default_factory=list)
+    fixes_applied: list[str] = field(default_factory=list)
+
+    def add(self, check: Check) -> None:
+        self.checks.append(check)
+
+    def overall(self) -> Status:
+        worst = Status.OK
+        order = {Status.OK: 0, Status.INFO: 0, Status.WARN: 1, Status.FAIL: 2}
+
+        def visit(c: Check):
+            nonlocal worst
+            if order[c.status] > order[worst]:
+                worst = c.status
+            for ch in c.children:
+                visit(ch)
+
+        for c in self.checks:
+            visit(c)
+        return worst
+
+
+# ─── individual checks ────────────────────────────────────────────────────────
+
+
+def _check_path(name: str, path_str: str, *, optional: bool = False) -> Check:
+    if not path_str:
+        return Check(
+            name=name,
+            status=Status.WARN if optional else Status.FAIL,
+            detail="not set" if optional else "not set (required)",
+            fix=f"spindoctor config set {name} <path>",
+        )
+    p = Path(path_str)
+    if not p.exists():
+        return Check(
+            name=name, status=Status.FAIL,
+            detail=f"does not exist: {p}",
+        )
+    if not p.is_dir():
+        return Check(
+            name=name, status=Status.WARN,
+            detail=f"not a directory: {p}",
+        )
+    return Check(name=name, status=Status.OK, detail=str(p))
+
+
+def check_paths(config: Config) -> Check:
+    parent = Check(name="Paths", status=Status.OK)
+    parent.children.append(_check_path("roms_dir", config.roms_dir))
+    parent.children.append(_check_path("hyperspin_dir", config.hyperspin_dir))
+    parent.children.append(
+        _check_path("rocketlauncher_dir", config.rocketlauncher_dir, optional=True)
+    )
+    parent.children.append(
+        _check_path("emulators_dir", config.emulators_dir, optional=True)
+    )
+    parent.children.append(
+        _check_path("ledblinky_dir", config.ledblinky_dir, optional=True)
+    )
+    parent.status = max(
+        (c.status for c in parent.children),
+        key=lambda s: {Status.OK: 0, Status.INFO: 0, Status.WARN: 1, Status.FAIL: 2}[s],
+        default=Status.OK,
+    )
+    return parent
+
+
+def check_binaries(config: Config) -> Check:
+    parent = Check(name="External binaries", status=Status.OK)
+
+    if config.mame_executable:
+        p = Path(config.mame_executable)
+        if not p.exists():
+            parent.children.append(Check(
+                name="mame_executable", status=Status.FAIL,
+                detail=f"does not exist: {p}",
+            ))
+        else:
+            parent.children.append(Check(
+                name="mame_executable", status=Status.OK, detail=str(p),
+            ))
+    else:
+        parent.children.append(Check(
+            name="mame_executable", status=Status.WARN, detail="not configured",
+            fix="spindoctor config set mame_executable /path/to/mame",
+        ))
+
+    if shutil.which("ffprobe"):
+        parent.children.append(Check(
+            name="ffprobe", status=Status.OK,
+            detail="available (used for video duration)",
+        ))
+    else:
+        parent.children.append(Check(
+            name="ffprobe", status=Status.INFO,
+            detail="not installed (native fallback used; install ffmpeg for accuracy)",
+        ))
+
+    parent.status = max(
+        (c.status for c in parent.children),
+        key=lambda s: {Status.OK: 0, Status.INFO: 0, Status.WARN: 1, Status.FAIL: 2}[s],
+        default=Status.OK,
+    )
+    return parent
+
+
+def check_lxml() -> Check:
+    try:
+        import lxml  # noqa: F401
+        return Check(
+            name="lxml", status=Status.OK,
+            detail="installed (XML round-trip preserves comments)",
+        )
+    except ImportError:
+        return Check(
+            name="lxml", status=Status.WARN,
+            detail="not installed; XML comments will be lost on save",
+            fix="pip install spindoctor[xml]",
+        )
+
+
+def check_databases(config: Config) -> Check:
+    parent = Check(name="HyperSpin databases", status=Status.OK)
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        parent.status = Status.INFO
+        parent.detail = "hyperspin_dir not configured; skipping"
+        return parent
+
+    systems = get_systems(config)
+    if not systems:
+        parent.status = Status.WARN
+        parent.detail = "no systems detected"
+        return parent
+
+    bad = 0
+    for sys_name in systems:
+        xml_path = find_database(sys_name, config.databases_dir)
+        if xml_path is None:
+            parent.children.append(Check(
+                name=sys_name, status=Status.WARN,
+                detail="no DB XML found",
+            ))
+            continue
+        try:
+            db = load_database(sys_name, config.databases_dir)
+            n = len(db.games())
+            parent.children.append(Check(
+                name=sys_name, status=Status.OK,
+                detail=f"{n} entries · {xml_path.name}",
+            ))
+        except ValueError as e:
+            bad += 1
+            parent.children.append(Check(
+                name=sys_name, status=Status.FAIL, detail=str(e),
+            ))
+
+    parent.status = Status.FAIL if bad else (
+        Status.WARN if any(c.status == Status.WARN for c in parent.children) else Status.OK
+    )
+    return parent
+
+
+def check_match_cache(config: Config, fix: bool, fixes_applied: list[str]) -> Check:
+    """Find match-cache entries pointing to ROMs that no longer exist."""
+    from .matcher import CACHE_DIR as MATCH_CACHE_DIR
+    cache_dir = MATCH_CACHE_DIR
+    if not cache_dir.exists():
+        return Check(name="Match cache", status=Status.OK, detail="no cache yet")
+
+    stale_total = 0
+    files_touched = 0
+    for cache_file in cache_dir.glob("*.json"):
+        system = cache_file.stem
+        rom_dir = Path(config.roms_dir) / system
+        try:
+            data = json.loads(cache_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
+        existing_roms = {p.stem for p in rom_dir.iterdir()} if rom_dir.exists() else set()
+        stale = [name for name in data if name not in existing_roms]
+        if stale:
+            stale_total += len(stale)
+            files_touched += 1
+            if fix:
+                for name in stale:
+                    data.pop(name, None)
+                cache_file.write_text(json.dumps(data, indent=2), encoding="utf-8")
+                fixes_applied.append(
+                    f"pruned {len(stale)} stale entries from match_cache/{system}.json"
+                )
+
+    if stale_total == 0:
+        return Check(name="Match cache", status=Status.OK, detail="no stale entries")
+    if fix:
+        return Check(
+            name="Match cache", status=Status.OK,
+            detail=f"pruned {stale_total} stale entries across {files_touched} files",
+        )
+    return Check(
+        name="Match cache", status=Status.WARN,
+        detail=f"{stale_total} stale entries across {files_touched} system(s)",
+        fix="spindoctor doctor --fix",
+    )
+
+
+def check_global_emulators(
+    config: Config, fix: bool, fixes_applied: list[str],
+) -> Check:
+    if not config.rocketlauncher_dir:
+        return Check(
+            name="Global Emulators.ini", status=Status.INFO,
+            detail="rocketlauncher_dir not configured; skipping",
+        )
+    target = Path(config.rocketlauncher_dir) / "Settings" / "Global Emulators.ini"
+    if target.exists():
+        return Check(
+            name="Global Emulators.ini", status=Status.OK, detail=str(target),
+        )
+    if fix:
+        from .rocketlauncher import generate_global_emulators_ini
+        try:
+            p, _ = generate_global_emulators_ini(config, overwrite=False)
+            fixes_applied.append(f"created {p}")
+            return Check(
+                name="Global Emulators.ini", status=Status.OK,
+                detail=f"created: {p}",
+            )
+        except ValueError as e:
+            return Check(
+                name="Global Emulators.ini", status=Status.WARN, detail=str(e),
+            )
+    return Check(
+        name="Global Emulators.ini", status=Status.WARN,
+        detail=f"missing: {target}",
+        fix="spindoctor generate-config --global-emulators  (or doctor --fix)",
+    )
+
+
+def check_ledblinky(config: Config) -> Check:
+    if not config.ledblinky_dir:
+        return Check(
+            name="LEDBlinky", status=Status.INFO,
+            detail="ledblinky_dir not configured",
+        )
+    base = Path(config.ledblinky_dir)
+    parent = Check(name="LEDBlinky", status=Status.OK)
+    for fname in ("controls.ini", "colors.ini"):
+        p = base / fname
+        if not p.exists():
+            parent.children.append(Check(
+                name=fname, status=Status.WARN,
+                detail=f"missing: {p}",
+            ))
+        else:
+            try:
+                from .ledblinky import parse_ini_sections
+                n = len(parse_ini_sections(p))
+                parent.children.append(Check(
+                    name=fname, status=Status.OK,
+                    detail=f"{n} sections",
+                ))
+            except Exception as e:
+                parent.children.append(Check(
+                    name=fname, status=Status.WARN, detail=str(e),
+                ))
+    parent.status = (
+        Status.OK if all(c.status == Status.OK for c in parent.children)
+        else Status.WARN
+    )
+    return parent
+
+
+def check_api_creds(config: Config) -> Check:
+    parent = Check(name="Metadata APIs", status=Status.OK)
+    if config.screenscraper_user and config.screenscraper_pass:
+        parent.children.append(Check(
+            name="ScreenScraper", status=Status.OK,
+            detail=f"user: {config.screenscraper_user}",
+        ))
+    else:
+        parent.children.append(Check(
+            name="ScreenScraper", status=Status.INFO,
+            detail="credentials not set",
+        ))
+    if config.thegamesdb_key:
+        parent.children.append(Check(
+            name="TheGamesDB", status=Status.OK,
+            detail="API key configured",
+        ))
+    else:
+        parent.children.append(Check(
+            name="TheGamesDB", status=Status.INFO,
+            detail="API key not set",
+        ))
+    return parent
+
+
+def check_media_skeletons(
+    config: Config, fix: bool, fixes_applied: list[str],
+) -> Check:
+    """For each known system, ensure Media/<System>/Images/ subdirs exist.
+
+    Missing subdirs are not an error per se — but creating them lets RocketUI
+    or external taggers drop files in without 'directory not found' errors.
+    """
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(
+            name="Media folders", status=Status.INFO,
+            detail="hyperspin_dir missing; skipping",
+        )
+    needed = (
+        ("Images", "Wheel"), ("Images", "Backgrounds"),
+        ("Images", "Artwork1"), ("Images", "Artwork2"),
+        ("Images", "Artwork3"), ("Video",), ("Video", "Trailers"),
+        ("Sound",), ("Themes",),
+    )
+    systems = get_systems(config)
+    missing = 0
+    for sys_name in systems:
+        for parts in needed:
+            d = config.media_dir / sys_name / Path(*parts)
+            if not d.exists():
+                missing += 1
+                if fix:
+                    d.mkdir(parents=True, exist_ok=True)
+    if missing == 0:
+        return Check(
+            name="Media folders", status=Status.OK,
+            detail="skeleton complete",
+        )
+    if fix:
+        fixes_applied.append(f"created {missing} media subfolder(s)")
+        return Check(
+            name="Media folders", status=Status.OK,
+            detail=f"created {missing} skeleton folders",
+        )
+    return Check(
+        name="Media folders", status=Status.INFO,
+        detail=f"{missing} subfolders not created (cosmetic)",
+        fix="spindoctor doctor --fix",
+    )
+
+
+# ─── orchestration ────────────────────────────────────────────────────────────
+
+
+def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
+    report = HealthReport()
+    report.add(check_paths(config))
+    report.add(check_binaries(config))
+    report.add(check_lxml())
+    report.add(check_databases(config))
+    report.add(check_match_cache(config, fix, report.fixes_applied))
+    report.add(check_global_emulators(config, fix, report.fixes_applied))
+    report.add(check_ledblinky(config))
+    report.add(check_api_creds(config))
+    report.add(check_media_skeletons(config, fix, report.fixes_applied))
+    return report

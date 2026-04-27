@@ -1,14 +1,21 @@
 """Metadata scraping from ScreenScraper and TheGamesDB."""
 from __future__ import annotations
 
+import json
+import re
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import requests
 
-from .config import SCREENSCRAPER_API, THEGAMESDB_API, Config
+from .config import CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config
 from .romutils import normalize, similarity
+
+
+METADATA_CACHE_DIR = CONFIG_DIR / "metadata_cache"
 
 
 SCREENSCRAPER_SYSTEMS: dict[str, int] = {
@@ -107,8 +114,126 @@ class MetadataError(Exception):
     pass
 
 
+# ─── disk cache ───────────────────────────────────────────────────────────────
+
+_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_name(value: str) -> str:
+    return _FILENAME_SAFE.sub("_", value)[:160] or "_"
+
+
+class MetadataCache:
+    """Disk-backed cache for fetch_with_search results.
+
+    Avoids re-querying ScreenScraper / TheGamesDB on iterative re-runs and
+    saves your monthly TheGamesDB quota.
+    """
+
+    def __init__(
+        self,
+        root: Path = METADATA_CACHE_DIR,
+        ttl_days: int = 30,
+        enabled: bool = True,
+    ):
+        self.root = root
+        self.ttl = timedelta(days=ttl_days) if ttl_days > 0 else None
+        self.enabled = enabled
+
+    def _path(self, source: str, system: str, rom_stem: str) -> Path:
+        return (
+            self.root
+            / _safe_name(source)
+            / _safe_name(system)
+            / f"{_safe_name(rom_stem)}.json"
+        )
+
+    def get(self, source: str, system: str, rom_stem: str) -> Optional[list["GameMetadata"]]:
+        if not self.enabled:
+            return None
+        p = self._path(source, system, rom_stem)
+        if not p.exists():
+            return None
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        ts = data.get("cached_at")
+        if self.ttl and ts:
+            try:
+                cached_at = datetime.fromisoformat(ts)
+                if datetime.now() - cached_at > self.ttl:
+                    return None
+            except ValueError:
+                return None
+        return [GameMetadata(**entry) for entry in data.get("results", [])]
+
+    def put(
+        self,
+        source: str,
+        system: str,
+        rom_stem: str,
+        results: list["GameMetadata"],
+    ) -> None:
+        if not self.enabled:
+            return
+        p = self._path(source, system, rom_stem)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cached_at": datetime.now().isoformat(timespec="seconds"),
+            "source": source,
+            "system": system,
+            "rom_stem": rom_stem,
+            "results": [asdict(r) for r in results],
+        }
+        try:
+            p.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        except OSError:
+            pass
+
+    def clear(
+        self,
+        source: Optional[str] = None,
+        system: Optional[str] = None,
+    ) -> int:
+        """Delete cache files; returns number of files removed."""
+        if not self.root.exists():
+            return 0
+        if source is None:
+            target = self.root
+        elif system is None:
+            target = self.root / _safe_name(source)
+        else:
+            target = self.root / _safe_name(source) / _safe_name(system)
+        if not target.exists():
+            return 0
+        n = 0
+        for p in target.rglob("*.json"):
+            try:
+                p.unlink()
+                n += 1
+            except OSError:
+                pass
+        return n
+
+
+def build_metadata_cache(config: Config) -> MetadataCache:
+    return MetadataCache(
+        root=METADATA_CACHE_DIR,
+        ttl_days=config.metadata_cache_ttl_days,
+        enabled=config.metadata_cache_enabled,
+    )
+
+
+# ─── fetch + search mixin ─────────────────────────────────────────────────────
+
+
 class _FetchWithSearchMixin:
     """Shared fetch_with_search logic for all metadata clients."""
+
+    # Subclasses set these.
+    source_name: str = ""
+    _cache: Optional[MetadataCache] = None
 
     def fetch_with_search(
         self,
@@ -119,15 +244,24 @@ class _FetchWithSearchMixin:
         """Try direct fetch first; fall back to search if no result.
 
         Returns a scored, sorted list (best first). May return multiple
-        candidates when the name is ambiguous.
+        candidates when the name is ambiguous.  Results are cached on disk
+        when a ``MetadataCache`` is configured.
         """
+        if self._cache is not None:
+            cached = self._cache.get(self.source_name, system_name, game_name)
+            if cached is not None:
+                return cached
+
         try:
             direct = self.fetch(game_name, system_name)
         except MetadataError:
             direct = None
 
         if direct and direct.match_score >= threshold:
-            return [direct]
+            results = [direct]
+            if self._cache is not None:
+                self._cache.put(self.source_name, system_name, game_name, results)
+            return results
 
         try:
             candidates = self.search(game_name, system_name)
@@ -135,13 +269,14 @@ class _FetchWithSearchMixin:
             candidates = []
 
         # Merge direct result in if it wasn't already found in search results.
-        # Guard against empty source_id causing false dedup matches.
         if direct and direct.source_id and not any(
             c.source_id == direct.source_id for c in candidates
         ):
             candidates.append(direct)
             candidates.sort(key=lambda m: m.match_score, reverse=True)
 
+        if self._cache is not None and candidates:
+            self._cache.put(self.source_name, system_name, game_name, candidates)
         return candidates
 
 
@@ -161,12 +296,21 @@ class RateLimiter:
 # ─── ScreenScraper ────────────────────────────────────────────────────────────
 
 class ScreenScraperClient(_FetchWithSearchMixin):
-    def __init__(self, username: str, password: str, rate_limit: float = 1.0):
+    source_name = "screenscraper"
+
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        rate_limit: float = 1.0,
+        cache: Optional["MetadataCache"] = None,
+    ):
         self.username = username
         self.password = password
         self._limiter = RateLimiter(rate_limit)
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "SpinDoctor/1.0"
+        self._cache = cache
 
     def _base_params(self) -> dict:
         return {
@@ -231,11 +375,19 @@ class ScreenScraperClient(_FetchWithSearchMixin):
 # ─── TheGamesDB ───────────────────────────────────────────────────────────────
 
 class TheGamesDBClient(_FetchWithSearchMixin):
-    def __init__(self, api_key: str, rate_limit: float = 1.0):
+    source_name = "thegamesdb"
+
+    def __init__(
+        self,
+        api_key: str,
+        rate_limit: float = 1.0,
+        cache: Optional["MetadataCache"] = None,
+    ):
         self.api_key = api_key
         self._limiter = RateLimiter(rate_limit)
         self._session = requests.Session()
         self._session.headers["User-Agent"] = "SpinDoctor/1.0"
+        self._cache = cache
 
     def _platform_id(self, system_name: str) -> Optional[int]:
         return THEGAMESDB_PLATFORMS.get(system_name.lower())
@@ -297,8 +449,14 @@ class TheGamesDBClient(_FetchWithSearchMixin):
 
 # ─── factory ──────────────────────────────────────────────────────────────────
 
-def build_client(config: Config, source: Optional[str] = None):
+def build_client(
+    config: Config,
+    source: Optional[str] = None,
+    use_cache: Optional[bool] = None,
+):
     source = source or config.default_metadata_source
+    enabled = config.metadata_cache_enabled if use_cache is None else use_cache
+    cache = build_metadata_cache(config) if enabled else None
 
     if source == "screenscraper":
         if not config.screenscraper_user or not config.screenscraper_pass:
@@ -306,7 +464,9 @@ def build_client(config: Config, source: Optional[str] = None):
                 "ScreenScraper credentials not configured. "
                 "Run: spindoctor config set screenscraper_user <user> screenscraper_pass <pass>"
             )
-        return ScreenScraperClient(config.screenscraper_user, config.screenscraper_pass)
+        return ScreenScraperClient(
+            config.screenscraper_user, config.screenscraper_pass, cache=cache,
+        )
 
     if source == "thegamesdb":
         if not config.thegamesdb_key:
@@ -314,7 +474,7 @@ def build_client(config: Config, source: Optional[str] = None):
                 "TheGamesDB API key not configured. "
                 "Run: spindoctor config set thegamesdb_key <key>"
             )
-        return TheGamesDBClient(config.thegamesdb_key)
+        return TheGamesDBClient(config.thegamesdb_key, cache=cache)
 
     raise MetadataError(f"Unknown metadata source: {source}")
 
