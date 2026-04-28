@@ -66,24 +66,22 @@ spindoctor --version
 
 ## First-Time Setup
 
-Run once to point SpinDoctor at your directories. Settings are saved to `%USERPROFILE%\.spindoctor\config.json`.
+Run the interactive wizard once to point SpinDoctor at your directories. It walks through every path-based setting (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled — press Enter to accept, or type `-` to leave an optional path blank.
+
+```bat
+spindoctor config init
+```
+
+Settings are saved to `%USERPROFILE%\.spindoctor\config.json`. Re-running the wizard uses your existing values as defaults, so it's safe to run again to refine paths.
+
+Prefer to set values one at a time (or script them)? You can still use `spindoctor config set <key> <value>` directly:
 
 ```bat
 spindoctor config set roms_dir           "D:\ROMs"
 spindoctor config set hyperspin_dir      "D:\HyperSpin"
 spindoctor config set emulators_dir      "D:\Emulators"
 spindoctor config set rocketlauncher_dir "D:\RocketLauncher"
-```
-
-Optional — default output directory so nothing is ever overwritten in-place:
-
-```bat
-spindoctor config set output_dir "D:\SpinDoctorOutput"
-```
-
-Auto-export an audit CSV after every write operation:
-
-```bat
+spindoctor config set output_dir         "D:\SpinDoctorOutput"
 spindoctor config set auto_audit_export_dir "D:\SpinDoctorAudits"
 ```
 
