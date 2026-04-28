@@ -1373,8 +1373,16 @@ def check_discs_cmd(system, all_systems):
               help="No-Intro / Redump / TOSEC DAT XML file.")
 @click.option("--show-good", is_flag=True,
               help="Also list verified-good ROMs (default: only problems).")
-def verify_cmd(system, dat_path, show_good):
-    """Verify ROM file integrity against a No-Intro / Redump DAT.
+@click.option("--match", "match_mode",
+              type=click.Choice(["inner", "wrapper", "auto"]), default="auto",
+              show_default=True,
+              help="How archives (zip/7z/rar/gz/chd) match the DAT. Most DATs "
+                   "(No-Intro, Redump) catalog inner ROM hashes; TOSEC and some "
+                   "older sets catalog wrapper bytes. `auto` (default) tries "
+                   "inner first then wrapper; pass `inner` or `wrapper` to "
+                   "force one.")
+def verify_cmd(system, dat_path, show_good, match_mode):
+    """Verify ROM file integrity against a No-Intro / Redump / TOSEC DAT.
 
     \b
     Each ROM is matched by SHA1, then CRC32, then size+name. Statuses:
@@ -1385,13 +1393,21 @@ def verify_cmd(system, dat_path, show_good):
 
     Hashing is lazy: a file whose size is absent from the DAT skips
     hashing entirely so unknown homebrew won't slow the scan down.
+
+    \b
+    Most DATs (No-Intro, Redump) catalog inner ROM hashes; TOSEC and
+    some older sets catalog wrapper bytes. `--match auto` (default)
+    tries inner first then wrapper; pass `inner` or `wrapper` to force
+    one.
     """
     from .verify import verify_system
 
     config = _cfg()
     _check_config(config)
 
-    report = verify_system(system, Path(dat_path), Path(config.roms_dir))
+    report = verify_system(
+        system, Path(dat_path), Path(config.roms_dir), match_mode=match_mode,
+    )
 
     console.print(Panel(f" verify: {system} ", style="bold blue"))
     if not report.entries:
