@@ -1,10 +1,11 @@
 # scripts/
 
-Standalone helpers for the **Favorites** and **Recently Played** synthetic
-HyperSpin wheels. Everything in this folder is meant to run on its own —
-on a Windows boot trigger, a scheduled task, or from a HyperSpin Tools
-menu entry — without the user opening a console or loading the full
-SpinDoctor CLI.
+Standalone helpers for the **Favorites**, **Recently Played**, and
+**Most Played** synthetic HyperSpin wheels (and the playtime reporter
+that backs the latter). Everything in this folder is meant to run on
+its own — on a Windows boot trigger, a scheduled task, or from a
+HyperSpin Tools menu entry — without the user opening a console or
+loading the full SpinDoctor CLI.
 
 ## What's here
 
@@ -12,9 +13,11 @@ SpinDoctor CLI.
 |------|---------|
 | `spindoctor-fav.py` | Python wrapper that calls `spindoctor.favorites:main` |
 | `spindoctor-recent.py` | Python wrapper that calls `spindoctor.recent:main` |
+| `spindoctor-stats.py` | Python wrapper that calls `spindoctor.playtime:main` |
 | `Refresh Favorites.bat` | Windows batch invoking `spindoctor-fav rebuild` |
 | `Refresh Recently Played.bat` | Windows batch invoking `spindoctor-recent rebuild` |
-| `Refresh Both.bat` | Run both in sequence |
+| `Refresh Most Played.bat` | Windows batch invoking `spindoctor-stats build-wheel --apply` |
+| `Refresh Both.bat` | Run fav + recent + most-played in sequence |
 
 The Python wrappers exist so users without `pip install -e .` can still
 run the tools directly:
@@ -22,10 +25,11 @@ run the tools directly:
 ```bat
 python scripts\spindoctor-fav.py rebuild
 python scripts\spindoctor-recent.py rebuild --limit 30
+python scripts\spindoctor-stats.py summary
 ```
 
-The `.bat` files assume `spindoctor-fav` and `spindoctor-recent` are on
-`PATH` (they will be after `pip install -e .`).
+The `.bat` files assume `spindoctor-fav`, `spindoctor-recent`, and
+`spindoctor-stats` are on `PATH` (they will be after `pip install -e .`).
 
 ## Wiring into HyperSpin's Tools menu
 
@@ -47,7 +51,7 @@ user reaches HyperSpin:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
+  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
 ```
 
 Or drop `Refresh Both.bat` into the Windows Startup folder
@@ -55,8 +59,9 @@ Or drop `Refresh Both.bat` into the Windows Startup folder
 
 ## Why these aren't in `spindoctor/`
 
-The actual logic lives in `spindoctor/favorites.py` and
-`spindoctor/recent.py` so the rest of the package can import it. This
-folder holds only thin runnable shims and Windows convenience files —
-keeping them separate makes it obvious which files are package
-internals vs. things the cabinet end-user is meant to invoke directly.
+The actual logic lives in `spindoctor/favorites.py`,
+`spindoctor/recent.py`, and `spindoctor/playtime.py` so the rest of
+the package can import it. This folder holds only thin runnable shims
+and Windows convenience files — keeping them separate makes it obvious
+which files are package internals vs. things the cabinet end-user is
+meant to invoke directly.

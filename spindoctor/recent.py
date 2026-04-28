@@ -166,40 +166,37 @@ class RecentSummary:
     media_errors: list[str] = field(default_factory=list)
 
 
-def rebuild(
+def _build_synthetic_wheel(
     config: Config,
+    target_system: str,
+    pseudo_entries: list[FavoriteEntry],
     *,
-    target_system: str = DEFAULT_RECENT_SYSTEM,
-    limit: int = DEFAULT_LIMIT,
     media_mode: LinkMode = LinkMode.AUTO,
     skip_media: bool = False,
     skip_launchers: bool = False,
 ) -> RecentSummary:
-    """Regenerate the Recently Played system from RocketLauncher stats.
+    """Shared synthetic-wheel builder used by ``recent`` and ``playtime``.
 
-    Re-uses the same launcher and media-mirror plumbing as
-    :func:`spindoctor.favorites.rebuild` so the two synthetic systems
-    behave identically inside HyperSpin.
+    Given a list of :class:`FavoriteEntry` records (each pointing at a
+    source ``(system, rom_name)``), this:
+
+      1. Writes ``Databases/<target_system>/<target_system>.xml``,
+         pulling metadata from the source system's database when
+         available and pruning entries that are no longer in the list.
+      2. Mirrors media via :func:`spindoctor.medialink.plan_mirror` /
+         :func:`apply_plan` (drops orphans first).
+      3. Writes per-game PCLauncher INIs that defer launching back to
+         the source system via RocketLauncher.
+
+    The recent + playtime callers translate their domain records into
+    :class:`FavoriteEntry` shells before delegating here so all three
+    synthetic wheels (Favorites, Recently Played, Most Played) behave
+    identically inside HyperSpin.
     """
     summary = RecentSummary(target_system=target_system)
     if not config.hyperspin_dir:
         return summary
 
-    # Restrict to systems we actually know about so a stray INI doesn't
-    # break the rebuild with an unknown source DB.
-    known = set(get_systems(config))
-    raw = collect_play_records(config)
-    raw = [r for r in raw if r.system in known]
-    top = top_recent(raw, limit=limit)
-
-    # Sort newest-first so HyperSpin renders them in play order.
-    pseudo_entries = [
-        FavoriteEntry(
-            system=r.system, rom_name=r.rom_name,
-            display_name=r.rom_name, added=r.isoformat(),
-        )
-        for r in top
-    ]
     target_names = _resolve_target_names(pseudo_entries)
     summary.entries = len(target_names)
 
@@ -212,13 +209,16 @@ def rebuild(
             db.remove_game(name)
             summary.pruned += 1
 
-    for r, fe in zip(top, pseudo_entries):
+    for fe in pseudo_entries:
         target_name = target_names[f"{fe.system}::{fe.rom_name}"]
-        source_db = _safe_load(r.system, config)
-        source_game = source_db.get(r.rom_name) if source_db else None
+        source_db = _safe_load(fe.system, config)
+        source_game = source_db.get(fe.rom_name) if source_db else None
         merged = GameEntry(
             name=target_name,
-            description=(source_game.description if source_game else r.rom_name),
+            description=(
+                fe.display_name
+                or (source_game.description if source_game else fe.rom_name)
+            ),
             cloneof=source_game.cloneof if source_game else "",
             crc=source_game.crc if source_game else "",
             manufacturer=source_game.manufacturer if source_game else "",
@@ -238,11 +238,11 @@ def rebuild(
                     media_path.unlink()
                 except OSError:
                     pass
-        for r, fe in zip(top, pseudo_entries):
+        for fe in pseudo_entries:
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             plan = plan_mirror(
-                config.media_dir, r.system, target_system,
-                r.rom_name, target_name,
+                config.media_dir, fe.system, target_system,
+                fe.rom_name, target_name,
             )
             result = apply_plan(plan, mode=media_mode)
             summary.media_linked += result["linked"]
@@ -260,14 +260,54 @@ def rebuild(
                         ini.unlink()
                     except OSError:
                         pass
-        for r, fe in zip(top, pseudo_entries):
+        for fe in pseudo_entries:
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             _generate_pclauncher_ini(
-                rl_dir, target_system, target_name, r.system, r.rom_name,
+                rl_dir, target_system, target_name, fe.system, fe.rom_name,
             )
             summary.inis_written += 1
 
     return summary
+
+
+def rebuild(
+    config: Config,
+    *,
+    target_system: str = DEFAULT_RECENT_SYSTEM,
+    limit: int = DEFAULT_LIMIT,
+    media_mode: LinkMode = LinkMode.AUTO,
+    skip_media: bool = False,
+    skip_launchers: bool = False,
+) -> RecentSummary:
+    """Regenerate the Recently Played system from RocketLauncher stats.
+
+    Re-uses the same launcher and media-mirror plumbing as
+    :func:`spindoctor.favorites.rebuild` so the two synthetic systems
+    behave identically inside HyperSpin.
+    """
+    if not config.hyperspin_dir:
+        return RecentSummary(target_system=target_system)
+
+    # Restrict to systems we actually know about so a stray INI doesn't
+    # break the rebuild with an unknown source DB.
+    known = set(get_systems(config))
+    raw = collect_play_records(config)
+    raw = [r for r in raw if r.system in known]
+    top = top_recent(raw, limit=limit)
+
+    # Sort newest-first so HyperSpin renders them in play order.
+    pseudo_entries = [
+        FavoriteEntry(
+            system=r.system, rom_name=r.rom_name,
+            display_name=r.rom_name, added=r.isoformat(),
+        )
+        for r in top
+    ]
+    return _build_synthetic_wheel(
+        config, target_system, pseudo_entries,
+        media_mode=media_mode, skip_media=skip_media,
+        skip_launchers=skip_launchers,
+    )
 
 
 # ─── standalone CLI (python -m spindoctor.recent …) ──────────────────────────
