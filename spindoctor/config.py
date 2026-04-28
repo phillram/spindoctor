@@ -20,6 +20,13 @@ ROM_EXTENSIONS: dict[str, list[str]] = {
     "gba": [".gba", ".zip", ".7z"],
     "psx": [".bin", ".cue", ".iso", ".img", ".zip", ".7z"],
     "ps2": [".iso", ".bin", ".img"],
+    "ps3": [".iso", ".pkg"],
+    "playstation3": [".iso", ".pkg"],
+    "saturn": [".chd", ".cue", ".bin", ".iso"],
+    "dreamcast": [".chd", ".cdi", ".gdi", ".cue"],
+    "segacd": [".chd", ".cue", ".bin", ".iso"],
+    "wii": [".iso", ".wbfs", ".rvz"],
+    "xbox360": [".iso"],
     "arcade": [".zip", ".7z"],
 }
 
@@ -94,6 +101,19 @@ class Config:
     # Per-system ignore lists  {system_name: [rom_name, ...], "_global": [...]}
     ignore_lists: dict[str, list[str]] = field(default_factory=dict)
 
+    # User-supplied overrides for hardcoded system lookups.  Lets users add
+    # support for new consoles (e.g. a future PS7) without editing source.
+    # Schema:
+    #   {
+    #     "Sony Playstation 7": {
+    #         "screenscraper_id": 999,        # int
+    #         "rom_extensions": [".ps7"],      # list[str]
+    #         "layout": "per-game-folder",     # "per-game-folder" | "multi-disc-m3u"
+    #         "emulator": "RPCS7",             # free-form
+    #     }
+    #   }
+    system_overrides: dict[str, dict] = field(default_factory=dict)
+
     # ── derived paths ──────────────────────────────────────────────────────────
 
     @property
@@ -161,6 +181,23 @@ class Config:
         return cls(**{k: v for k, v in data.items() if k in known})
 
 
+_OVERRIDE_CACHE: Optional[dict[str, dict]] = None
+
+
+def get_system_overrides() -> dict[str, dict]:
+    """Return the user-supplied system overrides map (cached)."""
+    global _OVERRIDE_CACHE
+    if _OVERRIDE_CACHE is None:
+        _OVERRIDE_CACHE = load_config().system_overrides or {}
+    return _OVERRIDE_CACHE
+
+
+def reset_override_cache() -> None:
+    """Drop the in-memory override cache so the next lookup re-reads disk."""
+    global _OVERRIDE_CACHE
+    _OVERRIDE_CACHE = None
+
+
 def load_config() -> Config:
     if CONFIG_FILE.exists():
         try:
@@ -175,9 +212,16 @@ def save_config(config: Config) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
         json.dump(config.to_dict(), f, indent=2)
+    reset_override_cache()
 
 
 def get_rom_extensions(system_name: str) -> list[str]:
+    # User override wins
+    ovr = get_system_overrides().get(system_name, {})
+    if isinstance(ovr.get("rom_extensions"), list) and ovr["rom_extensions"]:
+        return [str(e) if str(e).startswith(".") else f".{e}"
+                for e in ovr["rom_extensions"]]
+
     key = system_name.lower().replace(" ", "")
     # Exact match first
     if key in ROM_EXTENSIONS:

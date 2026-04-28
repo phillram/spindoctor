@@ -158,6 +158,114 @@ def config_set(key: str, value: str):
     console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {value!r}")
 
 
+# ─── config system overrides ──────────────────────────────────────────────────
+
+# Layout values supported by spindoctor/organize.py.  "flat" disables the
+# default folder restructuring rule for a system.
+_LAYOUT_CHOICES = ("per-game-folder", "multi-disc-m3u", "flat")
+
+
+@config_group.group("system")
+def config_system_group():
+    """Per-system overrides for ROM extensions, scraper IDs, layout, emulator.
+
+    Lets you add support for consoles SpinDoctor doesn't yet know about
+    without editing source code.
+    """
+
+
+@config_system_group.command("set")
+@click.argument("system_name")
+@click.option("--screenscraper-id", type=int, default=None,
+              help="ScreenScraper platform ID (integer).")
+@click.option("--thegamesdb-id", type=int, default=None,
+              help="TheGamesDB platform ID (integer).")
+@click.option("--rom-extensions", default=None,
+              help="Comma-separated ROM extensions (with or without leading dot).")
+@click.option("--layout", default=None, type=click.Choice(_LAYOUT_CHOICES),
+              help="ROM folder layout. 'flat' disables a built-in rule.")
+@click.option("--emulator", default=None,
+              help="RocketLauncher emulator name (e.g. RetroArch, MAME, RPCS3).")
+def config_system_set(system_name, screenscraper_id, thegamesdb_id,
+                      rom_extensions, layout, emulator):
+    """Add or update overrides for SYSTEM_NAME.
+
+    \b
+    Example — make SpinDoctor aware of a hypothetical PS7 install:
+      spindoctor config system set "Sony Playstation 7" \\
+          --screenscraper-id 999 \\
+          --rom-extensions ps7,iso \\
+          --layout per-game-folder \\
+          --emulator RPCS7
+    """
+    config = _cfg()
+    overrides = dict(config.system_overrides)
+    entry = dict(overrides.get(system_name, {}))
+
+    if screenscraper_id is not None:
+        entry["screenscraper_id"] = screenscraper_id
+    if thegamesdb_id is not None:
+        entry["thegamesdb_id"] = thegamesdb_id
+    if rom_extensions is not None:
+        exts = [
+            e.strip() if e.strip().startswith(".") else f".{e.strip()}"
+            for e in rom_extensions.split(",")
+            if e.strip()
+        ]
+        entry["rom_extensions"] = exts
+    if layout is not None:
+        entry["layout"] = layout
+    if emulator is not None:
+        entry["emulator"] = emulator
+
+    if not entry:
+        err_console.print(
+            "[red]Nothing to set.[/red] Pass at least one of "
+            "--screenscraper-id / --thegamesdb-id / --rom-extensions / --layout / --emulator."
+        )
+        sys.exit(1)
+
+    overrides[system_name] = entry
+    config.system_overrides = overrides
+    save_config(config)
+    console.print(f"[green]✓[/green] Override saved for [cyan]{system_name}[/cyan]:")
+    for k, v in entry.items():
+        console.print(f"    [dim]{k}:[/dim] {v}")
+
+
+@config_system_group.command("clear")
+@click.argument("system_name")
+def config_system_clear(system_name):
+    """Remove all overrides for SYSTEM_NAME (falls back to built-in defaults)."""
+    config = _cfg()
+    if system_name not in config.system_overrides:
+        console.print(f"[yellow]No overrides set for {system_name}.[/yellow]")
+        return
+    config.system_overrides = {
+        k: v for k, v in config.system_overrides.items() if k != system_name
+    }
+    save_config(config)
+    console.print(f"[green]✓[/green] Cleared overrides for [cyan]{system_name}[/cyan].")
+
+
+@config_system_group.command("list")
+def config_system_list():
+    """Show all per-system overrides."""
+    config = _cfg()
+    if not config.system_overrides:
+        console.print("[dim]No system overrides configured.[/dim]")
+        return
+    tbl = Table(title="System Overrides", box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Override")
+    tbl.add_column("Value")
+    for sys_name in sorted(config.system_overrides):
+        entry = config.system_overrides[sys_name]
+        for k, v in entry.items():
+            tbl.add_row(sys_name, k, str(v))
+    console.print(tbl)
+
+
 # ─── systems ──────────────────────────────────────────────────────────────────
 
 @cli.command("systems")
@@ -961,9 +1069,12 @@ def fetch_meta(system, all_systems, source, fetch_all,
               help=f"Comma-separated types. Options: {', '.join(MEDIA_TYPES)}")
 @click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
 @click.option("--overwrite", is_flag=True)
+@click.option("--pick-media", "pick_media", is_flag=True,
+              help="Interactively preview & pick when a media slot has multiple "
+                   "candidates (different regions / artwork variants).")
 @click.option("--dry-run", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
-def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_dir):
+def fetch_media(system, all_systems, types, source, overwrite, pick_media, dry_run, output_dir):
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
@@ -1026,6 +1137,9 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
 
         # ── Phase 1: gather metadata + flatten download jobs ────────────────
         all_jobs: list[tuple[str, str, str]] = []
+        # When --pick-media is set we keep the candidate list and run
+        # downloads sequentially so the picker can prompt interactively.
+        pick_jobs: list[tuple[str, str, list]] = []
         total_fail = 0
         with Progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
@@ -1036,20 +1150,33 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
                 try:
                     meta = client.fetch_with_search(game.name, sys_name)
                     chosen = meta[0] if meta else None
-                    if chosen:
+                    if not chosen:
+                        total_fail += len(media_types)
+                        prog.advance(task)
+                        continue
+                    if pick_media:
+                        for mt in media_types:
+                            cands = chosen.media_candidates.get(mt, [])
+                            if cands:
+                                pick_jobs.append((game.name, mt, cands))
+                            else:
+                                # Fall back to the legacy single URL if any
+                                url = downloader.jobs_for_metadata(
+                                    game.name, chosen, media_types=[mt],
+                                )[0][2]
+                                all_jobs.append((game.name, mt, url))
+                    else:
                         all_jobs.extend(
                             downloader.jobs_for_metadata(
                                 game.name, chosen, media_types=media_types,
                             )
                         )
-                    else:
-                        total_fail += len(media_types)
                 except MetadataError as e:
                     console.print(f"  [red]Error [{game.name}]:[/red] {e}")
                     total_fail += len(media_types)
                 prog.advance(task)
 
-        # ── Phase 2: parallel downloads ──────────────────────────────────────
+        # ── Phase 2: parallel downloads (auto path) + sequential picker ─────
         total_ok = total_skip = 0
         if dry_run:
             for game_name, mt, url in all_jobs:
@@ -1060,28 +1187,48 @@ def fetch_media(system, all_systems, types, source, overwrite, dry_run, output_d
                     total_ok += 1
                 else:
                     total_skip += 1
-        elif all_jobs:
-            with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                          BarColumn(), TextColumn("{task.completed}/{task.total}"),
-                          console=console) as prog:
-                task = prog.add_task("Downloading…", total=len(all_jobs))
-
-                def _on_done(r):
-                    nonlocal total_ok, total_skip, total_fail
-                    if r.skipped:
-                        total_skip += 1
-                    elif r.success:
-                        total_ok += 1
-                    else:
-                        total_fail += 1
-                    prog.advance(task)
-
-                downloader.download_many(
-                    all_jobs, sys_name,
-                    overwrite=overwrite,
-                    max_workers=workers,
-                    on_complete=_on_done,
+            for game_name, mt, cands in pick_jobs:
+                dest = downloader.media_path(sys_name, game_name, mt)
+                console.print(
+                    f"  [dim]+[/dim] {game_name} · {mt}  [dry-run · {len(cands)} candidates]  → {dest}"
                 )
+                total_ok += 1
+        else:
+            if all_jobs:
+                with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                              BarColumn(), TextColumn("{task.completed}/{task.total}"),
+                              console=console) as prog:
+                    task = prog.add_task("Downloading…", total=len(all_jobs))
+
+                    def _on_done(r):
+                        nonlocal total_ok, total_skip, total_fail
+                        if r.skipped:
+                            total_skip += 1
+                        elif r.success:
+                            total_ok += 1
+                        else:
+                            total_fail += 1
+                        prog.advance(task)
+
+                    downloader.download_many(
+                        all_jobs, sys_name,
+                        overwrite=overwrite,
+                        max_workers=workers,
+                        on_complete=_on_done,
+                    )
+
+            for game_name, mt, cands in pick_jobs:
+                dest = downloader.media_path(sys_name, game_name, mt)
+                r = downloader.download_with_picker(
+                    game_name, sys_name, mt, cands, dest,
+                    interactive=True, overwrite=overwrite,
+                )
+                if r.skipped:
+                    total_skip += 1
+                elif r.success:
+                    total_ok += 1
+                else:
+                    total_fail += 1
 
         console.print(
             f"  Downloaded: [green]{total_ok}[/green]  "
@@ -1767,3 +1914,340 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
         console.print(
             "\n[dim]Backups saved as <file>.YYYYMMDD_HHMMSS.bak next to each modified file.[/dim]"
         )
+
+
+# ─── add-system ───────────────────────────────────────────────────────────────
+
+# HyperSpin Main Menu media slots that we know how to fetch from ScreenScraper.
+SYSTEM_MEDIA_SLOTS = ("wheel", "background", "video")
+
+
+@cli.command("add-system")
+@click.argument("system_name")
+@click.option("--no-menu", is_flag=True, help="Skip the Main Menu upsert step.")
+@click.option("--no-system-media", is_flag=True,
+              help="Skip downloading wheel/background/video for the new system.")
+@click.option("--no-db", is_flag=True,
+              help="Skip building the per-system database from ROMs.")
+@click.option("--no-game-media", is_flag=True,
+              help="Skip per-game media fetch for the new system.")
+@click.option("--pick-media", "pick_media", is_flag=True,
+              help="Interactively preview & pick when a slot has multiple candidates.")
+@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--dry-run", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
+               pick_media, source, dry_run, output_dir):
+    """Bootstrap a top-level console end-to-end (e.g. PS3, Dreamcast).
+
+    Scaffolds the ROM/database folders, adds the Main Menu entry, downloads
+    wheel/background/video for the system tile, builds the games database
+    from the ROMs you've already placed in <roms_dir>/<SYSTEM>/, and runs
+    per-game media fetch for the new system.
+
+    \b
+    Examples:
+      spindoctor add-system "Sony Playstation 3"
+      spindoctor add-system Dreamcast --pick-media
+      spindoctor add-system PS3 --no-game-media --dry-run
+    """
+    from .audit import build_stub_entry, scan_roms
+    from .media import MediaDownloader
+    from .rocketlauncher import upsert_main_menu_system
+    from .scraper import MetadataError, build_client
+
+    config = _cfg()
+    _check_config(config)
+
+    out_base = Path(output_dir) if output_dir else None
+
+    if dry_run:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+
+    console.print(Panel(f" add-system: {system_name} ", style="bold blue"))
+
+    # 1. Scaffold folders ──────────────────────────────────────────────────────
+    rom_dir = Path(config.roms_dir) / system_name
+    db_dir = config.databases_dir / system_name
+
+    console.print("[blue bold]1. Scaffold folders[/blue bold]")
+    for d in (rom_dir, db_dir):
+        if d.exists():
+            console.print(f"  [dim]exists:[/dim] {d}")
+        elif dry_run:
+            console.print(f"  [yellow]would create:[/yellow] {d}")
+        else:
+            d.mkdir(parents=True, exist_ok=True)
+            console.print(f"  [green]+[/green] {d}")
+
+    # 2. Main Menu upsert ──────────────────────────────────────────────────────
+    if no_menu:
+        console.print("[dim]2. Main Menu upsert — skipped.[/dim]")
+    else:
+        console.print("\n[blue bold]2. Main Menu upsert[/blue bold]")
+        if dry_run:
+            console.print(f"  [yellow]would add[/yellow] '{system_name}' to "
+                          f"{config.databases_dir / 'Main Menu' / 'Main Menu.xml'}")
+        else:
+            path, added = upsert_main_menu_system(system_name, config, out_base)
+            if added:
+                console.print(f"  [green]+[/green] added to {path}")
+            else:
+                console.print(f"  [dim]already present in {path}[/dim]")
+
+    # 3. System-level media ────────────────────────────────────────────────────
+    if no_system_media:
+        console.print("[dim]3. System-level media — skipped.[/dim]")
+    else:
+        console.print("\n[blue bold]3. System-level media[/blue bold]")
+        try:
+            client = build_client(config, source)
+        except MetadataError as e:
+            err_console.print(f"  [red]{e}[/red]")
+            client = None
+
+        if client is None or not hasattr(client, "fetch_system_media"):
+            console.print(
+                "  [yellow]System media fetch requires ScreenScraper.[/yellow]"
+            )
+        else:
+            try:
+                slots = client.fetch_system_media(system_name)
+            except MetadataError as e:
+                err_console.print(f"  [red]{e}[/red]")
+                slots = {}
+
+            if not slots:
+                console.print(f"  [yellow]No system media available for {system_name}.[/yellow]")
+            else:
+                downloader = MediaDownloader(config, output_dir_override=out_base)
+                for slot in SYSTEM_MEDIA_SLOTS:
+                    cands = slots.get(slot, [])
+                    if not cands:
+                        console.print(f"  [dim]{slot}:[/dim] none")
+                        continue
+                    dest = downloader.system_media_path(system_name, slot)
+                    if dry_run:
+                        console.print(
+                            f"  [yellow]would fetch[/yellow] {slot}  "
+                            f"({len(cands)} candidate(s)) → {dest}"
+                        )
+                        continue
+                    if pick_media and len(cands) > 1:
+                        r = downloader.download_with_picker(
+                            system_name, system_name, slot, cands, dest,
+                            interactive=True,
+                        )
+                    else:
+                        r = downloader.download_to_path(
+                            dest, cands[0].url,
+                            label=system_name, media_type=slot,
+                        )
+                    _print_dl_result(slot, r)
+
+    # 4. Build the games database ──────────────────────────────────────────────
+    if no_db:
+        console.print("[dim]4. Games database — skipped.[/dim]")
+    else:
+        console.print("\n[blue bold]4. Games database[/blue bold]")
+        roms = scan_roms(system_name, Path(config.roms_dir))
+        if not roms:
+            console.print(f"  [yellow]No ROMs found in {rom_dir} — drop ROMs in and re-run.[/yellow]")
+        else:
+            db = load_database(system_name, config.databases_dir)
+            existing = set(db.games().keys())
+            new_count = 0
+            for rom_name in sorted(roms):
+                if rom_name in existing:
+                    continue
+                stub = build_stub_entry(
+                    rom_name,
+                    strip_variants=config.strip_variant_tags_in_display_name,
+                )
+                if dry_run:
+                    console.print(f"  [yellow]+[/yellow] would add stub: {rom_name}")
+                else:
+                    db.add_game(stub)
+                new_count += 1
+            if not dry_run and new_count:
+                if out_base:
+                    saved = db.save(
+                        output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
+                        backup=False,
+                    )
+                else:
+                    saved = db.save(backup=config.backup_before_modify)
+                console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
+            elif new_count:
+                console.print(f"  [yellow]would add {new_count} stub(s)[/yellow]")
+            else:
+                console.print("  [green]Database already in sync with ROMs.[/green]")
+
+    # 5. Per-game media fetch ──────────────────────────────────────────────────
+    if no_game_media:
+        console.print("[dim]5. Per-game media — skipped.[/dim]")
+        return
+    console.print("\n[blue bold]5. Per-game media[/blue bold]")
+    extra = ["--system", system_name]
+    if pick_media:
+        extra.append("--pick-media")
+    if dry_run:
+        extra.append("--dry-run")
+    if output_dir:
+        extra.extend(["--output-dir", str(output_dir)])
+    if source:
+        extra.extend(["--source", source])
+    console.print(f"  [dim]running:[/dim] spindoctor fetch-media {' '.join(extra)}")
+    try:
+        cli.main(args=["fetch-media", *extra], standalone_mode=False, prog_name="spindoctor")
+    except SystemExit:
+        pass
+
+
+def _print_dl_result(slot: str, r) -> None:
+    if r.skipped and r.success:
+        console.print(f"  [dim]·[/dim] {slot}: already present at {r.path}")
+    elif r.skipped:
+        console.print(f"  [yellow]·[/yellow] {slot}: skipped ({r.error})")
+    elif r.success:
+        console.print(f"  [green]+[/green] {slot}: {r.path}")
+    else:
+        console.print(f"  [red]✗[/red] {slot}: {r.error}")
+
+
+# ─── organize ─────────────────────────────────────────────────────────────────
+
+@cli.command("organize")
+@click.argument("system_name")
+@click.option("--no-sort", is_flag=True,
+              help="Skip generating per-axis sort databases (genre/year/...).")
+@click.option("--axes", default=",".join(("genre", "manufacturer", "year", "letter")),
+              help="Comma-separated sort axes to generate. Default: all four.")
+@click.option("--overwrite-sort", is_flag=True,
+              help="Replace existing sort-database files (default: skip them).")
+@click.option("--restructure", is_flag=True,
+              help="Plan ROM folder restructuring for systems that need it "
+                   "(PS3, multi-disc PS2/Saturn/Dreamcast). Dry-run by default.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Required to actually move files when --restructure is set.")
+@click.option("--undo", is_flag=True,
+              help="Reverse the latest restructure manifest for this system.")
+def organize(system_name, no_sort, axes, overwrite_sort, restructure,
+             apply_changes, undo):
+    """Populate sort wheels and (optionally) restructure ROMs into folders.
+
+    \b
+    What this does:
+      • Sort wheels — writes per-axis sub-databases under
+        Databases/<SYSTEM>/{Genre,Manufacturer,Year,Letter}/<bucket>.xml
+        so HyperSpin can render "Sort by genre / year / letter / manufacturer".
+        Touches only XML; never moves ROM files.
+      • --restructure (opt-in) — for systems that need per-game folders
+        (PS3, multi-disc PS2/Saturn/Dreamcast) plans the moves and writes a
+        manifest you can undo. Dry-run unless --apply is set.
+
+    \b
+    Examples:
+      spindoctor organize "Sony Playstation"
+      spindoctor organize "Sony Playstation 3" --restructure
+      spindoctor organize "Sony Playstation 3" --restructure --apply
+      spindoctor organize "Sony Playstation 3" --undo
+    """
+    from .database import write_sort_databases
+    from .organize import (
+        apply_restructure, find_latest_manifest, plan_restructure, undo_restructure,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    console.print(Panel(f" organize: {system_name} ", style="bold blue"))
+
+    # 1. Sort databases ────────────────────────────────────────────────────────
+    if not no_sort:
+        console.print("[blue bold]Sort databases[/blue bold]")
+        db = load_database(system_name, config.databases_dir)
+        games = list(db.games().values())
+        if not games:
+            console.print(f"  [yellow]No games in database for {system_name}.[/yellow]")
+        else:
+            axis_list = tuple(a.strip().lower() for a in axes.split(",") if a.strip())
+            written = write_sort_databases(
+                system_name, games, config.databases_dir,
+                axes=axis_list, overwrite=overwrite_sort,
+            )
+            for axis, paths in written.items():
+                if paths:
+                    console.print(
+                        f"  [green]+[/green] {axis}: {len(paths)} file(s) "
+                        f"under {config.databases_dir / system_name / axis.capitalize()}"
+                    )
+                else:
+                    console.print(f"  [dim]·[/dim] {axis}: no buckets / nothing to write")
+    else:
+        console.print("[dim]Sort databases — skipped.[/dim]")
+
+    # 2. Undo restructure ──────────────────────────────────────────────────────
+    if undo:
+        console.print("\n[blue bold]Undo restructure[/blue bold]")
+        manifest = find_latest_manifest(system_name, Path(config.roms_dir))
+        if not manifest:
+            console.print(f"  [yellow]No restructure manifest found for {system_name}.[/yellow]")
+            return
+        console.print(f"  Reverting from {manifest.name}")
+        summary = undo_restructure(manifest)
+        console.print(
+            f"  [green]+[/green] reverted {summary['moves_reverted']} moves, "
+            f"removed {summary['creates_removed']} generated file(s)"
+        )
+        for err in summary["errors"]:
+            console.print(f"  [red]✗[/red] {err}")
+        return
+
+    # 3. Restructure ROM layout ────────────────────────────────────────────────
+    if not restructure:
+        return
+
+    console.print("\n[blue bold]ROM restructure[/blue bold]")
+    plan = plan_restructure(system_name, Path(config.roms_dir))
+
+    for note in plan.notes:
+        console.print(f"  [dim]{note}[/dim]")
+
+    if plan.empty:
+        console.print(f"  [green]No restructuring needed for {system_name}.[/green]")
+        return
+
+    tbl = Table(title=f"Plan ({plan.layout})", box=box.SIMPLE)
+    tbl.add_column("From", style="yellow")
+    tbl.add_column("→")
+    tbl.add_column("To", style="green")
+    for m in plan.moves:
+        tbl.add_row(Path(m.src).name, "→", str(Path(m.dest).relative_to(Path(plan.roms_dir))))
+    console.print(tbl)
+
+    if plan.creates:
+        console.print(f"  Will write {len(plan.creates)} playlist(s):")
+        for c in plan.creates:
+            console.print(f"    [dim]+[/dim] {Path(c.path).relative_to(Path(plan.roms_dir))}")
+    if plan.skipped:
+        console.print(
+            f"  [dim]Skipping {len(plan.skipped)} item(s) "
+            f"already organized.[/dim]"
+        )
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run.[/yellow] Re-run with [cyan]--apply[/cyan] to execute."
+        )
+        return
+
+    try:
+        manifest = apply_restructure(plan)
+    except FileExistsError as e:
+        err_console.print(f"[red]Aborted:[/red] {e}")
+        sys.exit(1)
+    console.print(
+        f"  [green]✓[/green] Applied. Manifest: {manifest.name}\n"
+        f"  Run [cyan]spindoctor organize {system_name} --undo[/cyan] to revert."
+    )
