@@ -16,7 +16,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from . import __app_name__, __version__
-from .audit import GameAuditEntry, SystemAuditResult, audit_system, build_stub_entry
+from .audit import SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_systems, load_config, save_config,
 )
@@ -686,7 +686,7 @@ def inspect(system, game, all_games, fmt, output, no_path):
     config = _cfg()
     _check_config(config)
 
-    from .fileinfo import scan_game, scan_system
+    from .fileinfo import scan_game
 
     db = load_database(system, config.databases_dir)
     db_games = db.games()
@@ -1276,6 +1276,250 @@ def stats_cmd(system, all_systems):
         console.print("\n[bold]Top missing media types[/bold]")
         for media_type, count in missing:
             console.print(f"  · [cyan]{media_type}[/cyan] — {count} game(s)")
+
+
+# ─── fav / recent / tools ─────────────────────────────────────────────────────
+
+@cli.group("fav")
+def fav_group():
+    """Manage the cross-system Favorites wheel.
+
+    \b
+    The Favorites system is a synthetic HyperSpin system whose database
+    is regenerated from ~/.spindoctor/favorites.json. Each entry there is
+    a (source_system, rom_name) pair. After 'fav rebuild' you'll see one
+    unified wheel inside HyperSpin containing favorites picked from any
+    number of source systems.
+    """
+
+
+@fav_group.command("add")
+@click.argument("system_name")
+@click.argument("rom_name")
+@click.option("--display-name", default=None,
+              help="Override the wheel display name (default: ROM name).")
+def fav_add(system_name, rom_name, display_name):
+    """Add a favorite. Run [cyan]fav rebuild[/cyan] afterwards to update HyperSpin."""
+    from .favorites import add, load_store, save_store
+    store = load_store()
+    if add(store, system_name, rom_name, display_name):
+        save_store(store)
+        console.print(f"[green]+[/green] {system_name} :: {rom_name}")
+    else:
+        console.print(f"[yellow]already a favorite:[/yellow] {system_name} :: {rom_name}")
+
+
+@fav_group.command("remove")
+@click.argument("system_name")
+@click.argument("rom_name")
+def fav_remove(system_name, rom_name):
+    """Remove a favorite from the cross-system wheel."""
+    from .favorites import load_store, remove, save_store
+    store = load_store()
+    if remove(store, system_name, rom_name):
+        save_store(store)
+        console.print(f"[green]-[/green] {system_name} :: {rom_name}")
+    else:
+        console.print(f"[yellow]not a favorite:[/yellow] {system_name} :: {rom_name}")
+
+
+@fav_group.command("list")
+def fav_list():
+    """List every entry in the favorites store."""
+    from .favorites import load_store
+    store = load_store()
+    if not store.entries:
+        console.print("[dim]No favorites set.[/dim]")
+        return
+    tbl = Table(title=f"Favorites → '{store.target_system}'", box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("ROM", style="yellow")
+    tbl.add_column("Display name")
+    tbl.add_column("Added", style="dim")
+    for e in store.entries:
+        tbl.add_row(e.system, e.rom_name, e.display_name, e.added)
+    console.print(tbl)
+
+
+@fav_group.command("sync")
+def fav_sync():
+    """Pull HyperSpin's per-system favorites into the cross-system store.
+
+    HyperSpin's built-in F-key writes per-system Favorites lists. This
+    command merges them into your cross-system favorites so you can use
+    either workflow.
+    """
+    from .favorites import load_store, save_store, sync_native
+    config = _cfg()
+    _check_config(config)
+    store = load_store()
+    n = sync_native(store, config)
+    save_store(store)
+    console.print(f"[green]+[/green] synced {n} new favorite(s)")
+
+
+@fav_group.command("rebuild")
+@click.option("--media-mode",
+              type=click.Choice(["link", "symlink", "copy", "auto", "none"]),
+              default="auto",
+              help="How to mirror media into the Favorites system.")
+def fav_rebuild(media_mode):
+    """Regenerate the Favorites HyperSpin system + media + launchers.
+
+    \b
+    Idempotent — safe to run on every boot. Steps:
+      1. Write Databases/<Favorites>/<Favorites>.xml from favorites.json
+      2. Mirror media (hardlinks by default; falls back to copy)
+      3. Write per-game PCLauncher INIs that route via RocketLauncher
+    """
+    from .favorites import load_store, rebuild
+    from .medialink import LinkMode
+    config = _cfg()
+    _check_config(config)
+    store = load_store()
+    skip_media = media_mode == "none"
+    mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
+    summary = rebuild(store, config, media_mode=mode, skip_media=skip_media)
+    _print_synth_summary("Favorites", summary)
+
+
+@cli.group("recent")
+def recent_group():
+    """Manage the Recently Played wheel (auto-derived from RocketLauncher stats)."""
+
+
+@recent_group.command("rebuild")
+@click.option("--limit", type=int, default=20,
+              help="Number of recent games to keep (default 20).")
+@click.option("--target-system", default="Recently Played",
+              help="Synthetic system name (default 'Recently Played').")
+@click.option("--media-mode",
+              type=click.Choice(["link", "symlink", "copy", "auto", "none"]),
+              default="auto")
+def recent_rebuild(limit, target_system, media_mode):
+    """Rebuild the Recently Played system from RocketLauncher Statistics.ini files.
+
+    \b
+    Reads RocketLauncher's launch stats (no extra hooks required), keeps
+    the most-recent N games across every system, and regenerates the
+    HyperSpin system + media mirrors + per-game launchers.
+    """
+    from .medialink import LinkMode
+    from .recent import rebuild
+    config = _cfg()
+    _check_config(config)
+    skip_media = media_mode == "none"
+    mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
+    summary = rebuild(
+        config,
+        target_system=target_system,
+        limit=limit,
+        media_mode=mode,
+        skip_media=skip_media,
+    )
+    _print_synth_summary("Recently Played", summary)
+
+
+@recent_group.command("list")
+@click.option("--limit", type=int, default=20)
+def recent_list(limit):
+    """Print the top-N games by last-played timestamp."""
+    from .recent import collect_play_records, top_recent
+    config = _cfg()
+    records = top_recent(collect_play_records(config), limit=limit)
+    if not records:
+        console.print("[dim]No play records found.[/dim]")
+        return
+    tbl = Table(title=f"Top {len(records)} recently played", box=box.ROUNDED)
+    tbl.add_column("Last played", style="cyan")
+    tbl.add_column("System")
+    tbl.add_column("ROM", style="yellow")
+    tbl.add_column("×", justify="right")
+    for r in records:
+        tbl.add_row(
+            r.last_played.strftime("%Y-%m-%d %H:%M"),
+            r.system, r.rom_name, str(r.play_count),
+        )
+    console.print(tbl)
+
+
+def _print_synth_summary(label: str, summary) -> None:
+    grid = Table.grid(padding=(0, 2))
+    grid.add_row(f"[bold]{label} system:[/bold]", str(summary.target_system))
+    grid.add_row("[cyan]Entries:[/cyan]", str(summary.entries))
+    grid.add_row("[cyan]Pruned:[/cyan]", str(summary.pruned))
+    grid.add_row("[cyan]Database:[/cyan]", str(summary.db_path or "[dim]<not written>[/dim]"))
+    grid.add_row(
+        "[cyan]Media:[/cyan]",
+        f"linked={summary.media_linked} "
+        f"copied={summary.media_copied} "
+        f"skipped={summary.media_skipped}",
+    )
+    grid.add_row("[cyan]Launchers:[/cyan]", str(summary.inis_written))
+    console.print(grid)
+    if summary.media_errors:
+        console.print(f"[red]{len(summary.media_errors)} media error(s):[/red]")
+        for e in summary.media_errors[:5]:
+            console.print(f"  [red]·[/red] {e}")
+
+
+@cli.command("install-tools")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Directory to write .bat helpers. Defaults to "
+                   "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor.")
+def install_tools(output_dir):
+    """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
+
+    \b
+    Writes two .bat files that HyperSpin's Tools menu can call directly:
+
+      \b
+      • Refresh Favorites.bat       → spindoctor-fav rebuild
+      • Refresh Recently Played.bat → spindoctor-recent rebuild
+
+    Drop them into HyperSpin's Tools folder (or point HyperSpin at the
+    output directory) so users can refresh the wheels from the cabinet
+    without dropping to a console.
+    """
+    config = _cfg()
+    if output_dir:
+        out = Path(output_dir)
+    elif config.rocketlauncher_dir:
+        out = Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch" / "Tools" / "spindoctor"
+    else:
+        err_console.print("[red]No --output-dir and rocketlauncher_dir is unset.[/red]")
+        sys.exit(1)
+    out.mkdir(parents=True, exist_ok=True)
+
+    bats = {
+        "Refresh Favorites.bat":
+            "@echo off\r\n"
+            "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
+            "spindoctor-fav rebuild\r\n"
+            "if errorlevel 1 pause\r\n",
+        "Refresh Recently Played.bat":
+            "@echo off\r\n"
+            "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
+            "spindoctor-recent rebuild\r\n"
+            "if errorlevel 1 pause\r\n",
+        "Refresh Both.bat":
+            "@echo off\r\n"
+            "spindoctor-fav rebuild\r\n"
+            "spindoctor-recent rebuild\r\n"
+            "if errorlevel 1 pause\r\n",
+    }
+    for name, body in bats.items():
+        (out / name).write_text(body, encoding="utf-8")
+    console.print(f"[green]+[/green] wrote {len(bats)} helper(s) to [cyan]{out}[/cyan]")
+    console.print(
+        "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to HyperSpin's "
+        "Tools folder, or register the .bat files in HyperHQ → Tools.[/dim]"
+    )
+    console.print(
+        "[dim]Run on boot:[/dim] schedule [cyan]spindoctor-fav rebuild[/cyan] and "
+        "[cyan]spindoctor-recent rebuild[/cyan] via Windows Task Scheduler "
+        "(trigger: 'At log on')."
+    )
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
