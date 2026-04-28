@@ -1669,6 +1669,248 @@ def _print_synth_summary(label: str, summary) -> None:
             console.print(f"  [red]·[/red] {e}")
 
 
+@cli.group("stats-report", invoke_without_command=True)
+@click.option("--system", default=None,
+              help="Restrict the view to one source system.")
+@click.option("--top", "top_n", type=int, default=10,
+              help="How many entries in the Top tables (default 10).")
+@click.option("--by-system", is_flag=True,
+              help="Show only the per-system breakdown.")
+@click.option("--recent", "recent_only", is_flag=True,
+              help="Show only the most-recently-played view.")
+@click.option("--export", "export_csv_path", type=click.Path(), default=None,
+              help="Write the full stats table to PATH as CSV.")
+@click.option("--json", "export_json_path", type=click.Path(), default=None,
+              help="Write the full stats table to PATH as JSON.")
+@click.pass_context
+def stats_report_group(ctx, system, top_n, by_system, recent_only,
+                       export_csv_path, export_json_path):
+    """Playtime / launch-stats reporting from RocketLauncher.
+
+    \b
+    Aggregates every per-system Statistics.ini file into a single view
+    of how long the user has actually played each game.
+
+    \b
+      spindoctor stats-report                 overall summary
+      spindoctor stats-report --system MAME   one-system view
+      spindoctor stats-report --by-system     per-system breakdown
+      spindoctor stats-report --recent        recently-played list
+      spindoctor stats-report --export X.csv  full CSV dump
+      spindoctor stats-report --json X.json   JSON dump
+      spindoctor stats-report build-wheel     synthetic Most Played wheel
+    """
+    if ctx.invoked_subcommand is not None:
+        return
+    _stats_report_show(system, top_n, by_system, recent_only,
+                       export_csv_path, export_json_path)
+
+
+def _stats_report_show(system, top_n, by_system, recent_only,
+                       export_csv_path, export_json_path):
+    from .playtime import (
+        aggregate_by_system, export_csv, export_json,
+        format_duration, load_all_playtime, most_recent,
+        top_games, total_seconds, total_sessions,
+    )
+    config = _cfg()
+    _check_config(config)
+
+    stats = load_all_playtime(config)
+    if not stats:
+        console.print("[yellow]No RocketLauncher statistics found yet.[/yellow]")
+        return
+
+    if export_csv_path:
+        path = export_csv(stats, Path(export_csv_path))
+        console.print(f"[green]+[/green] CSV: [cyan]{path}[/cyan]")
+    if export_json_path:
+        path = export_json(stats, Path(export_json_path))
+        console.print(f"[green]+[/green] JSON: [cyan]{path}[/cyan]")
+    if export_csv_path or export_json_path:
+        return
+
+    if system:
+        scoped = [s for s in stats if s.system.lower() == system.lower()]
+        if not scoped:
+            console.print(f"[yellow]No statistics for '{system}'.[/yellow]")
+            return
+        console.print(
+            f"[bold]{system}[/bold] — total "
+            f"{format_duration(total_seconds(scoped))} across "
+            f"{total_sessions(scoped)} session(s)"
+        )
+        tbl = Table(title=f"Top {top_n} most played — {system}", box=box.ROUNDED)
+        tbl.add_column("Game", style="yellow")
+        tbl.add_column("Total", justify="right")
+        tbl.add_column("Sessions", justify="right")
+        tbl.add_column("Avg", justify="right")
+        tbl.add_column("Last played", style="dim")
+        for s in top_games(scoped, n=top_n, scope=system):
+            last = s.last_played.strftime("%Y-%m-%d %H:%M") if s.last_played else "—"
+            tbl.add_row(
+                s.game,
+                format_duration(s.total_seconds),
+                str(s.times_played),
+                format_duration(s.average_seconds),
+                last,
+            )
+        console.print(tbl)
+        return
+
+    if recent_only:
+        tbl = Table(title=f"Top {top_n} most recently played", box=box.ROUNDED)
+        tbl.add_column("Last played", style="cyan")
+        tbl.add_column("System")
+        tbl.add_column("Game", style="yellow")
+        tbl.add_column("Total", justify="right")
+        for s in most_recent(stats, n=top_n):
+            tbl.add_row(
+                s.last_played.strftime("%Y-%m-%d %H:%M") if s.last_played else "—",
+                s.system, s.game, format_duration(s.total_seconds),
+            )
+        console.print(tbl)
+        return
+
+    by_sys = aggregate_by_system(stats)
+    if by_system:
+        tbl = Table(title="Per-system playtime", box=box.ROUNDED)
+        tbl.add_column("System", style="cyan")
+        tbl.add_column("Total", justify="right")
+        tbl.add_column("Games", justify="right")
+        tbl.add_column("Sessions", justify="right")
+        for s in by_sys:
+            tbl.add_row(
+                s.system,
+                format_duration(s.total_seconds),
+                str(s.unique_games_played),
+                str(s.times_played),
+            )
+        console.print(tbl)
+        return
+
+    # Default: full summary view
+    played = [s for s in stats if s.times_played > 0 or s.total_seconds > 0]
+    head = Table.grid(padding=(0, 2))
+    head.add_row("[bold]Total playtime:[/bold]", format_duration(total_seconds(stats)))
+    head.add_row("[bold]Unique games:[/bold]", str(len(played)))
+    head.add_row("[bold]Sessions:[/bold]", str(total_sessions(stats)))
+    if by_sys:
+        head.add_row(
+            "[bold]Top system:[/bold]",
+            f"{by_sys[0].system}  ({format_duration(by_sys[0].total_seconds)})",
+        )
+    console.print(Panel(head, title="Playtime"))
+
+    tbl = Table(title=f"Top {top_n} most played", box=box.ROUNDED)
+    tbl.add_column("Game", style="yellow")
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Total", justify="right")
+    tbl.add_column("Sessions", justify="right")
+    for s in top_games(stats, n=top_n):
+        tbl.add_row(
+            s.game, s.system,
+            format_duration(s.total_seconds),
+            str(s.times_played),
+        )
+    console.print(tbl)
+
+    rec_tbl = Table(title=f"Top {top_n} most recently played", box=box.ROUNDED)
+    rec_tbl.add_column("Last played", style="cyan")
+    rec_tbl.add_column("Game", style="yellow")
+    rec_tbl.add_column("System")
+    for s in most_recent(stats, n=top_n):
+        rec_tbl.add_row(
+            s.last_played.strftime("%Y-%m-%d %H:%M") if s.last_played else "—",
+            s.game, s.system,
+        )
+    console.print(rec_tbl)
+
+    sys_tbl = Table(title="Per-system summary", box=box.ROUNDED)
+    sys_tbl.add_column("System", style="cyan")
+    sys_tbl.add_column("Total", justify="right")
+    sys_tbl.add_column("Games", justify="right")
+    sys_tbl.add_column("Sessions", justify="right")
+    for s in by_sys:
+        sys_tbl.add_row(
+            s.system,
+            format_duration(s.total_seconds),
+            str(s.unique_games_played),
+            str(s.times_played),
+        )
+    console.print(sys_tbl)
+
+
+@stats_report_group.command("build-wheel")
+@click.option("--limit", type=int, default=20,
+              help="Top-N games to include (default 20).")
+@click.option("--target-system", default="Most Played",
+              help="Synthetic system name (default 'Most Played').")
+@click.option("--media-mode",
+              type=click.Choice(["link", "symlink", "copy", "auto", "none"]),
+              default="auto")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write to a staging directory instead of hyperspin_dir.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually write the wheel (default is dry-run).")
+def stats_report_build_wheel(limit, target_system, media_mode,
+                             output_dir, apply_changes):
+    """Build a synthetic 'Most Played' HyperSpin wheel from playtime stats.
+
+    \b
+    Mirrors `recent rebuild` — top-N games by total playtime, written
+    as a synthetic system with hardlinked media + per-game launchers
+    that route back through RocketLauncher.  Idempotent: also adds the
+    new system to the Main Menu (no-op if already there).
+
+    Dry-run by default.  Pass [cyan]--apply[/cyan] to write.
+    """
+    from .medialink import LinkMode
+    from .playtime import (
+        build_most_played_wheel, format_duration, load_all_playtime, top_games,
+    )
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        stats = load_all_playtime(config)
+        rows = top_games(stats, n=limit)
+        console.print(f"[yellow]DRY RUN[/yellow] — would build "
+                      f"[cyan]{target_system}[/cyan] with {len(rows)} entries:")
+        if rows:
+            tbl = Table(box=box.ROUNDED)
+            tbl.add_column("Game", style="yellow")
+            tbl.add_column("System", style="cyan")
+            tbl.add_column("Total", justify="right")
+            for s in rows:
+                tbl.add_row(s.game, s.system, format_duration(s.total_seconds))
+            console.print(tbl)
+        console.print("[dim]Re-run with --apply to write changes.[/dim]")
+        return
+
+    if output_dir:
+        # Honour --output-dir by routing the synthetic wheel into a
+        # staging tree.  We override the config rather than the writer
+        # signature so the same code-path handles both modes.
+        from dataclasses import replace
+        out = Path(output_dir)
+        config = replace(
+            config,
+            hyperspin_dir=str(out),
+        )
+
+    skip_media = media_mode == "none"
+    mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
+    summary = build_most_played_wheel(
+        config,
+        target_system=target_system,
+        limit=limit,
+        media_mode=mode,
+        skip_media=skip_media,
+    )
+    _print_synth_summary("Most Played", summary)
+
+
 @cli.command("install-tools")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
@@ -1677,11 +1919,13 @@ def install_tools(output_dir):
     """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
 
     \b
-    Writes two .bat files that HyperSpin's Tools menu can call directly:
+    Writes .bat files that HyperSpin's Tools menu can call directly:
 
       \b
       • Refresh Favorites.bat       → spindoctor-fav rebuild
       • Refresh Recently Played.bat → spindoctor-recent rebuild
+      • Refresh Most Played.bat     → spindoctor-stats build-wheel --apply
+      • Refresh Both.bat            → fav + recent + most-played
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -1708,10 +1952,16 @@ def install_tools(output_dir):
             "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
             "spindoctor-recent rebuild\r\n"
             "if errorlevel 1 pause\r\n",
+        "Refresh Most Played.bat":
+            "@echo off\r\n"
+            "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
+            "spindoctor-stats build-wheel --apply\r\n"
+            "if errorlevel 1 pause\r\n",
         "Refresh Both.bat":
             "@echo off\r\n"
             "spindoctor-fav rebuild\r\n"
             "spindoctor-recent rebuild\r\n"
+            "spindoctor-stats build-wheel --apply\r\n"
             "if errorlevel 1 pause\r\n",
     }
     for name, body in bats.items():

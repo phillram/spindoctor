@@ -2,7 +2,7 @@
 
 **SpinDoctor** is a command-line tool for managing your [HyperSpin](http://www.hyperspin-fe.com/) and [RocketLauncher](https://rocketlauncher.net/) arcade cabinet library.
 
-Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate RocketLauncher configs, validate ROM integrity against No-Intro / Redump DATs, manage cross-system Favorites and Recently Played wheels, and more — all from a single CLI with dry-run mode and a non-destructive output directory option.
+Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate RocketLauncher configs, validate ROM integrity against No-Intro / Redump DATs, manage cross-system Favorites / Recently Played / Most Played wheels, report on playtime statistics, and more — all from a single CLI with dry-run mode and a non-destructive output directory option.
 
 ---
 
@@ -16,9 +16,10 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
   - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
+  - [Playtime stats](#playtime-stats) — `stats-report`, `stats-report build-wheel`
   - [LEDBlinky](#ledblinky)
   - [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `lint`
-- [Standalone scripts](#standalone-scripts) — `spindoctor-fav`, `spindoctor-recent`
+- [Standalone scripts](#standalone-scripts) — `spindoctor-fav`, `spindoctor-recent`, `spindoctor-stats`
 - [Directory structure expected](#directory-structure-expected)
 - [ROM variant handling](#rom-variant-handling)
 - [Typical workflows](#typical-workflows)
@@ -62,6 +63,7 @@ This installs three console scripts:
 | `spindoctor` | Full CLI |
 | `spindoctor-fav` | Standalone Favorites wheel manager (no `spindoctor` CLI required) |
 | `spindoctor-recent` | Standalone Recently Played rebuild (no `spindoctor` CLI required) |
+| `spindoctor-stats` | Standalone playtime reports + Most Played wheel rebuild |
 
 ---
 
@@ -582,15 +584,79 @@ spindoctor install-tools                                :: write to RocketLaunch
 spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
 ```
 
-Three files are produced:
+Four files are produced:
 
 ```
 Refresh Favorites.bat          → calls spindoctor-fav rebuild
 Refresh Recently Played.bat    → calls spindoctor-recent rebuild
-Refresh Both.bat               → calls both
+Refresh Most Played.bat        → calls spindoctor-stats build-wheel --apply
+Refresh Both.bat               → calls all three in sequence
 ```
 
 Register them in HyperHQ → Tools, or schedule them via Windows Task Scheduler (trigger: "At log on") to refresh on every boot.
+
+---
+
+### Playtime stats
+
+RocketLauncher silently logs how many times each game has been launched and how long the user spent in it (`Number_of_Times_Played`, `Total_Time_Played`, `Last_Played` per `Statistics.ini`). `stats-report` aggregates those files into useful views, and `stats-report build-wheel` turns the top-N into a synthetic **Most Played** HyperSpin system the same way `recent` builds the Recently Played wheel.
+
+```bat
+:: Overall summary — totals + Top 10 played + Top 10 recent + per-system table
+spindoctor stats-report
+
+:: Narrow to one system
+spindoctor stats-report --system MAME
+
+:: Custom Top-N
+spindoctor stats-report --top 50
+
+:: Per-system breakdown only
+spindoctor stats-report --by-system
+
+:: Recently-played view only
+spindoctor stats-report --recent
+
+:: Dump everything for an external dashboard
+spindoctor stats-report --export D:\Reports\playtime.csv
+spindoctor stats-report --json   D:\Reports\playtime.json
+```
+
+Example output:
+
+```
+╭─ Playtime ───────────────────────────────────╮
+│ Total playtime:  3d 4h 12m                   │
+│ Unique games:    127                         │
+│ Sessions:        842                         │
+│ Top system:      MAME  (1d 22h)              │
+╰──────────────────────────────────────────────╯
+
+Top 10 most played
+┌────────────────┬──────────┬───────┬──────────┐
+│ Game           │ System   │ Total │ Sessions │
+├────────────────┼──────────┼───────┼──────────┤
+│ Street Fighter │ MAME     │ 4h 30m│       42 │
+│ Chrono Trigger │ SNES     │ 3h 12m│       18 │
+│ ...            │          │       │          │
+└────────────────┴──────────┴───────┴──────────┘
+```
+
+#### `stats-report build-wheel` — Most Played wheel
+
+Generates `Databases/Most Played/Most Played.xml` with the top-N games, hardlinks media into `Media/Most Played/`, writes per-game launchers under `Modules/PCLauncher/Most Played/`, and registers `Most Played` in the HyperSpin Main Menu — all idempotently.
+
+```bat
+:: Dry-run preview
+spindoctor stats-report build-wheel --limit 25
+:: Actually write
+spindoctor stats-report build-wheel --limit 25 --apply
+
+:: Custom system name + media-mode
+spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode copy --apply
+```
+
+`--media-mode` accepts the same values as `fav rebuild` (`auto`, `link`, `symlink`, `copy`, `none`). The wheel is dry-run by default — pass `--apply` to write changes.
 
 ---
 
@@ -695,7 +761,7 @@ spindoctor lint --category unused-import,bare-except
 
 ## Standalone scripts
 
-Both wheel rebuilds are designed to run on every system boot or directly from HyperSpin's Tools menu, with **no SpinDoctor CLI loaded**. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a minimal `argparse`-based entry point.
+All three wheel/report helpers are designed to run on every system boot or directly from HyperSpin's Tools menu, with **no SpinDoctor CLI loaded**. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a minimal `argparse`-based entry point.
 
 The standalone helpers live in their own folder, separate from the rest of the package, so it's clear which files are package internals vs. things the cabinet end-user is meant to invoke directly:
 
@@ -703,13 +769,15 @@ The standalone helpers live in their own folder, separate from the rest of the p
 scripts/
 ├── spindoctor-fav.py             ← Python wrapper (works without `pip install`)
 ├── spindoctor-recent.py          ← Python wrapper (works without `pip install`)
+├── spindoctor-stats.py           ← Python wrapper (works without `pip install`)
 ├── Refresh Favorites.bat         ← Drop into HyperSpin Tools or Windows Startup
 ├── Refresh Recently Played.bat   ← ditto
-├── Refresh Both.bat              ← Run both in sequence
+├── Refresh Most Played.bat       ← ditto
+├── Refresh Both.bat              ← Run fav + recent + most-played in sequence
 └── README.md                     ← Quick-start for the folder
 ```
 
-After `pip install -e .` you can also call the entry-point console scripts (`spindoctor-fav` / `spindoctor-recent`) directly from any working directory — they're equivalent to running the wrappers in `scripts/`.
+After `pip install -e .` you can also call the entry-point console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats`) directly from any working directory — they're equivalent to running the wrappers in `scripts/`.
 
 ### `spindoctor-fav`
 
@@ -751,13 +819,35 @@ python scripts\spindoctor-recent.py list
 python -m spindoctor.recent list           :: equivalent
 ```
 
+### `spindoctor-stats`
+
+```
+spindoctor-stats summary [--top N]
+spindoctor-stats top     [--top N] [--system NAME]
+spindoctor-stats recent  [--top N]
+spindoctor-stats system
+spindoctor-stats build-wheel [--limit N] [--target-system NAME]
+                             [--media-mode {link,symlink,copy,auto,none}]
+                             [--apply]
+```
+
+Equivalent to `spindoctor stats-report …` but without rich/click. Examples:
+
+```bat
+spindoctor-stats summary
+spindoctor-stats top --system MAME --top 25
+spindoctor-stats build-wheel --apply
+python scripts\spindoctor-stats.py summary
+python -m spindoctor.playtime summary       :: equivalent
+```
+
 ### Wiring into Windows startup
 
 Run once on log-on so the wheels are fresh when the user reaches HyperSpin:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
+  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
 ```
 
 Or drop one of the `.bat` files from `scripts/` (or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
@@ -766,10 +856,10 @@ Or drop one of the `.bat` files from `scripts/` (or those written by `spindoctor
 
 Two equivalent options:
 
-1. **Auto-install:** `spindoctor install-tools` writes the three `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`.
+1. **Auto-install:** `spindoctor install-tools` writes four `.bat` files (`Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, `Refresh Both`) into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`.
 2. **Manual:** copy the `.bat` files from `scripts/` into HyperSpin's Tools directory yourself.
 
-Either way, register them in HyperHQ → Tools so they appear inside the cabinet UI as `Refresh Favorites`, `Refresh Recently Played`, and `Refresh Both`.
+Either way, register them in HyperHQ → Tools so they appear inside the cabinet UI as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh Both`.
 
 ---
 
@@ -1015,7 +1105,7 @@ spindoctor install-tools
 
 :: Schedule the rebuilds at log-on
 schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
+  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
 ```
 
 ---

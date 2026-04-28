@@ -27,6 +27,7 @@ setup(
             # HyperSpin Tools menu without loading the full CLI.
             "spindoctor-fav=spindoctor.favorites:main",
             "spindoctor-recent=spindoctor.recent:main",
+            "spindoctor-stats=spindoctor.playtime:main_cli",
         ],
     },
     python_requires=">=3.9",
