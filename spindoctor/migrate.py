@@ -356,7 +356,7 @@ def apply_migration(
     in ``{"start", "done"}``. May be ``None``.
     """
     if plan.empty:
-        return _write_manifest(plan, applied=[], config_before={}, config_after={},
+        return _write_manifest(plan, applied=[], config_before={},
                                keep_source=keep_source)
 
     # Snapshot config so undo can restore exact prior values.
@@ -395,15 +395,13 @@ def apply_migration(
         if progress_cb:
             progress_cb(move, "done")
 
-    cfg_after = dict(cfg_before)
     if update_config and not keep_source and plan.config_updates:
         cfg = load_config()
         for key, new_path in plan.config_updates.items():
             setattr(cfg, key, new_path)
         save_config(cfg)
-        cfg_after = cfg.to_dict()
 
-    return _write_manifest(plan, applied, cfg_before, cfg_after, keep_source)
+    return _write_manifest(plan, applied, cfg_before, keep_source)
 
 
 # ─── undo ─────────────────────────────────────────────────────────────────────
@@ -478,7 +476,6 @@ def _write_manifest(
     plan: MigrationPlan,
     applied: list[MigrateMove],
     config_before: dict,
-    config_after: dict,
     keep_source: bool,
 ) -> Path:
     MIGRATIONS_DIR.mkdir(parents=True, exist_ok=True)
@@ -490,7 +487,6 @@ def _write_manifest(
         "keep_source": keep_source,
         "moves": [asdict(m) for m in applied],
         "config_before": config_before,
-        "config_after": config_after,
     }
     manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     return manifest_path
