@@ -172,6 +172,17 @@ class MediaDownloader:
 
         dest.parent.mkdir(parents=True, exist_ok=True)
 
+        # Sidecar partial file. Bytes accumulate here; on success we atomically
+        # rename to *dest*.  An interrupted run leaves only the .part behind, so
+        # the next run can resume via HTTP Range without serving a half-written
+        # file as if it were complete.
+        part = dest.with_name(dest.name + ".part")
+        if overwrite and part.exists():
+            try:
+                part.unlink()
+            except OSError:
+                pass
+
         # Retry with exponential backoff on 429 (Too Many Requests) and 503.
         # Other 4xx/5xx fail fast.
         attempt = 0
@@ -180,7 +191,12 @@ class MediaDownloader:
         while attempt < max_retries:
             attempt += 1
             try:
-                resp = self._session.get(url, timeout=30, stream=True)
+                existing = part.stat().st_size if part.exists() else 0
+                kwargs: dict = {"timeout": 30, "stream": True}
+                if existing > 0:
+                    kwargs["headers"] = {"Range": f"bytes={existing}-"}
+                resp = self._session.get(url, **kwargs)
+
                 if resp.status_code in (429, 503):
                     retry_after = float(resp.headers.get("Retry-After", backoff))
                     last_error = f"HTTP {resp.status_code}; retry after {retry_after:.1f}s"
@@ -188,10 +204,28 @@ class MediaDownloader:
                     time.sleep(min(retry_after, 30.0))
                     backoff *= 2
                     continue
+
+                if resp.status_code == 416 and existing > 0:
+                    # Range unsatisfiable — partial is stale or larger than the
+                    # current resource. Drop it and retry from scratch.
+                    resp.close()
+                    try:
+                        part.unlink()
+                    except OSError:
+                        pass
+                    last_error = "HTTP 416; resetting partial download"
+                    continue
+
                 resp.raise_for_status()
-                with open(dest, "wb") as f:
+
+                # 206 → server honored Range; append. Otherwise (incl. 200)
+                # the server is sending the full body, so truncate.
+                mode = "ab" if (resp.status_code == 206 and existing > 0) else "wb"
+                with open(part, mode) as f:
                     for chunk in resp.iter_content(chunk_size=8192):
                         f.write(chunk)
+
+                os.replace(part, dest)
                 return DownloadResult(
                     game_name=label, media_type=media_type,
                     success=True, path=dest,
