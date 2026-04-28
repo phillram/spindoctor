@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import archives
 from .audit import scan_roms
 from .config import Config
 from .romutils import normalize
@@ -45,6 +46,7 @@ class CrossSystemMatch:
 
 
 def _hash_file(path: Path, chunk: int = 1 << 20) -> Optional[str]:
+    """SHA1 the bytes of *path* directly (no archive unwrapping)."""
     try:
         h = hashlib.sha1()
         with open(path, "rb") as f:
@@ -56,6 +58,31 @@ def _hash_file(path: Path, chunk: int = 1 << 20) -> Optional[str]:
         return h.hexdigest()
     except OSError:
         return None
+
+
+def _content_hash(path: Path) -> Optional[str]:
+    """Return a SHA1 that represents the *logical* content of a ROM file.
+
+    For raw files this is the file SHA1. For archive containers (zip/7z/rar/
+    gz/chd) it is a SHA1 of the sorted concatenation of inner-entry SHA1s,
+    so ``mario.zip`` and ``mario.7z`` containing the same payload collapse to
+    the same key. Falls back to the wrapper SHA1 when the optional dep
+    needed to peek inside is missing.
+    """
+    if archives.archive_kind(path) is None:
+        return _hash_file(path)
+    info = archives.extract_inner_hash(path)
+    if not info or not info["entries"]:
+        # py7zr/rarfile not installed, or unsupported CHD version — fall back
+        # to the raw wrapper SHA1 so the user still gets *some* duplicate
+        # detection signal.
+        return _hash_file(path)
+    inner = sorted(
+        e.get("sha1", "") for e in info["entries"] if e.get("sha1")
+    )
+    if not inner:
+        return _hash_file(path)
+    return hashlib.sha1("|".join(inner).encode("ascii")).hexdigest()
 
 
 def find_duplicates_in_system(
@@ -98,12 +125,27 @@ def find_duplicates_in_system(
                     except OSError:
                         continue
             seen_pairs: set[tuple[Path, ...]] = set()
-            for paths in by_size.values():
+            # When archives are involved, two files with different *wrapper*
+            # sizes can still share the same inner content (e.g. mario.zip and
+            # mario.7z compressing the same payload). Bucket archives together
+            # and let the content-aware hash do the matching.
+            archive_paths: list[Path] = []
+            raw_by_size: dict[int, list[Path]] = defaultdict(list)
+            for size, paths in by_size.items():
+                for p in paths:
+                    if archives.archive_kind(p) is not None:
+                        archive_paths.append(p)
+                    else:
+                        raw_by_size[size].append(p)
+            grouped: list[list[Path]] = list(raw_by_size.values())
+            if archive_paths:
+                grouped.append(archive_paths)
+            for paths in grouped:
                 if len(paths) < 2:
                     continue
                 by_hash: dict[str, list[Path]] = defaultdict(list)
                 for p in paths:
-                    digest = _hash_file(p)
+                    digest = _content_hash(p)
                     if digest:
                         by_hash[digest].append(p)
                 for digest, hpaths in by_hash.items():

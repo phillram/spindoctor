@@ -32,6 +32,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import archives
+
 
 @dataclass(frozen=True)
 class DatEntry:
@@ -122,10 +124,84 @@ def _hash_file(path: Path, want_sha1: bool, want_crc: bool) -> tuple[Optional[st
     return sha1_hex, crc_hex
 
 
+def _classify_archive(path: Path, index: dict[str, dict]) -> VerifyEntry:
+    """Verify an archive by hashing its inner contents instead of the wrapper.
+
+    For multi-entry archives (zip/7z/rar) any inner SHA1 hit promotes the file
+    to ``good`` (or ``renamed`` if the inner filename differs from the DAT
+    entry). CHDs carry a single ``rawsha1`` in their header that DATs match
+    against directly. Missing optional dependencies degrade to ``unknown``
+    with a one-line install hint.
+    """
+    info = archives.extract_inner_hash(path)
+    if info is None:
+        # Defensive — caller already gated on archive_kind, so this only fires
+        # if the extension table and the dispatcher disagree.
+        return VerifyEntry(path=path, status="unknown", detail="not an archive")
+
+    if info["error"] and not info["entries"]:
+        return VerifyEntry(path=path, status="unknown", detail=info["error"])
+
+    matches: list[tuple[dict, "DatEntry"]] = []
+    for entry in info["entries"]:
+        sha1_hex = (entry.get("sha1") or "").lower() or None
+        crc_hex = (entry.get("crc32") or "").lower() or None
+        match = None
+        if sha1_hex and sha1_hex in index["sha1"]:
+            match = index["sha1"][sha1_hex]
+        elif crc_hex and crc_hex in index["crc"]:
+            match = index["crc"][crc_hex]
+        if match is not None:
+            matches.append((entry, match))
+
+    if not matches:
+        names = ", ".join(e.get("name", "?") for e in info["entries"]) or "(empty)"
+        return VerifyEntry(
+            path=path, status="unknown",
+            detail=f"{info['kind']}: no inner entry matches DAT ({names})",
+        )
+
+    # Promote to "good" if either the wrapper filename or any inner entry name
+    # matches the DAT entry name; otherwise "renamed".
+    inner_entry, dat_match = matches[0]
+    inner_name = (inner_entry.get("name") or "").lower()
+    dat_name = dat_match.rom_name.lower()
+    wrapper_stem = path.stem.lower()
+    dat_stem = Path(dat_match.rom_name).stem.lower()
+
+    if info["kind"] == "chd":
+        # CHD DAT entries reference the .chd filename directly.
+        if path.name.lower() == dat_name:
+            return VerifyEntry(
+                path=path, status="good", expected_name=dat_match.rom_name,
+                detail="chd rawsha1 match",
+            )
+        return VerifyEntry(
+            path=path, status="renamed", expected_name=dat_match.rom_name,
+            detail=f"chd rawsha1 match — DAT calls it '{dat_match.rom_name}'",
+        )
+
+    if inner_name == dat_name or wrapper_stem == dat_stem:
+        return VerifyEntry(
+            path=path, status="good", expected_name=dat_match.rom_name,
+            detail=f"{info['kind']}: inner sha1 match",
+        )
+    return VerifyEntry(
+        path=path, status="renamed", expected_name=dat_match.rom_name,
+        detail=(
+            f"{info['kind']}: inner sha1 match — DAT calls it "
+            f"'{dat_match.rom_name}'"
+        ),
+    )
+
+
 def _classify(
     path: Path,
     index: dict[str, dict],
 ) -> VerifyEntry:
+    if archives.archive_kind(path) is not None:
+        return _classify_archive(path, index)
+
     try:
         size = path.stat().st_size
     except OSError as e:
