@@ -18,6 +18,10 @@ setup(
     entry_points={
         "console_scripts": [
             "spindoctor=spindoctor.cli:cli",
+            # Standalone helpers — designed to run on boot or from the
+            # HyperSpin Tools menu without loading the full CLI.
+            "spindoctor-fav=spindoctor.favorites:main",
+            "spindoctor-recent=spindoctor.recent:main",
         ],
     },
     python_requires=">=3.9",
