@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .config import Config, get_rom_extensions, get_systems
+from .config import Config, get_rom_extensions, get_system_overrides, get_systems
 from .database import _set_text as _set
 from .database import load_database
 
@@ -56,6 +56,9 @@ EMULATOR_MAP: dict[str, str] = {
 
 
 def guess_emulator(system_name: str) -> str:
+    ovr = get_system_overrides().get(system_name, {})
+    if isinstance(ovr.get("emulator"), str) and ovr["emulator"]:
+        return ovr["emulator"]
     return EMULATOR_MAP.get(system_name.lower(), "RetroArch")
 
 
@@ -185,17 +188,28 @@ def generate_rl_system_ini(
 
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
 
-def generate_hs_main_menu(
-    systems: list[str],
-    config: Config,
-    output_base: Optional[Path] = None,
-) -> Path:
-    """Generate Databases/Main Menu/Main Menu.xml listing all systems."""
+def _main_menu_path(config: Config, output_base: Optional[Path]) -> Path:
     db_base = output_base / "Databases" if output_base else config.databases_dir
-    dest_dir = db_base / "Main Menu"
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    out_path = dest_dir / "Main Menu.xml"
+    return db_base / "Main Menu" / "Main Menu.xml"
 
+
+def _read_main_menu_systems(path: Path) -> list[str]:
+    """Return current <game name="..."/> entries from Main Menu.xml (or [])."""
+    if not path.exists():
+        return []
+    try:
+        tree = ET.parse(path)
+    except ET.ParseError:
+        return []
+    return [
+        (g.get("name") or "").strip()
+        for g in tree.getroot().findall("game")
+        if (g.get("name") or "").strip()
+    ]
+
+
+def _write_main_menu(systems: list[str], out_path: Path) -> Path:
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     root = ET.Element("menu")
     hdr = ET.SubElement(root, "header")
     _set(hdr, "listname", "Main Menu")
@@ -213,8 +227,38 @@ def generate_hs_main_menu(
     with open(out_path, "wb") as f:
         f.write(b'<?xml version="1.0"?>\n')
         tree.write(f, encoding="utf-8", xml_declaration=False)
-
     return out_path
+
+
+def generate_hs_main_menu(
+    systems: list[str],
+    config: Config,
+    output_base: Optional[Path] = None,
+) -> Path:
+    """Generate Databases/Main Menu/Main Menu.xml listing all systems.
+
+    Replaces any existing file with a fresh listing of *systems*.
+    """
+    return _write_main_menu(list(systems), _main_menu_path(config, output_base))
+
+
+def upsert_main_menu_system(
+    system_name: str,
+    config: Config,
+    output_base: Optional[Path] = None,
+) -> tuple[Path, bool]:
+    """Add *system_name* to Main Menu.xml without disturbing other entries.
+
+    Returns ``(path, added)`` where ``added`` is False if the system was
+    already listed.
+    """
+    out_path = _main_menu_path(config, output_base)
+    existing = _read_main_menu_systems(out_path)
+    if system_name in existing:
+        return out_path, False
+    existing.append(system_name)
+    _write_main_menu(existing, out_path)
+    return out_path, True
 
 
 # ─── System database stubs ────────────────────────────────────────────────────
