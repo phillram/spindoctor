@@ -16,7 +16,6 @@ Schema:
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Optional
 
@@ -24,7 +23,8 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
-from .matcher import SKIP_SENTINEL
+from . import cache as _cache
+from .cache import SKIP_SENTINEL
 
 
 CACHE_DIR = Path.home() / ".spindoctor" / "pc_titles_cache"
@@ -32,40 +32,16 @@ CACHE_DIR = Path.home() / ".spindoctor" / "pc_titles_cache"
 _console = Console()
 
 
-def _cache_path(system_name: str) -> Path:
-    return CACHE_DIR / f"{system_name}.json"
-
-
 def load_cache(system_name: str) -> dict[str, str]:
-    p = _cache_path(system_name)
-    if p.exists():
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {}
+    return _cache.load(CACHE_DIR, system_name)
 
 
 def save_cache(system_name: str, cache: dict[str, str]) -> None:
-    p = _cache_path(system_name)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(cache, f, indent=2, sort_keys=True)
+    _cache.save(CACHE_DIR, system_name, cache)
 
 
 def clear_cache(system_name: Optional[str] = None) -> int:
-    removed = 0
-    if system_name:
-        p = _cache_path(system_name)
-        if p.exists():
-            p.unlink()
-            removed = 1
-    elif CACHE_DIR.exists():
-        for p in CACHE_DIR.glob("*.json"):
-            p.unlink()
-            removed += 1
-    return removed
+    return _cache.clear(CACHE_DIR, system_name)
 
 
 def _key(path: Path) -> str:

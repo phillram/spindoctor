@@ -1,7 +1,6 @@
 """Interactive match-selection UI and persistent match cache for SpinDoctor."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Callable, Optional
 
@@ -9,12 +8,14 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 
+from . import cache as _cache
+from .cache import SKIP_SENTINEL
+
 if TYPE_CHECKING:
     from .scraper import GameMetadata, MediaCandidate
 
 CACHE_DIR = Path.home() / ".spindoctor" / "match_cache"
 MEDIA_CACHE_DIR = Path.home() / ".spindoctor" / "media_pick_cache"
-SKIP_SENTINEL = "__skip__"  # stored in cache to record a deliberate skip decision
 
 _console = Console()
 _err = Console(stderr=True)
@@ -22,55 +23,22 @@ _err = Console(stderr=True)
 
 # ─── cache helpers ────────────────────────────────────────────────────────────
 
-def _cache_path(system_name: str) -> Path:
-    return CACHE_DIR / f"{system_name}.json"
-
-
 def load_cache(system_name: str) -> dict[str, str]:
-    p = _cache_path(system_name)
-    if p.exists():
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {}
+    return _cache.load(CACHE_DIR, system_name)
 
 
 def save_cache(system_name: str, cache: dict[str, str]) -> None:
-    p = _cache_path(system_name)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(cache, f, indent=2, sort_keys=True)
+    _cache.save(CACHE_DIR, system_name, cache)
 
 
 def clear_cache(system_name: Optional[str] = None) -> int:
     """Delete cached match decisions. Returns count of files removed."""
-    removed = 0
-    if system_name:
-        p = _cache_path(system_name)
-        if p.exists():
-            p.unlink()
-            removed = 1
-    else:
-        for p in CACHE_DIR.glob("*.json"):
-            p.unlink()
-            removed += 1
-    return removed
+    return _cache.clear(CACHE_DIR, system_name)
 
 
 def list_cache(system_name: Optional[str] = None) -> dict[str, dict[str, str]]:
     """Return {system: {rom_name: chosen_id}} for all cached decisions."""
-    result: dict[str, dict[str, str]] = {}
-    paths = [_cache_path(system_name)] if system_name else list(CACHE_DIR.glob("*.json"))
-    for p in paths:
-        if p.exists():
-            try:
-                with open(p, "r", encoding="utf-8") as f:
-                    result[p.stem] = json.load(f)
-            except (json.JSONDecodeError, IOError):
-                pass
-    return result
+    return _cache.list_all(CACHE_DIR, system_name)
 
 
 # ─── selection logic ──────────────────────────────────────────────────────────
@@ -186,36 +154,15 @@ def _media_cache_path(system_name: str) -> Path:
 
 
 def _load_media_cache(system_name: str) -> dict[str, str]:
-    p = _media_cache_path(system_name)
-    if p.exists():
-        try:
-            with open(p, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError):
-            pass
-    return {}
+    return _cache.load(MEDIA_CACHE_DIR, system_name)
 
 
 def _save_media_cache(system_name: str, cache: dict[str, str]) -> None:
-    p = _media_cache_path(system_name)
-    p.parent.mkdir(parents=True, exist_ok=True)
-    with open(p, "w", encoding="utf-8") as f:
-        json.dump(cache, f, indent=2, sort_keys=True)
+    _cache.save(MEDIA_CACHE_DIR, system_name, cache)
 
 
 def clear_media_cache(system_name: Optional[str] = None) -> int:
-    removed = 0
-    if system_name:
-        p = _media_cache_path(system_name)
-        if p.exists():
-            p.unlink()
-            removed = 1
-    else:
-        if MEDIA_CACHE_DIR.exists():
-            for p in MEDIA_CACHE_DIR.glob("*.json"):
-                p.unlink()
-                removed += 1
-    return removed
+    return _cache.clear(MEDIA_CACHE_DIR, system_name)
 
 
 def pick_media(
