@@ -52,6 +52,14 @@ EMULATOR_MAP: dict[str, str] = {
     "turbografx": "RetroArch",
     "turbografx-16": "RetroArch",
     "pc engine": "RetroArch",
+    # PC / Windows / Steam — RocketLauncher PCLauncher module reads a
+    # per-game INI to find the actual executable.
+    "pc": "PCLauncher",
+    "pc games": "PCLauncher",
+    "windows": "PCLauncher",
+    "windows games": "PCLauncher",
+    "steam": "PCLauncher",
+    "steam games": "PCLauncher",
 }
 
 
@@ -72,6 +80,7 @@ EMULATOR_EXECUTABLES: dict[str, str] = {
     "PCSX2": "pcsx2.exe",
     "Dolphin": "Dolphin.exe",
     "Demul": "demul.exe",
+    "PCLauncher": "PCLauncher.exe",
 }
 
 EMULATOR_EXTENSIONS: dict[str, str] = {
@@ -81,6 +90,7 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
     "PCSX2": "iso|bin|img",
     "Dolphin": "iso|gcm|wbfs|rvz",
     "Demul": "chd|cdi|gdi|cue",
+    "PCLauncher": "exe|lnk|url|bat",
 }
 
 
@@ -285,6 +295,66 @@ def generate_system_db_stubs(
         created.append(xml_path)
 
     return created
+
+
+# ─── PCLauncher per-game INIs ─────────────────────────────────────────────────
+
+def _pclauncher_ini_text(executable) -> str:
+    """Render the PCLauncher INI body that points at *executable*.
+
+    *executable* may be any path-like (str, Path, PureWindowsPath).  We
+    leave the path string verbatim so Windows-style paths produced from a
+    macOS/Linux dev box (or vice-versa) round-trip without mangling.
+    """
+    return (
+        "[Settings]\n"
+        f"ApplicationPath={executable}\n"
+        "ApplicationParameters=\n"
+        f"StartIn={executable.parent}\n"
+    )
+
+
+def generate_pclauncher_inis(
+    system_name: str,
+    title_to_path: dict,
+    config: Config,
+    output_base: Optional[Path] = None,
+    overwrite: bool = False,
+) -> tuple[Path, list[Path], list[Path]]:
+    """Write per-game PCLauncher INIs for *system_name*.
+
+    Each INI lives at
+    ``<RL>/Modules/PCLauncher/<system>/<title>.ini`` and tells the
+    PCLauncher AHK module which executable to actually launch when
+    HyperSpin asks RocketLauncher to run *<title>*.
+
+    Returns ``(module_dir, written_paths, skipped_paths)``.  Existing INIs
+    are left alone unless *overwrite* is set so user edits survive a
+    re-run of ``add-pc-system``.
+    """
+    rl_base = output_base or (
+        Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    )
+    if not rl_base:
+        raise ValueError(
+            "rocketlauncher_dir not configured. "
+            "Run: spindoctor config set rocketlauncher_dir <path>  "
+            "or pass --output-dir."
+        )
+
+    module_dir = rl_base / "Modules" / "PCLauncher" / system_name
+    module_dir.mkdir(parents=True, exist_ok=True)
+
+    written: list[Path] = []
+    skipped: list[Path] = []
+    for title, exe_path in sorted(title_to_path.items()):
+        ini_path = module_dir / f"{title}.ini"
+        if ini_path.exists() and not overwrite:
+            skipped.append(ini_path)
+            continue
+        ini_path.write_text(_pclauncher_ini_text(exe_path), encoding="utf-8")
+        written.append(ini_path)
+    return module_dir, written, skipped
 
 
 # ─── generate all ─────────────────────────────────────────────────────────────
