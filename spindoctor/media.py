@@ -25,6 +25,7 @@ MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
     "artwork":    ("Images", "Artwork1"),
     "title":      ("Images", "Artwork2"),
     "snap":       ("Images", "Artwork3"),
+    "fade":       ("Images", "Artwork4"),
     "video":      ("Video",),
     "trailer":    ("Video", "Trailers"),
     "sound":      ("Sound",),
@@ -37,6 +38,7 @@ MEDIA_EXTENSIONS: dict[str, str] = {
     "artwork":    ".png",
     "title":      ".png",
     "snap":       ".png",
+    "fade":       ".png",
     "video":      ".mp4",
     "trailer":    ".mp4",
     "sound":      ".mp3",
@@ -226,10 +228,11 @@ class MediaDownloader:
             "artwork":    getattr(metadata, "artwork_url", ""),
             "title":      getattr(metadata, "title_url", ""),
             "snap":       getattr(metadata, "snap_url", ""),
+            "fade":       getattr(metadata, "fade_url", ""),
             "video":      getattr(metadata, "video_url", ""),
             "trailer":    getattr(metadata, "trailer_url", ""),
             "sound":      getattr(metadata, "sound_url", ""),
-            "theme":      "",  # not provided by APIs
+            "theme":      getattr(metadata, "theme_url", ""),
         }
         return [(game_name, mt, url_map.get(mt, "")) for mt in types]
 
