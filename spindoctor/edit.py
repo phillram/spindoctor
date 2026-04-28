@@ -36,10 +36,9 @@ RENAME_DIR = CONFIG_DIR / "renames"
 EDIT_MANIFEST_PREFIX = "edit-"
 RENAME_MANIFEST_PREFIX = "rename-"
 
-# Editable metadata fields. ``GameEntry`` does not currently model
-# ``players``; we accept it here so the CLI surface matches the spec but
-# ignore it during apply if absent. Description doubles as the display
-# name field used by HyperSpin wheels.
+# Editable metadata fields. Description doubles as the display name field
+# used by HyperSpin wheels. ``players`` is modeled on ``GameEntry`` and
+# emitted as ``<players>N</players>`` when non-empty.
 EDITABLE_FIELDS: tuple[str, ...] = (
     "description",
     "genre",
@@ -688,6 +687,7 @@ def apply_rename(
             year=existing.year,
             genre=existing.genre,
             rating=existing.rating,
+            players=existing.players,
             enabled=existing.enabled or "Yes",
         )
         db.add_game(new_entry)
@@ -702,6 +702,7 @@ def apply_rename(
             year=existing.year,
             genre=existing.genre,
             rating=existing.rating,
+            players=existing.players,
             enabled=existing.enabled or "Yes",
         )
         db.remove_game(op.old_rom_name)
