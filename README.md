@@ -19,7 +19,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [Playtime stats](#playtime-stats) — `stats-report`, `stats-report build-wheel`
   - [LEDBlinky](#ledblinky)
-  - [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `lint`
+  - [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `cleanup`, `lint`
 - [Standalone scripts](#standalone-scripts) — `spindoctor-fav`, `spindoctor-recent`, `spindoctor-stats`
 - [Directory structure expected](#directory-structure-expected)
 - [ROM variant handling](#rom-variant-handling)
@@ -37,16 +37,18 @@ cd C:\path\to\spindoctor
 pip install -e .
 ```
 
-Optional but recommended: install with the `[xml]` extra so XML databases round-trip losslessly (preserves comments and attribute order from HyperHQ).
+**Optional extras:**
 
-```bat
-pip install -e .[xml]
-```
-
-If your ROM library uses non-zip archive formats (`.7z`, `.rar`), install the `[archives]` extra so `verify` and `find-dupes --by-content` can hash inner contents instead of falling back to "unknown". `.zip`, `.gz`, and `.chd` are supported out of the box without extra installs.
+| Extra | Pulls in | What it enables |
+|-------|----------|-----------------|
+| `[xml]` | `lxml` | Lossless XML round-trips (preserves comments + attribute order from HyperHQ). Recommended. |
+| `[archives]` | `py7zr`, `rarfile` | `verify` and `find-dupes --by-content` can hash the contents of `.7z` / `.rar` ROMs. `.zip`, `.gz`, and `.chd` are built-in. |
+| `[preview]` | `Pillow` | Lets `spindoctor preview --format png` build composited PNG contact sheets. HTML mode works without it. |
+| `[all]` | All of the above | Everything in one install. |
 
 ```bat
 pip install -e .[archives]
+pip install -e .[preview]
 :: or pull in everything at once:
 pip install -e .[all]
 ```
@@ -510,6 +512,75 @@ Undo moves the files back, restores the previous config snapshot, and deletes th
 | `--target` | Required unless using `--undo` or `--list-manifests` |
 
 The pre-flight plan tells you total bytes to transfer and free space at the target, and aborts the apply if there isn't enough room.
+
+#### `backup`
+
+Copy any combination of library components into a dated backup folder on a different drive — and restore it later, in full or in part. Useful before risky operations (drive migration, big metadata refresh) or as a periodic safety net.
+
+Components are à la carte — pick exactly what you want to preserve:
+
+| Component | What it covers | Default subfolder in the backup |
+|-----------|---------------|---------------------------------|
+| `roms` (alias `games`) | `roms_dir` (every system folder) | `Games/` |
+| `databases` (alias `db`, `data`) | `<hyperspin_dir>/Databases/` | `HyperSpin/Databases/` |
+| `media` | `<hyperspin_dir>/Media/` (wheels, snaps, video, themes) | `HyperSpin/Media/` |
+| `emulators` | `emulators_dir` | `Emulators/` |
+| `rocketlauncher` (alias `rl`) | `rocketlauncher_dir` | `RocketLauncher/` |
+| `ledblinky` (alias `led`) | `ledblinky_dir` | `LEDBlinky/` |
+| `settings` (alias `config`) | `~/.spindoctor/` (config, favorites, ignore lists, caches) | `Settings/` |
+| `all` | every component above | all of the above |
+
+Composite alias `hyperspin` (also `hs`) expands to `databases,media`.
+
+Each backup lives at `<target>/spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/` and contains a `manifest.json` describing what was copied and where it came from. Backups are plain folders — you can browse, copy, or zip them with any file explorer.
+
+**Dry-run is the default.** Pass `--apply` to actually copy.
+
+```bat
+:: 1. See what a full backup would copy
+spindoctor backup create --target E:\Backups
+
+:: 2. Full backup of everything
+spindoctor backup create --target E:\Backups --apply
+
+:: 3. Just the small stuff: settings + databases (no huge media folder)
+spindoctor backup create --target E:\Backups --include settings,databases --apply
+
+:: 4. Just games and media
+spindoctor backup create --target E:\Backups --include games,media --apply
+
+:: 5. Tag a backup before doing something risky
+spindoctor backup create --target E:\Backups --label pre-migration --apply
+```
+
+**Inspecting backups:**
+
+```bat
+spindoctor backup list --target E:\Backups
+spindoctor backup info --backup E:\Backups\spindoctor-backup-20260428_120000
+```
+
+**Restoring:**
+
+```bat
+:: Dry-run a full restore
+spindoctor backup restore --backup E:\Backups\spindoctor-backup-20260428_120000
+
+:: Restore everything back to the paths recorded in the backup
+spindoctor backup restore --backup E:\Backups\... --apply
+
+:: Restore just the settings (e.g. after a fresh install)
+spindoctor backup restore --backup E:\Backups\... --include settings --apply
+
+:: Drive letters changed since the backup — route restores to whatever
+:: paths config.json currently has instead of the originals
+spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
+
+:: Replace existing folders (default refuses to clobber non-empty dirs)
+spindoctor backup restore --backup E:\Backups\... --overwrite --apply
+```
+
+The pre-flight plan tells you total bytes to copy and free space at the target, and aborts the apply if there isn't enough room.
 
 ---
 
@@ -977,26 +1048,29 @@ roms_dir/
 hyperspin_dir/
 ├── Databases/
 │   ├── Main Menu/
-│   │   └── Main Menu.xml             ← generated by generate-config
+│   │   └── Main Menu.xml             ← generated by generate-config; edit with `mainmenu`
 │   ├── MAME/
 │   │   └── MAME.xml
-│   ├── Favorites/                    ← generated by spindoctor fav rebuild
+│   ├── Favorites/                    ← generated by `spindoctor fav rebuild`
 │   │   └── Favorites.xml
-│   └── Recently Played/              ← generated by spindoctor recent rebuild
-│       └── Recently Played.xml
+│   ├── Recently Played/              ← generated by `spindoctor recent rebuild`
+│   │   └── Recently Played.xml
+│   └── Most Played/                  ← generated by `spindoctor stats-report build-wheel`
+│       └── Most Played.xml
 └── Media/
     ├── MAME/
-    │   ├── Images/{Wheel,Backgrounds,Artwork1,Artwork2,Artwork3}/
+    │   ├── Images/{Wheel,Backgrounds,Artwork1,Artwork2,Artwork3,Artwork4}/
     │   ├── Video/{,Trailers}/
     │   ├── Sound/
     │   └── Themes/
     ├── Favorites/                    ← hardlinked / copied from source systems
-    └── Recently Played/
+    ├── Recently Played/
+    └── Most Played/
 
 rocketlauncher_dir/
 ├── Settings/{<System>.ini, Global Emulators.ini}
-├── Settings/Global Statistics/<System>.ini   ← read by spindoctor recent
-└── Modules/PCLauncher/{Favorites,Recently Played}/<game>.ini
+├── Settings/Global Statistics/<System>.ini   ← read by `recent` and `stats-report`
+└── Modules/PCLauncher/{Favorites,Recently Played,Most Played}/<game>.ini
 ```
 
 ### Media types
@@ -1083,6 +1157,34 @@ spindoctor find-orphan-media --all
 spindoctor check-discs --all
 ```
 
+### Weekly maintenance
+
+A periodic sweep that touches everything: integrity, curation, playtime, and a fresh visual snapshot.
+
+```bat
+:: 1. Take a labelled snapshot first so anything below is reversible.
+spindoctor backup create --target E:\Backups --label weekly --include settings,databases --apply
+
+:: 2. Health pass.
+spindoctor stats
+spindoctor doctor --fix
+spindoctor find-dupes --all --by-content
+spindoctor verify --system NES --dat "C:\Dats\NES.dat"
+
+:: 3. Thin out duplicates by region preference (archives losers, fully reversible).
+spindoctor curate --all
+spindoctor curate --system NES --apply
+
+:: 4. Refresh playtime stats and the Most Played wheel.
+spindoctor stats-report
+spindoctor stats-report build-wheel --limit 25 --apply
+spindoctor recent rebuild
+spindoctor fav rebuild
+
+:: 5. Generate a visual contact sheet so you can spot missing/wrong art at a glance.
+spindoctor preview --all --output-dir D:\Preview --open
+```
+
 ### ROM integrity sweep
 
 ```bat
@@ -1125,75 +1227,6 @@ spindoctor migrate --target E:\Cab --apply --preserve-names
 ```
 
 If something goes wrong, `spindoctor migrate --undo latest` puts everything back where it was and restores the previous config.
-
-#### `backup`
-
-Copy any combination of library components into a dated backup folder on a different drive — and restore it later, in full or in part. Useful before risky operations (drive migration, big metadata refresh) or as a periodic safety net.
-
-Components are à la carte — pick exactly what you want to preserve:
-
-| Component | What it covers | Default subfolder in the backup |
-|-----------|---------------|---------------------------------|
-| `roms` (alias `games`) | `roms_dir` (every system folder) | `Games/` |
-| `databases` (alias `db`, `data`) | `<hyperspin_dir>/Databases/` | `HyperSpin/Databases/` |
-| `media` | `<hyperspin_dir>/Media/` (wheels, snaps, video, themes) | `HyperSpin/Media/` |
-| `emulators` | `emulators_dir` | `Emulators/` |
-| `rocketlauncher` (alias `rl`) | `rocketlauncher_dir` | `RocketLauncher/` |
-| `ledblinky` (alias `led`) | `ledblinky_dir` | `LEDBlinky/` |
-| `settings` (alias `config`) | `~/.spindoctor/` (config, favorites, ignore lists, caches) | `Settings/` |
-| `all` | every component above | all of the above |
-
-Composite alias `hyperspin` (also `hs`) expands to `databases,media`.
-
-Each backup lives at `<target>/spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/` and contains a `manifest.json` describing what was copied and where it came from. Backups are plain folders — you can browse, copy, or zip them with any file explorer.
-
-**Dry-run is the default.** Pass `--apply` to actually copy.
-
-```bat
-:: 1. See what a full backup would copy
-spindoctor backup create --target E:\Backups
-
-:: 2. Full backup of everything
-spindoctor backup create --target E:\Backups --apply
-
-:: 3. Just the small stuff: settings + databases (no huge media folder)
-spindoctor backup create --target E:\Backups --include settings,databases --apply
-
-:: 4. Just games and media
-spindoctor backup create --target E:\Backups --include games,media --apply
-
-:: 5. Tag a backup before doing something risky
-spindoctor backup create --target E:\Backups --label pre-migration --apply
-```
-
-**Inspecting backups:**
-
-```bat
-spindoctor backup list --target E:\Backups
-spindoctor backup info --backup E:\Backups\spindoctor-backup-20260428_120000
-```
-
-**Restoring:**
-
-```bat
-:: Dry-run a full restore
-spindoctor backup restore --backup E:\Backups\spindoctor-backup-20260428_120000
-
-:: Restore everything back to the paths recorded in the backup
-spindoctor backup restore --backup E:\Backups\... --apply
-
-:: Restore just the settings (e.g. after a fresh install)
-spindoctor backup restore --backup E:\Backups\... --include settings --apply
-
-:: Drive letters changed since the backup — route restores to whatever
-:: paths config.json currently has instead of the originals
-spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
-
-:: Replace existing folders (default refuses to clobber non-empty dirs)
-spindoctor backup restore --backup E:\Backups\... --overwrite --apply
-```
-
-The pre-flight plan tells you total bytes to copy and free space at the target, and aborts the apply if there isn't enough room.
 
 ### Auto-refresh wheels on every boot
 
@@ -1255,6 +1288,29 @@ No — by default media is hardlinked from the source system into `Media/Favorit
 **How do I get cross-system "Recently Played" working?**
 
 It's automatic — `spindoctor recent rebuild` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher already writes on every game launch). Schedule it at log-on or run it from the Tools menu.
+
+**How is "Most Played" different from "Recently Played"?**
+
+Both read the same RocketLauncher `Statistics.ini` files. Recently Played sorts by `Last_Played` and shows the last N games launched; Most Played sorts by `Total_Time_Played` and shows where you've actually spent the most hours. Build it with `spindoctor stats-report build-wheel --apply`.
+
+**Can I undo a region/version curation?**
+
+Yes when you used `--action archive` (the default) — `spindoctor curate --undo` reverses the most recent archive. `--action delete` is permanent.
+
+**Where do the various manifests live?**
+
+| Command | Manifest dir |
+|---------|--------------|
+| `migrate` | `~/.spindoctor/migrations/` |
+| `backup` | `<target>/spindoctor-backup-…/manifest.json` |
+| `find-misplaced --apply` | `~/.spindoctor/misplaced/` |
+| `organize --restructure --apply` | `~/.spindoctor/restructure/` |
+| `curate --apply --action archive` | `~/.spindoctor/curation/` |
+| `media-scan --apply` | `~/.spindoctor/media_imports/` |
+| `batch-edit --apply` | `~/.spindoctor/edits/` |
+| `rename` / `clone --apply` | `~/.spindoctor/renames/` |
+
+Every command above accepts `--undo` (and most accept `--list-manifests`) to roll back the most recent run.
 
 ---
 
