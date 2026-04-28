@@ -13,7 +13,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Configuration](#configuration)
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
-  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`
+  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [LEDBlinky](#ledblinky)
@@ -248,6 +248,93 @@ The same as `add-system` but for PC / Windows / Steam libraries — handles recu
 spindoctor add-pc-system "PC Games"
 spindoctor pc-rename "PC Games"   :: re-run the title picker after dropping new games in
 ```
+
+#### `migrate`
+
+Move (or copy) the entire library — or just specific parts — to a new drive in one shot. Updates `~/.spindoctor/config.json` with the new paths and writes a manifest you can undo.
+
+The components map directly to your config paths:
+
+| Component | What moves | Default subfolder at target | Config field updated |
+|-----------|------------|------------------------------|----------------------|
+| `roms` | `roms_dir` (every system folder) | `Games/` | `roms_dir` |
+| `hyperspin` | `hyperspin_dir` (Databases + Media) | `HyperSpin/` | `hyperspin_dir` |
+| `emulators` | `emulators_dir` | `Emulators/` | `emulators_dir` |
+| `rocketlauncher` | `rocketlauncher_dir` | `RocketLauncher/` | `rocketlauncher_dir` |
+| `ledblinky` | `ledblinky_dir` | `LEDBlinky/` | `ledblinky_dir` |
+| `all` | every component above | all of the above | every field above |
+
+The default subfolder is `Games/` (not `ROMs/`) because the same folder also holds non-ROM titles — PC games, Steam shortcuts, multi-disc folders, and so on.
+
+Aliases for convenience: `games` → `roms`, and `media` / `data` / `databases` all → `hyperspin` (because the Databases and Media folders both live inside `hyperspin_dir` and travel together).
+
+**Dry-run is the default.** Pass `--apply` to actually move anything.
+
+```bat
+:: 1. See what would move (every component, dry-run)
+spindoctor migrate --target E:\NewCab
+
+:: 2. Move the whole library and update config in one shot
+spindoctor migrate --target E:\NewCab --apply
+
+:: 3. Move only specific components
+spindoctor migrate --target E:\NewCab --include roms,hyperspin --apply
+spindoctor migrate --target E:\NewCab --include games,media --apply        :: same thing, aliases
+spindoctor migrate --target E:\NewCab --include emulators --apply
+
+:: 4. Move only specific systems' ROMs to the new drive (split-library mode)
+spindoctor migrate --target E:\NewCab --include roms ^
+    --systems "MAME,Sony Playstation 3" --apply
+```
+
+**Per-system ROM moves:** when `--systems` is set, only those system folders move. `roms_dir` is left pointing at the original drive, since the library is being split. Symlink the moved folders back under the original `roms_dir` if you want SpinDoctor to keep finding them in one place — or run `spindoctor config set roms_dir E:\NewCab\Games` afterwards if you'd rather flip everything over.
+
+**Preserve original folder names:**
+
+By default the migration normalizes folder names at the target (`ROMs/`, `HyperSpin/`, `Emulators/`, etc.). Pass `--preserve-names` to keep each component's original top-level folder name instead — useful if you've already settled on a folder layout you like and don't want SpinDoctor to rename anything.
+
+```bat
+:: Source layout                       Target layout
+::   D:\MyArcade\GameFiles\              E:\NewCab\GameFiles\        (preserved)
+::   D:\MyArcade\HS\                     E:\NewCab\HS\               (preserved)
+spindoctor migrate --target E:\NewCab --apply --preserve-names
+
+:: vs. default (standardized):
+::   D:\MyArcade\GameFiles\  →  E:\NewCab\Games\
+::   D:\MyArcade\HS\         →  E:\NewCab\HyperSpin\
+```
+
+If two components have folders with the same basename (e.g. both `roms_dir` and `emulators_dir` end in `\Cab`), `--preserve-names` skips the second one and prints a clear message — drop the flag or rename one of the source folders.
+
+**Safer "copy then delete by hand" workflow:**
+
+```bat
+:: Copy without deleting the originals, and SHA1-verify every file afterwards.
+spindoctor migrate --target E:\NewCab --apply --keep-source --verify
+```
+
+`--keep-source` leaves the original intact and skips the config rewrite, so you can keep the old drive plugged in as a hot spare until you're confident the new one works. Once you're happy, delete the old folders by hand and update the config: `spindoctor config set roms_dir E:\NewCab\ROMs` (and so on per component).
+
+**Reverse a migration:**
+
+```bat
+spindoctor migrate --list-manifests        :: show every migration on disk
+spindoctor migrate --undo latest           :: reverse the most recent one
+spindoctor migrate --undo C:\Users\you\.spindoctor\migrations\migrate-20260427_213345.json
+```
+
+Undo moves the files back, restores the previous config snapshot, and deletes the manifest. For `--keep-source` migrations, undo just removes the copied destinations (your originals were never touched).
+
+**Other useful flags:**
+
+| Flag | Purpose |
+|------|---------|
+| `--preserve-names` | Keep each component's original top-level folder name at the target instead of using `Games/`, `HyperSpin/`, etc. |
+| `--no-update-config` | Skip the config rewrite even on a real move (e.g. when you're scripting and want to flip paths yourself) |
+| `--include hyperspin,emulators` | Multi-component selection — comma-separated list |
+| `--target` | Required unless using `--undo` or `--list-manifests` |
+
+The pre-flight plan tells you total bytes to transfer and free space at the target, and aborts the apply if there isn't enough room.
 
 ---
 
@@ -661,6 +748,33 @@ spindoctor fav rebuild
 ```
 
 After this the cabinet user sees Chrono Trigger inside the new `Favorites` system in HyperSpin, with its original SNES wheel art and snap mirrored across.
+
+### Migrating to a new drive
+
+```bat
+:: 1. Plug in the new drive (e.g. E:) and dry-run the plan.
+spindoctor migrate --target E:\Cab
+
+:: 2. (Recommended) Copy first, verify hashes, keep the originals as a fallback.
+spindoctor migrate --target E:\Cab --apply --keep-source --verify
+
+:: 3. Smoke-test the cabinet from the new drive — point the config at it.
+spindoctor config set roms_dir E:\Cab\Games
+spindoctor config set hyperspin_dir E:\Cab\HyperSpin
+spindoctor config set emulators_dir E:\Cab\Emulators
+spindoctor config set rocketlauncher_dir E:\Cab\RocketLauncher
+spindoctor doctor
+
+:: 4. Once the new drive looks good, delete the old folders by hand.
+::    Or skip steps 2–3 and do a one-shot move that updates config automatically:
+spindoctor migrate --target E:\Cab --apply
+
+:: To keep the old folder names (e.g. you had D:\MyArcade\GameFiles instead of
+:: D:\Old\ROMs and prefer it stays "GameFiles" on the new drive too):
+spindoctor migrate --target E:\Cab --apply --preserve-names
+```
+
+If something goes wrong, `spindoctor migrate --undo latest` puts everything back where it was and restores the previous config.
 
 ### Auto-refresh wheels on every boot
 

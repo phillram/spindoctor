@@ -3303,3 +3303,244 @@ def organize(system_name, no_sort, axes, overwrite_sort, restructure,
         f"  [green]✓[/green] Applied. Manifest: {manifest.name}\n"
         f"  Run [cyan]spindoctor organize {system_name} --undo[/cyan] to revert."
     )
+
+
+# ─── migrate (move library to a new drive) ────────────────────────────────────
+
+@cli.command("migrate")
+@click.option("--target", type=click.Path(file_okay=False), default=None,
+              help="Destination root folder on the new drive. New per-component "
+                   "subfolders (ROMs/, HyperSpin/, ...) are created underneath.")
+@click.option("--include", default="all",
+              help="Comma-separated components to migrate. Choices: "
+                   "roms, hyperspin, emulators, rocketlauncher, ledblinky, all. "
+                   "Aliases: games→roms, media/data/databases→hyperspin. "
+                   "Default: all.")
+@click.option("--systems", default=None,
+              help="Comma-separated systems to migrate (only applies to --include roms). "
+                   "When set, only those system subfolders are moved and "
+                   "roms_dir config is left unchanged.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the migration. Without this flag, prints a dry-run plan.")
+@click.option("--keep-source", is_flag=True,
+              help="Copy instead of move — leaves the source intact. Pair with "
+                   "--verify for a safe-then-delete-by-hand workflow.")
+@click.option("--verify", is_flag=True,
+              help="SHA1-verify each file after copy. Only meaningful with --keep-source.")
+@click.option("--no-update-config", is_flag=True,
+              help="Don't rewrite ~/.spindoctor/config.json with the new paths.")
+@click.option("--preserve-names", is_flag=True,
+              help="Keep each component's original folder name at the target "
+                   "(e.g. D:\\MyArcade\\HS lands at <target>/HS). "
+                   "Default: standardized names — Games, HyperSpin, Emulators, "
+                   "RocketLauncher, LEDBlinky.")
+@click.option("--undo", "undo_path", default=None,
+              help="Path to a manifest under ~/.spindoctor/migrations/ to reverse. "
+                   "Use 'latest' to undo the most recent migration.")
+@click.option("--list-manifests", is_flag=True,
+              help="List all migration manifests on disk and exit.")
+def migrate(target, include, systems, apply_changes, keep_source, verify,
+            no_update_config, preserve_names, undo_path, list_manifests):
+    """Migrate the library to a new drive.
+
+    \b
+    Move (or copy) ROMs, HyperSpin, Emulators, RocketLauncher, and LEDBlinky
+    folders to a new drive in one shot. Updates ~/.spindoctor/config.json so
+    SpinDoctor keeps working at the new location. Every applied migration
+    writes a manifest you can undo.
+
+    \b
+    Examples:
+      # See what would move (dry run, every component)
+      spindoctor migrate --target E:\\NewCab
+
+      # Move everything and update config
+      spindoctor migrate --target E:\\NewCab --apply
+
+      # Move only the ROMs and HyperSpin folder
+      spindoctor migrate --target E:\\NewCab --include roms,hyperspin --apply
+
+      # Aliases — these are equivalent to --include roms,hyperspin
+      spindoctor migrate --target E:\\NewCab --include games,media --apply
+
+      # Move only specific systems' ROMs (config unchanged)
+      spindoctor migrate --target E:\\NewCab --include roms \\
+          --systems "MAME,Sony Playstation 3" --apply
+
+      # Safe copy + verify (keeps the original intact)
+      spindoctor migrate --target E:\\NewCab --apply --keep-source --verify
+
+      # Reverse the most recent migration
+      spindoctor migrate --undo latest
+      spindoctor migrate --list-manifests
+    """
+    from .migrate import (
+        ALL_COMPONENTS, MIGRATIONS_DIR, apply_migration, find_latest_manifest,
+        format_bytes, free_bytes, list_manifests as list_migrate_manifests,
+        normalize_components, plan_migration, undo_migration,
+    )
+
+    # ── --list-manifests ──────────────────────────────────────────────────────
+    if list_manifests:
+        manifests = list_migrate_manifests()
+        if not manifests:
+            console.print(f"[yellow]No migration manifests under {MIGRATIONS_DIR}.[/yellow]")
+            return
+        tbl = Table(title="Migration manifests", box=box.SIMPLE)
+        tbl.add_column("Manifest", style="cyan")
+        tbl.add_column("Target")
+        tbl.add_column("Mode")
+        for m in manifests:
+            try:
+                import json as _json
+                data = _json.loads(m.read_text(encoding="utf-8"))
+                mode = "copy" if data.get("keep_source") else "move"
+                tbl.add_row(m.name, data.get("target_root", ""), mode)
+            except (OSError, ValueError):
+                tbl.add_row(m.name, "[red]?[/red]", "[red]?[/red]")
+        console.print(tbl)
+        return
+
+    # ── --undo ────────────────────────────────────────────────────────────────
+    if undo_path:
+        if undo_path == "latest":
+            manifest = find_latest_manifest()
+            if not manifest:
+                err_console.print("[red]No migration manifests to undo.[/red]")
+                sys.exit(1)
+        else:
+            manifest = Path(undo_path)
+            if not manifest.exists():
+                err_console.print(f"[red]Manifest not found:[/red] {manifest}")
+                sys.exit(1)
+        console.print(f"[blue bold]Undo migration[/blue bold]: {manifest.name}")
+        summary = undo_migration(manifest)
+        console.print(
+            f"  [green]+[/green] reverted {summary['moves_reverted']} move(s), "
+            f"removed {summary['destinations_removed']} copied destination(s)"
+        )
+        if summary["config_restored"]:
+            console.print("  [green]+[/green] config restored from snapshot")
+        for err in summary["errors"]:
+            console.print(f"  [red]✗[/red] {err}")
+        return
+
+    # ── plan / apply path ─────────────────────────────────────────────────────
+    if not target:
+        err_console.print(
+            "[red]--target is required (unless using --undo or --list-manifests).[/red]"
+        )
+        sys.exit(1)
+
+    config = _cfg()
+    target_root = Path(target).expanduser()
+
+    try:
+        components = normalize_components(include.split(","))
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not components:
+        err_console.print("[red]--include resolved to no components.[/red]")
+        sys.exit(1)
+
+    systems_filter = None
+    if systems:
+        systems_filter = [s.strip() for s in systems.split(",") if s.strip()]
+        if "roms" not in components:
+            console.print(
+                "[yellow]--systems only filters the 'roms' component; "
+                "ignoring for everything else.[/yellow]"
+            )
+
+    console.print(Panel(f" migrate → {target_root} ", style="bold blue"))
+    console.print(f"Components: [cyan]{', '.join(components)}[/cyan]")
+    if systems_filter:
+        console.print(f"Systems filter (roms only): [cyan]{', '.join(systems_filter)}[/cyan]")
+
+    plan = plan_migration(
+        config, target_root, components, systems_filter,
+        preserve_names=preserve_names,
+    )
+
+    for note in plan.notes:
+        console.print(f"  [dim]{note}[/dim]")
+
+    if plan.skipped:
+        console.print("\n[yellow]Skipped:[/yellow]")
+        for s in plan.skipped:
+            console.print(f"  [dim]· {s}[/dim]")
+
+    if plan.empty:
+        console.print("\n[green]Nothing to migrate.[/green]")
+        return
+
+    tbl = Table(title="Migration plan", box=box.SIMPLE)
+    tbl.add_column("Component", style="cyan")
+    tbl.add_column("From", style="yellow")
+    tbl.add_column("→")
+    tbl.add_column("To", style="green")
+    tbl.add_column("Size", justify="right")
+    for m in plan.moves:
+        tbl.add_row(m.component, m.src, "→", m.dest, format_bytes(m.size_bytes))
+    console.print(tbl)
+
+    total = plan.total_bytes
+    console.print(f"Total to transfer: [bold]{format_bytes(total)}[/bold]")
+    free = free_bytes(target_root)
+    if free:
+        marker = "[green]✓[/green]" if free > total else "[red]✗[/red]"
+        console.print(f"Free at target: {format_bytes(free)} {marker}")
+        if free <= total and apply_changes:
+            err_console.print(
+                "[red]Aborted:[/red] target drive does not have enough free space."
+            )
+            sys.exit(1)
+
+    if plan.config_updates and not no_update_config and not keep_source:
+        console.print("\nConfig updates that will be applied:")
+        for k, v in plan.config_updates.items():
+            console.print(f"  [cyan]{k}[/cyan] → {v}")
+    elif keep_source:
+        console.print("\n[dim]--keep-source: config will NOT be updated.[/dim]")
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run.[/yellow] Re-run with [cyan]--apply[/cyan] to execute."
+        )
+        return
+
+    # ── execute ───────────────────────────────────────────────────────────────
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Migrating", total=len(plan.moves))
+
+        def _cb(move, status):
+            if status == "start":
+                progress.update(task, description=f"Migrating {move.component}: {Path(move.src).name}")
+            elif status == "done":
+                progress.update(task, advance=1)
+
+        try:
+            manifest = apply_migration(
+                plan,
+                keep_source=keep_source,
+                verify=verify,
+                update_config=not no_update_config,
+                progress_cb=_cb,
+            )
+        except (FileExistsError, RuntimeError, OSError) as e:
+            err_console.print(f"[red]Aborted:[/red] {e}")
+            sys.exit(1)
+
+    console.print(f"\n[green]✓[/green] Migration complete. Manifest: {manifest}")
+    console.print(
+        f"  Run [cyan]spindoctor migrate --undo {manifest}[/cyan] to revert."
+    )
