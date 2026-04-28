@@ -150,7 +150,7 @@ def test_download_writes_to_correct_slot(tmp_path, monkeypatch):
         "https://ss/sound.mp3": b"ID3sound",
     }
 
-    def fake_get(url, timeout=30, stream=True):  # noqa: ARG001
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
         return _FakeResp(payloads[url])
 
     monkeypatch.setattr(dl._session, "get", fake_get)
