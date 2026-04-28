@@ -17,7 +17,11 @@ setup(
         # `verify` and `find-dupes --by-content`. .zip / .gz / .chd are
         # supported out of the box (stdlib + native CHD-header parser).
         "archives": ["py7zr>=0.20", "rarfile>=4.0"],
-        "all": ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0"],
+        # PNG contact-sheet output for `spindoctor preview --format png`.
+        # Without it the preview command still works, but only the HTML
+        # output mode is available (the PNG path falls back with a warning).
+        "preview": ["pillow>=9.0"],
+        "all": ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0", "pillow>=9.0"],
         "dev": ["pytest>=7.0", "lxml>=4.9"],
     },
     entry_points={

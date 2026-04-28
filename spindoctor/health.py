@@ -202,6 +202,26 @@ def check_archive_support() -> Check:
     return parent
 
 
+def check_preview_support() -> Check:
+    """Surface whether Pillow is available for `spindoctor preview --format png`.
+
+    Pillow is a soft dep — without it the HTML preview modes still work,
+    but the PNG contact sheet falls back to HTML with a warning.
+    """
+    from . import preview as _preview
+
+    if _preview.pillow_available():
+        return Check(
+            name="Preview support", status=Status.OK,
+            detail="PIL installed (PNG contact sheets enabled)",
+        )
+    return Check(
+        name="Preview support", status=Status.WARN,
+        detail="PIL not installed; only HTML preview available",
+        fix="pip install -e .[preview]",
+    )
+
+
 def check_databases(config: Config) -> Check:
     parent = Check(name="HyperSpin databases", status=Status.OK)
     if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
@@ -435,6 +455,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_binaries(config))
     report.add(check_lxml())
     report.add(check_archive_support())
+    report.add(check_preview_support())
     report.add(check_databases(config))
     report.add(check_match_cache(config, fix, report.fixes_applied))
     report.add(check_global_emulators(config, fix, report.fixes_applied))
