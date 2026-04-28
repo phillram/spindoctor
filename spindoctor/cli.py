@@ -2601,6 +2601,8 @@ def fetch_meta(system, all_systems, source, fetch_all,
                     game.genre = meta.genre
                 if meta.rating:
                     game.rating = meta.rating
+                if meta.players:
+                    game.players = meta.players
                 db.update_game(game)
             updated += 1
 

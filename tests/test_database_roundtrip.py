@@ -122,6 +122,49 @@ def test_remove_game(tmp_path):
     assert "1942" in re_db.games()
 
 
+def test_players_field_round_trip(tmp_path):
+    """``<players>`` survives load / save and is exposed on GameEntry.players."""
+    xml = textwrap.dedent("""\
+        <?xml version="1.0"?>
+        <menu>
+          <header><listname>MAME</listname></header>
+          <game name="sf2">
+            <description>Street Fighter II</description>
+            <manufacturer>Capcom</manufacturer>
+            <year>1991</year>
+            <genre>Fighting</genre>
+            <players>2</players>
+            <enabled>Yes</enabled>
+          </game>
+        </menu>
+        """)
+    p = _write(tmp_path, xml)
+    db = HyperspinDatabase("MAME", p)
+    db.load()
+    assert db.get("sf2").players == "2"
+
+    db.save(backup=False)
+    saved = p.read_text(encoding="utf-8")
+    assert "<players>2</players>" in saved
+
+    re_db = HyperspinDatabase("MAME", p)
+    re_db.load()
+    assert re_db.get("sf2").players == "2"
+
+
+def test_players_field_omitted_when_empty(tmp_path):
+    """An entry without ``<players>`` should not gain an empty placeholder."""
+    p = _write(tmp_path, SAMPLE_XML)
+    db = HyperspinDatabase("MAME", p)
+    db.load()
+    assert db.get("1942").players == ""
+    db.save(backup=False)
+    saved = p.read_text(encoding="utf-8")
+    # No empty <players/> introduced for entries that didn't have one.
+    assert "<players>" not in saved
+    assert "<players/>" not in saved
+
+
 def test_save_creates_fresh_file_when_no_existing(tmp_path):
     p = tmp_path / "NEW.xml"
     db = HyperspinDatabase("NEW", p)
