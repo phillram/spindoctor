@@ -15,3 +15,7 @@ env/
 
 # SpinDoctor runtime
 *.bak
+
+# Tooling
+.claude/
+.pytest_cache/
