@@ -41,6 +41,14 @@ Optional but recommended: install with the `[xml]` extra so XML databases round-
 pip install -e .[xml]
 ```
 
+If your ROM library uses non-zip archive formats (`.7z`, `.rar`), install the `[archives]` extra so `verify` and `find-dupes --by-content` can hash inner contents instead of falling back to "unknown". `.zip`, `.gz`, and `.chd` are supported out of the box without extra installs.
+
+```bat
+pip install -e .[archives]
+:: or pull in everything at once:
+pip install -e .[all]
+```
+
 Verify:
 
 ```bat
@@ -456,7 +464,7 @@ spindoctor find-dupes --all --cross-systems         :: same title in multiple fo
 spindoctor find-dupes --system NES --by-content     :: SHA1 match (catches renamed copies)
 ```
 
-Two ROMs are duplicates by default when their stems collapse to the same normalised title (region/version tags stripped). `--by-content` adds byte-level pairing.
+Two ROMs are duplicates by default when their stems collapse to the same normalised title (region/version tags stripped). `--by-content` adds byte-level pairing — and is archive-aware, so `mario.zip` and `mario.7z` containing the same payload are reported as duplicates (install `[archives]` for `.7z` / `.rar` peeking).
 
 #### `find-misplaced`
 
@@ -518,6 +526,8 @@ spindoctor verify --system NES --dat ... --show-good   :: also list verified-goo
 | `renamed` | Hash matches but filename differs (DAT calls it something else) |
 | `bad` | Size matches a known entry but hashes don't — likely a bad dump |
 | `unknown` | DAT doesn't list anything of this size — homebrew, hack, or unsupported |
+
+Archive support: `.zip`, `.gz`, and `.chd` are read natively (CHD `rawsha1` is parsed straight from the header — no decompression). `.7z` and `.rar` need the optional extras (`pip install -e .[archives]`); without them those files report `unknown` with an install hint.
 
 #### `stats`
 

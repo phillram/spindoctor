@@ -13,6 +13,11 @@ setup(
         # Lossless XML round-trip (preserves comments, attribute order).
         # Strongly recommended when sharing a HyperSpin install with HyperHQ.
         "xml": ["lxml>=4.9"],
+        # Read inner-content hashes from non-zip archive formats during
+        # `verify` and `find-dupes --by-content`. .zip / .gz / .chd are
+        # supported out of the box (stdlib + native CHD-header parser).
+        "archives": ["py7zr>=0.20", "rarfile>=4.0"],
+        "all": ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0"],
         "dev": ["pytest>=7.0", "lxml>=4.9"],
     },
     entry_points={

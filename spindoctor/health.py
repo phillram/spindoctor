@@ -161,6 +161,47 @@ def check_lxml() -> Check:
         )
 
 
+def check_archive_support() -> Check:
+    """Surface which archive formats `verify` / `find-dupes` can read.
+
+    .zip, .gz, and .chd are always available (stdlib + native parser).
+    .7z and .rar are soft deps — install via ``pip install -e .[archives]``.
+    """
+    from . import archives
+
+    status = archives.support_status()
+    children: list[Check] = []
+    missing: list[str] = []
+    for kind in ("zip", "7z", "rar", "gz", "chd"):
+        available, hint = status[kind]
+        if available:
+            detail = (
+                "built-in" if kind in ("zip", "gz", "chd")
+                else "installed"
+            )
+            children.append(Check(
+                name=f".{kind}", status=Status.OK, detail=detail,
+            ))
+        else:
+            missing.append(f".{kind}")
+            children.append(Check(
+                name=f".{kind}", status=Status.WARN,
+                detail="not installed",
+                fix=hint,
+            ))
+    parent = Check(name="Archive support", status=Status.OK, children=children)
+    if missing:
+        parent.status = Status.WARN
+        parent.detail = (
+            f"{', '.join(missing)} unavailable — "
+            "install with `pip install -e .[archives]`"
+        )
+        parent.fix = "pip install -e .[archives]"
+    else:
+        parent.detail = "zip, 7z, rar, gz, chd"
+    return parent
+
+
 def check_databases(config: Config) -> Check:
     parent = Check(name="HyperSpin databases", status=Status.OK)
     if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
@@ -393,6 +434,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_paths(config))
     report.add(check_binaries(config))
     report.add(check_lxml())
+    report.add(check_archive_support())
     report.add(check_databases(config))
     report.add(check_match_cache(config, fix, report.fixes_applied))
     report.add(check_global_emulators(config, fix, report.fixes_applied))
