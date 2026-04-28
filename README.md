@@ -526,6 +526,33 @@ spindoctor match list --system MAME
 spindoctor match clear --system MAME
 ```
 
+#### `cleanup`
+
+One-stop inventory and removal of every cache, manifest, temp dir, and `.bak` backup SpinDoctor produces. Categories cover match / media-pick / pc-titles / metadata / MAME-listxml caches, the preview temp dir, audit-CSV exports, restructure / misplaced / migration manifests, and HyperSpin / LEDBlinky `.bak` files.
+
+```bat
+:: See what categories exist and which are flagged unsafe to delete
+spindoctor cleanup categories
+
+:: Audit disk usage by category
+spindoctor cleanup audit
+spindoctor cleanup audit --detail
+spindoctor cleanup audit -c metadata-cache -c db-backups
+
+:: Dry-run by default — re-run with --apply to actually delete
+spindoctor cleanup run --include safe
+spindoctor cleanup run --include metadata-cache,match-cache --apply
+
+:: Time-window and quota filters
+spindoctor cleanup run --include metadata-cache --older-than 90 --apply
+spindoctor cleanup run --include db-backups --keep-recent 5 --apply
+
+:: Wipe everything (caches + backups + undo manifests)
+spindoctor cleanup run --include all --include-unsafe --apply --prune-empty-dirs
+```
+
+`safe` covers the regenerable caches and audit exports; `db-backups`, `migration-manifests`, and `restructure-manifests` are flagged unsafe — naming them in `--include` is an explicit opt-in. Use `--prune-empty-dirs` to collapse now-empty cache folders after deletion, and `--yes` to skip the final confirmation prompt for scripted runs.
+
 #### `lint`
 
 AST pass over the SpinDoctor source itself — surfaces unused imports, bare `except:`, TODO markers, and near-duplicate function bodies. Useful as a pre-commit sanity check if you fork or modify SpinDoctor.

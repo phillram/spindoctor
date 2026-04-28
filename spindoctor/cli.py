@@ -1598,6 +1598,371 @@ def ignore_clear(system: Optional[str]):
     save_config(config)
 
 
+# ─── cleanup ──────────────────────────────────────────────────────────────────
+
+@cli.group("cleanup")
+def cleanup_group():
+    """Audit and remove SpinDoctor caches, manifests, and temp files.
+
+    \b
+    Subcommands:
+      audit        Show how much disk each cache/manifest category uses.
+      run          Remove files from selected categories (dry-run by default).
+      categories   List every cleanup category and what it covers.
+
+    Caches (match, media, metadata, listxml, preview) rebuild themselves on
+    next use. Manifests and `.bak` backups are flagged unsafe — deleting
+    them removes recovery and undo options. Use --include-unsafe or pick
+    the category explicitly to remove those.
+    """
+
+
+def _cleanup_format_mtime(ts: Optional[float]) -> str:
+    if ts is None:
+        return "[dim]—[/dim]"
+    return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
+
+
+def _cleanup_resolve_keys(
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+    include_unsafe: bool,
+) -> list[str]:
+    """Expand --include / --exclude flag values into concrete category keys.
+
+    Special tokens: ``all`` (every category), ``safe`` (safe-by-default
+    categories only). ``unsafe`` is rejected — pick the unsafe category by
+    name so users opt-in deliberately.
+    """
+    from .cleanup import CATEGORY_KEYS, scan
+    from .config import Config as _Cfg
+
+    safe_keys = [r.key for r in scan(_Cfg()).values() if r.safe]
+
+    chosen: list[str] = []
+    for token in include:
+        for raw in token.split(","):
+            t = raw.strip().lower()
+            if not t:
+                continue
+            if t == "all":
+                chosen.extend(CATEGORY_KEYS)
+            elif t == "safe":
+                chosen.extend(safe_keys)
+            elif t in CATEGORY_KEYS:
+                chosen.append(t)
+            else:
+                err_console.print(f"[red]Unknown category:[/red] {t}")
+                sys.exit(2)
+
+    excluded: set[str] = set()
+    for token in exclude:
+        for raw in token.split(","):
+            t = raw.strip().lower()
+            if t and t in CATEGORY_KEYS:
+                excluded.add(t)
+
+    seen: set[str] = set()
+    resolved: list[str] = []
+    for k in chosen:
+        if k in excluded or k in seen:
+            continue
+        seen.add(k)
+        resolved.append(k)
+
+    if not include_unsafe:
+        from .cleanup import scan as _scan
+        unsafe = {r.key for r in _scan(_Cfg()).values() if not r.safe}
+        # Drop unsafe keys only if they came in via 'all' / 'safe'.
+        # Direct opt-in (named in --include) keeps them.
+        explicit = set()
+        for token in include:
+            for raw in token.split(","):
+                t = raw.strip().lower()
+                if t in CATEGORY_KEYS:
+                    explicit.add(t)
+        resolved = [k for k in resolved if k not in unsafe or k in explicit]
+
+    return resolved
+
+
+@cleanup_group.command("categories")
+def cleanup_categories():
+    """List every cleanup category and its purpose."""
+    from .cleanup import scan
+    config = _cfg()
+    reports = scan(config)
+    tbl = Table(title="Cleanup categories", box=box.ROUNDED)
+    tbl.add_column("Key", style="cyan")
+    tbl.add_column("Label")
+    tbl.add_column("Safe", justify="center")
+    tbl.add_column("Description")
+    for r in reports.values():
+        tbl.add_row(
+            r.key,
+            r.label,
+            "[green]yes[/green]" if r.safe else "[yellow]no[/yellow]",
+            r.description,
+        )
+    console.print(tbl)
+    console.print(
+        "\n[dim]Use [cyan]spindoctor cleanup audit[/cyan] to see how much disk each one uses, "
+        "or [cyan]spindoctor cleanup run --include <key>[/cyan] to remove.[/dim]"
+    )
+
+
+@cleanup_group.command("audit")
+@click.option("--detail", is_flag=True, help="List every individual file under each category.")
+@click.option("--category", "-c", "categories", multiple=True,
+              help="Limit audit to one or more category keys (repeatable, comma-separated).")
+def cleanup_audit(detail: bool, categories: tuple[str, ...]):
+    """Show disk usage for each SpinDoctor cache and manifest category.
+
+    \b
+    Examples:
+      spindoctor cleanup audit
+      spindoctor cleanup audit --detail
+      spindoctor cleanup audit -c metadata-cache -c db-backups
+    """
+    from .cleanup import CATEGORY_KEYS, format_size, scan
+
+    keys: Optional[list[str]] = None
+    if categories:
+        keys = []
+        for token in categories:
+            for raw in token.split(","):
+                t = raw.strip().lower()
+                if not t:
+                    continue
+                if t not in CATEGORY_KEYS:
+                    err_console.print(f"[red]Unknown category:[/red] {t}")
+                    sys.exit(2)
+                keys.append(t)
+
+    config = _cfg()
+    reports = scan(config, keys=keys)
+
+    summary = Table(title="SpinDoctor cleanup audit", box=box.ROUNDED)
+    summary.add_column("Category", style="cyan")
+    summary.add_column("Safe", justify="center")
+    summary.add_column("Files", justify="right")
+    summary.add_column("Size", justify="right")
+    summary.add_column("Oldest")
+    summary.add_column("Newest")
+    summary.add_column("Location", style="dim")
+
+    grand_bytes = 0
+    grand_files = 0
+    for r in reports.values():
+        grand_bytes += r.total_bytes
+        grand_files += r.count
+        summary.add_row(
+            r.key,
+            "[green]✓[/green]" if r.safe else "[yellow]![/yellow]",
+            str(r.count) if r.count else "[dim]0[/dim]",
+            format_size(r.total_bytes) if r.count else "[dim]—[/dim]",
+            _cleanup_format_mtime(r.oldest_mtime),
+            _cleanup_format_mtime(r.newest_mtime),
+            r.location,
+        )
+
+    console.print(summary)
+    console.print(
+        f"\n[bold]Total:[/bold] {grand_files} file(s), "
+        f"[bold]{format_size(grand_bytes)}[/bold] across {len(reports)} categor"
+        f"{'y' if len(reports) == 1 else 'ies'}."
+    )
+
+    notes = [(r.label, r.note) for r in reports.values() if r.note and r.count]
+    if notes:
+        console.print("\n[dim]Notes:[/dim]")
+        for label, note in notes:
+            console.print(f"  [yellow]•[/yellow] [bold]{escape(label)}[/bold]: {note}")
+
+    if detail:
+        for r in reports.values():
+            if not r.count:
+                continue
+            console.print(f"\n[bold]{escape(r.label)}[/bold]  [dim]({r.key})[/dim]")
+            tbl = Table(box=box.SIMPLE)
+            tbl.add_column("Modified", style="dim")
+            tbl.add_column("Size", justify="right")
+            tbl.add_column("Path")
+            for f in sorted(r.files, key=lambda x: x.mtime, reverse=True):
+                tbl.add_row(
+                    _cleanup_format_mtime(f.mtime),
+                    format_size(f.size),
+                    str(f.path),
+                )
+            console.print(tbl)
+
+
+@cleanup_group.command("run")
+@click.option("--include", "-i", multiple=True,
+              help="Categories to clean. Use 'all', 'safe', or a key (repeatable, comma-separated).")
+@click.option("--exclude", "-x", multiple=True,
+              help="Categories to skip (repeatable, comma-separated).")
+@click.option("--include-unsafe", is_flag=True,
+              help="With --include all/safe, also include unsafe categories (db-backups, manifests).")
+@click.option("--older-than", type=int, default=None, metavar="DAYS",
+              help="Only remove files older than DAYS (by mtime).")
+@click.option("--keep-recent", type=int, default=None, metavar="N",
+              help="Keep the N newest files in each category, remove the rest.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually delete. Without this flag the command runs as a dry-run.")
+@click.option("--prune-empty-dirs", is_flag=True,
+              help="After deleting files, remove now-empty cache directories.")
+@click.option("--yes", "-y", "skip_confirm", is_flag=True,
+              help="Skip the interactive confirmation prompt.")
+def cleanup_run(
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+    include_unsafe: bool,
+    older_than: Optional[int],
+    keep_recent: Optional[int],
+    apply_changes: bool,
+    prune_empty_dirs: bool,
+    skip_confirm: bool,
+):
+    """Remove cached files. Defaults to dry-run; pass --apply to actually delete.
+
+    \b
+    Examples:
+      # Preview what 'all safe caches' would remove
+      spindoctor cleanup run --include safe
+      \b
+      # Actually clear API + match caches
+      spindoctor cleanup run --include metadata-cache,match-cache --apply
+      \b
+      # Trim DB backups to the 5 most recent per location
+      spindoctor cleanup run --include db-backups --keep-recent 5 --apply
+      \b
+      # Drop scraper cache files older than 90 days
+      spindoctor cleanup run --include metadata-cache --older-than 90 --apply
+      \b
+      # Wipe everything (caution: includes backups and undo manifests)
+      spindoctor cleanup run --include all --include-unsafe --apply
+
+    Categories: see [cyan]spindoctor cleanup categories[/cyan].
+    """
+    from .cleanup import filter_files, format_size, prune_empty_dirs as _prune
+    from .cleanup import remove as _remove
+    from .cleanup import scan
+
+    if not include:
+        err_console.print(
+            "[red]No --include specified.[/red] "
+            "Try [cyan]--include safe[/cyan] for caches, or "
+            "[cyan]spindoctor cleanup categories[/cyan] for the full list."
+        )
+        sys.exit(2)
+
+    keys = _cleanup_resolve_keys(include, exclude, include_unsafe)
+    if not keys:
+        err_console.print("[yellow]No categories selected after applying filters.[/yellow]")
+        sys.exit(2)
+
+    config = _cfg()
+    reports = scan(config, keys=keys)
+
+    pending: list[tuple[str, list]] = []
+    total_files = 0
+    total_bytes = 0
+    for key in keys:
+        report = reports[key]
+        targets = filter_files(
+            report.files,
+            older_than_days=older_than,
+            keep_recent=keep_recent,
+        )
+        if targets:
+            pending.append((key, targets))
+            total_files += len(targets)
+            total_bytes += sum(f.size for f in targets)
+
+    mode = "[bold red]APPLY[/bold red]" if apply_changes else "[bold yellow]DRY-RUN[/bold yellow]"
+    console.print(f"\n{mode} — {total_files} file(s), {format_size(total_bytes)} selected.\n")
+
+    if not pending:
+        console.print("[dim]Nothing to remove.[/dim]")
+        return
+
+    plan_tbl = Table(box=box.ROUNDED)
+    plan_tbl.add_column("Category", style="cyan")
+    plan_tbl.add_column("Files", justify="right")
+    plan_tbl.add_column("Size", justify="right")
+    plan_tbl.add_column("Notes", style="dim")
+    for key, targets in pending:
+        report = reports[key]
+        notes = []
+        if not report.safe:
+            notes.append("[yellow]unsafe[/yellow]")
+        if report.note:
+            notes.append(report.note)
+        plan_tbl.add_row(
+            key,
+            str(len(targets)),
+            format_size(sum(f.size for f in targets)),
+            " · ".join(notes) if notes else "",
+        )
+    console.print(plan_tbl)
+
+    if not apply_changes:
+        console.print(
+            "\n[dim]Dry-run only. Re-run with [cyan]--apply[/cyan] to delete.[/dim]"
+        )
+        if total_files:
+            console.print(
+                "[dim]Tip: add [cyan]--include[/cyan] '<category>' or [cyan]"
+                "--keep-recent N[/cyan] to narrow the selection.[/dim]"
+            )
+        return
+
+    if not skip_confirm:
+        unsafe_in_plan = [k for k, _ in pending if not reports[k].safe]
+        prompt = f"Permanently delete {total_files} file(s) ({format_size(total_bytes)})?"
+        if unsafe_in_plan:
+            prompt = (
+                f"[!] Plan includes unsafe categories: {', '.join(unsafe_in_plan)}.\n"
+                + prompt
+            )
+        if not click.confirm(prompt, default=False):
+            console.print("[yellow]Cancelled — nothing was deleted.[/yellow]")
+            return
+
+    grand_removed = 0
+    grand_bytes = 0
+    grand_failed: list[tuple] = []
+    pruned_roots: list[Path] = []
+    for key, targets in pending:
+        result = _remove(targets, dry_run=False)
+        grand_removed += result.count_removed
+        grand_bytes += result.bytes_freed
+        grand_failed.extend(result.failed)
+        location = reports[key].location
+        if Path(location).exists():
+            pruned_roots.append(Path(location))
+        console.print(
+            f"  [green]✓[/green] {key}: removed {result.count_removed} "
+            f"({format_size(result.bytes_freed)})"
+            + (f" — [red]{len(result.failed)} failed[/red]" if result.failed else "")
+        )
+
+    if prune_empty_dirs:
+        n = _prune(pruned_roots)
+        if n:
+            console.print(f"  [green]✓[/green] Pruned {n} empty director{'y' if n == 1 else 'ies'}.")
+
+    console.print(
+        f"\n[green]✓ Cleanup complete.[/green] Removed {grand_removed} file(s), "
+        f"freed [bold]{format_size(grand_bytes)}[/bold]."
+    )
+    if grand_failed:
+        console.print(f"[red]{len(grand_failed)} file(s) could not be removed:[/red]")
+        for path, err in grand_failed[:10]:
+            console.print(f"  [red]·[/red] {path}: {err}")
+
+
 # ─── match ────────────────────────────────────────────────────────────────────
 
 @cli.group("match")
