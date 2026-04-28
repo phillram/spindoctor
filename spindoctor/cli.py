@@ -2181,6 +2181,316 @@ def _print_dl_result(slot: str, r) -> None:
         console.print(f"  [red]✗[/red] {slot}: {r.error}")
 
 
+# ─── add-pc-system / pc-rename ────────────────────────────────────────────────
+
+# Default overrides for a brand-new PC/Windows/Steam library.  Writes
+# settings.json so every other code path (audit, scraper, organize,
+# rocketlauncher) immediately treats the system like a PC library.
+PC_DEFAULT_OVERRIDES: dict = {
+    "rom_extensions": [".exe", ".lnk", ".url", ".bat"],
+    "layout": "flat",
+    "emulator": "PCLauncher",
+    "recursive_scan": True,
+    "title_strategy": "smart",
+}
+
+
+def _ensure_pc_overrides(config: Config, system_name: str) -> dict:
+    """Merge PC defaults into ``system_overrides[system_name]`` (preserves
+    existing user-set keys) and persist.  Returns the merged entry."""
+    overrides = dict(config.system_overrides)
+    entry = dict(overrides.get(system_name, {}))
+    for k, v in PC_DEFAULT_OVERRIDES.items():
+        entry.setdefault(k, v)
+    overrides[system_name] = entry
+    config.system_overrides = overrides
+    save_config(config)
+    return entry
+
+
+def _propose_pc_titles(
+    system_name: str,
+    config: Config,
+) -> list[tuple[Path, str]]:
+    """Walk the system's ROM dir and return ``(path, proposed_title)`` pairs.
+
+    Honours the override's title_strategy.  Same files that ``scan_roms``
+    would pick up — kept separate so the picker can show the file path
+    behind each proposed title.
+    """
+    from .config import get_rom_extensions, get_system_overrides
+    from .romutils import derive_pc_title
+
+    rom_dir = Path(config.roms_dir) / system_name
+    if not rom_dir.exists():
+        return []
+    extensions = {e.lower() for e in get_rom_extensions(system_name)}
+    strategy = (
+        get_system_overrides().get(system_name, {}).get("title_strategy", "smart")
+    )
+    proposals: list[tuple[Path, str]] = []
+    for path in sorted(rom_dir.rglob("*")):
+        if not path.is_file() or path.suffix.lower() not in extensions:
+            continue
+        proposals.append((path, derive_pc_title(path, rom_dir, strategy)))
+    return proposals
+
+
+@cli.command("add-pc-system")
+@click.argument("system_name", required=False, default="PC Games")
+@click.option("--rename/--no-rename", "rename", default=True,
+              help="Interactively confirm/edit derived titles before writing the DB.")
+@click.option("--no-menu", is_flag=True, help="Skip the Main Menu upsert step.")
+@click.option("--no-system-media", is_flag=True,
+              help="Skip downloading wheel/background/video for the new system.")
+@click.option("--no-db", is_flag=True, help="Skip building the per-system database.")
+@click.option("--no-game-media", is_flag=True, help="Skip per-game media fetch.")
+@click.option("--no-pclauncher", is_flag=True,
+              help="Skip generating per-game PCLauncher INIs.")
+@click.option("--overwrite-pclauncher", is_flag=True,
+              help="Overwrite existing PCLauncher INIs (default: keep user edits).")
+@click.option("--pick-media", "pick_media", is_flag=True,
+              help="Interactively preview & pick when a media slot has multiple candidates.")
+@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--dry-run", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
+                  no_game_media, no_pclauncher, overwrite_pclauncher,
+                  pick_media, source, dry_run, output_dir):
+    """Bootstrap a PC/Windows/Steam games system end-to-end.
+
+    \b
+    Equivalent to ``add-system`` with PC-friendly defaults baked in:
+      • recursive directory scan (your install layout is preserved)
+      • smart title extraction (parent folder for nested .exe; stem for .lnk/.url)
+      • PCLauncher emulator wired through RocketLauncher
+      • per-game PCLauncher INIs generated mapping each title → executable
+
+    \b
+    Examples:
+      spindoctor add-pc-system
+      spindoctor add-pc-system "Windows Games" --pick-media
+      spindoctor add-pc-system "Steam Games" --no-rename --no-pclauncher
+    """
+    from .config import reset_override_cache
+
+    config = _cfg()
+    _check_config(config)
+
+    out_base = Path(output_dir) if output_dir else None
+
+    # 1. Stamp PC overrides ───────────────────────────────────────────────────
+    if dry_run:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written, "
+            "and overrides will not be persisted."
+        )
+    console.print(Panel(f" add-pc-system: {system_name} ", style="bold magenta"))
+    console.print("[blue bold]0. PC system overrides[/blue bold]")
+    if dry_run:
+        merged = {**PC_DEFAULT_OVERRIDES, **config.system_overrides.get(system_name, {})}
+        console.print(f"  [yellow]would write[/yellow] system_overrides[{system_name!r}]:")
+        for k, v in merged.items():
+            console.print(f"    [dim]{k}:[/dim] {v}")
+    else:
+        entry = _ensure_pc_overrides(config, system_name)
+        reset_override_cache()
+        console.print(f"  [green]+[/green] saved override for [cyan]{system_name}[/cyan]")
+        for k, v in entry.items():
+            console.print(f"    [dim]{k}:[/dim] {v}")
+
+    # 2. Run the standard add-system flow.  We always pass --no-db and
+    #    --no-game-media because PC systems need the title-review step to
+    #    happen between scan and DB write, and per-game media fetch must
+    #    follow the DB build (otherwise there are no game names to scrape).
+    inner = ["add-system", system_name, "--no-db", "--no-game-media"]
+    if no_menu:
+        inner.append("--no-menu")
+    if no_system_media:
+        inner.append("--no-system-media")
+    if pick_media:
+        inner.append("--pick-media")
+    if dry_run:
+        inner.append("--dry-run")
+    if output_dir:
+        inner.extend(["--output-dir", str(output_dir)])
+    if source:
+        inner.extend(["--source", source])
+
+    console.print(f"\n[dim]running:[/dim] spindoctor {' '.join(inner)}")
+    try:
+        cli.main(args=inner, standalone_mode=False, prog_name="spindoctor")
+    except SystemExit:
+        pass
+
+    if no_db:
+        console.print("[dim]4. Games database — skipped.[/dim]")
+        if not no_pclauncher:
+            console.print(
+                "[yellow]Skipping PCLauncher INI generation because --no-db was passed.[/yellow]"
+            )
+        return
+
+    # 3. Title review + DB build ─────────────────────────────────────────────
+    console.print("\n[blue bold]4. Title review + games database[/blue bold]")
+    proposals = _propose_pc_titles(system_name, config)
+    if not proposals:
+        rom_dir = Path(config.roms_dir) / system_name
+        console.print(
+            f"  [yellow]No game files found under {rom_dir} — drop installs/shortcuts in and re-run.[/yellow]"
+        )
+        return
+
+    if rename and not dry_run:
+        from .pc_titles import review_titles
+        title_to_path = review_titles(system_name, proposals, interactive=True)
+    elif rename and dry_run:
+        console.print(
+            f"  [yellow]would review {len(proposals)} title(s) interactively[/yellow]"
+        )
+        title_to_path = {p: t for p, t in proposals}
+    else:
+        # No interactive review — accept proposed titles, drop duplicates.
+        title_to_path = {}
+        for path, proposed in proposals:
+            if proposed in title_to_path.values():
+                continue
+            title_to_path[path] = proposed
+
+    # Invert {path: title} → {title: path} for DB + INI writes.
+    by_title: dict[str, Path] = {}
+    for path, title in title_to_path.items():
+        by_title.setdefault(title, path)
+
+    if not by_title:
+        console.print("  [yellow]No titles accepted — nothing to write.[/yellow]")
+        return
+
+    console.print(f"  [green]+[/green] {len(by_title)} title(s) accepted")
+    if dry_run:
+        for t in sorted(by_title):
+            console.print(f"  [yellow]would add stub:[/yellow] {t}")
+    else:
+        db = load_database(system_name, config.databases_dir)
+        existing = set(db.games().keys())
+        new_count = 0
+        for title in sorted(by_title):
+            if title in existing:
+                continue
+            stub = build_stub_entry(
+                title,
+                strip_variants=config.strip_variant_tags_in_display_name,
+            )
+            db.add_game(stub)
+            new_count += 1
+        if new_count:
+            if out_base:
+                saved = db.save(
+                    output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
+                    backup=False,
+                )
+            else:
+                saved = db.save(backup=config.backup_before_modify)
+            console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
+        else:
+            console.print("  [green]Database already in sync with titles.[/green]")
+
+    # 4. PCLauncher per-game INIs ─────────────────────────────────────────────
+    if no_pclauncher:
+        console.print("[dim]6. PCLauncher INIs — skipped.[/dim]")
+    else:
+        console.print("\n[blue bold]6. PCLauncher per-game INIs[/blue bold]")
+        if dry_run:
+            console.print(
+                f"  [yellow]would write {len(by_title)} INI(s) under "
+                f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
+            )
+        else:
+            from .rocketlauncher import generate_pclauncher_inis
+            try:
+                module_dir, written, skipped = generate_pclauncher_inis(
+                    system_name, by_title, config, out_base,
+                    overwrite=overwrite_pclauncher,
+                )
+            except ValueError as e:
+                err_console.print(f"  [red]{e}[/red]")
+            else:
+                console.print(f"  [green]+[/green] wrote {len(written)} INI(s) → {module_dir}")
+                if skipped:
+                    console.print(
+                        f"  [dim]· kept {len(skipped)} existing INI(s) "
+                        f"(pass --overwrite-pclauncher to replace)[/dim]"
+                    )
+
+    # 5. Per-game media ──────────────────────────────────────────────────────
+    if no_game_media:
+        return
+    console.print("\n[blue bold]7. Per-game media[/blue bold]")
+    extra = ["--system", system_name]
+    if pick_media:
+        extra.append("--pick-media")
+    if dry_run:
+        extra.append("--dry-run")
+    if output_dir:
+        extra.extend(["--output-dir", str(output_dir)])
+    if source:
+        extra.extend(["--source", source])
+    console.print(f"  [dim]running:[/dim] spindoctor fetch-media {' '.join(extra)}")
+    try:
+        cli.main(args=["fetch-media", *extra], standalone_mode=False, prog_name="spindoctor")
+    except SystemExit:
+        pass
+
+
+@cli.command("pc-rename")
+@click.argument("system_name")
+@click.option("--no-pclauncher", is_flag=True,
+              help="Skip regenerating PCLauncher INIs after rename.")
+@click.option("--overwrite-pclauncher", is_flag=True,
+              help="Overwrite existing PCLauncher INIs.")
+def pc_rename(system_name, no_pclauncher, overwrite_pclauncher):
+    """Re-run the title picker for an existing PC system.
+
+    \b
+    Use this after dropping new games into <roms_dir>/<SYSTEM>/ or to
+    revise a previously-cached title.  Updates ~/.spindoctor/pc_titles_cache/
+    and (optionally) regenerates the per-game PCLauncher INIs.
+    """
+    config = _cfg()
+    _check_config(config)
+    proposals = _propose_pc_titles(system_name, config)
+    if not proposals:
+        rom_dir = Path(config.roms_dir) / system_name
+        console.print(f"[yellow]No game files found under {rom_dir}.[/yellow]")
+        return
+
+    from .pc_titles import review_titles
+    title_to_path = review_titles(system_name, proposals, interactive=True)
+
+    by_title: dict[str, Path] = {}
+    for path, title in title_to_path.items():
+        by_title.setdefault(title, path)
+
+    console.print(f"\n[green]+[/green] {len(by_title)} title(s) confirmed.")
+
+    if not no_pclauncher and by_title:
+        from .rocketlauncher import generate_pclauncher_inis
+        try:
+            module_dir, written, skipped = generate_pclauncher_inis(
+                system_name, by_title, config,
+                overwrite=overwrite_pclauncher,
+            )
+        except ValueError as e:
+            err_console.print(f"[red]{e}[/red]")
+        else:
+            console.print(f"[green]+[/green] wrote {len(written)} INI(s) → {module_dir}")
+            if skipped:
+                console.print(
+                    f"[dim]· kept {len(skipped)} existing INI(s) "
+                    f"(pass --overwrite-pclauncher to replace)[/dim]"
+                )
+
+
 # ─── organize ─────────────────────────────────────────────────────────────────
 
 @cli.command("organize")
