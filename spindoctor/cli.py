@@ -86,7 +86,11 @@ def cli():
 
 @cli.group("config")
 def config_group():
-    """Show or update SpinDoctor configuration."""
+    """Show or update SpinDoctor configuration.
+
+    Run `spindoctor config init` for a first-run wizard that walks through
+    every path-based setting in one go.
+    """
 
 
 @config_group.command("show")
@@ -156,6 +160,68 @@ def config_set(key: str, value: str):
         setattr(config, key, value)
     save_config(config)
     console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {value!r}")
+
+
+# Wizard fields: (key, prompt label, hardcoded Windows default, allow_blank).
+# allow_blank=True keys accept "-" as a sentinel to clear the value.
+_INIT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
+    ("roms_dir",              "ROMs directory (one sub-folder per system)",        r"D:\ROMs",                       False),
+    ("hyperspin_dir",         "HyperSpin directory (has Databases/ and Media/)",   r"D:\HyperSpin",                  False),
+    ("emulators_dir",         "Emulators directory",                               r"D:\Emulators",                  False),
+    ("rocketlauncher_dir",    "RocketLauncher directory",                          r"D:\RocketLauncher",             False),
+    ("ledblinky_dir",         "LEDBlinky install directory ('-' to skip)",         r"C:\LEDBlinky",                  True),
+    ("mame_executable",       "MAME executable ('-' to skip)",                     r"D:\Emulators\MAME\mame.exe",    True),
+    ("output_dir",            "Default output directory ('-' for in-place writes)", r"D:\SpinDoctorOutput",          True),
+    ("auto_audit_export_dir", "Auto-audit export directory ('-' to skip)",         r"D:\SpinDoctorAudits",           True),
+)
+
+
+@config_group.command("init")
+def config_init():
+    """First-run setup wizard — prompt for every path-based config key in order.
+
+    Press Enter to accept the shown default. For optional keys, type '-' to
+    leave the value blank. Existing values (from a previous run) are used as
+    the defaults so re-running the wizard refines rather than overwrites.
+    """
+    config = _cfg()
+    console.print(Panel.fit(
+        "[bold]SpinDoctor first-run setup[/bold]\n"
+        "Press [cyan]Enter[/cyan] to accept each default. "
+        "Type [cyan]-[/cyan] to clear an optional path.",
+        box=box.ROUNDED,
+    ))
+
+    pending: dict[str, str] = {}
+    for key, label, win_default, allow_blank in _INIT_FIELDS:
+        existing = getattr(config, key, "") or ""
+        default = existing if existing else win_default
+        answer = click.prompt(label, default=default, show_default=True).strip()
+        pending[key] = "" if (allow_blank and answer == "-") else answer
+
+    tbl = Table(title="Review", box=box.ROUNDED)
+    tbl.add_column("Key", style="cyan")
+    tbl.add_column("Value")
+    for key, val in pending.items():
+        tbl.add_row(key, val or "[dim]<not set>[/dim]")
+    console.print(tbl)
+
+    if not click.confirm("Save this configuration?", default=True):
+        console.print("[yellow]Cancelled — no changes written.[/yellow]")
+        return
+
+    for key, val in pending.items():
+        setattr(config, key, val)
+    save_config(config)
+
+    ok, errors = config.is_valid()
+    if ok:
+        console.print("[green]✓ Setup complete.[/green] Run [cyan]spindoctor doctor[/cyan] for a full health check.")
+    else:
+        console.print("[green]✓ Saved.[/green] [yellow]But some required paths still need attention:[/yellow]")
+        for e in errors:
+            err_console.print(f"  [yellow]•[/yellow] {e}")
+        console.print("Run [cyan]spindoctor doctor[/cyan] once paths are reachable.")
 
 
 # ─── config system overrides ──────────────────────────────────────────────────
