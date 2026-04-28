@@ -5424,3 +5424,368 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
     console.print(
         f"  Run [cyan]spindoctor migrate --undo {manifest}[/cyan] to revert."
     )
+
+
+# ─── batch-edit / rename / clone ─────────────────────────────────────────────
+
+
+def _print_edit_table(plan: dict, title: str) -> None:
+    """Render a (game | field | before -> after) table from a plan dict."""
+    tbl = Table(title=title, box=box.SIMPLE)
+    tbl.add_column("Game", style="cyan", overflow="fold")
+    tbl.add_column("Field")
+    tbl.add_column("Before", style="yellow", overflow="fold")
+    tbl.add_column("After", style="green", overflow="fold")
+    for game_name in sorted(plan.keys(), key=str.lower):
+        for field_name, (before, after) in plan[game_name].items():
+            tbl.add_row(
+                game_name, field_name,
+                escape(before) if before else "[dim](empty)[/dim]",
+                escape(after) if after else "[dim](empty)[/dim]",
+            )
+    console.print(tbl)
+
+
+@cli.command("batch-edit")
+@click.option("--system", "-s", required=False, default=None,
+              help="System whose database to edit.")
+@click.option("--filter", "filters", multiple=True,
+              help="Filter clause: name=*Mario*, genre=Action, year=1980-1989, "
+                   "manufacturer=Nintendo, missing=rating. May be repeated.")
+@click.option("--set", "set_clauses", multiple=True,
+              help="Set a field: --set genre=Action. May be repeated.")
+@click.option("--clear", "clear_fields", multiple=True,
+              help="Clear a field: --clear rating. May be repeated.")
+@click.option("--append", "append_clauses", multiple=True,
+              help="Append text to a field: --append description=' (USA)'.")
+@click.option("--prepend", "prepend_clauses", multiple=True,
+              help="Prepend text to a field. May be repeated.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the edit. Without this flag, dry-run only.")
+@click.option("--report", "report_path", default=None, type=click.Path(),
+              help="Write a CSV preview to this path (game,field,before,after).")
+@click.option("--undo", "undo_manifest", default=None, type=click.Path(exists=True),
+              help="Reverse the edit recorded in this manifest.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List edit manifests on disk and exit.")
+@click.option("--output-dir", default=None, type=click.Path(),
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def batch_edit(system, filters, set_clauses, clear_fields, append_clauses,
+               prepend_clauses, apply_changes, report_path, undo_manifest,
+               list_manifests_flag, output_dir):
+    """Edit metadata fields across many games in one shot.
+
+    \b
+    Examples:
+      spindoctor batch-edit --system MAME --filter genre=Action --set rating=5
+      spindoctor batch-edit --system MAME --filter year=1980-1989 \\
+                            --filter manufacturer=Capcom --set genre=Action --apply
+      spindoctor batch-edit --system MAME --filter missing=rating --set rating=3
+      spindoctor batch-edit --undo ~/.spindoctor/edits/edit-20260428_120000.json
+      spindoctor batch-edit --list-manifests
+    """
+    from .edit import (
+        EDIT_DIR, EditChange, apply_batch_edit, build_filter,
+        edit_manifest_summary, find_matching_games, list_edit_manifests,
+        plan_batch_edit, undo_batch_edit, write_edit_report,
+    )
+
+    config = _cfg()
+
+    # ── --list-manifests ──────────────────────────────────────────────────────
+    if list_manifests_flag:
+        manifests = list_edit_manifests()
+        if not manifests:
+            console.print(
+                f"[yellow]No edit manifests under {EDIT_DIR}.[/yellow]"
+            )
+            return
+        tbl = Table(title="Batch-edit manifests", box=box.SIMPLE)
+        tbl.add_column("Manifest", style="cyan")
+        tbl.add_column("System")
+        tbl.add_column("Games", justify="right")
+        tbl.add_column("Changes", justify="right")
+        for m in manifests:
+            info = edit_manifest_summary(m)
+            tbl.add_row(
+                m.name,
+                info["system"] or "[dim]?[/dim]",
+                str(info["games"]),
+                str(info["changes"]),
+            )
+        console.print(tbl)
+        return
+
+    # ── --undo ────────────────────────────────────────────────────────────────
+    if undo_manifest:
+        _check_config(config)
+        manifest_path = Path(undo_manifest)
+        console.print(f"Reverting {manifest_path.name}")
+        results = undo_batch_edit(manifest_path, config)
+        reverted = sum(1 for r in results if not r.skipped)
+        skipped = sum(1 for r in results if r.skipped)
+        console.print(
+            f"[green]+[/green] reverted {reverted} game(s); "
+            f"skipped {skipped}"
+        )
+        for r in results:
+            if r.skipped:
+                err_console.print(f"  [yellow]·[/yellow] {r.game_name} — {r.reason}")
+        return
+
+    # ── plan path ─────────────────────────────────────────────────────────────
+    if not system:
+        err_console.print("[red]--system is required for batch-edit.[/red]")
+        sys.exit(1)
+    _check_config(config)
+
+    try:
+        edit_filter = build_filter(system, filters)
+    except ValueError as e:
+        err_console.print(f"[red]Bad --filter:[/red] {e}")
+        sys.exit(1)
+
+    changes: list[EditChange] = []
+    try:
+        for clause in set_clauses:
+            key, value = clause.split("=", 1) if "=" in clause else (clause, "")
+            changes.append(EditChange(field=key.strip().lower(), value=value, mode="set"))
+        for fname in clear_fields:
+            changes.append(EditChange(field=fname.strip().lower(), value="", mode="clear"))
+        for clause in append_clauses:
+            key, value = clause.split("=", 1) if "=" in clause else (clause, "")
+            changes.append(EditChange(field=key.strip().lower(), value=value, mode="append"))
+        for clause in prepend_clauses:
+            key, value = clause.split("=", 1) if "=" in clause else (clause, "")
+            changes.append(EditChange(field=key.strip().lower(), value=value, mode="prepend"))
+    except ValueError as e:
+        err_console.print(f"[red]Bad change spec:[/red] {e}")
+        sys.exit(1)
+
+    if not changes:
+        err_console.print(
+            "[red]No changes specified. Use --set / --clear / --append / --prepend.[/red]"
+        )
+        sys.exit(1)
+
+    games = find_matching_games(config, edit_filter)
+    if not games:
+        console.print("[yellow]No games match the filter.[/yellow]")
+        return
+
+    plan = plan_batch_edit(games, changes)
+    if not plan:
+        console.print("[yellow]Filter matched games but no fields would change.[/yellow]")
+        return
+
+    console.print(Panel(
+        f" batch-edit — {system}: {len(plan)} game(s), "
+        f"{sum(len(v) for v in plan.values())} field change(s) ",
+        style="bold blue",
+    ))
+    _print_edit_table(plan, title=f"{system} — pending edits")
+
+    if report_path:
+        out = Path(report_path)
+        write_edit_report(games, changes, out)
+        console.print(f"[dim]CSV report:[/dim] {out}")
+
+    if not apply_changes:
+        console.print(
+            f"\n[yellow]{len(plan)}[/yellow] game(s) would be edited. "
+            f"Re-run with [cyan]--apply[/cyan] to write."
+        )
+        return
+
+    out_path = Path(output_dir) if output_dir else None
+    results, manifest = apply_batch_edit(
+        config, system, games, changes, output_dir=out_path,
+    )
+    edited = sum(1 for r in results if not r.skipped)
+    console.print(f"\n[green]+[/green] edited {edited} game(s)")
+    for r in results:
+        if r.skipped:
+            console.print(f"  [dim]·[/dim] {r.game_name} — {r.reason}")
+    if manifest:
+        console.print(
+            f"Manifest: {manifest.name}\n"
+            f"  Run [cyan]spindoctor batch-edit --undo {manifest}[/cyan] to revert."
+        )
+
+
+def _print_rename_table(plan, title: str) -> None:
+    tbl = Table(title=title, box=box.SIMPLE)
+    tbl.add_column("Kind", style="cyan")
+    tbl.add_column("From", overflow="fold")
+    tbl.add_column("To", overflow="fold")
+    tbl.add_column("Note", style="dim", overflow="fold")
+    for ch in plan.file_changes:
+        src = str(ch.src) if ch.src else "[dim]—[/dim]"
+        dest = str(ch.dest) if ch.dest else "[dim]—[/dim]"
+        kind = ch.kind if not ch.media_type else f"{ch.kind} ({ch.media_type})"
+        tbl.add_row(kind, escape(src), escape(dest), ch.note)
+    console.print(tbl)
+
+
+def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
+                        apply_changes, undo_manifest, list_manifests_flag,
+                        output_dir):
+    from .edit import (
+        RENAME_DIR, apply_rename, find_latest_rename_manifest,
+        list_rename_manifests, plan_rename, rename_manifest_summary,
+        undo_rename,
+    )
+
+    config = _cfg()
+    verb = "clone" if clone else "rename"
+
+    if list_manifests_flag:
+        manifests = list_rename_manifests()
+        if not manifests:
+            console.print(f"[yellow]No rename manifests under {RENAME_DIR}.[/yellow]")
+            return
+        tbl = Table(title="Rename / clone manifests", box=box.SIMPLE)
+        tbl.add_column("Manifest", style="cyan")
+        tbl.add_column("System")
+        tbl.add_column("Old")
+        tbl.add_column("New")
+        tbl.add_column("Mode")
+        tbl.add_column("Files", justify="right")
+        for m in manifests:
+            info = rename_manifest_summary(m)
+            tbl.add_row(
+                m.name,
+                info["system"] or "[dim]?[/dim]",
+                info["old"] or "",
+                info["new"] or "",
+                "clone" if info["clone"] else "rename",
+                str(info["moves"]),
+            )
+        console.print(tbl)
+        return
+
+    if undo_manifest:
+        _check_config(config)
+        manifest_path = Path(undo_manifest)
+        console.print(f"Reverting {manifest_path.name}")
+        reversed_changes = undo_rename(manifest_path, config)
+        ok = sum(1 for c in reversed_changes if "fail" not in c.note and "missing" not in c.note)
+        console.print(f"[green]+[/green] reverted {ok} change(s)")
+        for c in reversed_changes:
+            if "fail" in c.note or "missing" in c.note:
+                err_console.print(f"  [yellow]·[/yellow] {c.kind}: {c.note}")
+        return
+
+    if not system or not game or not to:
+        err_console.print(f"[red]--system, --game, --to are all required for {verb}.[/red]")
+        sys.exit(1)
+    _check_config(config)
+
+    try:
+        plan = plan_rename(
+            config, system, game, to,
+            clone=clone,
+            new_display_name=display_name or "",
+        )
+    except ValueError as e:
+        err_console.print(f"[red]Cannot {verb}:[/red] {e}")
+        sys.exit(1)
+
+    console.print(Panel(
+        f" {verb} — {system}: {game} -> {to} "
+        + ("[cyan](clone — keeps original)[/cyan]" if clone else ""),
+        style="bold blue",
+    ))
+    _print_rename_table(plan, title=f"Plan ({len(plan.file_changes)} change(s))")
+
+    if not apply_changes:
+        console.print(
+            f"\n[yellow]Dry-run only.[/yellow] "
+            f"Re-run with [cyan]--apply[/cyan] to {verb}."
+        )
+        return
+
+    out_path = Path(output_dir) if output_dir else None
+    try:
+        applied, manifest = apply_rename(plan, config, output_dir=out_path)
+    except (FileExistsError, RuntimeError, OSError) as e:
+        err_console.print(f"[red]Aborted:[/red] {e}")
+        sys.exit(1)
+
+    console.print(f"\n[green]+[/green] {verb} complete — {len(applied)} change(s)")
+    if manifest:
+        console.print(
+            f"Manifest: {manifest.name}\n"
+            f"  Run [cyan]spindoctor {verb} --undo {manifest}[/cyan] to revert."
+        )
+
+
+@cli.command("rename")
+@click.option("--system", "-s", default=None, help="System where the game lives.")
+@click.option("--game", default=None, help="Existing ROM/DB name to rename.")
+@click.option("--to", "to_name", default=None, help="New ROM/DB name.")
+@click.option("--display-name", default=None,
+              help="New <description> text. Defaults to the existing description.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the rename. Without this flag, dry-run only.")
+@click.option("--undo", "undo_manifest", default=None, type=click.Path(exists=True),
+              help="Reverse the rename described by this manifest.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List rename/clone manifests on disk and exit.")
+@click.option("--output-dir", default=None, type=click.Path(),
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def rename_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
+               list_manifests_flag, output_dir):
+    """Rename a game's ROM, DB entry, and every media file in one shot.
+
+    \b
+    Examples:
+      spindoctor rename --system MAME --game "1942" --to "1942 (USA)"
+      spindoctor rename --system MAME --game "1942" --to "1942 (USA)" \\
+                        --display-name "1942 (USA)" --apply
+      spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
+      spindoctor rename --list-manifests
+    """
+    _do_rename_or_clone(
+        clone=False,
+        system=system, game=game, to=to_name, display_name=display_name,
+        apply_changes=apply_changes, undo_manifest=undo_manifest,
+        list_manifests_flag=list_manifests_flag, output_dir=output_dir,
+    )
+
+
+@cli.command("clone")
+@click.option("--system", "-s", default=None, help="System where the game lives.")
+@click.option("--game", default=None, help="Existing ROM/DB name to duplicate.")
+@click.option("--to", "to_name", default=None, help="Name for the duplicate.")
+@click.option("--display-name", default=None,
+              help="<description> text for the new entry.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the clone. Without this flag, dry-run only.")
+@click.option("--undo", "undo_manifest", default=None, type=click.Path(exists=True),
+              help="Reverse the clone described by this manifest.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List rename/clone manifests on disk and exit.")
+@click.option("--output-dir", default=None, type=click.Path(),
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def clone_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
+              list_manifests_flag, output_dir):
+    """Duplicate a game (ROM, DB entry, all media) under a new name.
+
+    \b
+    Examples:
+      spindoctor clone --system MAME --game "1942" --to "1942 (Hack)"
+      spindoctor clone --system MAME --game "1942" --to "1942 (Hack)" \\
+                       --display-name "1942 (Speed Hack)" --apply
+      spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
+      spindoctor clone --list-manifests
+    """
+    _do_rename_or_clone(
+        clone=True,
+        system=system, game=game, to=to_name, display_name=display_name,
+        apply_changes=apply_changes, undo_manifest=undo_manifest,
+        list_manifests_flag=list_manifests_flag, output_dir=output_dir,
+    )
