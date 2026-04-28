@@ -1005,6 +1005,212 @@ def find_misplaced(system, all_systems, apply_moves_flag, undo):
         )
 
 
+@cli.command("curate")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+@click.option("--regions", default=None,
+              help="Comma-separated region preference order (e.g. 'USA,Japan'). "
+                   "Overrides config.region_preferences for this run.")
+@click.option("--include-proto", is_flag=True,
+              help="Treat prototypes/demos/betas as eligible candidates instead "
+                   "of always retiring them.")
+@click.option("--prefer-revision", type=click.Choice(["latest", "oldest"]),
+              default="latest", show_default=True,
+              help="Whether to keep the highest or lowest revision label.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the plan. Without this flag, curate only prints "
+                   "the table.")
+@click.option("--action", type=click.Choice(["archive", "delete"]),
+              default="archive", show_default=True,
+              help="What to do with retired ROMs. 'archive' moves them under "
+                   "<roms_dir>/<system>/_retired/ and writes a manifest. "
+                   "'delete' removes them permanently (no undo).")
+@click.option("--yes", is_flag=True,
+              help="Skip the confirmation prompt for --action delete.")
+@click.option("--undo", is_flag=True,
+              help="Reverse the most recent archive manifest.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List curation manifests on disk and exit.")
+def curate(system, all_systems, regions, include_proto, prefer_revision,
+           apply_changes, action, yes, undo, list_manifests_flag):
+    """Curate region/version variants — keep the best, retire the rest.
+
+    \b
+    Groups every ROM in a system by its normalized title, then picks one
+    canonical variant per game using region preferences and revision
+    rules. Other variants are listed as candidates for archive (default)
+    or delete.
+
+    \b
+    Examples:
+      spindoctor curate --system NES                    :: dry-run
+      spindoctor curate --all --regions USA,Japan
+      spindoctor curate --system NES --apply            :: archive losers
+      spindoctor curate --system NES --apply --action delete --yes
+      spindoctor curate --undo
+      spindoctor curate --list-manifests
+    """
+    from .curate import (
+        CURATION_DIR, DEFAULT_REGION_PREFERENCES, apply_curation,
+        curate_system, find_latest_manifest, list_manifests,
+        manifest_summary, parse_regions,
+    )
+
+    # ── --list-manifests ──────────────────────────────────────────────────────
+    if list_manifests_flag:
+        manifests = list_manifests()
+        if not manifests:
+            console.print(
+                f"[yellow]No curation manifests under {CURATION_DIR}.[/yellow]"
+            )
+            return
+        tbl = Table(title="Curation manifests", box=box.SIMPLE)
+        tbl.add_column("Manifest", style="cyan")
+        tbl.add_column("System")
+        tbl.add_column("Action")
+        tbl.add_column("Files", justify="right")
+        for m in manifests:
+            info = manifest_summary(m)
+            tbl.add_row(
+                m.name,
+                info["system"] or "[dim]?[/dim]",
+                info["action"] or "[dim]?[/dim]",
+                str(info["count"]),
+            )
+        console.print(tbl)
+        return
+
+    # ── --undo ────────────────────────────────────────────────────────────────
+    if undo:
+        from .curate import undo_curation
+        manifest = find_latest_manifest()
+        if not manifest:
+            console.print("[yellow]No curation manifest to undo.[/yellow]")
+            return
+        console.print(f"Reverting {manifest.name}")
+        summary = undo_curation(manifest)
+        console.print(
+            f"[green]+[/green] reverted {summary['reverted']} archive(s)"
+        )
+        for err in summary["errors"]:
+            err_console.print(f"  [red]✗[/red] {err}")
+        return
+
+    # ── plan path ─────────────────────────────────────────────────────────────
+    config = _cfg()
+    _check_config(config)
+
+    if regions:
+        prefs = parse_regions(regions)
+        if not prefs:
+            err_console.print("[red]--regions resolved to no entries.[/red]")
+            sys.exit(1)
+    else:
+        prefs = list(config.region_preferences or DEFAULT_REGION_PREFERENCES)
+
+    systems = _resolve_systems(config, system, all_systems)
+    prefer_latest = prefer_revision == "latest"
+
+    console.print(Panel(
+        f" curate — regions: {', '.join(prefs)} | revision: {prefer_revision} "
+        f"| proto: {'kept' if include_proto else 'excluded'} ",
+        style="bold blue",
+    ))
+
+    if apply_changes and action == "delete" and not yes:
+        if not click.confirm(
+            "Action is DELETE. Retired ROMs will be removed permanently with "
+            "no undo. Continue?",
+            default=False,
+        ):
+            console.print("[yellow]Cancelled.[/yellow]")
+            return
+
+    total_retire = 0
+    grand_archived = 0
+    grand_deleted = 0
+    grand_skipped: list[tuple[Path, str]] = []
+    last_manifest: Optional[Path] = None
+
+    for sys_name in systems:
+        groups = curate_system(
+            sys_name,
+            config,
+            preferences=prefs,
+            prefer_revision_latest=prefer_latest,
+            prefer_no_proto=not include_proto,
+        )
+        if not groups:
+            console.print(f"[green]✓[/green] {sys_name}: nothing to curate")
+            continue
+
+        console.print(Panel(
+            f" {sys_name} — {len(groups)} group(s), "
+            f"{sum(len(g.retire) for g in groups)} retirement(s) ",
+            style="bold yellow",
+        ))
+        tbl = Table(box=box.SIMPLE)
+        tbl.add_column("Title", style="cyan", overflow="fold")
+        tbl.add_column("Keep", style="green", overflow="fold")
+        tbl.add_column("Retire", style="yellow", overflow="fold")
+        tbl.add_column("Reason", style="dim", overflow="fold")
+        for g in groups:
+            retire_names = "\n".join(p.name for p in g.retire)
+            reason_lines = "\n".join(
+                g.reasons.get(p.name, "") for p in g.retire
+            )
+            tbl.add_row(g.title, g.keep.name, retire_names, reason_lines)
+        console.print(tbl)
+        total_retire += sum(len(g.retire) for g in groups)
+
+        if not apply_changes:
+            continue
+
+        result, manifest = apply_curation(
+            groups, config, sys_name, action=action,
+        )
+        if action == "archive":
+            grand_archived += len(result.archived)
+            for src, dest in result.archived:
+                console.print(
+                    f"  [green]+[/green] archived {src.name} -> "
+                    f"{dest.parent.name}/{dest.name}"
+                )
+        else:
+            grand_deleted += len(result.deleted)
+            for path in result.deleted:
+                console.print(f"  [red]-[/red] deleted {path.name}")
+        if result.skipped:
+            grand_skipped.extend(result.skipped)
+            for path, reason in result.skipped:
+                console.print(f"  [yellow]⚠[/yellow] {path.name} — {reason}")
+        if manifest:
+            last_manifest = manifest
+
+    if total_retire == 0:
+        console.print("\n[green]Clean — nothing to curate.[/green]")
+        return
+
+    if not apply_changes:
+        console.print(
+            f"\n[yellow]{total_retire}[/yellow] retirement(s) would be "
+            f"applied. Re-run with [cyan]--apply[/cyan] to "
+            f"{action} them."
+        )
+        return
+
+    console.print(
+        f"\n[green]✓[/green] curation complete — "
+        f"archived {grand_archived}, deleted {grand_deleted}, "
+        f"skipped {len(grand_skipped)}."
+    )
+    if last_manifest:
+        console.print(
+            f"Manifest: {last_manifest.name}\n"
+            f"Run [cyan]spindoctor curate --undo[/cyan] to revert."
+        )
+
+
 @cli.command("lint")
 @click.option("--source", default=None,
               help="Source root to scan (default: spindoctor package directory).")

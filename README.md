@@ -14,7 +14,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
   - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
-  - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `verify`, `stats`
+  - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [LEDBlinky](#ledblinky)
   - [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `lint`
@@ -365,6 +365,21 @@ spindoctor find-misplaced --undo                 :: reverse the most recent --ap
 ```
 
 `--apply` writes a manifest so the move can be undone in one command.
+
+#### `curate` — region & version curation
+
+Where `find-dupes` only reports collisions, `curate` actively picks one canonical variant per game (by region preference and revision number) and groups the rest as retirement candidates. Use it to thin a No-Intro set down to one ROM per title without manually clicking through each duplicate.
+
+```bat
+spindoctor curate --system NES                            :: dry-run
+spindoctor curate --all --regions USA,Japan               :: override preferences
+spindoctor curate --system NES --apply                    :: archive losers to _retired/
+spindoctor curate --system NES --apply --action delete --yes
+spindoctor curate --undo                                  :: reverse the last archive
+spindoctor curate --list-manifests
+```
+
+Selection rules, in order: exclude prototypes/demos/betas (pass `--include-proto` to keep them), pick the highest-priority region from the preferences list, prefer the latest revision (`--prefer-revision oldest` to invert), tiebreak by filename. Default preferences come from `config.region_preferences` — `["USA", "World", "Europe", "Japan"]` out of the box. `--apply --action archive` moves retired ROMs to `<roms_dir>/<system>/_retired/` and writes a manifest under `~/.spindoctor/curation/`; `--undo` reverses the most recent one. `--action delete` is permanent and has no undo.
 
 #### `find-orphan-media`
 
