@@ -1,8 +1,8 @@
 # SpinDoctor 🩺🕹️
 
-**SpinDoctor** is a command-line tool for managing your [HyperSpin](http://www.hyperspin-fe.com/) (and [RocketUI](https://rocketlauncher.net/)) arcade cabinet library.
+**SpinDoctor** is a command-line tool for managing your [HyperSpin](http://www.hyperspin-fe.com/) and [RocketLauncher](https://rocketlauncher.net/) arcade cabinet library.
 
-Audit your ROM collection, sync Hyperspin XML databases, automatically fill in missing metadata, download media assets, and generate RocketLauncher + RocketUI config files — all from a single CLI with dry-run mode and a non-destructive output directory option.
+Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate RocketLauncher configs, validate ROM integrity against No-Intro / Redump DATs, manage cross-system Favorites and Recently Played wheels, and more — all from a single CLI with dry-run mode and a non-destructive output directory option.
 
 ---
 
@@ -10,32 +10,18 @@ Audit your ROM collection, sync Hyperspin XML databases, automatically fill in m
 
 - [Installation](#installation)
 - [First-Time Setup](#first-time-setup)
+- [Configuration](#configuration)
 - [Commands](#commands)
-  - [config](#config)
-  - [systems](#systems)
-  - [audit](#audit)
-  - [inspect](#inspect)
-  - [update-db](#update-db)
-  - [fetch-meta](#fetch-meta)
-  - [fetch-media](#fetch-media)
-  - [media-add](#media-add)
-  - [generate-config](#generate-config)
-  - [ledblinky](#ledblinky)
-  - [doctor](#doctor)
-  - [ignore](#ignore)
-  - [match](#match)
-  - [report](#report)
-- [Tool Compatibility](#tool-compatibility)
-- [ROM Variant Handling](#rom-variant-handling)
-- [Fuzzy Matching](#fuzzy-matching)
-- [Interactive Match Selection](#interactive-match-selection)
-- [Auto-Audit Export](#auto-audit-export)
-- [Ignore Lists](#ignore-lists)
-- [Media Types](#media-types)
-- [Metadata Sources](#metadata-sources)
-- [Directory Structure Expected](#directory-structure-expected)
-- [Typical Workflows](#typical-workflows)
-- [Options Reference](#options-reference)
+  - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
+  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`
+  - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `verify`, `stats`
+  - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
+  - [LEDBlinky](#ledblinky)
+  - [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `lint`
+- [Standalone scripts](#standalone-scripts) — `spindoctor-fav`, `spindoctor-recent`
+- [Directory structure expected](#directory-structure-expected)
+- [ROM variant handling](#rom-variant-handling)
+- [Typical workflows](#typical-workflows)
 - [FAQ](#faq)
 
 ---
@@ -49,8 +35,7 @@ cd C:\path\to\spindoctor
 pip install -e .
 ```
 
-**Recommended optional dependency:** `lxml` — preserves XML comments and
-attribute order so HyperHQ-edited fields survive a SpinDoctor save round-trip.
+Optional but recommended: install with the `[xml]` extra so XML databases round-trip losslessly (preserves comments and attribute order from HyperHQ).
 
 ```bat
 pip install -e .[xml]
@@ -62,43 +47,38 @@ Verify:
 spindoctor --version
 ```
 
+This installs three console scripts:
+
+| Command | Purpose |
+|---------|---------|
+| `spindoctor` | Full CLI |
+| `spindoctor-fav` | Standalone Favorites wheel manager (no `spindoctor` CLI required) |
+| `spindoctor-recent` | Standalone Recently Played rebuild (no `spindoctor` CLI required) |
+
 ---
 
 ## First-Time Setup
 
-Run the interactive wizard once to point SpinDoctor at your directories. It walks through every path-based setting (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled — press Enter to accept, or type `-` to leave an optional path blank.
+Run the interactive wizard once. It prompts for every path-based setting (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled. Press Enter to accept, type `-` to leave an optional path blank.
 
 ```bat
 spindoctor config init
 ```
 
-Settings are saved to `%USERPROFILE%\.spindoctor\config.json`. Re-running the wizard uses your existing values as defaults, so it's safe to run again to refine paths.
-
-Prefer to set values one at a time (or script them)? You can still use `spindoctor config set <key> <value>` directly:
-
-```bat
-spindoctor config set roms_dir           "D:\ROMs"
-spindoctor config set hyperspin_dir      "D:\HyperSpin"
-spindoctor config set emulators_dir      "D:\Emulators"
-spindoctor config set rocketlauncher_dir "D:\RocketLauncher"
-spindoctor config set output_dir         "D:\SpinDoctorOutput"
-spindoctor config set auto_audit_export_dir "D:\SpinDoctorAudits"
-```
+Settings are saved to `%USERPROFILE%\.spindoctor\config.json`. Re-running the wizard uses your existing values as defaults, so it's safe to refine later.
 
 ---
 
-## Commands
+## Configuration
 
-### `config`
+Show or change individual values:
 
-Show or change configuration.
-
-```
+```bat
 spindoctor config show
 spindoctor config set <key> <value>
 ```
 
-**Keys:**
+**Most-used keys:**
 
 | Key | Description |
 |-----|-------------|
@@ -106,747 +86,430 @@ spindoctor config set <key> <value>
 | `hyperspin_dir` | Root HyperSpin folder (contains `Databases/` and `Media/`) |
 | `emulators_dir` | Root folder with one sub-folder per emulator |
 | `rocketlauncher_dir` | Root RocketLauncher folder |
-| `ledblinky_dir` | LedBlinky install directory (contains `LEDBlinky.exe` and `LEDBlinkyControls.xml`) |
+| `ledblinky_dir` | LEDBlinky install directory |
 | `output_dir` | Default output folder (blank = write in-place) |
-| `auto_audit_export_dir` | Auto-export audit CSV here after any write operation |
-| `screenscraper_user` | ScreenScraper username |
-| `screenscraper_pass` | ScreenScraper password |
+| `auto_audit_export_dir` | Auto-export an audit CSV here after every write operation |
+| `screenscraper_user` / `screenscraper_pass` | ScreenScraper credentials |
 | `thegamesdb_key` | TheGamesDB API key |
 | `default_metadata_source` | `screenscraper` or `thegamesdb` |
-| `backup_before_modify` | `true` / `false` |
-| `match_threshold` | Fuzzy confidence for auto-accept, `0.0`–`1.0` (default `0.80`) |
-| `interactive_matching` | `true` / `false` — prompt on ambiguous matches |
-| `max_concurrent_downloads` | Integer |
-| `strip_variant_tags_in_display_name` | `true` / `false` — when `true`, strips `(Japan)` / `(Rev A)` etc. from stub display names (default `false`, i.e. tags are kept) |
-| `mame_executable` | Path to the MAME binary (used by `ledblinky generate` for `-listxml`) |
-| `metadata_cache_enabled` | `true` / `false` — cache scraper API responses (default `true`) |
-| `metadata_cache_ttl_days` | Days to keep cached API responses (default `30`) |
+| `match_threshold` | Fuzzy auto-accept confidence, `0.0`–`1.0` (default `0.80`) |
+| `interactive_matching` | Prompt on ambiguous matches (default `true`) |
+| `mame_executable` | Path to MAME (used by `ledblinky generate`) |
+| `metadata_cache_ttl_days` | Days to keep cached scraper responses (default `30`) |
+
+**Per-system overrides** let you teach SpinDoctor about a system it doesn't know natively (custom emulators, unusual extensions, alternative scraper IDs):
+
+```bat
+spindoctor config system set "Sony Playstation 7" ^
+    --screenscraper-id 999 ^
+    --rom-extensions ps7,iso ^
+    --layout per-game-folder ^
+    --emulator RPCS7
+
+spindoctor config system list
+spindoctor config system clear "Sony Playstation 7"
+```
 
 ---
 
-### `systems`
+## Commands
 
-List all systems detected across your ROMs and Databases directories.
+### Core library
 
-```
+#### `systems`
+
+List every system detected across `roms_dir` and `Databases/`.
+
+```bat
 spindoctor systems
 ```
 
-Shows ROMs folder status, database XML status, and how many ignored games each system has.
+#### `audit`
 
----
-
-### `audit`
-
-Compare ROM files against the Hyperspin XML database and media assets.
-
-```
-spindoctor audit --system <name>
-spindoctor audit --all
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--system NAME` | Audit one system |
-| `--all` | Audit all systems |
-| `--no-media` | Skip media checks (much faster) |
-| `--no-fuzzy` | Skip fuzzy ROM/DB variant matching |
-| `--detailed` | After the summary, print per-file detail (size, dimensions, video length) for every game that needs attention |
-| `--report PATH` | Write full CSV report |
-| `--show-matched` | Also list matched games |
-
-**What it reports:**
-
-- Exact ROM ↔ DB matches
-- **Fuzzy matches** — ROMs with variant tags (region, version, revision) that closely match a DB entry
-- ROMs with no database entry
-- DB entries with no ROM file
-- Games with incomplete metadata
-- Games with missing media assets
-- Ignored game counts
-
-**Examples:**
+Compare ROM files against the HyperSpin database and media assets. Reports exact + fuzzy matches, ROMs without DB entries, DB entries without ROMs, incomplete metadata, missing media, and ignored counts.
 
 ```bat
 spindoctor audit --system MAME
 spindoctor audit --all --no-media
 spindoctor audit --all --report D:\audit_report.csv
+spindoctor audit --system MAME --detailed   :: append per-file dimensions/sizes
 ```
 
----
+#### `inspect`
 
-### `inspect`
-
-Show detailed per-file information for a game or an entire system — the full picture of what's on disk.
-
-```
-spindoctor inspect --system <name> --game <rom-name>
-spindoctor inspect --system <name> --all
-spindoctor inspect --system <name>
-```
-
-With no `--game` or `--all`, inspect defaults to showing only games that need attention (missing ROM, metadata, or media).
-
-For every game inspected, two tables are shown:
-
-**ROM** — one row per ROM file on disk:
-
-| Column | Description |
-|--------|-------------|
-| ✓ / ✗ | File found on disk |
-| File | Filename |
-| Size | Human-readable file size |
-| Ext | File extension |
-| Modified | Last modified date/time |
-| Path | Full path on disk |
-
-**MEDIA** — one row per media type:
-
-| Column | Description |
-|--------|-------------|
-| Type | wheel, background, artwork, title, snap, video, trailer, sound, theme |
-| ✓ / ✗ | File exists |
-| Size | File size |
-| Dim / Length | Image dimensions (e.g. `1920×1080`) or video duration (e.g. `0:43`) |
-| Ext | Extension of the actual file found |
-| Modified | Last modified |
-| Path | Full path (or expected path if missing) |
-
-A footer summary shows total on-disk size and missing-media counts across all inspected games.
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--system NAME` | System to inspect (required) |
-| `--game NAME` | Single game to inspect |
-| `--all` | Every game in the database |
-| `--format table\|csv` | Output format |
-| `--output PATH` | Write CSV output to file |
-| `--no-path` | Show only filenames instead of full paths (narrower output) |
-
-**Video length** is read using `ffprobe` (if FFmpeg is installed) or by parsing the MP4 file header directly — no extra Python packages required.
-
-**Image dimensions** (width × height) are read from PNG and JPEG file headers directly — no Pillow required.
-
-**Examples:**
+Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
 
 ```bat
-rem Single game deep-dive
 spindoctor inspect --system MAME --game 1942
-
-rem All games with issues in SNES (compact paths)
-spindoctor inspect --system SNES --no-path
-
-rem Full file manifest for all MAME games as CSV
-spindoctor inspect --system MAME --all --format csv --output D:\mame_manifest.csv
-
-rem Show only games needing attention in NES (default when no --game or --all)
-spindoctor inspect --system "Nintendo Entertainment System"
+spindoctor inspect --system SNES --no-path                  :: compact view
+spindoctor inspect --system MAME --all --format csv --output D:\manifest.csv
 ```
 
-You can also get this same per-file detail appended to the regular `audit` output:
+#### `update-db`
 
-```bat
-spindoctor audit --system MAME --detailed
-spindoctor audit --all --detailed --no-media   rem skip media scan for speed, then detailed fills it in
-```
-
----
-
-### `update-db`
-
-Sync HyperSpin XML databases to match ROM directories.
-
-```
-spindoctor update-db --system <name> [options]
-spindoctor update-db --all [options]
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--add-missing` | Add stub entries for ROMs not in the DB (default: on) |
-| `--remove-orphans` | Remove DB entries with no matching ROM |
-| `--dry-run` | Show what would change |
-| `--output-dir PATH` | Write XMLs here instead of in-place |
-| `--keep-variant-tags` | Keep `(Japan)` / `(Rev A)` tags in display names (default) |
-| `--strip-variant-tags` | Strip variant tags so all regions/revisions share a base display name |
-
-Every ROM variant (`Mario (v1.2)`, `Mario (USA)`, `Mario (patched)`) is treated as its own independent database entry with its own display name.
-
-By default, the display name keeps the variant tag, so `1942 (Japan).zip` shows as **`1942 (Japan)`** and `1942 (USA).zip` shows as **`1942 (USA)`** — the two are easy to tell apart in HyperSpin / RocketLauncher menus. Pass `--strip-variant-tags` (or set `strip_variant_tags_in_display_name true` in your config) if you'd rather have both render as just **`1942`**.
-
-Backups: a `.YYYYMMDD_HHMMSS.bak` copy is saved before in-place overwrites unless `backup_before_modify` is `false`.
-
-**Examples:**
+Sync HyperSpin XML databases to match the ROM directories — adds stub entries for new ROMs, optionally removes orphan entries.
 
 ```bat
 spindoctor update-db --system MAME --dry-run
 spindoctor update-db --all --remove-orphans --output-dir D:\Output
-spindoctor update-db --system "Nintendo Entertainment System"
-
-rem strip region/revision tags from display names for one run
-spindoctor update-db --system SNES --strip-variant-tags
-
-rem make stripping the persistent default
-spindoctor config set strip_variant_tags_in_display_name true
+spindoctor update-db --system SNES --strip-variant-tags     :: collapse "(Japan)"/"(USA)" displays
 ```
 
----
+A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_before_modify`).
 
-### `fetch-meta`
+#### `fetch-meta`
 
-Download and write game metadata (description, year, manufacturer, genre, rating) into the XML database.
-
-```
-spindoctor fetch-meta --system <name> [options]
-spindoctor fetch-meta --all [options]
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--source` | `screenscraper` or `thegamesdb` |
-| `--all-games` | Refresh every game, even complete ones (default: only updates games with incomplete metadata) |
-| `--interactive` / `--auto-best` | Prompt on ambiguous matches / always pick best |
-| `--threshold FLOAT` | Minimum confidence for auto-accept (overrides config) |
-| `--no-cache` | Force-refresh — ignore the disk-cached API responses |
-| `--clear-cache` | Delete cached API responses (for the targeted system or all) and exit |
-| `--dry-run` | Show what would be updated, write nothing |
-| `--output-dir PATH` | Write updated XMLs here |
-
-**Disk cache:** Successful API responses are cached to
-`~/.spindoctor/metadata_cache/<source>/<system>/<rom>.json`. Re-runs are
-near-instant and don't burn through TheGamesDB's monthly query quota.
-TTL is configurable via `metadata_cache_ttl_days` (default 30).
-
-**How matching works** (see also [Fuzzy Matching](#fuzzy-matching) and [Interactive Match Selection](#interactive-match-selection)):
-
-1. ROM name is normalised (regions, versions, revisions stripped).
-2. A direct lookup is tried first.
-3. If no result or confidence is below threshold, a broader search runs.
-4. If one candidate clears the threshold — it's accepted automatically.
-5. If multiple candidates exist and `interactive_matching` is on — you're prompted to choose.
-6. Your choice is cached in `~/.spindoctor/match_cache/` so re-runs skip the prompt.
-
-**Examples:**
+Download metadata (description, year, manufacturer, genre, rating) and write it into the XML.
 
 ```bat
-rem Dry run — see what would change for MAME
 spindoctor fetch-meta --system MAME --dry-run
-
-rem Fetch all missing metadata, prompt when ambiguous
 spindoctor fetch-meta --all --output-dir D:\Output
-
-rem Non-interactive: always accept the best match
-spindoctor fetch-meta --all --auto-best
-
-rem Force refresh everything for SNES
-spindoctor fetch-meta --system SNES --all-games
+spindoctor fetch-meta --all --auto-best          :: never prompt — pick top result
+spindoctor fetch-meta --system SNES --all-games  :: refresh complete entries too
 ```
 
----
+API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
-### `fetch-media`
+When multiple results match, the picker prompts you (or use `--auto-best`). Choices are cached at `~/.spindoctor/match_cache/<system>.json` so re-runs are silent.
 
-Download media assets from a metadata source.
+#### `fetch-media`
 
-```
-spindoctor fetch-media --system <name> [options]
-spindoctor fetch-media --all [options]
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--types LIST` | Comma-separated media types (default: all) |
-| `--source` | Metadata source to use for media URLs |
-| `--overwrite` | Re-download and replace existing files |
-| `--dry-run` | Show what would be downloaded |
-| `--output-dir PATH` | Save media here instead of inside `hyperspin_dir` |
-
-See [Media Types](#media-types) for the full list.
-
-**Concurrency:** Media downloads run in a thread pool sized by
-`max_concurrent_downloads` (default 4). The downloader retries with
-exponential backoff on HTTP 429 / 503, honouring `Retry-After`. Metadata
-lookups stay rate-limited at 1 req/s per the API providers' terms.
-
-**Examples:**
+Download wheels, backgrounds, snaps, videos, etc. for games in the database.
 
 ```bat
-rem Download wheel art and backgrounds for MAME (dry run first)
 spindoctor fetch-media --system MAME --types wheel,background --dry-run
-spindoctor fetch-media --system MAME --types wheel,background
-
-rem Download everything for all systems into staging
 spindoctor fetch-media --all --output-dir D:\Output
-
-rem Re-download trailer videos for SNES
 spindoctor fetch-media --system SNES --types trailer --overwrite
-
-rem Wheel, title screen, and background only
-spindoctor fetch-media --system MAME --types wheel,title,background
 ```
 
----
+Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 
-### `media-add`
+#### `media-add`
 
-Manually copy or move a local file into the correct HyperSpin media directory.
-
-```
-spindoctor media-add --system <name> --game <rom-name> --type <type> --file <path>
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--system NAME` | System the game belongs to |
-| `--game NAME` | ROM name (without extension) |
-| `--type TYPE` | One of the [Media Types](#media-types) |
-| `--file PATH` | Local source file |
-| `--move` | Move the file instead of copying |
-| `--overwrite` | Overwrite if file already exists |
-| `--output-dir PATH` | Place in this directory instead of `hyperspin_dir` |
-
-**Examples:**
+Manually drop a local file into the right HyperSpin media slot.
 
 ```bat
-rem Add a trailer video for 1942
 spindoctor media-add --system MAME --game 1942 --type trailer ^
     --file C:\Downloads\1942_trailer.mp4
-
-rem Add a custom title screen image, moving the file
-spindoctor media-add --system SNES --game "Super Mario World (USA)" ^
-    --type title --file C:\Art\smworld_title.png --move
-
-rem Add background for an NES game, output to staging
-spindoctor media-add --system NES --game Castlevania --type background ^
-    --file C:\Art\castlevania_bg.jpg --output-dir D:\Output
+spindoctor media-add --system SNES --game "Super Mario World" ^
+    --type title --file C:\Art\smw_title.png --move
 ```
 
----
+#### `report`
 
-### `generate-config`
-
-Generate RocketLauncher system INI files and the HyperSpin Main Menu XML.
-
-```
-spindoctor generate-config [options]
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--all` | All systems (default when neither `--all` nor `--system` is given) |
-| `--system NAME` | Single system only |
-| `--rl / --no-rl` | Generate RocketLauncher INI files (default: on) |
-| `--main-menu / --no-main-menu` | Generate `Main Menu.xml` (default: on) |
-| `--db-stubs / --no-db-stubs` | Create empty DB XMLs for systems that have none |
-| `--global-emulators / --no-global-emulators` | Write `Settings/Global Emulators.ini` if missing (default: on) |
-| `--overwrite-global` | Overwrite an existing `Global Emulators.ini` (default: leave it alone) |
-| `--dry-run` | Show what would be written |
-| `--output-dir PATH` | Write here instead of in-place |
-
-**What gets generated:**
-
-| File | Description |
-|------|-------------|
-| `RocketLauncher/Settings/<System>.ini` | Per-system emulator and ROM path settings |
-| `RocketLauncher/Settings/Global Emulators.ini` | Cross-system emulator paths (skipped if file exists) |
-| `Databases/Main Menu/Main Menu.xml` | HyperSpin system list (RocketUI reads this) |
-| `Databases/<System>/<System>.xml` | Empty database stubs (with `--db-stubs`) |
-
-Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). You can edit the generated INI files to override.
-
-**Examples:**
-
-```bat
-rem Preview what would be generated
-spindoctor generate-config --dry-run
-
-rem Generate into a staging folder for review
-spindoctor generate-config --output-dir D:\Output
-
-rem Generate in-place (rocketlauncher_dir must be configured)
-spindoctor generate-config
-
-rem Only regenerate the main menu (e.g. after adding a new system)
-spindoctor generate-config --no-rl
-
-rem Generate everything including empty database XMLs for new systems
-spindoctor generate-config --db-stubs --output-dir D:\Output
-```
-
----
-
-### `ledblinky`
-
-LedBlinky integration. Two complementary capabilities under one command group:
-
-1. **`generate` / `audit`** — build LEDBlinky's `controls.ini` and `colors.ini` from MAME `-listxml` output, preserving existing community-maintained entries.
-2. **`check` / `fix`** — diagnose and repair the long-standing crash where HyperSpin's **Search** special menu hangs or crashes when LedBlinky is installed.
-
-```
-spindoctor ledblinky generate [options]
-spindoctor ledblinky audit    [options]
-spindoctor ledblinky check
-spindoctor ledblinky fix      [options]
-```
-
-**Setup:**
-
-```bat
-spindoctor config set ledblinky_dir   "C:\LEDBlinky"
-spindoctor config set mame_executable "C:\Emulators\MAME\mame.exe"
-```
-
-#### `generate` — `controls.ini` / `colors.ini` export
-
-Generate or merge LEDBlinky `controls.ini` and `colors.ini` from MAME's `-listxml` output. Preserves any existing community-maintained entries (under `<ledblinky_dir>`) and only synthesizes ROMs that aren't already covered.
-
-| Flag | Description |
-|------|-------------|
-| `--system NAME` | System name (default: `MAME`) |
-| `--overwrite` | Replace existing entries (default: keep them) |
-| `--dry-run` | Show what would be written |
-| `--output-dir PATH` | Write to a staging directory instead of `ledblinky_dir` |
-
-The default per-button color palette is configurable via the `ledblinky_default_colors` field in `~/.spindoctor/config.json`.
-
-#### `audit` — control-coverage report
-
-Prints a coverage table per ROM: covered / would-synth / no-input / missing, so you can spot ROMs that LEDBlinky can't drive yet.
-
-#### `check` — HyperSpin Search compatibility scan
-
-Read-only audit of the two known conflicts that crash HyperSpin's Search overlay when LedBlinky is installed:
-
-1. LedBlinky injects `Start_Hyperspin_Process=…LEDBlinky.exe HyperspinStart` / `Exit_Hyperspin_Process=…LEDBlinky.exe HyperspinQuit` lines into the per-menu `Settings.ini`. Search's overlay launcher doesn't tolerate those hooks and crashes when it fires.
-2. `LEDBlinkyControls.xml` has no entry for the Search special menu, so LedBlinky's lookup fails on menu-change.
-
-Run `check` first to confirm which (if either) conflict applies to your cabinet.
-
-#### `fix` — HyperSpin Search compatibility patch
-
-Patches both conditions while keeping LedBlinky fully functional during gameplay.
-
-| Flag | Description |
-|------|-------------|
-| `--menus LIST` | Comma-separated list of special menus to patch. Default: `Search`. Other valid values: `Genre`, `Favorites`. |
-| `--dry-run` | Show what would change without writing anything |
-| `--output-dir PATH` | Write patched copies here instead of in-place |
-| `--no-backup` | Skip `.YYYYMMDD_HHMMSS.bak` backups (in-place only) |
-
-**What it patches:**
-
-- `<ledblinky_dir>/LEDBlinkyControls.xml` — adds a stub `<game name="Search">` entry (idempotent: re-runs are no-ops once the entry exists). The stub uses LedBlinky's default control profile.
-- `<hyperspin_dir>/Menu/<MenuName>/Settings.ini` — comments out (does not delete) any `Start_Hyperspin_Process` / `Exit_Hyperspin_Process` lines that reference `LEDBlinky.exe`. Each disabled line is tagged `; disabled by spindoctor ledblinky fix` so you can find and revert them later.
-
-The global `<hyperspin_dir>/Settings/Settings.ini` is **never** modified — LedBlinky needs those hooks to drive LEDs during regular menu transitions and gameplay.
-
-**Examples:**
-
-```bat
-rem Audit current state
-spindoctor ledblinky check
-
-rem Preview the patch
-spindoctor ledblinky fix --dry-run
-
-rem Apply the patch (creates .bak backups)
-spindoctor ledblinky fix
-
-rem Patch all three special menus at once
-spindoctor ledblinky fix --menus Search,Genre,Favorites
-
-rem Patch into a staging folder for review
-spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput
-```
-
-To revert: open each `.bak` file alongside the patched file, or simply uncomment the `;`-prefixed lines tagged with `disabled by spindoctor ledblinky fix`.
-
----
-
-### `doctor`
-
-Self-diagnose your install: paths, configured binaries, XML DB integrity,
-match-cache hygiene, RocketLauncher / LEDBlinky files, optional `lxml`,
-and `ffprobe`. Each check renders ✓ / ⚠ / ✗ in a tree view.
-
-```
-spindoctor doctor          # report only
-spindoctor doctor --fix    # apply safe, idempotent repairs
-```
-
-`--fix` only does things that are safe: prunes stale entries from the
-metadata-match cache, creates missing media-folder skeletons, and
-generates a missing `Global Emulators.ini`. It will never delete ROMs,
-DB XMLs, media files, or your real configuration.
-
----
-
-### `ignore`
-
-Manage per-system and global ignore lists.
-
-Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
-
-```
-spindoctor ignore add <game-name> [--system NAME]
-spindoctor ignore remove <game-name> [--system NAME]
-spindoctor ignore list [--system NAME]
-spindoctor ignore clear [--system NAME]
-```
-
-Omit `--system` to add/remove from the **global** ignore list (applies to all systems).
-
-**Examples:**
-
-```bat
-rem Ignore a specific MAME ROM globally
-spindoctor ignore add "pacman"
-
-rem Ignore a patched ROM only for NES
-spindoctor ignore add "Super Mario Bros (patched)" --system "Nintendo Entertainment System"
-
-rem See everything being ignored
-spindoctor ignore list
-
-rem Remove from ignore
-spindoctor ignore remove "pacman"
-
-rem Clear all ignores for MAME
-spindoctor ignore clear --system MAME
-```
-
----
-
-### `match`
-
-View and manage cached metadata match decisions.
-
-When you select a match interactively during `fetch-meta`, your choice is saved to `~/.spindoctor/match_cache/`. SpinDoctor reuses it on the next run so you aren't prompted again.
-
-```
-spindoctor match list [--system NAME]
-spindoctor match clear [--system NAME]
-```
-
-Use `match clear` if you want to re-evaluate your selections (e.g., after updating to a new metadata source).
-
----
-
-### `report`
-
-Read-only audit report — no changes made.
-
-```
-spindoctor report --system <name> [options]
-spindoctor report --all [options]
-```
-
-**Flags:**
-
-| Flag | Description |
-|------|-------------|
-| `--format` | `summary` (default), `table`, or `csv` |
-| `--output PATH` | Write report to file |
-| `--no-media` | Skip media checks |
-| `--no-fuzzy` | Skip fuzzy matching |
-
-**Examples:**
+Read-only summary or CSV — never modifies anything.
 
 ```bat
 spindoctor report --all --format summary
-spindoctor report --system MAME --format table
-spindoctor report --all --format csv --output D:\arcade_report.csv
+spindoctor report --all --format csv --output D:\weekly.csv
 ```
 
 ---
 
-## ROM Variant Handling
+### Library generation
 
-SpinDoctor treats every ROM file as an independent entry. A ROM named `Super Mario Bros (USA, Rev 1).nes` is a distinct game from `Super Mario Bros (USA).nes` — each gets its own database entry with its own display name, its own metadata fetch, and its own media slot.
+#### `generate-config`
 
-By default, the **display name** used as `<description>` in the XML keeps the region / revision tag so that multiple variants of the same game stay distinguishable in HyperSpin / RocketLauncher menus. The base name still gets light cleanup (underscores → spaces, title-case):
-
-| ROM filename | Display name (default) | With `--strip-variant-tags` |
-|---|---|---|
-| `1942 (Japan)` | `1942 (Japan)` | `1942` |
-| `1942 (USA)` | `1942 (USA)` | `1942` |
-| `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros` |
-| `Earthbound (USA) [patched]` | `Earthbound (USA) [patched]` | `Earthbound` |
-| `super_mario_bros` | `Super Mario Bros` | `Super Mario Bros` |
-
-If you'd rather have both `1942 (Japan)` and `1942 (USA)` appear as just `1942`, pass `--strip-variant-tags` to `update-db` for a single run, or set it as the default:
+Generate RocketLauncher INI files and the HyperSpin Main Menu XML.
 
 ```bat
-spindoctor config set strip_variant_tags_in_display_name true
+spindoctor generate-config --dry-run
+spindoctor generate-config --output-dir D:\Output
+spindoctor generate-config --no-rl                 :: only regenerate the main menu
+spindoctor generate-config --db-stubs              :: also create empty DB stubs
 ```
 
-The `name` attribute (used by HyperSpin as the key) is always the exact ROM filename stem, preserving all variant tags regardless of the display-name setting.
+Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INIs to override.
 
----
+#### `organize`
 
-## Fuzzy Matching
-
-During `audit` and `fetch-meta`, SpinDoctor can fuzzy-match ROM filenames against database entries and metadata search results.
-
-**How it works:**
-
-1. Region codes, version numbers, revision labels, and bracket tags are stripped.
-2. Punctuation is normalised.
-3. A sequence-similarity ratio is computed between the cleaned names.
-4. Matches above `match_threshold` (default `0.80`) are accepted; below it they're flagged for review.
-
-**In `audit`:** fuzzy matches are shown as a separate "ROM variants" table rather than as "ROMs not in DB", so you can see `1942 (Japan, Rev A)` → `1942` with 100% confidence at a glance.
-
-**In `fetch-meta`:** the same normalisation is applied to search queries so `Super Mario Bros. (USA)` searches for `Super Mario Bros` rather than the raw filename.
-
-Adjust the threshold:
+Populate per-axis sort wheels (genre/year/manufacturer/letter) and optionally restructure ROMs into per-game folders or multi-disc m3u playlists.
 
 ```bat
-spindoctor config set match_threshold 0.75
+spindoctor organize "Sony Playstation"                         :: sort wheels only
+spindoctor organize "Sony Playstation 3" --restructure         :: dry-run plan
+spindoctor organize "Sony Playstation 3" --restructure --apply :: execute
+spindoctor organize "Sony Playstation 3" --undo                :: revert last apply
 ```
 
-Disable fuzzy matching in a single run:
+#### `add-system`
+
+Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and (optionally) walks the metadata + media fetch flow.
 
 ```bat
-spindoctor audit --no-fuzzy
-spindoctor report --no-fuzzy
+spindoctor add-system "Sega Saturn"
+```
+
+#### `add-pc-system`
+
+The same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs.
+
+```bat
+spindoctor add-pc-system "PC Games"
+spindoctor pc-rename "PC Games"   :: re-run the title picker after dropping new games in
 ```
 
 ---
 
-## Interactive Match Selection
+### Health & integrity
 
-When a metadata search returns multiple candidates and confidence is below `match_threshold`, SpinDoctor shows a selection table and asks you to pick:
+These commands surface issues in your library without making changes (unless you opt in).
 
-```
-┌────────────────────────────── Multiple matches for 'earthbound' ────────────────────────────────┐
-│  #  │ Title                  │ Year  │ Publisher    │ Conf. │ Review link                       │
-│─────┼────────────────────────┼───────┼──────────────┼───────┼───────────────────────────────────│
-│  1  │ EarthBound             │ 1995  │ Nintendo     │  87%  │ https://screenscraper.fr/...      │
-│  2  │ Earthbound Beginnings  │ 1989  │ Nintendo     │  71%  │ https://screenscraper.fr/...      │
-└────────────────────────────────────────────────────────────────────────────────────────────────┘
-Number to select · 0 to skip · Enter to accept #1
-  Choice for 'earthbound' [1]:
-```
+#### `find-dupes`
 
-- The **Review link** opens the game's page on ScreenScraper or TheGamesDB so you can verify before committing.
-- Enter `0` to skip this game entirely this run.
-- Your choice is **cached** in `~/.spindoctor/match_cache/<system>.json` and reused automatically on future runs.
-- To re-evaluate: `spindoctor match clear --system MAME`.
-- To skip all prompts and always pick the highest-scoring result: `--auto-best`.
-
-Toggle interactive mode globally:
+Detect duplicate ROMs within a system or across systems.
 
 ```bat
-spindoctor config set interactive_matching false
+spindoctor find-dupes --system MAME
+spindoctor find-dupes --all --cross-systems         :: same title in multiple folders
+spindoctor find-dupes --system NES --by-content     :: SHA1 match (catches renamed copies)
+```
+
+Two ROMs are duplicates by default when their stems collapse to the same normalised title (region/version tags stripped). `--by-content` adds byte-level pairing.
+
+#### `find-misplaced`
+
+Flag ROMs whose extension doesn't match the folder's system (e.g. a `.nes` inside `snes/`). Generic containers (`.zip`, `.iso`, `.bin`) are skipped because they're ambiguous.
+
+```bat
+spindoctor find-misplaced --all                  :: report only
+spindoctor find-misplaced --system snes --apply  :: move each to its suggested system
+spindoctor find-misplaced --undo                 :: reverse the most recent --apply
+```
+
+`--apply` writes a manifest so the move can be undone in one command.
+
+#### `find-orphan-media`
+
+Wheels, snaps, videos, and themes whose game no longer exists in the database or ROMs. `--delete` removes them after a confirmation prompt.
+
+```bat
+spindoctor find-orphan-media --all
+spindoctor find-orphan-media --system SNES --delete
+```
+
+#### `check-discs`
+
+Validate multi-disc layouts: every `(Disc N)` file has its `(Disc 1..N-1)` siblings, and every `.m3u` line resolves to a real file.
+
+```bat
+spindoctor check-discs --system "Sony Playstation"
+spindoctor check-discs --all
+```
+
+#### `verify`
+
+Verify ROM file integrity against a No-Intro / Redump / TOSEC DAT XML. Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Hashing is lazy — files whose size doesn't appear in the DAT skip hashing entirely.
+
+```bat
+spindoctor verify --system NES --dat C:\Dats\Nintendo - Nintendo Entertainment System.dat
+spindoctor verify --system NES --dat ... --show-good   :: also list verified-good files
+```
+
+| Status | Meaning |
+|--------|---------|
+| `good` | Hash + filename match the DAT |
+| `renamed` | Hash matches but filename differs (DAT calls it something else) |
+| `bad` | Size matches a known entry but hashes don't — likely a bad dump |
+| `unknown` | DAT doesn't list anything of this size — homebrew, hack, or unsupported |
+
+#### `stats`
+
+Coverage dashboard: % ROMs matched to DB, % metadata complete, % media complete, plus the most commonly missing media types.
+
+```bat
+spindoctor stats
+spindoctor stats --system MAME
 ```
 
 ---
 
-## Auto-Audit Export
+### Custom wheels
 
-When `auto_audit_export_dir` is configured, SpinDoctor automatically runs a full audit and saves a timestamped CSV after every write operation (`update-db`, `fetch-meta`, `fetch-media`, `generate-config`).
+Two synthetic HyperSpin systems — **Favorites** and **Recently Played** — that pull entries from any number of source systems into a single wheel. Each entry routes back through RocketLauncher so the original emulator config (cores, overlays, controls, savestates) is reused.
+
+#### `fav` — cross-system Favorites
+
+State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. Re-running `rebuild` is idempotent — safe to run on every boot.
 
 ```bat
-spindoctor config set auto_audit_export_dir "D:\SpinDoctorAudits"
+spindoctor fav add "Super Nintendo" "Chrono Trigger"
+spindoctor fav add "Sony Playstation" "Final Fantasy VII" --display-name "FF VII"
+spindoctor fav remove "Super Nintendo" "Chrono Trigger"
+spindoctor fav list
+spindoctor fav sync       :: pull HyperSpin's per-system F-key favorites into the store
+spindoctor fav rebuild    :: regenerate Databases/Favorites/Favorites.xml + media + launchers
+spindoctor fav rebuild --media-mode copy   :: force file copies (for FAT32 thumb drives)
 ```
 
-This creates files like `D:\SpinDoctorAudits\audit_20260427_143021.csv` after each run so you always have a record of what's still missing.
+`--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
 
-Dry runs also trigger an auto-export so you can review the full state before committing to changes.
+When two source systems both contain a game with the same ROM name (e.g. `Tetris` on SNES and Game Boy), the wheel labels them `Tetris (Super Nintendo)` and `Tetris (Game Boy)` automatically.
+
+#### `recent` — Recently Played
+
+Reads RocketLauncher's `Statistics.ini` files (no extra hooks needed), keeps the most-recent N games across every system, and regenerates the wheel.
+
+```bat
+spindoctor recent rebuild                       :: top 20 (default)
+spindoctor recent rebuild --limit 10
+spindoctor recent rebuild --target-system "Last Played"
+spindoctor recent list                          :: just print the current top-N
+```
+
+#### `install-tools`
+
+Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so users can refresh wheels from the cabinet UI without opening a console.
+
+```bat
+spindoctor install-tools                                :: write to RocketLauncher Tools dir
+spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
+```
+
+Three files are produced:
+
+```
+Refresh Favorites.bat          → calls spindoctor-fav rebuild
+Refresh Recently Played.bat    → calls spindoctor-recent rebuild
+Refresh Both.bat               → calls both
+```
+
+Register them in HyperHQ → Tools, or schedule them via Windows Task Scheduler (trigger: "At log on") to refresh on every boot.
 
 ---
 
-## Ignore Lists
-
-Use ignore lists to permanently exclude games from all SpinDoctor operations — useful for prototypes, regional duplicates, hacks, or demos you don't care about.
-
-Ignored games appear in `audit` output with a count but are not flagged as problems, and are skipped by `fetch-meta`, `fetch-media`, and `update-db`.
+### LEDBlinky
 
 ```bat
-rem Ignore globally (all systems)
-spindoctor ignore add "cheat_rom"
+spindoctor ledblinky generate
+spindoctor ledblinky audit
+spindoctor ledblinky check     :: scan for HyperSpin Search-menu compatibility issues
+spindoctor ledblinky fix       :: patch them (dry-run first with --dry-run)
+```
 
-rem Ignore only for MAME
-spindoctor ignore add "1942c" --system MAME
+`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`.
 
-rem See what's ignored
+`check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search overlay crashes when LEDBlinky is installed:
+
+1. LEDBlinky injects `Start_Hyperspin_Process` / `Exit_Hyperspin_Process` lines into per-menu `Settings.ini` — Search's overlay launcher doesn't tolerate them.
+2. `LEDBlinkyControls.xml` has no entry for the Search special menu.
+
+`fix` is reversible: timestamped `.bak` backups are saved next to every modified file, and disabled lines are commented out (not deleted), tagged so you can find them later.
+
+```bat
+spindoctor ledblinky fix --menus Search,Genre,Favorites
+spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput   :: stage instead of in-place
+```
+
+The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.
+
+---
+
+### Maintenance
+
+#### `doctor`
+
+Self-diagnose your install: paths, binaries, XML DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, optional `lxml`, `ffprobe`. Each check renders ✓ / ⚠ / ✗.
+
+```bat
+spindoctor doctor
+spindoctor doctor --fix    :: prune stale cache entries, create media folder skeletons, etc.
+```
+
+`--fix` only does safe, idempotent repairs.
+
+#### `ignore`
+
+Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
+
+```bat
+spindoctor ignore add "pacman"                          :: global
+spindoctor ignore add "Mario (hack)" --system NES
 spindoctor ignore list
-
-rem Remove from ignore
-spindoctor ignore remove "1942c" --system MAME
+spindoctor ignore remove "pacman"
+spindoctor ignore clear --system MAME
 ```
 
----
+#### `match`
 
-## Media Types
-
-| Type | HyperSpin path | Description |
-|------|---------------|-------------|
-| `wheel` | `Media/<System>/Images/Wheel/` | Transparent PNG logo for the spinner |
-| `background` | `Media/<System>/Images/Backgrounds/` | Full-screen background |
-| `artwork` | `Media/<System>/Images/Artwork1/` | Box art |
-| `title` | `Media/<System>/Images/Artwork2/` | Title screen screenshot |
-| `snap` | `Media/<System>/Images/Artwork3/` | Gameplay screenshot |
-| `video` | `Media/<System>/Video/` | Attract / intro video |
-| `trailer` | `Media/<System>/Video/Trailers/` | Full game trailer |
-| `sound` | `Media/<System>/Sound/` | Sound clip on game select |
-| `theme` | `Media/<System>/Themes/` | HyperSpin SWF/ZIP theme |
-
-Use `media-add` to manually place a local file into any of these slots.
-
----
-
-## Metadata Sources
-
-### ScreenScraper (recommended)
-
-[ScreenScraper](https://www.screenscraper.fr/) has the most complete arcade and console database including media URLs (wheel, fanart, title, gameplay video).
-
-1. Register free at https://www.screenscraper.fr/
-2. Configure:
-   ```bat
-   spindoctor config set screenscraper_user your_username
-   spindoctor config set screenscraper_pass your_password
-   ```
-
-### TheGamesDB
-
-[TheGamesDB](https://thegamesdb.net/) is a community database with broad platform coverage.
-
-1. Get a free API key at https://thegamesdb.net/
-2. Configure:
-   ```bat
-   spindoctor config set thegamesdb_key your_api_key
-   ```
-
-### Switching sources
+Manage cached metadata-match decisions made interactively during `fetch-meta`.
 
 ```bat
-rem Use TheGamesDB for a single run
-spindoctor fetch-meta --system SNES --source thegamesdb
+spindoctor match list --system MAME
+spindoctor match clear --system MAME
+```
 
-rem Change the global default
-spindoctor config set default_metadata_source thegamesdb
+#### `lint`
+
+AST pass over the SpinDoctor source itself — surfaces unused imports, bare `except:`, TODO markers, and near-duplicate function bodies. Useful as a pre-commit sanity check if you fork or modify SpinDoctor.
+
+```bat
+spindoctor lint
+spindoctor lint --category unused-import,bare-except
 ```
 
 ---
 
-## Directory Structure Expected
+## Standalone scripts
+
+Both wheel rebuilds are designed to run on every system boot or directly from HyperSpin's Tools menu, with **no SpinDoctor CLI loaded**. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a minimal `argparse`-based entry point.
+
+### `spindoctor-fav`
+
+```
+spindoctor-fav add SYSTEM ROM_NAME [--display-name NAME]
+spindoctor-fav remove SYSTEM ROM_NAME
+spindoctor-fav list
+spindoctor-fav sync
+spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}]
+```
+
+Equivalent to `spindoctor fav <subcommand>` but lighter and faster to launch — no rich/click overhead. Examples:
+
+```bat
+spindoctor-fav add "Super Nintendo" "Chrono Trigger"
+spindoctor-fav rebuild
+```
+
+Or without installing the console script:
+
+```bat
+python -m spindoctor.favorites rebuild
+```
+
+### `spindoctor-recent`
+
+```
+spindoctor-recent rebuild [--limit N] [--target-system NAME]
+                          [--media-mode {link,symlink,copy,auto,none}]
+spindoctor-recent list
+```
+
+Examples:
+
+```bat
+spindoctor-recent rebuild --limit 20
+python -m spindoctor.recent list
+```
+
+### Wiring into Windows startup
+
+Run once on log-on so the wheels are fresh when the user reaches HyperSpin:
+
+```bat
+schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
+  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
+```
+
+Or drop the `.bat` files written by `spindoctor install-tools` into the Windows Startup folder.
+
+### Wiring into HyperSpin Tools menu
+
+After running `spindoctor install-tools`, register each `.bat` from `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/` in HyperHQ → Tools (or whichever Tools folder your build expects). The user then sees `Refresh Favorites`, `Refresh Recently Played`, and `Refresh Both` inside the cabinet UI.
+
+---
+
+## Directory structure expected
 
 ```
 roms_dir/
@@ -856,7 +519,7 @@ roms_dir/
 │   └── pacman.zip
 ├── Nintendo Entertainment System/
 │   ├── Super Mario Bros (USA).nes
-│   └── Super Mario Bros (USA, Rev 1).nes   ← its own DB entry
+│   └── Super Mario Bros (USA, Rev 1).nes
 └── ...
 
 hyperspin_dir/
@@ -865,223 +528,180 @@ hyperspin_dir/
 │   │   └── Main Menu.xml             ← generated by generate-config
 │   ├── MAME/
 │   │   └── MAME.xml
-│   └── Nintendo Entertainment System/
-│       └── Nintendo Entertainment System.xml
+│   ├── Favorites/                    ← generated by spindoctor fav rebuild
+│   │   └── Favorites.xml
+│   └── Recently Played/              ← generated by spindoctor recent rebuild
+│       └── Recently Played.xml
 └── Media/
     ├── MAME/
-    │   ├── Images/
-    │   │   ├── Wheel/                ← wheel art
-    │   │   ├── Backgrounds/          ← backgrounds
-    │   │   ├── Artwork1/             ← box art
-    │   │   ├── Artwork2/             ← title screens
-    │   │   └── Artwork3/             ← gameplay snaps
-    │   ├── Video/
-    │   │   └── Trailers/             ← trailer videos
+    │   ├── Images/{Wheel,Backgrounds,Artwork1,Artwork2,Artwork3}/
+    │   ├── Video/{,Trailers}/
     │   ├── Sound/
     │   └── Themes/
-    └── ...
+    ├── Favorites/                    ← hardlinked / copied from source systems
+    └── Recently Played/
 
 rocketlauncher_dir/
-└── Settings/
-    ├── MAME.ini                      ← generated by generate-config
-    └── Nintendo Entertainment System.ini
+├── Settings/{<System>.ini, Global Emulators.ini}
+├── Settings/Global Statistics/<System>.ini   ← read by spindoctor recent
+└── Modules/PCLauncher/{Favorites,Recently Played}/<game>.ini
+```
 
-emulators_dir/
-├── MAME/
-└── RetroArch/
+### Media types
+
+| Type | HyperSpin path | Description |
+|------|---------------|-------------|
+| `wheel` | `Images/Wheel/` | Transparent PNG logo |
+| `background` | `Images/Backgrounds/` | Full-screen background |
+| `artwork` | `Images/Artwork1/` | Box art |
+| `title` | `Images/Artwork2/` | Title screen screenshot |
+| `snap` | `Images/Artwork3/` | Gameplay screenshot |
+| `video` | `Video/` | Attract / intro video |
+| `trailer` | `Video/Trailers/` | Full trailer |
+| `sound` | `Sound/` | Sound clip on game select |
+| `theme` | `Themes/` | HyperSpin SWF/ZIP theme |
+
+---
+
+## ROM variant handling
+
+Every ROM file is treated as an independent entry. `Super Mario Bros (USA, Rev 1).nes` and `Super Mario Bros (USA).nes` get separate database entries with separate display names, separate metadata fetches, and separate media slots.
+
+By default the `<description>` keeps the variant tag so the two stay distinguishable in HyperSpin / RocketLauncher menus. Pass `--strip-variant-tags` to `update-db` (or set `strip_variant_tags_in_display_name true`) to collapse all variants of one game to a shared display name.
+
+| ROM filename | Display name (default) | With `--strip-variant-tags` |
+|---|---|---|
+| `1942 (Japan)` | `1942 (Japan)` | `1942` |
+| `1942 (USA)` | `1942 (USA)` | `1942` |
+| `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros (USA, Rev 1)` | `Super Mario Bros` |
+| `super_mario_bros` | `Super Mario Bros` | `Super Mario Bros` |
+
+Fuzzy matching (used by `audit` and `fetch-meta`) strips region/version/revision tags before comparing, so `1942 (Japan, Rev B)` matches the DB entry `1942` with high confidence.
+
+---
+
+## Metadata sources
+
+### ScreenScraper (recommended)
+
+[ScreenScraper](https://www.screenscraper.fr/) has the broadest arcade + console coverage and bundles media URLs.
+
+```bat
+spindoctor config set screenscraper_user your_username
+spindoctor config set screenscraper_pass your_password
+```
+
+### TheGamesDB
+
+```bat
+spindoctor config set thegamesdb_key your_api_key
+spindoctor config set default_metadata_source thegamesdb
 ```
 
 ---
 
-## Typical Workflows
+## Typical workflows
 
-### Initial setup — new arcade build
+### New cabinet build
 
 ```bat
-rem 1. Configure paths
-spindoctor config set roms_dir D:\ROMs
-spindoctor config set hyperspin_dir D:\HyperSpin
-spindoctor config set rocketlauncher_dir D:\RocketLauncher
-spindoctor config set screenscraper_user myuser
-spindoctor config set screenscraper_pass mypass
-spindoctor config set output_dir D:\SpinDoctorOutput
-spindoctor config set auto_audit_export_dir D:\SpinDoctorAudits
-
-rem 2. See what systems you have
+spindoctor config init
 spindoctor systems
-
-rem 3. Generate RocketLauncher INIs and Main Menu XML (into staging first)
 spindoctor generate-config --dry-run
 spindoctor generate-config --output-dir D:\SpinDoctorOutput
-
-rem 4. Sync all databases (dry run first)
-spindoctor update-db --all --dry-run
 spindoctor update-db --all --output-dir D:\SpinDoctorOutput
-
-rem 5. Review the auto-exported audit CSV, then fetch metadata
 spindoctor fetch-meta --all --output-dir D:\SpinDoctorOutput
-
-rem 6. Download priority media (wheel and background first — fastest visible improvement)
 spindoctor fetch-media --all --types wheel,background --output-dir D:\SpinDoctorOutput
 ```
 
-### Handling ROM variants
+### Health check
 
 ```bat
-rem Each variant shows up individually in the audit
-spindoctor audit --system MAME
-
-rem Fuzzy matches show ROMs that are variants of DB entries
-rem e.g. "1942 (Japan, Rev B).zip"  →  DB entry "1942" at 100%
-
-rem update-db adds each variant as its own entry with a cleaned name
-spindoctor update-db --system MAME --dry-run
+spindoctor stats
+spindoctor doctor
+spindoctor find-dupes --all
+spindoctor find-misplaced --all
+spindoctor find-orphan-media --all
+spindoctor check-discs --all
 ```
 
-### Dealing with ambiguous matches
+### ROM integrity sweep
 
 ```bat
-rem Run fetch-meta interactively to hand-pick correct matches
-spindoctor fetch-meta --system MAME --interactive
-
-rem Review what you've selected so far
-spindoctor match list --system MAME
-
-rem Re-evaluate selections for a system (clear cache)
-spindoctor match clear --system MAME
+spindoctor verify --system NES --dat "C:\Dats\Nintendo - NES - No-Intro.dat"
+spindoctor verify --system "Sony Playstation" --dat "C:\Dats\Sony - PS - Redump.dat"
 ```
 
-### Ignoring prototypes and hacks
+### Adding a Favorite
 
 ```bat
-rem Add individual games to the ignore list
-spindoctor ignore add "mame_cheat" --system MAME
-spindoctor ignore add "Super Mario Bros (hack)"  --system "Nintendo Entertainment System"
-
-rem Or add globally
-spindoctor ignore add "test_rom"
-
-rem See the full ignore list
-spindoctor ignore list
+spindoctor fav add "Super Nintendo" "Chrono Trigger"
+spindoctor fav rebuild
 ```
 
-### Add custom media manually
+After this the cabinet user sees Chrono Trigger inside the new `Favorites` system in HyperSpin, with its original SNES wheel art and snap mirrored across.
+
+### Auto-refresh wheels on every boot
 
 ```bat
-rem You found a great trailer for Street Fighter II — add it directly
-spindoctor media-add --system MAME --game "sf2" --type trailer ^
-    --file "C:\Downloads\sf2_trailer.mp4"
+:: One-time setup
+spindoctor install-tools
 
-rem Add a hi-res background, moving the file into place
-spindoctor media-add --system MAME --game "1942" --type background ^
-    --file "C:\Art\1942_bg.jpg" --move
-
-rem Preview what would happen without writing
-spindoctor media-add --system MAME --game "1942" --type title ^
-    --file "C:\Art\1942_title.png" --output-dir D:\Output
+:: Schedule the rebuilds at log-on
+schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
+  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
 ```
-
-### Regular maintenance
-
-```bat
-rem Full health check
-spindoctor report --all --format summary
-
-rem Export detailed CSV for review
-spindoctor report --all --format csv --output D:\weekly_audit.csv
-
-rem Grab any missing media that's appeared since last run
-spindoctor fetch-media --all --types wheel,background,video
-```
-
----
-
-## Options Reference
-
-All commands that write files accept these options:
-
-| Option | Effect |
-|--------|--------|
-| `--dry-run` | Print what would happen — nothing is written |
-| `--output-dir PATH` | Write all output here (mirrors HyperSpin folder structure) |
-
-When `--output-dir` is used, the tool mirrors the exact folder structure so you can inspect results and manually copy them over to your live cabinet.
-
----
-
-## Tool Compatibility
-
-SpinDoctor is designed to coexist with the rest of the HyperSpin / RocketLauncher
-ecosystem. Where it overlaps, here's how it behaves:
-
-| Tool | What it touches | SpinDoctor behaviour |
-|------|-----------------|----------------------|
-| **HyperHQ** | `Main Menu.xml`, per-system `Settings.ini`, `LEDBlinky.ini` | Install with `[xml]` extra (`pip install spindoctor[xml]`) so XML round-trips preserve HyperHQ's comments and custom attributes. Without `lxml`, comments are dropped on save. |
-| **RocketLauncher UI (RLUI)** | `Settings/<System>.ini`, `Settings/Global Emulators.ini` | `generate-config` writes per-system INIs; `--global-emulators` writes `Global Emulators.ini` only if missing (your edits are safe). Pass `--overwrite-global` to force-rewrite. |
-| **Don's HyperSpin Tools** | Per-system XML DBs (GUI editor) | Orthogonal — Don's tools edit one game at a time via GUI; SpinDoctor automates audits and bulk metadata. With `lxml` installed, your manual edits survive `update-db` round-trips. |
-| **LEDBlinky** | `controls.ini`, `colors.ini` | `spindoctor ledblinky generate` synthesizes per-ROM entries from MAME's `-listxml`, but never overwrites entries already present in `<ledblinky_dir>` (community data is trusted). |
-
-**Recommended order of operations** when working in the same area as HyperHQ:
-
-1. `spindoctor update-db` / `fetch-meta` (writes XML)
-2. HyperHQ — apply any cabinet-specific tweaks
-3. (Don't re-run SpinDoctor against the same DB without `lxml` — comments will be lost.)
-
-Run `spindoctor doctor` any time to see whether `lxml` is installed and whether
-each integration is configured.
 
 ---
 
 ## FAQ
 
-**My ROM filenames have region codes like `(USA)` or `(Japan)`. Will they match correctly?**
+**ROM filenames have region tags like `(USA)`. Will they match correctly?**
 
-Yes. SpinDoctor strips region/version/revision tags before searching (e.g., `Super Mario Bros (USA, Rev 1)` searches for `Super Mario Bros`). If the result is ambiguous you'll be shown options to pick from interactively, with a link to the game page for verification.
+Yes — region/version/revision tags are stripped before searching. Ambiguous matches prompt you with a review link to the metadata source.
 
-**I have `1942 (Japan).zip` and `1942 (USA).zip` — will they both get entries?**
+**Will SpinDoctor overwrite my data?**
 
-Yes. Each ROM file gets its own individual database entry. The DB `name` is the exact stem (`1942 (Japan)`, `1942 (USA)`), and by default the display name keeps the variant tag too (`1942 (Japan)`, `1942 (USA)`) so the two stay distinguishable in your menus. If you'd rather both appear as just `1942`, pass `--strip-variant-tags` to `update-db` or run `spindoctor config set strip_variant_tags_in_display_name true`. They are never merged either way.
+Every XML write makes a `.YYYYMMDD_HHMMSS.bak` first (toggle via `backup_before_modify`). Use `--output-dir` to write to a staging folder first.
 
-**Will SpinDoctor overwrite my existing data?**
+**Does it work with RocketUI / RocketLauncher?**
 
-No, by default it backs up every XML it modifies (`.YYYYMMDD_HHMMSS.bak`). Use `--output-dir` to write everything to a staging directory first. Set `backup_before_modify false` to disable backups if you use version control instead.
+Yes. RocketUI uses the same HyperSpin `Databases/` and `Media/` structure.
 
-**Does this work with RocketUI / RocketLauncher?**
+**ScreenScraper is rate-limiting me.**
 
-Yes. RocketUI uses the same HyperSpin `Databases/` and `Media/` structure. SpinDoctor reads and writes those directories directly. The `generate-config` command also creates RocketLauncher's per-system `Settings/<System>.ini` files.
+SpinDoctor caps itself at 1 request/second. The free tier is 500/day — wait for midnight UTC or upgrade.
 
-**ScreenScraper rate-limits me. What do I do?**
-
-SpinDoctor rate-limits itself to 1 request/second. If you hit the daily quota (500 requests on the free tier), wait until midnight UTC. A paid ScreenScraper subscription raises this limit significantly.
-
-**I selected the wrong match. How do I redo it?**
+**I picked the wrong metadata match.**
 
 ```bat
-spindoctor match clear --system <system>
+spindoctor match clear --system MAME
+spindoctor fetch-meta --system MAME
 ```
 
-Then re-run `fetch-meta`. Your previous XML changes won't be rolled back — only the cached match decision is cleared.
+Your previous XML changes aren't rolled back — only the cached match decision is cleared.
 
-**A game I added to the ignore list still shows up in the audit CSV.**
+**HyperSpin's Search menu crashes when LEDBlinky is enabled.**
 
-The game will still appear in the CSV with `ignored=True` but won't be counted in the "needs attention" totals or flagged as a problem.
+```bat
+spindoctor ledblinky check
+spindoctor ledblinky fix
+```
 
-**HyperSpin's Search menu crashes when I have LedBlinky enabled. Why?**
+The fix is reversible — `.bak` files are written and disabled lines are commented out (not deleted) and tagged.
 
-Two known conflicts: LedBlinky's process hooks leak into the Search menu's `Settings.ini`, and `LEDBlinkyControls.xml` has no entry for the Search special menu — so the menu-change lookup fails and the overlay crashes. Run `spindoctor ledblinky check` to confirm, then `spindoctor ledblinky fix` to patch both. The fix is reversible: timestamped `.bak` backups are saved next to every modified file, and disabled lines are commented out (not deleted) and tagged so you can find them later. See [`ledblinky`](#ledblinky) for details.
+**Can I edit favorites from inside HyperSpin?**
+
+HyperSpin's built-in F-key writes per-system favorite lists. Run `spindoctor fav sync` to merge those into the cross-system Favorites wheel. For explicit add/remove, use `spindoctor-fav add` / `remove`.
+
+**Does favoriting a game double its disk usage?**
+
+No — by default media is hardlinked from the source system into `Media/Favorites/`. Both pathnames point at the same bytes on NTFS. Pass `--media-mode copy` if you're on a filesystem that doesn't support hardlinks (FAT32, exFAT).
+
+**How do I get cross-system "Recently Played" working?**
+
+It's automatic — `spindoctor recent rebuild` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher already writes on every game launch). Schedule it at log-on or run it from the Tools menu.
 
 ---
 
-## Ideas & Suggested Additions
-
-Potential future commands that would complement the current feature set:
-
-| Command | What it would do |
-|---------|-----------------|
-| `sync` | One-shot: `update-db` + `fetch-meta` + `fetch-media` in a single command |
-| `clean` | Find and optionally delete orphaned media files that have no matching ROM or DB entry |
-| `verify-roms` | Check ZIP/7z integrity and report corrupt archives before you discover them mid-session |
-| `stats` | Library statistics dashboard — total ROMs, coverage percentages, media completeness per system |
-| `export-list` | Export a printable / shareable game list (HTML or text) with artwork thumbnails |
-
-To request a feature or report a bug: open an issue at the project repository.
+To request a feature or report a bug, open an issue at the project repository.

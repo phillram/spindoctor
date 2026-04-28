@@ -126,25 +126,6 @@ def find_best_match(
     return None
 
 
-def find_all_matches(
-    rom_name: str,
-    candidates: list[str],
-    threshold: float = 0.60,
-    max_results: int = 8,
-) -> list[tuple[str, float]]:
-    """Return all (candidate, score) pairs above threshold, best first."""
-    norm_rom = normalize(rom_name)
-    results = [
-        (c, SequenceMatcher(None, norm_rom, normalize(c)).ratio())
-        for c in candidates
-    ]
-    return sorted(
-        [(c, s) for c, s in results if s >= threshold],
-        key=lambda x: x[1],
-        reverse=True,
-    )[:max_results]
-
-
 _VARIANT_SEGMENT = re.compile(r'(\([^)]*\)|\[[^\]]*\])')
 _ROMAN = ("II", "III", "IV", "VI", "VII", "VIII", "IX", "XI")
 

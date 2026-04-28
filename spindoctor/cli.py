@@ -16,7 +16,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from . import __app_name__, __version__
-from .audit import GameAuditEntry, SystemAuditResult, audit_system, build_stub_entry
+from .audit import SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_systems, load_config, save_config,
 )
@@ -686,7 +686,7 @@ def inspect(system, game, all_games, fmt, output, no_path):
     config = _cfg()
     _check_config(config)
 
-    from .fileinfo import scan_game, scan_system
+    from .fileinfo import scan_game
 
     db = load_database(system, config.databases_dir)
     db_games = db.games()
