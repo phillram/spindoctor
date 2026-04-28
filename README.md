@@ -14,7 +14,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`
   - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
-  - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`
+  - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [Playtime stats](#playtime-stats) — `stats-report`, `stats-report build-wheel`
   - [LEDBlinky](#ledblinky)
@@ -539,6 +539,43 @@ Coverage dashboard: % ROMs matched to DB, % metadata complete, % media complete,
 spindoctor stats
 spindoctor stats --system MAME
 ```
+
+#### `preview`
+
+Generate a visual preview of a system's media — wheels, snaps, backgrounds, themes — so you can sanity-check what your library looks like in HyperSpin without opening every PNG by hand. Useful before applying a new wheel pack or swapping themes.
+
+Two output modes:
+
+* **Contact sheet** — a grid of every wheel with the game name underneath. Default output is a self-contained HTML page (no Pillow required) using `file://` paths to your existing media (no copies). Pass `--format png` for a single composited PNG (requires Pillow).
+* **Per-game card** — a full-page HTML mock of a HyperSpin entry: full-bleed background, wheel logo center-bottom, snap top-right, title image top-left, and a metadata strip (display name · year · manufacturer · genre) at the bottom. Theme / video paths are listed when present but not embedded.
+
+```bat
+spindoctor preview --system MAME --output-dir D:\Preview
+spindoctor preview --all --output-dir D:\Preview --columns 8
+spindoctor preview --system NES --output-dir D:\Out --format both --open
+spindoctor preview --system NES --output-dir D:\Out --game "Super Mario Bros"
+spindoctor preview --system NES --output-dir D:\Out --include-missing
+```
+
+Output layout per system:
+
+```
+<output-dir>/
+  index.html            :: contact sheet, links to each card
+  index.png             :: only when --format png|both AND Pillow installed
+  games/
+    Super Mario Bros.html
+    Zelda.html
+    ...
+```
+
+Pass `--all` to put each system in its own subfolder under `--output-dir`. The PNG mode is gated on the optional `[preview]` extra:
+
+```bat
+pip install -e .[preview]
+```
+
+When Pillow isn't installed, `--format png` falls back to HTML with a warning so the command still succeeds.
 
 ---
 
