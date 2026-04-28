@@ -6,9 +6,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .config import Config, get_rom_extensions, get_system_overrides, get_systems
+from .config import Config, get_rom_extensions, get_system_overrides
 from .database import _set_text as _set
-from .database import load_database
 
 
 EMULATOR_MAP: dict[str, str] = {
@@ -357,47 +356,3 @@ def generate_pclauncher_inis(
     return module_dir, written, skipped
 
 
-# ─── generate all ─────────────────────────────────────────────────────────────
-
-def generate_all(
-    config: Config,
-    output_base: Optional[Path] = None,
-    include_db_stubs: bool = False,
-    dry_run: bool = False,
-) -> dict:
-    """Run all config generation steps and return a results summary dict."""
-    systems = get_systems(config)
-    results: dict = {
-        "systems": systems,
-        "dry_run": dry_run,
-        "rl_inis": [],
-        "hs_main_menu": None,
-        "db_stubs": [],
-        "errors": [],
-    }
-
-    for sys_name in systems:
-        if dry_run:
-            results["rl_inis"].append(f"[dry-run] {sys_name}.ini")
-        else:
-            try:
-                p = generate_rl_system_ini(sys_name, config, output_base)
-                results["rl_inis"].append(str(p))
-            except ValueError as e:
-                results["errors"].append(str(e))
-                results["rl_inis"].append(f"[skipped] {sys_name}")
-
-    if dry_run:
-        results["hs_main_menu"] = "[dry-run] Main Menu.xml"
-    else:
-        p = generate_hs_main_menu(systems, config, output_base)
-        results["hs_main_menu"] = str(p)
-
-    if include_db_stubs:
-        if dry_run:
-            results["db_stubs"] = [f"[dry-run] {s}.xml" for s in systems]
-        else:
-            created = generate_system_db_stubs(systems, config, output_base)
-            results["db_stubs"] = [str(p) for p in created]
-
-    return results
