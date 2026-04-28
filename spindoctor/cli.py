@@ -846,6 +846,438 @@ def _write_inspect_csv(reports, path) -> None:
         console.print(buf.getvalue())
 
 
+# ─── find-dupes / find-misplaced / lint ──────────────────────────────────────
+
+@cli.command("find-dupes")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+@click.option("--cross-systems", is_flag=True,
+              help="Also report titles that appear under more than one system.")
+@click.option("--by-content", is_flag=True,
+              help="Hash file bytes (slow) to catch identical files renamed differently.")
+def find_dupes(system, all_systems, cross_systems, by_content):
+    """Scan for duplicated games within a system (and optionally across systems).
+
+    \b
+    Two ROMs are considered duplicates by default when their stems
+    collapse to the same normalised title (region/version/disc tags
+    stripped). Use --by-content to additionally pair files that share
+    bytes; --cross-systems to find a title filed under multiple systems.
+    """
+    from .dupes import find_cross_system_duplicates, find_duplicates_in_system
+
+    config = _cfg()
+    _check_config(config)
+    systems = _resolve_systems(config, system, all_systems)
+
+    total = 0
+    for sys_name in systems:
+        groups = find_duplicates_in_system(sys_name, config, by_content=by_content)
+        if not groups:
+            console.print(f"[green]✓[/green] {sys_name}: no duplicates")
+            continue
+        console.print(Panel(f" {sys_name} — {len(groups)} duplicate group(s) ",
+                            style="bold yellow"))
+        for g in groups:
+            label = "title" if g.reason == "title" else f"sha1:{g.key}"
+            console.print(f"  [cyan]{label}[/cyan] [dim]({g.count} files)[/dim]")
+            for p in g.files:
+                console.print(f"    [yellow]·[/yellow] {p}")
+        total += len(groups)
+
+    if cross_systems and len(systems) > 1:
+        matches = find_cross_system_duplicates(systems, config)
+        if matches:
+            console.print(Panel(
+                f" cross-system — {len(matches)} title(s) in multiple folders ",
+                style="bold magenta"))
+            for m in matches:
+                console.print(f"  [cyan]{m.key}[/cyan] [dim]→ {', '.join(m.systems)}[/dim]")
+                for sys_name, p in m.occurrences:
+                    console.print(f"    [yellow]·[/yellow] [dim]{sys_name}:[/dim] {p}")
+            total += len(matches)
+        else:
+            console.print("[green]✓[/green] no cross-system overlap")
+
+    if total == 0:
+        console.print("\n[green]Clean — no duplicates detected.[/green]")
+    else:
+        console.print(f"\n[yellow]{total}[/yellow] duplicate group(s) total.")
+
+
+@cli.command("find-misplaced")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+@click.option("--apply", "apply_moves_flag", is_flag=True,
+              help="Move each misplaced ROM into its first suggested system "
+                   "folder. Writes a manifest so the change can be undone.")
+@click.option("--undo", is_flag=True,
+              help="Reverse the most recent --apply manifest.")
+def find_misplaced(system, all_systems, apply_moves_flag, undo):
+    """Scan for ROMs whose extension doesn't match the folder's system.
+
+    \b
+    Surfaces files that probably belong to a different platform — e.g. a
+    .nes inside the snes folder. Generic containers (.zip, .iso, .bin)
+    are skipped because they're ambiguous on inspection alone. Each
+    finding lists candidate systems that *do* claim the extension.
+
+    \b
+    Examples:
+      spindoctor find-misplaced --all
+      spindoctor find-misplaced --system snes --apply
+      spindoctor find-misplaced --undo
+    """
+    from .misplaced import (
+        apply_moves, find_latest_misplaced_manifest,
+        find_misplaced_in_system, undo_moves,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    if undo:
+        manifest = find_latest_misplaced_manifest(Path(config.roms_dir))
+        if not manifest:
+            console.print("[yellow]No misplaced-move manifest to undo.[/yellow]")
+            return
+        console.print(f"Reverting {manifest.name}")
+        summary = undo_moves(manifest)
+        console.print(
+            f"[green]+[/green] reverted {summary['reverted']} move(s)"
+        )
+        for err in summary["errors"]:
+            err_console.print(f"  [red]✗[/red] {err}")
+        return
+
+    systems = _resolve_systems(config, system, all_systems)
+    known = get_systems(config)
+
+    total = 0
+    all_items = []
+    for sys_name in systems:
+        items = find_misplaced_in_system(sys_name, config, known_systems=known)
+        if not items:
+            console.print(f"[green]✓[/green] {sys_name}: nothing misplaced")
+            continue
+        console.print(Panel(
+            f" {sys_name} — {len(items)} misplaced ROM(s) ", style="bold yellow"))
+        tbl = Table(box=box.SIMPLE)
+        tbl.add_column("File", style="yellow")
+        tbl.add_column("Ext")
+        tbl.add_column("Likely belongs to", style="cyan")
+        for m in items:
+            try:
+                rel = m.path.relative_to(Path(config.roms_dir) / sys_name)
+            except ValueError:
+                rel = m.path
+            tbl.add_row(str(rel), m.extension,
+                        ", ".join(m.suggested_systems[:4]) or "—")
+        console.print(tbl)
+        total += len(items)
+        all_items.extend(items)
+
+    if total == 0:
+        console.print("\n[green]Clean — every ROM lives in a matching folder.[/green]")
+        return
+
+    console.print(f"\n[yellow]{total}[/yellow] misplaced ROM(s) total.")
+
+    if not apply_moves_flag:
+        console.print(
+            "[dim]Re-run with[/dim] [cyan]--apply[/cyan] [dim]to move them "
+            "into their suggested folders.[/dim]"
+        )
+        return
+
+    result, manifest = apply_moves(all_items, config)
+    console.print(f"\n[green]✓[/green] moved {len(result.moved)} file(s)")
+    for src, dest in result.moved:
+        console.print(f"  [dim]·[/dim] {src.name} → {dest.parent.name}/")
+    if result.skipped:
+        console.print(f"[yellow]⚠[/yellow] skipped {len(result.skipped)}:")
+        for path, reason in result.skipped:
+            console.print(f"  [dim]·[/dim] {path.name} — {reason}")
+    if manifest:
+        console.print(
+            f"\nManifest: {manifest.name}\n"
+            f"Run [cyan]spindoctor find-misplaced --undo[/cyan] to revert."
+        )
+
+
+@cli.command("lint")
+@click.option("--source", default=None,
+              help="Source root to scan (default: spindoctor package directory).")
+@click.option("--category", "-c", multiple=True,
+              help="Limit output to one or more categories: unused-import, "
+                   "dead-code, bare-except, todo, duplicate-body.")
+def lint_cmd(source, category):
+    """Static-analysis pass over the SpinDoctor codebase itself.
+
+    Reports unused imports, bare except clauses, TODO/FIXME markers, and
+    near-duplicate function bodies. Useful as a pre-commit sanity check.
+    """
+    from . import __file__ as pkg_init
+    from .lint import lint_tree
+
+    root = Path(source).resolve() if source else Path(pkg_init).resolve().parent
+    report = lint_tree(root)
+
+    wanted = set(category) if category else None
+    grouped = report.by_category()
+    shown = 0
+    for cat in sorted(grouped):
+        if wanted and cat not in wanted:
+            continue
+        items = grouped[cat]
+        console.print(Panel(f" {cat} — {len(items)} ", style="bold blue"))
+        tbl = Table(box=box.SIMPLE)
+        tbl.add_column("File", style="cyan")
+        tbl.add_column("Line", justify="right")
+        tbl.add_column("Detail")
+        for f in items:
+            try:
+                rel = f.path.relative_to(root)
+            except ValueError:
+                rel = f.path
+            tbl.add_row(str(rel), str(f.line), escape(f.detail))
+        console.print(tbl)
+        shown += len(items)
+
+    console.print(
+        f"\n[dim]scanned {report.files_scanned} file(s); "
+        f"{shown} finding(s) shown of {len(report.findings)} total.[/dim]"
+    )
+
+
+# ─── find-orphan-media / check-discs / verify / stats ────────────────────────
+
+@cli.command("find-orphan-media")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+@click.option("--delete", is_flag=True,
+              help="Delete the reported orphans (irreversible). Default is dry-run.")
+def find_orphan_media(system, all_systems, delete):
+    """Find media files whose game no longer exists in DB or ROMs.
+
+    \b
+    Walks Media/<system>/{Wheel,Backgrounds,Artwork1..3,Video,Sound,Themes}
+    and reports each file whose stem isn't a known game. With --delete,
+    removes the orphan files (this is destructive; no undo).
+    """
+    from .orphan_media import delete_orphans, find_orphan_media as _find
+
+    config = _cfg()
+    _check_config(config)
+    systems = _resolve_systems(config, system, all_systems)
+
+    grand_total = 0
+    pending_delete: list = []
+    for sys_name in systems:
+        report = _find(sys_name, config)
+        if not report.orphans:
+            console.print(f"[green]✓[/green] {sys_name}: no orphan media")
+            continue
+        console.print(Panel(
+            f" {sys_name} — {len(report.orphans)} orphan(s) ", style="bold yellow"))
+        tbl = Table(box=box.SIMPLE)
+        tbl.add_column("Type", style="cyan")
+        tbl.add_column("File", style="yellow")
+        for o in report.orphans:
+            try:
+                rel = o.path.relative_to(config.media_dir / sys_name)
+            except ValueError:
+                rel = o.path
+            tbl.add_row(o.media_type, str(rel))
+        console.print(tbl)
+        breakdown = ", ".join(f"{k}: {v}" for k, v in report.by_type.items())
+        console.print(f"  [dim]{breakdown}[/dim]")
+        grand_total += len(report.orphans)
+        pending_delete.extend(report.orphans)
+
+    if grand_total == 0:
+        console.print("\n[green]Clean — no orphan media.[/green]")
+        return
+
+    console.print(f"\n[yellow]{grand_total}[/yellow] orphan(s) total.")
+    if not delete:
+        console.print(
+            "[dim]Re-run with[/dim] [cyan]--delete[/cyan] [dim]to remove "
+            "them (irreversible).[/dim]"
+        )
+        return
+
+    if not click.confirm(f"Permanently delete {grand_total} file(s)/folder(s)?",
+                         default=False):
+        console.print("[yellow]Cancelled.[/yellow]")
+        return
+    deleted, errors = delete_orphans(pending_delete)
+    console.print(f"[green]✓[/green] deleted {deleted}")
+    for e in errors:
+        err_console.print(f"  [red]✗[/red] {e}")
+
+
+@cli.command("check-discs")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True)
+def check_discs_cmd(system, all_systems):
+    """Validate multi-disc games and .m3u playlists.
+
+    \b
+    Two checks per system:
+      • every (Disc N) file has a matching (Disc 1..N-1) sibling
+      • every .m3u line resolves to a file that exists on disk
+    """
+    from .discs import check_discs
+
+    config = _cfg()
+    _check_config(config)
+    systems = _resolve_systems(config, system, all_systems)
+
+    total_issues = 0
+    for sys_name in systems:
+        report = check_discs(sys_name, config)
+        if not report.issues:
+            console.print(
+                f"[green]✓[/green] {sys_name}: "
+                f"{report.games_checked} game(s), "
+                f"{report.playlists_checked} playlist(s) — all good"
+            )
+            continue
+        console.print(Panel(
+            f" {sys_name} — {len(report.issues)} disc issue(s) ",
+            style="bold yellow"))
+        for issue in report.issues:
+            console.print(
+                f"  [yellow]·[/yellow] [cyan]{issue.kind}[/cyan] "
+                f"[dim]{issue.location}[/dim]"
+            )
+            console.print(f"      {issue.detail}")
+        total_issues += len(report.issues)
+
+    if total_issues == 0:
+        console.print("\n[green]Clean — all multi-disc layouts are intact.[/green]")
+    else:
+        console.print(f"\n[yellow]{total_issues}[/yellow] disc issue(s) total.")
+
+
+@cli.command("verify")
+@click.option("--system", "-s", required=True, help="System to verify.")
+@click.option("--dat", "dat_path", type=click.Path(exists=True), required=True,
+              help="No-Intro / Redump / TOSEC DAT XML file.")
+@click.option("--show-good", is_flag=True,
+              help="Also list verified-good ROMs (default: only problems).")
+def verify_cmd(system, dat_path, show_good):
+    """Verify ROM file integrity against a No-Intro / Redump DAT.
+
+    \b
+    Each ROM is matched by SHA1, then CRC32, then size+name. Statuses:
+      good     — exact match
+      renamed  — hash matches but the filename differs from the DAT
+      bad      — size matches a known entry but hashes don't
+      unknown  — DAT doesn't list anything of this size
+
+    Hashing is lazy: a file whose size is absent from the DAT skips
+    hashing entirely so unknown homebrew won't slow the scan down.
+    """
+    from .verify import verify_system
+
+    config = _cfg()
+    _check_config(config)
+
+    report = verify_system(system, Path(dat_path), Path(config.roms_dir))
+
+    console.print(Panel(f" verify: {system} ", style="bold blue"))
+    if not report.entries:
+        console.print(f"[yellow]No files to verify under {Path(config.roms_dir) / system}[/yellow]")
+        return
+
+    style = {
+        "good": "green",
+        "renamed": "yellow",
+        "bad": "red",
+        "unknown": "dim",
+    }
+    tbl = Table(box=box.SIMPLE)
+    tbl.add_column("Status", style="cyan", width=8)
+    tbl.add_column("File", style="yellow")
+    tbl.add_column("Detail")
+    for e in report.entries:
+        if e.status == "good" and not show_good:
+            continue
+        try:
+            rel = e.path.relative_to(Path(config.roms_dir) / system)
+        except ValueError:
+            rel = e.path
+        tbl.add_row(
+            f"[{style.get(e.status, 'white')}]{e.status}[/{style.get(e.status, 'white')}]",
+            str(rel),
+            e.detail or (e.expected_name or ""),
+        )
+    console.print(tbl)
+    summary = ", ".join(
+        f"{k}: {v}" for k, v in sorted(report.summary.items())
+    )
+    console.print(f"\n[bold]Summary:[/bold] {summary}")
+
+
+@cli.command("stats")
+@click.option("--system", "-s", default=None)
+@click.option("--all", "all_systems", is_flag=True, default=True,
+              help="Aggregate across all systems (default).")
+def stats_cmd(system, all_systems):
+    """Coverage dashboard: % of games with metadata + media per system.
+
+    \b
+    Reuses the audit pipeline so figures match what `spindoctor audit`
+    reports. Useful for spotting which systems still need attention.
+    """
+    from .stats import collect_stats, top_missing_media
+
+    config = _cfg()
+    _check_config(config)
+    if system:
+        systems = [system]
+    else:
+        systems = _resolve_systems(config, None, True)
+
+    report = collect_stats(systems, config)
+    if not report.per_system:
+        console.print("[yellow]No systems found.[/yellow]")
+        return
+
+    tbl = Table(title="Coverage by system", box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("ROMs", justify="right")
+    tbl.add_column("DB", justify="right")
+    tbl.add_column("Matched", justify="right")
+    tbl.add_column("Metadata", justify="right")
+    tbl.add_column("Media", justify="right")
+    for s in report.per_system:
+        tbl.add_row(
+            s.system,
+            str(s.total_roms),
+            str(s.total_db_entries),
+            f"{s.rom_coverage:.0%}",
+            f"{s.metadata_coverage:.0%}",
+            f"{s.media_coverage:.0%}",
+        )
+    console.print(tbl)
+
+    grand = (
+        f"\n[bold]Totals:[/bold] {report.total_roms} ROMs · "
+        f"{report.total_db_entries} DB entries across "
+        f"{len(report.per_system)} system(s)"
+    )
+    console.print(grand)
+
+    missing = top_missing_media(report)
+    if missing:
+        console.print("\n[bold]Top missing media types[/bold]")
+        for media_type, count in missing:
+            console.print(f"  · [cyan]{media_type}[/cyan] — {count} game(s)")
+
+
 # ─── ignore ───────────────────────────────────────────────────────────────────
 
 @cli.group("ignore")
