@@ -38,6 +38,7 @@ MEDIA_TYPES = [
     "artwork",
     "title",
     "snap",
+    "fade",
     "video",
     "trailer",
     "sound",

@@ -180,9 +180,15 @@ Download wheels, backgrounds, snaps, videos, etc. for games in the database.
 spindoctor fetch-media --system MAME --types wheel,background --dry-run
 spindoctor fetch-media --all --output-dir D:\Output
 spindoctor fetch-media --system SNES --types trailer --overwrite
+spindoctor fetch-media --system MAME --types theme,fade,sound
 ```
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
+
+`theme`, `fade`, and `sound` come from ScreenScraper only (TheGamesDB
+has no equivalents) and coverage is sparse. For EmuMovies-style theme
+packs, drop the files into a folder and run
+`spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
 
 #### `media-add`
 
@@ -804,10 +810,16 @@ rocketlauncher_dir/
 | `artwork` | `Images/Artwork1/` | Box art |
 | `title` | `Images/Artwork2/` | Title screen screenshot |
 | `snap` | `Images/Artwork3/` | Gameplay screenshot |
+| `fade` | `Images/Artwork4/` | Fade-in image between wheel and game launch |
 | `video` | `Video/` | Attract / intro video |
 | `trailer` | `Video/Trailers/` | Full trailer |
 | `sound` | `Sound/` | Sound clip on game select |
 | `theme` | `Themes/` | HyperSpin SWF/ZIP theme |
+
+> Sources for `theme`, `fade`, and `sound` are limited — ScreenScraper
+> covers the most. For EmuMovies-style theme packs, drop the files into a
+> folder and use `spindoctor media-scan SOURCE_DIR --apply` to import
+> them in bulk.
 
 ---
 
