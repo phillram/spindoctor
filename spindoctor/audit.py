@@ -24,6 +24,7 @@ class MediaStatus:
     artwork: bool = False
     title: bool = False
     snap: bool = False
+    fade: bool = False
     video: bool = False
     trailer: bool = False
     sound: bool = False
@@ -171,6 +172,7 @@ def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStat
     status.artwork = _exists(sys_dir / "Images" / "Artwork1", game_name, img_exts)
     status.title = _exists(sys_dir / "Images" / "Artwork2", game_name, img_exts)
     status.snap = _exists(sys_dir / "Images" / "Artwork3", game_name, img_exts)
+    status.fade = _exists(sys_dir / "Images" / "Artwork4", game_name, img_exts)
     status.video = _exists(sys_dir / "Video", game_name, video_exts)
     status.trailer = _exists(sys_dir / "Video" / "Trailers", game_name, video_exts)
     status.sound = _exists(sys_dir / "Sound", game_name, sound_exts)
