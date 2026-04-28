@@ -3906,6 +3906,131 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
         console.print(f"[green]Report written:[/green] {output}")
 
 
+# ─── preview ──────────────────────────────────────────────────────────────────
+
+@cli.command("preview")
+@click.option("--system", "-s", default=None,
+              help="System to render (use --all to do every system).")
+@click.option("--all", "all_systems", is_flag=True,
+              help="One subfolder per system inside --output-dir.")
+@click.option("--output-dir", "-o", type=click.Path(), required=True,
+              help="Where to write the index.html / cards / index.png.")
+@click.option("--format", "fmt", default="html",
+              type=click.Choice(["html", "png", "both"]),
+              help="Contact-sheet output format. PNG requires Pillow.")
+@click.option("--columns", default=6, type=int,
+              help="Contact-sheet column count (default 6).")
+@click.option("--include-missing", is_flag=True,
+              help="Show games with no wheel as a placeholder cell.")
+@click.option("--game", "single_game", default=None,
+              help="Render only this game's card (no contact sheet).")
+@click.option("--open", "open_in_browser", is_flag=True,
+              help="Open the index in the default browser when done.")
+def preview_cmd(system, all_systems, output_dir, fmt, columns,
+                include_missing, single_game, open_in_browser):
+    """Generate visual previews of a system's wheels / themes / media.
+
+    \b
+    Two output modes:
+      • Contact sheet — grid of every wheel (HTML or PNG).
+      • Per-game card — full-page mock of a HyperSpin entry (HTML).
+
+    \b
+    Examples:
+      spindoctor preview --system MAME --output-dir D:\\Preview
+      spindoctor preview --all --output-dir D:\\Preview --format both
+      spindoctor preview --system NES --output-dir D:\\Out --game "Super Mario Bros"
+      spindoctor preview --system NES --output-dir D:\\Out --open
+    """
+    import webbrowser
+
+    from .preview import (
+        collect_previews,
+        collect_previews_including_missing,
+        render_game_card_html,
+        render_system_overview,
+        pillow_available,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    if fmt in ("png", "both") and not pillow_available():
+        console.print(
+            "[yellow]Pillow not installed — PNG output will fall back to HTML. "
+            "Install with: pip install -e .[preview][/yellow]"
+        )
+
+    if single_game and (all_systems or not system):
+        err_console.print(
+            "[red]--game requires --system NAME (one system at a time).[/red]"
+        )
+        sys.exit(1)
+
+    out_base = Path(output_dir)
+    systems = _resolve_systems(config, system, all_systems)
+
+    formats: tuple[str, ...]
+    if fmt == "html":
+        formats = ("html",)
+    elif fmt == "png":
+        formats = ("png",)
+    else:
+        formats = ("html", "png")
+
+    opened = False
+    primary_index: Optional[Path] = None
+
+    for sys_name in systems:
+        items = (
+            collect_previews_including_missing(sys_name, config)
+            if include_missing
+            else collect_previews(sys_name, config)
+        )
+
+        if single_game:
+            match = next((i for i in items if i.game_name == single_game), None)
+            if match is None:
+                # Try display-name match.
+                match = next(
+                    (i for i in items if i.display_name == single_game), None,
+                )
+            if match is None:
+                err_console.print(
+                    f"[red]No game named '{single_game}' in {sys_name}.[/red]"
+                )
+                sys.exit(1)
+            target = out_base / f"{single_game}.html"
+            render_game_card_html(match, target)
+            console.print(f"[green]Wrote card:[/green] {target}")
+            primary_index = target
+            continue
+
+        sys_dir = out_base / sys_name if all_systems else out_base
+        if not items:
+            console.print(
+                f"[yellow]{sys_name}: no games with media to preview.[/yellow]"
+            )
+            continue
+
+        result = render_system_overview(
+            sys_name, items, sys_dir,
+            columns=columns,
+            include_missing=include_missing,
+            formats=formats,
+        )
+        console.print(
+            f"[green]{sys_name}:[/green] {len(result['cards'])} card(s) · "
+            f"index: {result['index_html']}"
+            + (f" · png: {result['index_png']}" if result['index_png'] else "")
+        )
+        if primary_index is None:
+            primary_index = result["index_html"]
+
+    if open_in_browser and primary_index is not None and not opened:
+        webbrowser.open(primary_index.resolve().as_uri())
+
+
 # ─── ledblinky: HyperSpin Search compatibility (check / fix) ──────────────────
 
 @ledblinky_group.command("check")
