@@ -13,7 +13,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Configuration](#configuration)
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
-  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`
+  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [LEDBlinky](#ledblinky)
@@ -803,6 +803,75 @@ spindoctor migrate --target E:\Cab --apply --preserve-names
 
 If something goes wrong, `spindoctor migrate --undo latest` puts everything back where it was and restores the previous config.
 
+#### `backup`
+
+Copy any combination of library components into a dated backup folder on a different drive — and restore it later, in full or in part. Useful before risky operations (drive migration, big metadata refresh) or as a periodic safety net.
+
+Components are à la carte — pick exactly what you want to preserve:
+
+| Component | What it covers | Default subfolder in the backup |
+|-----------|---------------|---------------------------------|
+| `roms` (alias `games`) | `roms_dir` (every system folder) | `Games/` |
+| `databases` (alias `db`, `data`) | `<hyperspin_dir>/Databases/` | `HyperSpin/Databases/` |
+| `media` | `<hyperspin_dir>/Media/` (wheels, snaps, video, themes) | `HyperSpin/Media/` |
+| `emulators` | `emulators_dir` | `Emulators/` |
+| `rocketlauncher` (alias `rl`) | `rocketlauncher_dir` | `RocketLauncher/` |
+| `ledblinky` (alias `led`) | `ledblinky_dir` | `LEDBlinky/` |
+| `settings` (alias `config`) | `~/.spindoctor/` (config, favorites, ignore lists, caches) | `Settings/` |
+| `all` | every component above | all of the above |
+
+Composite alias `hyperspin` (also `hs`) expands to `databases,media`.
+
+Each backup lives at `<target>/spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/` and contains a `manifest.json` describing what was copied and where it came from. Backups are plain folders — you can browse, copy, or zip them with any file explorer.
+
+**Dry-run is the default.** Pass `--apply` to actually copy.
+
+```bat
+:: 1. See what a full backup would copy
+spindoctor backup create --target E:\Backups
+
+:: 2. Full backup of everything
+spindoctor backup create --target E:\Backups --apply
+
+:: 3. Just the small stuff: settings + databases (no huge media folder)
+spindoctor backup create --target E:\Backups --include settings,databases --apply
+
+:: 4. Just games and media
+spindoctor backup create --target E:\Backups --include games,media --apply
+
+:: 5. Tag a backup before doing something risky
+spindoctor backup create --target E:\Backups --label pre-migration --apply
+```
+
+**Inspecting backups:**
+
+```bat
+spindoctor backup list --target E:\Backups
+spindoctor backup info --backup E:\Backups\spindoctor-backup-20260428_120000
+```
+
+**Restoring:**
+
+```bat
+:: Dry-run a full restore
+spindoctor backup restore --backup E:\Backups\spindoctor-backup-20260428_120000
+
+:: Restore everything back to the paths recorded in the backup
+spindoctor backup restore --backup E:\Backups\... --apply
+
+:: Restore just the settings (e.g. after a fresh install)
+spindoctor backup restore --backup E:\Backups\... --include settings --apply
+
+:: Drive letters changed since the backup — route restores to whatever
+:: paths config.json currently has instead of the originals
+spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
+
+:: Replace existing folders (default refuses to clobber non-empty dirs)
+spindoctor backup restore --backup E:\Backups\... --overwrite --apply
+```
+
+The pre-flight plan tells you total bytes to copy and free space at the target, and aborts the apply if there isn't enough room.
+
 ### Auto-refresh wheels on every boot
 
 ```bat
@@ -824,7 +893,7 @@ Yes — region/version/revision tags are stripped before searching. Ambiguous ma
 
 **Will SpinDoctor overwrite my data?**
 
-Every XML write makes a `.YYYYMMDD_HHMMSS.bak` first (toggle via `backup_before_modify`). Use `--output-dir` to write to a staging folder first.
+Every XML write makes a `.YYYYMMDD_HHMMSS.bak` first (toggle via `backup_before_modify`). Use `--output-dir` to write to a staging folder first. For larger snapshots — full ROMs, media, settings — use `spindoctor backup create` to copy a labelled, dated backup off to another drive that `backup restore` can replay later.
 
 **Does it work with RocketUI / RocketLauncher?**
 
