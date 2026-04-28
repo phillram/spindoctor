@@ -11,7 +11,9 @@ from typing import Optional
 
 import requests
 
-from .config import CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config
+from .config import (
+    CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_system_overrides,
+)
 from .romutils import normalize, similarity
 
 
@@ -84,6 +86,37 @@ THEGAMESDB_PLATFORMS: dict[str, int] = {
 
 
 @dataclass
+class MediaCandidate:
+    """One concrete URL for a media slot, with metadata for picker display."""
+    url: str
+    region: str = ""          # e.g. "us", "eu", "wor", "jp"
+    version: str = ""         # ScreenScraper "version" or extension hint
+    format: str = ""          # file extension/format ("png", "mp4", ...)
+    source_type: str = ""     # raw API type tag ("box-2D", "screenmarquee", ...)
+    width: str = ""           # ScreenScraper "size" / dims (when present)
+    height: str = ""
+
+    def label(self) -> str:
+        bits = [b for b in (self.region.upper() or "—",
+                            self.source_type or "",
+                            self.format or "") if b]
+        return " · ".join(bits)
+
+
+# Maps logical media slot → ordered list of ScreenScraper "type" values to try.
+# First entry is the canonical type; later entries are fallbacks.
+SCREENSCRAPER_MEDIA_TYPES: dict[str, tuple[str, ...]] = {
+    "wheel":      ("wheel", "wheel-hd", "wheel-carbon", "wheel-steel"),
+    "background": ("ss", "fanart"),
+    "artwork":    ("box-2D", "box-3D"),
+    "title":      ("screenmarquee", "sstitle"),
+    "snap":       ("ss",),
+    "video":      ("video-normalized", "video"),
+    "trailer":    ("video-normalized",),
+}
+
+
+@dataclass
 class GameMetadata:
     name: str
     description: str = ""
@@ -99,7 +132,7 @@ class GameMetadata:
     source_url: str = ""
     match_score: float = 0.0
 
-    # Media download URLs
+    # Media download URLs (best/first candidate; auto-pick path)
     wheel_url: str = ""
     background_url: str = ""
     artwork_url: str = ""
@@ -108,6 +141,11 @@ class GameMetadata:
     video_url: str = ""
     trailer_url: str = ""
     sound_url: str = ""
+
+    # Full candidate list per slot — populated when --pick-media is used.
+    # Maps media slot name (wheel, background, ...) → list of MediaCandidate.
+    # Empty by default to keep cache files small for the common case.
+    media_candidates: dict[str, list[MediaCandidate]] = field(default_factory=dict)
 
 
 class MetadataError(Exception):
@@ -166,7 +204,7 @@ class MetadataCache:
                     return None
             except ValueError:
                 return None
-        return [GameMetadata(**entry) for entry in data.get("results", [])]
+        return [_metadata_from_dict(entry) for entry in data.get("results", [])]
 
     def put(
         self,
@@ -323,6 +361,9 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         }
 
     def _system_id(self, system_name: str) -> Optional[int]:
+        ovr = get_system_overrides().get(system_name, {})
+        if isinstance(ovr.get("screenscraper_id"), int):
+            return ovr["screenscraper_id"]
         return SCREENSCRAPER_SYSTEMS.get(system_name.lower())
 
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
@@ -371,6 +412,52 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         results.sort(key=lambda m: m.match_score, reverse=True)
         return results
 
+    def fetch_system_media(self, system_name: str) -> dict[str, list[MediaCandidate]]:
+        """Fetch system-level Main Menu media candidates from ScreenScraper.
+
+        Returns a dict keyed by HyperSpin Main Menu slot
+        (``wheel`` / ``background`` / ``video``) of candidate URLs.
+
+        ScreenScraper's ``/systemesListe.php`` endpoint exposes a ``medias``
+        array per system with type tags such as ``logo-monochrome``,
+        ``wheel``, ``photo``, ``video``.  We map those to HyperSpin's
+        Main Menu slots; missing types yield an empty list.
+        """
+        system_id = self._system_id(system_name)
+        if not system_id:
+            return {}
+
+        self._limiter.wait()
+        params = self._base_params()
+        try:
+            resp = self._session.get(
+                f"{SCREENSCRAPER_API}/systemesListe.php", params=params, timeout=15,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except (requests.RequestException, ValueError) as e:
+            raise MetadataError(f"ScreenScraper system list failed: {e}") from e
+
+        systems = data.get("response", {}).get("systemes", []) or []
+        target = next(
+            (s for s in systems if str(s.get("id")) == str(system_id)),
+            None,
+        )
+        if not target:
+            return {}
+
+        medias = target.get("medias", []) or []
+        slot_map: dict[str, tuple[str, ...]] = {
+            "wheel":      ("wheel", "logo-monochrome", "logo", "illustration"),
+            "background": ("photo", "fanart", "ss"),
+            "video":      ("video-normalized", "video"),
+        }
+        return {
+            slot: cands
+            for slot, types in slot_map.items()
+            if (cands := _collect_media_candidates(medias, types))
+        }
+
 
 # ─── TheGamesDB ───────────────────────────────────────────────────────────────
 
@@ -390,6 +477,9 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         self._cache = cache
 
     def _platform_id(self, system_name: str) -> Optional[int]:
+        ovr = get_system_overrides().get(system_name, {})
+        if isinstance(ovr.get("thegamesdb_id"), int):
+            return ovr["thegamesdb_id"]
         return THEGAMESDB_PLATFORMS.get(system_name.lower())
 
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
@@ -481,6 +571,56 @@ def build_client(
 
 # ─── parsers ──────────────────────────────────────────────────────────────────
 
+def _metadata_from_dict(entry: dict) -> GameMetadata:
+    """Reconstruct GameMetadata from a JSON-serialised dict, including candidates."""
+    candidates_raw = entry.get("media_candidates") or {}
+    candidates: dict[str, list[MediaCandidate]] = {}
+    for slot, items in candidates_raw.items():
+        candidates[slot] = [
+            MediaCandidate(**{k: v for k, v in item.items()
+                              if k in MediaCandidate.__dataclass_fields__})
+            for item in items
+            if isinstance(item, dict)
+        ]
+    known = {k: v for k, v in entry.items()
+             if k in GameMetadata.__dataclass_fields__ and k != "media_candidates"}
+    meta = GameMetadata(**known)
+    meta.media_candidates = candidates
+    return meta
+
+
+def _collect_media_candidates(
+    medias: list,
+    type_keys: tuple[str, ...],
+) -> list[MediaCandidate]:
+    """Return all matching candidates from a ScreenScraper medias[] array.
+
+    Iterates *all* entries that match any of ``type_keys`` (so different regions
+    / versions / formats become separate candidates).  Order: API order, with
+    type_keys priority preserved.
+    """
+    out: list[MediaCandidate] = []
+    for type_key in type_keys:
+        for m in medias:
+            if not isinstance(m, dict):
+                continue
+            if m.get("type") != type_key:
+                continue
+            url = m.get("url") or ""
+            if not url:
+                continue
+            out.append(MediaCandidate(
+                url=url,
+                region=str(m.get("region") or ""),
+                version=str(m.get("version") or ""),
+                format=str(m.get("format") or ""),
+                source_type=type_key,
+                width=str(m.get("width") or ""),
+                height=str(m.get("height") or ""),
+            ))
+    return out
+
+
 def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
     def _lang(items, lang: str = "en") -> str:
         if not items:
@@ -516,7 +656,17 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
     medias = jeu.get("medias", [])
     source_url = f"https://www.screenscraper.fr/gameinfos.php?gameid={jeu_id}" if jeu_id else ""
 
-    return GameMetadata(
+    candidates: dict[str, list[MediaCandidate]] = {}
+    for slot, type_keys in SCREENSCRAPER_MEDIA_TYPES.items():
+        cands = _collect_media_candidates(medias, type_keys)
+        if cands:
+            candidates[slot] = cands
+
+    def _first(slot: str) -> str:
+        cs = candidates.get(slot)
+        return cs[0].url if cs else ""
+
+    meta = GameMetadata(
         name=name,
         description=description,
         manufacturer=manufacturer,
@@ -526,21 +676,16 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
         source="screenscraper",
         source_id=jeu_id,
         source_url=source_url,
-        wheel_url=_find_media_url(medias, "wheel"),
-        background_url=_find_media_url(medias, "ss") or _find_media_url(medias, "fanart"),
-        artwork_url=_find_media_url(medias, "box-2D") or _find_media_url(medias, "box-3D"),
-        title_url=_find_media_url(medias, "screenmarquee") or _find_media_url(medias, "sstitle"),
-        snap_url=_find_media_url(medias, "ss"),
-        video_url=_find_media_url(medias, "video-normalized") or _find_media_url(medias, "video"),
-        trailer_url=_find_media_url(medias, "video-normalized"),
+        wheel_url=_first("wheel"),
+        background_url=_first("background"),
+        artwork_url=_first("artwork"),
+        title_url=_first("title"),
+        snap_url=_first("snap"),
+        video_url=_first("video"),
+        trailer_url=_first("trailer"),
     )
-
-
-def _find_media_url(medias: list, media_type: str) -> str:
-    for m in medias:
-        if isinstance(m, dict) and m.get("type") == media_type:
-            return m.get("url", "")
-    return ""
+    meta.media_candidates = candidates
+    return meta
 
 
 def _parse_thegamesdb(rom_name: str, game: dict, full_response: dict) -> GameMetadata:
@@ -559,12 +704,24 @@ def _parse_thegamesdb(rom_name: str, game: dict, full_response: dict) -> GameMet
 
     base_url = boxart.get("base_url", {}).get("medium", "")
     images = boxart.get("data", {}).get(str(game.get("id")), []) or []
-    artwork_url = (base_url + images[0]["filename"]) if images and base_url else ""
+
+    artwork_candidates: list[MediaCandidate] = []
+    if base_url:
+        for img in images:
+            filename = img.get("filename") if isinstance(img, dict) else None
+            if not filename:
+                continue
+            artwork_candidates.append(MediaCandidate(
+                url=base_url + filename,
+                source_type=str(img.get("side") or img.get("type") or "boxart"),
+                format=Path(filename).suffix.lstrip("."),
+            ))
+    artwork_url = artwork_candidates[0].url if artwork_candidates else ""
 
     game_id = str(game.get("id", ""))
     source_url = f"https://thegamesdb.net/game/{game_id}/" if game_id else ""
 
-    return GameMetadata(
+    meta = GameMetadata(
         name=game.get("game_title", rom_name),
         description=game.get("overview", ""),
         manufacturer=manufacturer,
@@ -577,3 +734,6 @@ def _parse_thegamesdb(rom_name: str, game: dict, full_response: dict) -> GameMet
         source_url=source_url,
         artwork_url=artwork_url,
     )
+    if artwork_candidates:
+        meta.media_candidates = {"artwork": artwork_candidates}
+    return meta

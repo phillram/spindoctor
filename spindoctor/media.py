@@ -1,7 +1,12 @@
 """Media asset downloading and local file management for SpinDoctor."""
 from __future__ import annotations
 
+import os
+import platform
 import shutil
+import subprocess
+import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -40,6 +45,32 @@ MEDIA_EXTENSIONS: dict[str, str] = {
 }
 
 
+# HyperSpin Main Menu (top-level system tile) media layout.
+# Files live under <Media>/Main Menu/<...>/<SYSTEM>.<ext>.
+SYSTEM_MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
+    "wheel":      ("Images", "Wheel"),
+    "background": ("Images", "Backgrounds"),
+    "video":      ("Video",),
+    "theme":      ("Themes",),
+}
+
+MAIN_MENU_DIR = "Main Menu"
+
+
+def _open_in_default_app(path: Path) -> None:
+    """Open *path* with the OS default app (best-effort; never raises)."""
+    try:
+        system = platform.system()
+        if system == "Darwin":
+            subprocess.run(["open", str(path)], check=False)
+        elif system == "Windows":
+            os.startfile(str(path))  # type: ignore[attr-defined]
+        else:
+            subprocess.run(["xdg-open", str(path)], check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 @dataclass
 class DownloadResult:
     game_name: str
@@ -67,6 +98,20 @@ class MediaDownloader:
         ext = MEDIA_EXTENSIONS.get(media_type, "")
         return self._media_base() / system_name / Path(*parts) / f"{game_name}{ext}"
 
+    def system_media_path(self, system_name: str, media_type: str) -> Path:
+        """Return the HyperSpin Main Menu media path for *system_name*.
+
+        Layout: ``<Media>/Main Menu/<Type>/<System>.<ext>``
+        """
+        parts = SYSTEM_MEDIA_DIR_MAP.get(
+            media_type, MEDIA_DIR_MAP.get(media_type, (media_type.capitalize(),))
+        )
+        ext = MEDIA_EXTENSIONS.get(media_type, "")
+        return (
+            self._media_base() / MAIN_MENU_DIR
+            / Path(*parts) / f"{system_name}{ext}"
+        )
+
     # ── download from URL ──────────────────────────────────────────────────────
 
     def download(
@@ -83,14 +128,45 @@ class MediaDownloader:
                                   success=False, error="No URL provided")
 
         dest = self.media_path(system_name, game_name, media_type)
+        return self._download_to(
+            dest, url, label=game_name, media_type=media_type,
+            overwrite=overwrite, max_retries=max_retries,
+        )
 
+    def download_to_path(
+        self,
+        dest: Path,
+        url: str,
+        *,
+        label: str = "",
+        media_type: str = "",
+        overwrite: bool = False,
+        max_retries: int = 3,
+    ) -> DownloadResult:
+        """Download a URL to a specific destination path (any HyperSpin location)."""
+        if not url:
+            return DownloadResult(game_name=label, media_type=media_type,
+                                  success=False, error="No URL provided")
+        return self._download_to(dest, url, label=label, media_type=media_type,
+                                 overwrite=overwrite, max_retries=max_retries)
+
+    def _download_to(
+        self,
+        dest: Path,
+        url: str,
+        *,
+        label: str,
+        media_type: str,
+        overwrite: bool,
+        max_retries: int,
+    ) -> DownloadResult:
         parsed = urlparse(url)
         url_ext = Path(parsed.path).suffix.lower()
         if url_ext and url_ext != dest.suffix:
             dest = dest.with_suffix(url_ext)
 
         if dest.exists() and not overwrite:
-            return DownloadResult(game_name=game_name, media_type=media_type,
+            return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -116,23 +192,22 @@ class MediaDownloader:
                     for chunk in resp.iter_content(chunk_size=8192):
                         f.write(chunk)
                 return DownloadResult(
-                    game_name=game_name, media_type=media_type,
+                    game_name=label, media_type=media_type,
                     success=True, path=dest,
                 )
             except requests.RequestException as e:
                 last_error = str(e)
-                # Network blip — back off and retry
                 if attempt < max_retries:
                     time.sleep(backoff)
                     backoff *= 2
                     continue
                 return DownloadResult(
-                    game_name=game_name, media_type=media_type,
+                    game_name=label, media_type=media_type,
                     success=False, error=last_error,
                 )
 
         return DownloadResult(
-            game_name=game_name, media_type=media_type,
+            game_name=label, media_type=media_type,
             success=False, error=f"Gave up after {max_retries} attempts: {last_error}",
         )
 
@@ -233,6 +308,73 @@ class MediaDownloader:
                     on_complete(r)
 
         return results
+
+    # ── multi-candidate picker ────────────────────────────────────────────────
+
+    def preview_candidate(self, candidate, idx: int = 0) -> Optional[Path]:
+        """Download a media candidate to a temp file and open it with the OS app.
+
+        Returns the temp file path on success, or None if download failed.
+        Caller owns the temp file lifecycle (kept for the duration of the
+        picker session so the user can compare candidates).
+        """
+        url = candidate.url
+        if not url:
+            return None
+        ext = Path(urlparse(url).path).suffix or f".{candidate.format or 'bin'}"
+        tmp_dir = Path(tempfile.gettempdir()) / "spindoctor_preview"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"candidate_{idx}_{abs(hash(url))}{ext}"
+        if not tmp_path.exists():
+            r = self.download_to_path(
+                tmp_path, url, label="preview",
+                media_type=candidate.source_type, overwrite=False,
+            )
+            if not r.success:
+                return None
+        _open_in_default_app(tmp_path)
+        return tmp_path
+
+    def download_with_picker(
+        self,
+        item_name: str,
+        system_name: str,
+        media_type: str,
+        candidates: list,
+        dest: Path,
+        *,
+        interactive: bool = True,
+        overwrite: bool = False,
+    ) -> DownloadResult:
+        """Pick a candidate (interactive if needed) and download it to *dest*.
+
+        Designed for both per-game and system-level media: caller computes the
+        destination path (via ``media_path`` or ``system_media_path``) and
+        passes the candidate list from ScreenScraper.
+
+        Returns a DownloadResult.  When the user skips, returns a skipped
+        result with ``error`` set to "skipped by user".
+        """
+        from .matcher import pick_media
+
+        if not candidates:
+            return DownloadResult(game_name=item_name, media_type=media_type,
+                                  success=False, error="No candidates available")
+
+        chosen = pick_media(
+            item_name, media_type, candidates, system_name,
+            interactive=interactive,
+            previewer=(self.preview_candidate if interactive else None),
+        )
+        if chosen is None:
+            return DownloadResult(
+                game_name=item_name, media_type=media_type,
+                success=False, skipped=True, error="skipped by user",
+            )
+        return self.download_to_path(
+            dest, chosen.url, label=item_name, media_type=media_type,
+            overwrite=overwrite,
+        )
 
     # ── add local file ─────────────────────────────────────────────────────────
 

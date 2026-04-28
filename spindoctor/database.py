@@ -317,6 +317,110 @@ def _update_game_element(el, game: "GameEntry") -> None:
             child.text = value
 
 
+# ─── secondary sort databases ─────────────────────────────────────────────────
+
+# HyperSpin reads these per-system sub-folders to build "Sort by …" wheels.
+SORT_AXES: tuple[str, ...] = ("genre", "manufacturer", "year", "letter")
+
+
+def _letter_bucket(name: str) -> str:
+    """Return the alphabetical bucket for *name* — A–Z, "0–9" for digits, "#" else."""
+    if not name:
+        return "#"
+    first = name.lstrip().lstrip("[(").lstrip()[:1].upper()
+    if first.isalpha():
+        return first
+    if first.isdigit():
+        return "0-9"
+    return "#"
+
+
+def _bucket_value(game: "GameEntry", axis: str) -> str:
+    if axis == "genre":
+        return (game.genre or "").strip()
+    if axis == "manufacturer":
+        return (game.manufacturer or "").strip()
+    if axis == "year":
+        return (game.year or "").strip()
+    if axis == "letter":
+        return _letter_bucket(game.description or game.name)
+    return ""
+
+
+def write_sort_databases(
+    system_name: str,
+    games: list["GameEntry"],
+    databases_dir: Path,
+    *,
+    axes: tuple[str, ...] = SORT_AXES,
+    overwrite: bool = False,
+) -> dict[str, list[Path]]:
+    """Write per-axis HyperSpin sort databases for *system_name*.
+
+    Files go to ``<databases_dir>/<system_name>/<Axis>/<Bucket>.xml`` where
+    *Axis* is one of "Genre", "Manufacturer", "Year", "Letter".  Each XML
+    lists the games belonging to that bucket.
+
+    By default existing files are skipped (so user-curated lists survive).
+    Pass ``overwrite=True`` to replace them.
+
+    Returns a dict {axis: [written_paths]}.
+    """
+    written: dict[str, list[Path]] = {a: [] for a in axes}
+    sys_dir = databases_dir / system_name
+
+    for axis in axes:
+        if axis not in SORT_AXES:
+            continue
+        buckets: dict[str, list["GameEntry"]] = {}
+        for g in games:
+            value = _bucket_value(g, axis)
+            if not value:
+                continue
+            buckets.setdefault(value, []).append(g)
+
+        if not buckets:
+            continue
+
+        axis_dir = sys_dir / axis.capitalize()
+        axis_dir.mkdir(parents=True, exist_ok=True)
+
+        for bucket_name, bucket_games in buckets.items():
+            safe = _safe_bucket_filename(bucket_name)
+            out_path = axis_dir / f"{safe}.xml"
+            if out_path.exists() and not overwrite:
+                continue
+
+            root = ET.Element("menu")
+            hdr = ET.SubElement(root, "header")
+            _set_text(hdr, "listname", f"{system_name} — {axis}: {bucket_name}")
+            _set_text(hdr, "lastlistupdate", datetime.now().strftime("%Y-%m-%d"))
+            _set_text(hdr, "listversion", "2.0")
+            _set_text(hdr, "exporterversion", "SpinDoctor")
+
+            for g in sorted(bucket_games, key=lambda x: (x.description or x.name).lower()):
+                _new_game_element(g, root=root)
+
+            tree = ET.ElementTree(root)
+            ET.indent(tree, space="  ")
+            with open(out_path, "wb") as f:
+                f.write(b'<?xml version="1.0"?>\n')
+                tree.write(f, encoding="utf-8", xml_declaration=False)
+            written[axis].append(out_path)
+
+    return written
+
+
+_BUCKET_FILE_SAFE = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+
+
+def _safe_bucket_filename(name: str) -> str:
+    """Sanitize a bucket value so it's a legal Windows/macOS/Linux filename."""
+    for ch in _BUCKET_FILE_SAFE:
+        name = name.replace(ch, "_")
+    return name.strip().rstrip(".") or "_"
+
+
 def _new_game_element(game: "GameEntry", root=None):
     """Build a fresh <game> element with all canonical fields."""
     if _HAS_LXML and (root is None or hasattr(root, "nsmap")):
