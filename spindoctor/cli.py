@@ -2391,7 +2391,13 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media, dry_r
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
-    Media types: wheel, background, artwork, title, snap, video, trailer, sound, theme.
+    Media types: wheel, background, artwork, title, snap, fade, video,
+    trailer, sound, theme.
+
+    ``theme``, ``fade`` and ``sound`` are sourced from ScreenScraper only
+    (TheGamesDB has no equivalents). Coverage is sparse — for EmuMovies-
+    style theme packs, drop the files into a folder and use
+    ``spindoctor media-scan SOURCE_DIR --apply`` to bulk-import them.
     """
     config = _cfg()
     _check_config(config)

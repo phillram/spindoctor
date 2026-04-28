@@ -127,8 +127,15 @@ SCREENSCRAPER_MEDIA_TYPES: dict[str, tuple[str, ...]] = {
     "artwork":    ("box-2D", "box-3D"),
     "title":      ("screenmarquee", "sstitle"),
     "snap":       ("ss",),
+    # Fade-in image shown between wheel and game launch.
+    # Prefer the dedicated fanart variant; fall back to mixrbv2 / screenmarquee.
+    "fade":       ("fanart", "mixrbv2", "screenmarquee"),
     "video":      ("video-normalized", "video"),
     "trailer":    ("video-normalized",),
+    # ScreenScraper uses ``bgmusic`` for the short audio clip on game select.
+    "sound":      ("bgmusic", "themetheme"),
+    # HyperSpin per-game theme zip (rare; only ScreenScraper exposes it).
+    "theme":      ("theme-hs",),
 }
 
 
@@ -154,9 +161,11 @@ class GameMetadata:
     artwork_url: str = ""
     title_url: str = ""
     snap_url: str = ""
+    fade_url: str = ""
     video_url: str = ""
     trailer_url: str = ""
     sound_url: str = ""
+    theme_url: str = ""
 
     # Full candidate list per slot — populated when --pick-media is used.
     # Maps media slot name (wheel, background, ...) → list of MediaCandidate.
@@ -697,8 +706,11 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
         artwork_url=_first("artwork"),
         title_url=_first("title"),
         snap_url=_first("snap"),
+        fade_url=_first("fade"),
         video_url=_first("video"),
         trailer_url=_first("trailer"),
+        sound_url=_first("sound"),
+        theme_url=_first("theme"),
     )
     meta.media_candidates = candidates
     return meta
