@@ -2829,6 +2829,363 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                 console.print("  [dim]All system databases already exist.[/dim]")
 
 
+# ─── mainmenu ─────────────────────────────────────────────────────────────────
+
+@cli.group("mainmenu")
+def mainmenu_group():
+    """Inspect and edit the HyperSpin Main Menu (top-level system wheel).
+
+    \b
+    Subcommands:
+      show       Render the current order with visibility flags.
+      reorder    Move a system to a 1-indexed position.
+      up/down    Single-step a system.
+      hide/show  Toggle the enabled flag (HyperSpin honours enabled="No").
+      add/remove Add or remove a system entry.
+      sort       Sort alphabetically, by manufacturer, or by year.
+      edit       Interactive prompt loop with numbered list.
+
+    All write commands are dry-run by default — pass --apply to commit.
+    """
+
+
+def _load_menu_or_exit(config: Config):
+    from .mainmenu import load_main_menu
+    menu = load_main_menu(config)
+    if not menu.entries and not menu.xml_path.exists():
+        err_console.print(
+            f"[red]Main Menu not found:[/red] {menu.xml_path}\n"
+            "Run [cyan]spindoctor generate-config[/cyan] first."
+        )
+        sys.exit(1)
+    return menu
+
+
+def _render_menu_table(menu, config) -> Table:
+    from .mainmenu import system_exists_in_databases
+    tbl = Table(box=box.SIMPLE, show_header=True)
+    tbl.add_column("#", justify="right", style="dim", width=4)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Status", width=8)
+    tbl.add_column("In Databases", width=14)
+    for i, entry in enumerate(menu.entries, start=1):
+        status = (
+            "[green]Visible[/green]" if entry.visible else "[yellow]Hidden[/yellow]"
+        )
+        present = system_exists_in_databases(config, entry.system)
+        present_cell = "yes" if present else "[red]✗ missing[/red]"
+        tbl.add_row(str(i), entry.system, status, present_cell)
+    return tbl
+
+
+def _save_with_message(menu, config, output_dir):
+    from .mainmenu import save_main_menu
+    out_dir = Path(output_dir) if output_dir else None
+    path = save_main_menu(menu, config, output_dir=out_dir)
+    console.print(f"[green]✓[/green] wrote {path}")
+
+
+def _resolve_target(menu, system_or_index: str) -> str:
+    """Allow either a system name or a 1-based index from the prompt."""
+    s = system_or_index.strip()
+    if s.isdigit():
+        idx = int(s)
+        if 1 <= idx <= len(menu.entries):
+            return menu.entries[idx - 1].system
+        raise click.UsageError(f"index out of range: {idx}")
+    return s
+
+
+@mainmenu_group.command("show")
+@click.argument("system", required=False)
+@click.option("--apply", is_flag=True,
+              help="With SYSTEM: write changes (default: dry-run).")
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_show(system, apply, output_dir):
+    """Render the menu, or unhide SYSTEM if one is given.
+
+    \b
+    With no argument: render a numbered table of systems and visibility.
+    With SYSTEM: set the system's enabled flag to "Yes" (the inverse of hide).
+    """
+    from .mainmenu import discover_systems, show as _show
+
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+
+    if system:
+        try:
+            _show(menu, system)
+        except KeyError:
+            err_console.print(f"[red]not in Main Menu:[/red] {system}")
+            sys.exit(1)
+        _apply_or_preview(f"show: {system}", menu, config, output_dir, apply)
+        return
+
+    console.print(Panel(f" Main Menu — {len(menu.entries)} system(s) ",
+                        style="bold blue"))
+    console.print(_render_menu_table(menu, config))
+
+    extras = discover_systems(config)
+    if extras:
+        console.print(
+            "\n[bold]Systems found in Databases/ but not in the Main Menu:[/bold]"
+        )
+        for name in extras:
+            console.print(f"  [yellow]·[/yellow] {name}")
+        console.print(
+            "\n[dim]Run[/dim] [cyan]spindoctor mainmenu add <system>[/cyan] "
+            "[dim]to include them.[/dim]"
+        )
+
+
+def _apply_or_preview(label: str, menu, config, output_dir, apply: bool):
+    if not apply:
+        console.print(f"[yellow][DRY RUN][/yellow] {label}")
+        console.print(_render_menu_table(menu, config))
+        console.print(
+            "[dim]Pass[/dim] [cyan]--apply[/cyan] [dim]to write changes.[/dim]"
+        )
+        return
+    console.print(f"[green]applying:[/green] {label}")
+    _save_with_message(menu, config, output_dir)
+
+
+@mainmenu_group.command("reorder")
+@click.argument("system")
+@click.argument("position", type=int)
+@click.option("--apply", is_flag=True, help="Write changes (default: dry-run).")
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_reorder(system, position, apply, output_dir):
+    """Move SYSTEM to POSITION (1-indexed)."""
+    from .mainmenu import reorder
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    try:
+        reorder(menu, system, position)
+    except (KeyError, ValueError) as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+    _apply_or_preview(f"reorder {system} → {position}", menu, config,
+                      output_dir, apply)
+
+
+@mainmenu_group.command("up")
+@click.argument("system")
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_up(system, apply, output_dir):
+    """Move SYSTEM up by one slot."""
+    from .mainmenu import move_up
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    try:
+        move_up(menu, system)
+    except KeyError:
+        err_console.print(f"[red]not in Main Menu:[/red] {system}")
+        sys.exit(1)
+    _apply_or_preview(f"move up: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("down")
+@click.argument("system")
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_down(system, apply, output_dir):
+    """Move SYSTEM down by one slot."""
+    from .mainmenu import move_down
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    try:
+        move_down(menu, system)
+    except KeyError:
+        err_console.print(f"[red]not in Main Menu:[/red] {system}")
+        sys.exit(1)
+    _apply_or_preview(f"move down: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("hide")
+@click.argument("system")
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_hide(system, apply, output_dir):
+    """Hide SYSTEM (sets enabled=\"No\")."""
+    from .mainmenu import hide
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    try:
+        hide(menu, system)
+    except KeyError:
+        err_console.print(f"[red]not in Main Menu:[/red] {system}")
+        sys.exit(1)
+    _apply_or_preview(f"hide: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("add")
+@click.argument("system")
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_add(system, apply, output_dir):
+    """Append SYSTEM to the Main Menu (idempotent)."""
+    from .mainmenu import add_system
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    added = add_system(menu, system)
+    if not added:
+        console.print(f"[yellow]already on the menu:[/yellow] {system}")
+        return
+    _apply_or_preview(f"add: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("remove")
+@click.argument("system")
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_remove(system, apply, output_dir):
+    """Remove SYSTEM from the Main Menu."""
+    from .mainmenu import remove_system
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    if not remove_system(menu, system):
+        console.print(f"[yellow]not on the menu:[/yellow] {system}")
+        return
+    _apply_or_preview(f"remove: {system}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("sort")
+@click.argument("strategy", type=click.Choice(["alpha", "manufacturer", "year"]))
+@click.option("--apply", is_flag=True)
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_sort(strategy, apply, output_dir):
+    """Sort the menu: alpha, manufacturer, or year."""
+    from .mainmenu import sort_alphabetical, sort_by_field
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    if strategy == "alpha":
+        sort_alphabetical(menu)
+    else:
+        sort_by_field(menu, strategy)
+    _apply_or_preview(f"sort: {strategy}", menu, config, output_dir, apply)
+
+
+@mainmenu_group.command("edit")
+@click.option("--output-dir", type=click.Path(), default=None)
+def mainmenu_edit(output_dir):
+    """Interactive editor — accept commands at a prompt and confirm on quit.
+
+    \b
+    Commands available at the prompt:
+      up N            move row N up
+      down N          move row N down
+      move N to M     move row N to position M (1-indexed)
+      hide N | show N toggle visibility for row N
+      add NAME        append a new system
+      remove N        delete row N
+      sort alpha|manufacturer|year
+      list            re-render the table
+      q | quit        exit (prompts to save if dirty)
+    """
+    from .mainmenu import (
+        add_system, hide, move_down, move_up, remove_system, reorder,
+        show as _show, sort_alphabetical, sort_by_field,
+    )
+    config = _cfg()
+    _check_config(config)
+    menu = _load_menu_or_exit(config)
+    dirty = False
+
+    def render():
+        console.print(_render_menu_table(menu, config))
+
+    console.print(Panel(" Main Menu editor ", style="bold blue"))
+    render()
+    console.print(
+        "[dim]commands: up N | down N | move N to M | hide N | show N | "
+        "add NAME | remove N | sort alpha|manufacturer|year | list | q[/dim]"
+    )
+
+    while True:
+        try:
+            line = click.prompt("mainmenu>", default="", show_default=False).strip()
+        except click.exceptions.Abort:
+            console.print("\n[yellow]Aborted.[/yellow]")
+            return
+        if not line:
+            continue
+        parts = line.split()
+        cmd = parts[0].lower()
+
+        try:
+            if cmd in {"q", "quit", "exit"}:
+                break
+            elif cmd == "list":
+                render()
+            elif cmd == "up" and len(parts) == 2:
+                move_up(menu, _resolve_target(menu, parts[1]))
+                dirty = True
+                render()
+            elif cmd == "down" and len(parts) == 2:
+                move_down(menu, _resolve_target(menu, parts[1]))
+                dirty = True
+                render()
+            elif cmd == "move" and len(parts) == 4 and parts[2].lower() == "to":
+                target_sys = _resolve_target(menu, parts[1])
+                reorder(menu, target_sys, int(parts[3]))
+                dirty = True
+                render()
+            elif cmd == "hide" and len(parts) == 2:
+                hide(menu, _resolve_target(menu, parts[1]))
+                dirty = True
+                render()
+            elif cmd == "show" and len(parts) == 2:
+                _show(menu, _resolve_target(menu, parts[1]))
+                dirty = True
+                render()
+            elif cmd == "add" and len(parts) >= 2:
+                name = " ".join(parts[1:])
+                if add_system(menu, name):
+                    dirty = True
+                    render()
+                else:
+                    console.print(f"[yellow]already on the menu:[/yellow] {name}")
+            elif cmd == "remove" and len(parts) == 2:
+                target_sys = _resolve_target(menu, parts[1])
+                if remove_system(menu, target_sys):
+                    dirty = True
+                    render()
+            elif cmd == "sort" and len(parts) == 2:
+                strat = parts[1].lower()
+                if strat == "alpha":
+                    sort_alphabetical(menu)
+                elif strat in {"manufacturer", "year", "genre"}:
+                    sort_by_field(menu, strat)
+                else:
+                    console.print(f"[red]unknown sort:[/red] {strat}")
+                    continue
+                dirty = True
+                render()
+            else:
+                console.print(f"[red]unrecognised command:[/red] {line}")
+        except (KeyError, ValueError, click.UsageError) as e:
+            console.print(f"[red]{e}[/red]")
+
+    if not dirty:
+        console.print("[dim]No changes.[/dim]")
+        return
+    if not click.confirm("Save changes to Main Menu.xml?", default=True):
+        console.print("[yellow]Discarded.[/yellow]")
+        return
+    _save_with_message(menu, config, output_dir)
+
+
 # ─── doctor ───────────────────────────────────────────────────────────────────
 
 @cli.command("doctor")

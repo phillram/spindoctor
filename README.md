@@ -13,7 +13,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Configuration](#configuration)
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
-  - [Library generation](#library-generation) — `generate-config`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
+  - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
   - [LEDBlinky](#ledblinky)
@@ -220,6 +220,57 @@ spindoctor generate-config --db-stubs              :: also create empty DB stubs
 ```
 
 Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INIs to override.
+
+#### `mainmenu`
+
+Inspect and edit the HyperSpin Main Menu — the top-level wheel of systems shown when the cabinet boots. `generate-config` writes this file; `mainmenu` lets you review the order, hide systems you've stopped using, and add the ones you forgot.
+
+```text
+spindoctor mainmenu show
+
+#   System                  Status    In Databases
+1   MAME                    Visible   yes
+2   Sony Playstation        Visible   yes
+3   Nintendo 64             Hidden    yes
+4   Atari Jaguar            Visible   ✗ missing
+
+Systems found in Databases/ but not in the Main Menu:
+  · Sega Saturn
+  · Sega Dreamcast
+
+Run `spindoctor mainmenu add <system>` to include them.
+```
+
+All write commands are dry-run by default — pass `--apply` to commit. Each write makes a `.YYYYMMDD_HHMMSS.bak` of `Main Menu.xml` first (when `backup_before_modify` is on).
+
+```bat
+:: Re-order systems
+spindoctor mainmenu reorder "Nintendo 64" 1 --apply
+spindoctor mainmenu up "Sony Playstation" --apply
+spindoctor mainmenu down MAME --apply
+
+:: Hide a system from the wheel without deleting its database
+spindoctor mainmenu hide "Atari Jaguar" --apply
+spindoctor mainmenu show "Atari Jaguar" --apply       :: un-hide
+
+:: Add or remove an entry
+spindoctor mainmenu add "Sega Saturn" --apply
+spindoctor mainmenu remove "Atari Jaguar" --apply
+
+:: Bulk sort the menu
+spindoctor mainmenu sort alpha --apply
+spindoctor mainmenu sort manufacturer --apply
+spindoctor mainmenu sort year --apply
+
+:: Stage changes to a different folder instead of writing in place
+spindoctor mainmenu reorder MAME 1 --apply --output-dir D:\Output
+```
+
+For larger reshuffles, use the interactive editor — it shows the numbered list, accepts commands like `up 3`, `move 3 to 1`, `hide 4`, `add Sega Saturn`, `remove 5`, and confirms before saving on `q`:
+
+```bat
+spindoctor mainmenu edit
+```
 
 #### `organize`
 
