@@ -12,7 +12,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [First-Time Setup](#first-time-setup)
 - [Configuration](#configuration)
 - [Commands](#commands)
-  - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `report`
+  - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`
   - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
@@ -194,6 +194,53 @@ spindoctor media-add --system MAME --game 1942 --type trailer ^
 spindoctor media-add --system SNES --game "Super Mario World" ^
     --type title --file C:\Art\smw_title.png --move
 ```
+
+#### `media-scan`
+
+Inverse of `find-orphan-media`: scan a folder of local media files (a
+downloaded EmuMovies pack, a custom-art directory, a wheel set you
+grabbed off the wiki) and audit it against HyperSpin databases.
+
+Each file is recognised by folder name (`Wheels`, `Snaps`,
+`Backgrounds`, `BoxArt`, `Titles`, `Videos`, `Trailers`, `Themes`,
+`Sounds`) and/or extension, then fuzzy-matched against the chosen
+system's `<game>` entries. Results are bucketed as:
+
+| Bucket | Meaning |
+|--------|---------|
+| `matched`      | Game found in DB, slot is empty (importable). |
+| `replacement`  | Game found in DB, slot already filled. |
+| `unmatched`    | No DB match above the fuzzy threshold. |
+| `unknown-type` | Couldn't infer media type (e.g. ambiguous bare image). |
+
+```bat
+spindoctor media-scan D:\Downloads\MAME-pack --system MAME
+spindoctor media-scan D:\Art --all --detail --report scan.csv
+spindoctor media-scan D:\Art --system SNES --types wheel,snap
+spindoctor media-scan D:\Art --system SNES --apply --action copy
+spindoctor media-scan D:\Art --system SNES --apply --overwrite
+spindoctor media-scan --undo
+spindoctor media-scan --list-manifests
+```
+
+Example summary output:
+
+```
+Scanning D:\Downloads\MAME-pack (recursive)…
+  found 1284 media file(s)
+
+      Media-scan summary
+   System    Matched  Replacement  Unmatched  Unknown type
+   ──────────────────────────────────────────────────────────
+   MAME          812           94        361             17
+```
+
+`--apply` defaults to `--action copy`; `--action move` relocates
+files, `--action link` creates symlinks (falls back to copy on
+filesystems that reject them). `--overwrite` also imports the
+`replacement` bucket. Imports write a manifest to
+`~/.spindoctor/media_imports/import-YYYYMMDD_HHMMSS.json`; pass
+`--undo` to reverse the most recent one.
 
 #### `report`
 
