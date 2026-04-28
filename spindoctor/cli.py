@@ -2599,6 +2599,221 @@ def media_add(system, game, media_type, source_file, move, overwrite, output_dir
         sys.exit(1)
 
 
+# ─── media-scan ───────────────────────────────────────────────────────────────
+
+@cli.command("media-scan")
+@click.argument("source_dir", type=click.Path(exists=True, file_okay=False),
+                required=False)
+@click.option("--system", "-s", default=None,
+              help="Match against this system's database.")
+@click.option("--all", "all_systems", is_flag=True,
+              help="Match against every configured system.")
+@click.option("--detail", is_flag=True,
+              help="Print every file, not just the summary table.")
+@click.option("--types", default=None,
+              help="Comma-separated subset of media types to consider "
+                   "(e.g. 'wheel,snap'). Default: all types.")
+@click.option("--no-recursive", is_flag=True,
+              help="Scan only the top level of SOURCE_DIR.")
+@click.option("--report", "report_csv", type=click.Path(), default=None,
+              help="Write a CSV report to this path.")
+@click.option("--apply", "apply_import", is_flag=True,
+              help="Actually import matched files into HyperSpin slots. "
+                   "Without this flag the scan is a dry-run.")
+@click.option("--action", type=click.Choice(["copy", "move", "link"]),
+              default="copy", show_default=True,
+              help="How to import each file when --apply is set.")
+@click.option("--overwrite", is_flag=True,
+              help="When importing, replace files in already-filled slots "
+                   "(also imports the 'replacement' bucket).")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Stage imports under this directory instead of writing "
+                   "in-place to hyperspin_dir.")
+@click.option("--undo", is_flag=True,
+              help="Reverse the most recent --apply manifest.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List existing import manifests and exit.")
+def media_scan_cmd(
+    source_dir, system, all_systems, detail, types, no_recursive,
+    report_csv, apply_import, action, overwrite, output_dir,
+    undo, list_manifests_flag,
+):
+    """Audit a folder of local media files against HyperSpin databases.
+
+    \b
+    Walks SOURCE_DIR, recognising files by folder name (Wheels, Snaps,
+    Backgrounds, Themes, …) and extension. Each file is fuzzy-matched
+    against games in the chosen system's database and bucketed as:
+
+    \b
+      matched      — game found, slot is empty (importable)
+      replacement  — game found, slot already filled
+      unmatched    — no game found in the DB
+      unknown-type — couldn't determine media type
+
+    \b
+    Examples:
+      spindoctor media-scan D:\\Downloads\\MAME-pack --system MAME
+      spindoctor media-scan D:\\Art --all --detail --report scan.csv
+      spindoctor media-scan D:\\Art --system SNES --apply --action copy
+      spindoctor media-scan --undo
+      spindoctor media-scan --list-manifests
+    """
+    from .media_scan import (
+        MANIFEST_DIR, find_latest_manifest, import_media,
+        list_manifests, match_to_database, merge_reports,
+        scan_local_media, undo_import, write_csv_report,
+    )
+
+    config = _cfg()
+
+    # Manifest housekeeping commands don't need a valid config or source.
+    if list_manifests_flag:
+        manifests = list_manifests()
+        if not manifests:
+            console.print(f"[dim]No import manifests in {MANIFEST_DIR}[/dim]")
+            return
+        tbl = Table(box=box.SIMPLE, title="Media-import manifests")
+        tbl.add_column("Manifest", style="cyan")
+        tbl.add_column("When")
+        for m in manifests:
+            stamp = m.stem.replace("import-", "").replace("_", " ")
+            tbl.add_row(m.name, stamp)
+        console.print(tbl)
+        return
+
+    if undo:
+        manifest = find_latest_manifest()
+        if not manifest:
+            console.print("[yellow]No media-import manifest to undo.[/yellow]")
+            return
+        console.print(f"Reverting {manifest.name}")
+        summary = undo_import(manifest)
+        console.print(
+            f"[green]+[/green] reverted {summary['reverted']} import(s)"
+        )
+        for err in summary["errors"]:
+            err_console.print(f"  [red]✗[/red] {err}")
+        return
+
+    if not source_dir:
+        err_console.print(
+            "[red]SOURCE_DIR is required (unless using --undo or "
+            "--list-manifests).[/red]"
+        )
+        sys.exit(1)
+
+    _check_config(config)
+    systems = _resolve_systems(config, system, all_systems)
+
+    type_filter = None
+    if types:
+        type_filter = [t.strip() for t in types.split(",") if t.strip()]
+        unknown = [t for t in type_filter if t not in MEDIA_TYPES]
+        if unknown:
+            err_console.print(
+                f"[red]Unknown media type(s):[/red] {', '.join(unknown)}"
+            )
+            sys.exit(1)
+
+    out_path = Path(output_dir) if output_dir else None
+
+    console.print(
+        f"Scanning [cyan]{source_dir}[/cyan] "
+        f"({'recursive' if not no_recursive else 'top-level only'})…"
+    )
+    files = scan_local_media(Path(source_dir), recursive=not no_recursive)
+    console.print(f"  found [cyan]{len(files)}[/cyan] media file(s)")
+
+    per_system_reports = []
+    for sys_name in systems:
+        rep = match_to_database(
+            files, sys_name, config,
+            types=type_filter, output_dir=out_path,
+        )
+        per_system_reports.append((sys_name, rep))
+
+    # Print one summary row per system.
+    tbl = Table(box=box.SIMPLE, title="Media-scan summary")
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Matched", justify="right", style="green")
+    tbl.add_column("Replacement", justify="right", style="yellow")
+    tbl.add_column("Unmatched", justify="right")
+    tbl.add_column("Unknown type", justify="right", style="dim")
+    for sys_name, rep in per_system_reports:
+        tbl.add_row(
+            sys_name,
+            str(len(rep.matched)),
+            str(len(rep.replacement)),
+            str(len(rep.unmatched)),
+            str(len(rep.unknown_type)),
+        )
+    console.print(tbl)
+
+    combined = merge_reports(r for _, r in per_system_reports)
+
+    if detail:
+        for sys_name, rep in per_system_reports:
+            if rep.total == 0:
+                continue
+            console.print(Panel(f" {sys_name} ", style="bold blue"))
+            dt = Table(box=box.SIMPLE)
+            dt.add_column("Bucket", style="cyan")
+            dt.add_column("Type")
+            dt.add_column("Source", style="yellow")
+            dt.add_column("Game")
+            dt.add_column("Score", justify="right")
+            for sm in rep.all():
+                dt.add_row(
+                    sm.bucket,
+                    sm.local.media_type or "—",
+                    sm.local.path.name,
+                    sm.game_name or "—",
+                    f"{sm.score:.2f}" if sm.score else "—",
+                )
+            console.print(dt)
+
+    if report_csv:
+        write_csv_report(combined, Path(report_csv))
+        console.print(f"\n[dim]CSV report:[/dim] {report_csv}")
+
+    if not apply_import:
+        if combined.matched or combined.replacement:
+            console.print(
+                "\n[dim]Re-run with[/dim] [cyan]--apply[/cyan] "
+                "[dim]to import matched files (default action: copy).[/dim]"
+            )
+        return
+
+    if combined.matched or (overwrite and combined.replacement):
+        result = import_media(
+            combined, config,
+            action=action, overwrite=overwrite,
+            include_replacements=overwrite,
+            output_dir=out_path,
+        )
+        verb = {"copy": "copied", "move": "moved", "link": "linked"}[action]
+        console.print(
+            f"\n[green]✓[/green] {verb} {len(result.imported)} file(s)"
+        )
+        if result.skipped:
+            console.print(
+                f"[yellow]⚠[/yellow] skipped {len(result.skipped)}:"
+            )
+            for src, reason in result.skipped:
+                console.print(f"  [dim]·[/dim] {src.name} — {reason}")
+        if result.manifest_path:
+            console.print(
+                f"\nManifest: {result.manifest_path.name}\n"
+                f"Run [cyan]spindoctor media-scan --undo[/cyan] to revert."
+            )
+    else:
+        console.print(
+            "\n[yellow]Nothing to import.[/yellow] "
+            "(Pass --overwrite to also import the 'replacement' bucket.)"
+        )
+
+
 # ─── update-db ────────────────────────────────────────────────────────────────
 
 @cli.command("update-db")
