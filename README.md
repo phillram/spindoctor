@@ -13,6 +13,7 @@ Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate Roc
 - [Configuration](#configuration)
 - [Commands](#commands)
   - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`
+  - [Editing](#editing) — `batch-edit`, `rename`, `clone`
   - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
   - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
   - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
@@ -265,6 +266,66 @@ Read-only summary or CSV — never modifies anything.
 ```bat
 spindoctor report --all --format summary
 spindoctor report --all --format csv --output D:\weekly.csv
+```
+
+---
+
+### Editing
+
+Three commands for editing game metadata and identity without ever opening HyperHQ. All three default to dry-run; pass `--apply` to commit, and every apply writes a JSON manifest under `~/.spindoctor/` so the change can be reversed with `--undo`.
+
+#### `batch-edit` — set/clear/append metadata across many games
+
+Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action`, `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
+
+```bat
+:: Tag every Capcom game from the 80s as Action
+spindoctor batch-edit --system MAME --filter manufacturer=Capcom --filter year=1980-1989 --set genre=Action
+
+:: Set rating=5 on every Action game in MAME (dry-run shows the table first)
+spindoctor batch-edit --system MAME --filter genre=Action --set rating=5 --apply
+
+:: Fill in a default rating for everything that's blank
+spindoctor batch-edit --system NES --filter missing=rating --set rating=3 --apply
+
+:: Reverse the most recent edit
+spindoctor batch-edit --undo ~/.spindoctor/edits/edit-20260428_120000.json
+spindoctor batch-edit --list-manifests
+```
+
+`--report path.csv` dumps a `(game,field,before,after)` preview before you commit. The DB is saved with a `.bak` next to it on each apply.
+
+#### `rename` — atomic ROM + DB + media rename
+
+Change a game's identity in one shot: ROM file, `<game>` entry, and every media slot (wheel, snap, video, theme, ...) all follow. RocketLauncher PCLauncher INIs (when present) are renamed too.
+
+```bat
+:: Dry-run: see exactly which files would move
+spindoctor rename --system MAME --game "1942" --to "1942 (USA)"
+
+:: Commit the rename, also updating the on-screen description
+spindoctor rename --system MAME --game "1942" --to "1942 (USA)" --display-name "1942 (USA)" --apply
+
+:: Reverse it
+spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
+```
+
+The plan refuses to overwrite anything that already exists at the target name, and the apply step writes a manifest with each move recorded so undo can reverse it back to the source paths.
+
+#### `clone` — duplicate a base ROM as a hack/translation variant
+
+Same pipeline as `rename`, but the ROM and every media file are copied (not moved) and a new `<game>` entry is appended alongside the original. Useful when you want to add a hack or fan-translation that shares assets with the base game.
+
+```bat
+:: Dry-run: see what would be duplicated
+spindoctor clone --system NES --game "Zelda" --to "Zelda (Speed Hack)"
+
+:: Commit the clone with a custom display name
+spindoctor clone --system NES --game "Zelda" --to "Zelda (Speed Hack)" \
+                 --display-name "Zelda (Speed Hack)" --apply
+
+:: Undo deletes only the copies — the original is untouched
+spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 ```
 
 ---
