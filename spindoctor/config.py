@@ -98,6 +98,13 @@ class Config:
         default_factory=lambda: dict(DEFAULT_LEDBLINKY_COLORS)
     )
 
+    # Region/version preference order used by `spindoctor curate` to choose
+    # the canonical ROM per game. First match wins. Override per-run with
+    # `--regions USA,Japan` on the CLI.
+    region_preferences: list[str] = field(
+        default_factory=lambda: ["USA", "World", "Europe", "Japan"]
+    )
+
     # Per-system ignore lists  {system_name: [rom_name, ...], "_global": [...]}
     ignore_lists: dict[str, list[str]] = field(default_factory=dict)
 
