@@ -454,6 +454,20 @@ spindoctor lint --category unused-import,bare-except
 
 Both wheel rebuilds are designed to run on every system boot or directly from HyperSpin's Tools menu, with **no SpinDoctor CLI loaded**. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a minimal `argparse`-based entry point.
 
+The standalone helpers live in their own folder, separate from the rest of the package, so it's clear which files are package internals vs. things the cabinet end-user is meant to invoke directly:
+
+```
+scripts/
+├── spindoctor-fav.py             ← Python wrapper (works without `pip install`)
+├── spindoctor-recent.py          ← Python wrapper (works without `pip install`)
+├── Refresh Favorites.bat         ← Drop into HyperSpin Tools or Windows Startup
+├── Refresh Recently Played.bat   ← ditto
+├── Refresh Both.bat              ← Run both in sequence
+└── README.md                     ← Quick-start for the folder
+```
+
+After `pip install -e .` you can also call the entry-point console scripts (`spindoctor-fav` / `spindoctor-recent`) directly from any working directory — they're equivalent to running the wrappers in `scripts/`.
+
 ### `spindoctor-fav`
 
 ```
@@ -471,10 +485,11 @@ spindoctor-fav add "Super Nintendo" "Chrono Trigger"
 spindoctor-fav rebuild
 ```
 
-Or without installing the console script:
+Or directly from a clone (no `pip install` needed):
 
 ```bat
-python -m spindoctor.favorites rebuild
+python scripts\spindoctor-fav.py rebuild
+python -m spindoctor.favorites rebuild     :: equivalent
 ```
 
 ### `spindoctor-recent`
@@ -489,7 +504,8 @@ Examples:
 
 ```bat
 spindoctor-recent rebuild --limit 20
-python -m spindoctor.recent list
+python scripts\spindoctor-recent.py list
+python -m spindoctor.recent list           :: equivalent
 ```
 
 ### Wiring into Windows startup
@@ -501,11 +517,16 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
   /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild"
 ```
 
-Or drop the `.bat` files written by `spindoctor install-tools` into the Windows Startup folder.
+Or drop one of the `.bat` files from `scripts/` (or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
 
 ### Wiring into HyperSpin Tools menu
 
-After running `spindoctor install-tools`, register each `.bat` from `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/` in HyperHQ → Tools (or whichever Tools folder your build expects). The user then sees `Refresh Favorites`, `Refresh Recently Played`, and `Refresh Both` inside the cabinet UI.
+Two equivalent options:
+
+1. **Auto-install:** `spindoctor install-tools` writes the three `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`.
+2. **Manual:** copy the `.bat` files from `scripts/` into HyperSpin's Tools directory yourself.
+
+Either way, register them in HyperHQ → Tools so they appear inside the cabinet UI as `Refresh Favorites`, `Refresh Recently Played`, and `Refresh Both`.
 
 ---
 
