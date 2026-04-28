@@ -678,6 +678,15 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
             rating = c.get("text", "")
             break
 
+    # ScreenScraper exposes the player count via ``joueurs``.  The value can
+    # be a plain string ("2"), a range ("1-4"), or a dict with a ``text``
+    # key in some payloads — handle all three.
+    joueurs = jeu.get("joueurs", "")
+    if isinstance(joueurs, dict):
+        players = str(joueurs.get("text", "") or "").strip()
+    else:
+        players = str(joueurs or "").strip()
+
     medias = jeu.get("medias", [])
     source_url = f"https://www.screenscraper.fr/gameinfos.php?gameid={jeu_id}" if jeu_id else ""
 
@@ -698,6 +707,7 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
         year=year,
         genre=genre,
         rating=rating,
+        players=players,
         source="screenscraper",
         source_id=jeu_id,
         source_url=source_url,

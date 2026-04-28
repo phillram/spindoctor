@@ -204,6 +204,36 @@ def test_apply_batch_edit_round_trip(isolated_config, tmp_path):
     assert not manifest.exists()
 
 
+def test_apply_batch_edit_sets_players_field(isolated_config, tmp_path):
+    """``--set players=2`` writes the value and ``--undo`` clears it back."""
+    cfg = _build_cfg(tmp_path)
+    games = find_matching_games(cfg, build_filter("nes", ["name=mario"]))
+    assert games and games[0].players == ""
+
+    results, manifest = apply_batch_edit(
+        cfg, "nes", games, [EditChange("players", "2", "set")],
+    )
+    assert manifest is not None and manifest.exists()
+    edited = {r.game_name for r in results if not r.skipped}
+    assert "mario" in edited
+
+    # In-memory game object got the new value.
+    after = {g.name: g for g in find_matching_games(cfg, build_filter("nes", []))}
+    assert after["mario"].players == "2"
+
+    # On-disk XML carries <players>2</players>.
+    db_xml = (Path(cfg.hyperspin_dir) / "Databases" / "nes" / "nes.xml").read_text(
+        encoding="utf-8",
+    )
+    assert "<players>2</players>" in db_xml
+
+    # Undo restores the empty value and drops the manifest.
+    undo_batch_edit(manifest, cfg)
+    after_undo = {g.name: g for g in find_matching_games(cfg, build_filter("nes", []))}
+    assert after_undo["mario"].players == ""
+    assert not manifest.exists()
+
+
 def test_list_edit_manifests_after_apply(isolated_config, tmp_path):
     cfg = _build_cfg(tmp_path)
     games = find_matching_games(cfg, build_filter("nes", ["name=mario"]))
