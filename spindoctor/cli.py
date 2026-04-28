@@ -3670,6 +3670,362 @@ def organize(system_name, no_sort, axes, overwrite_sort, restructure,
     )
 
 
+# ─── backup / restore ─────────────────────────────────────────────────────────
+
+@cli.group("backup")
+def backup_group():
+    """Back up or restore the SpinDoctor library.
+
+    Copy any combination of components (games, media, databases, emulators,
+    rocketlauncher, ledblinky, settings) into a dated backup folder under a
+    target directory. Each backup is self-describing and can be restored in
+    full or in part later.
+
+    \b
+    Subcommands:
+      create    Create a new backup
+      list      List backups under a target directory
+      info      Show what's inside a backup
+      restore   Restore a backup back to the original (or current) paths
+    """
+
+
+def _backup_format_includes() -> str:
+    from .backup import ALL_COMPONENTS, COMPONENT_ALIASES
+    return (
+        ", ".join(ALL_COMPONENTS)
+        + ", all"
+        + " (aliases: "
+        + ", ".join(sorted(COMPONENT_ALIASES))
+        + ")"
+    )
+
+
+@backup_group.command("create")
+@click.option("--target", type=click.Path(file_okay=False), required=True,
+              help="Destination folder for the backup. A new dated subfolder "
+                   "named 'spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/' is "
+                   "created under it.")
+@click.option("--include", default="all",
+              help="Comma-separated components to back up. Choices: roms, "
+                   "databases, media, emulators, rocketlauncher, ledblinky, "
+                   "settings, all. Aliases: games→roms, hyperspin→databases+media, "
+                   "config→settings. Default: all.")
+@click.option("--label", default=None,
+              help="Optional suffix appended to the backup folder name (e.g. "
+                   "'pre-migration', 'weekly').")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the backup. Without this flag, prints a dry-run plan.")
+def backup_create(target, include, label, apply_changes):
+    """Create a new backup of selected library components.
+
+    \b
+    Examples:
+      # Dry-run — see what would be backed up
+      spindoctor backup create --target E:\\Backups
+
+      # Full backup of everything
+      spindoctor backup create --target E:\\Backups --apply
+
+      # Just settings + databases
+      spindoctor backup create --target E:\\Backups --include settings,databases --apply
+
+      # Just the games (ROM files)
+      spindoctor backup create --target E:\\Backups --include games --apply
+
+      # Tagged backup — folder is suffixed with -pre-migration
+      spindoctor backup create --target E:\\Backups --label pre-migration --apply
+    """
+    from .backup import (
+        apply_backup, format_bytes, free_bytes, normalize_components,
+        plan_backup,
+    )
+
+    config = _cfg()
+    target_root = Path(target).expanduser()
+
+    try:
+        components = normalize_components(include.split(","))
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if not components:
+        err_console.print("[red]--include resolved to no components.[/red]")
+        sys.exit(1)
+
+    console.print(Panel(f" backup create → {target_root} ", style="bold blue"))
+    console.print(f"Components: [cyan]{', '.join(components)}[/cyan]")
+
+    plan = plan_backup(config, target_root, components, label=label)
+
+    if plan.skipped:
+        console.print("\n[yellow]Skipped:[/yellow]")
+        for s in plan.skipped:
+            console.print(f"  [dim]· {s}[/dim]")
+
+    if plan.empty:
+        console.print("\n[green]Nothing to back up.[/green]")
+        return
+
+    tbl = Table(title="Backup plan", box=box.SIMPLE)
+    tbl.add_column("Component", style="cyan")
+    tbl.add_column("From", style="yellow")
+    tbl.add_column("→")
+    tbl.add_column("To", style="green")
+    tbl.add_column("Size", justify="right")
+    for it in plan.items:
+        tbl.add_row(it.component, it.src, "→", it.dest, format_bytes(it.size_bytes))
+    console.print(tbl)
+    console.print(f"Backup root: [bold]{plan.backup_root}[/bold]")
+    total = plan.total_bytes
+    console.print(f"Total to copy: [bold]{format_bytes(total)}[/bold]")
+    free = free_bytes(target_root)
+    if free:
+        marker = "[green]✓[/green]" if free > total else "[red]✗[/red]"
+        console.print(f"Free at target: {format_bytes(free)} {marker}")
+        if free <= total and apply_changes:
+            err_console.print(
+                "[red]Aborted:[/red] target drive does not have enough free space."
+            )
+            sys.exit(1)
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run.[/yellow] Re-run with [cyan]--apply[/cyan] to execute."
+        )
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Backing up", total=len(plan.items))
+
+        def _cb(item, status):
+            if status == "start":
+                progress.update(
+                    task,
+                    description=f"Backing up {item.component}: {Path(item.src).name}",
+                )
+            elif status == "done":
+                progress.update(task, advance=1)
+
+        try:
+            backup_root = apply_backup(plan, config, progress_cb=_cb)
+        except (FileExistsError, OSError) as e:
+            err_console.print(f"[red]Aborted:[/red] {e}")
+            sys.exit(1)
+
+    console.print(f"\n[green]✓[/green] Backup complete: {backup_root}")
+    console.print(
+        f"  Run [cyan]spindoctor backup restore --backup \"{backup_root}\"[/cyan] "
+        f"to restore."
+    )
+
+
+@backup_group.command("list")
+@click.option("--target", type=click.Path(file_okay=False), required=True,
+              help="Folder where backups live (the same path passed to "
+                   "`backup create --target`).")
+def backup_list(target):
+    """List backups under a target folder."""
+    from .backup import format_bytes, list_backups, read_manifest
+
+    target_root = Path(target).expanduser()
+    backups = list_backups(target_root)
+    if not backups:
+        console.print(f"[yellow]No backups found under {target_root}.[/yellow]")
+        return
+
+    tbl = Table(title=f"Backups under {target_root}", box=box.SIMPLE)
+    tbl.add_column("Backup", style="cyan")
+    tbl.add_column("Timestamp")
+    tbl.add_column("Components")
+    tbl.add_column("Size", justify="right")
+    for b in backups:
+        try:
+            data = read_manifest(b)
+            comps = ", ".join(i["component"] for i in data.get("items", []))
+            size = sum(i.get("size_bytes", 0) for i in data.get("items", []))
+            tbl.add_row(b.name, data.get("timestamp", ""), comps or "[dim]none[/dim]",
+                        format_bytes(size))
+        except (FileNotFoundError, ValueError):
+            tbl.add_row(b.name, "[red]?[/red]", "[red]malformed manifest[/red]", "")
+    console.print(tbl)
+
+
+@backup_group.command("info")
+@click.option("--backup", "backup_path", type=click.Path(file_okay=False),
+              required=True,
+              help="Path to a backup folder (created by `backup create`).")
+def backup_info(backup_path):
+    """Show what's inside a backup."""
+    from .backup import format_bytes, read_manifest
+
+    backup_root = Path(backup_path).expanduser()
+    try:
+        data = read_manifest(backup_root)
+    except (FileNotFoundError, ValueError) as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(Panel(f" {backup_root.name} ", style="bold blue"))
+    console.print(f"Created: [cyan]{data.get('timestamp', '?')}[/cyan]")
+    console.print(f"Path:    [dim]{backup_root}[/dim]")
+
+    items = data.get("items", [])
+    if not items:
+        console.print("\n[yellow]Backup contains no components.[/yellow]")
+        return
+
+    tbl = Table(title="Components", box=box.SIMPLE)
+    tbl.add_column("Component", style="cyan")
+    tbl.add_column("Original source", style="yellow")
+    tbl.add_column("Size", justify="right")
+    for i in items:
+        tbl.add_row(i["component"], i["src"], format_bytes(i.get("size_bytes", 0)))
+    console.print(tbl)
+    total = sum(i.get("size_bytes", 0) for i in items)
+    console.print(f"Total: [bold]{format_bytes(total)}[/bold]")
+
+
+@backup_group.command("restore")
+@click.option("--backup", "backup_path", type=click.Path(file_okay=False),
+              required=True,
+              help="Path to the backup folder to restore.")
+@click.option("--include", default=None,
+              help="Comma-separated components to restore (default: every "
+                   "component recorded in the backup). Same vocabulary as "
+                   "`backup create --include`.")
+@click.option("--use-current-paths", is_flag=True,
+              help="Restore each component to the path currently set in "
+                   "~/.spindoctor/config.json instead of the path recorded "
+                   "in the backup manifest. Useful when drive letters changed.")
+@click.option("--overwrite", is_flag=True,
+              help="Replace existing destination folders. Without this flag, "
+                   "restore aborts if any destination is non-empty.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the restore. Without this flag, prints a dry-run plan.")
+def backup_restore(backup_path, include, use_current_paths, overwrite, apply_changes):
+    """Restore from a backup back to the library paths.
+
+    \b
+    Examples:
+      # Dry-run — see what would be restored
+      spindoctor backup restore --backup E:\\Backups\\spindoctor-backup-20260428_120000
+
+      # Full restore
+      spindoctor backup restore --backup E:\\... --apply
+
+      # Just restore settings (config + favorites)
+      spindoctor backup restore --backup E:\\... --include settings --apply
+
+      # Drive letters changed since the backup — route everything to the
+      # paths now in config.json
+      spindoctor backup restore --backup E:\\... --use-current-paths --apply
+
+      # Replace existing folders on disk
+      spindoctor backup restore --backup E:\\... --overwrite --apply
+    """
+    from .backup import (
+        apply_restore, format_bytes, plan_restore,
+    )
+
+    backup_root = Path(backup_path).expanduser()
+    components = None
+    if include:
+        components = [c.strip() for c in include.split(",") if c.strip()]
+
+    config_for_routing = _cfg() if use_current_paths else None
+
+    try:
+        plan = plan_restore(
+            backup_root,
+            components=components,
+            use_current_config=config_for_routing,
+        )
+    except (FileNotFoundError, ValueError) as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(Panel(f" backup restore ← {backup_root.name} ", style="bold blue"))
+
+    if plan.skipped:
+        console.print("[yellow]Skipped:[/yellow]")
+        for s in plan.skipped:
+            console.print(f"  [dim]· {s}[/dim]")
+
+    if plan.empty:
+        console.print("\n[green]Nothing to restore.[/green]")
+        return
+
+    tbl = Table(title="Restore plan", box=box.SIMPLE)
+    tbl.add_column("Component", style="cyan")
+    tbl.add_column("From backup", style="yellow")
+    tbl.add_column("→")
+    tbl.add_column("Restored to", style="green")
+    tbl.add_column("Size", justify="right")
+    for it in plan.items:
+        tbl.add_row(it.component, it.src, "→", it.dest, format_bytes(it.size_bytes))
+    console.print(tbl)
+    console.print(f"Total to restore: [bold]{format_bytes(plan.total_bytes)}[/bold]")
+
+    # Warn about clobbering
+    clobbers = [i for i in plan.items if Path(i.dest).exists()
+                and (Path(i.dest).is_file() or any(Path(i.dest).iterdir()))]
+    if clobbers and not overwrite:
+        console.print(
+            "\n[red]The following destinations already exist[/red] "
+            "(pass [cyan]--overwrite[/cyan] to replace them):"
+        )
+        for c in clobbers:
+            console.print(f"  · {c.dest}")
+        if apply_changes:
+            err_console.print(
+                "[red]Aborted:[/red] re-run with --overwrite or remove the "
+                "existing folders first."
+            )
+            sys.exit(1)
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run.[/yellow] Re-run with [cyan]--apply[/cyan] to execute."
+        )
+        return
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[bold]{task.description}"),
+        BarColumn(),
+        TextColumn("{task.completed}/{task.total}"),
+        TimeElapsedColumn(),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Restoring", total=len(plan.items))
+
+        def _cb(item, status):
+            if status == "start":
+                progress.update(
+                    task,
+                    description=f"Restoring {item.component} → {Path(item.dest).name}",
+                )
+            elif status == "done":
+                progress.update(task, advance=1)
+
+        try:
+            restored = apply_restore(plan, overwrite=overwrite, progress_cb=_cb)
+        except (FileExistsError, OSError) as e:
+            err_console.print(f"[red]Aborted:[/red] {e}")
+            sys.exit(1)
+
+    console.print(f"\n[green]✓[/green] Restored {restored} component(s).")
+
+
 # ─── migrate (move library to a new drive) ────────────────────────────────────
 
 @cli.command("migrate")
