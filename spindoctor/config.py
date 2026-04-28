@@ -102,14 +102,18 @@ class Config:
     ignore_lists: dict[str, list[str]] = field(default_factory=dict)
 
     # User-supplied overrides for hardcoded system lookups.  Lets users add
-    # support for new consoles (e.g. a future PS7) without editing source.
+    # support for new consoles (e.g. a future PS7) or PC/Windows/Steam game
+    # libraries without editing source.
     # Schema:
     #   {
     #     "Sony Playstation 7": {
     #         "screenscraper_id": 999,        # int
+    #         "thegamesdb_id": 99,             # int
     #         "rom_extensions": [".ps7"],      # list[str]
-    #         "layout": "per-game-folder",     # "per-game-folder" | "multi-disc-m3u"
+    #         "layout": "per-game-folder",     # "per-game-folder" | "multi-disc-m3u" | "flat"
     #         "emulator": "RPCS7",             # free-form
+    #         "recursive_scan": True,          # walk subdirectories under <roms_dir>/<system>/
+    #         "title_strategy": "smart",       # "smart" | "stem" | "parent_folder"
     #     }
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)

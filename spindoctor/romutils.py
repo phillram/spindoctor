@@ -3,7 +3,14 @@ from __future__ import annotations
 
 import re
 from difflib import SequenceMatcher
+from pathlib import Path
 from typing import Optional
+
+
+# Filenames whose stem is the title — Windows/Steam shortcuts.  Bare .exe
+# files in a sub-folder are usually launchers (launcher.exe, start.exe) and
+# the parent folder name is the better title; see derive_pc_title.
+SHORTCUT_EXTS = {".lnk", ".url"}
 
 
 # Ordered strip passes — most specific first so "(USA, Rev A)" is handled cleanly
@@ -153,6 +160,49 @@ def _title_case_base(text: str) -> str:
         else:
             titled.append(w.capitalize())
     return " ".join(titled)
+
+
+def derive_pc_title(
+    path: Path,
+    system_root: Path,
+    strategy: str = "smart",
+) -> str:
+    """Return a human-readable title for a PC game file.
+
+    ``strategy`` is one of:
+
+    * ``"stem"`` — always use ``path.stem``.
+    * ``"parent_folder"`` — use the immediate parent's name when *path* is
+      nested below *system_root*; otherwise fall back to the stem.
+    * ``"smart"`` (default) — for shortcut extensions (.lnk/.url) use the
+      stem; for executables nested below *system_root* use the parent
+      folder name (e.g. ``Games/Cyberpunk 2077/bin/launcher.exe`` →
+      ``Cyberpunk 2077``); for files directly inside *system_root* use the
+      stem.
+    """
+    try:
+        nested = path.parent.resolve() != system_root.resolve()
+    except OSError:
+        nested = path.parent != system_root
+
+    if strategy == "stem":
+        return path.stem
+    if strategy == "parent_folder":
+        return path.parent.name if nested else path.stem
+    # smart
+    if path.suffix.lower() in SHORTCUT_EXTS:
+        return path.stem
+    if nested:
+        # Walk up to the first directory directly under system_root so a
+        # nested launcher path picks the install-folder name, not the bin/
+        # subfolder it actually lives in.
+        try:
+            rel = path.resolve().relative_to(system_root.resolve())
+            top = rel.parts[0] if rel.parts else path.parent.name
+            return top
+        except (ValueError, OSError):
+            return path.parent.name
+    return path.stem
 
 
 def clean_display_name(rom_name: str, strip_variants: bool = False) -> str:

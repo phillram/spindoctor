@@ -56,6 +56,15 @@ SCREENSCRAPER_SYSTEMS: dict[str, int] = {
     "turbografx": 31,
     "turbografx-16": 31,
     "pc engine": 31,
+    # PC / Windows / Steam — ScreenScraper splits "PC" (DOS, 135) from
+    # "PC Win" (138).  We default to PC Win for shortcut/exe libraries;
+    # users can override either via system_overrides.screenscraper_id.
+    "pc": 135,
+    "pc games": 138,
+    "windows": 138,
+    "windows games": 138,
+    "steam": 138,
+    "steam games": 138,
 }
 
 THEGAMESDB_PLATFORMS: dict[str, int] = {
@@ -82,6 +91,13 @@ THEGAMESDB_PLATFORMS: dict[str, int] = {
     "atari 2600": 22,
     "master system": 35,
     "game gear": 20,
+    # PC / Windows / Steam — TheGamesDB platform 1 is "PC".
+    "pc": 1,
+    "pc games": 1,
+    "windows": 1,
+    "windows games": 1,
+    "steam": 1,
+    "steam games": 1,
 }
 
 

@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .config import Config, MEDIA_TYPES, get_rom_extensions
+from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides
 from .database import GameEntry, load_database
-from .romutils import clean_display_name, find_best_match
+from .romutils import clean_display_name, derive_pc_title, find_best_match
 
 
 @dataclass
@@ -113,6 +113,13 @@ def scan_roms(system_name: str, roms_dir: Path) -> dict[str, RomFileInfo]:
     if not system_rom_dir.exists():
         return {}
     extensions = get_rom_extensions(system_name)
+    ovr = get_system_overrides().get(system_name, {})
+    if ovr.get("recursive_scan"):
+        return _scan_recursive(
+            system_rom_dir,
+            extensions,
+            ovr.get("title_strategy", "smart"),
+        )
     roms: dict[str, RomFileInfo] = {}
     for rom_path in system_rom_dir.iterdir():
         if rom_path.is_file() and rom_path.suffix.lower() in extensions:
@@ -121,6 +128,33 @@ def scan_roms(system_name: str, roms_dir: Path) -> dict[str, RomFileInfo]:
                 path=rom_path,
                 extension=rom_path.suffix.lower(),
             )
+    return roms
+
+
+def _scan_recursive(
+    system_rom_dir: Path,
+    extensions: list[str],
+    title_strategy: str,
+) -> dict[str, RomFileInfo]:
+    """Walk *system_rom_dir* recursively, deriving a title for each match.
+
+    When two files in different sub-folders derive to the same title (e.g.
+    a game with both an .exe and a .lnk), the first one wins; subsequent
+    duplicates are dropped so the database key stays unique.
+    """
+    roms: dict[str, RomFileInfo] = {}
+    ext_set = {e.lower() for e in extensions}
+    for rom_path in system_rom_dir.rglob("*"):
+        if not rom_path.is_file() or rom_path.suffix.lower() not in ext_set:
+            continue
+        title = derive_pc_title(rom_path, system_rom_dir, title_strategy)
+        if title in roms:
+            continue
+        roms[title] = RomFileInfo(
+            name=title,
+            path=rom_path,
+            extension=rom_path.suffix.lower(),
+        )
     return roms
 
 
