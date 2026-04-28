@@ -22,9 +22,11 @@ except ImportError:  # pragma: no cover - fallback path
     _HAS_LXML = False
 
 # Order in which fields are emitted for new <game> elements (HyperSpin convention).
+# ``players`` sits next to ``rating`` — both are short, optional descriptors and
+# HyperHQ-exported XMLs typically place them adjacent.
 _FIELD_ORDER = (
     "description", "cloneof", "crc", "manufacturer",
-    "year", "genre", "rating", "enabled",
+    "year", "genre", "rating", "players", "enabled",
 )
 
 _LXML_WARNED = False
@@ -52,6 +54,7 @@ class GameEntry:
     year: str = ""
     genre: str = ""
     rating: str = ""
+    players: str = ""
     enabled: str = "Yes"
 
     def is_metadata_complete(self) -> bool:
@@ -110,6 +113,7 @@ class HyperspinDatabase:
                     year=_text(game_el, "year"),
                     genre=_text(game_el, "genre"),
                     rating=_text(game_el, "rating"),
+                    players=_text(game_el, "players"),
                     enabled=_text(game_el, "enabled") or "Yes",
                 )
                 self._game_elements[name] = game_el
@@ -312,6 +316,11 @@ def _update_game_element(el, game: "GameEntry") -> None:
             value = "Yes"
         child = el.find(field_name)
         if child is None:
+            # Skip optional fields that have no value rather than emitting
+            # empty placeholder elements.  ``players`` is an opt-in tag and
+            # adding ``<players></players>`` would be misleading.
+            if field_name == "players" and not value:
+                continue
             _set_text(el, field_name, value)
         else:
             child.text = value
@@ -442,5 +451,9 @@ def _new_game_element(game: "GameEntry", root=None):
     _set_text(el, "year", game.year)
     _set_text(el, "genre", game.genre)
     _set_text(el, "rating", game.rating)
+    # Only emit <players> when populated — HyperSpin treats an empty
+    # element as "1 player" in some skins, which is misleading.
+    if game.players:
+        _set_text(el, "players", game.players)
     _set_text(el, "enabled", game.enabled or "Yes")
     return el

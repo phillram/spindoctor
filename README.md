@@ -172,7 +172,7 @@ A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_bef
 
 #### `fetch-meta`
 
-Download metadata (description, year, manufacturer, genre, rating) and write it into the XML.
+Download metadata (description, year, manufacturer, genre, rating, players) and write it into the XML.
 
 ```bat
 spindoctor fetch-meta --system MAME --dry-run
