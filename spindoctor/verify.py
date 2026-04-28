@@ -30,9 +30,12 @@ import xml.etree.ElementTree as ET
 import zlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Iterable, Literal, Optional
 
 from . import archives
+
+
+MatchMode = Literal["inner", "wrapper", "auto"]
 
 
 @dataclass(frozen=True)
@@ -124,7 +127,65 @@ def _hash_file(path: Path, want_sha1: bool, want_crc: bool) -> tuple[Optional[st
     return sha1_hex, crc_hex
 
 
-def _classify_archive(path: Path, index: dict[str, dict]) -> VerifyEntry:
+def _classify_by_wrapper_hash(path: Path, index: dict[str, dict]) -> VerifyEntry:
+    """Hash the file's bytes directly and classify against ``index``.
+
+    This is the size→sha1/crc fallback path also used for non-archive ROMs.
+    Some DATs (TOSEC, older sets) catalog wrapper-byte hashes rather than
+    inner-content hashes, so this is the right matcher for them even when
+    the file happens to be a ``.zip``.
+    """
+    try:
+        size = path.stat().st_size
+    except OSError as e:
+        return VerifyEntry(path=path, status="unknown", detail=f"stat failed: {e}")
+
+    candidates = index["size"].get(size, [])
+    if not candidates:
+        named = index["name"].get(path.name.lower())
+        if named:
+            return VerifyEntry(
+                path=path, status="bad",
+                expected_name=named.rom_name,
+                detail=f"name match but size {size} ≠ {named.size}",
+            )
+        return VerifyEntry(path=path, status="unknown", detail=f"size {size} not in DAT")
+
+    want_sha1 = any(c.sha1 for c in candidates)
+    want_crc = any(c.crc for c in candidates)
+    sha1_hex, crc_hex = _hash_file(path, want_sha1, want_crc)
+
+    if sha1_hex and sha1_hex in index["sha1"]:
+        match = index["sha1"][sha1_hex]
+        if path.name.lower() == match.rom_name.lower():
+            return VerifyEntry(path=path, status="good", expected_name=match.rom_name)
+        return VerifyEntry(
+            path=path, status="renamed", expected_name=match.rom_name,
+            detail=f"sha1 match — DAT calls it '{match.rom_name}'",
+        )
+
+    if crc_hex and crc_hex in index["crc"]:
+        match = index["crc"][crc_hex]
+        if path.name.lower() == match.rom_name.lower():
+            return VerifyEntry(path=path, status="good", expected_name=match.rom_name)
+        return VerifyEntry(
+            path=path, status="renamed", expected_name=match.rom_name,
+            detail=f"crc match — DAT calls it '{match.rom_name}'",
+        )
+
+    expected = candidates[0]
+    return VerifyEntry(
+        path=path, status="bad",
+        expected_name=expected.rom_name,
+        detail=f"size matches '{expected.rom_name}' but hash differs",
+    )
+
+
+def _classify_archive(
+    path: Path,
+    index: dict[str, dict],
+    match_mode: MatchMode = "auto",
+) -> VerifyEntry:
     """Verify an archive by hashing its inner contents instead of the wrapper.
 
     For multi-entry archives (zip/7z/rar) any inner SHA1 hit promotes the file
@@ -132,7 +193,39 @@ def _classify_archive(path: Path, index: dict[str, dict]) -> VerifyEntry:
     entry). CHDs carry a single ``rawsha1`` in their header that DATs match
     against directly. Missing optional dependencies degrade to ``unknown``
     with a one-line install hint.
+
+    When ``match_mode`` is ``"auto"`` and inner-content matching turns up
+    nothing, this falls back to wrapper-byte hashing (used by TOSEC-style
+    DATs). When ``match_mode`` is ``"wrapper"``, the archive is never opened
+    — we just hash the file directly. When ``match_mode`` is ``"inner"``,
+    only inner-content matching is attempted.
     """
+    if match_mode == "wrapper":
+        return _classify_by_wrapper_hash(path, index)
+
+    inner_result = _classify_archive_inner(path, index)
+    if match_mode == "inner":
+        return inner_result
+    if inner_result.status != "unknown":
+        return inner_result
+
+    # auto mode: inner returned nothing — try wrapper hashing as a fallback for
+    # TOSEC-style DATs that catalog the archive bytes directly.
+    wrapper_result = _classify_by_wrapper_hash(path, index)
+    if wrapper_result.status == "unknown":
+        return inner_result
+    suffix = " (wrapper match)"
+    detail = f"{wrapper_result.detail}{suffix}" if wrapper_result.detail else suffix.strip()
+    return VerifyEntry(
+        path=wrapper_result.path,
+        status=wrapper_result.status,
+        expected_name=wrapper_result.expected_name,
+        detail=detail,
+    )
+
+
+def _classify_archive_inner(path: Path, index: dict[str, dict]) -> VerifyEntry:
+    """Inner-content matching for archives — the original PR #16 behaviour."""
     info = archives.extract_inner_hash(path)
     if info is None:
         # Defensive — caller already gated on archive_kind, so this only fires
@@ -198,61 +291,30 @@ def _classify_archive(path: Path, index: dict[str, dict]) -> VerifyEntry:
 def _classify(
     path: Path,
     index: dict[str, dict],
+    match_mode: MatchMode = "auto",
 ) -> VerifyEntry:
     if archives.archive_kind(path) is not None:
-        return _classify_archive(path, index)
-
-    try:
-        size = path.stat().st_size
-    except OSError as e:
-        return VerifyEntry(path=path, status="unknown", detail=f"stat failed: {e}")
-
-    candidates = index["size"].get(size, [])
-    if not candidates:
-        # Size doesn't match anything in the DAT → either a bad dump or
-        # something the DAT doesn't know about. Don't bother hashing.
-        named = index["name"].get(path.name.lower())
-        if named:
-            return VerifyEntry(
-                path=path, status="bad",
-                expected_name=named.rom_name,
-                detail=f"name match but size {size} ≠ {named.size}",
-            )
-        return VerifyEntry(path=path, status="unknown", detail=f"size {size} not in DAT")
-
-    want_sha1 = any(c.sha1 for c in candidates)
-    want_crc = any(c.crc for c in candidates)
-    sha1_hex, crc_hex = _hash_file(path, want_sha1, want_crc)
-
-    if sha1_hex and sha1_hex in index["sha1"]:
-        match = index["sha1"][sha1_hex]
-        if path.name.lower() == match.rom_name.lower():
-            return VerifyEntry(path=path, status="good", expected_name=match.rom_name)
-        return VerifyEntry(
-            path=path, status="renamed", expected_name=match.rom_name,
-            detail=f"sha1 match — DAT calls it '{match.rom_name}'",
-        )
-
-    if crc_hex and crc_hex in index["crc"]:
-        match = index["crc"][crc_hex]
-        if path.name.lower() == match.rom_name.lower():
-            return VerifyEntry(path=path, status="good", expected_name=match.rom_name)
-        return VerifyEntry(
-            path=path, status="renamed", expected_name=match.rom_name,
-            detail=f"crc match — DAT calls it '{match.rom_name}'",
-        )
-
-    # Size matched but hashes didn't — likely a bad dump.
-    expected = candidates[0]
-    return VerifyEntry(
-        path=path, status="bad",
-        expected_name=expected.rom_name,
-        detail=f"size matches '{expected.rom_name}' but hash differs",
-    )
+        return _classify_archive(path, index, match_mode=match_mode)
+    # Non-archive files always go through the wrapper-hash path — there is
+    # no "inner content" to hash for a raw ROM, so ``match_mode`` only
+    # affects archives.
+    return _classify_by_wrapper_hash(path, index)
 
 
-def verify_system(system_name: str, dat_path: Path, roms_dir: Path) -> VerifyReport:
-    """Verify every ROM under ``roms_dir/system_name`` against ``dat_path``."""
+def verify_system(
+    system_name: str,
+    dat_path: Path,
+    roms_dir: Path,
+    match_mode: MatchMode = "auto",
+) -> VerifyReport:
+    """Verify every ROM under ``roms_dir/system_name`` against ``dat_path``.
+
+    ``match_mode`` controls how archives (zip/7z/rar/gz/chd) are matched:
+
+    * ``"inner"``   — hash the archive's inner contents (No-Intro / Redump).
+    * ``"wrapper"`` — hash the archive bytes directly (TOSEC / older sets).
+    * ``"auto"``    — try inner first, fall back to wrapper. Default.
+    """
     report = VerifyReport(system=system_name, dat_path=dat_path)
     sys_dir = roms_dir / system_name
     if not sys_dir.exists():
@@ -266,7 +328,7 @@ def verify_system(system_name: str, dat_path: Path, roms_dir: Path) -> VerifyRep
         # Skip our own manifests
         if path.name.startswith(("_spindoctor-", ".")):
             continue
-        report.entries.append(_classify(path, index))
+        report.entries.append(_classify(path, index, match_mode=match_mode))
 
     for e in report.entries:
         report.summary[e.status] = report.summary.get(e.status, 0) + 1

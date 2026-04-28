@@ -649,9 +649,12 @@ spindoctor check-discs --all
 
 Verify ROM file integrity against a No-Intro / Redump / TOSEC DAT XML. Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Hashing is lazy — files whose size doesn't appear in the DAT skip hashing entirely.
 
+By default `verify` tries inner-content matching first then falls back to wrapper-byte matching, so the same command works against both No-Intro/Redump-style DATs (inner hashes) and TOSEC-style DATs (wrapper hashes). Pass `--match inner` or `--match wrapper` to force one.
+
 ```bat
 spindoctor verify --system NES --dat C:\Dats\Nintendo - Nintendo Entertainment System.dat
 spindoctor verify --system NES --dat ... --show-good   :: also list verified-good files
+spindoctor verify --system NES --dat tosec.dat --match wrapper
 ```
 
 | Status | Meaning |
