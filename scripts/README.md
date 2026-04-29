@@ -14,17 +14,17 @@ loading the full SpinDoctor CLI.
 | `spindoctor-fav.py` | Python wrapper that calls `spindoctor.favorites:main` |
 | `spindoctor-recent.py` | Python wrapper that calls `spindoctor.recent:main` |
 | `spindoctor-stats.py` | Python wrapper that calls `spindoctor.playtime:main` |
-| `Refresh Favorites.bat` | Windows batch invoking `spindoctor-fav rebuild` |
-| `Refresh Recently Played.bat` | Windows batch invoking `spindoctor-recent rebuild` |
+| `Refresh Favorites.bat` | Windows batch invoking `spindoctor-fav rebuild --apply` |
+| `Refresh Recently Played.bat` | Windows batch invoking `spindoctor-recent rebuild --apply` |
 | `Refresh Most Played.bat` | Windows batch invoking `spindoctor-stats build-wheel --apply` |
-| `Refresh Both.bat` | Run fav + recent + most-played in sequence |
+| `Refresh Both.bat` | Run fav + recent + most-played in sequence (all with `--apply`) |
 
 The Python wrappers exist so users without `pip install -e .` can still
 run the tools directly:
 
 ```bat
-python scripts\spindoctor-fav.py rebuild
-python scripts\spindoctor-recent.py rebuild --limit 30
+python scripts\spindoctor-fav.py rebuild --apply
+python scripts\spindoctor-recent.py rebuild --limit 30 --apply
 python scripts\spindoctor-stats.py summary
 ```
 
@@ -51,7 +51,7 @@ user reaches HyperSpin:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
+  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
 ```
 
 Or drop `Refresh Both.bat` into the Windows Startup folder

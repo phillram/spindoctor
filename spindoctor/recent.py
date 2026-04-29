@@ -278,12 +278,16 @@ def rebuild(
     media_mode: LinkMode = LinkMode.AUTO,
     skip_media: bool = False,
     skip_launchers: bool = False,
+    dry_run: bool = False,
 ) -> RecentSummary:
     """Regenerate the Recently Played system from RocketLauncher stats.
 
     Re-uses the same launcher and media-mirror plumbing as
     :func:`spindoctor.favorites.rebuild` so the two synthetic systems
     behave identically inside HyperSpin.
+
+    When ``dry_run`` is true, returns a populated summary describing
+    what would be written without touching disk.
     """
     if not config.hyperspin_dir:
         return RecentSummary(target_system=target_system)
@@ -303,6 +307,14 @@ def rebuild(
         )
         for r in top
     ]
+    if dry_run:
+        summary = RecentSummary(target_system=target_system)
+        summary.entries = len(pseudo_entries)
+        if not skip_launchers:
+            summary.inis_written = len(pseudo_entries)
+        if not skip_media:
+            summary.media_linked = len(pseudo_entries)
+        return summary
     return _build_synthetic_wheel(
         config, target_system, pseudo_entries,
         media_mode=media_mode, skip_media=skip_media,
@@ -328,6 +340,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
                        default="auto")
+    p_reb.add_argument("--apply", action="store_true",
+                       help="Commit the rebuild (default: dry-run preview).")
 
     sub.add_parser("list", help="Print the current top-N play records")
     return p
@@ -352,12 +366,15 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
+        if not args.apply:
+            print("[DRY RUN] No files will be written. Re-run with --apply to commit.")
         summary = rebuild(
             config,
             target_system=args.target_system,
             limit=args.limit,
             media_mode=mode,
             skip_media=skip_media,
+            dry_run=not args.apply,
         )
         print(f"Recently Played system: {summary.target_system}")
         print(f"  entries:    {summary.entries}")
