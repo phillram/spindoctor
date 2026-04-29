@@ -161,6 +161,26 @@ def _preview_temp(config: Config) -> CategoryReport:
     )
 
 
+def _partial_downloads(config: Config) -> CategoryReport:
+    base = config.media_dir if config.hyperspin_dir else None
+    files: list[FileEntry] = []
+    if base and base.exists():
+        files = _scan_glob(base, "*.part", recursive=True)
+    return CategoryReport(
+        key="partial-downloads",
+        label="Interrupted media downloads",
+        description=(
+            "Sidecar `.part` files left behind by `fetch-media` when a download "
+            "is interrupted. Inert by themselves: the next fetch resumes them "
+            "via HTTP Range. Safe to delete — deletion just forces a full "
+            "re-download next time."
+        ),
+        location=str(base) if base else "<hyperspin_dir not set>",
+        safe=True,
+        files=files,
+    )
+
+
 def _migration_manifests(config: Config) -> CategoryReport:
     d = CONFIG_DIR / "migrations"
     return CategoryReport(
@@ -259,6 +279,7 @@ _CATEGORY_FNS: tuple[_CategoryFn, ...] = (
     _metadata_cache,
     _listxml_cache,
     _preview_temp,
+    _partial_downloads,
     _audit_exports,
     _misplaced_manifests,
     _migration_manifests,

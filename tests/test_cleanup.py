@@ -84,9 +84,33 @@ def test_safe_flag_categories(isolated_home):
     assert safe["match-cache"] is True
     assert safe["metadata-cache"] is True
     assert safe["audit-exports"] is True
+    assert safe["partial-downloads"] is True
     assert safe["db-backups"] is False
     assert safe["migration-manifests"] is False
     assert safe["restructure-manifests"] is False
+
+
+def test_scan_finds_partial_download_sidecars(isolated_home, tmp_path):
+    hyperspin = tmp_path / "HyperSpin"
+    media = hyperspin / "Media"
+    _touch(media / "MAME" / "Images" / "Wheel" / "1942.png.part", "abc")
+    _touch(media / "SNES" / "Video" / "Super Mario World.mp4.part", "xy")
+    _touch(media / "MAME" / "Images" / "Wheel" / "complete.png", "real")
+
+    cfg = Config(hyperspin_dir=str(hyperspin))
+    reports = scan(cfg)
+    partials = reports["partial-downloads"]
+    assert partials.count == 2
+    assert partials.total_bytes == 5
+    names = {f.path.name for f in partials.files}
+    assert names == {"1942.png.part", "Super Mario World.mp4.part"}
+
+
+def test_partial_downloads_returns_zero_when_hyperspin_unset(isolated_home):
+    cfg = Config()
+    reports = scan(cfg)
+    assert "partial-downloads" in reports
+    assert reports["partial-downloads"].count == 0
 
 
 def test_filter_files_older_than(isolated_home, tmp_path):
