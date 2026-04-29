@@ -174,10 +174,13 @@ Lists every folder SpinDoctor has discovered across `<roms_dir>` and `<hyperspin
 
 ### Bootstrap each unconfigured system
 
+> **SpinDoctor convention:** every command that writes is **dry-run by default**. Run it bare to preview what would happen, then re-run with `--apply` to commit.
+
 For each system showing `Database: ✗`:
 
 ```bat
-spindoctor add-system "Sony Playstation"
+spindoctor add-system "Sony Playstation"           :: preview
+spindoctor add-system "Sony Playstation" --apply   :: commit
 ```
 
 `add-system` (see the [add-system section](../README.md#add-system) of the README) does, in one shot:
@@ -193,7 +196,8 @@ For PC / Steam / Windows libraries, use [`add-pc-system`](../README.md#add-pc-sy
 ### Wire up RocketLauncher
 
 ```bat
-spindoctor generate-config
+spindoctor generate-config              :: preview
+spindoctor generate-config --apply      :: commit
 ```
 
 Writes a per-system RocketLauncher INI (mapping ROMs → emulator) and the HyperSpin Main Menu XML. Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, PS2 → PCSX2, …); edit the generated INIs to override.
@@ -201,7 +205,9 @@ Writes a per-system RocketLauncher INI (mapping ROMs → emulator) and the Hyper
 ### Verify
 
 ```bat
-spindoctor doctor
+spindoctor doctor              :: read-only diagnosis
+spindoctor doctor --apply      :: also run safe, idempotent repairs (prune stale cache,
+                                  ::   create media folder skeletons, regen Global Emulators.ini)
 ```
 
 Validates paths, binaries, XML integrity, RocketLauncher / LEDBlinky files. Each check renders ✓ / ⚠ / ✗.
@@ -289,7 +295,8 @@ Be aware before you assume the new PC is fully wired up:
 
 ```bat
 spindoctor ledblinky check
-spindoctor ledblinky fix
+spindoctor ledblinky fix             :: dry-run preview
+spindoctor ledblinky fix --apply     :: commit the patch
 ```
 
 The fix is reversible — `.bak` files are written and disabled lines are commented out, not deleted. See [LEDBlinky](../README.md#ledblinky).
@@ -298,7 +305,7 @@ The fix is reversible — `.bak` files are written and disabled lines are commen
 
 ```bat
 spindoctor match clear --system MAME
-spindoctor fetch-meta --system MAME
+spindoctor fetch-meta --system MAME --apply
 ```
 
 Cached match decisions live at `~/.spindoctor/match_cache/<system>.json`; the previous XML edits are not rolled back, only the cached choice.

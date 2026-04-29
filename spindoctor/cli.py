@@ -517,8 +517,6 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
 
 def _print_game_detail(report, *, verbose_path: bool = True) -> None:
     """Print a rich per-game file-detail panel to the console."""
-    from .fileinfo import GameFileReport
-
     # ── DB info header ────────────────────────────────────────────────────────
     db_lines: list[str] = []
     if report.db_description:
@@ -1261,14 +1259,15 @@ def lint_cmd(source, category):
 @cli.command("find-orphan-media")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--delete", is_flag=True,
-              help="Delete the reported orphans (irreversible). Default is dry-run.")
-def find_orphan_media(system, all_systems, delete):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Delete the reported orphans (irreversible, no undo). "
+                   "Default: dry-run preview.")
+def find_orphan_media(system, all_systems, apply_changes):
     """Find media files whose game no longer exists in DB or ROMs.
 
     \b
     Walks Media/<system>/{Wheel,Backgrounds,Artwork1..3,Video,Sound,Themes}
-    and reports each file whose stem isn't a known game. With --delete,
+    and reports each file whose stem isn't a known game. With --apply,
     removes the orphan files (this is destructive; no undo).
     """
     from .orphan_media import delete_orphans, find_orphan_media as _find
@@ -1306,9 +1305,9 @@ def find_orphan_media(system, all_systems, delete):
         return
 
     console.print(f"\n[yellow]{grand_total}[/yellow] orphan(s) total.")
-    if not delete:
+    if not apply_changes:
         console.print(
-            "[dim]Re-run with[/dim] [cyan]--delete[/cyan] [dim]to remove "
+            "[dim]Re-run with[/dim] [cyan]--apply[/cyan] [dim]to remove "
             "them (irreversible).[/dim]"
         )
         return
@@ -1585,7 +1584,9 @@ def fav_sync():
               type=click.Choice(["link", "symlink", "copy", "auto", "none"]),
               default="auto",
               help="How to mirror media into the Favorites system.")
-def fav_rebuild(media_mode):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the rebuild (default: dry-run preview).")
+def fav_rebuild(media_mode, apply_changes):
     """Regenerate the Favorites HyperSpin system + media + launchers.
 
     \b
@@ -1601,7 +1602,13 @@ def fav_rebuild(media_mode):
     store = load_store()
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
-    summary = rebuild(store, config, media_mode=mode, skip_media=skip_media)
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
+                      dry_run=not apply_changes)
     _print_synth_summary("Favorites", summary)
 
 
@@ -1618,7 +1625,9 @@ def recent_group():
 @click.option("--media-mode",
               type=click.Choice(["link", "symlink", "copy", "auto", "none"]),
               default="auto")
-def recent_rebuild(limit, target_system, media_mode):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the rebuild (default: dry-run preview).")
+def recent_rebuild(limit, target_system, media_mode, apply_changes):
     """Rebuild the Recently Played system from RocketLauncher Statistics.ini files.
 
     \b
@@ -1632,12 +1641,18 @@ def recent_rebuild(limit, target_system, media_mode):
     _check_config(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
     summary = rebuild(
         config,
         target_system=target_system,
         limit=limit,
         media_mode=mode,
         skip_media=skip_media,
+        dry_run=not apply_changes,
     )
     _print_synth_summary("Recently Played", summary)
 
@@ -1938,8 +1953,8 @@ def install_tools(output_dir):
     Writes .bat files that HyperSpin's Tools menu can call directly:
 
       \b
-      • Refresh Favorites.bat       → spindoctor-fav rebuild
-      • Refresh Recently Played.bat → spindoctor-recent rebuild
+      • Refresh Favorites.bat       → spindoctor-fav rebuild --apply
+      • Refresh Recently Played.bat → spindoctor-recent rebuild --apply
       • Refresh Most Played.bat     → spindoctor-stats build-wheel --apply
       • Refresh Both.bat            → fav + recent + most-played
 
@@ -1961,12 +1976,12 @@ def install_tools(output_dir):
         "Refresh Favorites.bat":
             "@echo off\r\n"
             "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-            "spindoctor-fav rebuild\r\n"
+            "spindoctor-fav rebuild --apply\r\n"
             "if errorlevel 1 pause\r\n",
         "Refresh Recently Played.bat":
             "@echo off\r\n"
             "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-            "spindoctor-recent rebuild\r\n"
+            "spindoctor-recent rebuild --apply\r\n"
             "if errorlevel 1 pause\r\n",
         "Refresh Most Played.bat":
             "@echo off\r\n"
@@ -1975,8 +1990,8 @@ def install_tools(output_dir):
             "if errorlevel 1 pause\r\n",
         "Refresh Both.bat":
             "@echo off\r\n"
-            "spindoctor-fav rebuild\r\n"
-            "spindoctor-recent rebuild\r\n"
+            "spindoctor-fav rebuild --apply\r\n"
+            "spindoctor-recent rebuild --apply\r\n"
             "spindoctor-stats build-wheel --apply\r\n"
             "if errorlevel 1 pause\r\n",
     }
@@ -1988,8 +2003,8 @@ def install_tools(output_dir):
         "Tools folder, or register the .bat files in HyperHQ → Tools.[/dim]"
     )
     console.print(
-        "[dim]Run on boot:[/dim] schedule [cyan]spindoctor-fav rebuild[/cyan] and "
-        "[cyan]spindoctor-recent rebuild[/cyan] via Windows Task Scheduler "
+        "[dim]Run on boot:[/dim] schedule [cyan]spindoctor-fav rebuild --apply[/cyan] and "
+        "[cyan]spindoctor-recent rebuild --apply[/cyan] via Windows Task Scheduler "
         "(trigger: 'At log on')."
     )
 
@@ -2488,11 +2503,12 @@ def match_clear(system: Optional[str]):
               help="Force-refresh: ignore the disk-cached API responses.")
 @click.option("--clear-cache", is_flag=True,
               help="Delete cached API responses (for the targeted system or all) and exit.")
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit metadata writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 def fetch_meta(system, all_systems, source, fetch_all,
                interactive, threshold, no_cache, clear_cache,
-               dry_run, output_dir):
+               apply_changes, output_dir):
     """Fetch and update game metadata in the Hyperspin XML databases.
 
     For each game with missing fields, SpinDoctor queries the metadata source.
@@ -2532,8 +2548,11 @@ def fetch_meta(system, all_systems, source, fetch_all,
         sys.exit(1)
 
     out_base = Path(output_dir) if output_dir else None
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -2601,7 +2620,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
             meta = auto_resolved.get(game.name)
             if not meta:
                 continue
-            if dry_run:
+            if not apply_changes:
                 console.print(
                     f"  [dim]+[/dim] {game.name} → {meta.name!r} "
                     f"({meta.year}, {meta.manufacturer})"
@@ -2628,7 +2647,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
             f"Not found: [red]{len(fetch_errors)}[/red]"
         )
 
-        if not dry_run and updated > 0:
+        if apply_changes and updated > 0:
             if out_base:
                 saved = db.save(
                     output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
@@ -2653,9 +2672,11 @@ def fetch_meta(system, all_systems, source, fetch_all,
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple "
                    "candidates (different regions / artwork variants).")
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit downloads (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
-def fetch_media(system, all_systems, types, source, overwrite, pick_media, dry_run, output_dir):
+def fetch_media(system, all_systems, types, source, overwrite, pick_media,
+                apply_changes, output_dir):
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
@@ -2692,8 +2713,11 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media, dry_r
     downloader = MediaDownloader(config, output_dir_override=out_path)
     workers = max(1, config.max_concurrent_downloads)
 
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -2765,7 +2789,7 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media, dry_r
 
         # ── Phase 2: parallel downloads (auto path) + sequential picker ─────
         total_ok = total_skip = 0
-        if dry_run:
+        if not apply_changes:
             for game_name, mt, url in all_jobs:
                 dest = downloader.media_path(sys_name, game_name, mt)
                 note = "[dry-run]" if url else "[no URL available]"
@@ -3095,7 +3119,8 @@ def media_scan_cmd(
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--add-missing", "add_missing", is_flag=True, default=True)
 @click.option("--remove-orphans", is_flag=True)
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit XML writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 @click.option(
     "--strip-variant-tags/--keep-variant-tags",
@@ -3104,7 +3129,7 @@ def media_scan_cmd(
     help="Strip region/revision tags from stub display names "
          "(default: keep, e.g. '1942 (Japan)').",
 )
-def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
+def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
               output_dir, strip_variants_cli):
     """Sync Hyperspin XML databases to match ROM directories.
 
@@ -3123,8 +3148,11 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
         else config.strip_variant_tags_in_display_name
     )
 
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -3142,7 +3170,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
                 console.print(f"  Adding [cyan]{len(roms_to_add)}[/cyan] stub entries…")
                 for entry in roms_to_add:
                     stub = build_stub_entry(entry.rom_name, strip_variants=strip_variants)
-                    if dry_run:
+                    if not apply_changes:
                         console.print(
                             f"  [yellow]+[/yellow] {escape(entry.rom_name)} "
                             f"→ \"{escape(stub.description)}\""
@@ -3159,7 +3187,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
             if orphans:
                 console.print(f"  Removing [cyan]{len(orphans)}[/cyan] orphan entries…")
                 for entry in orphans:
-                    if dry_run:
+                    if not apply_changes:
                         console.print(f"  [red]−[/red] {escape(entry.rom_name)}")
                     else:
                         db.remove_game(entry.rom_name)
@@ -3167,7 +3195,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
 
         console.print(f"  Added: [green]{added}[/green]  Removed: [red]{removed}[/red]")
 
-        if not dry_run and (added or removed):
+        if apply_changes and (added or removed):
             if out_base:
                 saved = db.save(
                     output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
@@ -3199,11 +3227,12 @@ def update_db(system, all_systems, add_missing, remove_orphans, dry_run,
 @click.option("--overwrite-global", is_flag=True,
               help="Overwrite an existing Global Emulators.ini "
                    "(default: leave user customisations alone).")
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write all output here instead of in-place.")
 def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
-                    gen_global, overwrite_global, dry_run, output_dir):
+                    gen_global, overwrite_global, apply_changes, output_dir):
     """Generate RocketLauncher INI files and the HyperSpin Main Menu database.
 
     \b
@@ -3214,14 +3243,14 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
 
     \b
     Examples:
-      # Dry run — see what would be created
-      spindoctor generate-config --dry-run
+      # Dry run — see what would be created (default)
+      spindoctor generate-config
 
       # Write into a staging folder, review, then copy
-      spindoctor generate-config --output-dir D:\\Output
+      spindoctor generate-config --output-dir D:\\Output --apply
 
       # Write in-place (requires rocketlauncher_dir to be configured)
-      spindoctor generate-config
+      spindoctor generate-config --apply
     """
     config = _cfg()
     _check_config(config)
@@ -3240,19 +3269,22 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
 
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     if gen_rl:
         console.print(f"\n[blue bold]RocketLauncher system INIs[/blue bold] ({len(systems)} systems)")
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("System", style="cyan")
         tbl.add_column("Emulator")
-        tbl.add_column("Path" if not dry_run else "Would write")
+        tbl.add_column("Path" if apply_changes else "Would write")
 
         for sys_name in systems:
             emulator = guess_emulator(sys_name)
-            if dry_run:
+            if not apply_changes:
                 rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
                 path_str = (
                     str(rl_base / "Settings" / f"{sys_name}.ini")
@@ -3269,7 +3301,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
 
     if gen_menu:
         console.print(f"\n[blue bold]HyperSpin Main Menu[/blue bold]")
-        if dry_run:
+        if not apply_changes:
             db_base = out_base / "Databases" if out_base else config.databases_dir
             console.print(f"  [dim]Would write:[/dim] {db_base / 'Main Menu' / 'Main Menu.xml'}")
             console.print(f"  Listing {len(systems)} systems: {', '.join(systems[:8])}"
@@ -3280,7 +3312,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
 
     if gen_global:
         console.print(f"\n[blue bold]Global Emulators.ini[/blue bold]")
-        if dry_run:
+        if not apply_changes:
             rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
             if rl_base:
                 target = rl_base / "Settings" / "Global Emulators.ini"
@@ -3307,7 +3339,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
 
     if gen_stubs:
         console.print(f"\n[blue bold]Database stubs[/blue bold]")
-        if dry_run:
+        if not apply_changes:
             console.print(f"  [dim]Would create stubs for:[/dim] {', '.join(systems)}")
         else:
             created = generate_system_db_stubs(systems, config, out_base)
@@ -3678,19 +3710,21 @@ def mainmenu_edit(output_dir):
 # ─── doctor ───────────────────────────────────────────────────────────────────
 
 @cli.command("doctor")
-@click.option("--fix", is_flag=True,
-              help="Apply safe fixes: prune stale match cache, create missing "
-                   "media folders, regen Global Emulators.ini if missing.")
-def doctor(fix):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Apply safe, idempotent repairs (default: read-only diagnosis). "
+                   "Repairs include: pruning stale match cache, creating missing "
+                   "media folders, regenerating Global Emulators.ini if missing. "
+                   "Never deletes ROMs/DBs/media.")
+def doctor(apply_changes):
     """Self-diagnose: paths, binaries, DB integrity, cache hygiene, integrations.
 
-    Pass --fix to apply safe, idempotent repairs (never deletes ROMs/DBs/media).
+    Pass --apply to perform safe, idempotent repairs.
     """
     from rich.tree import Tree
     from .health import Status, run_health_checks
 
     config = _cfg()
-    report = run_health_checks(config, fix=fix)
+    report = run_health_checks(config, fix=apply_changes)
 
     icon_for = {
         Status.OK: "[green]✓[/green]",
@@ -3706,7 +3740,7 @@ def doctor(fix):
         if check.detail:
             label += f"  [dim]·[/dim] {check.detail}"
         node = parent.add(label)
-        if check.fix and not fix:
+        if check.fix and not apply_changes:
             node.add(f"[dim]fix:[/dim] {check.fix}")
         for ch in check.children:
             render(ch, node)
@@ -3742,10 +3776,11 @@ def ledblinky_group():
               help="System to generate for (default: MAME).")
 @click.option("--overwrite", is_flag=True,
               help="Overwrite existing entries (default: keep community-maintained ones).")
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write to this directory instead of <ledblinky_dir>.")
-def ledblinky_generate(system, overwrite, dry_run, output_dir):
+def ledblinky_generate(system, overwrite, apply_changes, output_dir):
     """Generate / merge LEDBlinky controls.ini and colors.ini.
 
     Strategy: existing entries from <ledblinky_dir> are preserved verbatim;
@@ -3777,13 +3812,13 @@ def ledblinky_generate(system, overwrite, dry_run, output_dir):
             rom_names=sorted(roms.keys()),
             output_dir=out_path,
             overwrite_existing=overwrite,
-            dry_run=dry_run,
+            dry_run=not apply_changes,
         )
     except ValueError as e:
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
-    label = "[yellow]would write[/yellow]" if dry_run else "[green]wrote[/green]"
+    label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
     console.print(f"\n{label} controls.ini → {result.controls_path}")
     console.print(f"{label} colors.ini   → {result.colors_path}")
     console.print(
@@ -4105,13 +4140,14 @@ def ledblinky_check(menus):
     for issue in result["issues"]:
         console.print(f"  • {issue}")
     console.print(
-        "\nRun [cyan]spindoctor ledblinky fix --dry-run[/cyan] to preview the patch."
+        "\nRun [cyan]spindoctor ledblinky fix[/cyan] to preview the patch "
+        "(re-run with [cyan]--apply[/cyan] to commit)."
     )
 
 
 @ledblinky_group.command("fix")
-@click.option("--dry-run", is_flag=True,
-              help="Show what would change without writing anything.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the patch (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write patched files here instead of in-place.")
 @click.option("--no-backup", is_flag=True,
@@ -4119,7 +4155,7 @@ def ledblinky_check(menus):
 @click.option("--menus", default="Search",
               help="Comma-separated special menus to patch. Default: Search. "
                    "Other options: Genre, Favorites.")
-def ledblinky_fix(dry_run, output_dir, no_backup, menus):
+def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
     """Patch LEDBlinkyControls.xml + HyperSpin Search Settings.ini for compatibility.
 
     \b
@@ -4131,10 +4167,10 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
 
     \b
     Examples:
-      spindoctor ledblinky fix --dry-run
-      spindoctor ledblinky fix
-      spindoctor ledblinky fix --menus Search,Genre,Favorites
-      spindoctor ledblinky fix --output-dir D:\\Output
+      spindoctor ledblinky fix                              # preview (default)
+      spindoctor ledblinky fix --apply                      # commit
+      spindoctor ledblinky fix --apply --menus Search,Genre,Favorites
+      spindoctor ledblinky fix --apply --output-dir D:\\Output
     """
     from . import ledblinky as lb
 
@@ -4143,13 +4179,16 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
     out_base = config.effective_output_dir(output_dir)
     menu_list = [m.strip() for m in menus.split(",") if m.strip()]
 
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     result = lb.apply_fix(
         config,
         output_base=out_base,
-        dry_run=dry_run,
+        dry_run=not apply_changes,
         backup=not no_backup,
         menus=menu_list,
     )
@@ -4159,7 +4198,7 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
     if cx is None:
         console.print("  [dim]skipped (ledblinky_dir not set)[/dim]")
     elif cx["added"]:
-        verb = "Would add" if dry_run or not cx["wrote"] else "Added"
+        verb = "Added" if apply_changes and cx["wrote"] else "Would add"
         console.print(f"  [green]{verb}[/green] entries: {', '.join(cx['added'])}")
         console.print(f"  Path: {cx['path']}")
     else:
@@ -4177,10 +4216,10 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
             continue
         if info["lines_changed"] == 0:
             status = "[green]nothing to do[/green]"
-        elif dry_run or not info["wrote"]:
-            status = "[yellow]would patch[/yellow]"
-        else:
+        elif apply_changes and info["wrote"]:
             status = "[green]patched[/green]"
+        else:
+            status = "[yellow]would patch[/yellow]"
         tbl.add_row(
             info["menu"],
             str(info["path"]),
@@ -4194,7 +4233,7 @@ def ledblinky_fix(dry_run, output_dir, no_backup, menus):
         for e in result["errors"]:
             console.print(f"  • {e}")
 
-    if not dry_run and result["backup"]:
+    if apply_changes and result["backup"]:
         console.print(
             "\n[dim]Backups saved as <file>.YYYYMMDD_HHMMSS.bak next to each modified file.[/dim]"
         )
@@ -4218,10 +4257,11 @@ SYSTEM_MEDIA_SLOTS = ("wheel", "background", "video")
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a slot has multiple candidates.")
 @click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
-               pick_media, source, dry_run, output_dir):
+               pick_media, source, apply_changes, output_dir):
     """Bootstrap a top-level console end-to-end (e.g. PS3, Dreamcast).
 
     Scaffolds the ROM/database folders, adds the Main Menu entry, downloads
@@ -4231,9 +4271,10 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
 
     \b
     Examples:
-      spindoctor add-system "Sony Playstation 3"
-      spindoctor add-system Dreamcast --pick-media
-      spindoctor add-system PS3 --no-game-media --dry-run
+      spindoctor add-system "Sony Playstation 3"           # dry-run preview
+      spindoctor add-system "Sony Playstation 3" --apply   # commit
+      spindoctor add-system Dreamcast --pick-media --apply
+      spindoctor add-system PS3 --no-game-media --apply
     """
     from .audit import build_stub_entry, scan_roms
     from .media import MediaDownloader
@@ -4245,8 +4286,11 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
 
     out_base = Path(output_dir) if output_dir else None
 
-    if dry_run:
-        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
 
     console.print(Panel(f" add-system: {system_name} ", style="bold blue"))
 
@@ -4258,7 +4302,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
     for d in (rom_dir, db_dir):
         if d.exists():
             console.print(f"  [dim]exists:[/dim] {d}")
-        elif dry_run:
+        elif not apply_changes:
             console.print(f"  [yellow]would create:[/yellow] {d}")
         else:
             d.mkdir(parents=True, exist_ok=True)
@@ -4269,7 +4313,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
         console.print("[dim]2. Main Menu upsert — skipped.[/dim]")
     else:
         console.print("\n[blue bold]2. Main Menu upsert[/blue bold]")
-        if dry_run:
+        if not apply_changes:
             console.print(f"  [yellow]would add[/yellow] '{system_name}' to "
                           f"{config.databases_dir / 'Main Menu' / 'Main Menu.xml'}")
         else:
@@ -4311,7 +4355,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                         console.print(f"  [dim]{slot}:[/dim] none")
                         continue
                     dest = downloader.system_media_path(system_name, slot)
-                    if dry_run:
+                    if not apply_changes:
                         console.print(
                             f"  [yellow]would fetch[/yellow] {slot}  "
                             f"({len(cands)} candidate(s)) → {dest}"
@@ -4348,12 +4392,12 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                     rom_name,
                     strip_variants=config.strip_variant_tags_in_display_name,
                 )
-                if dry_run:
+                if not apply_changes:
                     console.print(f"  [yellow]+[/yellow] would add stub: {rom_name}")
                 else:
                     db.add_game(stub)
                 new_count += 1
-            if not dry_run and new_count:
+            if apply_changes and new_count:
                 if out_base:
                     saved = db.save(
                         output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
@@ -4375,8 +4419,8 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
     extra = ["--system", system_name]
     if pick_media:
         extra.append("--pick-media")
-    if dry_run:
-        extra.append("--dry-run")
+    if apply_changes:
+        extra.append("--apply")
     if output_dir:
         extra.extend(["--output-dir", str(output_dir)])
     if source:
@@ -4470,11 +4514,12 @@ def _propose_pc_titles(
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple candidates.")
 @click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
-@click.option("--dry-run", is_flag=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
                   no_game_media, no_pclauncher, overwrite_pclauncher,
-                  pick_media, source, dry_run, output_dir):
+                  pick_media, source, apply_changes, output_dir):
     """Bootstrap a PC/Windows/Steam games system end-to-end.
 
     \b
@@ -4486,9 +4531,10 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
 
     \b
     Examples:
-      spindoctor add-pc-system
-      spindoctor add-pc-system "Windows Games" --pick-media
-      spindoctor add-pc-system "Steam Games" --no-rename --no-pclauncher
+      spindoctor add-pc-system                                       # dry-run preview
+      spindoctor add-pc-system --apply                               # commit
+      spindoctor add-pc-system "Windows Games" --pick-media --apply
+      spindoctor add-pc-system "Steam Games" --no-rename --no-pclauncher --apply
     """
     from .config import reset_override_cache
 
@@ -4498,14 +4544,15 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
     out_base = Path(output_dir) if output_dir else None
 
     # 1. Stamp PC overrides ───────────────────────────────────────────────────
-    if dry_run:
+    if not apply_changes:
         console.print(
             "[yellow bold][DRY RUN][/yellow bold] No files will be written, "
-            "and overrides will not be persisted."
+            "and overrides will not be persisted. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
         )
     console.print(Panel(f" add-pc-system: {system_name} ", style="bold magenta"))
     console.print("[blue bold]0. PC system overrides[/blue bold]")
-    if dry_run:
+    if not apply_changes:
         merged = {**PC_DEFAULT_OVERRIDES, **config.system_overrides.get(system_name, {})}
         console.print(f"  [yellow]would write[/yellow] system_overrides[{system_name!r}]:")
         for k, v in merged.items():
@@ -4528,8 +4575,8 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
         inner.append("--no-system-media")
     if pick_media:
         inner.append("--pick-media")
-    if dry_run:
-        inner.append("--dry-run")
+    if apply_changes:
+        inner.append("--apply")
     if output_dir:
         inner.extend(["--output-dir", str(output_dir)])
     if source:
@@ -4559,10 +4606,10 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
         )
         return
 
-    if rename and not dry_run:
+    if rename and apply_changes:
         from .pc_titles import review_titles
         title_to_path = review_titles(system_name, proposals, interactive=True)
-    elif rename and dry_run:
+    elif rename:
         console.print(
             f"  [yellow]would review {len(proposals)} title(s) interactively[/yellow]"
         )
@@ -4585,7 +4632,7 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
         return
 
     console.print(f"  [green]+[/green] {len(by_title)} title(s) accepted")
-    if dry_run:
+    if not apply_changes:
         for t in sorted(by_title):
             console.print(f"  [yellow]would add stub:[/yellow] {t}")
     else:
@@ -4618,7 +4665,7 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
         console.print("[dim]6. PCLauncher INIs — skipped.[/dim]")
     else:
         console.print("\n[blue bold]6. PCLauncher per-game INIs[/blue bold]")
-        if dry_run:
+        if not apply_changes:
             console.print(
                 f"  [yellow]would write {len(by_title)} INI(s) under "
                 f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
@@ -4647,8 +4694,8 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
     extra = ["--system", system_name]
     if pick_media:
         extra.append("--pick-media")
-    if dry_run:
-        extra.append("--dry-run")
+    if apply_changes:
+        extra.append("--apply")
     if output_dir:
         extra.extend(["--output-dir", str(output_dir)])
     if source:
@@ -5650,9 +5697,8 @@ def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
                         apply_changes, undo_manifest, list_manifests_flag,
                         output_dir):
     from .edit import (
-        RENAME_DIR, apply_rename, find_latest_rename_manifest,
-        list_rename_manifests, plan_rename, rename_manifest_summary,
-        undo_rename,
+        RENAME_DIR, apply_rename, list_rename_manifests, plan_rename,
+        rename_manifest_summary, undo_rename,
     )
 
     config = _cfg()
