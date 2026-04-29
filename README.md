@@ -4,10 +4,13 @@
 
 Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate RocketLauncher configs, validate ROM integrity against No-Intro / Redump DATs, manage cross-system Favorites / Recently Played / Most Played wheels, report on playtime statistics, and more — all from a single CLI with dry-run mode and a non-destructive output directory option.
 
+> **New to HyperSpin / RocketLauncher?** See the [Setup & Migration Guide](docs/SETUP.md) for a step-by-step walkthrough of standing up a cabinet on a fresh Windows PC, organizing your files, migrating between PCs, and troubleshooting.
+
 ---
 
 ## Table of Contents
 
+- [Setup & Migration Guide](docs/SETUP.md)
 - [Installation](#installation)
 - [First-Time Setup](#first-time-setup)
 - [Configuration](#configuration)
