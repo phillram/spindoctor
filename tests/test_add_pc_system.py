@@ -75,6 +75,7 @@ def test_add_pc_system_writes_overrides_db_and_pclauncher_inis(
             "add-pc-system", "PC Games",
             "--no-system-media",
             "--no-game-media",
+            "--apply",
         ],
         catch_exceptions=False,
     )
@@ -112,6 +113,7 @@ def test_add_pc_system_writes_overrides_db_and_pclauncher_inis(
 
 
 def test_add_pc_system_dry_run_writes_nothing(cabinet):
+    """Default invocation (no --apply) is a dry-run preview."""
     runner = CliRunner()
     result = runner.invoke(
         cli,
@@ -120,7 +122,6 @@ def test_add_pc_system_dry_run_writes_nothing(cabinet):
             "--no-system-media",
             "--no-game-media",
             "--no-rename",
-            "--dry-run",
         ],
         catch_exceptions=False,
     )
@@ -142,6 +143,7 @@ def test_add_pc_system_no_rename_accepts_proposals(cabinet):
             "--no-system-media",
             "--no-game-media",
             "--no-rename",
+            "--apply",
         ],
         catch_exceptions=False,
     )
