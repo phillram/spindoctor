@@ -219,8 +219,13 @@ def rebuild(
     media_mode: LinkMode = LinkMode.AUTO,
     skip_media: bool = False,
     skip_launchers: bool = False,
+    dry_run: bool = False,
 ) -> RebuildSummary:
-    """Regenerate the synthetic system's database, media mirrors, and launchers."""
+    """Regenerate the synthetic system's database, media mirrors, and launchers.
+
+    When ``dry_run`` is true, returns a populated summary describing what
+    would be written without touching disk.
+    """
     summary = RebuildSummary(target_system=store.target_system)
 
     if not config.hyperspin_dir:
@@ -228,6 +233,13 @@ def rebuild(
 
     target_names = _resolve_target_names(store.entries)
     summary.entries = len(target_names)
+
+    if dry_run:
+        # Preview-only: report counts without touching disk.
+        summary.inis_written = 0 if skip_launchers else len(target_names)
+        if not skip_media:
+            summary.media_linked = len(target_names)
+        return summary
 
     # ── 1. Database XML ──────────────────────────────────────────────────────
     db_path = config.databases_dir / store.target_system / f"{store.target_system}.xml"
@@ -337,6 +349,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
                        default="auto")
+    p_reb.add_argument("--apply", action="store_true",
+                       help="Commit the rebuild (default: dry-run preview).")
 
     return p
 
@@ -390,7 +404,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             return 1
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
-        summary = rebuild(store, config, media_mode=mode, skip_media=skip_media)
+        if not args.apply:
+            print("[DRY RUN] No files will be written. Re-run with --apply to commit.")
+        summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
+                          dry_run=not args.apply)
         print(f"Favorites system: {summary.target_system}")
         print(f"  entries:    {summary.entries}")
         print(f"  pruned:     {summary.pruned}")

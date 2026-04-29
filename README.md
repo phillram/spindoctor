@@ -4,6 +4,8 @@
 
 Audit ROMs, sync HyperSpin XML databases, fetch metadata and media, generate RocketLauncher configs, validate ROM integrity against No-Intro / Redump DATs, manage cross-system Favorites / Recently Played / Most Played wheels, report on playtime statistics, and more — all from a single CLI with dry-run mode and a non-destructive output directory option.
 
+> **Dry-run by default, `--apply` to commit.** Every command that would modify files (write XML, download media, install configs, delete orphans, run `migrate`, etc.) runs as a dry-run preview when invoked with no flag. Re-run the same command with `--apply` to actually commit. Read-only commands (`audit`, `inspect`, `stats`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, …) need no flag. Backups for reversal (`*.bak`, manifests) are still written by default — see the [FAQ](#faq) for the manifest map.
+
 > **New to HyperSpin / RocketLauncher?** See the [Setup & Migration Guide](docs/SETUP.md) for a step-by-step walkthrough of standing up a cabinet on a fresh Windows PC, organizing your files, migrating between PCs, and troubleshooting.
 
 ---
@@ -166,9 +168,11 @@ spindoctor inspect --system MAME --all --format csv --output D:\manifest.csv
 Sync HyperSpin XML databases to match the ROM directories — adds stub entries for new ROMs, optionally removes orphan entries.
 
 ```bat
-spindoctor update-db --system MAME --dry-run
-spindoctor update-db --all --remove-orphans --output-dir D:\Output
-spindoctor update-db --system SNES --strip-variant-tags     :: collapse "(Japan)"/"(USA)" displays
+spindoctor update-db --system MAME                                :: dry-run preview (default)
+spindoctor update-db --system MAME --apply                        :: commit
+spindoctor update-db --all --remove-orphans --apply
+spindoctor update-db --all --remove-orphans --output-dir D:\Output --apply
+spindoctor update-db --system SNES --strip-variant-tags --apply   :: collapse "(Japan)"/"(USA)" displays
 ```
 
 A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_before_modify`).
@@ -178,10 +182,12 @@ A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_bef
 Download metadata (description, year, manufacturer, genre, rating, players) and write it into the XML.
 
 ```bat
-spindoctor fetch-meta --system MAME --dry-run
-spindoctor fetch-meta --all --output-dir D:\Output
-spindoctor fetch-meta --all --auto-best          :: never prompt — pick top result
-spindoctor fetch-meta --system SNES --all-games  :: refresh complete entries too
+spindoctor fetch-meta --system MAME                          :: dry-run preview (default)
+spindoctor fetch-meta --system MAME --apply                  :: commit
+spindoctor fetch-meta --all --apply
+spindoctor fetch-meta --all --output-dir D:\Output --apply
+spindoctor fetch-meta --all --auto-best --apply              :: never prompt — pick top result
+spindoctor fetch-meta --system SNES --all-games --apply      :: refresh complete entries too
 ```
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
@@ -193,10 +199,12 @@ When multiple results match, the picker prompts you (or use `--auto-best`). Choi
 Download wheels, backgrounds, snaps, videos, etc. for games in the database.
 
 ```bat
-spindoctor fetch-media --system MAME --types wheel,background --dry-run
-spindoctor fetch-media --all --output-dir D:\Output
-spindoctor fetch-media --system SNES --types trailer --overwrite
-spindoctor fetch-media --system MAME --types theme,fade,sound
+spindoctor fetch-media --system MAME --types wheel,background           :: dry-run preview (default)
+spindoctor fetch-media --system MAME --types wheel,background --apply   :: commit
+spindoctor fetch-media --all --apply
+spindoctor fetch-media --all --output-dir D:\Output --apply
+spindoctor fetch-media --system SNES --types trailer --overwrite --apply
+spindoctor fetch-media --system MAME --types theme,fade,sound --apply
 ```
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
@@ -342,10 +350,11 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 Generate RocketLauncher INI files and the HyperSpin Main Menu XML.
 
 ```bat
-spindoctor generate-config --dry-run
-spindoctor generate-config --output-dir D:\Output
-spindoctor generate-config --no-rl                 :: only regenerate the main menu
-spindoctor generate-config --db-stubs              :: also create empty DB stubs
+spindoctor generate-config                                :: dry-run preview (default)
+spindoctor generate-config --apply                        :: commit
+spindoctor generate-config --output-dir D:\Output --apply
+spindoctor generate-config --no-rl --apply                :: only regenerate the main menu
+spindoctor generate-config --db-stubs --apply             :: also create empty DB stubs
 ```
 
 Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INIs to override.
@@ -417,7 +426,8 @@ spindoctor organize "Sony Playstation 3" --undo                :: revert last ap
 Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and (optionally) walks the metadata + media fetch flow.
 
 ```bat
-spindoctor add-system "Sega Saturn"
+spindoctor add-system "Sega Saturn"             :: dry-run preview (default)
+spindoctor add-system "Sega Saturn" --apply     :: commit
 ```
 
 #### `add-pc-system`
@@ -425,7 +435,8 @@ spindoctor add-system "Sega Saturn"
 The same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs.
 
 ```bat
-spindoctor add-pc-system "PC Games"
+spindoctor add-pc-system "PC Games"             :: dry-run preview (default)
+spindoctor add-pc-system "PC Games" --apply     :: commit
 spindoctor pc-rename "PC Games"   :: re-run the title picker after dropping new games in
 ```
 
@@ -632,11 +643,11 @@ Selection rules, in order: exclude prototypes/demos/betas (pass `--include-proto
 
 #### `find-orphan-media`
 
-Wheels, snaps, videos, and themes whose game no longer exists in the database or ROMs. `--delete` removes them after a confirmation prompt.
+Wheels, snaps, videos, and themes whose game no longer exists in the database or ROMs. `--apply` removes them after a confirmation prompt (irreversible — no undo).
 
 ```bat
-spindoctor find-orphan-media --all
-spindoctor find-orphan-media --system SNES --delete
+spindoctor find-orphan-media --all                    :: dry-run report (default)
+spindoctor find-orphan-media --system SNES --apply    :: remove (prompts for confirmation)
 ```
 
 #### `check-discs`
@@ -730,9 +741,10 @@ spindoctor fav add "Super Nintendo" "Chrono Trigger"
 spindoctor fav add "Sony Playstation" "Final Fantasy VII" --display-name "FF VII"
 spindoctor fav remove "Super Nintendo" "Chrono Trigger"
 spindoctor fav list
-spindoctor fav sync       :: pull HyperSpin's per-system F-key favorites into the store
-spindoctor fav rebuild    :: regenerate Databases/Favorites/Favorites.xml + media + launchers
-spindoctor fav rebuild --media-mode copy   :: force file copies (for FAT32 thumb drives)
+spindoctor fav sync               :: pull HyperSpin's per-system F-key favorites into the store
+spindoctor fav rebuild            :: dry-run preview (default)
+spindoctor fav rebuild --apply    :: regenerate Databases/Favorites/Favorites.xml + media + launchers
+spindoctor fav rebuild --media-mode copy --apply   :: force file copies (for FAT32 thumb drives)
 ```
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
@@ -744,10 +756,11 @@ When two source systems both contain a game with the same ROM name (e.g. `Tetris
 Reads RocketLauncher's `Statistics.ini` files (no extra hooks needed), keeps the most-recent N games across every system, and regenerates the wheel.
 
 ```bat
-spindoctor recent rebuild                       :: top 20 (default)
-spindoctor recent rebuild --limit 10
-spindoctor recent rebuild --target-system "Last Played"
-spindoctor recent list                          :: just print the current top-N
+spindoctor recent rebuild                                :: dry-run preview (default)
+spindoctor recent rebuild --apply                        :: top 20 (default)
+spindoctor recent rebuild --limit 10 --apply
+spindoctor recent rebuild --target-system "Last Played" --apply
+spindoctor recent list                                   :: just print the current top-N
 ```
 
 #### `install-tools`
@@ -762,8 +775,8 @@ spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
 Four files are produced:
 
 ```
-Refresh Favorites.bat          → calls spindoctor-fav rebuild
-Refresh Recently Played.bat    → calls spindoctor-recent rebuild
+Refresh Favorites.bat          → calls spindoctor-fav rebuild --apply
+Refresh Recently Played.bat    → calls spindoctor-recent rebuild --apply
 Refresh Most Played.bat        → calls spindoctor-stats build-wheel --apply
 Refresh Both.bat               → calls all three in sequence
 ```
@@ -838,10 +851,12 @@ spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode 
 ### LEDBlinky
 
 ```bat
-spindoctor ledblinky generate
+spindoctor ledblinky generate              :: dry-run preview (default)
+spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini
 spindoctor ledblinky audit
-spindoctor ledblinky check     :: scan for HyperSpin Search-menu compatibility issues
-spindoctor ledblinky fix       :: patch them (dry-run first with --dry-run)
+spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
+spindoctor ledblinky fix                   :: dry-run preview of the patch (default)
+spindoctor ledblinky fix --apply           :: commit the patch
 ```
 
 `generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`.
@@ -854,8 +869,8 @@ spindoctor ledblinky fix       :: patch them (dry-run first with --dry-run)
 `fix` is reversible: timestamped `.bak` backups are saved next to every modified file, and disabled lines are commented out (not deleted), tagged so you can find them later.
 
 ```bat
-spindoctor ledblinky fix --menus Search,Genre,Favorites
-spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput   :: stage instead of in-place
+spindoctor ledblinky fix --menus Search,Genre,Favorites --apply
+spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: stage instead of in-place
 ```
 
 The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.
@@ -869,11 +884,12 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 Self-diagnose your install: paths, binaries, XML DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, optional `lxml`, `ffprobe`. Each check renders ✓ / ⚠ / ✗.
 
 ```bat
-spindoctor doctor
-spindoctor doctor --fix    :: prune stale cache entries, create media folder skeletons, etc.
+spindoctor doctor              :: read-only diagnosis (default)
+spindoctor doctor --apply      :: also run safe, idempotent repairs (prune stale cache,
+                                  ::   create media folder skeletons, regen Global Emulators.ini)
 ```
 
-`--fix` only does safe, idempotent repairs.
+`--apply` only does safe, idempotent repairs (never deletes ROMs/DBs/media).
 
 #### `ignore`
 
@@ -961,35 +977,36 @@ spindoctor-fav add SYSTEM ROM_NAME [--display-name NAME]
 spindoctor-fav remove SYSTEM ROM_NAME
 spindoctor-fav list
 spindoctor-fav sync
-spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}]
+spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}] [--apply]
 ```
 
 Equivalent to `spindoctor fav <subcommand>` but lighter and faster to launch — no rich/click overhead. Examples:
 
 ```bat
 spindoctor-fav add "Super Nintendo" "Chrono Trigger"
-spindoctor-fav rebuild
+spindoctor-fav rebuild              :: dry-run preview (default)
+spindoctor-fav rebuild --apply      :: commit
 ```
 
 Or directly from a clone (no `pip install` needed):
 
 ```bat
-python scripts\spindoctor-fav.py rebuild
-python -m spindoctor.favorites rebuild     :: equivalent
+python scripts\spindoctor-fav.py rebuild --apply
+python -m spindoctor.favorites rebuild --apply     :: equivalent
 ```
 
 ### `spindoctor-recent`
 
 ```
 spindoctor-recent rebuild [--limit N] [--target-system NAME]
-                          [--media-mode {link,symlink,copy,auto,none}]
+                          [--media-mode {link,symlink,copy,auto,none}] [--apply]
 spindoctor-recent list
 ```
 
 Examples:
 
 ```bat
-spindoctor-recent rebuild --limit 20
+spindoctor-recent rebuild --limit 20 --apply
 python scripts\spindoctor-recent.py list
 python -m spindoctor.recent list           :: equivalent
 ```
@@ -1022,7 +1039,7 @@ Run once on log-on so the wheels are fresh when the user reaches HyperSpin:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
+  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
 ```
 
 Or drop one of the `.bat` files from `scripts/` (or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
@@ -1142,14 +1159,17 @@ spindoctor config set default_metadata_source thegamesdb
 
 ### New cabinet build
 
+Every write command defaults to a dry-run preview — pass `--apply` to commit. The first three steps below are previews; re-run each with `--apply` once the output looks right. The remaining commands stage everything to a side folder so you can review before copying in.
+
 ```bat
 spindoctor config init
 spindoctor systems
-spindoctor generate-config --dry-run
-spindoctor generate-config --output-dir D:\SpinDoctorOutput
-spindoctor update-db --all --output-dir D:\SpinDoctorOutput
-spindoctor fetch-meta --all --output-dir D:\SpinDoctorOutput
-spindoctor fetch-media --all --types wheel,background --output-dir D:\SpinDoctorOutput
+spindoctor generate-config                                                 :: preview
+spindoctor generate-config --output-dir D:\SpinDoctorOutput --apply
+spindoctor update-db --all --output-dir D:\SpinDoctorOutput --apply
+spindoctor fetch-meta --all --output-dir D:\SpinDoctorOutput --apply
+spindoctor fetch-media --all --types wheel,background ^
+    --output-dir D:\SpinDoctorOutput --apply
 ```
 
 ### Health check
@@ -1173,7 +1193,7 @@ spindoctor backup create --target E:\Backups --label weekly --include settings,d
 
 :: 2. Health pass.
 spindoctor stats
-spindoctor doctor --fix
+spindoctor doctor --apply
 spindoctor find-dupes --all --by-content
 spindoctor verify --system NES --dat "C:\Dats\NES.dat"
 
@@ -1184,8 +1204,8 @@ spindoctor curate --system NES --apply
 :: 4. Refresh playtime stats and the Most Played wheel.
 spindoctor stats-report
 spindoctor stats-report build-wheel --limit 25 --apply
-spindoctor recent rebuild
-spindoctor fav rebuild
+spindoctor recent rebuild --apply
+spindoctor fav rebuild --apply
 
 :: 5. Generate a visual contact sheet so you can spot missing/wrong art at a glance.
 spindoctor preview --all --output-dir D:\Preview --open
@@ -1202,7 +1222,7 @@ spindoctor verify --system "Sony Playstation" --dat "C:\Dats\Sony - PS - Redump.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
-spindoctor fav rebuild
+spindoctor fav rebuild --apply
 ```
 
 After this the cabinet user sees Chrono Trigger inside the new `Favorites` system in HyperSpin, with its original SNES wheel art and snap mirrored across.
@@ -1242,7 +1262,7 @@ spindoctor install-tools
 
 :: Schedule the rebuilds at log-on
 schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild && spindoctor-recent rebuild && spindoctor-stats build-wheel --apply"
+  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
 ```
 
 ---
@@ -1269,7 +1289,7 @@ SpinDoctor caps itself at 1 request/second. The free tier is 500/day — wait fo
 
 ```bat
 spindoctor match clear --system MAME
-spindoctor fetch-meta --system MAME
+spindoctor fetch-meta --system MAME --apply
 ```
 
 Your previous XML changes aren't rolled back — only the cached match decision is cleared.
@@ -1278,7 +1298,8 @@ Your previous XML changes aren't rolled back — only the cached match decision 
 
 ```bat
 spindoctor ledblinky check
-spindoctor ledblinky fix
+spindoctor ledblinky fix             :: dry-run preview
+spindoctor ledblinky fix --apply     :: commit the patch
 ```
 
 The fix is reversible — `.bak` files are written and disabled lines are commented out (not deleted) and tagged.
@@ -1293,7 +1314,7 @@ No — by default media is hardlinked from the source system into `Media/Favorit
 
 **How do I get cross-system "Recently Played" working?**
 
-It's automatic — `spindoctor recent rebuild` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher already writes on every game launch). Schedule it at log-on or run it from the Tools menu.
+It's automatic — `spindoctor recent rebuild --apply` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher already writes on every game launch). Schedule it at log-on or run it from the Tools menu.
 
 **How is "Most Played" different from "Recently Played"?**
 
