@@ -142,9 +142,12 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
     if py7zr is None:
         raise ModuleNotFoundError("py7zr")
 
-    # py7zr's stable cross-version API for reading is ``extract()`` with a
-    # custom ``WriterFactory``. Each inner file gets its own ``Py7zIO`` writer;
-    # we hash the bytes as they stream in instead of materialising them.
+    # py7zr's preferred reading API is ``extract(factory=WriterFactory)`` which
+    # streams each inner file through our hasher without materialising it.
+    # That keyword arg only exists in py7zr >= 1.0, which dropped Python 3.8;
+    # the latest 3.8-compatible release (0.22.x — needed for the Win 7 build)
+    # still ships ``readall()`` returning name -> BytesIO. We try the modern
+    # path first and fall back when the kwarg is rejected.
     class _Hasher:
         def __init__(self) -> None:
             self.sha1 = hashlib.sha1()
@@ -179,11 +182,23 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
             return h
 
     factory = _Factory()
+    hashers: dict[str, _Hasher] = factory.hashers
     with py7zr.SevenZipFile(path, mode="r") as zf:  # type: ignore[union-attr]
-        zf.extract(factory=factory)
+        try:
+            zf.extract(factory=factory)
+        except TypeError:
+            # Old py7zr (<= 0.22): no factory kwarg. Use readall() — loads each
+            # entry into a BytesIO, but it's the only inner-content API there.
+            zf.reset()
+            data = zf.readall() or {}
+            for name, buf in data.items():
+                h = _Hasher()
+                for chunk in iter(lambda: buf.read(1 << 20), b""):
+                    h.write(chunk)
+                hashers[name] = h
 
     entries: list[dict[str, Any]] = []
-    for name, h in factory.hashers.items():
+    for name, h in hashers.items():
         entries.append({
             "name": name,
             "size": h.length,
