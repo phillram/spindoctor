@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from ._compat import et_indent
 from .config import Config, get_rom_extensions, get_system_overrides
 from .database import _set_text as _set
 
@@ -232,7 +233,7 @@ def _write_main_menu(systems: list[str], out_path: Path) -> Path:
         _set(el, "enabled", "Yes")
 
     tree = ET.ElementTree(root)
-    ET.indent(tree, space="  ")
+    et_indent(tree)
     with open(out_path, "wb") as f:
         f.write(b'<?xml version="1.0"?>\n')
         tree.write(f, encoding="utf-8", xml_declaration=False)
