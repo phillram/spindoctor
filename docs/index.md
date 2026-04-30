@@ -14,6 +14,8 @@ A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [Rocket
 | See or change configuration | [Configuration](configuration.md) |
 | Do something common (backup, migrate, daily refresh, recovery) | [Workflows](workflows.md) |
 | Wire Favorites / Recently Played / Most Played into HyperSpin Tools menu or boot | [Standalone tools](standalone-tools.md) |
+| Set up Sinden / DemulShooter for lightgun systems | [Light guns](lightgun.md) |
+| Audit other arcade tools installed on the cabinet | [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have) |
 | Diagnose an error | [Troubleshooting](troubleshooting.md) |
 
 ## What SpinDoctor is, and isn't
