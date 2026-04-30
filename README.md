@@ -32,6 +32,7 @@ For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, 
 | | |
 |---|---|
 | [Installation](docs/installation.md) | Python deps, optional extras, console scripts |
+| [Windows binaries](docs/windows-binaries.md) | Standalone `.exe` files — no Python required, runs on Windows 7 SP1 + |
 | [First-time setup](docs/setup.md) | Step-by-step from a blank Windows PC to a working cabinet |
 | [Configuration](docs/configuration.md) | Config keys, per-system overrides, filesystem considerations |
 | [Command reference](docs/commands.md) | Every command, grouped by purpose |

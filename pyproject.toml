@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spindoctor"
+version = "1.0.0"
+description = "Command-line librarian for HyperSpin + RocketLauncher arcade cabinets."
+readme = "README.md"
+# 3.8 is the floor because that was the last Python release to officially
+# support Windows 7 — the cabinet target. The frozen Windows binaries in
+# GitHub Releases are built against 3.8.10 for the same reason.
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [{ name = "Phillip Ramirez" }]
+keywords = ["hyperspin", "rocketlauncher", "arcade", "mame", "emulation"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Games/Entertainment",
+    "Topic :: System :: Archiving",
+]
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+    "requests>=2.28",
+]
+
+[project.optional-dependencies]
+# Lossless XML round-trip (preserves comments, attribute order).
+# Strongly recommended when sharing a HyperSpin install with HyperHQ.
+xml = ["lxml>=4.9"]
+# Read inner-content hashes from non-zip archive formats during
+# `verify` and `find-dupes --by-content`. .zip / .gz / .chd are
+# supported out of the box (stdlib + native CHD-header parser).
+archives = ["py7zr>=0.20", "rarfile>=4.0"]
+# PNG contact-sheet output for `spindoctor preview --format png`.
+# Without it the preview command still works, but only the HTML
+# output mode is available (the PNG path falls back with a warning).
+preview = ["pillow>=9.0"]
+all = ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0", "pillow>=9.0"]
+dev = ["pytest>=7.0", "lxml>=4.9"]
+
+[project.urls]
+Homepage = "https://github.com/phillram/spindoctor"
+Documentation = "https://github.com/phillram/spindoctor/tree/main/docs"
+Issues = "https://github.com/phillram/spindoctor/issues"
+Changelog = "https://github.com/phillram/spindoctor/blob/main/CHANGELOG.md"
+
+[project.scripts]
+spindoctor = "spindoctor.cli:cli"
+# Standalone helpers — designed to run on boot or from the HyperSpin
+# Tools menu without loading the full CLI.
+spindoctor-fav = "spindoctor.favorites:main"
+spindoctor-recent = "spindoctor.recent:main"
+spindoctor-stats = "spindoctor.playtime:main_cli"
+
+[tool.setuptools.packages.find]
+include = ["spindoctor*"]
+exclude = ["tests*", "build*", "scripts*"]
