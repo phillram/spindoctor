@@ -16,7 +16,6 @@ CLI in :mod:`spindoctor.cli` formats reports and confirms before calling
 """
 from __future__ import annotations
 
-import shutil
 import tempfile
 import time
 from dataclasses import dataclass, field
