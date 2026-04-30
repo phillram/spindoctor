@@ -2,7 +2,7 @@
 
 A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
 
-> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`) need no flag and never modify anything.
+> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag and never modify anything.
 
 ## Where to start
 
@@ -20,7 +20,7 @@ A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [Rocket
 
 ## What SpinDoctor is, and isn't
 
-It is a librarian: it reads and writes HyperSpin databases, RocketLauncher configs, media folders, ROM folders, and its own caches. It does *not* install HyperSpin, RocketLauncher, or any emulator, and it does *not* download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
+It is a librarian: it reads and writes HyperSpin databases, RocketLauncher configs, media folders, ROM folders, and its own caches. It does *not* install HyperSpin, RocketLauncher, or any emulator, and it does *not* download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest — including Sinden / DemulShooter wiring per system and an inventory of the third-party arcade tools the cabinet has accumulated.
 
 ## Project layout
 
