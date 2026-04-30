@@ -1,0 +1,12 @@
+# Pinned to PyInstaller 5.x — the last major series whose bootloader is
+# verified to run on Windows 7 SP1. PyInstaller 6.x raised its minimum
+# Windows target to 8.1 and the bootloader fails to load on Win 7.
+PyInstaller==5.13.2
+# Explicit because we hidden-import lxml._elementpath in the spec.
+lxml>=4.9
+# Optional extras get bundled into the exe so the cabinet user doesn't
+# need a separate install. Keeping these here means the exe ships with
+# verify (.7z/.rar peeking) and preview (PNG contact sheets) functional.
+py7zr>=0.20
+rarfile>=4.0
+pillow>=9.0

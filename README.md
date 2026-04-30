@@ -6,6 +6,16 @@ A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [Rocket
 
 ## Quick start
 
+Two install paths — pick one:
+
+**Prebuilt Windows binaries** (no Python required, runs on Windows 7 SP1 +):
+
+1. Grab `spindoctor-windows-vX.Y.Z.zip` from the [latest release](https://github.com/phillram/spindoctor/releases).
+2. Extract to e.g. `C:\spindoctor\` and add the folder to `PATH`.
+3. `spindoctor config init`
+
+**From source** (Python 3.8+):
+
 ```bat
 git clone https://github.com/phillram/spindoctor C:\spindoctor
 cd C:\spindoctor
