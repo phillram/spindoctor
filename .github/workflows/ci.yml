@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-2019]
+        # 3.8 is the floor (last to support Win 7); 3.12 is the modern target.
+        python-version: ['3.8', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[all]
+          pip install pytest
+
+      - name: Run tests
+        run: pytest -q
+
+  build-smoke:
+    name: PyInstaller build smoke test
+    # On every PR, verify the Windows build still produces working binaries.
+    # Catches regressions in PyInstaller hidden imports before a release tag.
+    runs-on: windows-2019
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.8.10'
+
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[all]
+          pip install -r build/requirements-build.txt
+
+      - name: Build
+        shell: bash
+        run: python build/build_windows.py
+
+      - name: Smoke-test binaries
+        shell: cmd
+        run: |
+          dist\spindoctor.exe --version
+          dist\spindoctor-fav.exe --help
+          dist\spindoctor-recent.exe --help
+          dist\spindoctor-stats.exe --help
