@@ -5853,3 +5853,304 @@ def clone_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
         apply_changes=apply_changes, undo_manifest=undo_manifest,
         list_manifests_flag=list_manifests_flag, output_dir=output_dir,
     )
+
+
+# ─── tools-audit ──────────────────────────────────────────────────────────────
+
+@cli.command("tools-audit")
+@click.option("--extra-path", "extra_paths", multiple=True, type=click.Path(),
+              help="Additional directory to scan for installed tools. "
+                   "Repeatable.")
+@click.option("--max-depth", type=int, default=4, show_default=True,
+              help="How deep to descend into each scanned root.")
+@click.option("--show-unknown", is_flag=True,
+              help="List .exe files we found but don't recognise — useful "
+                   "for telling us what to add to the registry.")
+def tools_audit_cmd(extra_paths, max_depth, show_unknown):
+    """Audit third-party arcade tools installed on this PC.
+
+    \b
+    Read-only.  Scans HyperSpin\\Tools, RocketLauncher\\Modules, the
+    emulators tree, Program Files and the Start Menu for known utilities
+    (Tur-RemoveDupes, FatMatch, Sinden, DemulShooter, …) and reports
+    whether spindoctor already covers each tool's job.
+
+    Best run on the arcade cabinet itself.  Add --extra-path for any
+    custom install locations the auto-scan misses.
+    """
+    from . import tools_audit as ta
+
+    config = _cfg()
+    roots = ta.default_scan_roots(config)
+    extras = [Path(p) for p in extra_paths]
+    result = ta.scan_for_tools(
+        roots, extra_roots=extras, max_depth=max_depth,
+        report_unknown=show_unknown,
+    )
+
+    console.print(Panel(" Tools audit ", style="bold blue"))
+
+    if result.scanned_roots:
+        console.print("[dim]Scanned:[/dim]")
+        for r in result.scanned_roots:
+            console.print(f"  [dim]·[/dim] {r}")
+    if result.missing_roots:
+        console.print("[dim]Skipped (not present):[/dim]")
+        for r in result.missing_roots:
+            console.print(f"  [dim]·[/dim] {r}")
+
+    if not result.findings:
+        console.print("\n[yellow]No known tools detected.[/yellow]")
+        if not result.scanned_roots:
+            console.print("[dim]Tip:[/dim] configure hyperspin_dir and "
+                          "rocketlauncher_dir, or pass --extra-path.")
+        return
+
+    grouped = result.by_category()
+    for category in ta.CATEGORY_ORDER:
+        items = grouped.get(category)
+        if not items:
+            continue
+        console.print(f"\n[bold]{ta.category_label(category)}[/bold]")
+        tbl = Table(box=box.SIMPLE, show_header=True)
+        tbl.add_column("Tool", style="yellow", no_wrap=False)
+        tbl.add_column("Replaced by", style="cyan", no_wrap=False)
+        tbl.add_column("Notes", style="dim", no_wrap=False)
+        tbl.add_column("Path", style="dim", no_wrap=False)
+        for finding in items:
+            replaced = finding.entry.superseded_by or "—"
+            paths = "\n".join(str(p) for p in (
+                finding.matched_executables or finding.install_paths
+            )[:3])
+            tbl.add_row(finding.entry.name, replaced,
+                        finding.entry.notes or "", paths)
+        console.print(tbl)
+
+    if show_unknown and result.unknown_executables:
+        console.print(f"\n[bold]{ta.category_label(ta.CATEGORY_UNKNOWN)}[/bold]")
+        console.print(f"[dim]({len(result.unknown_executables)} unrecognised "
+                      "executables under scanned roots — first 50 shown)[/dim]")
+        for u in result.unknown_executables[:50]:
+            console.print(f"  · {u.path}")
+
+    superseded = [f for cat in (ta.CATEGORY_ROM_TOOL,)
+                  for f in grouped.get(cat, [])
+                  if f.entry.superseded_by]
+    if superseded:
+        console.print(
+            f"\n[green]→[/green] {len(superseded)} ROM/media tool(s) above "
+            "are fully covered by spindoctor commands. Safe to uninstall "
+            "once you've confirmed the spindoctor equivalent works for you."
+        )
+
+
+# ─── lightgun ─────────────────────────────────────────────────────────────────
+
+@cli.group("lightgun")
+def lightgun_group():
+    """Sinden / DemulShooter wiring for lightgun-enabled systems.
+
+    \b
+    `lightgun detect`    — find Sinden + DemulShooter, seed config from
+                           any RL INIs already wired to DemulShooter.
+    `lightgun audit`     — show DemulShooter wiring status per system.
+    `lightgun configure` — wire one system's RL INI (dry-run by default).
+    """
+
+
+@lightgun_group.command("detect")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Persist detected lightgun systems into spindoctor config.")
+def lightgun_detect(apply_changes):
+    """Detect installed lightgun gear and pre-wired systems."""
+    from . import lightgun as lg
+
+    config = _cfg()
+    install = lg.detect_lightgun_install(config)
+
+    grid = Table.grid(padding=(0, 2))
+    grid.add_row("[cyan]Sinden software:[/cyan]",
+                 str(install.sinden_software_dir) if install.has_sinden
+                 else "[red]not found[/red]")
+    grid.add_row("[cyan]DemulShooter:[/cyan]",
+                 str(install.demulshooter_exe) if install.has_demulshooter
+                 else "[red]not found[/red]")
+    grid.add_row("[cyan]Arcade Guns Utility:[/cyan]",
+                 str(install.arcade_guns_dir) if install.arcade_guns_dir
+                 else "[dim]not found[/dim]")
+    console.print(grid)
+
+    pre_wired = lg.detect_lightgun_systems(config)
+    already_marked = set(config.lightgun_systems())
+    new_systems = [s for s in pre_wired if s not in already_marked]
+
+    if pre_wired:
+        console.print(f"\n[bold]Systems already wired to DemulShooter[/bold] "
+                      f"({len(pre_wired)}):")
+        for s in pre_wired:
+            mark = " [dim](already in config)[/dim]" if s in already_marked else ""
+            console.print(f"  · {s}{mark}")
+    else:
+        console.print("\n[dim]No systems found with DemulShooter Pre_Launch_App "
+                      "wiring.[/dim]")
+
+    if new_systems and not apply_changes:
+        console.print(f"\n[yellow]DRY RUN[/yellow] — would mark "
+                      f"{len(new_systems)} system(s) as lightgun in config: "
+                      f"{', '.join(new_systems)}")
+        console.print("[dim]Re-run with --apply to persist.[/dim]")
+    elif new_systems and apply_changes:
+        for s in new_systems:
+            config.set_lightgun(s, True)
+        save_config(config)
+        console.print(f"\n[green]✓[/green] Marked {len(new_systems)} "
+                      f"system(s) as lightgun in spindoctor config.")
+
+
+@lightgun_group.command("audit")
+def lightgun_audit():
+    """Show DemulShooter wiring status for every lightgun system in config."""
+    from . import lightgun as lg
+
+    config = _cfg()
+    systems = config.lightgun_systems()
+    if not systems:
+        console.print("[yellow]No lightgun systems configured.[/yellow] "
+                      "Run [cyan]spindoctor lightgun detect --apply[/cyan] "
+                      "or set [cyan]system_overrides[].lightgun = true[/cyan].")
+        return
+
+    install = lg.detect_lightgun_install(config)
+    if not install.has_demulshooter:
+        console.print("[red]DemulShooter not found on this PC.[/red] "
+                      "Audit will still report INI status, but configure "
+                      "will fail until DemulShooter is installed.")
+
+    tbl = Table(box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("INI", style="dim")
+    tbl.add_column("Pre_Launch_App")
+    tbl.add_column("Target")
+    tbl.add_column("Post_Launch_App")
+    for s in systems:
+        status = lg.audit_system_wiring(s, config)
+        if not status:
+            tbl.add_row(s, "[red]missing[/red]", "—", "—", "—")
+            continue
+        pre = "[green]wired[/green]" if status.pre_launch else "[red]none[/red]"
+        post = "[green]wired[/green]" if status.post_launch else "[yellow]none[/yellow]"
+        tbl.add_row(
+            s, status.ini_path.name, pre, status.target or "—", post,
+        )
+    console.print(tbl)
+
+
+@lightgun_group.command("configure")
+@click.option("--system", "-s", required=True,
+              help="HyperSpin system name to wire up.")
+@click.option("--target", default=None,
+              help="DemulShooter -target value. Auto-detected for known systems.")
+@click.option("--extra-args", default=None,
+              help="Extra args appended to DemulShooter command "
+                   "(default: from config or '-noresize').")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the INI changes. Without this flag, dry-run only.")
+def lightgun_configure(system, target, extra_args, apply_changes):
+    """Wire DemulShooter pre/post-launch hooks into a system's RL INI."""
+    from . import lightgun as lg
+
+    config = _cfg()
+    install = lg.detect_lightgun_install(config)
+    if config.demulshooter_path:
+        # Honour user override even if auto-detect missed it.
+        forced = Path(config.demulshooter_path)
+        if forced.exists():
+            install.demulshooter_exe = forced
+
+    args = (extra_args
+            or config.demulshooter_extra_args
+            or lg.DEFAULT_DEMULSHOOTER_ARGS)
+    try:
+        plan = lg.plan_wire_system(
+            system, config, install,
+            target_override=target, extra_args=args,
+        )
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(Panel(f" Lightgun configure: {system} ", style="bold blue"))
+    grid = Table.grid(padding=(0, 2))
+    grid.add_row("[cyan]Target:[/cyan]", plan.target)
+    grid.add_row("[cyan]INI path:[/cyan]", str(plan.ini_path))
+    grid.add_row("[cyan]Pre_Launch_App:[/cyan]", plan.pre_launch_command)
+    grid.add_row("[cyan]Post_Launch_App:[/cyan]", plan.post_launch_command)
+    console.print(grid)
+    for note in plan.notes:
+        console.print(f"  [yellow]·[/yellow] {note}")
+
+    if not apply_changes:
+        console.print("\n[yellow]DRY RUN[/yellow] — re-run with --apply "
+                      "to write the INI.")
+        return
+
+    written = lg.apply_wire_plan(plan, config)
+    config.set_lightgun(system, True)
+    save_config(config)
+    console.print(f"\n[green]✓[/green] Wrote DemulShooter hooks to "
+                  f"[cyan]{written}[/cyan] and marked '{system}' as a "
+                  "lightgun system in spindoctor config.")
+
+
+# ─── find-global ──────────────────────────────────────────────────────────────
+
+@cli.command("find-global")
+@click.argument("query")
+@click.option("--limit", type=int, default=50, show_default=True,
+              help="Max results per system.")
+@click.option("--exact", is_flag=True,
+              help="Match only when the query equals the title (case-insensitive).")
+def find_global(query: str, limit: int, exact: bool):
+    """Search every configured system's HyperSpin database for *query*.
+
+    Replaces Hypersearch — type a title, get every system that has it.
+    """
+    config = _cfg()
+    _check_config(config)
+    systems = get_systems(config)
+    if not systems:
+        err_console.print("[red]No systems configured.[/red]")
+        sys.exit(1)
+
+    q = query.lower()
+    tbl = Table(box=box.ROUNDED, title=f"Matches for '{query}'")
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Title", style="yellow")
+    tbl.add_column("Description", style="dim")
+
+    total = 0
+    for sys_name in systems:
+        try:
+            db = load_database(sys_name, config.databases_dir)
+        except Exception:
+            continue
+        per_system = 0
+        for name, entry in sorted(db.games().items()):
+            haystack = f"{name} {entry.description}".lower()
+            if exact:
+                hit = (q == name.lower() or q == entry.description.lower())
+            else:
+                hit = q in haystack
+            if not hit:
+                continue
+            tbl.add_row(sys_name, name, entry.description or "")
+            total += 1
+            per_system += 1
+            if per_system >= limit:
+                break
+
+    if total == 0:
+        console.print(f"[yellow]No matches for '{query}'.[/yellow]")
+        return
+    console.print(tbl)
+    console.print(f"[dim]{total} match(es) across {len(systems)} system(s).[/dim]")

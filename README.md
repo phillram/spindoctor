@@ -26,7 +26,8 @@ For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, 
 | [Configuration](docs/configuration.md) | Config keys, per-system overrides, filesystem considerations |
 | [Command reference](docs/commands.md) | Every command, grouped by purpose |
 | [Workflows](docs/workflows.md) | First-system add, daily refresh, weekly maintenance, **backup**, **migration**, **recovery** |
-| [Standalone tools](docs/standalone-tools.md) | Favorites / Recent / Most Played wheels — Tools menu and boot wiring |
+| [Standalone tools](docs/standalone-tools.md) | Favorites / Recent / Most Played wheels — Tools menu and boot wiring; **tools-audit** for cataloguing other arcade utilities |
+| [Light guns](docs/lightgun.md) | Sinden + DemulShooter wiring per system |
 | [Troubleshooting](docs/troubleshooting.md) | FAQ + common errors |
 
 Start at [docs/index.md](docs/index.md) for a guided table of contents.
