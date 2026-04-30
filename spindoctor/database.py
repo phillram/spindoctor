@@ -163,6 +163,21 @@ class HyperspinDatabase:
             return True
         return False
 
+    def reset_games(self) -> None:
+        """Drop every game from both the dict and the parsed XML tree.
+
+        Synthetic systems (Favorites, Recently Played, Most Played) own
+        their XML end-to-end and want full control over entry order on
+        each rebuild. Without this, ``_merge_into_tree`` would leave
+        surviving ``<game>`` elements in their original positions.
+        """
+        self._ensure_loaded()
+        self._games.clear()
+        if self._root is not None:
+            for el in list(self._game_elements.values()):
+                self._root.remove(el)
+        self._game_elements.clear()
+
     def iter_incomplete(self) -> Iterator[GameEntry]:
         self._ensure_loaded()
         return (g for g in self._games.values() if not g.is_metadata_complete())
