@@ -1,8 +1,8 @@
 # SpinDoctor 🩺🕹️
 
-A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, validates ROM integrity, manages cross-system Favorites / Recently Played / Most Played wheels, reports on playtime, and migrates the whole library between drives or PCs — all from a single CLI.
+A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, validates ROM integrity, manages cross-system Favorites / Recently Played / Most Played wheels, reports on playtime, **wires Sinden / DemulShooter for light-gun systems**, **inventories the third-party tools already installed on your cabinet**, and migrates the whole library between drives or PCs — all from a single CLI.
 
-> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`) need no flag.
+> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag.
 
 ## Quick start
 
@@ -34,7 +34,20 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents.
 
 ## What it does, in one paragraph
 
-SpinDoctor reads and writes your existing HyperSpin databases, RocketLauncher configs, media folders, ROM folders, and its own caches. It is **not** an installer — it does not install HyperSpin, RocketLauncher, or any emulator, and does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the librarian work: stub creation, metadata + media fetching, integrity verification, cross-system Favorites / Recently Played / Most Played wheels, drive-to-drive migration with rollback, and incremental dated backups.
+SpinDoctor reads and writes your existing HyperSpin databases, RocketLauncher configs, media folders, ROM folders, and its own caches. It is **not** an installer — it does not install HyperSpin, RocketLauncher, or any emulator, and does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the librarian work: stub creation, metadata + media fetching, integrity verification, cross-system Favorites / Recently Played / Most Played wheels, drive-to-drive migration with rollback, incremental dated backups, Sinden / DemulShooter wiring per system, cross-system database search, and an inventory of the third-party utilities (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, …) that already live on your cabinet.
+
+## Common starting points
+
+| If you want to… | Run |
+|---|---|
+| See every command and what it does | `spindoctor --help` |
+| Inventory the tools already on this cabinet | `spindoctor tools-audit` |
+| Audit one system's ROMs vs. the HyperSpin DB | `spindoctor audit --system MAME` |
+| Find a game across every system | `spindoctor find-global "house of the dead"` |
+| Wire a Sinden lightgun for a system | `spindoctor lightgun configure --system "Sega Naomi" --apply` |
+| Refresh Favorites / Recently Played / Most Played | `spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply` |
+| Snapshot the library before risky work | `spindoctor backup create --target E:\Backups --apply` |
+| Migrate to a new drive | `spindoctor migrate --target E:\Cab --apply` |
 
 ## Reporting issues
 
