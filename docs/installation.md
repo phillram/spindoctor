@@ -1,6 +1,11 @@
 # Installation
 
-**Requirements:** Python 3.9+. Windows is the primary target (HyperSpin is a Windows app), but the CLI itself runs on macOS and Linux for development and testing.
+Two ways to install on a Windows cabinet:
+
+1. **Prebuilt binaries** — drop a `.exe` into place, no Python required. Works on **Windows 7 SP1 / 8 / 8.1 / 10 / 11**. See [Windows binaries](#windows-binaries-no-python-required) below.
+2. **Pip install from source** — needs Python 3.8+ on the box. The route below.
+
+**Requirements (source install):** Python 3.8+. Windows is the primary target (HyperSpin is a Windows app), but the CLI itself runs on macOS and Linux for development and testing.
 
 ## Install
 
@@ -65,3 +70,46 @@ python -m spindoctor.cli systems
 ```
 
 You still need Python and the runtime dependencies (`pip install -r requirements.txt`).
+
+## Windows binaries (no Python required)
+
+For older / locked-down cabinets where installing Python isn't an option, every release attaches a zip of standalone `.exe` files to its [GitHub Release](https://github.com/phillram/spindoctor/releases).
+
+```
+spindoctor-windows-vX.Y.Z.zip
+├── spindoctor.exe          ← full CLI
+├── spindoctor-fav.exe      ← Favorites wheel manager
+├── spindoctor-recent.exe   ← Recently Played rebuild
+└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
+```
+
+1. Download the zip from the latest release.
+2. Extract anywhere — e.g. `C:\spindoctor\`.
+3. Either add that folder to `PATH`, or call by full path: `C:\spindoctor\spindoctor.exe systems`.
+4. Run `spindoctor config init` once to point at your library.
+
+That's it — no Python, no `pip`, no virtualenv. The four `.bat` files in `scripts/` work unmodified once the `.exe` files are on `PATH`.
+
+### Windows 7 compatibility
+
+Binaries are built with **Python 3.8.10** + **PyInstaller 5.13.2** on a `windows-2019` runner. They run on:
+
+| Windows | Status |
+|---|---|
+| Windows 7 SP1 (x64) | ✓ Supported |
+| Windows 8 / 8.1 | ✓ Supported |
+| Windows 10 / 11 | ✓ Supported (may show an unsigned-binary SmartScreen warning — click "More info" → "Run anyway") |
+
+Windows 7 RTM (no service pack) is **not** supported — install SP1 (the standard update from Windows Update) first. Code signing for Windows 10/11 SmartScreen is on the roadmap but not yet implemented.
+
+### Building the binaries yourself
+
+If you want to reproduce or modify the build, see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md). On a Windows machine with Python 3.8:
+
+```bat
+pip install -e .[all]
+pip install -r build/requirements-build.txt
+python build/build_windows.py
+```
+
+Output lands in `dist/`.

@@ -8,6 +8,16 @@ Common problems and their fixes. For deeper recovery (rolling back a migration, 
 
 The console scripts didn't end up on PATH. Re-run `pip install -e .` from the repo root and confirm Python's `Scripts\` directory is on your `Path` environment variable. As a fallback, `python -m spindoctor.cli ...` works without the entry point.
 
+If you're using the prebuilt Windows binaries (no Python install), make sure the folder containing `spindoctor.exe` is on `PATH`, or invoke by full path (`C:\spindoctor\spindoctor.exe systems`).
+
+### Windows 7: "The procedure entry point ... could not be located in api-ms-win-core-..."
+
+The `.exe` was built against a Windows SDK newer than Win 7 supports. The official binaries ship from `windows-2019` + Python 3.8 + PyInstaller 5.x specifically to avoid this. If you self-built and hit this, downgrade your build environment to those versions — see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md). Also confirm your Win 7 install has Service Pack 1 — the RTM (un-patched) release isn't supported.
+
+### Windows SmartScreen blocks the .exe
+
+Releases aren't code-signed yet, so Windows 10/11 may flag the binaries as unrecognised. Click **More info** → **Run anyway**. (Code signing is on the roadmap.)
+
 ### `config init` rejects a path
 
 Folders must exist before they can be configured. Create the folder first, then re-run.

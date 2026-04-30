@@ -5,8 +5,12 @@ __pycache__/
 *.pyd
 *.egg-info/
 dist/
-build/
 .eggs/
+
+# PyInstaller working dirs (the build/ folder itself is tracked — it
+# holds the Windows-binary build script and docs)
+build/_pyinstaller/
+build/lib/
 
 # Virtual environments
 .venv/
