@@ -13,6 +13,9 @@ Common end-to-end flows. Each one is a recipe — copy, paste, edit paths to mat
 - [Recovery from mistakes](#recovery-from-mistakes)
 - [ROM integrity sweep](#rom-integrity-sweep)
 - [Adding a Favorite](#adding-a-favorite)
+- [Searching across systems](#searching-across-systems)
+- [Auditing legacy arcade tools](#auditing-legacy-arcade-tools)
+- [Wiring light guns](#wiring-light-guns)
 
 ---
 
@@ -90,6 +93,8 @@ spindoctor stats
 spindoctor doctor --apply
 spindoctor find-dupes --all --by-content
 spindoctor verify --system NES --dat "C:\Dats\NES.dat"
+spindoctor tools-audit             :: re-inventory third-party utilities (read-only)
+spindoctor lightgun audit          :: confirm DemulShooter wiring still intact (lightgun cabs only)
 
 :: 3. Thin out duplicates by region preference (archives losers, fully reversible).
 spindoctor curate --all
@@ -324,3 +329,65 @@ spindoctor fav rebuild --apply
 After this the cabinet user sees Chrono Trigger inside the `Favorites` system in HyperSpin, with its original SNES wheel art and snap mirrored across. The wheel is sorted alphabetically by display title.
 
 To pull HyperSpin's per-system F-key favorites into the cross-system store: `spindoctor fav sync` followed by `spindoctor fav rebuild --apply`.
+
+---
+
+## Searching across systems
+
+Find every system that has a given title — replaces standalone Hypersearch utilities.
+
+```bat
+spindoctor find-global "house of the dead"
+:: → MAME           hotd       House of the Dead
+::   Sega Naomi     hotd2      House of the Dead 2
+::   Sega Dreamcast hotd2dc    House of the Dead 2 (Dreamcast)
+
+spindoctor find-global "Pac-Man" --exact
+spindoctor find-global "1942" --limit 10
+```
+
+`--exact` matches only when the query equals the entry name or description (case-insensitive). Otherwise substring. `--limit` caps results per system (default 50).
+
+---
+
+## Auditing legacy arcade tools
+
+A typical HyperSpin cabinet accumulates 20+ third-party utilities over time — Tur-RemoveDupes, FatMatch, FuzzyRename 3, HyperSync, HyperT00ls, Don's HyperTools, the CUE Renamer, Hypersearch, plus drivers and mappers (XPadder, JoyToKey, DS4Windows, XOutput) and lightgun gear (Sinden, DemulShooter, Arcade Guns).
+
+```bat
+spindoctor tools-audit
+```
+
+The report groups everything found by category and lists which spindoctor command replaces each one (or notes "no spindoctor equivalent" for drivers and mappers that should stay installed). Read-only — never uninstalls anything.
+
+```bat
+spindoctor tools-audit --extra-path "C:\arcade-utils"     :: include a custom location
+spindoctor tools-audit --show-unknown                     :: list .exe files we don't recognise
+```
+
+Use `--show-unknown` when you've installed something not in the registry — paste the list into a spindoctor issue and the registry can grow. Once you've confirmed each replacement command works on your library (most often `audit`, `find-dupes`, `verify`, `fetch-meta`, `fetch-media`, `rename`), the listed ROM/media tools are safe to uninstall by hand. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
+
+---
+
+## Wiring light guns
+
+For cabinets with Sinden (or compatible) light guns + DemulShooter. Full walkthrough at [Light guns](lightgun.md).
+
+```bat
+:: 1. Confirm the gear is installed.
+spindoctor lightgun detect
+
+:: 2. Pull any pre-wired systems into spindoctor config.
+spindoctor lightgun detect --apply
+
+:: 3. Wire a new system.
+spindoctor lightgun configure --system "Sega Naomi"             :: dry-run preview
+spindoctor lightgun configure --system "Sega Naomi" --apply
+
+:: 4. Periodically check that wiring is still intact (also part of weekly maintenance).
+spindoctor lightgun audit
+```
+
+Auto-targeted systems include MAME, Sega Naomi/Atomiswave/Dreamcast, Model 2, Model 3 (Supermodel), Flycast, ChiHiro, Triforce, Lindbergh. Pass `--target <name>` to override for anything else.
+
+The wiring lives in `RocketLauncher\Settings\<System>.ini` as `Pre_Launch_App` (start DemulShooter) and `Post_Launch_App` (taskkill DemulShooter on exit). Module `.ahk` files are never modified, so a stock Tur build remains intact.

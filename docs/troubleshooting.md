@@ -63,6 +63,66 @@ Both read the same RocketLauncher `Statistics.ini` files. **Recently Played** so
 
 Automatic — `spindoctor recent rebuild --apply` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher writes on every game launch). Schedule it at log-on or run from the Tools menu — see [Standalone tools](standalone-tools.md).
 
+## Light guns
+
+### `spindoctor lightgun detect` reports "DemulShooter not found"
+
+DemulShooter must be on disk somewhere spindoctor scans. The auto-detected roots are `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, `<RocketLauncher>/Plugins`, `<emulators_dir>`, plus `Program Files` and the Start Menu. If yours lives elsewhere:
+
+```bat
+spindoctor config set demulshooter_path "C:\arcade\DemulShooter\DemulShooter.exe"
+spindoctor lightgun detect
+```
+
+### `lightgun configure` says "No DemulShooter target known for system"
+
+The system name doesn't match any auto-target rule (MAME, Naomi, Atomiswave, Dreamcast, Model 2, Model 3, Flycast, ChiHiro, Triforce, Lindbergh, …). Pass the target explicitly:
+
+```bat
+spindoctor lightgun configure --system "My System" --target supermodel --apply
+```
+
+See DemulShooter's own readme for the full list of `-target` values.
+
+### After `lightgun configure --apply`, the gun does nothing in-game
+
+Three usual causes:
+
+1. **DemulShooter never started.** Run `spindoctor lightgun audit` and confirm `Pre_Launch_App` is wired. If it is, launch the game from RocketLauncher's command line directly — RL prints the pre/post-launch app output, so any error will surface there.
+2. **Wrong target for that emulator.** A Naomi game running under Flycast needs `-target flycast`, not `-target demul07a`. Re-run `lightgun configure --system <name> --target flycast --apply`.
+3. **The Sinden software isn't running.** DemulShooter expects an active Sinden Lightgun instance. Start the Sinden software (or set it to autostart on boot) before launching games.
+
+### DemulShooter stays running after the emulator exits
+
+`Post_Launch_App` is missing or wrong. Re-run `lightgun configure --system <name> --apply` — it always (re)writes the standard `taskkill /IM "DemulShooter.exe" /F` post-launch hook.
+
+### How do I revert lightgun wiring for a system?
+
+Open `RocketLauncher\Settings\<System>.ini` in any editor and delete the `Pre_Launch_App` and `Post_Launch_App` lines, then set `"lightgun": false` under the system in `~/.spindoctor/config.json` (or run `spindoctor lightgun audit` to confirm the change took).
+
+## Cross-system search
+
+### How do I find a game when I'm not sure which system has it?
+
+```bat
+spindoctor find-global "metal slug"
+spindoctor find-global "Pac-Man" --exact
+```
+
+Searches every configured system's HyperSpin database. Substring match by default; `--exact` for a single best hit.
+
+## Auditing other tools
+
+### How do I list every arcade utility installed alongside spindoctor?
+
+```bat
+spindoctor tools-audit
+```
+
+Read-only. Scans `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, the emulators tree, Program Files, and the Start Menu for ~25 known tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, HyperT00ls, Don's HyperTools, Hypersearch, Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput, …) and reports which spindoctor command replaces each one.
+
+Add `--extra-path "C:\custom-tools"` for non-standard install locations. Pass `--show-unknown` to list `.exe` files the registry doesn't recognise — useful for telling the project what to add next.
+
 ## LEDBlinky
 
 ### HyperSpin's Search menu crashes when LEDBlinky is enabled

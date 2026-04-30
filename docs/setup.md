@@ -74,6 +74,16 @@ The folder name is what SpinDoctor matches against HyperSpin's database name and
 
 Skip this unless your cabinet has LED-lit buttons. If you have it, install LEDBlinky to a known folder (e.g. `C:\LEDBlinky`); SpinDoctor's `ledblinky` commands operate on it later.
 
+## 7b. (Optional) Light guns
+
+Skip this unless the cabinet has Sinden (or compatible) light guns. If you do:
+
+1. Install the **Sinden Lightgun** software per the manufacturer's instructions.
+2. Place **DemulShooter** somewhere reachable — `C:\RocketLauncher\Modules\DemulShooter\` and `C:\HyperSpin\Tools\DemulShooter\` are both auto-detected by spindoctor. (If you keep it elsewhere, you'll set `demulshooter_path` later.)
+3. (Optional) Install the **Arcade Guns Utility** for any Ultimarc Arcade Guns kit.
+
+SpinDoctor wires Sinden + DemulShooter into RocketLauncher per-system *after* you've done `config init` — see step 12 below. Module `.ahk` files (typically Tur-built) are never modified.
+
 ## 8. Install SpinDoctor
 
 ```bat
@@ -128,4 +138,26 @@ spindoctor doctor                                   :: validate
 
 For PC / Steam / Windows libraries use `add-pc-system` instead — it scans nested folders and prompts a title-picker for awkward layouts.
 
-After this, the cabinet should boot HyperSpin and show your systems. From here the [Workflows](workflows.md) page covers daily refresh, weekly maintenance, backup, and migration.
+## 12. (Optional) Audit existing tools and wire light guns
+
+If this is an *existing* cabinet that already has a pile of third-party utilities (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Don's HyperTools, Hypersearch, …), get an inventory:
+
+```bat
+spindoctor tools-audit
+```
+
+The report groups every recognised tool by category and lists which spindoctor command supersedes it. Read-only — never uninstalls anything. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
+
+If you completed step 7b (light guns):
+
+```bat
+spindoctor lightgun detect            :: confirm Sinden + DemulShooter are found
+spindoctor lightgun detect --apply    :: seed any RL-INI-pre-wired systems into spindoctor config
+spindoctor lightgun configure --system "Sega Naomi" --apply
+```
+
+Full walkthrough at [Light guns](lightgun.md).
+
+## 13. Final boot
+
+After this, the cabinet should boot HyperSpin and show your systems. From here the [Workflows](workflows.md) page covers daily refresh, weekly maintenance, backup, migration, and search.
