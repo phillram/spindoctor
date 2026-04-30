@@ -1,0 +1,108 @@
+name: Release Windows binaries
+
+# Triggers on any tag matching v*  (e.g. v1.0.0, v1.0.1, v1.1.0-rc1).
+# Manual dispatch is also supported for dry-runs that don't publish a release.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (no release published)'
+        required: false
+
+permissions:
+  contents: write   # needed to create the GitHub Release and upload assets
+
+jobs:
+  build:
+    name: Build Windows executables
+    # windows-2019 is the oldest Windows runner GitHub still offers.
+    # Building on the oldest available SDK maximises the chance the
+    # produced exe loads on Windows 7 SP1 (see build/README.md).
+    runs-on: windows-2019
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.8
+        # Python 3.8 was the last release to officially support Windows 7.
+        # Building with 3.8 keeps the bundled CPython runtime compatible.
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8.10'
+
+      - name: Install runtime + build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[all]
+          pip install -r build/requirements-build.txt
+
+      - name: Run unit tests
+        shell: bash
+        run: |
+          pip install pytest
+          pytest -q
+
+      - name: Build Windows executables
+        shell: bash
+        run: python build/build_windows.py
+
+      - name: Smoke-test every binary
+        shell: cmd
+        run: |
+          dist\spindoctor.exe --version
+          dist\spindoctor-fav.exe --help
+          dist\spindoctor-recent.exe --help
+          dist\spindoctor-stats.exe --help
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.tag || 'manual' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package as zip
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
+
+      - name: Upload build artifacts
+        # Always uploaded, even on workflow_dispatch — useful for testing the
+        # build pipeline without publishing a release.
+        uses: actions/upload-artifact@v4
+        with:
+          name: spindoctor-windows-${{ steps.tag.outputs.tag }}
+          path: artifacts/*.zip
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SpinDoctor ${{ github.ref_name }}
+          generate_release_notes: true
+          body: |
+            Standalone Windows executables for SpinDoctor.
+
+            Built with Python 3.8.10 + PyInstaller 5.13.2 on `windows-2019`.
+            Should run on Windows 7 SP1 and newer (see [build/README.md](build/README.md#windows-7-compatibility)).
+
+            **What's in the zip**
+
+            - `spindoctor.exe` — full CLI
+            - `spindoctor-fav.exe` — Favorites wheel manager
+            - `spindoctor-recent.exe` — Recently Played rebuild
+            - `spindoctor-stats.exe` — playtime reports + Most Played wheel
+
+            Drop the `.exe` files into a folder on `PATH` (or call by full path). No Python install required on the cabinet.
+          files: artifacts/*.zip

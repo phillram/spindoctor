@@ -34,5 +34,8 @@ setup(
             "spindoctor-stats=spindoctor.playtime:main_cli",
         ],
     },
-    python_requires=">=3.9",
+    # 3.8 is the floor because that was the last Python release to officially
+    # support Windows 7 — the cabinet target. The frozen Windows binaries in
+    # GitHub Releases are built against 3.8.10 for the same reason.
+    python_requires=">=3.8",
 )
