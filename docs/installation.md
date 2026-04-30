@@ -28,7 +28,11 @@ pip install -e .[preview]
 
 ```bat
 spindoctor --version
+spindoctor systems         :: lists configured systems (after `config init`)
+spindoctor tools-audit     :: inventory of third-party arcade utilities, read-only
 ```
+
+`tools-audit` is the safest first command on a cabinet — it never touches files, and the report tells you which legacy tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, DemulShooter, …) are now redundant with built-in spindoctor commands. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
 
 ## Console scripts installed
 
@@ -40,6 +44,16 @@ spindoctor --version
 | `spindoctor-stats` | Standalone playtime reports + Most Played wheel |
 
 The three standalone scripts are minimal `argparse` wrappers around the same library functions — useful for boot triggers and Tools menu entries because they skip the rich/click overhead. See [Standalone tools](standalone-tools.md).
+
+Other commonly-used commands that ship only inside the full `spindoctor` CLI (no separate console script):
+
+| Command | Purpose | Read-only? |
+|---|---|---|
+| `spindoctor tools-audit` | Inventory installed arcade utilities; flags spindoctor replacements | yes |
+| `spindoctor find-global "title"` | Search every system's HyperSpin database for a title | yes |
+| `spindoctor lightgun detect / audit / configure` | Wire Sinden + DemulShooter into per-system RocketLauncher hooks | `detect`/`audit` read-only; `configure` dry-run by default |
+
+See [Light guns](lightgun.md) for the Sinden / DemulShooter walkthrough.
 
 ## Running without `pip install`
 
