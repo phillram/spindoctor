@@ -84,25 +84,43 @@ jobs:
           path: artifacts/*.zip
           retention-days: 30
 
+      - name: Build release notes
+        # Pulls the curated section from CHANGELOG.md and prepends a short
+        # header about the binaries. The auto-generated PR / commit list
+        # appended by `generate_release_notes: true` lands underneath.
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          {
+            echo "## Windows binaries"
+            echo
+            echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2019\`. Runs on Windows 7 SP1 and newer."
+            echo
+            echo "Drop the \`.exe\` files into a folder on \`PATH\` (or call by full path). No Python install required on the cabinet. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
+            echo
+            echo "**What's in \`spindoctor-windows-${{ github.ref_name }}.zip\`:**"
+            echo
+            echo "- \`spindoctor.exe\` — full CLI"
+            echo "- \`spindoctor-fav.exe\` — Favorites wheel manager"
+            echo "- \`spindoctor-recent.exe\` — Recently Played rebuild"
+            echo "- \`spindoctor-stats.exe\` — playtime reports + Most Played wheel"
+            echo
+            echo "---"
+            echo
+            python build/extract_changelog.py "${{ github.ref_name }}"
+          } > release-notes.md
+          echo "::group::Release notes"
+          cat release-notes.md
+          echo "::endgroup::"
+
       - name: Publish GitHub Release
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: SpinDoctor ${{ github.ref_name }}
+          # generate_release_notes still appends "What's Changed" PR list
+          # below the curated body — best of both worlds.
           generate_release_notes: true
-          body: |
-            Standalone Windows executables for SpinDoctor.
-
-            Built with Python 3.8.10 + PyInstaller 5.13.2 on `windows-2019`.
-            Should run on Windows 7 SP1 and newer (see [build/README.md](build/README.md#windows-7-compatibility)).
-
-            **What's in the zip**
-
-            - `spindoctor.exe` — full CLI
-            - `spindoctor-fav.exe` — Favorites wheel manager
-            - `spindoctor-recent.exe` — Recently Played rebuild
-            - `spindoctor-stats.exe` — playtime reports + Most Played wheel
-
-            Drop the `.exe` files into a folder on `PATH` (or call by full path). No Python install required on the cabinet.
+          body_path: release-notes.md
           files: artifacts/*.zip
