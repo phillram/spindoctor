@@ -8,7 +8,8 @@ A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [Rocket
 
 | If you want to… | Read |
 |---|---|
-| Install SpinDoctor | [Installation](installation.md) |
+| Install SpinDoctor (Python) | [Installation](installation.md) |
+| Install the prebuilt Windows `.exe` binaries (no Python) | [Windows binaries](windows-binaries.md) |
 | Stand up a cabinet from a blank Windows PC | [First-time setup](setup.md) |
 | Look up a specific command | [Command reference](commands.md) |
 | See or change configuration | [Configuration](configuration.md) |
