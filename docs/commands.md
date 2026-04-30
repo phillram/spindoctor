@@ -6,14 +6,15 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 
 ## Contents
 
-- [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`
+- [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
 - [LEDBlinky](#ledblinky)
-- [Maintenance](#maintenance) — `doctor`, `ignore`, `match`, `cleanup`, `lint`
+- [Light guns](#light-guns) — `lightgun detect`, `lightgun audit`, `lightgun configure`
+- [Maintenance](#maintenance) — `doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
 
 ---
 
@@ -130,6 +131,18 @@ spindoctor media-scan --list-manifests
 ```
 
 `--apply` defaults to `--action copy`; `--action move` relocates files, `--action link` creates symlinks (falls back to copy on filesystems that reject them). `--overwrite` also imports the `replacement` bucket. Imports write a manifest to `~/.spindoctor/media_imports/` so `--undo` can reverse the most recent one.
+
+### `find-global`
+
+Search every configured system's HyperSpin database for a title. Replaces standalone Hypersearch utilities — type a title, get every system that has it.
+
+```bat
+spindoctor find-global "house of the dead"
+spindoctor find-global "Pac-Man" --exact
+spindoctor find-global "1942" --limit 10
+```
+
+`--exact` matches only when the query equals the entry name or description (case-insensitive). Otherwise substring search. `--limit` caps results per system (default 50).
 
 ### `report`
 
@@ -595,6 +608,27 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 
 ---
 
+## Light guns
+
+`spindoctor lightgun` wires Sinden / DemulShooter into RocketLauncher's per-system `Settings/<System>.ini` via `Pre_Launch_App` / `Post_Launch_App` keys. Module .ahk files are never touched, so a stock Tur build remains intact.
+
+```bat
+spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems
+spindoctor lightgun detect --apply                    :: also seed lightgun: true for each pre-wired system
+spindoctor lightgun audit                             :: status table for every system marked lightgun
+spindoctor lightgun configure --system "Sega Naomi"   :: dry-run preview of the INI hooks
+spindoctor lightgun configure --system "Sega Naomi" --apply
+spindoctor lightgun configure --system MAME --target mame --extra-args "-noresize"
+```
+
+Targets are auto-detected for MAME, Sega Naomi/Atomiswave, Model 2, Model 3 (Supermodel), Flycast, ChiHiro, Triforce and similar lightgun-supported emulators — pass `--target <name>` to override. Defaults to `-noresize` extra args (Sinden-friendly); change globally via `demulshooter_extra_args` in config.
+
+A system is considered lightgun-enabled when its entry in `system_overrides` has `"lightgun": true`. `lightgun detect --apply` and `lightgun configure --apply` set the flag automatically.
+
+See [Configuration → demulshooter_path](configuration.md) for setting an explicit DemulShooter location when auto-detection fails.
+
+---
+
 ## Maintenance
 
 ### `doctor`
@@ -607,6 +641,20 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs
 ```
 
 `--apply` only does safe, idempotent repairs (prune stale cache, create media folder skeletons, regen `Global Emulators.ini`) — never deletes ROMs/DBs/media.
+
+### `tools-audit`
+
+Read-only inventory of third-party arcade tools installed on this PC. Scans `HyperSpin\Tools`, `RocketLauncher\Modules` / `Plugins`, `<emulators_dir>`, Program Files, and the Start Menu for known utilities (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, DemulShooter, XPadder, JoyToKey, …) and groups them by category — flagging which spindoctor command supersedes each one.
+
+```bat
+spindoctor tools-audit
+spindoctor tools-audit --extra-path "C:\arcade-utils"
+spindoctor tools-audit --max-depth 6 --show-unknown
+```
+
+Best run on the arcade cabinet itself. The report is purely informational — it never uninstalls anything, but the "Replaced by" column tells you which tools are safely redundant once the spindoctor equivalent is wired up. `--show-unknown` lists `.exe` files the registry doesn't recognise so the project can grow the registry over time.
+
+See [Standalone tools → Tools audit](standalone-tools.md) for the categorised mapping.
 
 ### `ignore`
 

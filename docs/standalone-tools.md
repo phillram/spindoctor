@@ -115,6 +115,25 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
 
 Or drop one of the `.bat` files (from `scripts/`, or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
 
+## Tools audit — what other arcade utilities does this cabinet already have?
+
+A typical HyperSpin cabinet accumulates a graveyard of third-party utilities — Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Don's HyperTools, HyperT00ls, the CUE Renamer, Hypersearch, plus drivers and mappers like Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput. `spindoctor tools-audit` scans `HyperSpin\Tools`, `RocketLauncher\Modules`, the emulators tree, and Program Files for known tools and tells you which ones spindoctor already replaces.
+
+```bat
+spindoctor tools-audit
+spindoctor tools-audit --extra-path "C:\arcade-utils" --show-unknown
+```
+
+| Category | Tools | Replaced by |
+|---|---|---|
+| ROM / media tools | HyperSpin Checker, HyperT00ls, Don's HyperTools, FatMatch, Tur-Matcher, Tur-RemoveDupes, HyperSpin CUE Renamer, FuzzyRename 3, HyperSync, Hypersearch | `audit`, `verify`, `find-orphan-media`, `find-dupes`, `rename`, `fetch-meta`, `fetch-media`, `find-global` |
+| Light gun | Sinden Lightgun, DemulShooter, Arcade Guns Utility | `lightgun configure` (Sinden + DemulShooter wiring per system) |
+| Controllers / input | XPadder, JoyToKey, DS4Windows, XOutput, Arcade-One profiles, Atari Fightstick, Arcaid | not absorbed — keep external; expose via `install-tools` |
+| Frontend / config GUIs | HyperSpin, HyperHQ, RocketLauncherUI | not absorbed — keep external, useful for one-offs |
+| Shaders / visual | SweetFX | out of scope |
+
+The audit never uninstalls anything. Once you've confirmed the spindoctor equivalent works on your library, the listed ROM/media tools are safe to remove. Lightgun and input gear stay installed — spindoctor wraps them rather than replacing them.
+
 ## Why these are kept separate from the package
 
 The actual logic lives in `spindoctor/favorites.py`, `spindoctor/recent.py`, and `spindoctor/playtime.py` so the rest of the package can import it. The `scripts/` folder holds only thin runnable shims and Windows convenience files — keeping them separate makes it obvious which files are package internals vs. things the cabinet end-user is meant to invoke directly.

@@ -76,6 +76,8 @@ class Config:
 
     # External binaries
     mame_executable: str = ""
+    demulshooter_path: str = ""           # Override DemulShooter.exe location
+    demulshooter_extra_args: str = ""     # Extra CLI args appended to -target
 
     # Metadata API credentials
     screenscraper_user: str = ""
@@ -122,6 +124,7 @@ class Config:
     #         "emulator": "RPCS7",             # free-form
     #         "recursive_scan": True,          # walk subdirectories under <roms_dir>/<system>/
     #         "title_strategy": "smart",       # "smart" | "stem" | "parent_folder"
+    #         "lightgun": True,                # System uses Sinden / DemulShooter
     #     }
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)
@@ -173,6 +176,24 @@ class Config:
             lst.remove(rom_name)
             return True
         return False
+
+    # ── lightgun helpers ───────────────────────────────────────────────────────
+
+    def lightgun_systems(self) -> list[str]:
+        """System names with ``lightgun: true`` in their override map."""
+        return sorted(
+            name for name, ovr in (self.system_overrides or {}).items()
+            if isinstance(ovr, dict) and ovr.get("lightgun")
+        )
+
+    def set_lightgun(self, system_name: str, enabled: bool) -> None:
+        ovr = self.system_overrides.setdefault(system_name, {})
+        if enabled:
+            ovr["lightgun"] = True
+        else:
+            ovr.pop("lightgun", None)
+            if not ovr:
+                self.system_overrides.pop(system_name, None)
 
     def get_ignore_list(self, system_name: Optional[str] = None) -> list[str]:
         if system_name:
