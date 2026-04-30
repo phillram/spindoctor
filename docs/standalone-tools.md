@@ -20,7 +20,7 @@ After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `sp
 The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` which only exist after `pip install`. There are three working setups:
 
 1. **Full install (recommended).** `pip install -e .` from a checkout. Console scripts land on `PATH`, the .bat files work as-is.
-2. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install -r requirements.txt`, mainly `lxml`), and rewrite each `.bat` to call the wrappers directly:
+2. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the wrappers directly:
    ```bat
    python C:\path\to\spindoctor\scripts\spindoctor-fav.py rebuild --apply
    ```

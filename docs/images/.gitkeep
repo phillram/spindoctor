@@ -1,0 +1,10 @@
+# Drop screenshot PNGs here. The Windows-binaries doc references:
+#
+#   docs/images/windows-binaries-release-page.png
+#   docs/images/windows-binaries-extract.png
+#   docs/images/windows-binaries-cmd.png
+#   docs/images/windows-binaries-smartscreen.png
+#   docs/images/windows-binaries-tools-menu.png
+#
+# Captures from a Windows 7/10/11 cabinet are ideal — high-DPI PNGs at
+# native resolution (no scaling). Keep file sizes under ~500 KB each.
