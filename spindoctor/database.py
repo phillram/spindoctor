@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
 
+from ._compat import et_indent
+
 try:
     from lxml import etree as LET  # type: ignore
     _HAS_LXML = True
@@ -237,7 +239,7 @@ class HyperspinDatabase:
             )
             target.write_bytes(xml_bytes)
         else:
-            ET.indent(self._tree, space="  ")
+            et_indent(self._tree)
             with open(target, "wb") as f:
                 f.write(b'<?xml version="1.0"?>\n')
                 self._tree.write(f, encoding="utf-8", xml_declaration=False)
@@ -271,7 +273,7 @@ class HyperspinDatabase:
             target.write_bytes(xml_bytes)
         else:
             tree = ET.ElementTree(root)
-            ET.indent(tree, space="  ")
+            et_indent(tree)
             with open(target, "wb") as f:
                 f.write(b'<?xml version="1.0"?>\n')
                 tree.write(f, encoding="utf-8", xml_declaration=False)
@@ -426,7 +428,7 @@ def write_sort_databases(
                 _new_game_element(g, root=root)
 
             tree = ET.ElementTree(root)
-            ET.indent(tree, space="  ")
+            et_indent(tree)
             with open(out_path, "wb") as f:
                 f.write(b'<?xml version="1.0"?>\n')
                 tree.write(f, encoding="utf-8", xml_declaration=False)

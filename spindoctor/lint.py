@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ._compat import ast_unparse
+
 
 @dataclass
 class Finding:
@@ -147,10 +149,7 @@ def _function_signatures(tree: ast.AST) -> list[tuple[ast.FunctionDef, str]]:
     out: list[tuple[ast.FunctionDef, str]] = []
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            try:
-                body = ast.unparse(node)
-            except AttributeError:  # py < 3.9 — never hit but defensive
-                continue
+            body = ast_unparse(node)
             stripped = re.sub(r"\s+", "", body)
             if len(stripped) < 80:  # too small to be a meaningful dup
                 continue
