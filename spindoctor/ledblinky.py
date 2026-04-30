@@ -39,6 +39,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ._compat import et_indent
 from .config import CONFIG_DIR, Config
 
 
@@ -645,7 +646,7 @@ def _ensure_controls_xml_entries(
         return False, []
 
     dst_path.parent.mkdir(parents=True, exist_ok=True)
-    ET.indent(tree, space="  ")
+    et_indent(tree)
     with open(dst_path, "wb") as f:
         f.write(b'<?xml version="1.0"?>\n')
         tree.write(f, encoding="utf-8", xml_declaration=False)
