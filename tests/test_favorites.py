@@ -136,6 +136,75 @@ def test_rebuild_prunes_removed_favorite(isolated_config, tmp_path, monkeypatch)
     assert fav_wheels == []
 
 
+def test_rebuild_orders_games_alphabetically(isolated_config, tmp_path, monkeypatch):
+    roms, hs, rl = _build_layout(tmp_path)
+    # Add a second game per system so we have something to sort.
+    for sys_name in ("Super Nintendo", "Sony Playstation"):
+        (hs / "Databases" / sys_name / f"{sys_name}.xml").write_text(
+            "<menu>"
+            "<game name=\"Tetris\"><description>Tetris</description></game>"
+            "<game name=\"Aladdin\"><description>Aladdin</description></game>"
+            "<game name=\"Mario\"><description>Mario</description></game>"
+            "</menu>",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Add deliberately out of order
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    add(store, "Super Nintendo", "Aladdin")
+    add(store, "Sony Playstation", "Mario")
+
+    summary = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    db_text = summary.db_path.read_text(encoding="utf-8")
+
+    # XML preserves dict order, which now matches alphabetical display name
+    pos_aladdin = db_text.index("name=\"Aladdin\"")
+    pos_mario = db_text.index("name=\"Mario\"")
+    pos_tetris = db_text.index("name=\"Tetris\"")
+    assert pos_aladdin < pos_mario < pos_tetris
+
+
+def test_rebuild_reorders_existing_wheel(isolated_config, tmp_path, monkeypatch):
+    """A second rebuild after adding an earlier-alphabet game should reorder."""
+    roms, hs, rl = _build_layout(tmp_path)
+    for sys_name in ("Super Nintendo",):
+        (hs / "Databases" / sys_name / f"{sys_name}.xml").write_text(
+            "<menu>"
+            "<game name=\"Tetris\"><description>Tetris</description></game>"
+            "<game name=\"Aladdin\"><description>Aladdin</description></game>"
+            "</menu>",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    # Now add Aladdin (alphabetically earlier) and rebuild
+    add(store, "Super Nintendo", "Aladdin")
+    summary = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    db_text = summary.db_path.read_text(encoding="utf-8")
+    assert db_text.index("name=\"Aladdin\"") < db_text.index("name=\"Tetris\"")
+
+
+def test_sorted_entries_uses_display_name_case_insensitive():
+    from spindoctor.favorites import _sorted_entries
+    entries = [
+        FavoriteEntry("snes", "zelda", "Zelda", ""),
+        FavoriteEntry("snes", "aladdin", "aladdin", ""),
+        FavoriteEntry("snes", "mario", "Mario", ""),
+    ]
+    ordered = [e.display_name for e in _sorted_entries(entries)]
+    assert ordered == ["aladdin", "Mario", "Zelda"]
+
+
 def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, monkeypatch):
     roms, hs, rl = _build_layout(tmp_path)
     monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",

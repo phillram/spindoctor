@@ -146,6 +146,18 @@ def sync_native(store: FavoriteStore, config: Config) -> int:
 
 # ─── synthetic system rebuild ────────────────────────────────────────────────
 
+def _sorted_entries(entries: Iterable[FavoriteEntry]) -> list[FavoriteEntry]:
+    """Order favorites alphabetically by display title (case-insensitive).
+
+    Falls back to ``rom_name`` so legacy stores written before
+    ``display_name`` was always populated still order sensibly.
+    """
+    return sorted(
+        entries,
+        key=lambda e: (e.display_name or e.rom_name).casefold(),
+    )
+
+
 def _resolve_target_names(entries: Iterable[FavoriteEntry]) -> dict[str, str]:
     """Compute a unique HyperSpin entry name for each favorite.
 
@@ -231,7 +243,8 @@ def rebuild(
     if not config.hyperspin_dir:
         return summary
 
-    target_names = _resolve_target_names(store.entries)
+    sorted_entries = _sorted_entries(store.entries)
+    target_names = _resolve_target_names(sorted_entries)
     summary.entries = len(target_names)
 
     if dry_run:
@@ -246,12 +259,15 @@ def rebuild(
     db = HyperspinDatabase(store.target_system, db_path)
     db.load()
     existing_targets = set(target_names.values())
-    for name in list(db.games().keys()):
-        if name not in existing_targets:
-            db.remove_game(name)
-            summary.pruned += 1
+    summary.pruned = sum(
+        1 for name in db.games() if name not in existing_targets
+    )
+    # Drop every existing entry so the upserts below dictate XML order —
+    # otherwise `_merge_into_tree` would keep surviving games at their
+    # prior positions, defeating the alphabetical sort.
+    db.reset_games()
 
-    for entry in store.entries:
+    for entry in sorted_entries:
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
         source_db = _safe_load(entry.system, config)
         source_game = source_db.get(entry.rom_name) if source_db else None
@@ -280,7 +296,7 @@ def rebuild(
                 except OSError:
                     pass
 
-        for entry in store.entries:
+        for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             plan = plan_mirror(
                 config.media_dir, entry.system, store.target_system,
@@ -305,7 +321,7 @@ def rebuild(
                         ini.unlink()
                     except OSError:
                         pass
-        for entry in store.entries:
+        for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             _generate_pclauncher_ini(
                 rl_dir, store.target_system, target_name,
@@ -388,7 +404,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not store.entries:
             print("(no favorites)")
             return 0
-        for e in store.entries:
+        for e in _sorted_entries(store.entries):
             print(f"  · {e.system} :: {e.rom_name}  [{e.display_name}]")
         return 0
 
