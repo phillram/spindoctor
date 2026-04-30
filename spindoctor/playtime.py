@@ -18,7 +18,7 @@ import configparser
 import csv
 import json
 import sys
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
@@ -26,9 +26,7 @@ from typing import Iterable, Optional
 from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
-from .recent import (
-    DEFAULT_LIMIT, _build_synthetic_wheel, _parse_time,
-)
+from .recent import _build_synthetic_wheel, _parse_time
 
 
 DEFAULT_PLAYED_SYSTEM = "Most Played"
