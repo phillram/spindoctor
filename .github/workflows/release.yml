@@ -13,7 +13,9 @@ on:
         required: false
 
 permissions:
-  contents: write   # needed to create the GitHub Release and upload assets
+  contents: write       # create the GitHub Release and upload assets
+  id-token: write       # required by attest-build-provenance for OIDC
+  attestations: write   # required by attest-build-provenance to record SLSA
 
 jobs:
   build:
@@ -25,12 +27,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 
       - name: Set up Python 3.8
         # Python 3.8 was the last release to officially support Windows 7.
         # Building with 3.8 keeps the bundled CPython runtime compatible.
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with:
           python-version: '3.8.10'
 
@@ -75,10 +77,26 @@ jobs:
           mkdir -p artifacts
           cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
 
+      # Lets users verify their download with `sha256sum -c SHA256SUMS.txt`.
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd artifacts && sha256sum *.zip > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      # Records a signed SLSA provenance statement so users can run
+      # `gh attestation verify <zip> --repo ${{ github.repository }}`
+      # to prove the artifact came from this workflow on this repo.
+      - name: Attest build provenance
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be  # v2.4.0
+        with:
+          subject-path: 'artifacts/*.zip'
+
       - name: Upload build artifacts
         # Always uploaded, even on workflow_dispatch — useful for testing the
         # build pipeline without publishing a release.
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
         with:
           name: spindoctor-windows-${{ steps.tag.outputs.tag }}
           path: artifacts/*.zip
@@ -105,6 +123,11 @@ jobs:
             echo "- \`spindoctor-recent.exe\` — Recently Played rebuild"
             echo "- \`spindoctor-stats.exe\` — playtime reports + Most Played wheel"
             echo
+            echo "**Verify your download:**"
+            echo
+            echo "- \`SHA256SUMS.txt\` — verify with \`sha256sum -c SHA256SUMS.txt\`."
+            echo "- Build provenance: \`gh attestation verify spindoctor-windows-${{ github.ref_name }}.zip --repo ${{ github.repository }}\` proves the zip came from this workflow."
+            echo
             echo "---"
             echo
             python build/extract_changelog.py "${{ github.ref_name }}"
@@ -115,7 +138,7 @@ jobs:
 
       - name: Publish GitHub Release
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65  # v2.6.2
         with:
           tag_name: ${{ github.ref_name }}
           name: SpinDoctor ${{ github.ref_name }}
@@ -123,4 +146,6 @@ jobs:
           # below the curated body — best of both worlds.
           generate_release_notes: true
           body_path: release-notes.md
-          files: artifacts/*.zip
+          files: |
+            artifacts/*.zip
+            artifacts/SHA256SUMS.txt
