@@ -37,6 +37,8 @@ spindoctor config set <key> <value>
 | `metadata_cache_ttl_days` | Days to keep cached scraper responses (default `30`) |
 | `backup_before_modify` | Whether XML writes leave a `.bak` next to the file (default `true`) |
 | `region_preferences` | Default region order for `curate` (default `["USA", "World", "Europe", "Japan"]`) |
+| `demulshooter_path` | Explicit path to `DemulShooter.exe` if auto-detection misses it |
+| `demulshooter_extra_args` | Default extra args appended to DemulShooter (default `-noresize`, Sinden-friendly) |
 
 ## Per-system overrides
 
@@ -58,6 +60,7 @@ Common reasons to use overrides:
 - **`add-system` reports "no ROMs found"** — the file extension isn't in the recognized set. Add it via `--rom-extensions`.
 - **System has its own metadata IDs on ScreenScraper** — set `--screenscraper-id`.
 - **Multi-disc consoles where each game is a folder** — `--layout per-game-folder`.
+- **System uses a Sinden lightgun** — set `"lightgun": true` in the override (or run `spindoctor lightgun configure --system <name> --apply`, which sets it automatically). `lightgun audit` reports on every system with this flag.
 
 ## Filesystem considerations
 
