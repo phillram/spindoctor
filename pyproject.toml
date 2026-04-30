@@ -33,7 +33,8 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
-    "requests>=2.28",
+    # 2.33.0 ships the fix for CVE-2026-25645.
+    "requests>=2.33.0",
 ]
 
 [project.optional-dependencies]
@@ -68,3 +69,14 @@ spindoctor-stats = "spindoctor.playtime:main_cli"
 [tool.setuptools.packages.find]
 include = ["spindoctor*"]
 exclude = ["tests*", "build*", "scripts*"]
+
+[tool.bandit]
+# B324 (weak hash): SHA-1 / MD5 are used for *non-cryptographic* integrity
+#   checks — ROM verification against No-Intro DAT (the DATs themselves
+#   ship SHA-1), file dedupe, and lint duplicate-body detection. Switching
+#   to SHA-256 would break compatibility with ecosystem DATs.
+# B314 (XML without defusedxml): all XML inputs are local files the
+#   user controls (HyperSpin databases, RocketLauncher INIs, MAME
+#   -listxml output). Adopting `defusedxml` is tracked as a follow-up
+#   but not load-bearing under the current threat model.
+skips = ["B324", "B314"]
