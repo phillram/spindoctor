@@ -49,11 +49,20 @@ PyInstaller's `.spec` files are Python scripts evaluated at build time — commi
 5. Zips `dist/` as `spindoctor-windows-<tag>.zip`.
 6. Creates a GitHub Release with the tag and attaches the zip.
 
-To cut a release:
+### Cutting a release
 
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
+1. **Update `CHANGELOG.md`** on `main`. Add a new `## [X.Y.Z] - YYYY-MM-DD` section with the changes; keep the [Keep a Changelog](https://keepachangelog.com/) categories (`Added` / `Changed` / `Fixed` / `Removed` / `Deprecated` / `Security`). Add the matching link reference at the bottom: `[X.Y.Z]: https://github.com/phillram/spindoctor/releases/tag/vX.Y.Z`.
+2. **Verify the section parses**:
+   ```bash
+   python build/extract_changelog.py vX.Y.Z | head -20
+   ```
+   Non-zero exit means the workflow won't be able to build the release body — fix the heading first.
+3. **Tag with an annotated message** (lightweight tags carry no metadata):
+   ```bash
+   git checkout main && git pull
+   git tag -a vX.Y.Z -m "SpinDoctor X.Y.Z"
+   git push origin vX.Y.Z
+   ```
+4. The `release.yml` workflow then builds the binaries, extracts the matching CHANGELOG section as the release body, and publishes a GitHub Release. GitHub's `generate_release_notes` appends a "What's Changed" PR list underneath.
 
-The `v` prefix matters — the workflow filter is `tags: ['v*']`.
+The `v` prefix matters — the workflow filter is `tags: ['v*']` and `extract_changelog.py` strips it before matching the heading.
