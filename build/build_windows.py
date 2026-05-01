@@ -59,11 +59,21 @@ HIDDEN_IMPORTS = [
 
 
 def write_shim(entry: str, name: str) -> Path:
-    """Write a tiny `__main__` style shim that calls the package entry point."""
+    """Write a tiny `__main__` style shim that calls the package entry point.
+
+    The shim filename must NOT collide with any importable top-level package
+    name. The previous version wrote `spindoctor.py` for the main entry point,
+    which PyInstaller registered as the bundle's top-level `spindoctor`
+    module — shadowing the actual `spindoctor/` package and causing
+    `from spindoctor.cli import cli` to resolve to the shim itself, with
+    `ModuleNotFoundError: 'spindoctor' is not a package`. Prefixing with
+    an underscore puts the shim in a distinct namespace; PyInstaller's
+    `--name` argument keeps the produced exe named `spindoctor.exe`.
+    """
     module, attr = entry.split(":")
     shim_dir = BUILD / "shims"
     shim_dir.mkdir(parents=True, exist_ok=True)
-    shim = shim_dir / f"{name}.py"
+    shim = shim_dir / f"_{name.replace('-', '_')}_entry.py"
     shim.write_text(
         "import sys\n"
         f"from {module} import {attr}\n"
