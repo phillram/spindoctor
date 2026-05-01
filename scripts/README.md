@@ -12,7 +12,12 @@ Standalone helpers for the **Favorites**, **Recently Played**, and **Most Played
 | `Refresh Most Played.bat` | `spindoctor-stats build-wheel --apply` |
 | `Refresh Both.bat` | All three in sequence |
 
-The `.bat` files assume `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` are on `PATH` (they are after `pip install -e .`). For setups without an install, the `.py` wrappers work directly from a checkout.
+The `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` by bare name. `cmd.exe` resolves that via `PATHEXT` — so any of these satisfy the call:
+
+- the standalone Windows `.exe` binaries from a [GitHub Release](https://github.com/phillram/spindoctor/releases) (no Python needed), placed next to the `.bat` files or anywhere on `PATH`
+- the `pip install -e .` entry-point shims (also on `PATH`)
+
+For checkouts where neither is present, run the `.py` wrappers directly via `python scripts\spindoctor-fav.py …` — those require a Python install.
 
 Full documentation — including how to wire these into the HyperSpin Tools menu and Windows startup, and what to do when you can't run `pip install` on the cabinet — lives at [`docs/standalone-tools.md`](../docs/standalone-tools.md).
 
