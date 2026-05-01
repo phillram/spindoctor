@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spindoctor"
-version = "1.0.0"
+version = "1.1.0"
 description = "Command-line librarian for HyperSpin + RocketLauncher arcade cabinets."
 readme = "README.md"
 # 3.8 is the floor because that was the last Python release to officially
@@ -33,8 +33,10 @@ classifiers = [
 dependencies = [
     "click>=8.0",
     "rich>=13.0",
-    # 2.33.0 ships the fix for CVE-2026-25645.
-    "requests>=2.33.0",
+    # 2.32.4 is the latest patch release in the 2.32.x line that still
+    # supports Python 3.8 — required for the Windows 7 SP1 binary builds.
+    # 2.33.x raises the floor to Python 3.10 and so cannot be used here.
+    "requests>=2.32.4",
 ]
 
 [project.optional-dependencies]
