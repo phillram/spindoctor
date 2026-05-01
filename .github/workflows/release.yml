@@ -44,11 +44,13 @@ jobs:
           pip install -e .[all]
           pip install -r build/requirements-build.txt
 
-      - name: Run unit tests
-        shell: bash
-        run: |
-          pip install pytest
-          pytest -q
+      # Unit tests are intentionally NOT re-run here. The CI workflow
+      # (.github/workflows/ci.yml) already runs `pytest -q` on the same
+      # windows-2022 + Python 3.8 matrix on every push to main, so by
+      # the time a `v*` tag exists those tests are known-green. Running
+      # them again in the release pipeline doubled wall-clock time
+      # (~5+ min) and added a flaky failure path for shipping a release.
+      # The PyInstaller smoke step below is the release-specific guard.
 
       - name: Build Windows executables
         shell: bash
