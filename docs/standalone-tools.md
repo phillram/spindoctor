@@ -17,17 +17,19 @@ After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `sp
 
 ## Do I need `pip install`?
 
-The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` which only exist after `pip install`. There are three working setups:
+The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` by bare name. `cmd.exe` resolves that via `PATHEXT`, so anything called `spindoctor-fav.exe` (or `.bat`, `.cmd`, …) on `PATH` — or sitting next to the `.bat` in the same folder — satisfies it. Three working setups:
 
-1. **Full install (recommended).** `pip install -e .` from a checkout. Console scripts land on `PATH`, the .bat files work as-is.
-2. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the wrappers directly:
+1. **Standalone Windows binaries (no Python needed).** Download `spindoctor-windows-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page, extract `spindoctor-fav.exe` / `spindoctor-recent.exe` / `spindoctor-stats.exe`, and either drop the `.bat` files into the same folder or add the folder to `PATH`. The `.bat` files work as-is. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
+2. **Full Python install.** `pip install -e .` from a checkout. Console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats`) land on `PATH`, the `.bat` files work as-is.
+3. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the `.py` wrappers directly:
    ```bat
    python C:\path\to\spindoctor\scripts\spindoctor-fav.py rebuild --apply
    ```
    The wrappers `sys.path.insert(0, repo_root)` so `import spindoctor` resolves without an editable install.
-3. **`.bat` files only.** Won't work — they're shortcuts to a CLI that doesn't exist on the box.
 
-Hard requirements regardless of approach: Python 3.9+, `lxml`, and the `spindoctor` package importable somehow.
+The `.py` wrappers in `scripts/` themselves require a Python install — they're for setup (3) only.
+
+Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
 ## `spindoctor-fav`
 
