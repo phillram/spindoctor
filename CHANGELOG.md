@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-30
+
+Supply-chain hardening release. No CLI surface or behaviour changes — purely build, release, and security infrastructure improvements on top of 1.0.0.
+
 ### Added — Supply-chain hardening
 
 - `.github/workflows/security.yml` — runs Bandit (static analysis) and pip-audit (CVE scan) on every PR, every push to `main`, and weekly on Mondays.
@@ -130,5 +134,6 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/phillram/spindoctor/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/phillram/spindoctor/releases/tag/v1.0.0
