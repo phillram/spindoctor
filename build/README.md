@@ -15,7 +15,7 @@ Each is a single-file executable produced by [PyInstaller](https://pyinstaller.o
 
 ## Windows 7 compatibility
 
-The release workflow builds on `windows-2019` with **Python 3.8.10** and **PyInstaller 5.13.2** because:
+The release workflow builds on `windows-2022` with **Python 3.8.10** and **PyInstaller 5.13.2** because:
 
 - Python 3.8 was the last release to officially support Windows 7 SP1.
 - PyInstaller 5.x bootloaders link against the older Windows SDK and load on Win 7. PyInstaller 6.x raised its minimum target to 8.1 and the bootloader fails to load on Win 7 with `api-ms-win-core-path-l1-1-0.dll missing`.
@@ -42,7 +42,7 @@ PyInstaller's `.spec` files are Python scripts evaluated at build time — commi
 
 `.github/workflows/release.yml` runs on tag push (`v*`) and:
 
-1. Spins up `windows-2019` with Python 3.8.10.
+1. Spins up `windows-2022` with Python 3.8.10.
 2. Installs runtime extras + PyInstaller.
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each `.exe --version`.

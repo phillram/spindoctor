@@ -12,7 +12,7 @@ If you're using the prebuilt Windows binaries (no Python install), make sure the
 
 ### Windows 7: "The procedure entry point ... could not be located in api-ms-win-core-..."
 
-The `.exe` was built against a Windows SDK newer than Win 7 supports. The official binaries ship from `windows-2019` + Python 3.8 + PyInstaller 5.x specifically to avoid this. If you self-built and hit this, downgrade your build environment to those versions — see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md). Also confirm your Win 7 install has Service Pack 1 — the RTM (un-patched) release isn't supported.
+The `.exe` was built against a Windows SDK newer than Win 7 supports. The official binaries ship from a Python 3.8.10 + PyInstaller 5.x build environment specifically to avoid this — that pairing (not the runner OS) is what keeps the bootloader Win 7-compatible. If you self-built and hit this, downgrade your build environment to those versions — see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md). Also confirm your Win 7 install has Service Pack 1 — the RTM (un-patched) release isn't supported.
 
 ### Windows SmartScreen blocks the .exe
 
