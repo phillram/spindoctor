@@ -49,9 +49,9 @@ jobs:
           pip install -e .[all]
           pip install pip-audit
 
-      # --strict makes warnings fatal. --skip-editable skips spindoctor
-      # itself (editable installs aren't on PyPI to look up).
-      # CVE-2026-3219 is in pip itself with no fix yet — pip is a build
-      # tool here, not a runtime dep, so we ignore until a fix lands.
+      # --skip-editable skips spindoctor itself (editable installs aren't
+      # on PyPI to look up). We deliberately omit --strict because that
+      # promotes the editable-skip *warning* to a fatal error; pip-audit
+      # already exits non-zero on real CVE findings without it.
       - name: Run pip-audit
-        run: pip-audit --strict --skip-editable --ignore-vuln CVE-2026-3219
+        run: pip-audit --skip-editable

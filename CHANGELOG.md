@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-30
+
+Supply-chain hardening release. No CLI surface or behaviour changes — purely build, release, and security infrastructure improvements on top of 1.0.0.
+
 ### Added — Supply-chain hardening
 
 - `.github/workflows/security.yml` — runs Bandit (static analysis) and pip-audit (CVE scan) on every PR, every push to `main`, and weekly on Mondays.
@@ -16,7 +20,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- `requests` floor bumped from `2.28` to `2.33.0` to ship the fix for [CVE-2026-25645](https://github.com/advisories/GHSA-) (HTTP request smuggling on chunked responses).
+- `requests` floor bumped from `2.28` to `2.32.4` (the latest 2.32.x patch release that still supports Python 3.8 — required by the Windows 7 SP1 binary build).
 - All GitHub Actions in `ci.yml`, `release.yml`, `security.yml` are now pinned to commit SHAs (with the version in a comment) so a tag-rewrite supply-chain attack cannot silently swap action code. Dependabot keeps these current.
 
 ### Fixed
@@ -130,5 +134,6 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/phillram/spindoctor/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/phillram/spindoctor/releases/tag/v1.0.0
