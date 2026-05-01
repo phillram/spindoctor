@@ -20,7 +20,7 @@ Supply-chain hardening release. No CLI surface or behaviour changes — purely b
 
 ### Changed
 
-- `requests` floor bumped from `2.28` to `2.33.0` to ship the fix for [CVE-2026-25645](https://github.com/advisories/GHSA-) (HTTP request smuggling on chunked responses).
+- `requests` floor bumped from `2.28` to `2.32.4` (the latest 2.32.x patch release that still supports Python 3.8 — required by the Windows 7 SP1 binary build).
 - All GitHub Actions in `ci.yml`, `release.yml`, `security.yml` are now pinned to commit SHAs (with the version in a comment) so a tag-rewrite supply-chain attack cannot silently swap action code. Dependabot keeps these current.
 
 ### Fixed
