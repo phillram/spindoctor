@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-2019]
+        os: [ubuntu-latest, windows-2022]
         # 3.8 is the floor (last to support Win 7); 3.12 is the modern target.
         python-version: ['3.8', '3.12']
 
@@ -39,7 +39,7 @@ jobs:
     name: PyInstaller build smoke test
     # On every PR, verify the Windows build still produces working binaries.
     # Catches regressions in PyInstaller hidden imports before a release tag.
-    runs-on: windows-2019
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 

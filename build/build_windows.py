@@ -14,9 +14,9 @@ Usage (locally, on Windows):
     pip install -r build/requirements-build.txt
     python build/build_windows.py
 
-The GitHub Actions release workflow runs this on a windows-2019 runner
-with Python 3.8 so the bootloaders link against the older SDK that
-Windows 7 still supports.
+The GitHub Actions release workflow runs this on a windows-2022 runner
+(windows-2019 was retired) with Python 3.8.10 + PyInstaller 5.x — the
+combination that produces a bootloader Windows 7 SP1 still loads.
 """
 from __future__ import annotations
 

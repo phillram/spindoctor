@@ -20,10 +20,11 @@ permissions:
 jobs:
   build:
     name: Build Windows executables
-    # windows-2019 is the oldest Windows runner GitHub still offers.
-    # Building on the oldest available SDK maximises the chance the
-    # produced exe loads on Windows 7 SP1 (see build/README.md).
-    runs-on: windows-2019
+    # windows-2022 is the oldest Windows runner GitHub still offers
+    # (windows-2019 was retired). The Win 7 SP1 compatibility of the
+    # produced exe comes from CPython 3.8.10 itself — pinned below —
+    # not from the build host's SDK version, so a newer runner is fine.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
@@ -112,7 +113,7 @@ jobs:
           {
             echo "## Windows binaries"
             echo
-            echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2019\`. Runs on Windows 7 SP1 and newer."
+            echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2022\`. Runs on Windows 7 SP1 and newer."
             echo
             echo "Drop the \`.exe\` files into a folder on \`PATH\` (or call by full path). No Python install required on the cabinet. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
             echo
