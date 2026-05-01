@@ -41,7 +41,7 @@ All four are **single-file** PyInstaller binaries — no installer, no setup wiz
 | Windows 7 RTM (no SP1) | ✗ Not supported — install SP1 from Windows Update first |
 | Windows XP / Vista | ✗ Not supported — Python 3.8 dropped them |
 
-Built with **Python 3.8.10 + PyInstaller 5.13.2** on a `windows-2019` GitHub Actions runner. These pins are deliberate — see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md#windows-7-compatibility) for the rationale.
+Built with **Python 3.8.10 + PyInstaller 5.13.2** on a `windows-2022` GitHub Actions runner. The Win 7 SP1 compatibility comes from the CPython 3.8 + PyInstaller 5.x pairing — these pins are deliberate, see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md#windows-7-compatibility) for the rationale.
 
 ## Download
 
