@@ -1,6 +1,6 @@
 # Standalone tools
 
-Three minimal CLIs and a handful of `.bat` files designed to run on every system boot or directly from HyperSpin's Tools menu — **without loading the full SpinDoctor CLI**. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a light `argparse`-based entry point so they launch fast enough to use as a boot trigger.
+Three minimal CLIs and a handful of `.bat` files designed to run on every system boot or directly from HyperSpin's Tools menu — without loading the full SpinDoctor CLI. They share `~/.spindoctor/config.json` with the main `spindoctor` command but use a light `argparse`-based entry point so they launch fast enough to use as a boot trigger.
 
 ```
 scripts/

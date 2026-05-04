@@ -28,7 +28,7 @@ spindoctor-windows-vX.Y.Z.zip
 └── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
-All four are **single-file** PyInstaller binaries — no installer, no setup wizard, no DLL hell. Each is roughly 30–50 MB because it bundles its own Python runtime and all dependencies (lxml, Pillow, py7zr, rarfile).
+All four are single-file PyInstaller binaries — no installer, no setup wizard, no DLL hell. Each is roughly 30–50 MB because it bundles its own Python runtime and all dependencies (lxml, Pillow, py7zr, rarfile).
 
 ## Compatibility
 
@@ -97,7 +97,7 @@ There's no installer — just extract.
 
 ```bat
 spindoctor --version
-:: SpinDoctor, version 1.0.0
+:: SpinDoctor, version 1.1.0
 
 spindoctor config init
 ```
