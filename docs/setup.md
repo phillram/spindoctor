@@ -6,7 +6,7 @@ A complete walkthrough for standing up a cabinet on a blank Windows PC. Steps 1â
 
 > **Legal.** Source ROMs and BIOS files only from games and consoles you own. SpinDoctor never downloads either, by design.
 
-## 1. Install Python 3.9+
+## 1. Install Python 3.8+
 
 Download from [python.org/downloads/windows](https://www.python.org/downloads/windows/). During the installer, tick **"Add Python to PATH"** so `python` and `pip` work from any command prompt.
 

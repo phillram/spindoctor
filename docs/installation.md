@@ -2,7 +2,7 @@
 
 Two ways to install on a Windows cabinet:
 
-1. **Prebuilt binaries** — drop a `.exe` into place, no Python required. Works on **Windows 7 SP1 / 8 / 8.1 / 10 / 11**. Full walkthrough at [Windows binaries](windows-binaries.md). Quick summary in the [Windows binaries](#windows-binaries-no-python-required) section below.
+1. **Prebuilt binaries** — drop a `.exe` into place, no Python required. Works on Windows 7 SP1 / 8 / 8.1 / 10 / 11. Full walkthrough at [Windows binaries](windows-binaries.md). Quick summary in the [Windows binaries](#windows-binaries-no-python-required) section below.
 2. **Pip install from source** — needs Python 3.8+ on the box. The route below.
 
 **Requirements (source install):** Python 3.8+. Windows is the primary target (HyperSpin is a Windows app), but the CLI itself runs on macOS and Linux for development and testing.
@@ -91,4 +91,4 @@ spindoctor-windows-vX.Y.Z.zip
 
 Quick version: download → extract → add to `PATH` → `spindoctor config init`. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
-**Full walkthrough with screenshots, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions: [Windows binaries](windows-binaries.md).**
+Full walkthrough with screenshots, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions: [Windows binaries](windows-binaries.md).
