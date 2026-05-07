@@ -177,9 +177,9 @@ The pre-flight plan reports total bytes to copy and free space at the target, an
 
 Easiest case. Drive plugs in at the same letters on the new PC.
 
-1. Install Python, then `pip install -e .[all]` from the SpinDoctor source.
-2. `spindoctor config init` — point at the existing folders on the moved drive.
-3. `spindoctor doctor` to verify.
+1. Install SpinDoctor on the new PC — either `pip install -e .[all]` from a checkout, or extract the [Windows binaries zip](windows-binaries.md) if you'd rather skip Python entirely.
+2. Run the configuration wizard: `spindoctor-gui` → Setup tab → Save (or `spindoctor config init` from `cmd.exe`). Point at the existing folders on the moved drive.
+3. `spindoctor doctor` (or the Audit & Doctor tab in the GUI) to verify.
 
 No data move needed.
 

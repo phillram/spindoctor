@@ -7,11 +7,12 @@ Standalone Windows executables for SpinDoctor — for cabinets that can't (or sh
 | Binary | Purpose |
 |---|---|
 | `spindoctor.exe` | Full CLI |
+| `spindoctor-gui.exe` | Tkinter GUI launcher (built `--windowed`, no console) |
 | `spindoctor-fav.exe` | Favorites wheel manager (boot-trigger friendly) |
 | `spindoctor-recent.exe` | Recently Played rebuild |
 | `spindoctor-stats.exe` | Playtime reports + Most Played wheel |
 
-Each is a single-file executable produced by [PyInstaller](https://pyinstaller.org/). No installer, no Python on the target box — copy the `.exe` somewhere on `PATH` (or call by full path) and run.
+Each is a single-file executable produced by [PyInstaller](https://pyinstaller.org/). No installer, no Python on the target box — extract all five together (`spindoctor-gui.exe` finds its peers by walking up from `sys.executable`), then either double-click the GUI or call the CLIs from `cmd.exe`.
 
 ## Windows 7 compatibility
 
@@ -36,7 +37,7 @@ Outputs land in `dist/`. Cleans `dist/` and `build/_pyinstaller/` first so each 
 
 ## Why a build script instead of `.spec` files
 
-PyInstaller's `.spec` files are Python scripts evaluated at build time — committing four near-identical specs is more code than the `build_windows.py` driver, and the driver writes one tiny shim per entry-point so the same approach scales to new console scripts in `setup.py` by editing one list.
+PyInstaller's `.spec` files are Python scripts evaluated at build time — committing five near-identical specs is more code than the `build_windows.py` driver, and the driver writes one tiny shim per entry-point so the same approach scales to new console scripts in `pyproject.toml` by editing one list.
 
 ## Release workflow
 
@@ -45,7 +46,7 @@ PyInstaller's `.spec` files are Python scripts evaluated at build time — commi
 1. Spins up `windows-2022` with Python 3.8.10.
 2. Installs runtime extras + PyInstaller.
 3. Runs `python build/build_windows.py`.
-4. Smoke-tests each `.exe --version`.
+4. Smoke-tests each CLI `.exe` (the GUI exe is `--windowed` so cmd can't observe its exit code; the workflow checks the file exists and exercises `python -m spindoctor.gui --version` against the source instead).
 5. Zips `dist/` as `spindoctor-windows-<tag>.zip`.
 6. Creates a GitHub Release with the tag and attaches the zip.
 
