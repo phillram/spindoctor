@@ -1,28 +1,45 @@
 # SpinDoctor 🩺🕹️
 
-A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, validates ROM integrity against No-Intro / Redump / TOSEC DATs, manages cross-system Favorites / Recently Played / Most Played wheels, reports on playtime, wires Sinden / DemulShooter for light-gun systems, inventories the third-party tools already installed on your cabinet, and migrates the whole library between drives or PCs — all from a single CLI.
+A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets — full CLI plus an optional Tkinter GUI launcher for cabinet owners who'd rather not touch `cmd.exe`. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, validates ROM integrity against No-Intro / Redump / TOSEC DATs, manages cross-system Favorites / Recently Played / Most Played wheels, reports on playtime, wires Sinden / DemulShooter for light-gun systems, inventories the third-party tools already installed on your cabinet, and migrates the whole library between drives or PCs.
 
 SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
 
 > **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back.
 
-## Quick start
+## Pick your install route
 
-Two install paths — pick one:
+SpinDoctor ships in three forms — pick whichever matches your cabinet:
 
-**Prebuilt Windows binaries** (no Python required, runs on Windows 7 SP1 +):
+| | Best for | What you get | Walkthrough |
+|---|---|---|---|
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Five `.exe` files including a windowed GUI launcher and the full CLI. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11. | [docs/windows-binaries.md](docs/windows-binaries.md) |
+| 🐍 **Pip install from source** | Dev machines, custom builds, anyone already running Python 3.8+ | Same CLI plus `spindoctor-gui` console script, importable as a package. Cross-platform (Windows / macOS / Linux). | [docs/installation.md](docs/installation.md) |
+| 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is | The `.py` wrappers in [`scripts/`](scripts/) run directly from a checkout via `python scripts\spindoctor-fav.py …`. | [docs/installation.md#running-without-pip-install](docs/installation.md#running-without-pip-install) |
+
+Then pick how you want to *use* it:
+
+| | When to use it | How to launch |
+|---|---|---|
+| 🖱️ **GUI launcher** | First-time setup, refreshing wheels, casual use, anyone who'd rather not touch `cmd.exe` | Double-click **`spindoctor-gui.exe`** (binary route) or run **`spindoctor-gui`** (pip route). See [docs/windows-binaries.md#gui-launcher](docs/windows-binaries.md#gui-launcher). |
+| ⌨️ **CLI** | Every command, scripts, scheduled tasks, advanced workflows | Open `cmd.exe` and run `spindoctor …`. See the [Command reference](docs/commands.md). |
+
+> **Don't double-click `spindoctor.exe` from File Explorer.** It's a command-line tool — with no arguments it prints `--help` and exits, so the cmd window flashes open and closes again before you can read it. Use `spindoctor-gui.exe` for double-click launching, or open `cmd.exe` first and run `spindoctor` from there. ([more](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly))
+
+### Five-minute quick start (binaries)
 
 1. Grab `spindoctor-windows-vX.Y.Z.zip` from the [latest release](https://github.com/phillram/spindoctor/releases).
-2. Extract to e.g. `C:\spindoctor\` and add the folder to `PATH`.
-3. Double-click `spindoctor-gui.exe` for the windowed launcher, **or** open `cmd.exe` and run `spindoctor config init`. (`spindoctor.exe` is a CLI — double-clicking it just flashes a console and exits, [by design](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly).)
+2. Extract to e.g. `C:\spindoctor\`. Optionally add the folder to `PATH` for CLI use.
+3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab, click Save. Done.
 
-**From source** (Python 3.8+):
+### Five-minute quick start (pip)
 
 ```bat
 git clone https://github.com/phillram/spindoctor C:\spindoctor
 cd C:\spindoctor
 pip install -e .[all]
-spindoctor config init
+spindoctor-gui                 :: GUI — fills out config.json via the Setup tab
+:: ── or ──
+spindoctor config init         :: CLI wizard, equivalent
 spindoctor systems
 spindoctor add-system "Nintendo Entertainment System" --apply
 ```
@@ -31,11 +48,18 @@ For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, 
 
 ## Documentation
 
+**Install & launch**
+
 | | |
 |---|---|
-| [Installation](docs/installation.md) | Python deps, optional extras, console scripts |
-| [Windows binaries](docs/windows-binaries.md) | Standalone `.exe` files — no Python required, runs on Windows 7 SP1 + |
-| [First-time setup](docs/setup.md) | Step-by-step from a blank Windows PC to a working cabinet |
+| [Windows binaries](docs/windows-binaries.md) | Standalone `.exe` files — no Python required. Includes the GUI launcher. |
+| [Installation (pip)](docs/installation.md) | Python install, optional extras, console scripts including `spindoctor-gui`. |
+| [First-time setup](docs/setup.md) | Step-by-step from a blank Windows PC to a working cabinet. |
+
+**Use**
+
+| | |
+|---|---|
 | [Configuration](docs/configuration.md) | Config keys, per-system overrides, filesystem considerations |
 | [Command reference](docs/commands.md) | Every command, grouped by purpose |
 | [Workflows](docs/workflows.md) | First-system add, daily refresh, weekly maintenance, backup, migration, recovery |
@@ -46,6 +70,8 @@ For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, 
 Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim [CHANGELOG.md](CHANGELOG.md) for what shipped in each release.
 
 ## Common starting points
+
+The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes, and any other `spindoctor …` invocation — also work from the GUI's Custom Command tab if you'd rather click than type. The Setup, Wheels, and Audit & Doctor tabs cover the most-used ones with dedicated buttons.
 
 | If you want to… | Run |
 |---|---|
