@@ -1,10 +1,27 @@
-# Drop screenshot PNGs here. The Windows-binaries doc references:
+# Drop screenshot PNGs here.
 #
-#   docs/images/windows-binaries-release-page.png
-#   docs/images/windows-binaries-extract.png
-#   docs/images/windows-binaries-cmd.png
-#   docs/images/windows-binaries-smartscreen.png
-#   docs/images/windows-binaries-tools-menu.png
+# Only the GUI launcher requires screenshots — the CLI surface is text and
+# already documented inline. The Windows-binaries doc references these files:
 #
-# Captures from a Windows 7/10/11 cabinet are ideal — high-DPI PNGs at
-# native resolution (no scaling). Keep file sizes under ~500 KB each.
+#   docs/images/gui-launcher-overview.png
+#       Hero shot — full window, Setup tab visible, output panel showing a
+#       completed `doctor` run.
+#
+#   docs/images/gui-launcher-setup-tab.png
+#       Setup tab populated with cabinet paths (ROMs, HyperSpin, Emulators,
+#       RocketLauncher, ...). Browse buttons visible on the right.
+#
+#   docs/images/gui-launcher-wheels-tab.png
+#       Wheels tab — Refresh Favorites / Recently Played / Most Played
+#       buttons stacked, plus "Refresh All Three" below a separator.
+#
+#   docs/images/gui-launcher-audit-tab.png
+#       Audit & Doctor tab — system dropdown expanded showing several
+#       configured systems; the four diagnostic buttons visible.
+#
+#   docs/images/gui-launcher-custom-tab.png
+#       Custom Command tab with a representative command typed into the
+#       entry (e.g. `audit --all`). Output panel below shows mid-run text.
+#
+# Capture from a real Windows cabinet (Win 7 / 10 / 11) at native resolution
+# — high-DPI PNGs, no scaling. Keep file sizes under ~500 KB each.

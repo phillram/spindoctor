@@ -64,6 +64,18 @@ jobs:
           dist\spindoctor-recent.exe --help
           dist\spindoctor-stats.exe --help
 
+      # spindoctor-gui.exe is a `--windowed` build (Win32 GUI subsystem),
+      # so cmd doesn't wait for it and stdout is detached — `--version`
+      # works in code but the shell can't observe its exit. The check
+      # above confirms PyInstaller produced the file; importing the
+      # module here exercises its argument-handling path the same way
+      # the frozen binary does at startup.
+      - name: Smoke-test GUI module
+        shell: bash
+        run: |
+          test -f dist/spindoctor-gui.exe
+          python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
+
       - name: Resolve release tag
         id: tag
         shell: bash
@@ -122,6 +134,7 @@ jobs:
             echo "**What's in \`spindoctor-windows-${{ github.ref_name }}.zip\`:**"
             echo
             echo "- \`spindoctor.exe\` — full CLI"
+            echo "- \`spindoctor-gui.exe\` — double-clickable GUI launcher (no cmd.exe required)"
             echo "- \`spindoctor-fav.exe\` — Favorites wheel manager"
             echo "- \`spindoctor-recent.exe\` — Recently Played rebuild"
             echo "- \`spindoctor-stats.exe\` — playtime reports + Most Played wheel"

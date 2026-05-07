@@ -19,17 +19,19 @@ After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `sp
 
 The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` by bare name. `cmd.exe` resolves that via `PATHEXT`, so anything called `spindoctor-fav.exe` (or `.bat`, `.cmd`, …) on `PATH` — or sitting next to the `.bat` in the same folder — satisfies it. Three working setups:
 
-1. **Standalone Windows binaries (no Python needed).** Download `spindoctor-windows-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page, extract `spindoctor-fav.exe` / `spindoctor-recent.exe` / `spindoctor-stats.exe`, and either drop the `.bat` files into the same folder or add the folder to `PATH`. The `.bat` files work as-is. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
-2. **Full Python install.** `pip install -e .` from a checkout. Console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats`) land on `PATH`, the `.bat` files work as-is.
+1. **Standalone Windows binaries (no Python needed).** Download `spindoctor-windows-vX.Y.Z.zip` from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page, extract `spindoctor-fav.exe` / `spindoctor-recent.exe` / `spindoctor-stats.exe` (and `spindoctor-gui.exe` if you want one-click refreshes from a window), and either drop the `.bat` files into the same folder or add the folder to `PATH`. The `.bat` files work as-is. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
+2. **Full Python install.** `pip install -e .` from a checkout. Console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` / `spindoctor-gui`) land on `PATH`, the `.bat` files work as-is.
 3. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the `.py` wrappers directly:
    ```bat
    python C:\path\to\spindoctor\scripts\spindoctor-fav.py rebuild --apply
    ```
-   The wrappers `sys.path.insert(0, repo_root)` so `import spindoctor` resolves without an editable install.
+   The wrappers `sys.path.insert(0, repo_root)` so `import spindoctor` resolves without an editable install. The GUI is also available as `python -m spindoctor.gui`.
 
 The `.py` wrappers in `scripts/` themselves require a Python install — they're for setup (3) only.
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
+
+> **Want a windowed alternative to the `.bat` files?** The Wheels tab in `spindoctor-gui` (binary route) or `spindoctor-gui.exe` (pip route) has a button per refresh and a Refresh All Three — same outcome as `Refresh Both.bat`, no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
 
 ## `spindoctor-fav`
 

@@ -4,11 +4,25 @@ Common problems and their fixes. For deeper recovery (rolling back a migration, 
 
 ## Install / startup
 
+### Double-clicking `spindoctor.exe` flashes a window that closes instantly
+
+That's the program working correctly — the CLI binaries (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, `spindoctor-stats.exe`) print `--help` and exit when run with no arguments, and Windows tears the cmd window down the moment they exit. Three options:
+
+- **Double-click `spindoctor-gui.exe`** instead — that's the supported windowed launcher.
+- Open `cmd.exe` first (`Win+R` → `cmd` → Enter), `cd` to the install folder, then run `spindoctor.exe …` with arguments.
+- Use the bundled `.bat` wrappers in [`scripts/`](https://github.com/phillram/spindoctor/tree/main/scripts) — they `pause` on error so the window stays open.
+
 ### `spindoctor: command not found`
 
 The console scripts didn't end up on PATH. Re-run `pip install -e .` from the repo root and confirm Python's `Scripts\` directory is on your `Path` environment variable. As a fallback, `python -m spindoctor.cli ...` works without the entry point.
 
-If you're using the prebuilt Windows binaries (no Python install), make sure the folder containing `spindoctor.exe` is on `PATH`, or invoke by full path (`C:\spindoctor\spindoctor.exe systems`).
+If you're using the prebuilt Windows binaries (no Python install), make sure the folder containing `spindoctor.exe` is on `PATH`, or invoke by full path (`C:\spindoctor\spindoctor.exe systems`). The GUI launcher locates its sibling exes by walking up from `sys.executable`, so it works without `PATH` configured — handy for cabinets where you don't want to touch environment variables.
+
+### `spindoctor-gui` opens but every button errors with "Binary not found"
+
+The GUI shells out to `spindoctor.exe` / `spindoctor-fav.exe` / `spindoctor-recent.exe` / `spindoctor-stats.exe` sitting next to it. If those got moved, renamed, or quarantined by antivirus, every Run click fails. Restore the missing exe (or re-extract the release zip) so all five files share a folder again.
+
+For the pip install route, the same error means the underlying console script isn't on `PATH` — re-run `pip install -e .` and confirm the Python `Scripts/` directory is on `PATH`.
 
 ### Windows 7: "The procedure entry point ... could not be located in api-ms-win-core-..."
 

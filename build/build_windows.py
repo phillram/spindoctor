@@ -1,9 +1,10 @@
 """Build standalone Windows executables for SpinDoctor.
 
-Produces four one-file binaries that run on Windows 7 SP1 and newer
+Produces five one-file binaries that run on Windows 7 SP1 and newer
 when built with Python 3.8 + PyInstaller 5.x:
 
-    dist/spindoctor.exe
+    dist/spindoctor.exe          ← full CLI (every command)
+    dist/spindoctor-gui.exe      ← Tkinter GUI launcher (--windowed)
     dist/spindoctor-fav.exe
     dist/spindoctor-recent.exe
     dist/spindoctor-stats.exe
@@ -29,12 +30,16 @@ ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 BUILD = ROOT / "build" / "_pyinstaller"
 
-# (entry-point module, console-script name)
+# (entry-point module, console-script name, windowed?)
+# `windowed=True` builds with `--windowed` (no console window on launch) —
+# only used for the Tkinter GUI; the CLIs need `--console` so their stdout
+# pipes work when invoked from cmd.exe or by the GUI's subprocess.Popen.
 TARGETS = [
-    ("spindoctor.cli:cli",            "spindoctor"),
-    ("spindoctor.favorites:main",     "spindoctor-fav"),
-    ("spindoctor.recent:main",        "spindoctor-recent"),
-    ("spindoctor.playtime:main_cli",  "spindoctor-stats"),
+    ("spindoctor.cli:cli",            "spindoctor",        False),
+    ("spindoctor.gui:main",           "spindoctor-gui",    True),
+    ("spindoctor.favorites:main",     "spindoctor-fav",    False),
+    ("spindoctor.recent:main",        "spindoctor-recent", False),
+    ("spindoctor.playtime:main_cli",  "spindoctor-stats",  False),
 ]
 
 # Modules PyInstaller's static analysis can miss because they're imported
@@ -45,6 +50,7 @@ HIDDEN_IMPORTS = [
     "spindoctor.favorites",
     "spindoctor.recent",
     "spindoctor.playtime",
+    "spindoctor.gui",
     "spindoctor.scraper",
     "spindoctor.archives",
     "spindoctor.preview",
@@ -83,11 +89,15 @@ def write_shim(entry: str, name: str) -> Path:
     return shim
 
 
-def run_pyinstaller(shim: Path, name: str) -> None:
+def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
+    # `--windowed` suppresses the console window on Windows for GUI binaries.
+    # On the CLI binaries `--console` is required so stdout/stderr keep flowing
+    # to the parent cmd window (or to the GUI's subprocess.Popen pipes).
+    mode_flag = "--windowed" if windowed else "--console"
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean",
-        "--onefile", "--console",
+        "--onefile", mode_flag,
         "--name", name,
         "--distpath", str(DIST),
         "--workpath", str(BUILD / "work"),
@@ -107,12 +117,12 @@ def main() -> int:
         shutil.rmtree(BUILD)
     DIST.mkdir(parents=True, exist_ok=True)
 
-    for entry, name in TARGETS:
+    for entry, name, windowed in TARGETS:
         shim = write_shim(entry, name)
-        run_pyinstaller(shim, name)
+        run_pyinstaller(shim, name, windowed)
 
     print("\nBuilt:")
-    for _, name in TARGETS:
+    for _, name, _windowed in TARGETS:
         exe = DIST / (f"{name}.exe" if sys.platform == "win32" else name)
         print(f"  {exe}  ({exe.stat().st_size // 1024} KB)")
     return 0

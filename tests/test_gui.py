@@ -1,0 +1,117 @@
+"""Tests for spindoctor.gui — kept headless so they run on every CI matrix.
+
+The tests deliberately avoid spinning up Tk: they exercise the argument-
+parsing and CLI-resolution helpers that constitute the testable surface of
+the GUI module. The Tk window itself is covered by manual launch + the
+release workflow's frozen-binary smoke test.
+"""
+from __future__ import annotations
+
+import shutil
+import sys
+from pathlib import Path
+
+import pytest
+
+from spindoctor import __app_name__, __version__
+from spindoctor import gui
+
+
+# ─── main() argument handling ─────────────────────────────────────────────────
+
+def test_main_version_prints_and_exits_zero(capsys):
+    rc = gui.main(["--version"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert __version__ in out
+    assert __app_name__ in out
+
+
+def test_main_help_prints_usage(capsys):
+    rc = gui.main(["--help"])
+    assert rc == 0
+    assert "spindoctor-gui" in capsys.readouterr().out
+
+
+def test_main_unknown_arg_returns_2(capsys):
+    rc = gui.main(["--no-such-flag"])
+    assert rc == 2
+    assert "Unknown argument" in capsys.readouterr().err
+
+
+# ─── resolve_cli_command ──────────────────────────────────────────────────────
+
+def test_resolve_unknown_binary_raises():
+    with pytest.raises(ValueError):
+        gui.resolve_cli_command("not-a-real-binary")
+
+
+def test_resolve_dev_install_falls_back_to_module(monkeypatch):
+    """Without a frozen exe and without the binary on PATH, we should
+    invoke the underlying module via `python -m`. This is the default
+    code path for `pip install -e .` developer setups and for the
+    headless CI smoke test."""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.setattr(gui.shutil, "which", lambda _name: None)
+
+    argv = gui.resolve_cli_command("spindoctor")
+    assert argv[0] == sys.executable
+    assert argv[1:] == ["-m", "spindoctor.cli"]
+
+
+def test_resolve_dev_install_prefers_path_binary(monkeypatch, tmp_path):
+    """If a real `spindoctor` is on PATH (e.g. installed via `pip install`
+    rather than `-e .`), we should use it instead of falling back to
+    `python -m` — both work, but the installed entry point is closer to
+    what an end-user would invoke."""
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    fake = tmp_path / "spindoctor"
+    fake.write_text("#!/bin/sh\necho ok\n")
+    monkeypatch.setattr(gui.shutil, "which",
+                        lambda name: str(fake) if name == "spindoctor" else None)
+
+    argv = gui.resolve_cli_command("spindoctor")
+    assert argv == [str(fake)]
+
+
+def test_resolve_frozen_finds_sibling_binary(monkeypatch, tmp_path):
+    """The frozen GUI exe locates its peer CLI exes by looking next to
+    sys.executable — that's how the release zip ships them, and avoids
+    forcing users to put the install folder on PATH."""
+    fake_gui_exe = tmp_path / "spindoctor-gui"
+    fake_gui_exe.write_bytes(b"")
+    sibling = tmp_path / ("spindoctor.exe" if sys.platform == "win32" else "spindoctor")
+    sibling.write_bytes(b"")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_gui_exe))
+
+    argv = gui.resolve_cli_command("spindoctor")
+    assert argv == [str(sibling)]
+
+
+def test_resolve_frozen_missing_sibling_raises(monkeypatch, tmp_path):
+    """If the user accidentally separates the GUI from the CLI exes,
+    we should give a clear error rather than silently falling back to
+    a `python -m` invocation that won't work in a frozen build."""
+    fake_gui_exe = tmp_path / "spindoctor-gui"
+    fake_gui_exe.write_bytes(b"")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_gui_exe))
+    monkeypatch.setattr(gui.shutil, "which", lambda _name: None)
+
+    with pytest.raises(gui.CliNotFoundError) as exc:
+        gui.resolve_cli_command("spindoctor-fav")
+    assert "spindoctor-fav" in str(exc.value)
+
+
+# ─── _format_argv ─────────────────────────────────────────────────────────────
+
+def test_format_argv_quotes_args_with_spaces():
+    assert gui._format_argv(["spindoctor", "audit", "--system", "Sega Naomi"]) == \
+        'spindoctor audit --system "Sega Naomi"'
+
+
+def test_format_argv_leaves_simple_args_unquoted():
+    assert gui._format_argv(["spindoctor", "doctor"]) == "spindoctor doctor"

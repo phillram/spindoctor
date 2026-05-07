@@ -1,13 +1,20 @@
 # Installation
 
-Two ways to install on a Windows cabinet:
+SpinDoctor ships in three forms — pick whichever fits your cabinet:
 
-1. **Prebuilt binaries** — drop a `.exe` into place, no Python required. Works on Windows 7 SP1 / 8 / 8.1 / 10 / 11. Full walkthrough at [Windows binaries](windows-binaries.md). Quick summary in the [Windows binaries](#windows-binaries-no-python-required) section below.
-2. **Pip install from source** — needs Python 3.8+ on the box. The route below.
+| Route | Best for | Python required? | Includes GUI? |
+|---|---|---|---|
+| 🪟 [Prebuilt Windows binaries](windows-binaries.md) | Cabinets where Python isn't an option. Win 7 SP1 / 8 / 8.1 / 10 / 11. | No | Yes — `spindoctor-gui.exe` |
+| 🐍 [Pip install from source](#pip-install-from-source) | Dev machines, custom builds, anyone already on Python 3.8+. Cross-platform. | Yes (≥ 3.8) | Yes — `spindoctor-gui` console script |
+| 📂 [Source-on-disk, no install](#running-without-pip-install) | Locked-down boxes where Python is available but `pip install` isn't. | Yes (≥ 3.8) | Yes — `python -m spindoctor.gui` |
 
-**Requirements (source install):** Python 3.8+. Windows is the primary target (HyperSpin is a Windows app), but the CLI itself runs on macOS and Linux for development and testing.
+> Once installed, you can use SpinDoctor through the **GUI launcher** (double-click `spindoctor-gui.exe` or run `spindoctor-gui`) or the **CLI** (`spindoctor …` from `cmd.exe`). They share the same `~/.spindoctor/config.json`, so anything you do in one is visible to the other.
 
-## Install
+---
+
+## Pip install from source
+
+**Requirements:** Python 3.8+. Windows is the primary target (HyperSpin is a Windows app), but the CLI and GUI both run on macOS and Linux for development and testing.
 
 ```bat
 git clone https://github.com/phillram/spindoctor C:\spindoctor
@@ -29,12 +36,15 @@ pip install -e .[archives]
 pip install -e .[preview]
 ```
 
+The GUI uses Tkinter, which ships with the standard python.org Windows installer — no extra dependency. On Linux you may need `apt install python3-tk`; on macOS the official Python installer bundles it.
+
 ## Verify
 
 ```bat
 spindoctor --version
 spindoctor systems         :: lists configured systems (after `config init`)
 spindoctor tools-audit     :: inventory of third-party arcade utilities, read-only
+spindoctor-gui --version   :: confirms the GUI binary loads (without opening a window)
 ```
 
 `tools-audit` is the safest first command on a cabinet — it never touches files, and the report tells you which legacy tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, DemulShooter, …) are now redundant with built-in spindoctor commands. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
@@ -44,11 +54,14 @@ spindoctor tools-audit     :: inventory of third-party arcade utilities, read-on
 | Command | Purpose |
 |---|---|
 | `spindoctor` | Full CLI |
+| `spindoctor-gui` | Tkinter GUI launcher (Setup, Wheels, Audit & Doctor, Custom Command tabs) |
 | `spindoctor-fav` | Standalone Favorites wheel manager |
 | `spindoctor-recent` | Standalone Recently Played rebuild |
 | `spindoctor-stats` | Standalone playtime reports + Most Played wheel |
 
-The three standalone scripts are minimal `argparse` wrappers around the same library functions — useful for boot triggers and Tools menu entries because they skip the rich/click overhead. See [Standalone tools](standalone-tools.md).
+The three standalone wheel scripts are minimal `argparse` wrappers around the same library functions — useful for boot triggers and Tools menu entries because they skip the rich/click overhead. See [Standalone tools](standalone-tools.md).
+
+`spindoctor-gui` shells out to `spindoctor` (and the wheel scripts) under the hood, so anything you can do via a button or form in the window is also available — and identical — on the command line. See [Windows binaries → GUI launcher](windows-binaries.md#gui-launcher) for a tab-by-tab tour (the layout is the same on all platforms).
 
 Other commonly-used commands that ship only inside the full `spindoctor` CLI (no separate console script):
 
@@ -67,6 +80,7 @@ If you can't (or don't want to) install the package, the wrappers in `scripts/` 
 ```bat
 python C:\spindoctor\scripts\spindoctor-fav.py rebuild --apply
 python -m spindoctor.cli systems
+python -m spindoctor.gui                 :: GUI launcher
 ```
 
 You still need Python and the runtime dependencies. From the repo root:
@@ -84,11 +98,12 @@ For older / locked-down cabinets where installing Python isn't an option, every 
 ```
 spindoctor-windows-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI
+├── spindoctor-gui.exe      ← double-clickable GUI launcher
 ├── spindoctor-fav.exe      ← Favorites wheel manager
 ├── spindoctor-recent.exe   ← Recently Played rebuild
 └── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
-Quick version: download → extract → add to `PATH` → `spindoctor config init`. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
+Quick version: download → extract → either double-click `spindoctor-gui.exe` or open `cmd.exe` and run `spindoctor config init`. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
-Full walkthrough with screenshots, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions: [Windows binaries](windows-binaries.md).
+Full walkthrough — including a tour of the GUI tabs, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions — at [Windows binaries](windows-binaries.md).

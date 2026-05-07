@@ -4,12 +4,27 @@ A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [Rocket
 
 > **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag and never modify anything.
 
+## Pick your install route
+
+SpinDoctor ships in three forms. Pick the one that fits, then either click your way through the GUI or stay on the command line:
+
+| Route | Best for | Walkthrough |
+|---|---|---|
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python. Five `.exe`s including a GUI launcher. Win 7 SP1+. | [Windows binaries](windows-binaries.md) |
+| 🐍 **Pip install from source** | Dev machines, custom builds, anyone already on Python 3.8+. Cross-platform. | [Installation](installation.md) |
+| 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is. | [Installation → Running without `pip install`](installation.md#running-without-pip-install) |
+
+Then pick how to launch:
+
+| Mode | When to use it | How |
+|---|---|---|
+| 🖱️ **GUI launcher** (`spindoctor-gui`) | First-time setup, refreshing wheels, casual use | Double-click `spindoctor-gui.exe` (binary route) or run `spindoctor-gui` (pip route). See [Windows binaries → GUI launcher](windows-binaries.md#gui-launcher). |
+| ⌨️ **CLI** (`spindoctor`) | Every command, scripts, scheduled tasks, advanced workflows | Open `cmd.exe` and run `spindoctor …`. See the [Command reference](commands.md). |
+
 ## Where to start
 
 | If you want to… | Read |
 |---|---|
-| Install SpinDoctor (Python) | [Installation](installation.md) |
-| Install the prebuilt Windows `.exe` binaries (no Python) | [Windows binaries](windows-binaries.md) |
 | Stand up a cabinet from a blank Windows PC | [First-time setup](setup.md) |
 | Look up a specific command | [Command reference](commands.md) |
 | See or change configuration | [Configuration](configuration.md) |
@@ -26,10 +41,11 @@ It is a librarian: it reads and writes HyperSpin databases, RocketLauncher confi
 ## Project layout
 
 ```
-spindoctor/        ← Python package (the CLI)
+spindoctor/        ← Python package (CLI + GUI module)
 scripts/           ← Standalone wrappers + Windows .bat files
+build/             ← PyInstaller driver that produces the Windows .exe zip
 docs/              ← You are here
 tests/
 ```
 
-The standalone tools in `scripts/` are documented in [Standalone tools](standalone-tools.md).
+The standalone tools in `scripts/` are documented in [Standalone tools](standalone-tools.md). The frozen Windows binaries (CLI + GUI) come from `build/build_windows.py` — see [Windows binaries → Building from source](windows-binaries.md#building-from-source).

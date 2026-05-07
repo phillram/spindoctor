@@ -2,6 +2,8 @@
 
 A complete walkthrough for standing up a cabinet on a blank Windows PC. Steps 1–7 are prerequisites SpinDoctor itself never touches; 8–11 are SpinDoctor.
 
+> **Two install routes for SpinDoctor itself.** Step 8 below uses `pip install` because the rest of this walkthrough assumes Python is already on the box (`add-system`, `fetch-meta`, etc. all run from `cmd.exe`). If you're locking the cabinet down so end-users never see Python, install the [prebuilt Windows binaries](windows-binaries.md) instead — they include a GUI launcher (`spindoctor-gui.exe`) that wraps the same Setup wizard described in step 9 in a windowed form. Everything from step 9 onward works identically; the binary names are just `spindoctor.exe` instead of the `pip` console scripts.
+
 > **Hardware sanity.** NTFS is recommended for the system drive — `fav rebuild` and `stats-report build-wheel` use hardlinks to mirror media without duplicating bytes. FAT32 / exFAT fall back to copies via `--media-mode copy`.
 
 > **Legal.** Source ROMs and BIOS files only from games and consoles you own. SpinDoctor never downloads either, by design.
@@ -97,15 +99,19 @@ See [Installation](installation.md) for à-la-carte extras.
 
 ## 9. Configure paths
 
+Either drive the wizard from the GUI or the CLI — both write the same `%USERPROFILE%\.spindoctor\config.json`:
+
 ```bat
-spindoctor config init
+spindoctor-gui            :: GUI: fill in the Setup tab, click Save configuration
+:: ── or ──
+spindoctor config init    :: CLI: walks every key in order, asks at the prompt
 ```
 
-The wizard prompts for every path (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled. Press Enter to accept, type `-` to leave an optional path blank. Settings save to `%USERPROFILE%\.spindoctor\config.json`.
+The wizard prompts for every path (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled. In the CLI, press Enter to accept, type `-` to leave an optional path blank; in the GUI, each row has a Browse button.
 
 **All paths must already exist** — that's why steps 2–7 come first. If a path is rejected, create the folder and re-run.
 
-Re-running `config init` later uses your current values as defaults, so it's safe to refine.
+Re-running the wizard later uses your current values as defaults, so it's safe to refine.
 
 ## 10. (Optional) Add a metadata source
 
