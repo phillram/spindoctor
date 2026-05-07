@@ -7,6 +7,7 @@ Standalone Windows executables for SpinDoctor — for cabinets that can't (or sh
 | Binary | Purpose |
 |---|---|
 | `spindoctor.exe` | Full CLI |
+| `spindoctor-gui.exe` | Tkinter GUI launcher (built `--windowed`, no console) |
 | `spindoctor-fav.exe` | Favorites wheel manager (boot-trigger friendly) |
 | `spindoctor-recent.exe` | Recently Played rebuild |
 | `spindoctor-stats.exe` | Playtime reports + Most Played wheel |

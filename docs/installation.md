@@ -84,11 +84,12 @@ For older / locked-down cabinets where installing Python isn't an option, every 
 ```
 spindoctor-windows-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI
+├── spindoctor-gui.exe      ← double-clickable GUI launcher
 ├── spindoctor-fav.exe      ← Favorites wheel manager
 ├── spindoctor-recent.exe   ← Recently Played rebuild
 └── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
-Quick version: download → extract → add to `PATH` → `spindoctor config init`. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
+Quick version: download → extract → either double-click `spindoctor-gui.exe` or open `cmd.exe` and run `spindoctor config init`. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
 Full walkthrough with screenshots, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions: [Windows binaries](windows-binaries.md).

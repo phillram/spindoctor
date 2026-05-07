@@ -14,7 +14,7 @@ Two install paths — pick one:
 
 1. Grab `spindoctor-windows-vX.Y.Z.zip` from the [latest release](https://github.com/phillram/spindoctor/releases).
 2. Extract to e.g. `C:\spindoctor\` and add the folder to `PATH`.
-3. `spindoctor config init`
+3. Double-click `spindoctor-gui.exe` for the windowed launcher, **or** open `cmd.exe` and run `spindoctor config init`. (`spindoctor.exe` is a CLI — double-clicking it just flashes a console and exits, [by design](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly).)
 
 **From source** (Python 3.8+):
 

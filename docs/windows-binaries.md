@@ -9,6 +9,7 @@ Standalone `.exe` files for cabinets that can't (or shouldn't) install Python. D
 - [Download](#download)
 - [Install](#install)
 - [First run](#first-run)
+- [GUI launcher](#gui-launcher)
 - [Wiring into HyperSpin](#wiring-into-hyperspin)
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
@@ -23,6 +24,7 @@ Each release at [github.com/phillram/spindoctor/releases](https://github.com/phi
 ```
 spindoctor-windows-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI (every command)
+├── spindoctor-gui.exe      ← double-clickable GUI launcher
 ├── spindoctor-fav.exe      ← Favorites wheel manager
 ├── spindoctor-recent.exe   ← Recently Played rebuild
 └── spindoctor-stats.exe    ← playtime reports + Most Played wheel
@@ -69,10 +71,13 @@ There's no installer — just extract.
    ```
    C:\spindoctor\
    ├── spindoctor.exe
+   ├── spindoctor-gui.exe
    ├── spindoctor-fav.exe
    ├── spindoctor-recent.exe
    └── spindoctor-stats.exe
    ```
+
+   Keep all five together — `spindoctor-gui.exe` finds the other binaries by looking next to itself.
 
    > ![File Explorer showing the four .exe files in C:\spindoctor](images/windows-binaries-extract.png)
    >
@@ -95,6 +100,16 @@ There's no installer — just extract.
 
 ## First run
 
+> **Don't double-click `spindoctor.exe` from File Explorer.** It's a command-line tool — with no arguments it prints `--help` and exits, so the cmd window opens, dumps text into itself, and closes again before you can read it. That "flash and disappear" is the program working correctly, not a crash.
+>
+> Either use the GUI (`spindoctor-gui.exe`, see [GUI launcher](#gui-launcher)) or open `cmd.exe` first and run the binary from there:
+>
+> ```bat
+> :: Press Win+R, type cmd, hit Enter — then:
+> cd C:\spindoctor
+> spindoctor.exe --help
+> ```
+
 ```bat
 spindoctor --version
 :: SpinDoctor, version 1.1.0
@@ -111,6 +126,19 @@ spindoctor config init
 After the wizard, settings live at `%USERPROFILE%\.spindoctor\config.json`. Re-run `config init` later to refine — it uses your current values as defaults.
 
 A safe first command after install is `spindoctor tools-audit` — it never touches files and reports every third-party arcade utility installed alongside SpinDoctor (Tur-RemoveDupes, FatMatch, Sinden, DemulShooter, …) with the SpinDoctor command that supersedes each one.
+
+## GUI launcher
+
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with tabs for the most common operations:
+
+- **Setup** — the same paths `config init` asks for, in a form. Save writes to `%USERPROFILE%\.spindoctor\config.json`.
+- **Wheels** — one click each for Refresh Favorites / Recently Played / Most Played, plus a Refresh All.
+- **Audit & Doctor** — pick a system from the dropdown, run audit; one-click `doctor` and `tools-audit`.
+- **Custom Command** — a text box that accepts any `spindoctor` arguments (`audit --system MAME`, `migrate --target E:\Cab --apply`, etc.) for the cases the canned tabs don't cover.
+
+Output streams into the bottom panel as commands run, so you can watch progress without a console.
+
+The GUI shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it — keep all five files in the same folder. It does not require `PATH` to be configured.
 
 ## Wiring into HyperSpin
 
@@ -142,6 +170,14 @@ schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
 
 ## Troubleshooting
+
+### Double-clicking `spindoctor.exe` flashes a window that closes instantly
+
+Expected. SpinDoctor's CLI binaries (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, `spindoctor-stats.exe`) are command-line tools — with no arguments they print `--help` and exit, and Windows tears down the cmd window the moment they exit. Use one of:
+
+- Double-click `spindoctor-gui.exe` instead (see [GUI launcher](#gui-launcher)).
+- Open `cmd.exe` first (`Win+R` → `cmd` → Enter), `cd` into the install folder, then run the binary with arguments.
+- Use the bundled `.bat` wrappers under [`scripts/`](https://github.com/phillram/spindoctor/tree/main/scripts) — they `pause` on error so the window stays open.
 
 ### "Windows protected your PC" SmartScreen warning
 
