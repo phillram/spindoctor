@@ -12,10 +12,22 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # Coverage rationale:
+      # * ubuntu-latest × {3.8, 3.12} — catches Python 3.8 stdlib/syntax
+      #   regressions (the Win 7 cabinet floor) and the modern interpreter.
+      # * windows-2022 × 3.12 — catches Windows-specific path / encoding /
+      #   filesystem behaviour. We don't run windows-2022 × 3.8 here because
+      #   Defender + NTFS make it 4× slower than 3.12 (≈21min vs ≈5min)
+      #   without finding bugs the 3.8.10-frozen build-smoke job below
+      #   wouldn't already catch.
       matrix:
-        os: [ubuntu-latest, windows-2022]
-        # 3.8 is the floor (last to support Win 7); 3.12 is the modern target.
-        python-version: ['3.8', '3.12']
+        include:
+          - os: ubuntu-latest
+            python-version: '3.8'
+          - os: ubuntu-latest
+            python-version: '3.12'
+          - os: windows-2022
+            python-version: '3.12'
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -24,16 +36,23 @@ jobs:
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
+          # Cache the pip download wheelhouse keyed on pyproject.toml so
+          # subsequent runs skip re-downloading lxml/Pillow/py7zr.
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install
         shell: bash
         run: |
           python -m pip install --upgrade pip
           pip install -e .[all]
-          pip install pytest
+          pip install pytest pytest-xdist
 
+      # -n auto fans tests across the runner's CPUs. On the Windows runner
+      # this roughly halves wall time; on Linux it's a smaller win but
+      # still positive.
       - name: Run tests
-        run: pytest -q
+        run: pytest -q -n auto
 
   build-smoke:
     name: PyInstaller build smoke test
@@ -46,6 +65,10 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
         with:
           python-version: '3.8.10'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            build/requirements-build.txt
 
       - name: Install
         shell: bash
