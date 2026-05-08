@@ -54,7 +54,7 @@ spindoctor-gui --version   :: confirms the GUI binary loads (without opening a w
 | Command | Purpose |
 |---|---|
 | `spindoctor` | Full CLI |
-| `spindoctor-gui` | Tkinter GUI launcher (Setup, Wheels, Audit & Doctor, Custom Command tabs) |
+| `spindoctor-gui` | Tkinter GUI launcher with 11 tabs: Setup · Wheels · Main Menu · Audit & Doctor · Diagnose · LEDBlinky · Lightgun · Tools · Backup & Restore · Migrate · Custom Command |
 | `spindoctor-fav` | Standalone Favorites wheel manager |
 | `spindoctor-recent` | Standalone Recently Played rebuild |
 | `spindoctor-stats` | Standalone playtime reports + Most Played wheel |

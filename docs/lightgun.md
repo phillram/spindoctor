@@ -2,6 +2,8 @@
 
 `spindoctor lightgun` wires DemulShooter into RocketLauncher's per-system launches so a Sinden (or compatible) lightgun cabinet can fire on the right emulator without hand-editing `Settings\<System>.ini` for every game system. Module `.ahk` files are never modified — all edits land in the system INI's `Pre_Launch_App` and `Post_Launch_App` keys, which RocketLauncher runs around the emulator.
 
+> **GUI alternative:** the **Lightgun** tab in `spindoctor-gui` covers the same workflow without a console — `Detect installed gear` (with an optional `--apply` checkbox to persist discovered systems into config), `Audit wiring` (per-system table of Pre/Post launch state), and `Configure one system` (with optional `-target` and extra-args overrides). The CLI walkthrough below is still the source of truth; the GUI just builds the equivalent argv.
+
 ## Prerequisites
 
 - **Sinden Lightgun** (or another lightgun + driver). Install per the manufacturer's instructions; spindoctor only needs the install to exist on disk.
