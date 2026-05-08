@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -2105,6 +2106,148 @@ def theme_scan(system, keyword, output):
             "\n[dim]Heads-up:[/dim] your Main Menu folder also contains "
             ".swf / .zip theme files — those embed glyph art that "
             "SpinDoctor can't edit on top of what's listed above."
+        )
+
+
+@cli.command("theme-apply")
+@click.argument("source_dir", type=click.Path(file_okay=False), required=False)
+@click.option("--target", default=None,
+              help="Narrow the swap pool: 'all' (default), 'frontend' "
+                   "(only Media/Frontend/Images), or a system name "
+                   "(only that system's Special A/B folders).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the swap. Without this flag, prints the "
+                   "planned swaps as a dry-run table.")
+@click.option("--undo", "undo_path", default=None,
+              help="Reverse a previous run. Pass 'latest' to reverse "
+                   "the most recent theme-apply manifest, or a path "
+                   "under ~/.spindoctor/themes/.")
+@click.option("--list-manifests", "list_manifests_flag", is_flag=True,
+              help="List existing theme-apply manifests on disk and exit.")
+def theme_apply(source_dir, target, apply_changes, undo_path,
+                list_manifests_flag):
+    """Replace HyperSpin frontend overlay art from a community pack.
+
+    \b
+    Walks SOURCE_DIR for every PNG/JPG/etc., looks up each filename in
+    the cabinet's frontend art (Media/Frontend/Images +
+    Media/<system>/Images/{Special A,Special B}), and copies the
+    source over each match. Every overwritten file is backed up under
+    ~/.spindoctor/themes/theme-apply-<timestamp>/backup/ so the run
+    can be reversed.
+
+    \b
+    Examples:
+      # Preview what a 'PS Buttons' pack would replace
+      spindoctor theme-apply C:\\Packs\\PS-Buttons
+
+      # Commit the swap
+      spindoctor theme-apply C:\\Packs\\PS-Buttons --apply
+
+      # Only replace files in the universal Frontend bucket
+      spindoctor theme-apply C:\\Packs\\PS-Buttons --target frontend --apply
+
+      # Reverse the most recent run
+      spindoctor theme-apply --undo latest
+
+      # List previous runs
+      spindoctor theme-apply --list-manifests
+    """
+    from . import themes
+
+    config = _cfg()
+
+    if list_manifests_flag:
+        manifests = themes.list_manifests()
+        if not manifests:
+            console.print(
+                f"[yellow]No theme-apply manifests under {themes.THEMES_DIR}.[/yellow]"
+            )
+            return
+        for m in manifests:
+            try:
+                data = json.loads(m.read_text(encoding="utf-8"))
+                count = len(data.get("swaps", []))
+            except (OSError, ValueError):
+                count = "?"
+            console.print(f"[cyan]{m}[/cyan]  ({count} swap(s))")
+        return
+
+    if undo_path:
+        if undo_path == "latest":
+            manifest = themes.find_latest_manifest()
+            if manifest is None:
+                err_console.print(
+                    "[red]No theme-apply manifests on disk to undo.[/red]"
+                )
+                sys.exit(1)
+        else:
+            manifest = Path(undo_path).expanduser()
+            if not manifest.exists():
+                err_console.print(f"[red]Manifest not found:[/red] {manifest}")
+                sys.exit(1)
+        restored = themes.undo_plan(manifest)
+        console.print(
+            f"[green]✓[/green] Restored {restored} file(s) from "
+            f"[cyan]{manifest}[/cyan]"
+        )
+        return
+
+    if not source_dir:
+        err_console.print(
+            "[red]SOURCE_DIR is required (unless using --undo or "
+            "--list-manifests).[/red]"
+        )
+        sys.exit(1)
+
+    _check_config(config)
+    src = Path(source_dir).expanduser()
+    if not src.exists():
+        err_console.print(f"[red]Source folder not found:[/red] {src}")
+        sys.exit(1)
+
+    plans = themes.plan_apply(config, src, target=target)
+    if not plans:
+        console.print(
+            "[yellow]No filename matches between the source pack and "
+            "your cabinet's frontend art.[/yellow] Either the pack is "
+            "for a different HyperSpin layout, or the filenames don't "
+            "line up. Run [cyan]spindoctor theme-scan[/cyan] to see "
+            "what your cabinet actually has."
+        )
+        return
+
+    console.print(Panel(f" theme-apply ← {src} ", style="bold blue"))
+    tbl = Table(box=box.SIMPLE, title=f"{len(plans)} swap(s)")
+    tbl.add_column("Source", style="yellow")
+    tbl.add_column("→")
+    tbl.add_column("Target", style="green")
+    tbl.add_column("Scope", style="cyan")
+    tbl.add_column("Bucket", style="dim")
+    for p in plans:
+        tbl.add_row(p.source.name, "→", str(p.target),
+                    p.target_scope, p.target_bucket)
+    console.print(tbl)
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run.[/yellow] Re-run with [cyan]--apply[/cyan] "
+            "to commit. Every overwritten file is backed up under "
+            "~/.spindoctor/themes/ — reversible via [cyan]theme-apply "
+            "--undo latest[/cyan]."
+        )
+        return
+
+    result = themes.apply_plan(plans)
+    msg_parts = [f"{result.swapped} swapped"]
+    if result.skipped:
+        msg_parts.append(f"{len(result.skipped)} skipped")
+    console.print(f"\n[green]✓[/green] {', '.join(msg_parts)}.")
+    if result.manifest_path:
+        console.print(
+            f"  Manifest: [cyan]{result.manifest_path}[/cyan]\n"
+            f"  Run [cyan]spindoctor theme-apply --undo {result.manifest_path}[/cyan] "
+            "to revert."
         )
 
 

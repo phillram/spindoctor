@@ -246,6 +246,11 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "theme-scan --keyword xbox",
     "theme-scan --system <SYSTEM>",
     "theme-scan --output <PATH>",
+    "theme-apply <SOURCE_DIR>",
+    "theme-apply <SOURCE_DIR> --apply",
+    "theme-apply <SOURCE_DIR> --target frontend --apply",
+    "theme-apply --undo latest",
+    "theme-apply --list-manifests",
 )
 
 
@@ -642,13 +647,19 @@ class _SpinDoctorGUI:
     # matters: newest-style categories near the top so they win the
     # default selection. The viewer scans whichever of these exist on
     # disk; users without `migrate` history just see fewer rows.
-    _LOG_CATEGORIES: tuple[tuple[str, str], ...] = (
-        ("Migrations",     "migrations"),
-        ("Curation",       "curation"),
-        ("Edits",          "edits"),
-        ("Renames",        "renames"),
-        ("Media imports",  "media_imports"),
-        ("Misplaced ROMs", "misplaced"),
+    # (label, dirname, depth) — depth=0 means "files directly inside
+    # the dir"; depth=1 means "manifest.json one level deep" which is
+    # how theme-apply organises a run-folder per swap. Adding categories
+    # at unusual depths is rare enough that we keep the populator
+    # simple instead of accepting a callable.
+    _LOG_CATEGORIES: tuple[tuple[str, str, int], ...] = (
+        ("Migrations",     "migrations",     0),
+        ("Curation",       "curation",       0),
+        ("Edits",          "edits",          0),
+        ("Renames",        "renames",        0),
+        ("Media imports",  "media_imports",  0),
+        ("Theme swaps",    "themes",         1),
+        ("Misplaced ROMs", "misplaced",      0),
     )
 
     # Per-category undo recipes for the "Undo this run" button on the
@@ -685,6 +696,10 @@ class _SpinDoctorGUI:
         "media_imports": {
             "argv": lambda _path: ["media-scan", "--undo"],
             "uses_path": False,
+        },
+        "themes": {
+            "argv": lambda path: ["theme-apply", "--undo", str(path)],
+            "uses_path": True,
         },
     }
 
@@ -763,12 +778,24 @@ class _SpinDoctorGUI:
             tree.delete(*tree.get_children())
             item_meta.clear()
             any_found = False
-            for label, dirname in self._LOG_CATEGORIES:
+            for label, dirname, depth in self._LOG_CATEGORIES:
                 cat_dir = CONFIG_DIR / dirname
                 if not cat_dir.exists():
                     continue
+                if depth == 0:
+                    candidates = (p for p in cat_dir.iterdir()
+                                  if p.is_file())
+                else:
+                    # depth=1: subdir-per-run with a manifest.json
+                    # inside (theme-apply layout). The manifest.json
+                    # is what the Undo command consumes, so that's
+                    # what the user sees in the tree.
+                    candidates = (sub / "manifest.json"
+                                  for sub in cat_dir.iterdir()
+                                  if sub.is_dir()
+                                  and (sub / "manifest.json").exists())
                 files = sorted(
-                    (p for p in cat_dir.iterdir() if p.is_file()),
+                    candidates,
                     key=lambda p: p.stat().st_mtime,
                     reverse=True,
                 )
@@ -1114,6 +1141,10 @@ class _SpinDoctorGUI:
             command=open_folder,
         ).pack(side="left", padx=6)
         self.ttk.Button(
+            btn_row, text="Apply replacement pack…",
+            command=self._show_theme_apply,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Refresh",
             command=lambda: threading.Thread(
                 target=worker, daemon=True,
@@ -1124,6 +1155,207 @@ class _SpinDoctorGUI:
         ).pack(side="right")
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _show_theme_apply(self) -> None:
+        """Open a Toplevel that runs `theme-apply` against a user-picked
+        source directory.
+
+        Two-step UI: pick a folder + scope, click Plan to see the dry-
+        run table, then Apply to commit. Apply writes a manifest under
+        ``~/.spindoctor/themes/`` that the Logs & Manifests viewer's
+        Undo this run button can reverse later.
+        """
+        win = self.tk.Toplevel(self.root)
+        win.title(f"{__app_name__} — Apply theme replacement pack")
+        win.geometry("960x600")
+        win.transient(self.root)
+
+        self.ttk.Label(
+            win,
+            text=("Replace HyperSpin frontend overlay art with a "
+                  "community pack. Pick the folder containing the "
+                  "replacement images (PNGs/JPGs etc.); SpinDoctor "
+                  "looks up each filename in the cabinet's Frontend / "
+                  "Special A / Special B folders and copies the "
+                  "source over each match. Every overwritten file is "
+                  "backed up so the run is reversible via the Logs & "
+                  "Manifests viewer."),
+            wraplength=940, justify="left", padding=(10, 6),
+        ).pack(fill="x")
+
+        # ── Source folder picker ──────────────────────────────────────
+        src_row = self.ttk.Frame(win)
+        src_row.pack(fill="x", padx=8, pady=2)
+        self.ttk.Label(src_row, text="Source folder").pack(side="left")
+        src_var = self.tk.StringVar()
+        self.ttk.Entry(
+            src_row, textvariable=src_var,
+        ).pack(side="left", fill="x", expand=True, padx=6)
+        self.ttk.Button(
+            src_row, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                src_var, "Pick theme replacement folder",
+            ),
+        ).pack(side="left")
+
+        # ── Target scope ──────────────────────────────────────────────
+        scope_row = self.ttk.Frame(win)
+        scope_row.pack(fill="x", padx=8, pady=2)
+        self.ttk.Label(scope_row, text="Target scope").pack(side="left")
+        scope_var = self.tk.StringVar(value="all")
+        self.ttk.Combobox(
+            scope_row, textvariable=scope_var,
+            values=["all", "frontend", "<system name>"],
+            state="normal", width=24,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(
+            scope_row,
+            text=("'all' = every match anywhere; 'frontend' = only "
+                  "Media/Frontend/Images; or type a system name to "
+                  "limit to that system's Special A/B."),
+            foreground="#666", wraplength=600, justify="left",
+        ).pack(side="left", padx=6)
+
+        # ── Plan tree ─────────────────────────────────────────────────
+        tree_frame = self.ttk.Frame(win)
+        tree_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        tree = self.ttk.Treeview(
+            tree_frame, columns=("scope", "bucket", "target"),
+            show="tree headings",
+        )
+        tree.heading("#0", text="Source filename")
+        tree.heading("scope", text="Scope")
+        tree.heading("bucket", text="Bucket")
+        tree.heading("target", text="Target path")
+        tree.column("#0", width=240, stretch=True)
+        tree.column("scope", width=140, stretch=False)
+        tree.column("bucket", width=130, stretch=False)
+        tree.column("target", width=420, stretch=True)
+        tscroll = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=tscroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        tscroll.pack(side="right", fill="y")
+
+        status_var = self.tk.StringVar(
+            value="Pick a source folder and click Plan to preview the swaps.",
+        )
+        self.ttk.Label(
+            win, textvariable=status_var, padding=(10, 4),
+            wraplength=940, justify="left",
+        ).pack(fill="x")
+
+        # State carried between Plan and Apply.
+        plans_holder: list = []
+
+        def run_plan() -> None:
+            from . import themes as themes_mod
+            src = src_var.get().strip()
+            if not src:
+                self.messagebox.showwarning(
+                    "Source folder required",
+                    "Pick the folder containing the replacement images "
+                    "first (Browse…).",
+                )
+                return
+            src_path = Path(src)
+            if not src_path.exists():
+                self.messagebox.showerror(
+                    "Folder not found",
+                    f"{src_path} doesn't exist.",
+                )
+                return
+
+            cfg = load_config()
+            scope = scope_var.get().strip()
+            target = None if scope.lower() in ("", "all") else scope
+            try:
+                plans = themes_mod.plan_apply(cfg, src_path, target=target)
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                self.messagebox.showerror(
+                    "Plan failed", f"{type(exc).__name__}: {exc}",
+                )
+                return
+
+            tree.delete(*tree.get_children())
+            plans_holder.clear()
+            plans_holder.extend(plans)
+            for p in plans:
+                tree.insert(
+                    "", "end", text=p.source.name,
+                    values=(p.target_scope, p.target_bucket,
+                            str(p.target)),
+                )
+            if plans:
+                status_var.set(
+                    f"{len(plans)} swap(s) planned. Click Apply to "
+                    "commit — every overwritten file is backed up "
+                    "first."
+                )
+            else:
+                status_var.set(
+                    "No filename matches between the source pack and "
+                    "your cabinet's frontend art. Either the pack is "
+                    "for a different layout or the filenames don't "
+                    "line up. Open the Theme browser to see what your "
+                    "cabinet has."
+                )
+
+        def run_apply() -> None:
+            from . import themes as themes_mod
+            if not plans_holder:
+                self.messagebox.showinfo(
+                    "Nothing to apply",
+                    "Click Plan first. If the planned table is empty, "
+                    "there are no matches to apply.",
+                )
+                return
+            if not self.messagebox.askyesno(
+                "Confirm apply",
+                f"Replace {len(plans_holder)} file(s) on disk? Every "
+                "overwritten file is backed up under "
+                "~/.spindoctor/themes/ — reversible via the Logs & "
+                "Manifests viewer (or `theme-apply --undo latest`).",
+            ):
+                return
+            try:
+                result = themes_mod.apply_plan(plans_holder)
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                self.messagebox.showerror(
+                    "Apply failed", f"{type(exc).__name__}: {exc}",
+                )
+                return
+            self._append_output(
+                f"\n[theme-apply] swapped {result.swapped} file(s)"
+                + (f", skipped {len(result.skipped)}"
+                   if result.skipped else "")
+                + (f"\n  manifest: {result.manifest_path}"
+                   if result.manifest_path else "")
+                + "\n"
+            )
+            self.messagebox.showinfo(
+                "Theme applied",
+                f"Swapped {result.swapped} file(s).\n\n"
+                + (f"Manifest: {result.manifest_path}\n"
+                   "Undo via File → View logs & manifests… → Theme "
+                   "swaps → Undo this run."
+                   if result.manifest_path else
+                   "No manifest written."),
+            )
+            win.destroy()
+
+        btn_row = self.ttk.Frame(win)
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        self.ttk.Button(
+            btn_row, text="Plan", command=run_plan,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Apply", command=run_apply,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Close", command=win.destroy,
+        ).pack(side="right")
 
     # ── Setup tab ─────────────────────────────────────────────────────────────
 
