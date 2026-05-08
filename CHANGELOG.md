@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-05-08
+
 ### Added
 
 - **GUI draggable output panel.** The tab notebook and Output panel are now separated by a vertical `PanedWindow` sash. Drag the divider up to give the output area more room — useful on 1024×768 / 1280×720 arcade screens where the default height can be too short to read full command output. On window resize the notebook absorbs extra space and the output panel holds its dragged size; the output panel cannot be collapsed below 60 px.
@@ -226,7 +228,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/phillram/spindoctor/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/phillram/spindoctor/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/phillram/spindoctor/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/phillram/spindoctor/compare/v1.2.0...v1.3.0
