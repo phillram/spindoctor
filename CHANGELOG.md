@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **GUI Backup & Restore tab.** New Tkinter tab wrapping `spindoctor backup create / list / info / restore`. Per-component checkboxes (default: all seven), shared target-folder picker for create/list, separate backup-folder picker for info/restore, optional label, dry-run by default with explicit Apply, plus restore-time toggles for `--use-current-paths` and `--overwrite`. Cabinet owners can now snapshot the library before a migration without dropping into `cmd.exe`.
+- **GUI Custom Command tab now ships a presets dropdown.** The free-form arg field became an editable Combobox seeded with ~70 curated commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Users can pick a canonical example, tweak `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), and run — no more guessing the command surface from a blank field. Picks an unfilled placeholder up before launch and warns instead of silently shelling out.
 
 ## [1.3.0] - 2026-05-07
 
