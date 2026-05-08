@@ -106,6 +106,17 @@ def test_resolve_frozen_missing_sibling_raises(monkeypatch, tmp_path):
     assert "spindoctor-fav" in str(exc.value)
 
 
+# ─── Backup tab presets ───────────────────────────────────────────────────────
+
+def test_backup_components_match_cli_components():
+    """The Backup tab's checklist must stay in sync with `backup.ALL_COMPONENTS`
+    or the GUI will silently omit (or invent) components when building
+    `--include`."""
+    from spindoctor import backup as backup_mod
+    gui_keys = tuple(key for key, _desc in gui._BACKUP_COMPONENTS)
+    assert gui_keys == backup_mod.ALL_COMPONENTS
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
