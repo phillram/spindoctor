@@ -35,7 +35,7 @@ from .audit import SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_systems, load_config, save_config,
 )
-from .database import load_database
+from .database import GameEntry, HyperspinDatabase, load_database
 
 console = Console()
 err_console = Console(stderr=True)
@@ -1957,11 +1957,65 @@ def stats_report_build_wheel(limit, target_system, media_mode,
     _print_synth_summary("Most Played", summary)
 
 
+# Static .bat bodies — kept module-level so `install-tools` and any future
+# helper (e.g. a unit test) build the same files without duplicating CRLF
+# quoting nightmares.
+_INSTALL_TOOLS_BATS: dict[str, str] = {
+    "Refresh Favorites.bat":
+        "@echo off\r\n"
+        "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
+        "spindoctor-fav rebuild --apply\r\n"
+        "if errorlevel 1 pause\r\n",
+    "Refresh Recently Played.bat":
+        "@echo off\r\n"
+        "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
+        "spindoctor-recent rebuild --apply\r\n"
+        "if errorlevel 1 pause\r\n",
+    "Refresh Most Played.bat":
+        "@echo off\r\n"
+        "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
+        "spindoctor-stats build-wheel --apply\r\n"
+        "if errorlevel 1 pause\r\n",
+    "Refresh Both.bat":
+        "@echo off\r\n"
+        "spindoctor-fav rebuild --apply\r\n"
+        "spindoctor-recent rebuild --apply\r\n"
+        "spindoctor-stats build-wheel --apply\r\n"
+        "if errorlevel 1 pause\r\n",
+}
+
+
+def _install_tools_pclauncher_ini(bat_path: Path) -> str:
+    """PCLauncher INI body that runs *bat_path* directly.
+
+    Unlike the favorites/recent INIs (which delegate via RLaunch back to
+    the source emulator), the wheel-refresh helpers are plain .bat files —
+    so the INI just points ``applicationpath`` at the bat itself and lets
+    PCLauncher run it.
+    """
+    return (
+        "[exe info]\n"
+        f"applicationpath={bat_path}\n"
+        f"rompath=\n"
+        f"parameters=\n"
+    )
+
+
 @cli.command("install-tools")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
-                   "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor.")
-def install_tools(output_dir):
+                   "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
+                   "when --add-to-system is unset, or to "
+                   "<rocketlauncher_dir>/Modules/PCLauncher/<system> when it "
+                   "is set (so the INIs sit next to the bats they launch).")
+@click.option("--add-to-system", "add_to_system", default=None,
+              help="HyperSpin system whose database should gain wheel "
+                   "entries for these helpers. Use this to expose the "
+                   "refresh helpers as 'games' inside a Tools / Toolkit "
+                   "wheel you can navigate to from the cabinet. The "
+                   "system's database XML must already exist; existing "
+                   "entries with the same name are overwritten.")
+def install_tools(output_dir, add_to_system):
     """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
 
     \b
@@ -1976,51 +2030,127 @@ def install_tools(output_dir):
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
     without dropping to a console.
+
+    \b
+    With --add-to-system, also adds matching <game> entries to the named
+    system's database XML and writes per-game PCLauncher INIs alongside
+    the bats. The system shows up on a wheel inside HyperSpin (commonly
+    a 'Toolkit' or 'Tools' wheel) and each helper appears as a 'game'
+    you can launch like any other.
     """
     config = _cfg()
-    if output_dir:
+
+    if add_to_system:
+        # Wheel-integration mode: bats live next to the per-game INIs
+        # that PCLauncher uses, so a single output_dir keeps related
+        # files together and HyperSpin picks them up without further
+        # path config.
+        if not config.rocketlauncher_dir:
+            err_console.print(
+                "[red]rocketlauncher_dir is not set.[/red] Configure it "
+                "in the Setup tab (or `spindoctor config set "
+                "rocketlauncher_dir …`) before using --add-to-system."
+            )
+            sys.exit(1)
+        if not config.hyperspin_dir:
+            err_console.print(
+                "[red]hyperspin_dir is not set.[/red] --add-to-system "
+                "needs it to find the target system's database XML."
+            )
+            sys.exit(1)
+        if output_dir:
+            out = Path(output_dir)
+        else:
+            out = (Path(config.rocketlauncher_dir) / "Modules"
+                   / "PCLauncher" / add_to_system)
+    elif output_dir:
         out = Path(output_dir)
     elif config.rocketlauncher_dir:
-        out = Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch" / "Tools" / "spindoctor"
+        out = (Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch"
+               / "Tools" / "spindoctor")
     else:
-        err_console.print("[red]No --output-dir and rocketlauncher_dir is unset.[/red]")
+        err_console.print(
+            "[red]No --output-dir and rocketlauncher_dir is unset.[/red]"
+        )
         sys.exit(1)
     out.mkdir(parents=True, exist_ok=True)
 
-    bats = {
-        "Refresh Favorites.bat":
-            "@echo off\r\n"
-            "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-            "spindoctor-fav rebuild --apply\r\n"
-            "if errorlevel 1 pause\r\n",
-        "Refresh Recently Played.bat":
-            "@echo off\r\n"
-            "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-            "spindoctor-recent rebuild --apply\r\n"
-            "if errorlevel 1 pause\r\n",
-        "Refresh Most Played.bat":
-            "@echo off\r\n"
-            "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
-            "spindoctor-stats build-wheel --apply\r\n"
-            "if errorlevel 1 pause\r\n",
-        "Refresh Both.bat":
-            "@echo off\r\n"
-            "spindoctor-fav rebuild --apply\r\n"
-            "spindoctor-recent rebuild --apply\r\n"
-            "spindoctor-stats build-wheel --apply\r\n"
-            "if errorlevel 1 pause\r\n",
-    }
-    for name, body in bats.items():
-        (out / name).write_text(body, encoding="utf-8")
-    console.print(f"[green]+[/green] wrote {len(bats)} helper(s) to [cyan]{out}[/cyan]")
+    written_bats: list[Path] = []
+    for name, body in _INSTALL_TOOLS_BATS.items():
+        path = out / name
+        path.write_text(body, encoding="utf-8")
+        written_bats.append(path)
     console.print(
-        "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to HyperSpin's "
-        "Tools folder, or register the .bat files in HyperHQ → Tools.[/dim]"
+        f"[green]+[/green] wrote {len(written_bats)} helper(s) to "
+        f"[cyan]{out}[/cyan]"
+    )
+
+    if not add_to_system:
+        console.print(
+            "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
+            "HyperSpin's Tools folder, or register the .bat files in "
+            "HyperHQ → Tools.[/dim]"
+        )
+        console.print(
+            "[dim]Run on boot:[/dim] schedule "
+            "[cyan]spindoctor-fav rebuild --apply[/cyan] and "
+            "[cyan]spindoctor-recent rebuild --apply[/cyan] via Windows "
+            "Task Scheduler (trigger: 'At log on'), or use the GUI's "
+            "Tools tab → Auto-refresh on startup."
+        )
+        return
+
+    # ── --add-to-system path: also add wheel entries + per-game INIs ─────────
+    db_path = (config.databases_dir / add_to_system / f"{add_to_system}.xml")
+    if not db_path.exists():
+        err_console.print(
+            f"[red]Database not found:[/red] {db_path}\n"
+            f"Create the system first (e.g. via [cyan]spindoctor add-system "
+            f"\"{add_to_system}\"[/cyan]) before adding tool entries to it."
+        )
+        sys.exit(1)
+
+    db = HyperspinDatabase(add_to_system, db_path)
+    db.load()
+    added_entries: list[str] = []
+    for bat_path in written_bats:
+        # Wheel name = bat filename without the .bat suffix. HyperSpin
+        # treats the <game name="..."/> attribute as the rom key, so
+        # this is what PCLauncher will look up "<name>.ini" by.
+        entry_name = bat_path.stem
+        db.upsert_game(GameEntry(
+            name=entry_name,
+            description=entry_name,
+            manufacturer="SpinDoctor",
+            year="",
+            genre="Tools",
+            players="1",
+            enabled="Yes",
+        ))
+        added_entries.append(entry_name)
+
+        # Per-game PCLauncher INI sitting next to the bat. PCLauncher
+        # looks under <rocketlauncher>/Modules/PCLauncher/<system>/
+        # for "<rom>.ini", so when the bats live there the INIs can be
+        # written alongside without a second path lookup.
+        ini_path = bat_path.with_suffix(".ini")
+        ini_path.write_text(
+            _install_tools_pclauncher_ini(bat_path), encoding="utf-8"
+        )
+
+    db.save()
+    console.print(
+        f"[green]+[/green] added {len(added_entries)} entry(ies) to "
+        f"[cyan]{db_path}[/cyan]: "
+        + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
     console.print(
-        "[dim]Run on boot:[/dim] schedule [cyan]spindoctor-fav rebuild --apply[/cyan] and "
-        "[cyan]spindoctor-recent rebuild --apply[/cyan] via Windows Task Scheduler "
-        "(trigger: 'At log on')."
+        f"[dim]Make sure[/dim] [cyan]{add_to_system}[/cyan] [dim]uses "
+        "PCLauncher as its emulator (HyperHQ → Settings → Emulator → "
+        "PCLauncher), and that[/dim] [cyan]{add_to_system}[/cyan] "
+        "[dim]is on the Main Menu — run[/dim] "
+        f"[cyan]spindoctor mainmenu add \"{add_to_system}\" --apply[/cyan]"
+        "[dim] if it isn't.[/dim]"
     )
 
 
