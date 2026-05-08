@@ -4,7 +4,7 @@ A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](htt
 
 SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
 
-> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back.
+> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`, `theme-scan`) need no flag. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back.
 
 ## Pick your install route
 
@@ -71,7 +71,7 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 
 ## Common starting points
 
-The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes, and any other `spindoctor …` invocation — also work from the GUI's Custom Command tab (whose dropdown ships ~70 canonical commands) if you'd rather click than type. The 14 dedicated GUI tabs cover the most-used workflows directly: **Setup**, **Wheels** (Favorites / Recently Played / Most Played + HyperSpin integration), **Main Menu** (top-level wheel ordering), **Audit & Doctor**, **Diagnose** (find-dupes, find-misplaced, find-orphan-media, check-discs, lint, report, verify-against-DAT, global search), **Metadata & Media** (fetch-meta, fetch-media, media-scan, update-db, generate-config), **Curate** (region/revision thinning, cleanup, ignore lifecycle), **Systems** (add-system, add-pc-system, pc-rename), **LEDBlinky**, **Lightgun**, **Tools** (Tools-menu helpers + Windows auto-refresh on log-on), **Backup & Restore**, **Migrate** (with undo), **Custom Command**. A `File` menu adds shortcuts to `config.json` / `~/.spindoctor` / a Logs & Manifests viewer; a `Help` menu surfaces an About dialog and a "Check for updates" action that pings GitHub for newer releases.
+The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes, and any other `spindoctor …` invocation — also work from the GUI's Custom Command tab (whose dropdown ships ~70 canonical commands) if you'd rather click than type. The 14 dedicated GUI tabs cover the most-used workflows directly: **Setup**, **Wheels** (Favorites / Recently Played / Most Played + HyperSpin integration), **Main Menu** (top-level wheel ordering), **Audit & Doctor**, **Diagnose** (find-dupes, find-misplaced, find-orphan-media, check-discs, lint, report, verify-against-DAT, global search), **Metadata & Media** (fetch-meta, fetch-media, media-scan, update-db, generate-config), **Curate** (region/revision thinning with an interactive `☑/☐` per-row preview, cleanup, ignore lifecycle with click-to-un-ignore viewer), **Systems** (add-system, add-pc-system, pc-rename), **LEDBlinky**, **Lightgun**, **Tools** (Tools-menu helpers + Windows auto-refresh on log-on), **Backup & Restore**, **Migrate** (with undo), **Custom Command**. A `File` menu adds shortcuts to `config.json` / `~/.spindoctor` / a Logs & Manifests viewer (with one-click "Undo this run" for any apply-mode command) / a HyperSpin theme browser; a `Help` menu surfaces an About dialog and a "Check for updates" action that pings GitHub for newer releases.
 
 | If you want to… | Run |
 |---|---|
@@ -86,6 +86,8 @@ The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes
 | Refresh Favorites / Recently Played / Most Played | `spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply` |
 | Snapshot the library before risky work | `spindoctor backup create --target E:\Backups --apply` |
 | Migrate to a new drive | `spindoctor migrate --target E:\Cab --apply` |
+| Inventory frontend controller-glyph art | `spindoctor theme-scan --keyword xbox` |
+| Replace controller glyphs with a community pack | `spindoctor theme-apply C:\Packs\PS-Buttons --apply` |
 
 ## Reporting issues
 

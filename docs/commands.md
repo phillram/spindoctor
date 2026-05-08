@@ -1,8 +1,8 @@
 # Command reference
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `mainmenu show`, `find-misplaced` without `--apply`) need no flag and never modify anything.
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`) need no flag and never modify anything.
 
-Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map.
+Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
 ## Contents
 
@@ -12,6 +12,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
+- [Themes](#themes) — `theme-scan`, `theme-apply`
 - [LEDBlinky](#ledblinky)
 - [Light guns](#light-guns) — `lightgun detect`, `lightgun audit`, `lightgun configure`
 - [Maintenance](#maintenance) — `doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
@@ -409,7 +410,7 @@ spindoctor find-misplaced --undo                 :: reverse the most recent --ap
 
 ### `curate` — region & version curation
 
-> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)…** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore…** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
 
 Where `find-dupes` only reports collisions, `curate` actively picks one canonical variant per game (by region preference and revision number) and groups the rest as retirement candidates.
 
@@ -595,6 +596,56 @@ spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode 
 
 ---
 
+## Themes
+
+Inventory and replace HyperSpin's frontend overlay art — the controller-hint glyphs that appear at the bottom of the cabinet UI (Special A / Special B). Two commands: a read-only `theme-scan` for figuring out what's there, and a `theme-apply` that swaps a community pack onto the cabinet with full undo support.
+
+> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack…" button on that window opens a Plan/Apply window for swapping a community pack. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo.
+
+### `theme-scan`
+
+Read-only inventory of every overlay file under `<hyperspin>/Media/Frontend/Images/` and per-system `<hyperspin>/Media/<system>/Images/{Special A,Special B}/`. These are the folders HyperHQ → Special A/B writes to and the most common place "controller hint glyph" art lives.
+
+```bat
+spindoctor theme-scan                                  :: rich table of every overlay file
+spindoctor theme-scan --system MAME                    :: limit to one system
+spindoctor theme-scan --keyword xbox                   :: case-insensitive filename filter
+spindoctor theme-scan --output D:\theme_audit.csv      :: write CSV instead of table
+```
+
+If your bottom-of-screen glyphs are baked into a Flash `.swf` inside `<hyperspin>/Media/Main Menu/Themes/default.zip`, this command can't see them — SWFs need a Flash authoring tool to edit. The report flags that case at the end so you know the difference between "nothing to swap" and "glyphs are inside a SWF".
+
+### `theme-apply`
+
+Replace overlays by walking a source folder of replacement images and matching each filename against the cabinet's frontend art. Filename-based matching, so a single source file can swap multiple targets if the same filename exists in several Special A/B folders.
+
+```bat
+:: Dry-run preview — see what a "PS Buttons" pack would replace
+spindoctor theme-apply C:\Packs\PS-Buttons
+
+:: Commit the swap. Every overwritten file is backed up first.
+spindoctor theme-apply C:\Packs\PS-Buttons --apply
+
+:: Only replace the universal Frontend bucket (no per-system swaps)
+spindoctor theme-apply C:\Packs\PS-Buttons --target frontend --apply
+
+:: Limit to one system's Special A/B
+spindoctor theme-apply C:\Packs\PS-Buttons --target "Sega Naomi" --apply
+
+:: Reverse the most recent run
+spindoctor theme-apply --undo latest
+
+:: Reverse a specific run
+spindoctor theme-apply --undo ~/.spindoctor/themes/theme-apply-20260508_120000/manifest.json
+
+:: List previous runs
+spindoctor theme-apply --list-manifests
+```
+
+Every applied swap writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/` with the original files mirrored into a `backup/` subfolder. `--undo` reads the manifest and restores each backup back to its target path. The GUI's `File → View logs & manifests…` window has a **Theme swaps** category and a one-click **Undo this run** button that runs the same undo command.
+
+---
+
 ## LEDBlinky
 
 ```bat
@@ -673,6 +724,8 @@ Best run on the arcade cabinet itself. The report is purely informational — it
 See [Standalone tools → Tools audit](standalone-tools.md) for the categorised mapping.
 
 ### `ignore`
+
+> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
 
 Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
 
