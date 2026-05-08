@@ -191,4 +191,22 @@ Yes — RocketUI uses the same HyperSpin `Databases/` and `Media/` structure.
 
 ### Recovering from any apply
 
-Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes).
+Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests…` window lists every per-run manifest with a tree on the left and a JSON viewer on the right — useful when you can't remember which dir owns the run you want to undo.
+
+## GUI launcher
+
+### Status bar says "Update available: vX.Y.Z" — what does it mean?
+
+The GUI checks GitHub Releases on launch and surfaces newer-version hints in the status bar (with the URL in the Output panel). `Help → Check for updates` re-runs the same check on demand. To download, open the [latest release](https://github.com/phillram/spindoctor/releases/latest) and replace your `.exe` files (config and caches under `~/.spindoctor/` survive the upgrade — see [Updating](windows-binaries.md#updating)).
+
+### How do I disable the update check?
+
+Set the `SPINDOCTOR_NO_UPDATE_CHECK=1` environment variable before launching the GUI. The check is also a no-op when GitHub is unreachable, so you don't need to disable it explicitly for offline cabinets — it just silently degrades. See [Configuration → Environment variables](configuration.md#environment-variables).
+
+### Where do my manifests live? How do I read one?
+
+Open the GUI and use **`File → View logs & manifests…`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim.
+
+### Menubar reference
+
+`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Exit. `Help`: About SpinDoctor / Check for updates. Full descriptions at [Windows binaries → Menubar](windows-binaries.md#menubar).

@@ -109,7 +109,7 @@ You have two equivalent ways to point SpinDoctor at your library — pick whiche
 ```bat
 cd C:\spindoctor
 spindoctor.exe --version
-:: SpinDoctor, version 1.2.0
+:: SpinDoctor, version 1.4.0
 
 spindoctor.exe config init
 ```
@@ -120,7 +120,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 11 tabs that cover essentially the entire CLI surface, plus a shared output panel that streams subprocess output as commands run.
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 14 tabs that cover essentially the entire CLI surface, a `File` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
 > ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
 >
@@ -140,11 +140,17 @@ The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standal
 
 **Main Menu** — reorder, hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). Show renders the current order in the output panel; pick a system, type a position if needed, then click Move up / Move down / Reorder / Hide / Show / Add / Remove. Sort rewrites the whole wheel alphabetically, by manufacturer, or by year. One Apply checkbox shared by every action — dry-run by default. Equivalent to the `spindoctor mainmenu *` subcommand group.
 
-**Audit & Doctor** — pick a system from the dropdown to run a per-system audit, or click Run doctor / Tools audit / Audit all systems for library-wide checks. None of these write to disk. Equivalent to `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`.
+**Audit & Doctor** — pick a system from the dropdown to run a per-system audit, or click Run doctor / Tools audit / Audit all systems for library-wide checks. None of these write to disk. Equivalent to `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`. **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` in Explorer (Finder / xdg-open on macOS / Linux) — useful when an audit row reports "missing wheel" or "wrong title" and you want to eyeball the offending folder.
 
 > ![Audit & Doctor tab with the system dropdown expanded](images/gui-launcher-audit-tab.png)
 
 **Diagnose** — one-click read-only inspectors that don't change anything on disk: Find duplicate ROMs, Find misplaced ROMs, Find orphan media, Check disc-set consistency, Lint, Generate report, Preview HyperSpin XML, Stats. Plus a Global Search box (`spindoctor find-global`) and a Verify-against-DAT mini-form (`spindoctor verify --system X --dat …`).
+
+**Metadata & Media** — fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system field at the top (or "All systems" toggle) plus an Apply checkbox; below, four sections wrap `fetch-meta` (with `--auto-best` / `--all-games`), `fetch-media` (comma-separated `--types` defaulting to `wheel,background`, plus `--overwrite`), `media-scan` (source-folder picker + copy/move/link action), and `update-db` (with `--remove-orphans` / `--strip-variant-tags`). A separate `generate-config` button regenerates the HyperSpin Main Menu + RocketLauncher INIs from the current config.
+
+**Curate** — thin out region/revision duplicates, prune library caches, and manage ignore lists. Three sections: **Curate region/revision variants** wraps `spindoctor curate` (with regions, prefer-revision latest/oldest, --include-proto, archive vs delete, dry-run by default) plus Undo and List manifests buttons; **Cache cleanup** wraps `cleanup categories / audit / run` with an optional `--older-than DAYS` field; **Ignore list** wires up `ignore add / remove / list` with system + game-name fields.
+
+**Systems** — add or rename HyperSpin systems. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. **Rename an existing PC system** runs `pc-rename` with old / new fields. Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by default.
 
 **LEDBlinky** — Generate (controls.ini + colors.ini), Audit coverage, Check, and Fix. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. Equivalent to `spindoctor ledblinky generate / audit / check / fix`.
 
@@ -164,6 +170,17 @@ The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standal
 **Custom Command** — anything the dedicated tabs don't cover. The entry field is now an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 > ![Custom Command tab with `audit --all` typed into the entry](images/gui-launcher-custom-tab.png)
+
+### Menubar
+
+A `File` / `Help` menubar runs across the top of the window:
+
+- **File → Open config.json** — opens `~/.spindoctor/config.json` in your OS default editor.
+- **File → Open SpinDoctor folder** — opens `~/.spindoctor/` (where caches, manifests, and ignore lists live) in Explorer / Finder / xdg-open.
+- **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`. Falls back to a warning dialog if the path doesn't exist (e.g. an unmounted drive).
+- **File → View logs & manifests…** — opens a Toplevel window listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. These are the files `--undo` reads to reverse a run; the viewer is read-only on purpose so you don't accidentally break a future undo.
+- **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG.
+- **Help → Check for updates** — pings `api.github.com/repos/phillram/spindoctor/releases/latest` and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every GUI launch — when newer, the status bar shows "Update available: vX.Y.Z" and the Output panel logs the URL. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable both for cabinets behind a strict firewall.
 
 ### Stopping a long-running command
 
