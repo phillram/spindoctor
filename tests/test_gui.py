@@ -269,6 +269,36 @@ def test_log_categories_cover_known_manifest_dirs():
         assert required in expected_dirs
 
 
+def test_undo_recipes_argv_includes_path_iff_uses_path():
+    """Each recipe must produce an argv that includes the manifest path
+    iff `uses_path` is True. Catches the off-by-one mistake of putting
+    a path-taking command into the no-path bucket (or vice versa)."""
+    recipes = gui._SpinDoctorGUI._UNDO_RECIPES
+    fake_path = Path("/tmp/spindoctor-fake-manifest.json")
+    for dirname, recipe in recipes.items():
+        argv = recipe["argv"](fake_path)
+        assert argv, f"{dirname}: recipe produced empty argv"
+        assert "--undo" in argv, f"{dirname}: missing --undo"
+        if recipe["uses_path"]:
+            assert str(fake_path) in argv, (
+                f"{dirname}: uses_path=True but argv omits the path"
+            )
+        else:
+            assert str(fake_path) not in argv, (
+                f"{dirname}: uses_path=False but argv mentions the path"
+            )
+
+
+def test_undo_recipes_only_target_known_log_categories():
+    """A recipe pointing at a category the viewer's tree never shows is
+    a dead button — fail loud when that drifts."""
+    recipe_dirs = set(gui._SpinDoctorGUI._UNDO_RECIPES)
+    category_dirs = {dirname for _label, dirname
+                     in gui._SpinDoctorGUI._LOG_CATEGORIES}
+    extra = recipe_dirs - category_dirs
+    assert not extra, f"recipes for categories not in tree: {extra}"
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
