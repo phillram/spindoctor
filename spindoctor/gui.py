@@ -116,6 +116,22 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
 )
 
 
+# Components offered as checkboxes on the Backup tab. Mirrors
+# `backup.ALL_COMPONENTS` and the `--include` choices in
+# `spindoctor backup create`. Kept here as a static tuple so the GUI
+# module stays import-light (it doesn't pull `spindoctor.backup` until
+# the user actually runs a command).
+_BACKUP_COMPONENTS: tuple[tuple[str, str], ...] = (
+    ("roms",            "ROM / game files"),
+    ("databases",       "HyperSpin database XMLs"),
+    ("media",           "HyperSpin media (wheels, snaps, video, themes)"),
+    ("emulators",       "Emulator binaries"),
+    ("rocketlauncher",  "RocketLauncher install"),
+    ("ledblinky",       "LEDBlinky install"),
+    ("settings",        "SpinDoctor config & state (~/.spindoctor/)"),
+)
+
+
 _HELP_TEXT = (
     f"{__app_name__} GUI {__version__} — Tkinter launcher for the SpinDoctor CLI.\n"
     "\n"
@@ -203,6 +219,7 @@ class _SpinDoctorGUI:
         nb.add(self._build_setup_tab(nb), text="Setup")
         nb.add(self._build_wheels_tab(nb), text="Wheels")
         nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
+        nb.add(self._build_backup_tab(nb), text="Backup & Restore")
         nb.add(self._build_custom_tab(nb), text="Custom Command")
 
         out_frame = self.ttk.LabelFrame(self.root, text="Output")
@@ -420,6 +437,228 @@ class _SpinDoctorGUI:
             )
             return
         self._run_cli("spindoctor", ["audit", "--system", system])
+
+    # ── Backup & Restore tab ──────────────────────────────────────────────────
+
+    def _build_backup_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Snapshot the library to a target folder, list previous "
+                  "backups, or restore from one. Pick the components to "
+                  "include — the default is everything. Every action is a "
+                  "dry-run unless you tick Apply, mirroring the CLI."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        # ── Target folder (shared by Create / List) ──────────────────────────
+        self.ttk.Label(frame, text="Target folder").grid(
+            row=1, column=0, sticky="w", pady=2,
+        )
+        self._backup_target_var = self.tk.StringVar()
+        self.ttk.Entry(frame, textvariable=self._backup_target_var, width=60).grid(
+            row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+        )
+        self.ttk.Button(
+            frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(self._backup_target_var,
+                                                   "Pick backup target folder"),
+        ).grid(row=1, column=3, sticky="w", pady=2)
+
+        # ── Components (shared by Create / Restore) ──────────────────────────
+        comp_frame = self.ttk.LabelFrame(frame, text="Components")
+        comp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        # Default to "everything" so a click-and-go user gets a full backup.
+        # Cabinet owners who want a partial backup can untick.
+        self._backup_component_vars: dict[str, "self.tk.BooleanVar"] = {}
+        for i, (key, desc) in enumerate(_BACKUP_COMPONENTS):
+            var = self.tk.BooleanVar(value=True)
+            self._backup_component_vars[key] = var
+            self.ttk.Checkbutton(
+                comp_frame, text=f"{key}  —  {desc}", variable=var,
+            ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
+
+        # ── Create section ───────────────────────────────────────────────────
+        create_frame = self.ttk.LabelFrame(frame, text="Create backup")
+        create_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        create_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(create_frame, text="Label (optional)").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._backup_label_var = self.tk.StringVar()
+        self.ttk.Entry(create_frame, textvariable=self._backup_label_var, width=30).grid(
+            row=0, column=1, sticky="w", padx=6, pady=2,
+        )
+
+        self._backup_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            create_frame, text="Apply (uncheck for dry-run)",
+            variable=self._backup_apply_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            create_frame, text="Create backup",
+            command=self._run_backup_create,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        # ── List section ─────────────────────────────────────────────────────
+        list_frame = self.ttk.LabelFrame(frame, text="List backups")
+        list_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        self.ttk.Button(
+            list_frame, text="List backups under target",
+            command=self._run_backup_list,
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+
+        # ── Restore section ──────────────────────────────────────────────────
+        restore_frame = self.ttk.LabelFrame(frame, text="Restore from a backup")
+        restore_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        restore_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(restore_frame, text="Backup folder").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._backup_restore_path_var = self.tk.StringVar()
+        self.ttk.Entry(
+            restore_frame, textvariable=self._backup_restore_path_var, width=50,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            restore_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._backup_restore_path_var, "Pick backup folder to restore",
+            ),
+        ).grid(row=0, column=2, sticky="w", padx=6, pady=2)
+
+        self._backup_use_current_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            restore_frame,
+            text="Use current config paths (drive letters changed since backup)",
+            variable=self._backup_use_current_var,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self._backup_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            restore_frame,
+            text="Overwrite existing folders at the destination",
+            variable=self._backup_overwrite_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self._backup_restore_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            restore_frame, text="Apply (uncheck for dry-run)",
+            variable=self._backup_restore_apply_var,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        btn_row = self.ttk.Frame(restore_frame)
+        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            btn_row, text="Show backup info",
+            command=self._run_backup_info,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Restore backup",
+            command=self._run_backup_restore,
+        ).pack(side="left", padx=6)
+
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _browse_backup_dir(self, var, title: str) -> None:
+        path = self.filedialog.askdirectory(
+            title=title, initialdir=var.get() or str(Path.home()),
+        )
+        if path:
+            # Match the Setup tab: keep separators native to the OS so
+            # paths copy-pasted into a Windows shell don't trip on
+            # forward slashes.
+            var.set(str(Path(path)))
+
+    def _selected_backup_components(self) -> Optional[str]:
+        """Return a comma-separated `--include` value, or None for "all".
+
+        ``None`` lets the underlying CLI pick its default ("all"), which
+        matches what most users want and avoids re-listing every component
+        in the argv.
+        """
+        selected = [k for k, v in self._backup_component_vars.items() if v.get()]
+        if not selected:
+            return ""  # signal to caller: nothing picked
+        if len(selected) == len(_BACKUP_COMPONENTS):
+            return None
+        return ",".join(selected)
+
+    def _run_backup_create(self) -> None:
+        target = self._backup_target_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Target folder required",
+                "Pick the folder where backups should be written before "
+                "running Create.",
+            )
+            return
+        include = self._selected_backup_components()
+        if include == "":
+            self.messagebox.showwarning(
+                "No components selected",
+                "Tick at least one component to back up.",
+            )
+            return
+        args = ["backup", "create", "--target", target]
+        if include is not None:
+            args += ["--include", include]
+        label = self._backup_label_var.get().strip()
+        if label:
+            args += ["--label", label]
+        if self._backup_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_backup_list(self) -> None:
+        target = self._backup_target_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Target folder required",
+                "Pick the folder where backups live before listing.",
+            )
+            return
+        self._run_cli("spindoctor", ["backup", "list", "--target", target])
+
+    def _run_backup_info(self) -> None:
+        backup_path = self._backup_restore_path_var.get().strip()
+        if not backup_path:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick a backup folder first (one that was produced by "
+                "`backup create`).",
+            )
+            return
+        self._run_cli("spindoctor", ["backup", "info", "--backup", backup_path])
+
+    def _run_backup_restore(self) -> None:
+        backup_path = self._backup_restore_path_var.get().strip()
+        if not backup_path:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick the backup folder you want to restore from.",
+            )
+            return
+        include = self._selected_backup_components()
+        if include == "":
+            self.messagebox.showwarning(
+                "No components selected",
+                "Tick at least one component to restore.",
+            )
+            return
+        args = ["backup", "restore", "--backup", backup_path]
+        if include is not None:
+            args += ["--include", include]
+        if self._backup_use_current_var.get():
+            args.append("--use-current-paths")
+        if self._backup_overwrite_var.get():
+            args.append("--overwrite")
+        if self._backup_restore_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     # ── Custom command tab ────────────────────────────────────────────────────
 
