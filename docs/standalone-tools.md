@@ -98,26 +98,38 @@ spindoctor-stats build-wheel --apply
 
 ## Wiring into HyperSpin Tools menu
 
-Two equivalent options:
+Three integration patterns, in roughly increasing order of "how much you want it to feel like part of HyperSpin":
 
-1. **Auto-install** — write the four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`:
+1. **HyperHQ → Tools menu (default).** The GUI's **Tools** tab → "Install for HyperHQ → Tools menu" runs:
    ```bat
    spindoctor install-tools
    ```
-2. **Manual** — copy the `.bat` files from `scripts/` into HyperSpin's Tools directory yourself.
+   Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh Both`.
 
-Either way, register them in HyperHQ → Tools so they appear inside the cabinet UI as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh Both`.
+2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Tools** tab → "Install into an existing wheel system" runs:
+   ```bat
+   spindoctor install-tools --add-to-system Toolkit
+   ```
+   Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>/Modules/PCLauncher/Toolkit/`, and adds `<game>` entries (with `genre=Tools`, `manufacturer=SpinDoctor`) to `<HyperSpin>/Databases/Toolkit/Toolkit.xml`. Idempotent on re-run. The target system must already exist and use PCLauncher as its emulator.
+
+3. **Manual** — copy the `.bat` files from `scripts/` into wherever you want and register them yourself.
 
 ## Wiring into Windows startup
 
-Run the rebuilds at user log-on so wheels are fresh by the time HyperSpin loads:
+The GUI's **Tools** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Schedule auto-refresh* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Remove scheduled task* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required.
+
+Equivalent CLI invocation:
 
 ```bat
-schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
+schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
+  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
 ```
 
+(`&` rather than `&&` so a failing favorites rebuild doesn't kill the rest of the chain.)
+
 Or drop one of the `.bat` files (from `scripts/`, or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
+
+For macOS, schedule via `crontab -e` with an `@reboot` line, or write a launchd plist under `~/Library/LaunchAgents/`. For Linux, `crontab -e` or a `systemd --user` unit.
 
 ## Tools audit — what other arcade utilities does this cabinet already have?
 
