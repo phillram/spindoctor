@@ -334,6 +334,9 @@ class _SpinDoctorGUI:
         nb.add(self._build_mainmenu_tab(nb), text="Main Menu")
         nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
         nb.add(self._build_diagnose_tab(nb), text="Diagnose")
+        nb.add(self._build_metadata_tab(nb), text="Metadata & Media")
+        nb.add(self._build_curate_tab(nb), text="Curate")
+        nb.add(self._build_systems_tab(nb), text="Systems")
         nb.add(self._build_ledblinky_tab(nb), text="LEDBlinky")
         nb.add(self._build_lightgun_tab(nb), text="Lightgun")
         nb.add(self._build_tools_tab(nb), text="Tools")
@@ -1497,6 +1500,582 @@ class _SpinDoctorGUI:
         self._run_cli(
             "spindoctor", ["verify", "--system", system, "--dat", dat],
         )
+
+    # ── Metadata & Media tab ──────────────────────────────────────────────────
+
+    def _build_metadata_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Fetch metadata + media from ScreenScraper / TheGamesDB, "
+                  "scan local media folders into the right HyperSpin "
+                  "slots, and sync database XML to your ROM directories. "
+                  "Each section is dry-run by default; tick Apply to "
+                  "commit."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        # Shared system field — every command on this tab takes one.
+        sys_row = self.ttk.Frame(frame)
+        sys_row.pack(fill="x", pady=(0, 6))
+        self.ttk.Label(sys_row, text="System (or tick All systems)").pack(
+            side="left",
+        )
+        self._meta_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            sys_row, textvariable=self._meta_system_var, width=30,
+        ).pack(side="left", padx=6)
+        self._meta_all_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sys_row, text="All systems", variable=self._meta_all_var,
+        ).pack(side="left", padx=6)
+        self._meta_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sys_row, text="Apply (uncheck for dry-run)",
+            variable=self._meta_apply_var,
+        ).pack(side="left", padx=6)
+
+        # ── fetch-meta ───────────────────────────────────────────────────────
+        meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
+        meta_frame.pack(fill="x", pady=(4, 4))
+        self._meta_auto_best_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            meta_frame, text="Auto-pick best match (--auto-best)",
+            variable=self._meta_auto_best_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        self._meta_all_games_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            meta_frame,
+            text="Refresh complete entries too (--all-games)",
+            variable=self._meta_all_games_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        self.ttk.Button(
+            meta_frame, text="Run fetch-meta",
+            command=self._run_fetch_meta,
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── fetch-media ──────────────────────────────────────────────────────
+        media_frame = self.ttk.LabelFrame(frame, text="Fetch media")
+        media_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            media_frame,
+            text=("Comma-separated types (wheel, background, snap, "
+                  "video, trailer, title, theme, fade, sound). Leave "
+                  "blank for the project default."),
+            foreground="#666",
+        ).pack(anchor="w", padx=6, pady=(2, 0))
+        types_row = self.ttk.Frame(media_frame)
+        types_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(types_row, text="Types").pack(side="left")
+        self._meta_types_var = self.tk.StringVar(value="wheel,background")
+        self.ttk.Entry(
+            types_row, textvariable=self._meta_types_var, width=40,
+        ).pack(side="left", padx=6)
+        self._meta_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            media_frame, text="Overwrite existing files (--overwrite)",
+            variable=self._meta_overwrite_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        self.ttk.Button(
+            media_frame, text="Run fetch-media",
+            command=self._run_fetch_media,
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── media-scan ───────────────────────────────────────────────────────
+        scan_frame = self.ttk.LabelFrame(frame, text="Scan local media folder")
+        scan_frame.pack(fill="x", pady=(4, 4))
+        scan_row = self.ttk.Frame(scan_frame)
+        scan_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(scan_row, text="Source folder").pack(side="left")
+        self._meta_scan_dir_var = self.tk.StringVar()
+        self.ttk.Entry(
+            scan_row, textvariable=self._meta_scan_dir_var,
+        ).pack(side="left", fill="x", expand=True, padx=6)
+        self.ttk.Button(
+            scan_row, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._meta_scan_dir_var, "Pick media folder to scan",
+            ),
+        ).pack(side="left")
+        self.ttk.Label(scan_row, text="Action").pack(side="left", padx=(10, 0))
+        self._meta_scan_action_var = self.tk.StringVar(value="copy")
+        self.ttk.Combobox(
+            scan_row, textvariable=self._meta_scan_action_var,
+            values=["copy", "move", "link"],
+            state="readonly", width=8,
+        ).pack(side="left", padx=4)
+        self.ttk.Button(
+            scan_frame, text="Run media-scan",
+            command=self._run_media_scan,
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── update-db ────────────────────────────────────────────────────────
+        db_frame = self.ttk.LabelFrame(frame, text="Sync database to ROMs")
+        db_frame.pack(fill="x", pady=(4, 4))
+        self._meta_remove_orphans_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            db_frame, text="Remove DB entries without ROMs (--remove-orphans)",
+            variable=self._meta_remove_orphans_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        self._meta_strip_variant_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            db_frame, text="Strip region/version tags from displays "
+                            "(--strip-variant-tags)",
+            variable=self._meta_strip_variant_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        btn_row = self.ttk.Frame(db_frame)
+        btn_row.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            btn_row, text="Run update-db",
+            command=self._run_update_db,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Run generate-config",
+            command=self._run_generate_config,
+        ).pack(side="left", padx=6)
+
+        return frame
+
+    def _meta_system_args(self) -> Optional[list[str]]:
+        """Return the `--system X` or `--all` argv tail, or None on error."""
+        if self._meta_all_var.get():
+            return ["--all"]
+        system = self._meta_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type a system name (e.g. 'MAME') or tick All systems.",
+            )
+            return None
+        return ["--system", system]
+
+    def _run_fetch_meta(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        args = ["fetch-meta", *sys_args]
+        if self._meta_auto_best_var.get():
+            args.append("--auto-best")
+        if self._meta_all_games_var.get():
+            args.append("--all-games")
+        if self._meta_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_fetch_media(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        args = ["fetch-media", *sys_args]
+        types = self._meta_types_var.get().strip()
+        if types:
+            args += ["--types", types]
+        if self._meta_overwrite_var.get():
+            args.append("--overwrite")
+        if self._meta_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_media_scan(self) -> None:
+        source = self._meta_scan_dir_var.get().strip()
+        if not source:
+            self.messagebox.showwarning(
+                "Source folder required",
+                "Pick the media folder to scan first.",
+            )
+            return
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        args = ["media-scan", source, *sys_args]
+        if self._meta_apply_var.get():
+            args += ["--apply", "--action", self._meta_scan_action_var.get()]
+        self._run_cli("spindoctor", args)
+
+    def _run_update_db(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        args = ["update-db", *sys_args]
+        if self._meta_remove_orphans_var.get():
+            args.append("--remove-orphans")
+        if self._meta_strip_variant_var.get():
+            args.append("--strip-variant-tags")
+        if self._meta_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_generate_config(self) -> None:
+        args = ["generate-config"]
+        if self._meta_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Curate tab ────────────────────────────────────────────────────────────
+
+    def _build_curate_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Thin out region / revision duplicates, prune the "
+                  "library cache directories, and manage the per-system "
+                  "ignore list. Curate keeps one canonical variant per "
+                  "title and archives the rest (reversible). Cleanup "
+                  "trims SpinDoctor's caches when they grow stale. Ignore "
+                  "lists silence games you don't want to see in audits."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        # ── curate ───────────────────────────────────────────────────────────
+        cur_frame = self.ttk.LabelFrame(frame, text="Curate region/revision variants")
+        cur_frame.pack(fill="x", pady=(4, 4))
+
+        cur_top = self.ttk.Frame(cur_frame)
+        cur_top.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(cur_top, text="System (or tick All systems)").pack(
+            side="left",
+        )
+        self._curate_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cur_top, textvariable=self._curate_system_var, width=24,
+        ).pack(side="left", padx=6)
+        self._curate_all_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cur_top, text="All systems", variable=self._curate_all_var,
+        ).pack(side="left", padx=6)
+
+        cur_opts = self.ttk.Frame(cur_frame)
+        cur_opts.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(cur_opts, text="Regions (comma-separated, optional)").pack(
+            side="left",
+        )
+        self._curate_regions_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cur_opts, textvariable=self._curate_regions_var, width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(cur_opts, text="Prefer revision").pack(
+            side="left", padx=(10, 0),
+        )
+        self._curate_revision_var = self.tk.StringVar(value="latest")
+        self.ttk.Combobox(
+            cur_opts, textvariable=self._curate_revision_var,
+            values=["latest", "oldest"], state="readonly", width=8,
+        ).pack(side="left", padx=4)
+
+        cur_flags = self.ttk.Frame(cur_frame)
+        cur_flags.pack(fill="x", padx=6, pady=2)
+        self._curate_proto_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cur_flags, text="Treat prototypes as candidates "
+                              "(--include-proto)",
+            variable=self._curate_proto_var,
+        ).pack(side="left")
+        self.ttk.Label(cur_flags, text="Action").pack(side="left", padx=(20, 0))
+        self._curate_action_var = self.tk.StringVar(value="archive")
+        self.ttk.Combobox(
+            cur_flags, textvariable=self._curate_action_var,
+            values=["archive", "delete"], state="readonly", width=10,
+        ).pack(side="left", padx=4)
+        self._curate_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cur_flags, text="Apply (uncheck for dry-run)",
+            variable=self._curate_apply_var,
+        ).pack(side="left", padx=10)
+
+        cur_btns = self.ttk.Frame(cur_frame)
+        cur_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            cur_btns, text="Run curate", command=self._run_curate,
+        ).pack(side="left")
+        self.ttk.Button(
+            cur_btns, text="Undo most recent curate",
+            command=self._run_curate_undo,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            cur_btns, text="List manifests",
+            command=lambda: self._run_cli(
+                "spindoctor", ["curate", "--list-manifests"],
+            ),
+        ).pack(side="left", padx=6)
+
+        # ── cleanup ──────────────────────────────────────────────────────────
+        cln_frame = self.ttk.LabelFrame(frame, text="Cache cleanup")
+        cln_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            cln_frame,
+            text=("Categories: metadata_cache, mame_listxml_cache, "
+                  "match_cache, media_pick_cache, pc_titles_cache, "
+                  "old manifests."),
+            foreground="#666",
+        ).pack(anchor="w", padx=6, pady=(2, 0))
+
+        cln_opts = self.ttk.Frame(cln_frame)
+        cln_opts.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(cln_opts, text="Older than (days, optional)").pack(
+            side="left",
+        )
+        self._cleanup_older_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cln_opts, textvariable=self._cleanup_older_var, width=6,
+        ).pack(side="left", padx=6)
+        self._cleanup_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cln_opts, text="Apply (uncheck for dry-run)",
+            variable=self._cleanup_apply_var,
+        ).pack(side="left", padx=10)
+
+        cln_btns = self.ttk.Frame(cln_frame)
+        cln_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            cln_btns, text="List categories",
+            command=lambda: self._run_cli(
+                "spindoctor", ["cleanup", "categories"],
+            ),
+        ).pack(side="left")
+        self.ttk.Button(
+            cln_btns, text="Audit caches",
+            command=lambda: self._run_cli("spindoctor", ["cleanup", "audit"]),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            cln_btns, text="Run cleanup",
+            command=self._run_cleanup,
+        ).pack(side="left", padx=6)
+
+        # ── ignore ───────────────────────────────────────────────────────────
+        ign_frame = self.ttk.LabelFrame(frame, text="Ignore list")
+        ign_frame.pack(fill="x", pady=(4, 4))
+        ign_top = self.ttk.Frame(ign_frame)
+        ign_top.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(ign_top, text="System (blank = global)").pack(side="left")
+        self._ignore_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            ign_top, textvariable=self._ignore_system_var, width=24,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(ign_top, text="Game name").pack(side="left", padx=(10, 0))
+        self._ignore_game_var = self.tk.StringVar()
+        self.ttk.Entry(
+            ign_top, textvariable=self._ignore_game_var, width=30,
+        ).pack(side="left", padx=6)
+
+        ign_btns = self.ttk.Frame(ign_frame)
+        ign_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            ign_btns, text="Add to ignore",
+            command=lambda: self._run_ignore("add"),
+        ).pack(side="left")
+        self.ttk.Button(
+            ign_btns, text="Remove from ignore",
+            command=lambda: self._run_ignore("remove"),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            ign_btns, text="List entries",
+            command=self._run_ignore_list,
+        ).pack(side="left", padx=6)
+
+        return frame
+
+    def _curate_system_args(self) -> Optional[list[str]]:
+        if self._curate_all_var.get():
+            return ["--all"]
+        system = self._curate_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type a system name or tick All systems first.",
+            )
+            return None
+        return ["--system", system]
+
+    def _run_curate(self) -> None:
+        sys_args = self._curate_system_args()
+        if sys_args is None:
+            return
+        args = ["curate", *sys_args,
+                "--prefer-revision", self._curate_revision_var.get()]
+        regions = self._curate_regions_var.get().strip()
+        if regions:
+            args += ["--regions", regions]
+        if self._curate_proto_var.get():
+            args.append("--include-proto")
+        action = self._curate_action_var.get()
+        if action != "archive":
+            args += ["--action", action]
+        if self._curate_apply_var.get():
+            args.append("--apply")
+            if action == "delete":
+                args.append("--yes")
+        self._run_cli("spindoctor", args)
+
+    def _run_curate_undo(self) -> None:
+        self._run_cli("spindoctor", ["curate", "--undo"])
+
+    def _run_cleanup(self) -> None:
+        args = ["cleanup", "run"]
+        older = self._cleanup_older_var.get().strip()
+        if older:
+            if not older.isdigit():
+                self.messagebox.showwarning(
+                    "Invalid value",
+                    "Older-than must be a non-negative integer (days).",
+                )
+                return
+            args += ["--older-than", older]
+        if self._cleanup_apply_var.get():
+            args += ["--apply", "--yes"]
+        self._run_cli("spindoctor", args)
+
+    def _run_ignore(self, sub: str) -> None:
+        game = self._ignore_game_var.get().strip()
+        if not game:
+            self.messagebox.showwarning(
+                "Game name required",
+                "Type the game name (e.g. 'Big Bug Adventure') first.",
+            )
+            return
+        args = ["ignore", sub, game]
+        system = self._ignore_system_var.get().strip()
+        if system:
+            args += ["--system", system]
+        self._run_cli("spindoctor", args)
+
+    def _run_ignore_list(self) -> None:
+        args = ["ignore", "list"]
+        system = self._ignore_system_var.get().strip()
+        if system:
+            args += ["--system", system]
+        self._run_cli("spindoctor", args)
+
+    # ── Systems tab ───────────────────────────────────────────────────────────
+
+    def _build_systems_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Add a new console / arcade system or a PC-game system, "
+                  "or rename an existing PC system. add-system scans the "
+                  "ROMs folder and scaffolds the database, media, and "
+                  "config; add-pc-system uses the same flow with a "
+                  "title-picker for PC titles. Both are dry-run by "
+                  "default."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        self._systems_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            frame, text="Apply (uncheck for dry-run)",
+            variable=self._systems_apply_var,
+        ).pack(anchor="w", pady=(0, 6))
+
+        # ── add-system ────────────────────────────────────────────────────────
+        add_frame = self.ttk.LabelFrame(frame, text="Add a new system")
+        add_frame.pack(fill="x", pady=(4, 4))
+        add_row = self.ttk.Frame(add_frame)
+        add_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(add_row, text="System name").pack(side="left")
+        self._systems_name_var = self.tk.StringVar()
+        self.ttk.Entry(
+            add_row, textvariable=self._systems_name_var, width=40,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+
+        flags_row = self.ttk.Frame(add_frame)
+        flags_row.pack(fill="x", padx=6, pady=2)
+        self._systems_no_sys_media_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Skip system-level media (--no-system-media)",
+            variable=self._systems_no_sys_media_var,
+        ).pack(side="left")
+        self._systems_no_game_media_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Skip game-level media (--no-game-media)",
+            variable=self._systems_no_game_media_var,
+        ).pack(side="left", padx=10)
+
+        add_btns = self.ttk.Frame(add_frame)
+        add_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            add_btns, text="Run add-system",
+            command=lambda: self._run_add_system(False),
+        ).pack(side="left")
+        self.ttk.Button(
+            add_btns, text="Run add-pc-system",
+            command=lambda: self._run_add_system(True),
+        ).pack(side="left", padx=6)
+        self.ttk.Label(
+            add_btns,
+            text=("(add-pc-system runs an interactive title-picker "
+                  "via --auto-best where possible.)"),
+            foreground="#666",
+        ).pack(side="left", padx=10)
+
+        # ── pc-rename ─────────────────────────────────────────────────────────
+        rename_frame = self.ttk.LabelFrame(frame, text="Rename an existing PC system")
+        rename_frame.pack(fill="x", pady=(4, 4))
+        rn_row = self.ttk.Frame(rename_frame)
+        rn_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(rn_row, text="Old name").pack(side="left")
+        self._systems_old_var = self.tk.StringVar()
+        self.ttk.Entry(
+            rn_row, textvariable=self._systems_old_var, width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(rn_row, text="New name").pack(side="left", padx=(10, 0))
+        self._systems_new_var = self.tk.StringVar()
+        self.ttk.Entry(
+            rn_row, textvariable=self._systems_new_var, width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            rename_frame, text="Run pc-rename",
+            command=self._run_pc_rename,
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── List existing systems ─────────────────────────────────────────────
+        list_frame = self.ttk.LabelFrame(frame, text="Inspect")
+        list_frame.pack(fill="x", pady=(4, 4))
+        list_btns = self.ttk.Frame(list_frame)
+        list_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            list_btns, text="List systems",
+            command=lambda: self._run_cli("spindoctor", ["systems"]),
+        ).pack(side="left")
+        self.ttk.Button(
+            list_btns, text="Show config — system list",
+            command=lambda: self._run_cli(
+                "spindoctor", ["config", "system", "list"],
+            ),
+        ).pack(side="left", padx=6)
+
+        return frame
+
+    def _run_add_system(self, pc: bool) -> None:
+        name = self._systems_name_var.get().strip()
+        if not name:
+            self.messagebox.showwarning(
+                "System name required",
+                "Type a system name (e.g. 'Nintendo Entertainment "
+                "System' or 'PC Games') first.",
+            )
+            return
+        args = ["add-pc-system" if pc else "add-system", name]
+        if self._systems_no_sys_media_var.get():
+            args.append("--no-system-media")
+        if self._systems_no_game_media_var.get():
+            args.append("--no-game-media")
+        if self._systems_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_pc_rename(self) -> None:
+        old = self._systems_old_var.get().strip()
+        new = self._systems_new_var.get().strip()
+        if not old or not new:
+            self.messagebox.showwarning(
+                "Both names required",
+                "pc-rename needs both Old and New names.",
+            )
+            return
+        args = ["pc-rename", old, new]
+        if self._systems_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     # ── LEDBlinky tab ─────────────────────────────────────────────────────────
 
