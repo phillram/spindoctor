@@ -53,6 +53,7 @@ HIDDEN_IMPORTS = [
     "spindoctor.gui",
     "spindoctor.autostart",
     "spindoctor.update_check",
+    "spindoctor.themes",
     "spindoctor.scraper",
     "spindoctor.archives",
     "spindoctor.preview",

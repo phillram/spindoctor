@@ -2001,6 +2001,113 @@ def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     )
 
 
+@cli.command("theme-scan")
+@click.option("--system", "-s", default=None,
+              help="Restrict to one system's Special A/B buckets. "
+                   "Without this, also includes universal Frontend art.")
+@click.option("--keyword", "-k", default=None,
+              help="Case-insensitive filename substring. Pass 'xbox' to "
+                   "find every file that mentions xbox, etc.")
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write the asset list as CSV. Without this, prints a "
+                   "rich table to stdout.")
+def theme_scan(system, keyword, output):
+    """Inventory HyperSpin frontend overlay art (Special A/B + Frontend).
+
+    \b
+    Walks <hyperspin>/Media/Frontend/Images/ and every per-system
+    <hyperspin>/Media/<system>/Images/{Special A,Special B}/ — these
+    are the folders where the "controller hint" glyphs at the bottom
+    of the HyperSpin frontend usually live, configured via HyperHQ →
+    Special A/B.
+
+    \b
+    Examples:
+      spindoctor theme-scan
+      spindoctor theme-scan --system MAME
+      spindoctor theme-scan --keyword xbox
+      spindoctor theme-scan --output D:\\theme_audit.csv
+
+    \b
+    Read-only — does not modify anything. To replace the files this
+    finds with a community theme pack, use `spindoctor theme-apply`
+    (writes a reversible manifest).
+
+    \b
+    Note: if your bottom-of-screen glyphs are baked into a Flash .swf
+    inside <hyperspin>/Media/Main Menu/Themes/default.zip, this
+    command won't see them — SWFs need a Flash authoring tool to
+    edit. SpinDoctor flags that case at the bottom of the report.
+    """
+    from . import themes
+
+    config = _cfg()
+    _check_config(config)
+
+    assets = themes.scan_frontend_art(config)
+    assets = themes.filter_assets(assets, system=system, keyword=keyword)
+
+    if output:
+        import csv
+        out_path = Path(output)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        with out_path.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(("path", "scope", "bucket", "kind", "size_bytes",
+                        "modified"))
+            for a in assets:
+                w.writerow((str(a.path), a.scope, a.bucket, a.kind,
+                            a.size_bytes, a.modified.isoformat()))
+        console.print(
+            f"[green]✓[/green] Wrote {len(assets)} row(s) to "
+            f"[cyan]{out_path}[/cyan]"
+        )
+        return
+
+    if not assets:
+        console.print(
+            "[yellow]No overlay PNG/JPG/etc. files found.[/yellow]\n"
+            "Either there's no frontend art on disk, or your filters "
+            "matched nothing. Try removing --system / --keyword."
+        )
+        if themes.has_swf_themes(config):
+            console.print(
+                "\n[dim]Heads-up:[/dim] your Main Menu folder contains "
+                ".swf / .zip theme files — those embed glyph art that "
+                "SpinDoctor can't edit. Open them in a SWF authoring "
+                "tool, or replace with a non-Flash community theme."
+            )
+        return
+
+    tbl = Table(box=box.SIMPLE, show_header=True,
+                title=f"Frontend overlay art — {len(assets)} file(s)")
+    tbl.add_column("Scope", style="cyan")
+    tbl.add_column("Bucket", style="dim")
+    tbl.add_column("File")
+    tbl.add_column("Kind", justify="right")
+    tbl.add_column("Size", justify="right")
+    tbl.add_column("Modified", style="dim")
+    for a in assets:
+        tbl.add_row(
+            a.scope, a.bucket, a.path.name, a.kind,
+            f"{a.size_bytes:,} B",
+            a.modified.strftime("%Y-%m-%d %H:%M"),
+        )
+    console.print(tbl)
+    console.print(
+        f"\n[dim]Tip:[/dim] pass [cyan]--keyword <STRING>[/cyan] to "
+        "narrow the list (e.g. 'xbox', 'arcade', 'controller'). "
+        "Replace any of these with a community pack via "
+        "[cyan]spindoctor theme-apply[/cyan]."
+    )
+    if themes.has_swf_themes(config):
+        console.print(
+            "\n[dim]Heads-up:[/dim] your Main Menu folder also contains "
+            ".swf / .zip theme files — those embed glyph art that "
+            "SpinDoctor can't edit on top of what's listed above."
+        )
+
+
 @cli.command("install-tools")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
