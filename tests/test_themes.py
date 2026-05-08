@@ -175,3 +175,170 @@ def test_has_swf_themes_false_when_no_main_menu_folder(tmp_path):
     # The fake cabinet has no Main Menu/Themes directory at all, so
     # the heuristic must say "no SWF concern".
     assert themes.has_swf_themes(cfg) is False
+
+
+# ─── plan_apply ───────────────────────────────────────────────────────────────
+
+def _make_replacement_pack(tmp_path: Path) -> Path:
+    """Build a flat replacement pack with the same filenames as the
+    cabinet's overlay art so plan_apply has matches to find."""
+    pack = tmp_path / "ps_pack"
+    pack.mkdir()
+    (pack / "select_button.png").write_bytes(b"new-sel")
+    (pack / "specialA1_xbox.png").write_bytes(b"new-fe")
+    # Decoy file with no matching target — should be silently dropped.
+    (pack / "no_such_glyph.png").write_bytes(b"no-match")
+    return pack
+
+
+def test_plan_apply_matches_filenames_across_all_scopes(tmp_path):
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    plans = themes.plan_apply(cfg, pack)
+    targets = {p.target.name for p in plans}
+    # Both the Frontend and per-system Special A names from the
+    # cabinet should be matched by the pack.
+    assert "select_button.png" in targets
+    assert "specialA1_xbox.png" in targets
+    # The decoy must not appear — there was no matching cabinet file.
+    assert "no_such_glyph.png" not in targets
+
+
+def test_plan_apply_target_filter_frontend_only(tmp_path):
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    plans = themes.plan_apply(cfg, pack, target="frontend")
+    scopes = {p.target_scope for p in plans}
+    # With target="frontend" only the universal Frontend bucket is
+    # eligible, so per-system matches must be excluded.
+    assert scopes == {"Frontend"}
+
+
+def test_plan_apply_target_filter_specific_system(tmp_path):
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    plans = themes.plan_apply(
+        cfg, pack, target="Nintendo Entertainment System",
+    )
+    scopes = {p.target_scope for p in plans}
+    assert scopes == {"Nintendo Entertainment System"}
+
+
+def test_plan_apply_empty_source_returns_no_plans(tmp_path):
+    cfg = _make_cabinet(tmp_path)
+    empty = tmp_path / "empty_pack"
+    empty.mkdir()
+    # Nothing in the source means nothing to swap — and no traceback.
+    assert themes.plan_apply(cfg, empty) == []
+
+
+# ─── apply_plan + undo_plan + list_manifests ─────────────────────────────────
+
+def test_apply_plan_writes_backups_and_manifest(tmp_path, monkeypatch):
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    # Redirect ~/.spindoctor/themes/ so each test gets a clean dir.
+    manifest_dir = tmp_path / "spindoctor_state" / "themes"
+    plans = themes.plan_apply(cfg, pack)
+
+    result = themes.apply_plan(plans, manifest_dir=manifest_dir)
+    assert result.swapped == len(plans)
+    assert result.manifest_path is not None
+    assert result.manifest_path.exists()
+    # Each target now has the source's contents.
+    for p in plans:
+        assert p.target.read_bytes() in (b"new-sel", b"new-fe")
+
+
+def test_undo_plan_restores_originals(tmp_path):
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    manifest_dir = tmp_path / "spindoctor_state" / "themes"
+
+    # Snapshot pre-apply contents so we can verify the restore.
+    plans = themes.plan_apply(cfg, pack)
+    pre = {p.target: p.target.read_bytes() for p in plans}
+
+    result = themes.apply_plan(plans, manifest_dir=manifest_dir)
+    # Apply happened — files are now the new bytes.
+    for p in plans:
+        assert p.target.read_bytes() != pre[p.target]
+
+    restored = themes.undo_plan(result.manifest_path)
+    assert restored == result.swapped
+    # Each target is back to its original bytes.
+    for p in plans:
+        assert p.target.read_bytes() == pre[p.target]
+
+
+def test_apply_plan_no_swaps_leaves_no_manifest(tmp_path):
+    # When nothing was actually applied (empty plan), we must not
+    # litter ~/.spindoctor/themes/ with a stale empty run folder.
+    manifest_dir = tmp_path / "spindoctor_state" / "themes"
+    result = themes.apply_plan([], manifest_dir=manifest_dir)
+    assert result.swapped == 0
+    assert result.manifest_path is None
+    if manifest_dir.exists():
+        # No run-folders left behind.
+        assert not any(manifest_dir.iterdir())
+
+
+def test_list_manifests_sorts_newest_first(tmp_path):
+    import time
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+    manifest_dir = tmp_path / "spindoctor_state" / "themes"
+
+    plans = themes.plan_apply(cfg, pack)
+
+    # Two consecutive runs — the second should sort first.
+    first = themes.apply_plan(plans, manifest_dir=manifest_dir)
+    time.sleep(1.1)  # Manifest filenames include only second-resolution.
+    second = themes.apply_plan(plans, manifest_dir=manifest_dir)
+
+    listed = themes.list_manifests(manifest_dir)
+    assert listed[0] == second.manifest_path
+    assert listed[1] == first.manifest_path
+
+    latest = themes.find_latest_manifest(manifest_dir)
+    assert latest == second.manifest_path
+
+
+# ─── theme-apply CLI smoke ────────────────────────────────────────────────────
+
+def test_theme_apply_cli_dry_run_lists_plan(tmp_path, monkeypatch):
+    """End-to-end smoke: the Click command's dry-run should print the
+    swap table without touching disk and without writing a manifest."""
+    from click.testing import CliRunner
+    import spindoctor.config as config_mod
+    from spindoctor.cli import cli
+
+    cfg = _make_cabinet(tmp_path)
+    pack = _make_replacement_pack(tmp_path)
+
+    # `_check_config` requires roms_dir to exist on disk; the helper
+    # synthesises a path but doesn't create the folder.
+    Path(cfg.roms_dir).mkdir(parents=True, exist_ok=True)
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", home / ".spindoctor")
+    monkeypatch.setattr(
+        config_mod, "CONFIG_FILE", home / ".spindoctor" / "config.json",
+    )
+    config_mod.reset_override_cache()
+    config_mod.save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["theme-apply", str(pack)], catch_exceptions=False,
+    )
+    config_mod.reset_override_cache()
+
+    # Dry-run exits 0 and prints the planned table.
+    assert result.exit_code == 0, result.output
+    assert "Dry-run" in result.output or "swap(s)" in result.output
+    # No manifest written on dry-run.
+    themes_dir = home / ".spindoctor" / "themes"
+    if themes_dir.exists():
+        assert not any(themes_dir.iterdir())
