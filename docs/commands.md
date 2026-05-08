@@ -529,11 +529,21 @@ Sorted by `last_played` desc — newest game first, deduped on `(system, rom)`. 
 Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console.
 
 ```bat
-spindoctor install-tools                                :: write to RocketLauncher Tools dir
+spindoctor install-tools                                :: write to RocketLauncher Tools dir (HyperHQ → Tools)
 spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
+spindoctor install-tools --add-to-system Toolkit        :: install as games inside an existing wheel
 ```
 
 Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh Both). See [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
+
+`--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
+
+1. Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\<NAME>\`.
+2. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
+
+Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
+
+The GUI's **Tools** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
 
 ---
 

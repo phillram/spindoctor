@@ -120,7 +120,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with four tabs that cover the most common operations, plus a shared output panel that streams subprocess output as commands run.
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 11 tabs that cover essentially the entire CLI surface, plus a shared output panel that streams subprocess output as commands run.
 
 > ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
 >
@@ -130,29 +130,40 @@ The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standal
 
 ### Tab tour
 
-**Setup** — every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run). Each row has a Browse button that opens a native folder picker, and Save validates the configuration once it lands on disk.
+**Setup** — every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run). Each row has a Browse button that opens a native folder picker, and Save validates the configuration once it lands on disk. Equivalent to `spindoctor config init`.
 
 > ![Setup tab populated with cabinet paths](images/gui-launcher-setup-tab.png)
->
-> *Screenshot: Setup tab — equivalent to `spindoctor config init`.*
 
-**Wheels** — one button each for Refresh Favorites / Refresh Recently Played / Refresh Most Played, plus a Refresh All Three that chains them. Each button invokes the corresponding standalone binary with `--apply`, the same way the bundled `.bat` shortcuts do.
+**Wheels** — Refresh Favorites / Recently Played / Most Played, plus a Refresh All Three that chains them. Below the refresh buttons is a HyperSpin integration explainer (Most Played auto-registers in the Main Menu, Favorites and Recently Played do not, none auto-fire on cabinet startup) plus two helpers: **Add wheels to Main Menu** (chains `mainmenu add Favorites/Recently Played/Most Played --apply`) and **Install Tools-menu helpers** (a shortcut into the Tools tab's `install-tools` action). Equivalent to `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
 > ![Wheels tab with the four refresh buttons](images/gui-launcher-wheels-tab.png)
->
-> *Screenshot: Wheels tab.*
 
-**Audit & Doctor** — read-only diagnostics. Pick a system from the dropdown to run a per-system audit, or click Run doctor / Tools audit / Audit all systems for library-wide checks. None of these write to disk.
+**Main Menu** — reorder, hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). Show renders the current order in the output panel; pick a system, type a position if needed, then click Move up / Move down / Reorder / Hide / Show / Add / Remove. Sort rewrites the whole wheel alphabetically, by manufacturer, or by year. One Apply checkbox shared by every action — dry-run by default. Equivalent to the `spindoctor mainmenu *` subcommand group.
+
+**Audit & Doctor** — pick a system from the dropdown to run a per-system audit, or click Run doctor / Tools audit / Audit all systems for library-wide checks. None of these write to disk. Equivalent to `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`.
 
 > ![Audit & Doctor tab with the system dropdown expanded](images/gui-launcher-audit-tab.png)
->
-> *Screenshot: Audit & Doctor tab.*
 
-**Custom Command** — anything the canned tabs don't cover. Type the arguments you'd normally pass to `spindoctor` on the command line (`verify --system NES --dat path\to.dat`, `migrate --target E:\Cab --apply`, …) and press Enter or click Run.
+**Diagnose** — one-click read-only inspectors that don't change anything on disk: Find duplicate ROMs, Find misplaced ROMs, Find orphan media, Check disc-set consistency, Lint, Generate report, Preview HyperSpin XML, Stats. Plus a Global Search box (`spindoctor find-global`) and a Verify-against-DAT mini-form (`spindoctor verify --system X --dat …`).
+
+**LEDBlinky** — Generate (controls.ini + colors.ini), Audit coverage, Check, and Fix. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. Equivalent to `spindoctor ledblinky generate / audit / check / fix`.
+
+**Lightgun** — Detect installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), Audit per-system wiring, and Configure one system's RocketLauncher INI with optional `-target` / extra-args overrides. Equivalent to `spindoctor lightgun detect / audit / configure`.
+
+**Tools** — three sections that cover the HyperSpin-integration surface:
+
+1. **Install for HyperHQ → Tools menu** — writes the four `Refresh *.bat` helpers into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\` (or a custom output dir). Then register them in HyperHQ → Tools to expose them in the in-cabinet Tools menu.
+2. **Install into an existing wheel system** — adds the four helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel where the "games" are maintenance tasks), with per-game PCLauncher INIs alongside the bats. The target system must already exist and use PCLauncher as its emulator. Equivalent to `spindoctor install-tools --add-to-system <NAME>`.
+3. **Auto-refresh on cabinet startup** (Windows-only) — Schedule auto-refresh registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). Remove scheduled task and Check task status round out the lifecycle. Off-Windows, this section shows launchd / crontab equivalents inline.
+4. **Manual setup** — inline instructions for HyperHQ → Tools and `taskschd.msc` if you'd rather configure them by hand.
+
+**Backup & Restore** — Per-component checkboxes (default: all seven — roms, databases, media, emulators, rocketlauncher, ledblinky, settings), shared target-folder picker for create/list, separate backup-folder picker for info/restore, optional label, dry-run by default. Restore-time toggles for `--use-current-paths` (drive letters changed since backup) and `--overwrite`. Equivalent to `spindoctor backup create / list / info / restore`.
+
+**Migrate** — Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, optional comma-separated systems filter for partial roms migrations, toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate Undo panel that pre-fills `latest` and exposes `--list-manifests`. Dry-run by default. Equivalent to `spindoctor migrate`.
+
+**Custom Command** — anything the dedicated tabs don't cover. The entry field is now an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 > ![Custom Command tab with `audit --all` typed into the entry](images/gui-launcher-custom-tab.png)
->
-> *Screenshot: Custom Command tab — drives the full CLI surface.*
 
 ### Stopping a long-running command
 
@@ -160,19 +171,29 @@ The Stop button in the bottom-right of the window terminates the current subproc
 
 ## Wiring into HyperSpin
 
-The cabinet end-user shouldn't need to launch the GUI or drop into `cmd.exe` for routine wheel refreshes — SpinDoctor wires into the HyperSpin Tools menu so they're one click:
+The cabinet end-user shouldn't need to launch the GUI or drop into `cmd.exe` for routine wheel refreshes — SpinDoctor offers three integration patterns:
+
+**1. HyperSpin Tools menu (`install-tools`).** From the GUI's **Tools** tab → "Install for HyperHQ → Tools menu", or from the CLI:
 
 ```bat
 spindoctor install-tools
 ```
 
-Writes four `.bat` shortcuts (Refresh Favorites / Refresh Recently Played / Refresh Most Played / Refresh Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's UI.
+Writes four `.bat` shortcuts (Refresh Favorites / Recently Played / Most Played / Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu.
 
-For automatic boot-time refresh:
+**2. Inside an existing wheel system (`install-tools --add-to-system`).** If you have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. From the GUI's **Tools** tab → "Install into an existing wheel system", or from the CLI:
 
 ```bat
-schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
+spindoctor install-tools --add-to-system Toolkit
+```
+
+Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
+
+**3. Automatic refresh on cabinet startup.** From the GUI's **Tools** tab → "Auto-refresh on cabinet startup", click *Schedule auto-refresh* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
+
+```bat
+schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
+  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
 ```
 
 ## Updating

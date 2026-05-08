@@ -69,20 +69,28 @@ If `add-system` reports "no ROMs found", the file extension isn't in SpinDoctor'
 
 ## Daily wheel refresh
 
-Schedule the three wheel rebuilds at user log-on so HyperSpin always boots with fresh Favorites / Recently Played / Most Played:
+Three integration patterns, in roughly increasing order of "how invisible to the cabinet user":
+
+1. **From inside HyperSpin** (HyperHQ → Tools menu, or as games inside an existing wheel) — GUI Tools tab → "Install for HyperHQ → Tools menu" *or* "Install into an existing wheel system" (e.g. a `Toolkit` wheel). CLI equivalents: `spindoctor install-tools` and `spindoctor install-tools --add-to-system Toolkit`. See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+2. **Auto-refresh on cabinet startup** — GUI Tools tab → "Auto-refresh on cabinet startup" → Schedule auto-refresh (Windows-only — wraps `schtasks.exe`, Schedule / Remove / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
+3. **Manual `schtasks` (Windows)** if you'd rather skip the GUI:
 
 ```bat
-schtasks /create /sc onlogon /tn "SpinDoctor Wheels" ^
-  /tr "cmd /c spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply"
+schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
+  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
 ```
 
-Or use `spindoctor install-tools` to write `.bat` files into HyperSpin's Tools menu so the cabinet user can refresh from inside the UI. See [Standalone tools](standalone-tools.md) for the full wiring options.
+(`&` rather than `&&` so a failing favorites rebuild doesn't kill the rest.)
+
+See [Standalone tools](standalone-tools.md) for full wiring details and the macOS / Linux equivalents.
 
 ---
 
 ## Weekly maintenance
 
 A periodic sweep that touches everything: integrity, curation, playtime, and a fresh visual snapshot.
+
+> **GUI alternative:** the **Diagnose** tab in `spindoctor-gui` surfaces every read-only check in this section as a one-click button — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `preview`, `stats`, plus a Global Search box and a Verify-against-DAT mini-form. Snapshot first via the **Backup & Restore** tab.
 
 ```bat
 :: 1. Snapshot first so anything below is reversible.
@@ -115,6 +123,8 @@ spindoctor preview --all --output-dir D:\Preview --open
 ## Backup & restore
 
 Backups copy any combination of library components into a dated folder on a different drive. They're plain folders — you can browse, copy, or zip them with any file explorer — with a `manifest.json` describing what was copied and where it came from.
+
+> **GUI alternative:** the **Backup & Restore** tab in `spindoctor-gui` covers all four subcommands (create / list / info / restore) with per-component checkboxes, dry-run-by-default, and a separate restore panel with `--use-current-paths` and `--overwrite` toggles.
 
 ### Quick reference
 
@@ -172,6 +182,8 @@ The pre-flight plan reports total bytes to copy and free space at the target, an
 ## Migration
 
 `migrate` moves the entire library — or specific components — to a new drive in one shot, then updates `config.json` so the next command finds everything. See [Command reference → migrate](commands.md#migrate) for all flags.
+
+> **GUI alternative:** the **Migrate** tab in `spindoctor-gui` wraps every flag and exposes a separate Undo panel that pre-fills `latest` and surfaces `--list-manifests` — useful when you want to roll back a migration without scrolling through `~/.spindoctor/migrations/`.
 
 ### Scenario A — same drive moves to a new PC
 
@@ -372,6 +384,8 @@ Use `--show-unknown` when you've installed something not in the registry — pas
 ## Wiring light guns
 
 For cabinets with Sinden (or compatible) light guns + DemulShooter. Full walkthrough at [Light guns](lightgun.md).
+
+> **GUI alternative:** the **Lightgun** tab in `spindoctor-gui` has buttons for Detect (with optional `--apply`), Audit, and Configure (with optional `--target` / extra-args overrides) — so most cabinet owners never need to type these commands by hand.
 
 ```bat
 :: 1. Confirm the gear is installed.
