@@ -15,6 +15,7 @@ Common end-to-end flows. Each one is a recipe — copy, paste, edit paths to mat
 - [Adding a Favorite](#adding-a-favorite)
 - [Searching across systems](#searching-across-systems)
 - [Auditing legacy arcade tools](#auditing-legacy-arcade-tools)
+- [Replacing controller-glyph art](#replacing-controller-glyph-art)
 - [Wiring light guns](#wiring-light-guns)
 
 ---
@@ -283,8 +284,11 @@ Every destructive command writes a JSON manifest to `~/.spindoctor/<category>/`.
 | `media-scan --apply` | `~/.spindoctor/media_imports/` | `--undo` |
 | `batch-edit --apply` | `~/.spindoctor/edits/` | `--undo <path>` |
 | `rename` / `clone --apply` | `~/.spindoctor/renames/` | `--undo <path>` |
+| `theme-apply --apply` | `~/.spindoctor/themes/theme-apply-<stamp>/manifest.json` | `--undo latest` or `--undo <path>` |
 
 Most also accept `--list-manifests` to show every run on disk.
+
+> **GUI alternative:** **`File → View logs & manifests…`** in `spindoctor-gui` lists every manifest above (categorised, newest first) and has an **Undo this run** button that runs the matching `--undo` command for the selected row. For commands that always reverse the most recent run (curate, media-scan), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 `curate --action delete` is permanent (no manifest). `find-orphan-media --apply` is permanent (prompts first).
 
@@ -384,6 +388,35 @@ spindoctor tools-audit --show-unknown                     :: list .exe files we 
 ```
 
 Use `--show-unknown` when you've installed something not in the registry — paste the list into a spindoctor issue and the registry can grow. Once you've confirmed each replacement command works on your library (most often `audit`, `find-dupes`, `verify`, `fetch-meta`, `fetch-media`, `rename`), the listed ROM/media tools are safe to uninstall by hand. See [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have).
+
+---
+
+## Replacing controller-glyph art
+
+The Xbox glyphs at the bottom of the HyperSpin frontend annoying you on a PlayStation-themed cabinet? Or want arcade button hints instead? SpinDoctor swaps overlay PNGs for any community pack with full undo support.
+
+> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable inventory; the **Apply replacement pack…** button on that window opens a Plan/Apply window that wraps the same flow.
+
+```bat
+:: 1. See what's currently on disk — narrow with --keyword to find
+::    "the Xbox glyphs" before guessing which file to swap.
+spindoctor theme-scan --keyword xbox
+spindoctor theme-scan --keyword controller --output D:\theme_audit.csv
+
+:: 2. Drop a community pack folder (PNGs/JPGs with the same filenames
+::    your cabinet uses) onto disk, then dry-run to preview the swaps.
+spindoctor theme-apply C:\Packs\PS-Buttons
+
+:: 3. Commit. Every overwritten file is backed up first.
+spindoctor theme-apply C:\Packs\PS-Buttons --apply
+
+:: 4. Don't like it? Reverse the most recent run.
+spindoctor theme-apply --undo latest
+```
+
+`--target` narrows the swap pool: `frontend` (only `Media/Frontend/Images`), a system name (only that system's Special A/B), or the default `all`. If `theme-scan` returns no results but the cabinet clearly *has* glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool). The `theme-scan` report flags this case at the bottom.
+
+Reversibility: each applied run writes `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` plus a `backup/` mirror of every overwritten file. Undo via the CLI (`theme-apply --undo latest|<path>`) or the GUI's Logs & Manifests viewer (Theme swaps category → Undo this run).
 
 ---
 
