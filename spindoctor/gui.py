@@ -132,6 +132,105 @@ _BACKUP_COMPONENTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Curated dropdown for the Custom Command tab. Each entry is the argv
+# string the user would type after `spindoctor` on the command line, in
+# canonical form. Picking one populates the entry field; the user can
+# then edit placeholders (<SYSTEM>, <PATH>, ...) before clicking Run.
+# Order is roughly "discover → audit → curate → fetch → wheels → admin"
+# so the list reads top-to-bottom like a guided tour of the CLI.
+_CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
+    "--help",
+    "--version",
+    # Discovery / health
+    "doctor",
+    "tools-audit",
+    "systems",
+    "report",
+    "preview",
+    # Audit & inspect
+    "audit --all",
+    "audit --system <SYSTEM>",
+    "inspect --system <SYSTEM>",
+    "inspect --system <SYSTEM> --all",
+    "find-dupes --all",
+    "find-dupes --cross-systems",
+    "find-misplaced --all",
+    "find-orphan-media --all",
+    "check-discs --all",
+    "verify --system <SYSTEM> --dat <DAT_PATH>",
+    "lint",
+    "stats",
+    # Curate & cleanup
+    "curate --all",
+    "curate --all --apply",
+    "cleanup categories",
+    "cleanup audit",
+    "cleanup run --apply",
+    "ignore list",
+    "match list",
+    # Metadata & media
+    "fetch-meta --all",
+    "fetch-media --all",
+    "media-scan --all",
+    "media-add <SYSTEM> <ROM> --type wheel --source <PATH>",
+    "update-db --system <SYSTEM>",
+    "generate-config",
+    # Wheels (favorites / recent / most-played)
+    "fav list",
+    "fav rebuild --apply",
+    "recent list",
+    "recent rebuild --apply",
+    "stats-report",
+    "stats-report build-wheel --apply",
+    # Main Menu (HyperSpin top-level wheel)
+    "mainmenu show",
+    "mainmenu sort alpha --apply",
+    "mainmenu sort manufacturer --apply",
+    "mainmenu sort year --apply",
+    "mainmenu reorder <SYSTEM> <POSITION> --apply",
+    "mainmenu hide <SYSTEM> --apply",
+    "mainmenu add <SYSTEM> --apply",
+    "mainmenu remove <SYSTEM> --apply",
+    "mainmenu edit",
+    # LEDBlinky
+    "ledblinky generate",
+    "ledblinky audit",
+    "ledblinky check",
+    "ledblinky fix",
+    # Lightgun
+    "lightgun detect",
+    "lightgun audit",
+    "lightgun configure",
+    # Add / rename / batch edit
+    "add-system <SYSTEM>",
+    "add-pc-system <SYSTEM>",
+    "pc-rename <OLD> <NEW>",
+    "rename <SYSTEM> <OLD_ROM> <NEW_ROM> --apply",
+    "clone <SYSTEM> <ROM> <NEW_ROM> --apply",
+    "batch-edit --system <SYSTEM>",
+    "organize --apply",
+    "find-global <QUERY>",
+    # Backup & migration
+    "backup create --target <PATH>",
+    "backup create --target <PATH> --apply",
+    "backup list --target <PATH>",
+    "backup info --backup <PATH>",
+    "backup restore --backup <PATH> --apply",
+    "migrate --target <PATH>",
+    "migrate --target <PATH> --apply",
+    "migrate --list-manifests",
+    "migrate --undo latest --apply",
+    # Config
+    "config show",
+    "config init",
+    "config set <KEY> <VALUE>",
+    "config system list",
+    "config system set <SYSTEM> --layout wheel",
+    # Tools
+    "install-tools",
+)
+
+
 _HELP_TEXT = (
     f"{__app_name__} GUI {__version__} — Tkinter launcher for the SpinDoctor CLI.\n"
     "\n"
@@ -666,21 +765,39 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
-            text=("Run any spindoctor sub-command. Type the arguments as "
-                  "you would after `spindoctor` on the command line — for "
-                  "example `verify --system NES --dat path\\to.dat` or "
-                  "`migrate --target E:\\Cab --apply`."),
+            text=("Run any spindoctor sub-command. Pick a preset from the "
+                  "dropdown to start, then edit placeholders like <SYSTEM> "
+                  "or <PATH> before hitting Run. You can also type any "
+                  "arguments by hand — the field is fully editable."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
         row = self.ttk.Frame(frame)
         row.pack(fill="x", pady=4)
         self.ttk.Label(row, text="spindoctor").pack(side="left")
-        self._custom_var = self.tk.StringVar(value="--help")
-        entry = self.ttk.Entry(row, textvariable=self._custom_var)
-        entry.pack(side="left", fill="x", expand=True, padx=6)
-        entry.bind("<Return>", lambda _e: self._run_custom())
+        self._custom_var = self.tk.StringVar(value=_CUSTOM_COMMAND_PRESETS[0])
+        # Editable Combobox = "dropdown of presets + free-text entry" in
+        # one widget, which is what cabinet owners actually want here:
+        # they don't know the full command surface yet, but once they
+        # pick a preset they may need to tweak <SYSTEM> or <PATH>.
+        combo = self.ttk.Combobox(
+            row,
+            textvariable=self._custom_var,
+            values=list(_CUSTOM_COMMAND_PRESETS),
+            state="normal",
+        )
+        combo.pack(side="left", fill="x", expand=True, padx=6)
+        combo.bind("<Return>", lambda _e: self._run_custom())
         self.ttk.Button(row, text="Run", command=self._run_custom).pack(side="left")
+
+        hint = self.ttk.Label(
+            frame,
+            text=("Tip: anything in <ANGLE_BRACKETS> is a placeholder you "
+                  "need to replace before running. Append --help to any "
+                  "command to see its full option list in the Output panel."),
+            wraplength=860, justify="left", foreground="#666",
+        )
+        hint.pack(anchor="w", pady=(8, 0))
 
         return frame
 
@@ -688,6 +805,17 @@ class _SpinDoctorGUI:
         raw = self._custom_var.get().strip()
         if not raw:
             self.messagebox.showinfo("Nothing to run", "Type some arguments first.")
+            return
+        # Catch unfilled `<PLACEHOLDER>` tokens before we shell out — the
+        # CLI would just complain about a literal "<SYSTEM>" path which is
+        # confusing if the user didn't realise the dropdown was a template.
+        if "<" in raw and ">" in raw:
+            self.messagebox.showwarning(
+                "Replace placeholders first",
+                "The command still contains <PLACEHOLDER> tokens. Replace "
+                "them with real values (e.g. a system name or a path) "
+                "before clicking Run.",
+            )
             return
         try:
             # posix=False matches Windows quoting (`"foo bar"` stays one token,
