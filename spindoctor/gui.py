@@ -203,6 +203,7 @@ class _SpinDoctorGUI:
         nb.add(self._build_setup_tab(nb), text="Setup")
         nb.add(self._build_wheels_tab(nb), text="Wheels")
         nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
+        nb.add(self._build_mainmenu_tab(nb), text="Main Menu")
         nb.add(self._build_custom_tab(nb), text="Custom Command")
 
         out_frame = self.ttk.LabelFrame(self.root, text="Output")
@@ -420,6 +421,174 @@ class _SpinDoctorGUI:
             )
             return
         self._run_cli("spindoctor", ["audit", "--system", system])
+
+    # ── Main Menu tab ─────────────────────────────────────────────────────────
+
+    def _build_mainmenu_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Reorder, hide, sort, add, or remove systems on the "
+                  "HyperSpin Main Menu wheel. Click Show menu first to "
+                  "see the current order. Every write is a dry-run unless "
+                  "you tick Apply, mirroring the CLI."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            frame, text="Apply (uncheck for dry-run on every action below)",
+            variable=self._mainmenu_apply_var,
+        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 6))
+
+        # ── View section ─────────────────────────────────────────────────────
+        view_frame = self.ttk.LabelFrame(frame, text="View")
+        view_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 4))
+        self.ttk.Button(
+            view_frame, text="Show menu",
+            command=lambda: self._run_cli("spindoctor", ["mainmenu", "show"]),
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+
+        # ── Sort section ─────────────────────────────────────────────────────
+        sort_frame = self.ttk.LabelFrame(frame, text="Sort whole menu")
+        sort_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        self.ttk.Label(sort_frame, text="Strategy").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
+        )
+        # Choices mirror the CLI's `mainmenu sort` argument exactly.
+        self._mainmenu_sort_var = self.tk.StringVar(value="alpha")
+        self.ttk.Combobox(
+            sort_frame, textvariable=self._mainmenu_sort_var,
+            values=["alpha", "manufacturer", "year"],
+            state="readonly", width=18,
+        ).grid(row=0, column=1, sticky="w", padx=6, pady=4)
+        self.ttk.Button(
+            sort_frame, text="Sort menu",
+            command=self._run_mainmenu_sort,
+        ).grid(row=0, column=2, sticky="w", padx=6, pady=4)
+
+        # ── Per-system actions ───────────────────────────────────────────────
+        sys_frame = self.ttk.LabelFrame(frame, text="Per-system actions")
+        sys_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        sys_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(sys_frame, text="System").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._mainmenu_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            sys_frame, textvariable=self._mainmenu_system_var, width=40,
+        ).grid(row=0, column=1, columnspan=3, sticky="ew", padx=6, pady=4)
+
+        # Move / visibility / membership buttons all share the same
+        # System entry above. Position (one-indexed) lives next to its
+        # Reorder button so it's clear which action consumes it.
+        btn_grid = self.ttk.Frame(sys_frame)
+        btn_grid.grid(row=1, column=0, columnspan=4, sticky="w", padx=6, pady=2)
+        self.ttk.Button(
+            btn_grid, text="Move up",
+            command=lambda: self._run_mainmenu_simple("up"),
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_grid, text="Move down",
+            command=lambda: self._run_mainmenu_simple("down"),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_grid, text="Hide",
+            command=lambda: self._run_mainmenu_simple("hide"),
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_grid, text="Show / unhide",
+            command=lambda: self._run_mainmenu_simple("show"),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_grid, text="Add",
+            command=lambda: self._run_mainmenu_simple("add"),
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_grid, text="Remove",
+            command=lambda: self._run_mainmenu_simple("remove"),
+        ).pack(side="left", padx=6)
+
+        self.ttk.Label(sys_frame, text="Move to position").grid(
+            row=2, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._mainmenu_position_var = self.tk.StringVar()
+        self.ttk.Entry(
+            sys_frame, textvariable=self._mainmenu_position_var, width=8,
+        ).grid(row=2, column=1, sticky="w", padx=6, pady=4)
+        self.ttk.Button(
+            sys_frame, text="Reorder",
+            command=self._run_mainmenu_reorder,
+        ).grid(row=2, column=2, sticky="w", padx=6, pady=4)
+
+        hint = self.ttk.Label(
+            frame,
+            text=("Tip: position is 1-indexed. Click Show menu first to "
+                  "see each system's current row number."),
+            wraplength=860, justify="left", foreground="#666",
+        )
+        hint.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 0))
+
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _maybe_apply(self) -> list[str]:
+        return ["--apply"] if self._mainmenu_apply_var.get() else []
+
+    def _run_mainmenu_sort(self) -> None:
+        strategy = self._mainmenu_sort_var.get().strip()
+        if strategy not in ("alpha", "manufacturer", "year"):
+            self.messagebox.showwarning(
+                "Pick a strategy",
+                "Choose alpha, manufacturer, or year before sorting.",
+            )
+            return
+        self._run_cli(
+            "spindoctor",
+            ["mainmenu", "sort", strategy, *self._maybe_apply()],
+        )
+
+    def _run_mainmenu_simple(self, action: str) -> None:
+        """Dispatch up/down/hide/show/add/remove against the current system."""
+        system = self._mainmenu_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type the name of a system first (e.g. 'Nintendo 64').",
+            )
+            return
+        self._run_cli(
+            "spindoctor",
+            ["mainmenu", action, system, *self._maybe_apply()],
+        )
+
+    def _run_mainmenu_reorder(self) -> None:
+        system = self._mainmenu_system_var.get().strip()
+        position_raw = self._mainmenu_position_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type the name of a system before reordering.",
+            )
+            return
+        # Validate up-front so we don't shell out on a typo — the CLI
+        # would still reject it, but a Tk warning surfaces the cause
+        # immediately instead of hiding it inside the Output panel.
+        try:
+            position = int(position_raw)
+            if position < 1:
+                raise ValueError
+        except ValueError:
+            self.messagebox.showwarning(
+                "Position must be a positive integer",
+                "Enter a 1-indexed row number (e.g. 1 = first slot).",
+            )
+            return
+        self._run_cli(
+            "spindoctor",
+            ["mainmenu", "reorder", system, str(position), *self._maybe_apply()],
+        )
 
     # ── Custom command tab ────────────────────────────────────────────────────
 

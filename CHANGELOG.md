@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI Main Menu tab.** New Tkinter tab wrapping `spindoctor mainmenu` so cabinet owners can reorder, hide, sort, add, or remove the consoles on the HyperSpin top-level wheel without dropping into `cmd.exe`. Surfaces `mainmenu show`, `mainmenu sort {alpha,manufacturer,year}`, per-system Move up / Move down / Hide / Show / Add / Remove buttons, and a 1-indexed Reorder field. Dry-run by default with a single Apply checkbox covering every action on the tab.
+
 ## [1.3.0] - 2026-05-07
 
 Windows-quality-of-life release. Fixes two papercuts cabinet owners hit on real installs and substantially speeds up CI on the Windows runner. No CLI surface changes.
