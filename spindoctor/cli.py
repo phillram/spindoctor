@@ -2115,6 +2115,11 @@ def theme_scan(system, keyword, output):
               help="Narrow the swap pool: 'all' (default), 'frontend' "
                    "(only Media/Frontend/Images), or a system name "
                    "(only that system's Special A/B folders).")
+@click.option("--systems", default=None,
+              help="Comma-separated list of system names to target "
+                   "(e.g. 'MAME,Sega Naomi'). Targets those systems' "
+                   "Special A/B folders. Overrides --target for the "
+                   "system-name filter when both are given.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Execute the swap. Without this flag, prints the "
                    "planned swaps as a dry-run table.")
@@ -2122,10 +2127,15 @@ def theme_scan(system, keyword, output):
               help="Reverse a previous run. Pass 'latest' to reverse "
                    "the most recent theme-apply manifest, or a path "
                    "under ~/.spindoctor/themes/.")
+@click.option("--revert-system", "revert_system", default=None,
+              help="Revert only one system from a previous run. "
+                   "Pair with --undo to pick the manifest (defaults to "
+                   "latest). Example: --revert-system 'Sega Naomi' "
+                   "--undo latest")
 @click.option("--list-manifests", "list_manifests_flag", is_flag=True,
               help="List existing theme-apply manifests on disk and exit.")
-def theme_apply(source_dir, target, apply_changes, undo_path,
-                list_manifests_flag):
+def theme_apply(source_dir, target, systems, apply_changes, undo_path,
+                revert_system, list_manifests_flag):
     """Replace HyperSpin frontend overlay art from a community pack.
 
     \b
@@ -2147,8 +2157,14 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
       # Only replace files in the universal Frontend bucket
       spindoctor theme-apply C:\\Packs\\PS-Buttons --target frontend --apply
 
+      # Apply to multiple systems at once
+      spindoctor theme-apply C:\\Packs\\PS-Buttons --systems "MAME,Sega Naomi" --apply
+
       # Reverse the most recent run
       spindoctor theme-apply --undo latest
+
+      # Reverse only one system from the most recent run
+      spindoctor theme-apply --undo latest --revert-system "Sega Naomi"
 
       # List previous runs
       spindoctor theme-apply --list-manifests
@@ -2173,8 +2189,9 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
             console.print(f"[cyan]{m}[/cyan]  ({count} swap(s))")
         return
 
-    if undo_path:
-        if undo_path == "latest":
+    if undo_path or revert_system:
+        raw_path = undo_path or "latest"
+        if raw_path == "latest":
             manifest = themes.find_latest_manifest()
             if manifest is None:
                 err_console.print(
@@ -2182,21 +2199,29 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
                 )
                 sys.exit(1)
         else:
-            manifest = Path(undo_path).expanduser()
+            manifest = Path(raw_path).expanduser()
             if not manifest.exists():
                 err_console.print(f"[red]Manifest not found:[/red] {manifest}")
                 sys.exit(1)
-        restored = themes.undo_plan(manifest)
-        console.print(
-            f"[green]✓[/green] Restored {restored} file(s) from "
-            f"[cyan]{manifest}[/cyan]"
-        )
+
+        if revert_system:
+            restored = themes.undo_plan_system(manifest, revert_system)
+            console.print(
+                f"[green]✓[/green] Restored {restored} file(s) for "
+                f"[cyan]{revert_system}[/cyan] from [cyan]{manifest}[/cyan]"
+            )
+        else:
+            restored = themes.undo_plan(manifest)
+            console.print(
+                f"[green]✓[/green] Restored {restored} file(s) from "
+                f"[cyan]{manifest}[/cyan]"
+            )
         return
 
     if not source_dir:
         err_console.print(
-            "[red]SOURCE_DIR is required (unless using --undo or "
-            "--list-manifests).[/red]"
+            "[red]SOURCE_DIR is required (unless using --undo, "
+            "--revert-system, or --list-manifests).[/red]"
         )
         sys.exit(1)
 
@@ -2206,7 +2231,8 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
         err_console.print(f"[red]Source folder not found:[/red] {src}")
         sys.exit(1)
 
-    plans = themes.plan_apply(config, src, target=target)
+    systems_list = [s.strip() for s in systems.split(",") if s.strip()] if systems else None
+    plans = themes.plan_apply(config, src, target=target, systems=systems_list)
     if not plans:
         console.print(
             "[yellow]No filename matches between the source pack and "
@@ -2218,6 +2244,8 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
         return
 
     console.print(Panel(f" theme-apply ← {src} ", style="bold blue"))
+    if systems_list:
+        console.print(f"Systems filter: [cyan]{', '.join(systems_list)}[/cyan]")
     tbl = Table(box=box.SIMPLE, title=f"{len(plans)} swap(s)")
     tbl.add_column("Source", style="yellow")
     tbl.add_column("→")
@@ -2249,6 +2277,64 @@ def theme_apply(source_dir, target, apply_changes, undo_path,
             f"  Run [cyan]spindoctor theme-apply --undo {result.manifest_path}[/cyan] "
             "to revert."
         )
+
+
+@cli.command("theme-pack-create")
+@click.argument("output_dir", type=click.Path(file_okay=False))
+@click.option("--target", default=None,
+              help="Narrow which art to snapshot: 'all' (default), "
+                   "'frontend' (only Media/Frontend/Images), or a "
+                   "system name (only that system's Special A/B).")
+def theme_pack_create(output_dir, target):
+    """Snapshot the cabinet's current frontend art into a community-pack tree.
+
+    \b
+    Copies every file from Media/Frontend/Images/ and per-system
+    Special A / Special B folders into OUTPUT_DIR/<scope>/<bucket>/,
+    preserving original filenames. The resulting folder can be passed
+    straight to theme-apply to re-apply the same art on another
+    cabinet, back up before a swap, or migrate alongside the library.
+
+    \b
+    Examples:
+      # Back up all current art before applying a new pack
+      spindoctor theme-pack-create D:\\Packs\\MyCurrentArt
+
+      # Only snapshot the universal Frontend bucket
+      spindoctor theme-pack-create D:\\Packs\\FrontendOnly --target frontend
+
+      # Only snapshot MAME's Special A/B
+      spindoctor theme-pack-create D:\\Packs\\MAME-only --target "MAME"
+    """
+    from . import themes
+
+    config = _cfg()
+    _check_config(config)
+
+    out = Path(output_dir).expanduser()
+    console.print(Panel(f" theme-pack-create → {out} ", style="bold blue"))
+    if target:
+        console.print(f"Target scope: [cyan]{target}[/cyan]")
+
+    result = themes.create_pack(config, out, target=target)
+
+    if not result.files_copied and not result.skipped:
+        console.print(
+            "[yellow]No frontend art found.[/yellow] "
+            "Run [cyan]spindoctor theme-scan[/cyan] to see what your "
+            "cabinet has."
+        )
+        return
+
+    from .backup import format_bytes
+    console.print(
+        f"[green]✓[/green] {result.files_copied} file(s) copied "
+        f"({format_bytes(result.bytes_copied)}) → [cyan]{out}[/cyan]"
+    )
+    for path, err in result.skipped:
+        console.print(f"  [red]✗[/red] {path.name}: {err}")
+    if result.skipped:
+        console.print(f"  [yellow]{len(result.skipped)} file(s) skipped.[/yellow]")
 
 
 @cli.command("install-tools")
@@ -5643,6 +5729,139 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
             sys.exit(1)
 
     console.print(f"\n[green]✓[/green] Restored {restored} component(s).")
+
+
+# ─── diff (compare backup to live tree) ──────────────────────────────────────
+
+
+@cli.command("diff")
+@click.argument("backup_folder", type=click.Path(exists=True, file_okay=False))
+@click.option("--component", default=None,
+              help="Limit the diff to one component (roms, databases, media, etc.).")
+def diff(backup_folder, component):
+    """Compare a spindoctor-backup-… folder against the live cabinet tree.
+
+    \b
+    Lists which files have been added, deleted, or modified in each
+    backed-up component since the snapshot was taken. Comparison is by
+    file size and modification time (fast; no full hash). Useful for
+    answering "what changed since last week?" without manually diffing
+    folders.
+
+    \b
+    Examples:
+      spindoctor diff E:\\Backups\\spindoctor-backup-20260101_120000
+      spindoctor diff E:\\Backups\\spindoctor-backup-20260101_120000 --component databases
+    """
+    from .backup import read_manifest
+
+    backup_root = Path(backup_folder).expanduser()
+    try:
+        manifest = read_manifest(backup_root)
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]Could not read manifest:[/red] {exc}")
+        sys.exit(1)
+
+    items = manifest.get("items", [])
+    if component:
+        items = [i for i in items if i.get("component") == component]
+        if not items:
+            err_console.print(
+                f"[yellow]No component '{component}' in this backup.[/yellow] "
+                f"Available: {', '.join(i['component'] for i in manifest.get('items', []))}"
+            )
+            sys.exit(1)
+
+    console.print(
+        Panel(
+            f" diff  backup: {backup_root.name} ",
+            style="bold blue",
+        )
+    )
+    ts = manifest.get("timestamp", "unknown")
+    console.print(f"Backup taken: [dim]{ts}[/dim]\n")
+
+    grand_added = grand_deleted = grand_modified = 0
+
+    for item in items:
+        comp = item.get("component", "?")
+        live_str = item.get("src", "")
+        snap_str = item.get("dest", "")
+
+        live_root = Path(live_str) if live_str else None
+        snap_root = Path(snap_str) if snap_str else None
+
+        console.print(f"[bold cyan]{comp}[/bold cyan]")
+
+        if not live_root or not live_root.exists():
+            console.print(f"  [yellow]Live path not found:[/yellow] {live_root}")
+            console.print()
+            continue
+        if not snap_root or not snap_root.exists():
+            console.print(f"  [yellow]Backup path not found:[/yellow] {snap_root}")
+            console.print()
+            continue
+
+        # Build index: relative path → (size, mtime) for both trees.
+        def _index(root: Path) -> dict:
+            idx: dict = {}
+            for p in root.rglob("*"):
+                if not p.is_file():
+                    continue
+                try:
+                    st = p.stat()
+                    idx[p.relative_to(root)] = (st.st_size, int(st.st_mtime))
+                except OSError:
+                    pass
+            return idx
+
+        live_idx = _index(live_root)
+        snap_idx = _index(snap_root)
+
+        live_keys = set(live_idx)
+        snap_keys = set(snap_idx)
+
+        added = sorted(live_keys - snap_keys)
+        deleted = sorted(snap_keys - live_keys)
+        modified = sorted(
+            k for k in live_keys & snap_keys
+            if live_idx[k] != snap_idx[k]
+        )
+
+        if not added and not deleted and not modified:
+            console.print("  [green]No changes.[/green]")
+        else:
+            for k in added:
+                console.print(f"  [green]+[/green] {k}")
+            for k in deleted:
+                console.print(f"  [red]−[/red] {k}")
+            for k in modified:
+                console.print(f"  [yellow]~[/yellow] {k}")
+
+        count_parts = []
+        if added:
+            count_parts.append(f"[green]{len(added)} added[/green]")
+        if deleted:
+            count_parts.append(f"[red]{len(deleted)} deleted[/red]")
+        if modified:
+            count_parts.append(f"[yellow]{len(modified)} modified[/yellow]")
+        if count_parts:
+            console.print(f"  → {', '.join(count_parts)}")
+        console.print()
+
+        grand_added += len(added)
+        grand_deleted += len(deleted)
+        grand_modified += len(modified)
+
+    total = grand_added + grand_deleted + grand_modified
+    if total == 0:
+        console.print("[green]✓ No differences found.[/green]")
+    else:
+        console.print(
+            f"Total: [green]{grand_added} added[/green]  "
+            f"[red]{grand_deleted} deleted[/red]  "
+            f"[yellow]{grand_modified} modified[/yellow]"
+        )
 
 
 # ─── migrate (move library to a new drive) ────────────────────────────────────
