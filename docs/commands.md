@@ -65,6 +65,8 @@ A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_bef
 
 ### `fetch-meta`
 
+> **GUI alternative:** the **Metadata & Media** tab wraps `fetch-meta`, `fetch-media`, `media-scan`, `update-db`, and `generate-config` behind one shared "System (or All systems) + Apply" header. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+
 Download metadata (description, year, manufacturer, genre, rating, players) and write it into the XML.
 
 ```bat
@@ -280,6 +282,8 @@ spindoctor organize "Sony Playstation 3" --undo                :: revert last ap
 
 ### `add-system`
 
+> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` (with `--no-system-media` / `--no-game-media` toggles, dry-run by default). See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+
 Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and walks the metadata + media fetch flow.
 
 ```bat
@@ -404,6 +408,8 @@ spindoctor find-misplaced --undo                 :: reverse the most recent --ap
 ```
 
 ### `curate` — region & version curation
+
+> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
 
 Where `find-dupes` only reports collisions, `curate` actively picks one canonical variant per game (by region preference and revision number) and groups the rest as retirement candidates.
 

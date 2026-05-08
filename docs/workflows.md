@@ -40,6 +40,8 @@ Once `D:\SpinDoctorOutput` looks right, copy its contents over your live `hypers
 
 ## Adding your first system
 
+> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` with a system-name field, optional skip-media toggles, and a dry-run-by-default Apply checkbox.
+
 You've got ROMs in `C:\Games\Nintendo Entertainment System\` but the cabinet doesn't show NES yet. Walk:
 
 ```bat
@@ -322,6 +324,8 @@ Files move back, config snapshot restores. For `--keep-source` migrations, undo 
 
 ## ROM integrity sweep
 
+> **GUI alternative:** the **Diagnose** tab has a Verify-against-DAT mini-form (System + DAT-path picker + Verify button) and a Global Search box for finding a title across every database without typing the command.
+
 ```bat
 spindoctor verify --system NES --dat "C:\Dats\Nintendo - NES - No-Intro.dat"
 spindoctor verify --system "Sony Playstation" --dat "C:\Dats\Sony - PS - Redump.dat"
@@ -332,6 +336,8 @@ Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good
 ---
 
 ## Adding a Favorite
+
+> **GUI alternative:** the **Wheels** tab has Refresh / Add-to-Main-Menu / Install-Tools-helpers buttons. The `fav add / remove / list` lifecycle still goes through the CLI (or the Custom Command tab's preset dropdown) since the favourites are pulled from RocketLauncher's tracking, not entered by hand from the GUI.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"

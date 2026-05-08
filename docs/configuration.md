@@ -92,3 +92,15 @@ You can leave `mame_executable` blank if you don't use `ledblinky generate` — 
 | Across two different drives | ✗ | Pass `--media-mode copy`. |
 
 `auto` (the default) tries hardlink and silently falls back to copy if it fails — so you usually don't need to think about this until you see media doubling your disk usage on FAT32.
+
+## Environment variables
+
+A small handful of runtime knobs live in environment variables rather than `config.json` because they're per-launch toggles, not persistent cabinet config.
+
+| Variable | Effect |
+|---|---|
+| `SPINDOCTOR_NO_UPDATE_CHECK=1` | Disables the GUI's GitHub release-tag check on launch and from `Help → Check for updates`. Useful for cabinets behind strict firewalls or when you want a fully hermetic launch. The CLI doesn't run any update check, so this only affects `spindoctor-gui`. |
+| `PYTHONIOENCODING=utf-8` | Forced internally on the frozen Windows exe to keep Rich's tree glyphs (`✓ ⚠ ✗`) rendering on cmd.exe with cp1252. You don't normally need to set it yourself. |
+| `PYTHONUNBUFFERED=1` | Set automatically when the GUI shells out so per-row progress (`fetch-meta`, `audit`) streams in real time instead of being buffered until the child exits. |
+
+Anything else you might want to control (concurrency, cache TTL, region preferences, …) lives in `config.json` and is documented above.
