@@ -321,6 +321,10 @@ class _SpinDoctorGUI:
         self._set_status("Ready.")
         # 50 ms polling is fast enough to feel real-time without busy-looping.
         self.root.after(50, self._drain_queue)
+        # Kick off the GitHub release-tag check on a background thread
+        # so a slow / unreachable GitHub doesn't delay the first paint.
+        # Result lands in the status bar via _on_update_check_done.
+        self._start_update_check()
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -392,6 +396,9 @@ class _SpinDoctorGUI:
 
         help_menu = self.tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
+        help_menu.add_command(
+            label="Check for updates", command=self._manual_update_check,
+        )
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self.root.configure(menu=menubar)
@@ -449,6 +456,89 @@ class _SpinDoctorGUI:
         self.ttk.Button(body, text="Close", command=win.destroy).pack(
             anchor="e", pady=(12, 0),
         )
+
+    # ── Update check ──────────────────────────────────────────────────────────
+
+    def _start_update_check(self) -> None:
+        """Kick off the GitHub release-tag check on a background thread.
+
+        Runs at GUI launch — silently no-ops on opt-out via the
+        ``SPINDOCTOR_NO_UPDATE_CHECK`` env var, on offline machines, on
+        GitHub outages, and on any other failure. The thread is
+        daemonic so it won't keep the process alive after the user
+        closes the window.
+        """
+        # Imported lazily so the module's import cost stays out of the
+        # GUI launch critical path on machines that opt out via env.
+        from . import update_check
+
+        def worker() -> None:
+            try:
+                result = update_check.check_for_update(__version__)
+            except update_check.UpdateCheckDisabled:
+                return
+            except Exception:  # noqa: BLE001 — never let this kill the UI
+                return
+            if result is not None:
+                # Hop back to the Tk main loop before touching widgets.
+                self.root.after(0, self._on_update_check_done, result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_check_done(self, result) -> None:
+        if result.newer_available:
+            self._set_status(
+                f"Update available: {result.latest} "
+                f"(running {result.current}). Help → Check for updates."
+            )
+            self._append_output(
+                f"\n[update check] {__app_name__} {result.latest} is "
+                f"available. Current: {__version__}.\n"
+                f"  {result.release_url or 'https://github.com/phillram/spindoctor/releases'}\n"
+            )
+        # When the user is up to date, stay quiet — no point cluttering
+        # the output panel with an "all good" line on every launch.
+
+    def _manual_update_check(self) -> None:
+        """Help → Check for updates: synchronous variant with feedback.
+
+        The launch check runs silently on success, but a manual
+        invocation should always tell the user *something* — otherwise
+        clicking the menu entry feels broken when the user is up to
+        date.
+        """
+        from . import update_check
+
+        try:
+            result = update_check.check_for_update(__version__)
+        except update_check.UpdateCheckDisabled as exc:
+            self.messagebox.showinfo("Update check disabled", str(exc))
+            return
+        if result is None:
+            self.messagebox.showinfo(
+                "Update check failed",
+                "Could not reach GitHub. Check your connection and try "
+                "again, or visit "
+                "https://github.com/phillram/spindoctor/releases/latest "
+                "manually.",
+            )
+            return
+        if result.newer_available:
+            if self.messagebox.askyesno(
+                "Update available",
+                f"{__app_name__} {result.latest} is available.\n"
+                f"You're running {result.current}.\n\n"
+                "Open the release page in your browser?",
+            ):
+                self._open_url(
+                    result.release_url
+                    or "https://github.com/phillram/spindoctor/releases/latest",
+                )
+        else:
+            self.messagebox.showinfo(
+                "Up to date",
+                f"{__app_name__} {result.current} is the latest release.",
+            )
 
     def _open_url(self, url: str) -> None:
         # webbrowser.open hands off to the OS default browser without
