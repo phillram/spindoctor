@@ -320,6 +320,50 @@ def test_undo_recipes_only_target_known_log_categories():
     assert not extra, f"recipes for categories not in tree: {extra}"
 
 
+# ─── _RunRecord (Logs tab buffer) ─────────────────────────────────────────────
+
+def test_run_record_tag_dry_run():
+    """Dry-run + exit 0 should label as DRY-RUN so the Logs tab can
+    distinguish "preview, nothing changed" from "applied, succeeded"."""
+    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
+                         argv_str="spindoctor audit --all", dry_run=True)
+    rec.exit_code = 0
+    assert rec.tag() == "DRY-RUN"
+
+
+def test_run_record_tag_applied_ok():
+    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
+                         argv_str="spindoctor audit --all --apply",
+                         dry_run=False)
+    rec.exit_code = 0
+    assert rec.tag() == "OK"
+
+
+def test_run_record_tag_failed():
+    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
+                         argv_str="spindoctor doctor", dry_run=True)
+    rec.exit_code = 2
+    assert rec.tag() == "FAIL 2"
+
+
+def test_run_record_tag_running():
+    """Before the subprocess exits, exit_code is None and the row
+    should show "running" so users can tell what's still in flight."""
+    rec = gui._RunRecord(started_at="2026-05-08 12:00:00",
+                         argv_str="spindoctor migrate --target X",
+                         dry_run=True)
+    assert rec.tag() == "running"
+
+
+def test_run_record_joined_output_concatenates_fragments():
+    rec = gui._RunRecord(started_at="t", argv_str="cmd", dry_run=False)
+    rec.append("line1\n")
+    rec.append("line2\n")
+    # Per-line fragments are joined on demand — keeping them as a
+    # list avoids O(n²) reallocation on long-running commands.
+    assert rec.joined_output() == "line1\nline2\n"
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():

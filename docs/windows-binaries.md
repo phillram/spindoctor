@@ -120,7 +120,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 14 tabs that cover essentially the entire CLI surface, a `File` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 tabs that cover essentially the entire CLI surface, a `File` / `Help` menubar, and a shared output panel that streams subprocess output as commands run. Every tab scrolls vertically with an always-visible scrollbar, so cabinet owners on smaller screens (1024×768 / 1280×720) can still reach widgets that overflow.
 
 > ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
 >
@@ -167,7 +167,25 @@ The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standal
 
 **Migrate** — Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, optional comma-separated systems filter for partial roms migrations, toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate Undo panel that pre-fills `latest` and exposes `--list-manifests`. Dry-run by default. Equivalent to `spindoctor migrate`.
 
+**Logs** — persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN` (no `--apply` was passed), `OK` (applied + exit 0), `FAIL <code>`, or `running`. The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **`File → View logs & manifests…`** instead.
+
 **Custom Command** — anything the dedicated tabs don't cover. The entry field is now an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
+
+### Dry-run feedback
+
+Every command without `--apply` is a dry-run. The GUI now bookends those with explicit banners:
+
+```
+=== DRY RUN ===
+
+$ spindoctor curate --all
+
+(plan output…)
+
+=== DRY RUN COMPLETE (exit 0) — nothing was written. Re-run with --apply to commit. ===
+```
+
+The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
 
 > ![Custom Command tab with `audit --all` typed into the entry](images/gui-launcher-custom-tab.png)
 
