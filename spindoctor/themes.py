@@ -222,6 +222,15 @@ class ApplyResult:
     manifest_path: Optional[Path] = None
 
 
+@dataclass
+class PackCreateResult:
+    """Outcome of :func:`create_pack`."""
+    files_copied: int = 0
+    bytes_copied: int = 0
+    skipped: list[tuple[Path, str]] = field(default_factory=list)
+    output_dir: Optional[Path] = None
+
+
 def _enumerate_source_pack(source_dir: Path) -> dict[str, Path]:
     """Map lowercase filename → source Path for every overlay-extension
     file in *source_dir* (recursively).
@@ -247,16 +256,23 @@ def plan_apply(
     source_dir: Path,
     *,
     target: Optional[str] = None,
+    systems: Optional[list[str]] = None,
 ) -> list[SwapPlan]:
     """Build the list of swaps for replacing frontend art with *source_dir*.
 
-    *target* narrows the candidate pool:
+    *target* narrows the candidate pool (single scope):
 
     * ``None`` or ``"all"`` — every Frontend / Special A / Special B file.
     * ``"frontend"`` — only the universal ``Media/Frontend/Images``
       bucket. Useful when a pack is generic (no per-system art).
     * any other string — treated as a system name; only that system's
       Special A/B folders are considered.
+
+    *systems* accepts a list of system names (e.g. ``["MAME", "Sega
+    Naomi"]``). When provided it overrides *target* for the system-name
+    filtering step: only those systems' Special A/B folders are
+    considered. Useful for applying a pack to several wheels at once
+    without touching the universal Frontend bucket.
 
     Each match is one :class:`SwapPlan`. A source file with no matching
     target name is dropped silently (the source pack just has spare
@@ -266,13 +282,20 @@ def plan_apply(
     if not sources:
         return []
 
-    targets = scan_frontend_art(config)
-    if target and target.lower() != "all":
+    all_targets = scan_frontend_art(config)
+
+    if systems:
+        # Multi-system filter: include Frontend + every named system.
+        systems_set = set(systems)
+        targets = [t for t in all_targets if t.scope in systems_set]
+    elif target and target.lower() != "all":
         if target.lower() == "frontend":
-            targets = [t for t in targets if t.scope == "Frontend"]
+            targets = [t for t in all_targets if t.scope == "Frontend"]
         else:
             # Exact match against the on-disk system folder name.
-            targets = [t for t in targets if t.scope == target]
+            targets = [t for t in all_targets if t.scope == target]
+    else:
+        targets = all_targets
 
     plans: list[SwapPlan] = []
     for t in targets:
@@ -412,3 +435,101 @@ def find_latest_manifest(manifest_dir: Optional[Path] = None) -> Optional[Path]:
     are no theme-apply manifests on disk yet."""
     manifests = list_manifests(manifest_dir)
     return manifests[0] if manifests else None
+
+
+def undo_plan_system(manifest_path: Path, system: str) -> int:
+    """Restore only the files belonging to *system* from *manifest_path*.
+
+    Like :func:`undo_plan` but scoped to a single ``target_scope`` so
+    a multi-system swap can be partially reversed — e.g. roll back
+    "Sega Naomi" without touching every other wheel the pack touched.
+
+    Returns the number of files restored.
+    """
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    restored = 0
+    for entry in data.get("swaps", []):
+        if entry.get("target_scope") != system:
+            continue
+        backup = Path(entry["backup"])
+        target = Path(entry["target"])
+        if not backup.exists():
+            continue
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(backup, target)
+            restored += 1
+        except OSError:
+            continue
+    return restored
+
+
+def list_systems_in_manifest(manifest_path: Path) -> list[str]:
+    """Return the unique system names (``target_scope`` values) recorded
+    in *manifest_path*, sorted alphabetically.
+
+    Used by the GUI's per-system revert picker to populate a dropdown
+    without parsing the JSON twice.
+    """
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    scopes: set[str] = set()
+    for entry in data.get("swaps", []):
+        scope = entry.get("target_scope", "")
+        if scope:
+            scopes.add(scope)
+    return sorted(scopes)
+
+
+def create_pack(
+    config: Config,
+    output_dir: Path,
+    *,
+    target: Optional[str] = None,
+) -> PackCreateResult:
+    """Snapshot the cabinet's current Frontend / Special A / Special B art
+    into a directory tree shaped like a community pack.
+
+    Walks the same folders :func:`scan_frontend_art` covers and copies
+    each overlay file to::
+
+        <output_dir>/<scope>/<bucket>/<filename>
+
+    where ``scope`` is ``"Frontend"`` or the system name, and ``bucket``
+    is ``"Frontend/Images"``, ``"Special A"``, or ``"Special B"``. The
+    resulting tree is accepted by :func:`plan_apply` (and its CLI
+    counterpart ``theme-apply``) so users can back up, share, or
+    migrate their art alongside a library migration.
+
+    *target* narrows which art is snapshotted:
+
+    * ``None`` / ``"all"`` — everything (default).
+    * ``"frontend"`` — only ``Media/Frontend/Images``.
+    * any other string — only that system's Special A/B buckets.
+    """
+    assets = scan_frontend_art(config)
+    if target and target.lower() not in ("", "all"):
+        if target.lower() == "frontend":
+            assets = [a for a in assets if a.scope == "Frontend"]
+        else:
+            assets = [a for a in assets if a.scope == target]
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    result = PackCreateResult(output_dir=output_dir)
+
+    for asset in assets:
+        # "Frontend / Images" → "Frontend/Images"; "Special A" stays as-is.
+        bucket_path = asset.bucket.replace(" / ", "/")
+        dest_dir = output_dir / asset.scope / bucket_path
+        dest = dest_dir / asset.path.name
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(asset.path, dest)
+            result.files_copied += 1
+            result.bytes_copied += asset.size_bytes
+        except OSError as exc:
+            result.skipped.append((asset.path, str(exc)))
+
+    return result
