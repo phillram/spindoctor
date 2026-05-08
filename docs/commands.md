@@ -12,7 +12,8 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
-- [Themes](#themes) — `theme-scan`, `theme-apply`
+- [Themes](#themes) — `theme-scan`, `theme-apply`, `theme-pack-create`
+- [Diff](#diff) — `diff`
 - [LEDBlinky](#ledblinky)
 - [Light guns](#light-guns) — `lightgun detect`, `lightgun audit`, `lightgun configure`
 - [Maintenance](#maintenance) — `doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
@@ -598,9 +599,9 @@ spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode 
 
 ## Themes
 
-Inventory and replace HyperSpin's frontend overlay art — the controller-hint glyphs that appear at the bottom of the cabinet UI (Special A / Special B). Two commands: a read-only `theme-scan` for figuring out what's there, and a `theme-apply` that swaps a community pack onto the cabinet with full undo support.
+Inventory, back up, and replace HyperSpin's frontend overlay art — the controller-hint glyphs that appear at the bottom of the cabinet UI (Special A / Special B). Three commands: a read-only `theme-scan` for figuring out what's there, a `theme-apply` that swaps a community pack onto the cabinet with full undo support, and a `theme-pack-create` that is the inverse — snapshot the cabinet's current art into a portable pack folder.
 
-> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack…" button on that window opens a Plan/Apply window for swapping a community pack. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo.
+> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack…" button on that window opens a Plan/Apply window for swapping a community pack, with a scope picker that accepts comma-separated system names for multi-system swaps. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo, a **Show diff** button that renders the swap table as a before/after grid, and a **Revert just \<SYSTEM\>…** button for per-system partial rollback.
 
 ### `theme-scan`
 
@@ -632,17 +633,97 @@ spindoctor theme-apply C:\Packs\PS-Buttons --target frontend --apply
 :: Limit to one system's Special A/B
 spindoctor theme-apply C:\Packs\PS-Buttons --target "Sega Naomi" --apply
 
+:: Apply to multiple systems at once (comma-separated)
+spindoctor theme-apply C:\Packs\PS-Buttons --systems "MAME,Sega Naomi" --apply
+
 :: Reverse the most recent run
 spindoctor theme-apply --undo latest
 
 :: Reverse a specific run
 spindoctor theme-apply --undo ~/.spindoctor/themes/theme-apply-20260508_120000/manifest.json
 
+:: Revert only one system from the most recent run (leave all other wheels untouched)
+spindoctor theme-apply --undo latest --revert-system "Sega Naomi"
+
+:: Revert only one system from a specific run
+spindoctor theme-apply --undo ~/.spindoctor/themes/theme-apply-20260508_120000/manifest.json --revert-system "MAME"
+
 :: List previous runs
 spindoctor theme-apply --list-manifests
 ```
 
-Every applied swap writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/` with the original files mirrored into a `backup/` subfolder. `--undo` reads the manifest and restores each backup back to its target path. The GUI's `File → View logs & manifests…` window has a **Theme swaps** category and a one-click **Undo this run** button that runs the same undo command.
+Every applied swap writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/` with the original files mirrored into a `backup/` subfolder. `--undo` reads the manifest and restores each backup back to its target path. `--revert-system` limits the restore to a single system's files — useful when a multi-system pack swap looks wrong on only one wheel. The GUI's **Show diff** button in the Logs & Manifests viewer renders the same swap table without raw JSON.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--target` | `all` (default), `frontend` (only universal bucket), or a system name |
+| `--systems` | Comma-separated system names — multi-system shortcut (overrides `--target` for system-name filtering) |
+| `--apply` | Commit the swap; dry-run without this flag |
+| `--undo` | `latest` or a manifest path — reverse a previous run |
+| `--revert-system` | System name — pair with `--undo` to roll back only one system |
+| `--list-manifests` | List all previous runs and exit |
+
+### `theme-pack-create`
+
+The inverse of `theme-apply`: snapshot the cabinet's current art into a directory tree shaped like a community pack. Use it to back up before installing a swap, share your setup, or migrate themed art alongside a library migration.
+
+```bat
+:: Back up all current art before applying a new pack
+spindoctor theme-pack-create D:\Packs\MyCurrentArt
+
+:: Only snapshot the universal Frontend bucket
+spindoctor theme-pack-create D:\Packs\FrontendOnly --target frontend
+
+:: Only snapshot one system's Special A/B
+spindoctor theme-pack-create D:\Packs\MAME-only --target "MAME"
+```
+
+The output mirrors the art's scope/bucket: `<output_dir>/Frontend/Frontend/Images/` for universal art, `<output_dir>/<system>/Special A/` and `<output_dir>/<system>/Special B/` for per-system overlays. The folder is accepted directly by `theme-apply` — the cabinet itself is never modified.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--target` | `all` (default), `frontend`, or a system name — same semantics as `theme-apply --target` |
+
+---
+
+## Diff
+
+Answer "what changed since last week?" without manually diffing folders. Given a `spindoctor-backup-…/` folder (created by `backup create`), lists which files are added, deleted, or modified in each component compared to the live cabinet tree. Comparison is size + modification time (fast; no full hash). Read-only — the live tree and backup are never modified.
+
+```bat
+:: Compare a backup against the live cabinet
+spindoctor diff E:\Backups\spindoctor-backup-20260101_120000
+
+:: Limit to one component
+spindoctor diff E:\Backups\spindoctor-backup-20260101_120000 --component databases
+spindoctor diff E:\Backups\spindoctor-backup-20260101_120000 --component roms
+```
+
+Output per component:
+
+```
+databases
+  + Media\Sega Model 3\Sega Model 3.xml       ← added since backup
+  − Media\Sega Naomi\Sega Naomi.xml           ← deleted since backup
+  ~ Databases\MAME\MAME.xml                   ← modified since backup
+  → 1 added, 1 deleted, 1 modified
+```
+
+| Symbol | Meaning |
+|--------|---------|
+| `+`    | File exists in the live tree but not in the backup (added since snapshot) |
+| `−`    | File exists in the backup but not in the live tree (deleted since snapshot) |
+| `~`    | File exists in both but differs by size or modification time (modified) |
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--component` | Limit the report to one component (`roms`, `databases`, `media`, `emulators`, `rocketlauncher`, `ledblinky`, `settings`) |
 
 ---
 
