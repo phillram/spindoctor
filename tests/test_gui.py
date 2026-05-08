@@ -289,6 +289,19 @@ def test_undo_recipes_argv_includes_path_iff_uses_path():
             )
 
 
+def test_ignore_global_label_resolves_to_global_key():
+    """The dropdown shows a friendlier `_global  (cross-system)` label,
+    but ignore_lists is keyed on the literal `_global`. Catch any
+    refactor that renames the label without keeping the mapping in
+    sync — the viewer would silently fail to remove cross-system
+    ignores."""
+    label = gui._SpinDoctorGUI._IGNORE_GLOBAL_LABEL
+    # The literal storage key must appear inside the label so the
+    # mapping function (label → "_global" when label == sentinel) has
+    # an obvious correspondence.
+    assert "_global" in label
+
+
 def test_curate_preview_glyphs_are_distinct():
     """The retire and skip glyphs must be different — otherwise the
     toggle handler can't tell which state a row is in. Easy to break
