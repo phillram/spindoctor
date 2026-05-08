@@ -355,21 +355,13 @@ class _SpinDoctorGUI:
     def _build_layout(self) -> None:
         self._build_menubar()
 
-        # Pack the status bar first (side=bottom) so it always hugs the
-        # bottom edge regardless of how the user resizes the sash above.
-        bar = self.ttk.Frame(self.root)
-        bar.pack(fill="x", side="bottom", padx=8, pady=(0, 8))
-        self._status_var = self.tk.StringVar(value="")
-        self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
-            side="left", fill="x", expand=True
-        )
-        self._stop_btn = self.ttk.Button(
-            bar, text="Stop", command=self._stop_running, state="disabled"
-        )
-        self._stop_btn.pack(side="right")
-        self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
-            side="right", padx=(0, 6)
-        )
+        # Use grid on the root so the status bar (row 1, weight=0) is
+        # ALWAYS allocated its natural height — pack's expand=True can
+        # race with side=bottom items and push the bar off-screen on
+        # smaller displays. Grid separates the concerns completely.
+        self.root.rowconfigure(0, weight=1)   # main_paned grows/shrinks
+        self.root.rowconfigure(1, weight=0)   # bar: fixed height, never hidden
+        self.root.columnconfigure(0, weight=1)
 
         # Vertical PanedWindow splits the tab notebook (top) from the
         # Output panel (bottom). The raised 6-px sash lets cabinet owners
@@ -380,7 +372,7 @@ class _SpinDoctorGUI:
             sashwidth=6, sashrelief="raised", sashpad=2,
             borderwidth=0,
         )
-        main_paned.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+        main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
 
         nb = self.ttk.Notebook(main_paned)
         # Wrap each tab in a Canvas + always-visible Scrollbar so
@@ -406,8 +398,6 @@ class _SpinDoctorGUI:
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
-        # Notebook takes all extra space when the window is resized;
-        # the Output panel stays at its dragged size (stretch="never").
         main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
 
         out_frame = self.ttk.LabelFrame(main_paned, text="Output")
@@ -417,7 +407,31 @@ class _SpinDoctorGUI:
         )
         self._output.configure(state="disabled")
         self._output.pack(fill="both", expand=True, padx=4, pady=4)
-        main_paned.add(out_frame, stretch="never", height=150, minsize=60, sticky="nsew")
+        main_paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
+
+        # Set initial sash position after the window has been painted so
+        # we know the real allocated height. Target: output panel gets
+        # ~160 px; notebook takes the rest.
+        def _place_initial_sash():
+            h = main_paned.winfo_height()
+            if h > 300:
+                main_paned.sash_place(0, 0, max(200, h - 160))
+        self.root.after(100, _place_initial_sash)
+
+        # Status bar — grid row 1, always visible.
+        bar = self.ttk.Frame(self.root)
+        bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        self._status_var = self.tk.StringVar(value="")
+        self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
+            side="left", fill="x", expand=True
+        )
+        self._stop_btn = self.ttk.Button(
+            bar, text="Stop", command=self._stop_running, state="disabled"
+        )
+        self._stop_btn.pack(side="right")
+        self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
+            side="right", padx=(0, 6)
+        )
 
     def _add_scrollable_tab(self, nb, builder, label: str) -> None:
         """Add a Notebook tab that scrolls vertically when content overflows.
