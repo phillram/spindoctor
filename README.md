@@ -85,6 +85,7 @@ The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes
 | Wire a Sinden lightgun for a system | `spindoctor lightgun configure --system "Sega Naomi" --apply` |
 | Refresh Favorites / Recently Played / Most Played | `spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply` |
 | Snapshot the library before risky work | `spindoctor backup create --target E:\Backups --apply` |
+| See what changed since a backup | `spindoctor diff E:\Backups\spindoctor-backup-20260101_120000` |
 | Migrate to a new drive | `spindoctor migrate --target E:\Cab --apply` |
 | Inventory frontend controller-glyph art | `spindoctor theme-scan --keyword xbox` |
 | Replace controller glyphs with a community pack | `spindoctor theme-apply C:\Packs\PS-Buttons --apply` |
