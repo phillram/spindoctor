@@ -321,6 +321,10 @@ class _SpinDoctorGUI:
         self._set_status("Ready.")
         # 50 ms polling is fast enough to feel real-time without busy-looping.
         self.root.after(50, self._drain_queue)
+        # Kick off the GitHub release-tag check on a background thread
+        # so a slow / unreachable GitHub doesn't delay the first paint.
+        # Result lands in the status bar via _on_update_check_done.
+        self._start_update_check()
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -390,11 +394,18 @@ class _SpinDoctorGUI:
             label="Open ROMs folder", command=self._open_roms_folder,
         )
         file_menu.add_separator()
+        file_menu.add_command(
+            label="View logs & manifests…", command=self._show_log_viewer,
+        )
+        file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.destroy)
         menubar.add_cascade(label="File", menu=file_menu)
 
         help_menu = self.tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
+        help_menu.add_command(
+            label="Check for updates", command=self._manual_update_check,
+        )
         menubar.add_cascade(label="Help", menu=help_menu)
 
         self.root.configure(menu=menubar)
@@ -452,6 +463,89 @@ class _SpinDoctorGUI:
         self.ttk.Button(body, text="Close", command=win.destroy).pack(
             anchor="e", pady=(12, 0),
         )
+
+    # ── Update check ──────────────────────────────────────────────────────────
+
+    def _start_update_check(self) -> None:
+        """Kick off the GitHub release-tag check on a background thread.
+
+        Runs at GUI launch — silently no-ops on opt-out via the
+        ``SPINDOCTOR_NO_UPDATE_CHECK`` env var, on offline machines, on
+        GitHub outages, and on any other failure. The thread is
+        daemonic so it won't keep the process alive after the user
+        closes the window.
+        """
+        # Imported lazily so the module's import cost stays out of the
+        # GUI launch critical path on machines that opt out via env.
+        from . import update_check
+
+        def worker() -> None:
+            try:
+                result = update_check.check_for_update(__version__)
+            except update_check.UpdateCheckDisabled:
+                return
+            except Exception:  # noqa: BLE001 — never let this kill the UI
+                return
+            if result is not None:
+                # Hop back to the Tk main loop before touching widgets.
+                self.root.after(0, self._on_update_check_done, result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_check_done(self, result) -> None:
+        if result.newer_available:
+            self._set_status(
+                f"Update available: {result.latest} "
+                f"(running {result.current}). Help → Check for updates."
+            )
+            self._append_output(
+                f"\n[update check] {__app_name__} {result.latest} is "
+                f"available. Current: {__version__}.\n"
+                f"  {result.release_url or 'https://github.com/phillram/spindoctor/releases'}\n"
+            )
+        # When the user is up to date, stay quiet — no point cluttering
+        # the output panel with an "all good" line on every launch.
+
+    def _manual_update_check(self) -> None:
+        """Help → Check for updates: synchronous variant with feedback.
+
+        The launch check runs silently on success, but a manual
+        invocation should always tell the user *something* — otherwise
+        clicking the menu entry feels broken when the user is up to
+        date.
+        """
+        from . import update_check
+
+        try:
+            result = update_check.check_for_update(__version__)
+        except update_check.UpdateCheckDisabled as exc:
+            self.messagebox.showinfo("Update check disabled", str(exc))
+            return
+        if result is None:
+            self.messagebox.showinfo(
+                "Update check failed",
+                "Could not reach GitHub. Check your connection and try "
+                "again, or visit "
+                "https://github.com/phillram/spindoctor/releases/latest "
+                "manually.",
+            )
+            return
+        if result.newer_available:
+            if self.messagebox.askyesno(
+                "Update available",
+                f"{__app_name__} {result.latest} is available.\n"
+                f"You're running {result.current}.\n\n"
+                "Open the release page in your browser?",
+            ):
+                self._open_url(
+                    result.release_url
+                    or "https://github.com/phillram/spindoctor/releases/latest",
+                )
+        else:
+            self.messagebox.showinfo(
+                "Up to date",
+                f"{__app_name__} {result.current} is the latest release.",
+            )
 
     def _open_url(self, url: str) -> None:
         # webbrowser.open hands off to the OS default browser without
@@ -531,6 +625,204 @@ class _SpinDoctorGUI:
             return
         media_dir = Path(cfg.hyperspin_dir) / "Media" / system
         self._open_path(media_dir, missing_label=f"Media/{system}")
+
+    # ── Log / manifest viewer ─────────────────────────────────────────────────
+
+    # Where SpinDoctor's apply-mode commands write their per-run
+    # manifests. Tuple is (label, dirname under ~/.spindoctor/) — order
+    # matters: newest-style categories near the top so they win the
+    # default selection. The viewer scans whichever of these exist on
+    # disk; users without `migrate` history just see fewer rows.
+    _LOG_CATEGORIES: tuple[tuple[str, str], ...] = (
+        ("Migrations",     "migrations"),
+        ("Curation",       "curation"),
+        ("Edits",          "edits"),
+        ("Renames",        "renames"),
+        ("Media imports",  "media_imports"),
+        ("Misplaced ROMs", "misplaced"),
+    )
+
+    def _show_log_viewer(self) -> None:
+        """Open a Toplevel window listing recent manifests on the left
+        and showing the selected file's contents on the right.
+
+        SpinDoctor's destructive commands write JSON / NDJSON manifests
+        under ~/.spindoctor/<category>/ for `--undo` to consume. They
+        also serve as an audit trail — but until now the only way to
+        browse them was a file explorer + a text editor. This window
+        is a quick read-only viewer for that pile.
+        """
+        win = self.tk.Toplevel(self.root)
+        win.title(f"{__app_name__} — Logs & Manifests")
+        win.geometry("960x600")
+        win.transient(self.root)
+
+        # Top description so first-time users understand what the panel
+        # is showing — these aren't application logs (SpinDoctor doesn't
+        # have a logfile), they're per-run manifests.
+        self.ttk.Label(
+            win,
+            text=("Per-run manifests written by SpinDoctor's apply-mode "
+                  "commands (curate, migrate, batch-edit, rename, "
+                  "media-scan, find-misplaced --apply). Each one is the "
+                  "file `--undo` reads to reverse a run. Read-only — "
+                  "use the file menu's 'Open ~/.spindoctor' to edit."),
+            wraplength=920, justify="left", padding=(10, 6),
+        ).pack(fill="x")
+
+        paned = self.ttk.PanedWindow(win, orient="horizontal")
+        paned.pack(fill="both", expand=True, padx=8, pady=4)
+
+        # ── Left pane: tree ──────────────────────────────────────────────────
+        tree_frame = self.ttk.Frame(paned)
+        tree = self.ttk.Treeview(
+            tree_frame, columns=("modified", "size"), show="tree headings",
+            selectmode="browse",
+        )
+        tree.heading("#0", text="File")
+        tree.heading("modified", text="Modified")
+        tree.heading("size", text="Size")
+        tree.column("#0", width=320, stretch=True)
+        tree.column("modified", width=160, stretch=False, anchor="w")
+        tree.column("size", width=80, stretch=False, anchor="e")
+        scrollbar = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        paned.add(tree_frame, weight=2)
+
+        # ── Right pane: viewer ───────────────────────────────────────────────
+        viewer_frame = self.ttk.Frame(paned)
+        mono = "Consolas" if sys.platform == "win32" else "Menlo"
+        viewer = self.scrolledtext.ScrolledText(
+            viewer_frame, wrap="none", font=(mono, 9),
+        )
+        viewer.configure(state="disabled")
+        viewer.pack(fill="both", expand=True, padx=4, pady=4)
+        paned.add(viewer_frame, weight=3)
+
+        # Path → file text. Cached so re-clicking a row doesn't re-read
+        # disk; manifests don't change after they're written.
+        loaded: dict[str, str] = {}
+        # Tree iid → manifest path. Populated below; consulted in the
+        # selection handler.
+        item_paths: dict[str, Path] = {}
+
+        def populate() -> None:
+            tree.delete(*tree.get_children())
+            item_paths.clear()
+            any_found = False
+            for label, dirname in self._LOG_CATEGORIES:
+                cat_dir = CONFIG_DIR / dirname
+                if not cat_dir.exists():
+                    continue
+                files = sorted(
+                    (p for p in cat_dir.iterdir() if p.is_file()),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )
+                if not files:
+                    continue
+                any_found = True
+                cat_iid = tree.insert(
+                    "", "end", text=f"{label}  ({len(files)})",
+                    values=("", ""), open=True,
+                )
+                for f in files:
+                    stat = f.stat()
+                    iid = tree.insert(
+                        cat_iid, "end", text=f.name,
+                        values=(
+                            self._format_mtime(stat.st_mtime),
+                            self._format_bytes(stat.st_size),
+                        ),
+                    )
+                    item_paths[iid] = f
+            if not any_found:
+                tree.insert(
+                    "", "end",
+                    text="No manifests yet — run something with --apply.",
+                    values=("", ""),
+                )
+
+        def on_select(_evt) -> None:
+            sel = tree.selection()
+            if not sel:
+                return
+            path = item_paths.get(sel[0])
+            if path is None:
+                return
+            key = str(path)
+            if key not in loaded:
+                try:
+                    loaded[key] = path.read_text(
+                        encoding="utf-8", errors="replace",
+                    )
+                except OSError as exc:
+                    loaded[key] = f"[could not read {path}]\n{exc}"
+            viewer.configure(state="normal")
+            viewer.delete("1.0", "end")
+            # Header line shows the absolute path so the viewer pane is
+            # self-describing if the user takes a screenshot.
+            viewer.insert("end", f"# {path}\n\n")
+            viewer.insert("end", loaded[key])
+            viewer.configure(state="disabled")
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+
+        # ── Bottom button row ────────────────────────────────────────────────
+        btn_row = self.ttk.Frame(win)
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        self.ttk.Button(
+            btn_row, text="Refresh", command=populate,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Open in file explorer",
+            command=lambda: self._open_selected_manifest_in_explorer(
+                tree, item_paths,
+            ),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Open ~/.spindoctor",
+            command=self._open_spindoctor_folder,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(btn_row, text="Close", command=win.destroy).pack(
+            side="right",
+        )
+
+        populate()
+
+    def _open_selected_manifest_in_explorer(
+        self, tree, item_paths: dict,
+    ) -> None:
+        sel = tree.selection()
+        if not sel:
+            return
+        path = item_paths.get(sel[0])
+        if path is None or not path.exists():
+            return
+        # Open the *parent* — the file selected handler already showed
+        # the contents, so what's useful here is "show me where this
+        # lives so I can poke around its siblings".
+        self._open_path(path.parent, missing_label=str(path.parent))
+
+    @staticmethod
+    def _format_mtime(ts: float) -> str:
+        from datetime import datetime
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
+
+    @staticmethod
+    def _format_bytes(n: int) -> str:
+        # Identical units to backup.format_bytes — kept inline so the
+        # viewer doesn't pull in the heavier backup module just for
+        # display formatting.
+        for unit in ("B", "KB", "MB", "GB"):
+            if n < 1024:
+                return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+            n /= 1024
+        return f"{n:.1f} TB"
 
     # ── Setup tab ─────────────────────────────────────────────────────────────
 
