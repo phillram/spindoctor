@@ -2182,8 +2182,12 @@ class _SpinDoctorGUI:
         cur_btns = self.ttk.Frame(cur_frame)
         cur_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            cur_btns, text="Run curate", command=self._run_curate,
+            cur_btns, text="Preview (interactive)…",
+            command=self._show_curate_preview,
         ).pack(side="left")
+        self.ttk.Button(
+            cur_btns, text="Run curate", command=self._run_curate,
+        ).pack(side="left", padx=6)
         self.ttk.Button(
             cur_btns, text="Undo most recent curate",
             command=self._run_curate_undo,
@@ -2305,6 +2309,291 @@ class _SpinDoctorGUI:
 
     def _run_curate_undo(self) -> None:
         self._run_cli("spindoctor", ["curate", "--undo"])
+
+    # ── Curate preview (interactive diff) ─────────────────────────────────────
+
+    # Glyphs used in the per-row checkboxes. ☑ = retire, ☐ = keep
+    # (i.e. user vetoed the retirement). Picked over Tk's `tristatevalue`
+    # because it doesn't require a custom style and renders identically
+    # across platforms.
+    _CURATE_RETIRE_GLYPH = "☑"
+    _CURATE_SKIP_GLYPH = "☐"
+
+    def _show_curate_preview(self) -> None:
+        """Open a Toplevel with the curate plan rendered as a tree.
+
+        Each title is a parent row; under it the kept ROM appears with
+        an unchecked status, and each retire candidate appears with a
+        checkbox. Toggling a checkbox vetoes that row's retirement.
+        Apply runs `apply_curation` against the (possibly filtered)
+        groups — bypassing the CLI so we don't have to round-trip a
+        list of "skip these specific files" through argv.
+        """
+        # Multi-system preview is unwieldy in a single tree and the
+        # scan can take minutes. Force one-system-at-a-time here.
+        if self._curate_all_var.get():
+            self.messagebox.showinfo(
+                "Pick one system",
+                "The interactive preview only handles one system at a "
+                "time — multi-system would be too slow and too tall a "
+                "tree to navigate. Untick 'All systems' and pick a "
+                "specific system, or use the non-interactive Run "
+                "curate button for a multi-system pass.",
+            )
+            return
+        system = self._curate_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type a system name (e.g. 'NES') first.",
+            )
+            return
+
+        regions = self._curate_regions_var.get().strip()
+        prefer_latest = self._curate_revision_var.get() == "latest"
+        prefer_no_proto = not self._curate_proto_var.get()
+
+        # ── Build the window shell synchronously, fill the tree async ───────
+        win = self.tk.Toplevel(self.root)
+        win.title(f"Curate preview — {system}")
+        win.geometry("1100x650")
+        win.transient(self.root)
+
+        status_var = self.tk.StringVar(
+            value=f"Scanning {system} — this can take a while on large libraries…",
+        )
+        self.ttk.Label(
+            win, textvariable=status_var, padding=(10, 6),
+            wraplength=1080, justify="left",
+        ).pack(fill="x")
+
+        tree_frame = self.ttk.Frame(win)
+        tree_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        tree = self.ttk.Treeview(
+            tree_frame, columns=("status", "reason"),
+            show="tree headings", selectmode="extended",
+        )
+        tree.heading("#0", text="Title / file")
+        tree.heading("status", text="Action")
+        tree.heading("reason", text="Reason")
+        tree.column("#0", width=440, stretch=True)
+        tree.column("status", width=110, stretch=False, anchor="w")
+        tree.column("reason", width=420, stretch=True)
+        scrollbar = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # iid → (group_index, retire_path). Only retire rows are in here;
+        # keep rows aren't toggleable so don't need an entry.
+        retire_iids: dict[str, tuple] = {}
+        # group_index → CurationGroup, to round-trip into apply_curation.
+        groups_by_idx: dict[int, object] = {}
+
+        # ── Worker: run curate_system on a thread, post result via after() ──
+        def worker() -> None:
+            from . import curate as curate_mod
+            try:
+                cfg = load_config()
+                prefs = (curate_mod.parse_regions(regions) if regions
+                         else list(cfg.region_preferences))
+                groups = curate_mod.curate_system(
+                    system, cfg,
+                    preferences=prefs,
+                    prefer_revision_latest=prefer_latest,
+                    prefer_no_proto=prefer_no_proto,
+                )
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                self.root.after(0, lambda: status_var.set(
+                    f"Error scanning {system}: {exc}",
+                ))
+                return
+            self.root.after(0, populate, groups)
+
+        def populate(groups) -> None:
+            if not groups:
+                status_var.set(
+                    f"No multi-variant titles found for {system}. "
+                    "Either every title has only one variant, or your "
+                    "filters retired everything (try toggling "
+                    "--include-proto).",
+                )
+                return
+            total_retire = sum(len(g.retire) for g in groups)
+            status_var.set(
+                f"{len(groups)} title(s) with {total_retire} retire "
+                "candidate(s). Click a row and press Space (or "
+                "double-click) to toggle a retirement on/off. Then "
+                "click Apply to commit only the rows still marked "
+                f"{self._CURATE_RETIRE_GLYPH}."
+            )
+            for g_idx, g in enumerate(groups):
+                groups_by_idx[g_idx] = g
+                parent = tree.insert(
+                    "", "end",
+                    text=f"{g.title}  ({1 + len(g.retire)} variants)",
+                    values=("", ""), open=False,
+                )
+                # Keep row first (no checkbox; can't be vetoed).
+                tree.insert(
+                    parent, "end",
+                    text=f"      {g.keep.name}",
+                    values=("KEEP", g.reasons.get(g.keep.name, "")),
+                )
+                for r in g.retire:
+                    iid = tree.insert(
+                        parent, "end",
+                        text=f"  {self._CURATE_RETIRE_GLYPH}  {r.name}",
+                        values=("RETIRE", g.reasons.get(r.name, "")),
+                    )
+                    retire_iids[iid] = (g_idx, r)
+
+        def toggle_selected(_evt=None) -> None:
+            for iid in tree.selection():
+                if iid not in retire_iids:
+                    continue
+                text = tree.item(iid, "text")
+                if self._CURATE_RETIRE_GLYPH in text:
+                    new = text.replace(
+                        self._CURATE_RETIRE_GLYPH,
+                        self._CURATE_SKIP_GLYPH, 1,
+                    )
+                    tree.item(iid, text=new, values=("SKIP",
+                              tree.item(iid, "values")[1]))
+                elif self._CURATE_SKIP_GLYPH in text:
+                    new = text.replace(
+                        self._CURATE_SKIP_GLYPH,
+                        self._CURATE_RETIRE_GLYPH, 1,
+                    )
+                    tree.item(iid, text=new, values=("RETIRE",
+                              tree.item(iid, "values")[1]))
+
+        tree.bind("<space>", toggle_selected)
+        tree.bind("<Double-Button-1>", toggle_selected)
+
+        # ── Bottom bar ──────────────────────────────────────────────────────
+        btn_row = self.ttk.Frame(win)
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        self.ttk.Label(
+            btn_row,
+            text=("Action:"),
+        ).pack(side="left")
+        action_var = self.tk.StringVar(value=self._curate_action_var.get())
+        self.ttk.Combobox(
+            btn_row, textvariable=action_var,
+            values=["archive", "delete"], state="readonly", width=10,
+        ).pack(side="left", padx=4)
+
+        def apply() -> None:
+            self._apply_curate_preview(
+                win, system, retire_iids, groups_by_idx, tree, action_var.get(),
+            )
+
+        self.ttk.Button(
+            btn_row, text="Apply selected retirements",
+            command=apply,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Toggle selected", command=toggle_selected,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Close", command=win.destroy,
+        ).pack(side="right")
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _apply_curate_preview(
+        self, win, system: str, retire_iids: dict, groups_by_idx: dict,
+        tree, action: str,
+    ) -> None:
+        """Build a filtered list of CurationGroups from the tree state and
+        run ``apply_curation`` against it.
+
+        Per-group rule: drop retire entries the user un-checked. If a
+        group ends up with zero retirements, drop the whole group — the
+        CLI's ``--undo`` only stores groups with at least one retire.
+        """
+        from . import curate as curate_mod
+
+        # Bucket the still-checked retire paths by group index.
+        retain: dict[int, list] = {}
+        for iid, (g_idx, retire_path) in retire_iids.items():
+            text = tree.item(iid, "text")
+            if self._CURATE_RETIRE_GLYPH in text:
+                retain.setdefault(g_idx, []).append(retire_path)
+
+        if not retain:
+            self.messagebox.showinfo(
+                "Nothing to apply",
+                "Every retirement is unchecked — nothing to do. Toggle "
+                "some rows back to "
+                f"{self._CURATE_RETIRE_GLYPH} and try again.",
+            )
+            return
+
+        filtered = []
+        for g_idx, kept_retires in retain.items():
+            g = groups_by_idx[g_idx]
+            filtered.append(curate_mod.CurationGroup(
+                title=g.title, keep=g.keep,
+                retire=sorted(kept_retires, key=lambda p: p.name.lower()),
+                reasons=g.reasons,
+            ))
+
+        # Confirm before destructive action — `delete` has no undo.
+        if action == "delete":
+            if not self.messagebox.askyesno(
+                "Confirm DELETE",
+                f"Delete {sum(len(g.retire) for g in filtered)} ROM "
+                f"file(s) across {len(filtered)} title(s)?\n\n"
+                "There is NO undo for delete. Use 'archive' if you "
+                "might want to recover them later.",
+            ):
+                return
+        else:
+            if not self.messagebox.askyesno(
+                "Confirm archive",
+                f"Archive {sum(len(g.retire) for g in filtered)} ROM "
+                f"file(s) across {len(filtered)} title(s) under "
+                f"<roms_dir>/{system}/_retired/?\n\n"
+                "Reversible via Logs & Manifests viewer → Undo this run, "
+                "or `spindoctor curate --undo`.",
+            ):
+                return
+
+        try:
+            cfg = load_config()
+            result, manifest = curate_mod.apply_curation(
+                filtered, cfg, system, action=action,
+            )
+        except Exception as exc:  # noqa: BLE001 — surface in UI
+            self.messagebox.showerror(
+                "Curate failed", f"{type(exc).__name__}: {exc}",
+            )
+            return
+
+        msg_parts = []
+        if result.archived:
+            msg_parts.append(f"{len(result.archived)} archived")
+        if result.deleted:
+            msg_parts.append(f"{len(result.deleted)} deleted")
+        if result.skipped:
+            msg_parts.append(f"{len(result.skipped)} skipped")
+        msg = ", ".join(msg_parts) or "nothing"
+        self._append_output(
+            f"\n[curate preview] {system}: {msg}.\n"
+            f"  manifest: {manifest}\n" if manifest else f"\n[curate preview] {system}: {msg}.\n"
+        )
+        self.messagebox.showinfo(
+            "Curate done",
+            f"{msg}.\n\n"
+            + (f"Manifest: {manifest}\n"
+               "Reverse via Logs & Manifests viewer → Undo this run."
+               if manifest else "No manifest written (delete leaves no undo)."),
+        )
+        win.destroy()
 
     def _run_cleanup(self) -> None:
         args = ["cleanup", "run"]

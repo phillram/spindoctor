@@ -289,6 +289,14 @@ def test_undo_recipes_argv_includes_path_iff_uses_path():
             )
 
 
+def test_curate_preview_glyphs_are_distinct():
+    """The retire and skip glyphs must be different — otherwise the
+    toggle handler can't tell which state a row is in. Easy to break
+    on a copy-paste; cheap to assert."""
+    assert (gui._SpinDoctorGUI._CURATE_RETIRE_GLYPH
+            != gui._SpinDoctorGUI._CURATE_SKIP_GLYPH)
+
+
 def test_undo_recipes_only_target_known_log_categories():
     """A recipe pointing at a category the viewer's tree never shows is
     a dead button — fail loud when that drifts."""
