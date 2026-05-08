@@ -263,7 +263,7 @@ def test_format_mtime_returns_iso_like():
 def test_log_categories_cover_known_manifest_dirs():
     """The viewer's category list must track manifest dirs the CLI writes
     to, or users can't find their history through the GUI."""
-    expected_dirs = {dirname for _label, dirname in gui._SpinDoctorGUI._LOG_CATEGORIES}
+    expected_dirs = {entry[1] for entry in gui._SpinDoctorGUI._LOG_CATEGORIES}
     for required in ("migrations", "curation", "edits", "renames",
                      "media_imports"):
         assert required in expected_dirs
@@ -314,7 +314,7 @@ def test_undo_recipes_only_target_known_log_categories():
     """A recipe pointing at a category the viewer's tree never shows is
     a dead button — fail loud when that drifts."""
     recipe_dirs = set(gui._SpinDoctorGUI._UNDO_RECIPES)
-    category_dirs = {dirname for _label, dirname
+    category_dirs = {entry[1] for entry
                      in gui._SpinDoctorGUI._LOG_CATEGORIES}
     extra = recipe_dirs - category_dirs
     assert not extra, f"recipes for categories not in tree: {extra}"
