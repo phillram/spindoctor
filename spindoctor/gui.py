@@ -325,6 +325,7 @@ class _SpinDoctorGUI:
     # ── layout ────────────────────────────────────────────────────────────────
 
     def _build_layout(self) -> None:
+        self._build_menubar()
         nb = self.ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=8, pady=(8, 4))
 
@@ -363,6 +364,171 @@ class _SpinDoctorGUI:
             side="right", padx=(0, 6)
         )
 
+    # ── Menubar / About / cross-tab folder helpers ────────────────────────────
+
+    def _build_menubar(self) -> None:
+        # Tk's Menu sits in a `Menu` subwidget rather than a `ttk.Menu`
+        # (which doesn't exist) — but a plain Tk Menu is fine here, the
+        # rest of the UI doesn't visually clash with native menubars.
+        menubar = self.tk.Menu(self.root)
+
+        file_menu = self.tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(
+            label="Open config.json", command=self._open_config_file,
+        )
+        file_menu.add_command(
+            label="Open SpinDoctor folder (~/.spindoctor)",
+            command=self._open_spindoctor_folder,
+        )
+        file_menu.add_command(
+            label="Open HyperSpin folder", command=self._open_hyperspin_folder,
+        )
+        file_menu.add_command(
+            label="Open ROMs folder", command=self._open_roms_folder,
+        )
+        file_menu.add_separator()
+        file_menu.add_command(label="Exit", command=self.root.destroy)
+        menubar.add_cascade(label="File", menu=file_menu)
+
+        help_menu = self.tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="About SpinDoctor", command=self._show_about)
+        menubar.add_cascade(label="Help", menu=help_menu)
+
+        self.root.configure(menu=menubar)
+
+    def _show_about(self) -> None:
+        # Plain modal — Tkinter's `Toplevel` is enough; we don't need
+        # platform-native About panels (and can't easily get them through
+        # tkinter without trading portability).
+        win = self.tk.Toplevel(self.root)
+        win.title(f"About {__app_name__}")
+        win.transient(self.root)
+        win.resizable(False, False)
+
+        body = self.ttk.Frame(win, padding=18)
+        body.pack(fill="both", expand=True)
+
+        self.ttk.Label(
+            body, text=f"{__app_name__}",
+            font=("TkDefaultFont", 14, "bold"),
+        ).pack(anchor="w")
+        self.ttk.Label(body, text=f"version {__version__}").pack(
+            anchor="w", pady=(0, 8),
+        )
+        self.ttk.Label(
+            body,
+            text=("A librarian for HyperSpin + RocketLauncher arcade "
+                  "cabinets — full CLI plus this Tkinter GUI launcher.\n\n"
+                  "SpinDoctor is a librarian, not an installer: it does "
+                  "not install HyperSpin, RocketLauncher, or any "
+                  "emulator, and it does not download ROMs or BIOS."),
+            wraplength=420, justify="left",
+        ).pack(anchor="w")
+
+        link_row = self.ttk.Frame(body)
+        link_row.pack(anchor="w", pady=(12, 4))
+        self.ttk.Button(
+            link_row, text="Open project on GitHub",
+            command=lambda: self._open_url(
+                "https://github.com/phillram/spindoctor",
+            ),
+        ).pack(side="left")
+        self.ttk.Button(
+            link_row, text="Latest release",
+            command=lambda: self._open_url(
+                "https://github.com/phillram/spindoctor/releases/latest",
+            ),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            link_row, text="CHANGELOG",
+            command=lambda: self._open_url(
+                "https://github.com/phillram/spindoctor/blob/main/CHANGELOG.md",
+            ),
+        ).pack(side="left", padx=6)
+
+        self.ttk.Button(body, text="Close", command=win.destroy).pack(
+            anchor="e", pady=(12, 0),
+        )
+
+    def _open_url(self, url: str) -> None:
+        # webbrowser.open hands off to the OS default browser without
+        # blocking the Tk main loop, so the GUI stays responsive while
+        # the browser is starting up.
+        import webbrowser
+        webbrowser.open(url)
+
+    def _open_path(self, path: Path, *, missing_label: str) -> None:
+        """Open *path* in the OS's file explorer / Finder / xdg-open.
+
+        Falls back to a warning dialog when the path doesn't exist —
+        better than asking the OS to open `D:\\Arcade` on a machine
+        where that drive isn't mounted, which silently no-ops on
+        Windows and pops a Finder error on macOS.
+        """
+        if not path.exists():
+            self.messagebox.showwarning(
+                "Path not found",
+                f"{missing_label} doesn't exist on disk:\n  {path}\n\n"
+                "Set the corresponding path in the Setup tab first.",
+            )
+            return
+        try:
+            if sys.platform == "win32":
+                os.startfile(str(path))  # noqa: S606 — user-initiated open
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", str(path)])  # noqa: S603,S607
+            else:
+                subprocess.Popen(["xdg-open", str(path)])  # noqa: S603,S607
+        except OSError as exc:
+            self.messagebox.showerror(
+                "Could not open folder",
+                f"OS refused to open {path}:\n{exc}",
+            )
+
+    def _open_config_file(self) -> None:
+        self._open_path(CONFIG_FILE, missing_label="config.json")
+
+    def _open_spindoctor_folder(self) -> None:
+        self._open_path(CONFIG_DIR, missing_label="~/.spindoctor")
+
+    def _open_hyperspin_folder(self) -> None:
+        cfg = load_config()
+        if not cfg.hyperspin_dir:
+            self.messagebox.showwarning(
+                "Not configured",
+                "hyperspin_dir is unset. Fill it in on the Setup tab.",
+            )
+            return
+        self._open_path(Path(cfg.hyperspin_dir), missing_label="hyperspin_dir")
+
+    def _open_roms_folder(self) -> None:
+        cfg = load_config()
+        if not cfg.roms_dir:
+            self.messagebox.showwarning(
+                "Not configured",
+                "roms_dir is unset. Fill it in on the Setup tab.",
+            )
+            return
+        self._open_path(Path(cfg.roms_dir), missing_label="roms_dir")
+
+    def _open_system_media_folder(self, system: str) -> None:
+        """Open `<hyperspin>/Media/<system>/` so the user can eyeball art.
+
+        Used by the Audit tab so a cabinet owner spotting "missing
+        wheel" or "wrong title" output can jump straight to the
+        offending folder without copy-pasting paths into Explorer.
+        """
+        cfg = load_config()
+        if not cfg.hyperspin_dir:
+            self.messagebox.showwarning(
+                "hyperspin_dir not set",
+                "Fill in the HyperSpin directory on the Setup tab "
+                "before browsing media.",
+            )
+            return
+        media_dir = Path(cfg.hyperspin_dir) / "Media" / system
+        self._open_path(media_dir, missing_label=f"Media/{system}")
+
     # ── Setup tab ─────────────────────────────────────────────────────────────
 
     def _build_setup_tab(self, parent):
@@ -399,6 +565,18 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
+        # Folder shortcuts — same actions are also under File menu, but
+        # surfacing them here saves a click for the Setup-tab use case
+        # ("opened the GUI to fix a bad path, want to peek at the
+        # current value on disk").
+        self.ttk.Button(
+            btn_row, text="Open config.json",
+            command=self._open_config_file,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Open ~/.spindoctor",
+            command=self._open_spindoctor_folder,
+        ).pack(side="left", padx=6)
 
         return frame
 
@@ -595,7 +773,56 @@ class _SpinDoctorGUI:
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
 
+        # Browse buttons — when an audit reports "wrong wheel" or
+        # "missing video", jumping to the relevant folder in Explorer
+        # is faster than copy-pasting the path. Picks the system from
+        # the dropdown above so they always agree on what's selected.
+        browse_row = self.ttk.Frame(frame)
+        browse_row.grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.ttk.Label(
+            browse_row, text="Browse on disk:",
+            foreground="#666",
+        ).pack(side="left")
+        self.ttk.Button(
+            browse_row, text="Open Media folder for selected system",
+            command=self._open_audit_media_folder,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            browse_row, text="Open ROMs folder for selected system",
+            command=self._open_audit_roms_folder,
+        ).pack(side="left", padx=6)
+
         return frame
+
+    def _open_audit_media_folder(self) -> None:
+        system = self._system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Pick a system from the dropdown above first.",
+            )
+            return
+        self._open_system_media_folder(system)
+
+    def _open_audit_roms_folder(self) -> None:
+        system = self._system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Pick a system from the dropdown above first.",
+            )
+            return
+        cfg = load_config()
+        if not cfg.roms_dir:
+            self.messagebox.showwarning(
+                "roms_dir not set",
+                "Fill in the ROMs directory on the Setup tab first.",
+            )
+            return
+        self._open_path(
+            Path(cfg.roms_dir) / system,
+            missing_label=f"roms_dir/{system}",
+        )
 
     def _refresh_systems(self) -> None:
         try:
