@@ -1478,11 +1478,11 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
-            text=("Install .bat helpers into "
-                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
-                  "so Favorites / Recently Played / Most Played can be "
-                  "refreshed from inside HyperSpin's Tools menu, without "
-                  "dropping to a console."),
+            text=("Install .bat helpers so Favorites / Recently Played / "
+                  "Most Played can be refreshed from inside HyperSpin "
+                  "without dropping to a console — either via HyperHQ → "
+                  "Tools (the default), or as 'games' inside an existing "
+                  "wheel system like 'Toolkit' (the second section)."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 12))
 
@@ -1499,11 +1499,23 @@ class _SpinDoctorGUI:
             font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
         ).pack(anchor="w", pady=(0, 8))
 
+        # ── HyperHQ → Tools install (default) ─────────────────────────────────
+        hhq_frame = self.ttk.LabelFrame(
+            frame, text="Install for HyperHQ → Tools menu",
+        )
+        hhq_frame.pack(fill="x", pady=(2, 8))
         self.ttk.Label(
-            frame, text="Output directory (optional)",
-        ).pack(anchor="w")
-        out_row = self.ttk.Frame(frame)
-        out_row.pack(fill="x", pady=2)
+            hhq_frame,
+            text=("Output directory (optional). Defaults to "
+                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
+                  "if blank. After installing, register the .bat files in "
+                  "HyperHQ → Tools tab so they show up in the in-cabinet "
+                  "Tools menu."),
+            wraplength=860, justify="left", foreground="#666",
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        out_row = self.ttk.Frame(hhq_frame)
+        out_row.pack(fill="x", padx=6, pady=2)
         self._tools_outdir_var = self.tk.StringVar()
         self.ttk.Entry(
             out_row, textvariable=self._tools_outdir_var,
@@ -1514,21 +1526,123 @@ class _SpinDoctorGUI:
                 self._tools_outdir_var, "Pick output directory",
             ),
         ).pack(side="left")
-        self.ttk.Label(
-            frame,
-            text=("Defaults to "
-                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
-                  "if blank. After installing, register the .bat files in "
-                  "HyperHQ → Tools, or schedule them via Windows Task "
-                  "Scheduler ('At log on' trigger) for hands-off updates "
-                  "on cabinet startup."),
-            wraplength=860, justify="left", foreground="#666",
-        ).pack(anchor="w", pady=(2, 8))
-
         self.ttk.Button(
-            frame, text="Install Tools-menu helpers",
+            hhq_frame, text="Install Tools-menu helpers",
             command=self._run_install_tools,
-        ).pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── Wheel-integration mode (e.g. user's 'Toolkit' wheel) ──────────────
+        wheel_frame = self.ttk.LabelFrame(
+            frame, text="Install into an existing wheel system",
+        )
+        wheel_frame.pack(fill="x", pady=(2, 8))
+        self.ttk.Label(
+            wheel_frame,
+            text=("Adds matching <game> entries to the named system's "
+                  "database XML and writes per-game PCLauncher INIs "
+                  "alongside the bats. Use this if you have a 'Toolkit' "
+                  "or 'Tools' wheel (a HyperSpin system whose 'games' "
+                  "are maintenance tasks). The system must already exist "
+                  "under <hyperspin_dir>/Databases/<NAME>/<NAME>.xml and "
+                  "use PCLauncher as its emulator."),
+            wraplength=860, justify="left", foreground="#666",
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        sys_row = self.ttk.Frame(wheel_frame)
+        sys_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(sys_row, text="Target wheel system").pack(side="left")
+        self._tools_wheel_var = self.tk.StringVar(value="Toolkit")
+        self.ttk.Entry(
+            sys_row, textvariable=self._tools_wheel_var, width=30,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            sys_row, text="Install into wheel",
+            command=self._run_install_tools_into_wheel,
+        ).pack(side="left", padx=6)
+
+        # ── Auto-refresh on cabinet startup ───────────────────────────────────
+        sched_frame = self.ttk.LabelFrame(
+            frame, text="Auto-refresh on cabinet startup",
+        )
+        sched_frame.pack(fill="x", pady=(2, 8))
+        if sys.platform == "win32":
+            self.ttk.Label(
+                sched_frame,
+                text=("Schedule a Windows Task Scheduler 'At log on' task "
+                      "that runs Refresh Both at every cabinet startup. "
+                      "The task runs as the current user with limited "
+                      "privileges (no UAC prompt). Optional delay lets "
+                      "HyperSpin / RocketLauncher settle before the "
+                      "rebuild kicks in."),
+                wraplength=860, justify="left", foreground="#666",
+            ).pack(anchor="w", padx=6, pady=(2, 4))
+
+            delay_row = self.ttk.Frame(sched_frame)
+            delay_row.pack(fill="x", padx=6, pady=2)
+            self.ttk.Label(delay_row, text="Delay after log-on (minutes)").pack(
+                side="left",
+            )
+            self._tools_delay_var = self.tk.StringVar(value="2")
+            self.ttk.Entry(
+                delay_row, textvariable=self._tools_delay_var, width=6,
+            ).pack(side="left", padx=6)
+
+            sched_btns = self.ttk.Frame(sched_frame)
+            sched_btns.pack(fill="x", padx=6, pady=(4, 6))
+            self.ttk.Button(
+                sched_btns, text="Schedule auto-refresh",
+                command=self._schedule_autorefresh,
+            ).pack(side="left")
+            self.ttk.Button(
+                sched_btns, text="Remove scheduled task",
+                command=self._remove_autorefresh,
+            ).pack(side="left", padx=6)
+            self.ttk.Button(
+                sched_btns, text="Check task status",
+                command=self._check_autorefresh,
+            ).pack(side="left", padx=6)
+        else:
+            self.ttk.Label(
+                sched_frame,
+                text=("Windows-only — Task Scheduler doesn't exist on "
+                      "this OS. macOS equivalent: launchd plist (~/Library/"
+                      "LaunchAgents/com.spindoctor.refresh.plist with a "
+                      "RunAtLoad key). Linux equivalent: a "
+                      "`@reboot spindoctor-fav rebuild --apply && "
+                      "spindoctor-recent rebuild --apply && "
+                      "spindoctor-stats build-wheel --apply` line in "
+                      "`crontab -e`, or a systemd-user unit."),
+                wraplength=860, justify="left", foreground="#666",
+            ).pack(anchor="w", padx=6, pady=(2, 6))
+
+        # ── Manual fallback instructions ──────────────────────────────────────
+        manual_frame = self.ttk.LabelFrame(
+            frame, text="Manual setup (if you'd rather do it yourself)",
+        )
+        manual_frame.pack(fill="x", pady=(2, 8))
+        self.ttk.Label(
+            manual_frame,
+            text=(
+                "HyperHQ → Tools menu:\n"
+                "  1. Open HyperHQ.exe (sits next to HyperSpin.exe).\n"
+                "  2. Go to the Tools tab.\n"
+                "  3. Click Add and point each entry at the matching .bat\n"
+                "     under <rocketlauncher>/Modules/HyperLaunch/Tools/spindoctor.\n"
+                "  4. Save. The helpers appear in HyperSpin's in-cabinet Tools menu.\n"
+                "\n"
+                "Windows Task Scheduler (manual):\n"
+                "  1. Win+R → 'taskschd.msc'.\n"
+                "  2. Action → Create Task… name: 'SpinDoctor Refresh Wheels'.\n"
+                "  3. Triggers → New → Begin: 'At log on' → Delay: 2 minutes.\n"
+                "  4. Actions → New → Program: cmd.exe → Args:\n"
+                "     /c spindoctor-fav rebuild --apply ^&^& "
+                "spindoctor-recent rebuild --apply ^&^& "
+                "spindoctor-stats build-wheel --apply\n"
+                "  5. Settings → uncheck 'Stop the task if it runs longer than'."
+            ),
+            justify="left", foreground="#444",
+            font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
+        ).pack(anchor="w", padx=6, pady=(2, 6))
 
         return frame
 
@@ -1538,6 +1652,106 @@ class _SpinDoctorGUI:
         if outdir:
             args += ["--output-dir", outdir]
         self._run_cli("spindoctor", args)
+
+    def _run_install_tools_into_wheel(self) -> None:
+        wheel = self._tools_wheel_var.get().strip()
+        if not wheel:
+            self.messagebox.showwarning(
+                "Wheel name required",
+                "Type the HyperSpin system name to install into "
+                "(e.g. 'Toolkit') before clicking Install into wheel.",
+            )
+            return
+        self._run_cli(
+            "spindoctor", ["install-tools", "--add-to-system", wheel],
+        )
+
+    # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
+
+    def _autorefresh_command(self) -> str:
+        # Run all three rebuilds in sequence via cmd.exe so a failing
+        # earlier rebuild doesn't kill the rest. `&&` would short-circuit;
+        # `&` runs unconditionally so a flaky favorites build still lets
+        # recent/most-played update.
+        return (
+            'cmd.exe /c '
+            '"spindoctor-fav rebuild --apply & '
+            'spindoctor-recent rebuild --apply & '
+            'spindoctor-stats build-wheel --apply"'
+        )
+
+    def _parse_delay_minutes(self) -> Optional[int]:
+        raw = self._tools_delay_var.get().strip()
+        if not raw:
+            return None
+        if not raw.isdigit():
+            self.messagebox.showwarning(
+                "Invalid delay",
+                "Delay must be a non-negative integer (minutes).",
+            )
+            return -1  # sentinel: caller should bail
+        return int(raw)
+
+    def _schedule_autorefresh(self) -> None:
+        from . import autostart
+        try:
+            delay = self._parse_delay_minutes()
+            if delay == -1:
+                return
+            result = autostart.create_logon_task(
+                self._autorefresh_command(),
+                delay_minutes=delay,
+            )
+        except autostart.NotSupportedError as exc:
+            self.messagebox.showinfo("Not supported on this OS", str(exc))
+            return
+        except (ValueError, RuntimeError) as exc:
+            self.messagebox.showerror("Could not schedule task", str(exc))
+            return
+        self._append_output(
+            f"\n[Task Scheduler] created '{result.name}' → "
+            f"{result.command}\n{result.output}\n"
+        )
+        self.messagebox.showinfo(
+            "Scheduled",
+            f"Auto-refresh task '{result.name}' is registered. "
+            "Reboot or log out and back in to test it; the GUI's Output "
+            "panel shows the schtasks message above.",
+        )
+
+    def _remove_autorefresh(self) -> None:
+        from . import autostart
+        try:
+            if not autostart.task_exists():
+                self.messagebox.showinfo(
+                    "Nothing to remove",
+                    f"No task named '{autostart.DEFAULT_LOGON_TASK}' is "
+                    "registered.",
+                )
+                return
+            output = autostart.delete_logon_task()
+        except autostart.NotSupportedError as exc:
+            self.messagebox.showinfo("Not supported on this OS", str(exc))
+            return
+        except RuntimeError as exc:
+            self.messagebox.showerror("Could not remove task", str(exc))
+            return
+        self._append_output(f"\n[Task Scheduler] removed task.\n{output}\n")
+        self.messagebox.showinfo("Removed", "Auto-refresh task deleted.")
+
+    def _check_autorefresh(self) -> None:
+        from . import autostart
+        try:
+            exists = autostart.task_exists()
+        except autostart.NotSupportedError as exc:
+            self.messagebox.showinfo("Not supported on this OS", str(exc))
+            return
+        msg = (
+            f"Task '{autostart.DEFAULT_LOGON_TASK}' is "
+            f"{'REGISTERED' if exists else 'not registered'}."
+        )
+        self._append_output(f"\n[Task Scheduler] {msg}\n")
+        self.messagebox.showinfo("Auto-refresh status", msg)
 
     # ── Custom command tab ────────────────────────────────────────────────────
 

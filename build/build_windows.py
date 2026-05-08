@@ -51,6 +51,7 @@ HIDDEN_IMPORTS = [
     "spindoctor.recent",
     "spindoctor.playtime",
     "spindoctor.gui",
+    "spindoctor.autostart",
     "spindoctor.scraper",
     "spindoctor.archives",
     "spindoctor.preview",
