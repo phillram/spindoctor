@@ -117,6 +117,37 @@ def test_backup_components_match_cli_components():
     assert gui_keys == backup_mod.ALL_COMPONENTS
 
 
+# ─── custom-command presets ───────────────────────────────────────────────────
+
+def test_custom_command_presets_first_is_help():
+    # The Custom Command tab uses the first entry as its default value
+    # (mirroring the previous hard-coded "--help"), so a regression here
+    # would silently change the GUI's startup behaviour.
+    assert gui._CUSTOM_COMMAND_PRESETS[0] == "--help"
+
+
+def test_custom_command_presets_contains_canonical_examples():
+    presets = set(gui._CUSTOM_COMMAND_PRESETS)
+    # Spot-check a representative slice across each major command family
+    # so the dropdown stays useful without enumerating every entry.
+    for expected in (
+        "doctor",
+        "audit --all",
+        "fav rebuild --apply",
+        "mainmenu show",
+        "backup create --target <PATH>",
+        "migrate --target <PATH> --apply",
+    ):
+        assert expected in presets, f"missing preset: {expected}"
+
+
+def test_custom_command_presets_are_unique():
+    # A duplicate would just be visual noise in the Combobox dropdown,
+    # but it usually means a copy-paste error during edits — fail loud.
+    presets = list(gui._CUSTOM_COMMAND_PRESETS)
+    assert len(presets) == len(set(presets))
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
