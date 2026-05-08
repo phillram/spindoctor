@@ -132,6 +132,19 @@ _BACKUP_COMPONENTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Components offered as checkboxes on the Migration tab. Mirrors
+# `migrate.ALL_COMPONENTS` (only 5 entries — `databases`/`media`
+# collapse into `hyperspin` here, unlike the Backup tab which lists
+# them separately).
+_MIGRATE_COMPONENTS: tuple[tuple[str, str], ...] = (
+    ("roms",            "ROM / game files"),
+    ("hyperspin",       "HyperSpin install (Databases + Media + bin)"),
+    ("emulators",       "Emulator binaries"),
+    ("rocketlauncher",  "RocketLauncher install"),
+    ("ledblinky",       "LEDBlinky install"),
+)
+
+
 # Curated dropdown for the Custom Command tab. Each entry is the argv
 # string the user would type after `spindoctor` on the command line, in
 # canonical form. Picking one populates the entry field; the user can
@@ -317,8 +330,14 @@ class _SpinDoctorGUI:
 
         nb.add(self._build_setup_tab(nb), text="Setup")
         nb.add(self._build_wheels_tab(nb), text="Wheels")
+        nb.add(self._build_mainmenu_tab(nb), text="Main Menu")
         nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
+        nb.add(self._build_diagnose_tab(nb), text="Diagnose")
+        nb.add(self._build_ledblinky_tab(nb), text="LEDBlinky")
+        nb.add(self._build_lightgun_tab(nb), text="Lightgun")
+        nb.add(self._build_tools_tab(nb), text="Tools")
         nb.add(self._build_backup_tab(nb), text="Backup & Restore")
+        nb.add(self._build_migrate_tab(nb), text="Migrate")
         nb.add(self._build_custom_tab(nb), text="Custom Command")
 
         out_frame = self.ttk.LabelFrame(self.root, text="Output")
@@ -451,7 +470,73 @@ class _SpinDoctorGUI:
             command=self._refresh_all_wheels,
         ).pack(anchor="w", pady=3)
 
+        # ── HyperSpin integration helpers ────────────────────────────────────
+        # The custom wheels (Favorites / Recently Played / Most Played) write
+        # synthetic HyperSpin systems with media + per-game PCLauncher INIs,
+        # but they don't auto-fire on cabinet startup and only Most Played
+        # auto-registers in the Main Menu. The buttons below close those
+        # gaps so users don't have to drop into cmd.exe to wire them up.
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="HyperSpin integration",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(2, 4))
+        self.ttk.Label(
+            frame,
+            text=(
+                "• Refresh writes a synthetic HyperSpin system (media + "
+                "per-game INIs delegating to the original system via "
+                "RocketLauncher).\n"
+                "• Most Played auto-registers in the Main Menu wheel; "
+                "Favorites and Recently Played do not — use the Main Menu "
+                "tab (or the buttons below) to add them.\n"
+                "• None of these auto-fire on cabinet startup. Use the "
+                "Tools tab to install Tools-menu .bat helpers, or schedule "
+                "the rebuild commands via Windows Task Scheduler "
+                "(trigger: 'At log on') for hands-off updates."
+            ),
+            wraplength=860, justify="left", foreground="#444",
+        ).pack(anchor="w", pady=(0, 6))
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.pack(anchor="w", pady=(2, 4))
+        self.ttk.Button(
+            btn_row, text="Add wheels to Main Menu", width=28,
+            command=self._register_wheels_in_main_menu,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Install Tools-menu helpers", width=28,
+            command=lambda: self._run_cli("spindoctor", ["install-tools"]),
+        ).pack(side="left", padx=6)
+
         return frame
+
+    def _register_wheels_in_main_menu(self) -> None:
+        # Each `mainmenu add` runs only after the previous one finishes so
+        # the underlying XML write doesn't race with itself. Using `--apply`
+        # here matches the user's intent: they clicked the button.
+        steps = [
+            ("Favorites",        ["mainmenu", "add", "Favorites", "--apply"]),
+            ("Recently Played",  ["mainmenu", "add", "Recently Played", "--apply"]),
+            ("Most Played",      ["mainmenu", "add", "Most Played", "--apply"]),
+        ]
+
+        def run_next(remaining, rc: int) -> None:
+            if rc != 0:
+                self._append_output(
+                    f"\nStopped — previous step exited with code {rc}.\n"
+                )
+                return
+            if not remaining:
+                self._append_output("\nWheels registered in Main Menu.\n")
+                return
+            _label, args = remaining[0]
+            self._run_cli(
+                "spindoctor", args,
+                on_complete=lambda code: run_next(remaining[1:], code),
+            )
+
+        run_next(steps, 0)
 
     def _refresh_all_wheels(self) -> None:
         # Chained via a callback queue so each subprocess runs to completion
@@ -757,6 +842,701 @@ class _SpinDoctorGUI:
             args.append("--overwrite")
         if self._backup_restore_apply_var.get():
             args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Migrate tab ───────────────────────────────────────────────────────────
+
+    def _build_migrate_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Move (or copy) the library to a new drive in one shot. "
+                  "Per-component checkboxes default to all five — uncheck "
+                  "to migrate a subset. Dry-run by default; tick Apply to "
+                  "execute. Every applied migration writes a manifest you "
+                  "can undo from the panel below."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        # ── Target root ──────────────────────────────────────────────────────
+        self.ttk.Label(frame, text="Target root").grid(
+            row=1, column=0, sticky="w", pady=2,
+        )
+        self._migrate_target_var = self.tk.StringVar()
+        self.ttk.Entry(frame, textvariable=self._migrate_target_var, width=60).grid(
+            row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+        )
+        self.ttk.Button(
+            frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._migrate_target_var, "Pick migration target root",
+            ),
+        ).grid(row=1, column=3, sticky="w", pady=2)
+
+        # ── Components ───────────────────────────────────────────────────────
+        comp_frame = self.ttk.LabelFrame(frame, text="Components")
+        comp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        self._migrate_component_vars: dict = {}
+        for i, (key, desc) in enumerate(_MIGRATE_COMPONENTS):
+            var = self.tk.BooleanVar(value=True)
+            self._migrate_component_vars[key] = var
+            self.ttk.Checkbutton(
+                comp_frame, text=f"{key}  —  {desc}", variable=var,
+            ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
+
+        # ── Options ──────────────────────────────────────────────────────────
+        opt_frame = self.ttk.LabelFrame(frame, text="Options")
+        opt_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        opt_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(opt_frame, text="Systems filter (optional)").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._migrate_systems_var = self.tk.StringVar()
+        self.ttk.Entry(
+            opt_frame, textvariable=self._migrate_systems_var, width=40,
+        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            opt_frame,
+            text="Comma-separated. Only applies to the roms component.",
+            foreground="#666",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6)
+
+        self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opt_frame, text="Copy instead of move (--keep-source)",
+            variable=self._migrate_keep_source_var,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_verify_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opt_frame,
+            text="SHA1-verify after copy (--verify; only with Copy)",
+            variable=self._migrate_verify_var,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_no_update_config_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opt_frame,
+            text="Don't rewrite config.json with new paths "
+                 "(--no-update-config)",
+            variable=self._migrate_no_update_config_var,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opt_frame,
+            text="Keep original folder names (--preserve-names)",
+            variable=self._migrate_preserve_names_var,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opt_frame, text="Apply (uncheck for dry-run)",
+            variable=self._migrate_apply_var,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            opt_frame, text="Run migration", command=self._run_migrate,
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        # ── Undo / list manifests ────────────────────────────────────────────
+        undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
+        undo_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        undo_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(undo_frame, text="Manifest").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._migrate_undo_var = self.tk.StringVar(value="latest")
+        self.ttk.Entry(
+            undo_frame, textvariable=self._migrate_undo_var, width=40,
+        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            undo_frame,
+            text="'latest' to undo the most recent migration, or a path "
+                 "under ~/.spindoctor/migrations/.",
+            foreground="#666",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6)
+
+        self._migrate_undo_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            undo_frame, text="Apply (uncheck for dry-run)",
+            variable=self._migrate_undo_apply_var,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        btn_row = self.ttk.Frame(undo_frame)
+        btn_row.grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            btn_row, text="List manifests",
+            command=lambda: self._run_cli(
+                "spindoctor", ["migrate", "--list-manifests"],
+            ),
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Undo", command=self._run_migrate_undo,
+        ).pack(side="left", padx=6)
+
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _selected_migrate_components(self) -> Optional[str]:
+        """Return a comma-separated `--include` value, or None for "all"."""
+        selected = [k for k, v in self._migrate_component_vars.items() if v.get()]
+        if not selected:
+            return ""
+        if len(selected) == len(_MIGRATE_COMPONENTS):
+            return None
+        return ",".join(selected)
+
+    def _run_migrate(self) -> None:
+        target = self._migrate_target_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Target root required",
+                "Pick the destination root folder before running migrate.",
+            )
+            return
+        include = self._selected_migrate_components()
+        if include == "":
+            self.messagebox.showwarning(
+                "No components selected",
+                "Tick at least one component to migrate.",
+            )
+            return
+        args = ["migrate", "--target", target]
+        if include is not None:
+            args += ["--include", include]
+        systems = self._migrate_systems_var.get().strip()
+        if systems:
+            args += ["--systems", systems]
+        if self._migrate_keep_source_var.get():
+            args.append("--keep-source")
+        if self._migrate_verify_var.get():
+            args.append("--verify")
+        if self._migrate_no_update_config_var.get():
+            args.append("--no-update-config")
+        if self._migrate_preserve_names_var.get():
+            args.append("--preserve-names")
+        if self._migrate_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_migrate_undo(self) -> None:
+        manifest = self._migrate_undo_var.get().strip()
+        if not manifest:
+            self.messagebox.showwarning(
+                "Manifest required",
+                "Type 'latest' or paste a manifest path before running Undo.",
+            )
+            return
+        args = ["migrate", "--undo", manifest]
+        if self._migrate_undo_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Main Menu tab ─────────────────────────────────────────────────────────
+
+    def _build_mainmenu_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Reorder, hide, or sort the systems on HyperSpin's "
+                  "top-level wheel (Main Menu.xml). Click Show to render "
+                  "the current order in the output panel; pick a system "
+                  "and use Move up / Move down / Hide to nudge it. Sort "
+                  "rewrites the whole wheel alphabetically, by "
+                  "manufacturer, or by year. Every action is dry-run "
+                  "unless you tick Apply."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            frame, text="Apply (uncheck for dry-run)",
+            variable=self._mainmenu_apply_var,
+        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 6))
+
+        # ── Show / Sort (don't need a system pick) ───────────────────────────
+        view_frame = self.ttk.LabelFrame(frame, text="View / Sort")
+        view_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 4))
+
+        self.ttk.Button(
+            view_frame, text="Show current order",
+            command=lambda: self._run_cli("spindoctor", ["mainmenu", "show"]),
+        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+
+        self.ttk.Label(view_frame, text="Sort strategy").grid(
+            row=0, column=1, sticky="e", padx=(20, 4),
+        )
+        self._mainmenu_sort_var = self.tk.StringVar(value="alpha")
+        self.ttk.Combobox(
+            view_frame, textvariable=self._mainmenu_sort_var,
+            values=["alpha", "manufacturer", "year"],
+            state="readonly", width=14,
+        ).grid(row=0, column=2, sticky="w", padx=4)
+        self.ttk.Button(
+            view_frame, text="Sort", command=self._run_mainmenu_sort,
+        ).grid(row=0, column=3, sticky="w", padx=4)
+
+        # ── System-targeted actions ──────────────────────────────────────────
+        sys_frame = self.ttk.LabelFrame(
+            frame, text="System actions (move, hide/show, add, remove)",
+        )
+        sys_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        sys_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(sys_frame, text="System").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._mainmenu_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            sys_frame, textvariable=self._mainmenu_system_var, width=40,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=4)
+
+        self.ttk.Label(sys_frame, text="Position (for Reorder)").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._mainmenu_position_var = self.tk.StringVar()
+        self.ttk.Entry(
+            sys_frame, textvariable=self._mainmenu_position_var, width=10,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        action_row = self.ttk.Frame(sys_frame)
+        action_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        for label, sub in (
+            ("Move up",   "up"),
+            ("Move down", "down"),
+            ("Reorder",   "reorder"),
+            ("Hide",      "hide"),
+            ("Show",      "show"),
+            ("Add",       "add"),
+            ("Remove",    "remove"),
+        ):
+            self.ttk.Button(
+                action_row, text=label,
+                command=lambda s=sub: self._run_mainmenu_action(s),
+            ).pack(side="left", padx=2)
+
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _run_mainmenu_sort(self) -> None:
+        strategy = self._mainmenu_sort_var.get()
+        args = ["mainmenu", "sort", strategy]
+        if self._mainmenu_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_mainmenu_action(self, sub: str) -> None:
+        system = self._mainmenu_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Type a system name (or its 1-based index from Show) "
+                "before clicking a Main Menu action.",
+            )
+            return
+        args = ["mainmenu", sub, system]
+        if sub == "reorder":
+            position = self._mainmenu_position_var.get().strip()
+            if not position.isdigit():
+                self.messagebox.showwarning(
+                    "Position required",
+                    "Reorder needs a 1-based position (an integer).",
+                )
+                return
+            args.append(position)
+        if self._mainmenu_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Diagnose tab ──────────────────────────────────────────────────────────
+
+    def _build_diagnose_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Read-only inspectors that don't change anything on "
+                  "disk. Each click runs the corresponding command and "
+                  "streams output below — handy when something looks "
+                  "off but you don't know which command will surface it."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+
+        # Two-column grid of buttons so all checks fit without scrolling.
+        # `(label, argv_after_spindoctor)` — argv built lazily so a CLI
+        # change in one command doesn't ripple here.
+        rows: list[tuple[str, list[str]]] = [
+            ("Find duplicate ROMs",        ["find-dupes", "--all"]),
+            ("Find misplaced ROMs",        ["find-misplaced", "--all"]),
+            ("Find orphan media",          ["find-orphan-media", "--all"]),
+            ("Check disc-set consistency", ["check-discs", "--all"]),
+            ("Lint config + databases",    ["lint"]),
+            ("Generate report",            ["report"]),
+            ("Preview HyperSpin XML",      ["preview"]),
+            ("Stats — playtime overview",  ["stats"]),
+        ]
+        grid = self.ttk.Frame(frame)
+        grid.pack(anchor="w", pady=4)
+        for i, (label, args) in enumerate(rows):
+            r, c = divmod(i, 2)
+            self.ttk.Button(
+                grid, text=label, width=32,
+                command=lambda a=args: self._run_cli("spindoctor", a),
+            ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
+
+        # ── Find global ──────────────────────────────────────────────────────
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="Global search",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(0, 4))
+        self.ttk.Label(
+            frame,
+            text="Search every system's database for a ROM or display name.",
+            foreground="#444",
+        ).pack(anchor="w", pady=(0, 4))
+        search_row = self.ttk.Frame(frame)
+        search_row.pack(fill="x", pady=2)
+        self.ttk.Label(search_row, text="Query").pack(side="left")
+        self._diagnose_query_var = self.tk.StringVar()
+        entry = self.ttk.Entry(
+            search_row, textvariable=self._diagnose_query_var,
+        )
+        entry.pack(side="left", fill="x", expand=True, padx=6)
+        entry.bind("<Return>", lambda _e: self._run_find_global())
+        self.ttk.Button(
+            search_row, text="Search", command=self._run_find_global,
+        ).pack(side="left")
+
+        # ── Verify against a DAT ─────────────────────────────────────────────
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="Verify ROMs against a DAT file",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(0, 4))
+
+        verify_row = self.ttk.Frame(frame)
+        verify_row.pack(fill="x", pady=2)
+        self.ttk.Label(verify_row, text="System").pack(side="left")
+        self._verify_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            verify_row, textvariable=self._verify_system_var, width=24,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(verify_row, text="DAT path").pack(side="left", padx=(8, 0))
+        self._verify_dat_var = self.tk.StringVar()
+        self.ttk.Entry(
+            verify_row, textvariable=self._verify_dat_var,
+        ).pack(side="left", fill="x", expand=True, padx=6)
+        self.ttk.Button(
+            verify_row, text="Browse…",
+            command=self._browse_verify_dat,
+        ).pack(side="left")
+        self.ttk.Button(
+            verify_row, text="Verify",
+            command=self._run_verify,
+        ).pack(side="left", padx=6)
+
+        return frame
+
+    def _browse_verify_dat(self) -> None:
+        path = self.filedialog.askopenfilename(
+            title="Pick a DAT file",
+            initialdir=str(Path.home()),
+            filetypes=[("DAT files", "*.dat *.xml"), ("All files", "*.*")],
+        )
+        if path:
+            self._verify_dat_var.set(str(Path(path)))
+
+    def _run_find_global(self) -> None:
+        query = self._diagnose_query_var.get().strip()
+        if not query:
+            self.messagebox.showinfo(
+                "Query required", "Type something to search for first.",
+            )
+            return
+        self._run_cli("spindoctor", ["find-global", query])
+
+    def _run_verify(self) -> None:
+        system = self._verify_system_var.get().strip()
+        dat = self._verify_dat_var.get().strip()
+        if not system or not dat:
+            self.messagebox.showwarning(
+                "System and DAT required",
+                "Verify needs both a system name and a DAT file path.",
+            )
+            return
+        self._run_cli(
+            "spindoctor", ["verify", "--system", system, "--dat", dat],
+        )
+
+    # ── LEDBlinky tab ─────────────────────────────────────────────────────────
+
+    def _build_ledblinky_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Generate and audit LEDBlinky controls.ini / colors.ini "
+                  "from MAME's -listxml output. Generate is dry-run by "
+                  "default and preserves community-maintained entries; "
+                  "tick Overwrite if you want to replace them."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        self.ttk.Label(frame, text="System").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_system_var = self.tk.StringVar(value="MAME")
+        self.ttk.Entry(
+            frame, textvariable=self._led_system_var, width=24,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        self._led_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            frame, text="Overwrite existing entries (--overwrite)",
+            variable=self._led_overwrite_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self._led_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_apply_var,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        self.ttk.Button(
+            btn_row, text="Generate (controls + colors)",
+            command=self._run_led_generate,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Audit coverage",
+            command=self._run_led_audit,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Check existing INIs",
+            command=lambda: self._run_cli(
+                "spindoctor", ["ledblinky", "check"],
+            ),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Fix INI issues",
+            command=self._run_led_fix,
+        ).pack(side="left", padx=6)
+
+        self.ttk.Label(
+            frame,
+            text=("Tip: configure ledblinky_dir in the Setup tab if your "
+                  "LEDBlinky install isn't at the default location. The "
+                  "Backup tab can snapshot the LEDBlinky install before "
+                  "you run Generate with --overwrite."),
+            wraplength=860, justify="left", foreground="#666",
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
+
+        return frame
+
+    def _run_led_generate(self) -> None:
+        system = self._led_system_var.get().strip() or "MAME"
+        args = ["ledblinky", "generate", "--system", system]
+        if self._led_overwrite_var.get():
+            args.append("--overwrite")
+        if self._led_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_audit(self) -> None:
+        system = self._led_system_var.get().strip() or "MAME"
+        self._run_cli(
+            "spindoctor", ["ledblinky", "audit", "--system", system],
+        )
+
+    def _run_led_fix(self) -> None:
+        # `ledblinky fix` is a writer; it respects --apply, so we forward
+        # the same Apply checkbox the Generate path uses.
+        args = ["ledblinky", "fix"]
+        if self._led_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Lightgun tab ──────────────────────────────────────────────────────────
+
+    def _build_lightgun_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Wire Sinden / DemulShooter into RocketLauncher INIs "
+                  "for lightgun systems. Detect inventories your install "
+                  "and seeds spindoctor config from any RL INIs already "
+                  "wired to DemulShooter; Audit shows the wiring status; "
+                  "Configure adds (or repairs) the Pre/Post launch hooks "
+                  "for one system."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        # ── Detect / Audit ───────────────────────────────────────────────────
+        det_frame = self.ttk.LabelFrame(frame, text="Detect & audit")
+        det_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
+
+        self._lg_detect_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            det_frame,
+            text="Persist detected systems into config (--apply)",
+            variable=self._lg_detect_apply_var,
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=2)
+
+        btn_row = self.ttk.Frame(det_frame)
+        btn_row.grid(row=1, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
+        self.ttk.Button(
+            btn_row, text="Detect installed gear",
+            command=self._run_lg_detect,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Audit wiring",
+            command=lambda: self._run_cli(
+                "spindoctor", ["lightgun", "audit"],
+            ),
+        ).pack(side="left", padx=6)
+
+        # ── Configure one system ─────────────────────────────────────────────
+        cfg_frame = self.ttk.LabelFrame(
+            frame, text="Configure one system",
+        )
+        cfg_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        cfg_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(cfg_frame, text="System").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._lg_system_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cfg_frame, textvariable=self._lg_system_var, width=30,
+        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(cfg_frame, text="Target (optional)").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._lg_target_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cfg_frame, textvariable=self._lg_target_var, width=30,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            cfg_frame,
+            text="DemulShooter -target value. Auto-detected for known systems.",
+            foreground="#666",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6)
+
+        self.ttk.Label(cfg_frame, text="Extra args (optional)").grid(
+            row=3, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._lg_extra_args_var = self.tk.StringVar()
+        self.ttk.Entry(
+            cfg_frame, textvariable=self._lg_extra_args_var, width=30,
+        ).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+
+        self._lg_configure_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cfg_frame, text="Apply (uncheck for dry-run)",
+            variable=self._lg_configure_apply_var,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            cfg_frame, text="Configure system",
+            command=self._run_lg_configure,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        return frame
+
+    def _run_lg_detect(self) -> None:
+        args = ["lightgun", "detect"]
+        if self._lg_detect_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_lg_configure(self) -> None:
+        system = self._lg_system_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required",
+                "Configure needs a system name (e.g. 'Sega Naomi').",
+            )
+            return
+        args = ["lightgun", "configure", "--system", system]
+        target = self._lg_target_var.get().strip()
+        if target:
+            args += ["--target", target]
+        extra = self._lg_extra_args_var.get().strip()
+        if extra:
+            args += ["--extra-args", extra]
+        if self._lg_configure_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Tools tab (HyperSpin Tools-menu helpers + install-tools) ─────────────
+
+    def _build_tools_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Install .bat helpers into "
+                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
+                  "so Favorites / Recently Played / Most Played can be "
+                  "refreshed from inside HyperSpin's Tools menu, without "
+                  "dropping to a console."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 12))
+
+        self.ttk.Label(
+            frame,
+            text=(
+                "Helpers written:\n"
+                "  • Refresh Favorites.bat        → spindoctor-fav rebuild --apply\n"
+                "  • Refresh Recently Played.bat  → spindoctor-recent rebuild --apply\n"
+                "  • Refresh Most Played.bat      → spindoctor-stats build-wheel --apply\n"
+                "  • Refresh Both.bat             → all three in sequence"
+            ),
+            justify="left", foreground="#444",
+            font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
+        ).pack(anchor="w", pady=(0, 8))
+
+        self.ttk.Label(
+            frame, text="Output directory (optional)",
+        ).pack(anchor="w")
+        out_row = self.ttk.Frame(frame)
+        out_row.pack(fill="x", pady=2)
+        self._tools_outdir_var = self.tk.StringVar()
+        self.ttk.Entry(
+            out_row, textvariable=self._tools_outdir_var,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.ttk.Button(
+            out_row, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._tools_outdir_var, "Pick output directory",
+            ),
+        ).pack(side="left")
+        self.ttk.Label(
+            frame,
+            text=("Defaults to "
+                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
+                  "if blank. After installing, register the .bat files in "
+                  "HyperHQ → Tools, or schedule them via Windows Task "
+                  "Scheduler ('At log on' trigger) for hands-off updates "
+                  "on cabinet startup."),
+            wraplength=860, justify="left", foreground="#666",
+        ).pack(anchor="w", pady=(2, 8))
+
+        self.ttk.Button(
+            frame, text="Install Tools-menu helpers",
+            command=self._run_install_tools,
+        ).pack(anchor="w", pady=(2, 0))
+
+        return frame
+
+    def _run_install_tools(self) -> None:
+        args = ["install-tools"]
+        outdir = self._tools_outdir_var.get().strip()
+        if outdir:
+            args += ["--output-dir", outdir]
         self._run_cli("spindoctor", args)
 
     # ── Custom command tab ────────────────────────────────────────────────────
