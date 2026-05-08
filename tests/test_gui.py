@@ -237,6 +237,38 @@ def test_open_path_warns_on_missing(monkeypatch, tmp_path):
     assert "warning" in captured
 
 
+# ─── log viewer helpers ───────────────────────────────────────────────────────
+
+def test_format_bytes_bucketing():
+    """Sanity check the byte formatter — same intent as backup.format_bytes
+    but inlined to keep the GUI module light."""
+    fb = gui._SpinDoctorGUI._format_bytes
+    assert fb(0) == "0 B"
+    assert fb(1023) == "1023 B"
+    assert fb(1024) == "1.0 KB"
+    assert fb(1024 * 1024) == "1.0 MB"
+    assert fb(5 * 1024 * 1024 * 1024) == "5.0 GB"
+
+
+def test_format_mtime_returns_iso_like():
+    fm = gui._SpinDoctorGUI._format_mtime
+    out = fm(1778243696.0)
+    # Looks like "YYYY-MM-DD HH:MM:SS" — exact string depends on the
+    # host's local TZ, so we just pin the layout.
+    assert len(out) == 19
+    assert out[4] == "-" and out[7] == "-" and out[10] == " "
+    assert out[13] == ":" and out[16] == ":"
+
+
+def test_log_categories_cover_known_manifest_dirs():
+    """The viewer's category list must track manifest dirs the CLI writes
+    to, or users can't find their history through the GUI."""
+    expected_dirs = {dirname for _label, dirname in gui._SpinDoctorGUI._LOG_CATEGORIES}
+    for required in ("migrations", "curation", "edits", "renames",
+                     "media_imports"):
+        assert required in expected_dirs
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
