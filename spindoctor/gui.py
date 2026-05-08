@@ -116,6 +116,20 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
 )
 
 
+# Components offered as checkboxes on the Migration tab. Mirrors
+# `migrate.ALL_COMPONENTS` (note: only 5 entries — `databases`/`media`
+# collapse into `hyperspin` here, unlike the Backup tab which lists
+# them separately). Kept as a static tuple so the GUI module stays
+# import-light.
+_MIGRATE_COMPONENTS: tuple[tuple[str, str], ...] = (
+    ("roms",            "ROM / game files"),
+    ("hyperspin",       "HyperSpin install (Databases + Media + bin)"),
+    ("emulators",       "Emulator binaries"),
+    ("rocketlauncher",  "RocketLauncher install"),
+    ("ledblinky",       "LEDBlinky install"),
+)
+
+
 _HELP_TEXT = (
     f"{__app_name__} GUI {__version__} — Tkinter launcher for the SpinDoctor CLI.\n"
     "\n"
@@ -203,6 +217,7 @@ class _SpinDoctorGUI:
         nb.add(self._build_setup_tab(nb), text="Setup")
         nb.add(self._build_wheels_tab(nb), text="Wheels")
         nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
+        nb.add(self._build_migrate_tab(nb), text="Migrate")
         nb.add(self._build_custom_tab(nb), text="Custom Command")
 
         out_frame = self.ttk.LabelFrame(self.root, text="Output")
@@ -420,6 +435,200 @@ class _SpinDoctorGUI:
             )
             return
         self._run_cli("spindoctor", ["audit", "--system", system])
+
+    # ── Migrate tab ───────────────────────────────────────────────────────────
+
+    def _build_migrate_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Move (or copy) the library to a new drive in one shot. "
+                  "Pick the components, the destination root, and any "
+                  "extra options. Every action is a dry-run unless you "
+                  "tick Apply, mirroring the CLI."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+
+        # Target root
+        self.ttk.Label(frame, text="Target root").grid(
+            row=1, column=0, sticky="w", pady=2,
+        )
+        self._migrate_target_var = self.tk.StringVar()
+        self.ttk.Entry(frame, textvariable=self._migrate_target_var, width=60).grid(
+            row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+        )
+        self.ttk.Button(
+            frame, text="Browse…",
+            command=lambda: self._browse_migrate_dir(
+                self._migrate_target_var, "Pick destination root",
+            ),
+        ).grid(row=1, column=3, sticky="w", pady=2)
+
+        # Components
+        comp_frame = self.ttk.LabelFrame(frame, text="Components")
+        comp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        self._migrate_component_vars: dict[str, "self.tk.BooleanVar"] = {}
+        for i, (key, desc) in enumerate(_MIGRATE_COMPONENTS):
+            var = self.tk.BooleanVar(value=True)
+            self._migrate_component_vars[key] = var
+            self.ttk.Checkbutton(
+                comp_frame, text=f"{key}  —  {desc}", variable=var,
+            ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
+
+        # Optional systems filter (only applies to roms)
+        self.ttk.Label(frame, text="Systems (roms only, comma-sep)").grid(
+            row=3, column=0, sticky="w", pady=2,
+        )
+        self._migrate_systems_var = self.tk.StringVar()
+        self.ttk.Entry(frame, textvariable=self._migrate_systems_var, width=60).grid(
+            row=3, column=1, columnspan=3, sticky="ew", padx=6, pady=2,
+        )
+
+        # Options
+        opts_frame = self.ttk.LabelFrame(frame, text="Options")
+        opts_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+
+        self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opts_frame,
+            text="Keep source (copy instead of move — leaves originals intact)",
+            variable=self._migrate_keep_source_var,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_verify_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opts_frame,
+            text="Verify (SHA1-check each file after copy — pair with Keep source)",
+            variable=self._migrate_verify_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_no_update_config_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opts_frame,
+            text="Don't update ~/.spindoctor/config.json with the new paths",
+            variable=self._migrate_no_update_config_var,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opts_frame,
+            text="Preserve original folder names at the target",
+            variable=self._migrate_preserve_names_var,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self._migrate_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            opts_frame, text="Apply (uncheck for dry-run)",
+            variable=self._migrate_apply_var,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        # Action buttons
+        btn_row = self.ttk.Frame(frame)
+        btn_row.grid(row=5, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        self.ttk.Button(
+            btn_row, text="Run migration",
+            command=self._run_migrate,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="List manifests",
+            command=lambda: self._run_cli("spindoctor", ["migrate", "--list-manifests"]),
+        ).pack(side="left", padx=6)
+
+        # Undo section
+        undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
+        undo_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        undo_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(undo_frame, text="Manifest").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        # Default to "latest" — the most common undo target by far, and
+        # matches the example in the CLI help.
+        self._migrate_undo_var = self.tk.StringVar(value="latest")
+        self.ttk.Entry(undo_frame, textvariable=self._migrate_undo_var, width=50).grid(
+            row=0, column=1, sticky="ew", padx=6, pady=2,
+        )
+
+        self._migrate_undo_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            undo_frame, text="Apply (uncheck for dry-run)",
+            variable=self._migrate_undo_apply_var,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            undo_frame, text="Undo migration",
+            command=self._run_migrate_undo,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        frame.columnconfigure(1, weight=1)
+        return frame
+
+    def _browse_migrate_dir(self, var, title: str) -> None:
+        path = self.filedialog.askdirectory(
+            title=title, initialdir=var.get() or str(Path.home()),
+        )
+        if path:
+            var.set(str(Path(path)))
+
+    def _selected_migrate_components(self) -> Optional[str]:
+        """Return a comma-separated `--include` value, or None for "all"."""
+        selected = [k for k, v in self._migrate_component_vars.items() if v.get()]
+        if not selected:
+            return ""
+        if len(selected) == len(_MIGRATE_COMPONENTS):
+            return None
+        return ",".join(selected)
+
+    def _run_migrate(self) -> None:
+        target = self._migrate_target_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Target root required",
+                "Pick the destination root folder before running Migrate.",
+            )
+            return
+        include = self._selected_migrate_components()
+        if include == "":
+            self.messagebox.showwarning(
+                "No components selected",
+                "Tick at least one component to migrate.",
+            )
+            return
+        args = ["migrate", "--target", target]
+        if include is not None:
+            args += ["--include", include]
+        systems = self._migrate_systems_var.get().strip()
+        if systems:
+            # The CLI's --systems flag only acts on the roms component.
+            # We let the user supply it regardless and let the CLI warn
+            # if they paired it with `--include hyperspin` etc., rather
+            # than re-implement that validation here.
+            args += ["--systems", systems]
+        if self._migrate_keep_source_var.get():
+            args.append("--keep-source")
+        if self._migrate_verify_var.get():
+            args.append("--verify")
+        if self._migrate_no_update_config_var.get():
+            args.append("--no-update-config")
+        if self._migrate_preserve_names_var.get():
+            args.append("--preserve-names")
+        if self._migrate_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_migrate_undo(self) -> None:
+        manifest = self._migrate_undo_var.get().strip()
+        if not manifest:
+            self.messagebox.showwarning(
+                "Manifest required",
+                "Type 'latest' or paste a manifest path before running "
+                "Undo. Click List manifests to see what's on disk.",
+            )
+            return
+        args = ["migrate", "--undo", manifest]
+        if self._migrate_undo_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     # ── Custom command tab ────────────────────────────────────────────────────
 

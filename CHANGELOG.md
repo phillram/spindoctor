@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI Migrate tab.** New Tkinter tab wrapping `spindoctor migrate` end-to-end. Per-component checkboxes (defaulting to all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, optional system filter (for partial roms migrations), checkboxes for `--keep-source`, `--verify`, `--no-update-config`, `--preserve-names`, dry-run-by-default Apply, plus a separate "Undo a previous migration" panel that pre-fills `latest` and exposes `--list-manifests`. Cabinet owners moving the library to a new drive no longer need to memorise the migrate flag soup.
+
 ## [1.3.0] - 2026-05-07
 
 Windows-quality-of-life release. Fixes two papercuts cabinet owners hit on real installs and substantially speeds up CI on the Windows runner. No CLI surface changes.

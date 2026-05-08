@@ -106,6 +106,16 @@ def test_resolve_frozen_missing_sibling_raises(monkeypatch, tmp_path):
     assert "spindoctor-fav" in str(exc.value)
 
 
+# ─── Migrate tab presets ──────────────────────────────────────────────────────
+
+def test_migrate_components_match_cli_components():
+    """Keep the GUI's checkbox list in sync with `migrate.ALL_COMPONENTS`,
+    or `--include` will reference components the CLI doesn't recognise."""
+    from spindoctor import migrate as migrate_mod
+    gui_keys = tuple(key for key, _desc in gui._MIGRATE_COMPONENTS)
+    assert gui_keys == migrate_mod.ALL_COMPONENTS
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
