@@ -2272,6 +2272,10 @@ class _SpinDoctorGUI:
             ign_btns, text="List entries",
             command=self._run_ignore_list,
         ).pack(side="left", padx=6)
+        self.ttk.Button(
+            ign_btns, text="View / un-ignore…",
+            command=self._show_ignore_viewer,
+        ).pack(side="left", padx=6)
 
         return frame
 
@@ -2630,6 +2634,160 @@ class _SpinDoctorGUI:
         if system:
             args += ["--system", system]
         self._run_cli("spindoctor", args)
+
+    # Sentinel value used by the ignore viewer's system dropdown for the
+    # cross-system "_global" bucket. The CLI uses `_global` literally,
+    # but a label is friendlier to a UI user who's never read the
+    # config schema.
+    _IGNORE_GLOBAL_LABEL = "_global  (cross-system)"
+
+    def _show_ignore_viewer(self) -> None:
+        """Open a Toplevel listing every ignored entry for the picked
+        system, with a "Remove selected" button that updates config.
+
+        Closes the loop with `audit` / `fetch-meta` skipping logic:
+        you can finally see what's currently being skipped *and*
+        un-ignore something with a click, without grepping
+        ``~/.spindoctor/config.json``.
+        """
+        win = self.tk.Toplevel(self.root)
+        win.title(f"{__app_name__} — Ignore list viewer")
+        win.geometry("700x520")
+        win.transient(self.root)
+
+        self.ttk.Label(
+            win,
+            text=("Every entry on the ignore list for the selected "
+                  "system. The `_global` bucket applies cross-system "
+                  "(matches `cfg.is_ignored(rom, system)` for every "
+                  "system). Pick rows and click Remove selected to "
+                  "un-ignore them — saves immediately to "
+                  "~/.spindoctor/config.json."),
+            wraplength=680, justify="left", padding=(10, 6),
+        ).pack(fill="x")
+
+        # ── System picker ──────────────────────────────────────────────
+        picker_row = self.ttk.Frame(win)
+        picker_row.pack(fill="x", padx=8, pady=2)
+        self.ttk.Label(picker_row, text="System").pack(side="left")
+        sys_var = self.tk.StringVar()
+        sys_combo = self.ttk.Combobox(
+            picker_row, textvariable=sys_var, state="readonly", width=40,
+        )
+        sys_combo.pack(side="left", padx=6, fill="x", expand=True)
+        count_var = self.tk.StringVar(value="")
+        self.ttk.Label(picker_row, textvariable=count_var, width=24).pack(
+            side="right", padx=6,
+        )
+
+        # ── Listbox ────────────────────────────────────────────────────
+        list_frame = self.ttk.Frame(win)
+        list_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        listbox = self.tk.Listbox(list_frame, selectmode="extended")
+        scrollbar = self.ttk.Scrollbar(
+            list_frame, orient="vertical", command=listbox.yview,
+        )
+        listbox.configure(yscrollcommand=scrollbar.set)
+        listbox.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        def picked_system() -> str:
+            """Map the dropdown's display label back to the storage key."""
+            label = sys_var.get()
+            if label == self._IGNORE_GLOBAL_LABEL:
+                return "_global"
+            return label
+
+        def refresh_systems() -> None:
+            cfg = load_config()
+            # Include every key with at least one entry, plus _global
+            # always so the user can pick it even when empty (so they
+            # can confirm "nothing's ignored cross-system").
+            keys = [k for k, v in (cfg.ignore_lists or {}).items() if v]
+            display = []
+            if "_global" in keys:
+                keys.remove("_global")
+            display.append(self._IGNORE_GLOBAL_LABEL)
+            display.extend(sorted(keys))
+            sys_combo["values"] = display
+            # Default selection: prefer the system field on the Curate
+            # tab if it's filled and present, else the first non-_global,
+            # else _global.
+            preferred = self._ignore_system_var.get().strip()
+            if preferred and preferred in keys:
+                sys_var.set(preferred)
+            elif keys:
+                sys_var.set(sorted(keys)[0])
+            else:
+                sys_var.set(self._IGNORE_GLOBAL_LABEL)
+
+        def refresh_list(_evt=None) -> None:
+            listbox.delete(0, "end")
+            cfg = load_config()
+            entries = sorted(
+                cfg.ignore_lists.get(picked_system(), []),
+                key=str.lower,
+            )
+            for name in entries:
+                listbox.insert("end", name)
+            count_var.set(f"{len(entries)} entr{'y' if len(entries) == 1 else 'ies'}")
+
+        sys_combo.bind("<<ComboboxSelected>>", refresh_list)
+
+        # ── Buttons ────────────────────────────────────────────────────
+        btn_row = self.ttk.Frame(win)
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+
+        def remove_selected() -> None:
+            selection = listbox.curselection()
+            if not selection:
+                self.messagebox.showinfo(
+                    "Nothing selected",
+                    "Click one or more entries in the list first "
+                    "(Ctrl/Shift-click for multi-select).",
+                )
+                return
+            target = picked_system()
+            names = [listbox.get(i) for i in selection]
+            if not self.messagebox.askyesno(
+                "Remove from ignore list?",
+                f"Remove {len(names)} entr{'y' if len(names) == 1 else 'ies'} "
+                f"from the '{target}' ignore list?\n\n"
+                + "\n".join(f"  · {n}" for n in names[:10])
+                + ("\n  …" if len(names) > 10 else "")
+                + "\n\nAffects audit / fetch-meta skipping immediately.",
+            ):
+                return
+            cfg = load_config()
+            removed = 0
+            for name in names:
+                if cfg.remove_ignore(name, target):
+                    removed += 1
+            save_config(cfg)
+            self._append_output(
+                f"\n[ignore viewer] removed {removed}/{len(names)} entr"
+                f"{'y' if len(names) == 1 else 'ies'} from '{target}'.\n"
+            )
+            refresh_systems()
+            refresh_list()
+
+        self.ttk.Button(
+            btn_row, text="Remove selected", command=remove_selected,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Refresh",
+            command=lambda: (refresh_systems(), refresh_list()),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Open config.json",
+            command=self._open_config_file,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Close", command=win.destroy,
+        ).pack(side="right")
+
+        refresh_systems()
+        refresh_list()
 
     # ── Systems tab ───────────────────────────────────────────────────────────
 
