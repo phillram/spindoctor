@@ -249,8 +249,15 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "theme-apply <SOURCE_DIR>",
     "theme-apply <SOURCE_DIR> --apply",
     "theme-apply <SOURCE_DIR> --target frontend --apply",
+    "theme-apply <SOURCE_DIR> --systems \"<SYSTEM1,SYSTEM2>\" --apply",
     "theme-apply --undo latest",
+    "theme-apply --undo latest --revert-system <SYSTEM>",
     "theme-apply --list-manifests",
+    "theme-pack-create <OUTPUT_DIR>",
+    "theme-pack-create <OUTPUT_DIR> --target frontend",
+    # Diff
+    "diff <BACKUP_FOLDER>",
+    "diff <BACKUP_FOLDER> --component databases",
 )
 
 
