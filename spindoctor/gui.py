@@ -642,6 +642,43 @@ class _SpinDoctorGUI:
         ("Misplaced ROMs", "misplaced"),
     )
 
+    # Per-category undo recipes for the "Undo this run" button on the
+    # Logs & Manifests viewer. Each entry maps a manifest dir name to a
+    # callable that builds the argv (without the leading `spindoctor`)
+    # for the matching `--undo --apply` invocation.
+    #
+    # Some commands (curate, media-scan) only undo the *most recent*
+    # run and ignore the path argument — those still appear here, but
+    # the Undo Center warns the user when they pick a non-most-recent
+    # manifest of that category to avoid the surprise of a different
+    # run getting reversed.
+    #
+    # `find-misplaced` writes its manifests *into the roms_dir*, not
+    # under ~/.spindoctor/, so it's not in the viewer's tree at all and
+    # therefore not in this map.
+    _UNDO_RECIPES: dict = {
+        "migrations": {
+            "argv": lambda path: ["migrate", "--undo", str(path), "--apply"],
+            "uses_path": True,
+        },
+        "curation": {
+            "argv": lambda _path: ["curate", "--undo"],
+            "uses_path": False,
+        },
+        "edits": {
+            "argv": lambda path: ["batch-edit", "--undo", str(path)],
+            "uses_path": True,
+        },
+        "renames": {
+            "argv": lambda path: ["rename", "--undo", str(path)],
+            "uses_path": True,
+        },
+        "media_imports": {
+            "argv": lambda _path: ["media-scan", "--undo"],
+            "uses_path": False,
+        },
+    }
+
     def _show_log_viewer(self) -> None:
         """Open a Toplevel window listing recent manifests on the left
         and showing the selected file's contents on the right.
@@ -706,13 +743,16 @@ class _SpinDoctorGUI:
         # Path → file text. Cached so re-clicking a row doesn't re-read
         # disk; manifests don't change after they're written.
         loaded: dict[str, str] = {}
-        # Tree iid → manifest path. Populated below; consulted in the
-        # selection handler.
-        item_paths: dict[str, Path] = {}
+        # Tree iid → (manifest path, category dirname, is_most_recent).
+        # is_most_recent matters for the Undo button's safety check:
+        # `curate --undo` and `media-scan --undo` ignore the path arg
+        # and reverse only the newest run, so we warn if the user
+        # picks an older manifest from those categories.
+        item_meta: dict[str, tuple] = {}
 
         def populate() -> None:
             tree.delete(*tree.get_children())
-            item_paths.clear()
+            item_meta.clear()
             any_found = False
             for label, dirname in self._LOG_CATEGORIES:
                 cat_dir = CONFIG_DIR / dirname
@@ -730,7 +770,7 @@ class _SpinDoctorGUI:
                     "", "end", text=f"{label}  ({len(files)})",
                     values=("", ""), open=True,
                 )
-                for f in files:
+                for i, f in enumerate(files):
                     stat = f.stat()
                     iid = tree.insert(
                         cat_iid, "end", text=f.name,
@@ -739,7 +779,7 @@ class _SpinDoctorGUI:
                             self._format_bytes(stat.st_size),
                         ),
                     )
-                    item_paths[iid] = f
+                    item_meta[iid] = (f, dirname, i == 0)
             if not any_found:
                 tree.insert(
                     "", "end",
@@ -751,9 +791,10 @@ class _SpinDoctorGUI:
             sel = tree.selection()
             if not sel:
                 return
-            path = item_paths.get(sel[0])
-            if path is None:
+            meta = item_meta.get(sel[0])
+            if meta is None:
                 return
+            path, _dirname, _is_recent = meta
             key = str(path)
             if key not in loaded:
                 try:
@@ -779,9 +820,13 @@ class _SpinDoctorGUI:
             btn_row, text="Refresh", command=populate,
         ).pack(side="left")
         self.ttk.Button(
+            btn_row, text="Undo this run",
+            command=lambda: self._undo_selected_manifest(tree, item_meta),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Open in file explorer",
             command=lambda: self._open_selected_manifest_in_explorer(
-                tree, item_paths,
+                tree, item_meta,
             ),
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -794,13 +839,73 @@ class _SpinDoctorGUI:
 
         populate()
 
+    def _undo_selected_manifest(self, tree, item_meta: dict) -> None:
+        """Run the matching `--undo` command for the selected manifest.
+
+        Looks up the recipe in ``_UNDO_RECIPES`` keyed by the manifest's
+        category dirname. For commands that always reverse the most-
+        recent run (curate, media-scan), warns the user if they picked
+        an older manifest — that's the most surprising failure mode.
+        """
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Nothing selected",
+                "Pick a manifest from the tree first.",
+            )
+            return
+        meta = item_meta.get(sel[0])
+        if meta is None:
+            self.messagebox.showinfo(
+                "Pick a file",
+                "Selected row is a category folder. Pick a specific "
+                "manifest underneath it.",
+            )
+            return
+        path, dirname, is_most_recent = meta
+        recipe = self._UNDO_RECIPES.get(dirname)
+        if recipe is None:
+            self.messagebox.showwarning(
+                "No undo for this category",
+                f"Undo isn't wired up for the '{dirname}' manifest "
+                "type. Open the file in your editor and reverse the "
+                "changes manually, or check `spindoctor --help` for "
+                "command-specific options.",
+            )
+            return
+        if not recipe["uses_path"] and not is_most_recent:
+            # `curate --undo` / `media-scan --undo` ignore which file
+            # you picked and always reverse the most recent run. Make
+            # that explicit so users don't think they're undoing the
+            # row they clicked on.
+            if not self.messagebox.askyesno(
+                "This will undo the *most recent* run",
+                f"`{recipe['argv'](path)[0]} --undo` always reverses "
+                "the most recent run, not the manifest you selected. "
+                "Continue?",
+            ):
+                return
+        if not self.messagebox.askyesno(
+            "Confirm undo",
+            f"Run the matching `--undo` command for {path.name}?\n\n"
+            "Output streams to the panel below the tree window. "
+            "Most undos are themselves reversible by re-running the "
+            "original apply, but back up first if you're unsure.",
+        ):
+            return
+        argv = recipe["argv"](path)
+        self._run_cli("spindoctor", argv)
+
     def _open_selected_manifest_in_explorer(
-        self, tree, item_paths: dict,
+        self, tree, item_meta: dict,
     ) -> None:
         sel = tree.selection()
         if not sel:
             return
-        path = item_paths.get(sel[0])
+        meta = item_meta.get(sel[0])
+        if meta is None:
+            return
+        path, _dirname, _is_recent = meta
         if path is None or not path.exists():
             return
         # Open the *parent* — the file selected handler already showed
