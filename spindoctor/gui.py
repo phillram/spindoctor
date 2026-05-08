@@ -1570,6 +1570,50 @@ class _SpinDoctorGUI:
                     "cabinet has."
                 )
 
+            # Mirror plan results to the Output panel and Logs tab so
+            # users can answer "what would that plan have swapped?" after
+            # closing this window, and the row shows in the Logs timeline.
+            from datetime import datetime as _dt
+            scope_label = scope or "all"
+            argv_display = f"theme-apply plan ← {src_path.name}  (scope: {scope_label})"
+            record = _RunRecord(
+                started_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                argv_str=argv_display,
+                dry_run=True,
+            )
+            header = (
+                f"\n=== DRY RUN ===\n"
+                f"$ theme-apply plan ← {src_path}\n"
+                f"Target scope: {scope_label}\n\n"
+            )
+            self._append_output(header)
+            record.append(header)
+            if plans:
+                for p in plans:
+                    line = (
+                        f"  {p.source.name}  →  {p.target}"
+                        f"  [{p.target_scope} / {p.target_bucket}]\n"
+                    )
+                    self._append_output(line)
+                    record.append(line)
+                footer = (
+                    f"\n=== DRY RUN COMPLETE ({len(plans)} swap(s) planned) — "
+                    "nothing written. Click Apply to commit. ===\n"
+                )
+            else:
+                footer = "\n=== DRY RUN COMPLETE — no matches. ===\n"
+            self._append_output(footer)
+            record.append(footer)
+            record.exit_code = 0
+            self._run_history.append(record)
+            if len(self._run_history) > 200:
+                self._run_history.pop(0)
+            self._refresh_logs_tab()
+            self._set_status(
+                f"Dry run: {len(plans)} swap(s) planned. "
+                "View details in Output or the Logs tab."
+            )
+
         def run_apply() -> None:
             from . import themes as themes_mod
             if not plans_holder:
