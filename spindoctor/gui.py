@@ -1023,7 +1023,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Logs & Manifests")
-        win.geometry("960x600")
+        self._fit_geometry(win, 960, 600)
         win.transient(self.root)
 
         # Top description so first-time users understand what the panel
@@ -1303,7 +1303,7 @@ class _SpinDoctorGUI:
 
         win = self.tk.Toplevel(self.root)
         win.title(f"Diff — {path.name}")
-        win.geometry("960x540")
+        self._fit_geometry(win, 960, 540)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -1438,7 +1438,7 @@ class _SpinDoctorGUI:
         # Small dialog: label + listbox + OK/Cancel.
         dialog = self.tk.Toplevel(self.root)
         dialog.title("Revert just one system")
-        dialog.geometry("380x260")
+        self._fit_geometry(dialog, 380, 260)
         dialog.transient(self.root)
         dialog.resizable(False, False)
 
@@ -1523,7 +1523,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — HyperSpin theme browser")
-        win.geometry("1080x600")
+        self._fit_geometry(win, 1080, 600)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -1712,7 +1712,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Apply theme replacement pack")
-        win.geometry("960x600")
+        self._fit_geometry(win, 960, 600)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -3390,7 +3390,7 @@ class _SpinDoctorGUI:
         # ── Build the window shell synchronously, fill the tree async ───────
         win = self.tk.Toplevel(self.root)
         win.title(f"Curate preview — {system}")
-        win.geometry("1100x650")
+        self._fit_geometry(win, 1100, 650)
         win.transient(self.root)
 
         status_var = self.tk.StringVar(
@@ -3682,7 +3682,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Ignore list viewer")
-        win.geometry("700x520")
+        self._fit_geometry(win, 700, 520)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -4686,6 +4686,19 @@ class _SpinDoctorGUI:
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)
+
+    def _fit_geometry(self, win, ideal_w: int, ideal_h: int) -> None:
+        """Set dialog geometry capped to the current screen size minus margins.
+
+        Hard-coded pixel values (960x600, 1100x650 …) overflow on arcade
+        cabinet monitors at 1024×768. This method uses the real screen
+        dimensions so dialogs are always fully on-screen and resizable.
+        """
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        w = min(ideal_w, sw - 40)
+        h = min(ideal_h, sh - 80)
+        win.geometry(f"{w}x{h}")
 
     def mainloop(self) -> None:
         self.root.mainloop()
