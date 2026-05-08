@@ -354,9 +354,27 @@ class _SpinDoctorGUI:
 
     def _build_layout(self) -> None:
         self._build_menubar()
-        nb = self.ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=8, pady=(8, 4))
 
+        # Use grid on the root so the status bar (row 1, weight=0) is
+        # ALWAYS allocated its natural height — pack's expand=True can
+        # race with side=bottom items and push the bar off-screen on
+        # smaller displays. Grid separates the concerns completely.
+        self.root.rowconfigure(0, weight=1)   # main_paned grows/shrinks
+        self.root.rowconfigure(1, weight=0)   # bar: fixed height, never hidden
+        self.root.columnconfigure(0, weight=1)
+
+        # Vertical PanedWindow splits the tab notebook (top) from the
+        # Output panel (bottom). The raised 6-px sash lets cabinet owners
+        # drag the boundary up or down — useful on smaller screens where
+        # the default output height might be too short to read full output.
+        main_paned = self.tk.PanedWindow(
+            self.root, orient="vertical",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
+        main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
+
+        nb = self.ttk.Notebook(main_paned)
         # Wrap each tab in a Canvas + always-visible Scrollbar so
         # cabinet owners on smaller screens (1024×768, 1280×720) can
         # still reach widgets that overflow the window. Each tab
@@ -380,18 +398,29 @@ class _SpinDoctorGUI:
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
+        main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
 
-        out_frame = self.ttk.LabelFrame(self.root, text="Output")
-        out_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        out_frame = self.ttk.LabelFrame(main_paned, text="Output")
         mono = "Consolas" if sys.platform == "win32" else "Menlo"
         self._output = self.scrolledtext.ScrolledText(
             out_frame, height=14, wrap="word", font=(mono, 10),
         )
         self._output.configure(state="disabled")
         self._output.pack(fill="both", expand=True, padx=4, pady=4)
+        main_paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
 
+        # Set initial sash position after the window has been painted so
+        # we know the real allocated height. Target: output panel gets
+        # ~160 px; notebook takes the rest.
+        def _place_initial_sash():
+            h = main_paned.winfo_height()
+            if h > 300:
+                main_paned.sash_place(0, 0, max(200, h - 160))
+        self.root.after(100, _place_initial_sash)
+
+        # Status bar — grid row 1, always visible.
         bar = self.ttk.Frame(self.root)
-        bar.pack(fill="x", side="bottom", padx=8, pady=(0, 8))
+        bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
         self._status_var = self.tk.StringVar(value="")
         self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
             side="left", fill="x", expand=True
@@ -511,7 +540,11 @@ class _SpinDoctorGUI:
         )
         intro.pack(fill="x")
 
-        paned = self.ttk.PanedWindow(frame, orient="horizontal")
+        paned = self.tk.PanedWindow(
+            frame, orient="horizontal",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
         paned.pack(fill="both", expand=True, padx=4, pady=4)
 
         # Left pane: tree of runs.
@@ -532,7 +565,7 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=tscroll.set)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
-        paned.add(tree_frame, weight=2)
+        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Right pane: full output of the selected run.
         viewer_frame = self.ttk.Frame(paned)
@@ -542,7 +575,7 @@ class _SpinDoctorGUI:
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, weight=3)
+        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Stash widgets so _refresh_logs_tab() can update them.
         self._logs_tree = tree
@@ -990,7 +1023,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Logs & Manifests")
-        win.geometry("960x600")
+        self._fit_geometry(win, 960, 600)
         win.transient(self.root)
 
         # Top description so first-time users understand what the panel
@@ -1006,7 +1039,11 @@ class _SpinDoctorGUI:
             wraplength=920, justify="left", padding=(10, 6),
         ).pack(fill="x")
 
-        paned = self.ttk.PanedWindow(win, orient="horizontal")
+        paned = self.tk.PanedWindow(
+            win, orient="horizontal",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
         paned.pack(fill="both", expand=True, padx=8, pady=4)
 
         # ── Left pane: tree ──────────────────────────────────────────────────
@@ -1027,7 +1064,7 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        paned.add(tree_frame, weight=2)
+        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
 
         # ── Right pane: viewer ───────────────────────────────────────────────
         viewer_frame = self.ttk.Frame(paned)
@@ -1037,7 +1074,7 @@ class _SpinDoctorGUI:
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, weight=3)
+        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Path → file text. Cached so re-clicking a row doesn't re-read
         # disk; manifests don't change after they're written.
@@ -1266,7 +1303,7 @@ class _SpinDoctorGUI:
 
         win = self.tk.Toplevel(self.root)
         win.title(f"Diff — {path.name}")
-        win.geometry("960x540")
+        self._fit_geometry(win, 960, 540)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -1401,7 +1438,7 @@ class _SpinDoctorGUI:
         # Small dialog: label + listbox + OK/Cancel.
         dialog = self.tk.Toplevel(self.root)
         dialog.title("Revert just one system")
-        dialog.geometry("380x260")
+        self._fit_geometry(dialog, 380, 260)
         dialog.transient(self.root)
         dialog.resizable(False, False)
 
@@ -1486,7 +1523,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — HyperSpin theme browser")
-        win.geometry("1080x600")
+        self._fit_geometry(win, 1080, 600)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -1675,7 +1712,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Apply theme replacement pack")
-        win.geometry("960x600")
+        self._fit_geometry(win, 960, 600)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -3353,7 +3390,7 @@ class _SpinDoctorGUI:
         # ── Build the window shell synchronously, fill the tree async ───────
         win = self.tk.Toplevel(self.root)
         win.title(f"Curate preview — {system}")
-        win.geometry("1100x650")
+        self._fit_geometry(win, 1100, 650)
         win.transient(self.root)
 
         status_var = self.tk.StringVar(
@@ -3645,7 +3682,7 @@ class _SpinDoctorGUI:
         """
         win = self.tk.Toplevel(self.root)
         win.title(f"{__app_name__} — Ignore list viewer")
-        win.geometry("700x520")
+        self._fit_geometry(win, 700, 520)
         win.transient(self.root)
 
         self.ttk.Label(
@@ -4649,6 +4686,19 @@ class _SpinDoctorGUI:
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)
+
+    def _fit_geometry(self, win, ideal_w: int, ideal_h: int) -> None:
+        """Set dialog geometry capped to the current screen size minus margins.
+
+        Hard-coded pixel values (960x600, 1100x650 …) overflow on arcade
+        cabinet monitors at 1024×768. This method uses the real screen
+        dimensions so dialogs are always fully on-screen and resizable.
+        """
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        w = min(ideal_w, sw - 40)
+        h = min(ideal_h, sh - 80)
+        win.geometry(f"{w}x{h}")
 
     def mainloop(self) -> None:
         self.root.mainloop()
