@@ -241,6 +241,11 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "config system set <SYSTEM> --layout wheel",
     # Tools
     "install-tools",
+    # Themes
+    "theme-scan",
+    "theme-scan --keyword xbox",
+    "theme-scan --system <SYSTEM>",
+    "theme-scan --output <PATH>",
 )
 
 
@@ -396,6 +401,10 @@ class _SpinDoctorGUI:
         file_menu.add_separator()
         file_menu.add_command(
             label="View logs & manifests…", command=self._show_log_viewer,
+        )
+        file_menu.add_command(
+            label="Browse HyperSpin themes…",
+            command=self._show_theme_browser,
         )
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.destroy)
@@ -928,6 +937,193 @@ class _SpinDoctorGUI:
                 return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
             n /= 1024
         return f"{n:.1f} TB"
+
+    # ── Theme browser ─────────────────────────────────────────────────────────
+
+    def _show_theme_browser(self) -> None:
+        """Open a Toplevel window inventorying HyperSpin frontend art.
+
+        Shells out to ``spindoctor.themes.scan_frontend_art`` so the
+        scanner logic stays testable without Tk. Each row is a
+        :class:`ThemeAsset`; double-clicking (or Enter) opens the
+        file in the OS image viewer so users can eyeball whether
+        a "specialA1.png" really is the Xbox glyph they want to swap.
+        """
+        win = self.tk.Toplevel(self.root)
+        win.title(f"{__app_name__} — HyperSpin theme browser")
+        win.geometry("1080x600")
+        win.transient(self.root)
+
+        self.ttk.Label(
+            win,
+            text=("Inventory of HyperSpin frontend overlay art — the "
+                  "controller-hint glyphs at the bottom of the cabinet UI. "
+                  "Walks <hyperspin>/Media/Frontend/Images/ and every "
+                  "system's Special A / Special B folders. Double-click "
+                  "(or press Enter) to open the file in your OS image "
+                  "viewer. Use Filter to narrow the list — type 'xbox', "
+                  "'arcade', etc."),
+            wraplength=1060, justify="left", padding=(10, 6),
+        ).pack(fill="x")
+
+        # ── Filter row ────────────────────────────────────────────────
+        filter_row = self.ttk.Frame(win)
+        filter_row.pack(fill="x", padx=8, pady=2)
+        self.ttk.Label(filter_row, text="Filter").pack(side="left")
+        filter_var = self.tk.StringVar()
+        filter_entry = self.ttk.Entry(
+            filter_row, textvariable=filter_var,
+        )
+        filter_entry.pack(side="left", fill="x", expand=True, padx=6)
+        count_var = self.tk.StringVar(value="Loading…")
+        self.ttk.Label(filter_row, textvariable=count_var, width=24).pack(
+            side="right",
+        )
+
+        # ── Tree ──────────────────────────────────────────────────────
+        tree_frame = self.ttk.Frame(win)
+        tree_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        tree = self.ttk.Treeview(
+            tree_frame,
+            columns=("scope", "bucket", "kind", "size", "modified"),
+            show="tree headings", selectmode="browse",
+        )
+        tree.heading("#0", text="File")
+        tree.heading("scope", text="Scope")
+        tree.heading("bucket", text="Bucket")
+        tree.heading("kind", text="Kind")
+        tree.heading("size", text="Size")
+        tree.heading("modified", text="Modified")
+        tree.column("#0", width=320, stretch=True)
+        tree.column("scope", width=140, stretch=False)
+        tree.column("bucket", width=140, stretch=False)
+        tree.column("kind", width=60, stretch=False, anchor="w")
+        tree.column("size", width=80, stretch=False, anchor="e")
+        tree.column("modified", width=140, stretch=False, anchor="w")
+        scrollbar = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=scrollbar.set)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # iid → ThemeAsset, used by the open-in-viewer / open-folder
+        # handlers. Tree text is the file *name* not the full path so
+        # the column width stays manageable; we look the path back up
+        # from this dict on selection.
+        item_assets: dict = {}
+        # All assets, unfiltered. Re-rendered when the filter box
+        # changes — no re-scan needed since this is a pure in-memory
+        # filter pass.
+        all_assets: list = []
+
+        def render(filtered) -> None:
+            tree.delete(*tree.get_children())
+            item_assets.clear()
+            for a in filtered:
+                iid = tree.insert(
+                    "", "end", text=a.path.name,
+                    values=(
+                        a.scope, a.bucket, a.kind,
+                        self._format_bytes(a.size_bytes),
+                        a.modified.strftime("%Y-%m-%d %H:%M"),
+                    ),
+                )
+                item_assets[iid] = a
+            count_var.set(
+                f"{len(filtered)} of {len(all_assets)} file(s)"
+            )
+
+        def apply_filter(_evt=None) -> None:
+            from . import themes as themes_mod
+            kw = filter_var.get().strip()
+            filtered = themes_mod.filter_assets(
+                all_assets, keyword=kw or None,
+            )
+            render(filtered)
+
+        filter_entry.bind("<KeyRelease>", apply_filter)
+
+        def open_selected(_evt=None) -> None:
+            sel = tree.selection()
+            if not sel:
+                return
+            asset = item_assets.get(sel[0])
+            if asset is None:
+                return
+            # Re-uses the same cross-platform opener as the File menu
+            # shortcuts; the OS picks the right image viewer.
+            self._open_path(asset.path, missing_label=str(asset.path))
+
+        def open_folder() -> None:
+            sel = tree.selection()
+            if not sel:
+                self.messagebox.showinfo(
+                    "Pick a row first",
+                    "Click a row in the table, then click Open folder.",
+                )
+                return
+            asset = item_assets.get(sel[0])
+            if asset is None:
+                return
+            self._open_path(
+                asset.path.parent, missing_label=str(asset.path.parent),
+            )
+
+        tree.bind("<Double-Button-1>", open_selected)
+        tree.bind("<Return>", open_selected)
+
+        # ── Worker thread for the scan itself ─────────────────────────
+        def worker() -> None:
+            from . import themes as themes_mod
+            try:
+                cfg = load_config()
+                assets = themes_mod.scan_frontend_art(cfg)
+                has_swfs = themes_mod.has_swf_themes(cfg)
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                self.root.after(0, lambda: count_var.set(f"Error: {exc}"))
+                return
+            self.root.after(0, on_scan_done, assets, has_swfs)
+
+        def on_scan_done(assets, has_swfs) -> None:
+            all_assets.clear()
+            all_assets.extend(assets)
+            apply_filter()
+            if not assets:
+                self._append_output(
+                    "\n[theme browser] No PNG/JPG/etc. overlays found "
+                    "under <hyperspin>/Media/Frontend or any "
+                    "<system>/Images/Special A|B folder.\n"
+                )
+            if has_swfs:
+                self._append_output(
+                    "\n[theme browser] Heads-up: your Main Menu folder "
+                    "contains .swf / .zip theme files — those embed "
+                    "glyph art that SpinDoctor can't edit.\n"
+                )
+
+        # ── Bottom button row ─────────────────────────────────────────
+        btn_row = self.ttk.Frame(win)
+        btn_row.pack(fill="x", padx=8, pady=(0, 8))
+        self.ttk.Button(
+            btn_row, text="Open in image viewer",
+            command=open_selected,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Open containing folder",
+            command=open_folder,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Refresh",
+            command=lambda: threading.Thread(
+                target=worker, daemon=True,
+            ).start(),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Close", command=win.destroy,
+        ).pack(side="right")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # ── Setup tab ─────────────────────────────────────────────────────────────
 
