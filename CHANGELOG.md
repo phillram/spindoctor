@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-08
+
 ### Added
 
 - **GUI Logs tab.** New tab keeping a per-run timeline of every command since the GUI was launched, newest first. Tree on the left (Status / Started / Command columns); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN` (no `--apply`), `OK` (applied + exit 0), `FAIL <code>`, or `running`. Buffer caps at 200 entries with FIFO eviction so a long session doesn't leak memory. Buttons for Refresh, Copy selected output, and Clear in-memory log. Closes the "I just ran a dry-run, where did the output go?" gap — the bottom Output panel only shows the *current* run, the Logs tab indexes everything.
@@ -214,7 +216,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/phillram/spindoctor/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/phillram/spindoctor/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/phillram/spindoctor/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/phillram/spindoctor/compare/v1.1.0...v1.2.0
