@@ -354,9 +354,35 @@ class _SpinDoctorGUI:
 
     def _build_layout(self) -> None:
         self._build_menubar()
-        nb = self.ttk.Notebook(self.root)
-        nb.pack(fill="both", expand=True, padx=8, pady=(8, 4))
 
+        # Pack the status bar first (side=bottom) so it always hugs the
+        # bottom edge regardless of how the user resizes the sash above.
+        bar = self.ttk.Frame(self.root)
+        bar.pack(fill="x", side="bottom", padx=8, pady=(0, 8))
+        self._status_var = self.tk.StringVar(value="")
+        self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
+            side="left", fill="x", expand=True
+        )
+        self._stop_btn = self.ttk.Button(
+            bar, text="Stop", command=self._stop_running, state="disabled"
+        )
+        self._stop_btn.pack(side="right")
+        self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
+            side="right", padx=(0, 6)
+        )
+
+        # Vertical PanedWindow splits the tab notebook (top) from the
+        # Output panel (bottom). The raised 6-px sash lets cabinet owners
+        # drag the boundary up or down — useful on smaller screens where
+        # the default output height might be too short to read full output.
+        main_paned = self.tk.PanedWindow(
+            self.root, orient="vertical",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
+        main_paned.pack(fill="both", expand=True, padx=8, pady=(8, 4))
+
+        nb = self.ttk.Notebook(main_paned)
         # Wrap each tab in a Canvas + always-visible Scrollbar so
         # cabinet owners on smaller screens (1024×768, 1280×720) can
         # still reach widgets that overflow the window. Each tab
@@ -380,29 +406,18 @@ class _SpinDoctorGUI:
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
+        # Notebook takes all extra space when the window is resized;
+        # the Output panel stays at its dragged size (stretch="never").
+        main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
 
-        out_frame = self.ttk.LabelFrame(self.root, text="Output")
-        out_frame.pack(fill="both", expand=True, padx=8, pady=4)
+        out_frame = self.ttk.LabelFrame(main_paned, text="Output")
         mono = "Consolas" if sys.platform == "win32" else "Menlo"
         self._output = self.scrolledtext.ScrolledText(
             out_frame, height=14, wrap="word", font=(mono, 10),
         )
         self._output.configure(state="disabled")
         self._output.pack(fill="both", expand=True, padx=4, pady=4)
-
-        bar = self.ttk.Frame(self.root)
-        bar.pack(fill="x", side="bottom", padx=8, pady=(0, 8))
-        self._status_var = self.tk.StringVar(value="")
-        self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
-            side="left", fill="x", expand=True
-        )
-        self._stop_btn = self.ttk.Button(
-            bar, text="Stop", command=self._stop_running, state="disabled"
-        )
-        self._stop_btn.pack(side="right")
-        self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
-            side="right", padx=(0, 6)
-        )
+        main_paned.add(out_frame, stretch="never", height=150, minsize=60, sticky="nsew")
 
     def _add_scrollable_tab(self, nb, builder, label: str) -> None:
         """Add a Notebook tab that scrolls vertically when content overflows.
@@ -511,7 +526,11 @@ class _SpinDoctorGUI:
         )
         intro.pack(fill="x")
 
-        paned = self.ttk.PanedWindow(frame, orient="horizontal")
+        paned = self.tk.PanedWindow(
+            frame, orient="horizontal",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
         paned.pack(fill="both", expand=True, padx=4, pady=4)
 
         # Left pane: tree of runs.
@@ -532,7 +551,7 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=tscroll.set)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
-        paned.add(tree_frame, weight=2)
+        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Right pane: full output of the selected run.
         viewer_frame = self.ttk.Frame(paned)
@@ -542,7 +561,7 @@ class _SpinDoctorGUI:
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, weight=3)
+        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Stash widgets so _refresh_logs_tab() can update them.
         self._logs_tree = tree
@@ -1006,7 +1025,11 @@ class _SpinDoctorGUI:
             wraplength=920, justify="left", padding=(10, 6),
         ).pack(fill="x")
 
-        paned = self.ttk.PanedWindow(win, orient="horizontal")
+        paned = self.tk.PanedWindow(
+            win, orient="horizontal",
+            sashwidth=6, sashrelief="raised", sashpad=2,
+            borderwidth=0,
+        )
         paned.pack(fill="both", expand=True, padx=8, pady=4)
 
         # ── Left pane: tree ──────────────────────────────────────────────────
@@ -1027,7 +1050,7 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        paned.add(tree_frame, weight=2)
+        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
 
         # ── Right pane: viewer ───────────────────────────────────────────────
         viewer_frame = self.ttk.Frame(paned)
@@ -1037,7 +1060,7 @@ class _SpinDoctorGUI:
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, weight=3)
+        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
 
         # Path → file text. Cached so re-clicking a row doesn't re-read
         # disk; manifests don't change after they're written.
