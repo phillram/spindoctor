@@ -1135,6 +1135,14 @@ class _SpinDoctorGUI:
             command=lambda: self._undo_selected_manifest(tree, item_meta),
         ).pack(side="left", padx=6)
         self.ttk.Button(
+            btn_row, text="Show diff",
+            command=lambda: self._show_manifest_diff(tree, item_meta),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Revert just <SYSTEM>…",
+            command=lambda: self._revert_system_from_manifest(tree, item_meta),
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Open in file explorer",
             command=lambda: self._open_selected_manifest_in_explorer(
                 tree, item_meta,
@@ -1223,6 +1231,231 @@ class _SpinDoctorGUI:
         # the contents, so what's useful here is "show me where this
         # lives so I can poke around its siblings".
         self._open_path(path.parent, missing_label=str(path.parent))
+
+    def _show_manifest_diff(self, tree, item_meta: dict) -> None:
+        """Render the selected manifest's recorded changes as a readable
+        before/after table instead of raw JSON.
+
+        Handles theme-apply manifests (source → target swaps) and
+        migration manifests (component → from/to moves). Other manifest
+        types fall back to a nicely formatted JSON view.
+        """
+        import json as _json
+
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Pick a row first",
+                "Select a manifest from the tree, then click Show diff.",
+            )
+            return
+        meta = item_meta.get(sel[0])
+        if meta is None:
+            self.messagebox.showinfo(
+                "Pick a file",
+                "Selected row is a category folder. Pick a specific "
+                "manifest underneath it.",
+            )
+            return
+        path, dirname, _is_recent = meta
+        try:
+            data = _json.loads(path.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, ValueError) as exc:
+            self.messagebox.showerror("Could not read manifest", str(exc))
+            return
+
+        win = self.tk.Toplevel(self.root)
+        win.title(f"Diff — {path.name}")
+        win.geometry("960x540")
+        win.transient(self.root)
+
+        self.ttk.Label(
+            win,
+            text=f"Changes recorded in {path.name}",
+            font=("TkDefaultFont", 10, "bold"),
+            padding=(10, 6),
+        ).pack(anchor="w")
+        self.ttk.Label(
+            win,
+            text=f"Timestamp: {data.get('timestamp', 'unknown')}",
+            foreground="#666", padding=(10, 0),
+        ).pack(anchor="w")
+
+        tree_frame = self.ttk.Frame(win)
+        tree_frame.pack(fill="both", expand=True, padx=8, pady=4)
+
+        if dirname == "themes" and "swaps" in data:
+            cols = ("scope", "bucket", "source", "target")
+            diff_tree = self.ttk.Treeview(
+                tree_frame, columns=cols, show="headings",
+            )
+            diff_tree.heading("scope", text="Scope")
+            diff_tree.heading("bucket", text="Bucket")
+            diff_tree.heading("source", text="Source file")
+            diff_tree.heading("target", text="Target path (overwritten)")
+            diff_tree.column("scope", width=120, stretch=False)
+            diff_tree.column("bucket", width=110, stretch=False)
+            diff_tree.column("source", width=200, stretch=False)
+            diff_tree.column("target", width=460, stretch=True)
+            for swap in data["swaps"]:
+                diff_tree.insert("", "end", values=(
+                    swap.get("target_scope", ""),
+                    swap.get("target_bucket", ""),
+                    Path(swap.get("source", "")).name,
+                    swap.get("target", ""),
+                ))
+            n = len(data["swaps"])
+            self.ttk.Label(
+                win, text=f"{n} swap(s) recorded.",
+                padding=(10, 4),
+            ).pack(anchor="w")
+
+        elif dirname == "migrations" and "moves" in data:
+            cols = ("component", "from_path", "to_path")
+            diff_tree = self.ttk.Treeview(
+                tree_frame, columns=cols, show="headings",
+            )
+            diff_tree.heading("component", text="Component")
+            diff_tree.heading("from_path", text="From")
+            diff_tree.heading("to_path", text="To")
+            diff_tree.column("component", width=120, stretch=False)
+            diff_tree.column("from_path", width=380, stretch=True)
+            diff_tree.column("to_path", width=380, stretch=True)
+            for move in data["moves"]:
+                diff_tree.insert("", "end", values=(
+                    move.get("component", ""),
+                    move.get("src", ""),
+                    move.get("dest", ""),
+                ))
+
+        else:
+            # Generic: render keys as rows.
+            cols = ("key", "value")
+            diff_tree = self.ttk.Treeview(
+                tree_frame, columns=cols, show="headings",
+            )
+            diff_tree.heading("key", text="Field")
+            diff_tree.heading("value", text="Value")
+            diff_tree.column("key", width=180, stretch=False)
+            diff_tree.column("value", width=720, stretch=True)
+            for k, v in data.items():
+                if isinstance(v, (list, dict)):
+                    display = _json.dumps(v, indent=2)[:200]
+                else:
+                    display = str(v)
+                diff_tree.insert("", "end", values=(k, display))
+
+        vsb = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=diff_tree.yview,
+        )
+        diff_tree.configure(yscrollcommand=vsb.set)
+        diff_tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        self.ttk.Button(win, text="Close", command=win.destroy).pack(
+            anchor="e", padx=8, pady=(0, 8),
+        )
+
+    def _revert_system_from_manifest(self, tree, item_meta: dict) -> None:
+        """Open a dialog to pick one system from a theme-apply manifest
+        and revert only that system's swaps, leaving all other wheels
+        untouched.
+
+        Only available for Theme swaps manifests — other manifest types
+        don't have per-system scope so the button shows an info message
+        for those.
+        """
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Pick a row first",
+                "Select a theme-apply manifest from the tree first.",
+            )
+            return
+        meta = item_meta.get(sel[0])
+        if meta is None:
+            self.messagebox.showinfo(
+                "Pick a file",
+                "Selected row is a category folder. Pick a specific "
+                "manifest underneath it.",
+            )
+            return
+        path, dirname, _is_recent = meta
+        if dirname != "themes":
+            self.messagebox.showinfo(
+                "Theme manifests only",
+                "Per-system revert is only available for Theme swaps "
+                "manifests. Select a row under the 'Theme swaps' category.",
+            )
+            return
+
+        from . import themes as themes_mod
+        systems = themes_mod.list_systems_in_manifest(path)
+        if not systems:
+            self.messagebox.showwarning(
+                "No systems found",
+                f"Could not read system names from {path.name}.",
+            )
+            return
+
+        # Small dialog: label + listbox + OK/Cancel.
+        dialog = self.tk.Toplevel(self.root)
+        dialog.title("Revert just one system")
+        dialog.geometry("380x260")
+        dialog.transient(self.root)
+        dialog.resizable(False, False)
+
+        self.ttk.Label(
+            dialog,
+            text=(f"Pick the system to revert from\n{path.name}.\n\n"
+                  "Only that system's files will be restored from the\n"
+                  "backup — all other wheels are left as-is."),
+            wraplength=350, justify="left", padding=(12, 8),
+        ).pack(fill="x")
+
+        lb_frame = self.ttk.Frame(dialog)
+        lb_frame.pack(fill="both", expand=True, padx=12)
+        lb = self.tk.Listbox(lb_frame, selectmode="single", height=6)
+        for s in systems:
+            lb.insert("end", s)
+        lb.selection_set(0)
+        lb_sb = self.ttk.Scrollbar(lb_frame, orient="vertical", command=lb.yview)
+        lb.configure(yscrollcommand=lb_sb.set)
+        lb.pack(side="left", fill="both", expand=True)
+        lb_sb.pack(side="right", fill="y")
+
+        chosen: list = []
+
+        def _ok() -> None:
+            sel_idx = lb.curselection()
+            if not sel_idx:
+                return
+            chosen.append(lb.get(sel_idx[0]))
+            dialog.destroy()
+
+        btn_row = self.ttk.Frame(dialog)
+        btn_row.pack(fill="x", padx=12, pady=(4, 10))
+        self.ttk.Button(btn_row, text="Revert", command=_ok).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Cancel", command=dialog.destroy,
+        ).pack(side="left", padx=6)
+
+        dialog.wait_window()
+
+        if not chosen:
+            return
+        system = chosen[0]
+        if not self.messagebox.askyesno(
+            "Confirm per-system revert",
+            f"Revert '{system}' files from {path.name}?\n\n"
+            "Only that system's overwritten files will be restored. "
+            "Other wheels are untouched.",
+        ):
+            return
+        self._run_cli(
+            "spindoctor",
+            ["theme-apply", "--undo", str(path), "--revert-system", system],
+        )
 
     @staticmethod
     def _format_mtime(ts: float) -> str:
@@ -1480,15 +1713,17 @@ class _SpinDoctorGUI:
         scope_var = self.tk.StringVar(value="all")
         self.ttk.Combobox(
             scope_row, textvariable=scope_var,
-            values=["all", "frontend", "<system name>"],
-            state="normal", width=24,
+            values=["all", "frontend", "<system name>",
+                    "<SYSTEM1,SYSTEM2>"],
+            state="normal", width=28,
         ).pack(side="left", padx=6)
         self.ttk.Label(
             scope_row,
-            text=("'all' = every match anywhere; 'frontend' = only "
-                  "Media/Frontend/Images; or type a system name to "
-                  "limit to that system's Special A/B."),
-            foreground="#666", wraplength=600, justify="left",
+            text=("'all' = every match; 'frontend' = only "
+                  "Media/Frontend/Images; a system name = that "
+                  "system's Special A/B; comma-separated names = "
+                  "multiple systems at once (e.g. 'MAME,Sega Naomi')."),
+            foreground="#666", wraplength=580, justify="left",
         ).pack(side="left", padx=6)
 
         # ── Plan tree ─────────────────────────────────────────────────
@@ -1544,9 +1779,20 @@ class _SpinDoctorGUI:
 
             cfg = load_config()
             scope = scope_var.get().strip()
-            target = None if scope.lower() in ("", "all") else scope
+            # Comma-separated → multi-system; "frontend"/"all"/blank → target.
+            systems_arg = None
+            target_arg = None
+            if scope.lower() not in ("", "all"):
+                if scope.lower() == "frontend":
+                    target_arg = "frontend"
+                elif "," in scope:
+                    systems_arg = [s.strip() for s in scope.split(",") if s.strip()]
+                else:
+                    target_arg = scope
             try:
-                plans = themes_mod.plan_apply(cfg, src_path, target=target)
+                plans = themes_mod.plan_apply(
+                    cfg, src_path, target=target_arg, systems=systems_arg,
+                )
             except Exception as exc:  # noqa: BLE001 — surface in UI
                 self.messagebox.showerror(
                     "Plan failed", f"{type(exc).__name__}: {exc}",
