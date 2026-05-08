@@ -33,7 +33,7 @@ spindoctor config set <key> <value>
 | `default_metadata_source` | `screenscraper` or `thegamesdb` |
 | `match_threshold` | Fuzzy auto-accept confidence, `0.0`–`1.0` (default `0.80`) |
 | `interactive_matching` | Prompt on ambiguous matches (default `true`) |
-| `mame_executable` | Path to MAME (used by `ledblinky generate`) |
+| `mame_executable` | Path to a MAME binary (used by `ledblinky generate` — see below) |
 | `metadata_cache_ttl_days` | Days to keep cached scraper responses (default `30`) |
 | `backup_before_modify` | Whether XML writes leave a `.bak` next to the file (default `true`) |
 | `region_preferences` | Default region order for `curate` (default `["USA", "World", "Europe", "Japan"]`) |
@@ -61,6 +61,24 @@ Common reasons to use overrides:
 - **System has its own metadata IDs on ScreenScraper** — set `--screenscraper-id`.
 - **Multi-disc consoles where each game is a folder** — `--layout per-game-folder`.
 - **System uses a Sinden lightgun** — set `"lightgun": true` in the override (or run `spindoctor lightgun configure --system <name> --apply`, which sets it automatically). `lightgun audit` reports on every system with this flag.
+
+## `mame_executable` — which one if I have several?
+
+Cabinet builders often keep multiple MAME folders side-by-side (`MAME (driving)`, `MAME (gun games)`, `MAME (sinden)`, …) so RocketLauncher can launch each ROM with the right `mame.ini` / `cfg/` / `ctrlr/` setup. SpinDoctor doesn't care about that — it only invokes MAME for one thing:
+
+```
+mame.exe -listxml
+```
+
+That dump is the canonical control schema for every machine MAME knows about, and it's baked into the MAME source. Every variant build produces the same data, so **pick whichever copy is most convenient** and point `mame_executable` at it. Suggested order:
+
+1. The newest MAME version you have installed (newer MAME knows about strictly more ROMs, never fewer).
+2. A "vanilla" build over a fork, if you have both — they differ in a handful of obscure machines, but for listxml purposes it's a wash.
+3. Whichever folder is closest to your other `Emulators/` subfolders, just so the path is easy to remember.
+
+The listxml output is cached under the SpinDoctor cache directory keyed by system, and only re-runs when the binary's mtime changes — so you pay the (slow) listxml dump once per MAME upgrade, not per audit. Your per-system MAME folders for driving / gun games / etc. are launched by RocketLauncher as usual; SpinDoctor never touches them.
+
+You can leave `mame_executable` blank if you don't use `ledblinky generate` — `audit` and `doctor` will skip the MAME-controls check and warn instead of failing.
 
 ## Filesystem considerations
 

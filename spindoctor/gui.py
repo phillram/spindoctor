@@ -280,7 +280,11 @@ class _SpinDoctorGUI:
                 initialdir=var.get() or str(Path.home()),
             )
         if path:
-            var.set(path)
+            # Tk's filedialog returns POSIX-style separators even on Windows
+            # ("D:/Arcade"). Normalise to native separators so the saved
+            # config matches what Windows tools expect ("D:\Arcade") and
+            # downstream path comparisons don't trip over the mix.
+            var.set(str(Path(path)))
 
     def _save_setup(self) -> None:
         cfg = load_config()
