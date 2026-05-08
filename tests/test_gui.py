@@ -158,6 +158,85 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
+# ─── Folder-open helpers ──────────────────────────────────────────────────────
+
+def test_open_path_uses_platform_specific_command(monkeypatch, tmp_path):
+    """`_open_path` must dispatch to the right OS-native opener.
+
+    We don't actually launch the file explorer — that would pop up a
+    real Finder/Explorer window on the dev machine — so the test
+    swaps `subprocess.Popen` and `os.startfile` for capturing stubs.
+    """
+    real_dir = tmp_path / "spindoctor"
+    real_dir.mkdir()
+
+    captured: dict = {}
+
+    class _FakeApp:
+        # Minimal stand-in for `_SpinDoctorGUI` — just enough for
+        # `_open_path` to bind self.messagebox and call the right
+        # platform branch.
+        messagebox = type("M", (), {
+            "showwarning": staticmethod(lambda *_a, **_k: None),
+            "showerror": staticmethod(lambda *_a, **_k: None),
+        })
+
+        def _open_path(self, path, *, missing_label):  # noqa: D401
+            return gui._SpinDoctorGUI._open_path(self, path, missing_label=missing_label)
+
+    monkeypatch.setattr(
+        gui.subprocess, "Popen",
+        lambda args, *a, **k: captured.setdefault("popen", list(args)),
+    )
+    # os.startfile only exists on Windows; patching it onto gui.os here
+    # lets the win32 branch run on macOS / Linux CI without blowing up
+    # before reaching our capture.
+    monkeypatch.setattr(
+        gui.os, "startfile", lambda p: captured.setdefault("startfile", p),
+        raising=False,
+    )
+
+    for platform, expected_key in (
+        ("win32", "startfile"),
+        ("darwin", "popen"),
+        ("linux", "popen"),
+    ):
+        captured.clear()
+        monkeypatch.setattr(gui.sys, "platform", platform)
+        _FakeApp()._open_path(real_dir, missing_label="ignored")
+        assert expected_key in captured, f"{platform}: nothing captured"
+        if expected_key == "popen":
+            tool = captured["popen"][0]
+            expected_tool = "open" if platform == "darwin" else "xdg-open"
+            assert tool == expected_tool
+
+
+def test_open_path_warns_on_missing(monkeypatch, tmp_path):
+    """If the path doesn't exist, no OS call should fire — the user
+    gets a warning dialog instead. Saves us from confusing 'silently
+    nothing happened' behaviour on Windows when a stale config points
+    at an unmounted drive."""
+    captured: dict = {}
+
+    class _FakeApp:
+        messagebox = type("M", (), {
+            "showwarning": staticmethod(
+                lambda *args, **_k: captured.setdefault("warning", args)
+            ),
+            "showerror": staticmethod(lambda *_a, **_k: None),
+        })
+
+        def _open_path(self, path, *, missing_label):
+            return gui._SpinDoctorGUI._open_path(self, path, missing_label=missing_label)
+
+    monkeypatch.setattr(
+        gui.subprocess, "Popen",
+        lambda *a, **k: pytest.fail("Popen should not run for missing paths"),
+    )
+    _FakeApp()._open_path(tmp_path / "nope", missing_label="thing")
+    assert "warning" in captured
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
