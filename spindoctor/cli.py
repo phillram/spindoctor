@@ -7,6 +7,21 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Switch Windows stdio to UTF-8 before Rich's Console is constructed below —
+# otherwise the cp1252 default codepage can't encode the tree glyphs (✓ ⚠ ✗)
+# that `doctor` and other commands print, and the frozen exe crashes mid-render.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except (AttributeError, OSError):
+        pass
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
+
 import click
 from rich import box
 from rich.console import Console
