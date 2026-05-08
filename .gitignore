@@ -23,3 +23,5 @@ env/
 # Tooling
 .claude/
 .pytest_cache/
+
+.DS_Store
