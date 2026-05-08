@@ -108,7 +108,10 @@ def fetch_latest_release(
             "User-Agent": "spindoctor-gui-update-check",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 — fixed URL
+    # nosec B310 — URL is the hardcoded GitHub Releases endpoint, not
+    # user input. Bandit otherwise flags every urlopen because it
+    # *could* be handed a file:// URL by a caller.
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
         payload = json.loads(resp.read().decode("utf-8", errors="replace"))
     return payload["tag_name"], payload.get("html_url", "")
 
