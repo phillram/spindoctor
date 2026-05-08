@@ -323,6 +323,13 @@ class _SpinDoctorGUI:
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
 
+        # Per-run history buffered for the Logs tab. The Output panel
+        # at the bottom of the window only shows the current run; the
+        # Logs tab indexes everything since launch so you can scroll
+        # back to "what did that dry-run say?" without re-running.
+        self._run_history: list[_RunRecord] = []
+        self._current_run: Optional[_RunRecord] = None
+
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
 
@@ -343,20 +350,29 @@ class _SpinDoctorGUI:
         nb = self.ttk.Notebook(self.root)
         nb.pack(fill="both", expand=True, padx=8, pady=(8, 4))
 
-        nb.add(self._build_setup_tab(nb), text="Setup")
-        nb.add(self._build_wheels_tab(nb), text="Wheels")
-        nb.add(self._build_mainmenu_tab(nb), text="Main Menu")
-        nb.add(self._build_audit_tab(nb), text="Audit & Doctor")
-        nb.add(self._build_diagnose_tab(nb), text="Diagnose")
-        nb.add(self._build_metadata_tab(nb), text="Metadata & Media")
-        nb.add(self._build_curate_tab(nb), text="Curate")
-        nb.add(self._build_systems_tab(nb), text="Systems")
-        nb.add(self._build_ledblinky_tab(nb), text="LEDBlinky")
-        nb.add(self._build_lightgun_tab(nb), text="Lightgun")
-        nb.add(self._build_tools_tab(nb), text="Tools")
-        nb.add(self._build_backup_tab(nb), text="Backup & Restore")
-        nb.add(self._build_migrate_tab(nb), text="Migrate")
-        nb.add(self._build_custom_tab(nb), text="Custom Command")
+        # Wrap each tab in a Canvas + always-visible Scrollbar so
+        # cabinet owners on smaller screens (1024×768, 1280×720) can
+        # still reach widgets that overflow the window. Each tab
+        # builder creates its frame as before; the helper just bolts
+        # a vertical scrollbar onto whichever container holds it.
+        self._add_scrollable_tab(nb, self._build_setup_tab,    "Setup")
+        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
+        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
+        self._add_scrollable_tab(nb, self._build_audit_tab,    "Audit & Doctor")
+        self._add_scrollable_tab(nb, self._build_diagnose_tab, "Diagnose")
+        self._add_scrollable_tab(nb, self._build_metadata_tab, "Metadata & Media")
+        self._add_scrollable_tab(nb, self._build_curate_tab,   "Curate")
+        self._add_scrollable_tab(nb, self._build_systems_tab,  "Systems")
+        self._add_scrollable_tab(nb, self._build_ledblinky_tab, "LEDBlinky")
+        self._add_scrollable_tab(nb, self._build_lightgun_tab, "Lightgun")
+        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
+        self._add_scrollable_tab(nb, self._build_backup_tab,   "Backup & Restore")
+        self._add_scrollable_tab(nb, self._build_migrate_tab,  "Migrate")
+        # Logs tab is the only one that intentionally fills its own
+        # vertical space (tree + viewer panes), so it doesn't need
+        # the wrapping scrollbar.
+        nb.add(self._build_logs_tab(nb), text="Logs")
+        self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
 
         out_frame = self.ttk.LabelFrame(self.root, text="Output")
         out_frame.pack(fill="both", expand=True, padx=8, pady=4)
@@ -380,6 +396,258 @@ class _SpinDoctorGUI:
         self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
             side="right", padx=(0, 6)
         )
+
+    def _add_scrollable_tab(self, nb, builder, label: str) -> None:
+        """Add a Notebook tab that scrolls vertically when content overflows.
+
+        ``builder`` is one of the existing ``_build_*_tab`` callables —
+        each takes a parent and returns a Frame. We wrap the result in
+        a Canvas + Scrollbar so cabinet owners on 1024×768 / 1280×720
+        screens can still reach options at the bottom of long tabs
+        (Migrate, Curate, Tools have ~10+ rows of widgets).
+        """
+        container = self.ttk.Frame(nb)
+        canvas = self.tk.Canvas(container, highlightthickness=0)
+        vsb = self.ttk.Scrollbar(
+            container, orient="vertical", command=canvas.yview,
+        )
+        canvas.configure(yscrollcommand=vsb.set)
+        # Scrollbar always packed (not auto-hide) so users on the
+        # smallest screens always know scrolling is available, even
+        # before they realise content is clipped.
+        vsb.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+
+        # Builder packs its widgets into `inner`. The builder still
+        # creates its own Frame inside `inner` (existing pattern); we
+        # pack that frame edge-to-edge.
+        inner = self.ttk.Frame(canvas)
+        builder_frame = builder(inner)
+        builder_frame.pack(fill="both", expand=True)
+
+        inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_inner_configure(_evt):
+            # As widgets get added to the inner frame, expand the
+            # canvas's scrollable region so the scrollbar reflects the
+            # full content height.
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(evt):
+            # Stretch the inner frame to match the canvas's width so
+            # widgets `pack(fill="x")` actually fill the visible area
+            # (without this they collapse to their natural width).
+            canvas.itemconfigure(inner_id, width=evt.width)
+
+        inner.bind("<Configure>", _on_inner_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+
+        # Mouse-wheel scrolling. `bind_all` is global, so we only
+        # activate it while the cursor is over this canvas — Enter
+        # binds, Leave unbinds. Otherwise Output-panel scrolling and
+        # tab-content scrolling fight each other.
+        def _scroll(evt):
+            # Windows / macOS use evt.delta (±120 per notch); Linux
+            # uses Button-4 / Button-5. Normalise to a signed step.
+            if hasattr(evt, "delta") and evt.delta:
+                step = -1 if evt.delta > 0 else 1
+            elif getattr(evt, "num", None) == 4:
+                step = -1
+            elif getattr(evt, "num", None) == 5:
+                step = 1
+            else:
+                return
+            canvas.yview_scroll(step, "units")
+
+        def _bind_wheel(_evt):
+            canvas.bind_all("<MouseWheel>", _scroll)
+            canvas.bind_all("<Button-4>", _scroll)
+            canvas.bind_all("<Button-5>", _scroll)
+
+        def _unbind_wheel(_evt):
+            canvas.unbind_all("<MouseWheel>")
+            canvas.unbind_all("<Button-4>")
+            canvas.unbind_all("<Button-5>")
+
+        canvas.bind("<Enter>", _bind_wheel)
+        canvas.bind("<Leave>", _unbind_wheel)
+
+        nb.add(container, text=label)
+
+    # ── Logs tab ──────────────────────────────────────────────────────────────
+
+    def _build_logs_tab(self, parent):
+        """Persistent timeline of every command run since GUI launch.
+
+        The bottom Output panel only shows the *current* run; it scrolls
+        away the moment the next command starts. This tab keeps every
+        run's full output addressable by row, so cabinet owners can
+        answer "what did that dry-run actually say?" without re-running.
+
+        Layout: tree on the left (newest first, with status / time /
+        command columns), read-only viewer on the right showing the
+        full output of the selected row.
+        """
+        frame = self.ttk.Frame(parent, padding=4)
+
+        intro = self.ttk.Label(
+            frame,
+            text=("Every command run since the GUI was launched, newest "
+                  "first. Click a row to see its full output. "
+                  "DRY-RUN rows are previews (no --apply was passed); "
+                  "OK rows committed; FAIL rows exited non-zero. The "
+                  "buffer is in-memory only — restarting the GUI "
+                  "clears it. Manifest-based history (apply runs that "
+                  "wrote a JSON manifest under ~/.spindoctor/) lives in "
+                  "File → View logs & manifests…"),
+            wraplength=900, justify="left", padding=(6, 4),
+        )
+        intro.pack(fill="x")
+
+        paned = self.ttk.PanedWindow(frame, orient="horizontal")
+        paned.pack(fill="both", expand=True, padx=4, pady=4)
+
+        # Left pane: tree of runs.
+        tree_frame = self.ttk.Frame(paned)
+        tree = self.ttk.Treeview(
+            tree_frame, columns=("status", "time", "command"),
+            show="headings", selectmode="browse",
+        )
+        tree.heading("status", text="Status")
+        tree.heading("time", text="Started")
+        tree.heading("command", text="Command")
+        tree.column("status", width=90, stretch=False)
+        tree.column("time", width=140, stretch=False)
+        tree.column("command", width=420, stretch=True)
+        tscroll = self.ttk.Scrollbar(
+            tree_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=tscroll.set)
+        tree.pack(side="left", fill="both", expand=True)
+        tscroll.pack(side="right", fill="y")
+        paned.add(tree_frame, weight=2)
+
+        # Right pane: full output of the selected run.
+        viewer_frame = self.ttk.Frame(paned)
+        mono = "Consolas" if sys.platform == "win32" else "Menlo"
+        viewer = self.scrolledtext.ScrolledText(
+            viewer_frame, wrap="word", font=(mono, 10),
+        )
+        viewer.configure(state="disabled")
+        viewer.pack(fill="both", expand=True, padx=4, pady=4)
+        paned.add(viewer_frame, weight=3)
+
+        # Stash widgets so _refresh_logs_tab() can update them.
+        self._logs_tree = tree
+        self._logs_viewer = viewer
+        # iid → record index, so selecting a row knows which record
+        # to render. Indexes are recomputed every refresh.
+        self._logs_iid_to_idx: dict[str, int] = {}
+
+        def on_select(_evt) -> None:
+            sel = tree.selection()
+            if not sel:
+                return
+            idx = self._logs_iid_to_idx.get(sel[0])
+            if idx is None or idx >= len(self._run_history):
+                return
+            record = self._run_history[idx]
+            viewer.configure(state="normal")
+            viewer.delete("1.0", "end")
+            header = (
+                f"# Started: {record.started_at}\n"
+                f"# Status:  {record.tag()}\n"
+                f"# Dry-run: {record.dry_run}\n"
+                f"# Command: {record.argv_str}\n\n"
+            )
+            viewer.insert("end", header)
+            viewer.insert("end", record.joined_output())
+            viewer.configure(state="disabled")
+
+        tree.bind("<<TreeviewSelect>>", on_select)
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.pack(fill="x", padx=4, pady=(0, 4))
+        self.ttk.Button(
+            btn_row, text="Refresh", command=self._refresh_logs_tab,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Copy selected output to clipboard",
+            command=self._copy_selected_log,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Clear in-memory log",
+            command=self._clear_logs,
+        ).pack(side="left", padx=6)
+
+        # First paint.
+        self._refresh_logs_tab()
+        return frame
+
+    def _refresh_logs_tab(self) -> None:
+        """Re-render the Logs tab tree from ``self._run_history``.
+
+        Called whenever a run starts or finishes so the tree updates
+        live. Cheap to re-render: even at the 200-entry cap the whole
+        operation is sub-millisecond.
+        """
+        tree = getattr(self, "_logs_tree", None)
+        if tree is None:
+            # Tab hasn't been built yet (first call from _run_cli
+            # during construction). Will catch up on next refresh.
+            return
+        tree.delete(*tree.get_children())
+        self._logs_iid_to_idx.clear()
+        # Newest first — cabinet owners want "what did I just do?"
+        # not "what did I do an hour ago?".
+        for offset, record in enumerate(reversed(self._run_history)):
+            real_idx = len(self._run_history) - 1 - offset
+            iid = tree.insert(
+                "", "end",
+                values=(record.tag(), record.started_at, record.argv_str),
+            )
+            self._logs_iid_to_idx[iid] = real_idx
+
+    def _copy_selected_log(self) -> None:
+        tree = getattr(self, "_logs_tree", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Pick a row first",
+                "Select a row in the tree, then click Copy.",
+            )
+            return
+        idx = self._logs_iid_to_idx.get(sel[0])
+        if idx is None or idx >= len(self._run_history):
+            return
+        record = self._run_history[idx]
+        text = (
+            f"# {record.started_at}  [{record.tag()}]  "
+            f"{record.argv_str}\n\n{record.joined_output()}"
+        )
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self._set_status(
+            f"Copied {len(text)} characters to clipboard."
+        )
+
+    def _clear_logs(self) -> None:
+        if self._proc is not None:
+            self.messagebox.showinfo(
+                "Wait for the current run to finish",
+                "A command is still running — wait for it (or Stop) "
+                "before clearing the log.",
+            )
+            return
+        self._run_history.clear()
+        self._refresh_logs_tab()
+        viewer = getattr(self, "_logs_viewer", None)
+        if viewer is not None:
+            viewer.configure(state="normal")
+            viewer.delete("1.0", "end")
+            viewer.configure(state="disabled")
 
     # ── Menubar / About / cross-tab folder helpers ────────────────────────────
 
@@ -3920,9 +4188,38 @@ class _SpinDoctorGUI:
             self.messagebox.showerror("Binary not found", str(exc))
             return
 
-        self._append_output(f"\n$ {_format_argv(argv)}\n")
-        self._set_status(f"Running: {binary} {' '.join(args)}")
+        # Heuristic: anything without `--apply` is a dry-run for our
+        # apply-mode commands. Tag the run so the Logs tab can label
+        # it, and prepend a banner to the streaming output so the
+        # user can't miss "this was a preview, not a real change".
+        is_dry_run = "--apply" not in args
+        argv_str = _format_argv(argv)
+        from datetime import datetime
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str=argv_str,
+            dry_run=is_dry_run,
+        )
+        self._run_history.append(record)
+        self._current_run = record
+        # Cap history at 200 entries — that's hours of cabinet use,
+        # far more than the user will scroll back through. Without a
+        # cap, a long-running GUI session leaks memory through the
+        # output buffers.
+        if len(self._run_history) > 200:
+            self._run_history.pop(0)
+
+        banner = "\n=== DRY RUN ===\n" if is_dry_run else ""
+        self._append_output(f"{banner}\n$ {argv_str}\n")
+        record.append(f"$ {argv_str}\n")
+        self._set_status(
+            f"{'[DRY RUN] ' if is_dry_run else ''}Running: "
+            f"{binary} {' '.join(args)}"
+        )
         self._stop_btn.configure(state="normal")
+        # Logs tab refreshes itself from _run_history when it's open;
+        # nudge it now so the new row appears immediately.
+        self._refresh_logs_tab()
 
         # Force unbuffered output from the child so progress bars / per-row
         # status lines arrive in real time. PyInstaller-frozen Click apps
@@ -3982,6 +4279,12 @@ class _SpinDoctorGUI:
                     self._on_proc_done(item)
                 else:
                     self._append_output(item)
+                    # Mirror into the current run's per-record buffer
+                    # so the Logs tab can replay the same content
+                    # later. The Output panel and the Logs tab show
+                    # identical text at the moment a run finishes.
+                    if self._current_run is not None:
+                        self._current_run.append(item)
         except queue.Empty:
             pass
         self.root.after(50, self._drain_queue)
@@ -3989,9 +4292,36 @@ class _SpinDoctorGUI:
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         self._proc = None
         self._stop_btn.configure(state="disabled")
-        self._set_status(
-            "Ready." if marker.rc == 0 else f"Last command exited with code {marker.rc}."
-        )
+
+        # Stamp the exit code on the run record + emit a closing
+        # banner for dry-runs so the user always sees "preview done,
+        # nothing changed on disk". Real applies don't get a banner —
+        # the output panel already shows command-specific success
+        # messages and we don't want to drown those out.
+        was_dry_run = False
+        if self._current_run is not None:
+            self._current_run.exit_code = marker.rc
+            was_dry_run = self._current_run.dry_run
+            if was_dry_run:
+                footer = (
+                    f"\n=== DRY RUN COMPLETE (exit {marker.rc}) — "
+                    "nothing was written. Re-run with --apply to commit. ===\n"
+                )
+                self._append_output(footer)
+                self._current_run.append(footer)
+        self._current_run = None
+
+        if marker.rc == 0:
+            self._set_status(
+                "Dry run finished — nothing changed. View results in "
+                "Output or the Logs tab." if was_dry_run else "Ready."
+            )
+        else:
+            self._set_status(f"Last command exited with code {marker.rc}.")
+
+        # Re-render the Logs tab so the row's exit-code column updates.
+        self._refresh_logs_tab()
+
         if marker.callback is not None:
             try:
                 marker.callback(marker.rc)
@@ -4035,6 +4365,49 @@ class _DoneMarker:
     def __init__(self, rc: int, callback: Optional[Callable[[int], None]]) -> None:
         self.rc = rc
         self.callback = callback
+
+
+class _RunRecord:
+    """One historical command run captured for the Logs tab.
+
+    The Output panel at the bottom of the window shows whichever
+    command is *currently* running — useful while watching progress,
+    useless for "what did I do an hour ago?". The Logs tab solves
+    that by keeping a per-run buffer indexed by start time.
+
+    ``dry_run`` is a heuristic: ``True`` when ``--apply`` is missing
+    from the argv. It's not perfect (a few commands don't follow the
+    dry-run-by-default convention), but it lets the Logs tab tag
+    rows so users can tell at a glance whether a row's output was a
+    preview or a real change.
+    """
+
+    __slots__ = ("started_at", "argv_str", "output", "exit_code", "dry_run")
+
+    def __init__(self, started_at: str, argv_str: str, dry_run: bool) -> None:
+        self.started_at = started_at
+        self.argv_str = argv_str
+        self.output: list[str] = []
+        self.exit_code: Optional[int] = None
+        self.dry_run = dry_run
+
+    def append(self, text: str) -> None:
+        # Per-run buffer is plain str fragments, joined on demand.
+        # Keeping fragments rather than a single growing string avoids
+        # repeated O(n²) string copies on long-running commands like
+        # `audit --all` that emit thousands of lines.
+        self.output.append(text)
+
+    def joined_output(self) -> str:
+        return "".join(self.output)
+
+    def tag(self) -> str:
+        """Short label for the Logs tree's leftmost column."""
+        if self.exit_code is None:
+            return "running"
+        if self.exit_code == 0:
+            return "DRY-RUN" if self.dry_run else "OK"
+        return f"FAIL {self.exit_code}"
 
 
 def _format_argv(argv: Sequence[str]) -> str:
