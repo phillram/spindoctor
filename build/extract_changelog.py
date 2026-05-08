@@ -17,6 +17,10 @@ import re
 import sys
 from pathlib import Path
 
+# Windows cmd/PowerShell default to cp1252; the changelog contains Unicode.
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 
 def extract(changelog: str, version: str) -> str:
     version = version.lstrip("v")
