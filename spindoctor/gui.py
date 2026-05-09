@@ -2260,13 +2260,30 @@ class _SpinDoctorGUI:
         except Exception as exc:  # noqa: BLE001 — surface any config error to UI
             systems = []
             self._set_status(f"Could not list systems: {exc}")
-        # Combobox may not exist yet during __init__'s first call.
-        combo = getattr(self, "_system_combo", None)
-        if combo is None:
-            return
-        combo["values"] = systems
-        if systems and not self._system_var.get():
-            self._system_var.set(systems[0])
+
+        # Every tab that has a system picker. Attributes may not exist yet
+        # on the first call (tabs build lazily), so we guard with getattr.
+        combos_and_vars = [
+            ("_system_combo",          "_system_var",          None),
+            ("_mainmenu_system_combo", "_mainmenu_system_var", None),
+            ("_meta_system_combo",     "_meta_system_var",     None),
+            ("_verify_system_combo",   "_verify_system_var",   None),
+            ("_curate_system_combo",   "_curate_system_var",   None),
+            ("_ignore_system_combo",   "_ignore_system_var",   None),
+            ("_led_system_combo",      "_led_system_var",      "MAME"),
+            ("_lg_system_combo",       "_lg_system_var",       None),
+            ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
+        ]
+        for combo_attr, var_attr, default in combos_and_vars:
+            combo = getattr(self, combo_attr, None)
+            if combo is None:
+                continue
+            combo["values"] = systems
+            var = getattr(self, var_attr, None)
+            if var is None:
+                continue
+            if systems and not var.get():
+                var.set(default if default and default not in systems else (systems[0] if systems else ""))
 
     def _run_audit(self) -> None:
         system = self._system_var.get().strip()
@@ -2747,9 +2764,11 @@ class _SpinDoctorGUI:
             row=0, column=0, sticky="w", padx=6, pady=4,
         )
         self._mainmenu_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            sys_frame, textvariable=self._mainmenu_system_var, width=40,
-        ).grid(row=0, column=1, sticky="ew", padx=6, pady=4)
+        self._mainmenu_system_combo = self.ttk.Combobox(
+            sys_frame, textvariable=self._mainmenu_system_var,
+            state="readonly", width=40,
+        )
+        self._mainmenu_system_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=4)
 
         self.ttk.Label(sys_frame, text="Position (for Reorder)").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -2878,9 +2897,11 @@ class _SpinDoctorGUI:
         verify_row.pack(fill="x", pady=2)
         self.ttk.Label(verify_row, text="System").pack(side="left")
         self._verify_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            verify_row, textvariable=self._verify_system_var, width=24,
-        ).pack(side="left", padx=6)
+        self._verify_system_combo = self.ttk.Combobox(
+            verify_row, textvariable=self._verify_system_var,
+            state="readonly", width=24,
+        )
+        self._verify_system_combo.pack(side="left", padx=6)
         self.ttk.Label(verify_row, text="DAT path").pack(side="left", padx=(8, 0))
         self._verify_dat_var = self.tk.StringVar()
         self.ttk.Entry(
@@ -2949,9 +2970,11 @@ class _SpinDoctorGUI:
             side="left",
         )
         self._meta_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            sys_row, textvariable=self._meta_system_var, width=30,
-        ).pack(side="left", padx=6)
+        self._meta_system_combo = self.ttk.Combobox(
+            sys_row, textvariable=self._meta_system_var,
+            state="readonly", width=30,
+        )
+        self._meta_system_combo.pack(side="left", padx=6)
         self._meta_all_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             sys_row, text="All systems", variable=self._meta_all_var,
@@ -3163,9 +3186,11 @@ class _SpinDoctorGUI:
             side="left",
         )
         self._curate_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            cur_top, textvariable=self._curate_system_var, width=24,
-        ).pack(side="left", padx=6)
+        self._curate_system_combo = self.ttk.Combobox(
+            cur_top, textvariable=self._curate_system_var,
+            state="readonly", width=24,
+        )
+        self._curate_system_combo.pack(side="left", padx=6)
         self._curate_all_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             cur_top, text="All systems", variable=self._curate_all_var,
@@ -3279,9 +3304,11 @@ class _SpinDoctorGUI:
         ign_top.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(ign_top, text="System (blank = global)").pack(side="left")
         self._ignore_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            ign_top, textvariable=self._ignore_system_var, width=24,
-        ).pack(side="left", padx=6)
+        self._ignore_system_combo = self.ttk.Combobox(
+            ign_top, textvariable=self._ignore_system_var,
+            state="readonly", width=24,
+        )
+        self._ignore_system_combo.pack(side="left", padx=6)
         self.ttk.Label(ign_top, text="Game name").pack(side="left", padx=(10, 0))
         self._ignore_game_var = self.tk.StringVar()
         self.ttk.Entry(
@@ -3968,9 +3995,11 @@ class _SpinDoctorGUI:
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_system_var = self.tk.StringVar(value="MAME")
-        self.ttk.Entry(
-            frame, textvariable=self._led_system_var, width=24,
-        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self._led_system_combo = self.ttk.Combobox(
+            frame, textvariable=self._led_system_var,
+            state="readonly", width=24,
+        )
+        self._led_system_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -4089,9 +4118,11 @@ class _SpinDoctorGUI:
             row=0, column=0, sticky="w", padx=6, pady=2,
         )
         self._lg_system_var = self.tk.StringVar()
-        self.ttk.Entry(
-            cfg_frame, textvariable=self._lg_system_var, width=30,
-        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self._lg_system_combo = self.ttk.Combobox(
+            cfg_frame, textvariable=self._lg_system_var,
+            state="readonly", width=30,
+        )
+        self._lg_system_combo.grid(row=0, column=1, sticky="w", padx=6, pady=2)
 
         self.ttk.Label(cfg_frame, text="Target (optional)").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -4232,9 +4263,11 @@ class _SpinDoctorGUI:
         sys_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(sys_row, text="Target wheel system").pack(side="left")
         self._tools_wheel_var = self.tk.StringVar(value="Toolkit")
-        self.ttk.Entry(
-            sys_row, textvariable=self._tools_wheel_var, width=30,
-        ).pack(side="left", padx=6)
+        self._tools_wheel_combo = self.ttk.Combobox(
+            sys_row, textvariable=self._tools_wheel_var,
+            state="readonly", width=30,
+        )
+        self._tools_wheel_combo.pack(side="left", padx=6)
         self.ttk.Button(
             sys_row, text="Install into wheel",
             command=self._run_install_tools_into_wheel,
