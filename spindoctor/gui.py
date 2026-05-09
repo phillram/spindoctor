@@ -2750,90 +2750,256 @@ class _SpinDoctorGUI:
     # ── Main Menu tab ─────────────────────────────────────────────────────────
 
     def _build_mainmenu_tab(self, parent):
+        import xml.etree.ElementTree as _ET  # stdlib — always available
+        self._mm_ET = _ET
+        self._mm_data: list[dict] = []  # [{system, enabled}]
+
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
-            text=("Reorder, hide, or sort the systems on HyperSpin's "
-                  "top-level wheel (Main Menu.xml). Click Show to render "
-                  "the current order in the output panel; pick a system "
-                  "and use Move up / Move down / Hide to nudge it. Sort "
-                  "rewrites the whole wheel alphabetically, by "
-                  "manufacturer, or by year. Every action is dry-run "
-                  "unless you tick Apply."),
+            text=("Edit the order and visibility of systems on HyperSpin's "
+                  "top-level wheel (Main Menu.xml). Click Refresh to load "
+                  "the current order, drag-select a row then use Move Up / "
+                  "Move Down to reposition it, Toggle Visible to "
+                  "hide/unhide, then Save Order to write all changes at once."),
             wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            frame, text="Apply (uncheck for dry-run)",
-            variable=self._mainmenu_apply_var,
-        ).grid(row=1, column=0, columnspan=4, sticky="w", pady=(0, 6))
+        # ── Treeview ─────────────────────────────────────────────────────────
+        tree_frame = self.ttk.Frame(frame)
+        tree_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(0, 4))
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
 
-        # ── Show / Sort (don't need a system pick) ───────────────────────────
-        view_frame = self.ttk.LabelFrame(frame, text="View / Sort")
-        view_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(4, 4))
+        self._mm_tree = self.ttk.Treeview(
+            tree_frame,
+            columns=("pos", "system", "visible"),
+            show="headings",
+            selectmode="browse",
+            height=16,
+        )
+        self._mm_tree.heading("pos",     text="#",       anchor="center")
+        self._mm_tree.heading("system",  text="System",  anchor="w")
+        self._mm_tree.heading("visible", text="Visible", anchor="center")
+        self._mm_tree.column("pos",     width=50,  stretch=False, anchor="center")
+        self._mm_tree.column("system",  width=340, stretch=True,  anchor="w")
+        self._mm_tree.column("visible", width=80,  stretch=False, anchor="center")
+        self._mm_tree.tag_configure("hidden", foreground="gray")
 
+        vsb = self.ttk.Scrollbar(tree_frame, orient="vertical",
+                                 command=self._mm_tree.yview)
+        self._mm_tree.configure(yscrollcommand=vsb.set)
+        self._mm_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+
+        # ── Table action buttons ──────────────────────────────────────────────
+        tbl_btn_row = self.ttk.Frame(frame)
+        tbl_btn_row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 8))
         self.ttk.Button(
-            view_frame, text="Show current order",
-            command=lambda: self._run_cli("spindoctor", ["mainmenu", "show"]),
-        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+            tbl_btn_row, text="Refresh",
+            command=self._mm_refresh,
+        ).pack(side="left")
+        self.ttk.Button(
+            tbl_btn_row, text="Move Up",
+            command=self._mm_move_up,
+        ).pack(side="left", padx=(6, 2))
+        self.ttk.Button(
+            tbl_btn_row, text="Move Down",
+            command=self._mm_move_down,
+        ).pack(side="left", padx=2)
+        self.ttk.Button(
+            tbl_btn_row, text="Toggle Visible",
+            command=self._mm_toggle_visible,
+        ).pack(side="left", padx=(6, 2))
+        self.ttk.Button(
+            tbl_btn_row, text="Save Order",
+            command=self._mm_save_order,
+        ).pack(side="left", padx=(20, 0))
 
-        self.ttk.Label(view_frame, text="Sort strategy").grid(
-            row=0, column=1, sticky="e", padx=(20, 4),
+        # ── Sort ─────────────────────────────────────────────────────────────
+        sort_frame = self.ttk.LabelFrame(frame, text="Sort all systems")
+        sort_frame.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(0, 6))
+
+        self.ttk.Label(sort_frame, text="Strategy").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
         )
         self._mainmenu_sort_var = self.tk.StringVar(value="alpha")
         self.ttk.Combobox(
-            view_frame, textvariable=self._mainmenu_sort_var,
+            sort_frame, textvariable=self._mainmenu_sort_var,
             values=["alpha", "manufacturer", "year"],
             state="readonly", width=14,
-        ).grid(row=0, column=2, sticky="w", padx=4)
+        ).grid(row=0, column=1, sticky="w", padx=4)
+        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sort_frame, text="Apply (uncheck = dry-run)",
+            variable=self._mainmenu_apply_var,
+        ).grid(row=0, column=2, sticky="w", padx=8)
         self.ttk.Button(
-            view_frame, text="Sort", command=self._run_mainmenu_sort,
-        ).grid(row=0, column=3, sticky="w", padx=4)
+            sort_frame, text="Sort", command=self._run_mainmenu_sort,
+        ).grid(row=0, column=3, sticky="w", padx=4, pady=4)
 
-        # ── System-targeted actions ──────────────────────────────────────────
-        sys_frame = self.ttk.LabelFrame(
-            frame, text="System actions (move, hide/show, add, remove)",
-        )
-        sys_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
-        sys_frame.columnconfigure(1, weight=1)
+        # ── Add / Remove ─────────────────────────────────────────────────────
+        mgmt_frame = self.ttk.LabelFrame(frame, text="Add / Remove system")
+        mgmt_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        mgmt_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(sys_frame, text="System").grid(
+        self.ttk.Label(mgmt_frame, text="System").grid(
             row=0, column=0, sticky="w", padx=6, pady=4,
         )
         self._mainmenu_system_var = self.tk.StringVar()
         self._mainmenu_system_combo = self.ttk.Combobox(
-            sys_frame, textvariable=self._mainmenu_system_var,
+            mgmt_frame, textvariable=self._mainmenu_system_var,
             state="readonly", width=40,
         )
         self._mainmenu_system_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=4)
 
-        self.ttk.Label(sys_frame, text="Position (for Reorder)").grid(
-            row=1, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._mainmenu_position_var = self.tk.StringVar()
-        self.ttk.Entry(
-            sys_frame, textvariable=self._mainmenu_position_var, width=10,
-        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
-
-        action_row = self.ttk.Frame(sys_frame)
-        action_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
-        for label, sub in (
-            ("Move up",   "up"),
-            ("Move down", "down"),
-            ("Reorder",   "reorder"),
-            ("Hide",      "hide"),
-            ("Show",      "show"),
-            ("Add",       "add"),
-            ("Remove",    "remove"),
-        ):
+        mgmt_btn_row = self.ttk.Frame(mgmt_frame)
+        mgmt_btn_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
+        for label, sub in (("Add", "add"), ("Remove", "remove")):
             self.ttk.Button(
-                action_row, text=label,
+                mgmt_btn_row, text=label,
                 command=lambda s=sub: self._run_mainmenu_action(s),
             ).pack(side="left", padx=2)
 
-        frame.columnconfigure(1, weight=1)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(1, weight=1)
+
+        self._mm_refresh()
         return frame
+
+    # ── Main Menu table helpers ───────────────────────────────────────────────
+
+    def _mm_xml_path(self):
+        """Return the Path to Main Menu.xml, or None if hyperspin_dir unset."""
+        cfg = load_config()
+        hdir = (cfg.hyperspin_dir or "").strip()
+        if not hdir:
+            return None
+        from pathlib import Path as _Path
+        return _Path(hdir) / "Databases" / "Main Menu" / "Main Menu.xml"
+
+    def _mm_refresh(self) -> None:
+        xml_path = self._mm_xml_path()
+        if xml_path is None:
+            self._mm_data = []
+            self._mm_repopulate_tree()
+            self._append_output(
+                "Main Menu: HyperSpin directory not configured — "
+                "set it in the Setup tab first.\n"
+            )
+            return
+        if not xml_path.exists():
+            self._mm_data = []
+            self._mm_repopulate_tree()
+            self._append_output(f"Main Menu.xml not found: {xml_path}\n")
+            return
+        try:
+            root = self._mm_ET.parse(str(xml_path)).getroot()
+            self._mm_data = [
+                {"system": (el.get("name") or "").strip(),
+                 "enabled": el.get("enabled", "Yes")}
+                for el in root.findall("game")
+                if (el.get("name") or "").strip()
+            ]
+        except Exception as exc:
+            self._append_output(f"Error reading Main Menu.xml: {exc}\n")
+            return
+        self._mm_repopulate_tree()
+        self._append_output(
+            f"Main Menu loaded: {len(self._mm_data)} system(s) from {xml_path}\n"
+        )
+
+    def _mm_repopulate_tree(self) -> None:
+        self._mm_tree.delete(*self._mm_tree.get_children())
+        for i, entry in enumerate(self._mm_data, start=1):
+            visible = "Yes" if entry["enabled"].strip().lower() != "no" else "No"
+            tag = "hidden" if visible == "No" else ""
+            self._mm_tree.insert(
+                "", "end", iid=str(i),
+                values=(i, entry["system"], visible),
+                tags=(tag,),
+            )
+
+    def _mm_selected_index(self) -> int:
+        """Return 0-based index of the selected row, or -1 if nothing selected."""
+        sel = self._mm_tree.selection()
+        if not sel:
+            return -1
+        values = self._mm_tree.item(sel[0], "values")
+        return int(values[0]) - 1  # values[0] is 1-based position
+
+    def _mm_move_up(self) -> None:
+        idx = self._mm_selected_index()
+        if idx <= 0:
+            return
+        self._mm_data[idx], self._mm_data[idx - 1] = (
+            self._mm_data[idx - 1], self._mm_data[idx]
+        )
+        self._mm_repopulate_tree()
+        new_iid = str(idx)       # item is now at 1-based position idx
+        self._mm_tree.selection_set(new_iid)
+        self._mm_tree.see(new_iid)
+
+    def _mm_move_down(self) -> None:
+        idx = self._mm_selected_index()
+        if idx < 0 or idx >= len(self._mm_data) - 1:
+            return
+        self._mm_data[idx], self._mm_data[idx + 1] = (
+            self._mm_data[idx + 1], self._mm_data[idx]
+        )
+        self._mm_repopulate_tree()
+        new_iid = str(idx + 2)   # item is now at 1-based position idx+2
+        self._mm_tree.selection_set(new_iid)
+        self._mm_tree.see(new_iid)
+
+    def _mm_toggle_visible(self) -> None:
+        idx = self._mm_selected_index()
+        if idx < 0:
+            return
+        current = self._mm_data[idx]["enabled"].strip().lower()
+        self._mm_data[idx]["enabled"] = "No" if current != "no" else "Yes"
+        self._mm_repopulate_tree()
+        iid = str(idx + 1)
+        self._mm_tree.selection_set(iid)
+        self._mm_tree.see(iid)
+
+    def _mm_save_order(self) -> None:
+        xml_path = self._mm_xml_path()
+        if xml_path is None or not xml_path.exists():
+            self.messagebox.showerror(
+                "Cannot save",
+                "Main Menu.xml not found. Refresh the tab after configuring "
+                "HyperSpin directory in Setup.",
+            )
+            return
+        if not self._mm_data:
+            self.messagebox.showwarning("Nothing to save", "No systems loaded.")
+            return
+        try:
+            tree = self._mm_ET.parse(str(xml_path))
+            root = tree.getroot()
+            # Index existing <game> elements by name
+            by_name = {
+                (el.get("name") or "").strip(): el
+                for el in root.findall("game")
+            }
+            # Remove all <game> children
+            for el in list(root.findall("game")):
+                root.remove(el)
+            # Re-insert in new order, applying any visibility changes
+            for entry in self._mm_data:
+                name = entry["system"]
+                if name not in by_name:
+                    continue
+                el = by_name[name]
+                el.set("enabled", entry["enabled"])
+                root.append(el)
+            tree.write(str(xml_path), encoding="unicode", xml_declaration=False)
+        except Exception as exc:
+            self.messagebox.showerror("Save failed", str(exc))
+            return
+        self._append_output(f"Main Menu order saved to {xml_path}\n")
+        self.messagebox.showinfo("Saved", "Main Menu order saved.")
 
     def _run_mainmenu_sort(self) -> None:
         strategy = self._mainmenu_sort_var.get()
@@ -2847,22 +3013,10 @@ class _SpinDoctorGUI:
         if not system:
             self.messagebox.showwarning(
                 "System required",
-                "Type a system name (or its 1-based index from Show) "
-                "before clicking a Main Menu action.",
+                "Select a system from the dropdown before clicking Add or Remove.",
             )
             return
-        args = ["mainmenu", sub, system]
-        if sub == "reorder":
-            position = self._mainmenu_position_var.get().strip()
-            if not position.isdigit():
-                self.messagebox.showwarning(
-                    "Position required",
-                    "Reorder needs a 1-based position (an integer).",
-                )
-                return
-            args.append(position)
-        if self._mainmenu_apply_var.get():
-            args.append("--apply")
+        args = ["mainmenu", sub, system, "--apply"]
         self._run_cli("spindoctor", args)
 
     # ── Diagnose tab ──────────────────────────────────────────────────────────
