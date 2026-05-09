@@ -2431,15 +2431,22 @@ class _SpinDoctorGUI:
             row=0, column=0, sticky="w", padx=6, pady=2,
         )
         self._backup_restore_path_var = self.tk.StringVar()
-        self.ttk.Entry(
-            restore_frame, textvariable=self._backup_restore_path_var, width=50,
-        ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self._backup_restore_combo = self.ttk.Combobox(
+            restore_frame, textvariable=self._backup_restore_path_var, width=48,
+        )
+        self._backup_restore_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        restore_btn_frame = self.ttk.Frame(restore_frame)
+        restore_btn_frame.grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
         self.ttk.Button(
-            restore_frame, text="Browse…",
+            restore_btn_frame, text="Scan",
+            command=self._scan_backup_folders,
+        ).pack(side="left", padx=(0, 4))
+        self.ttk.Button(
+            restore_btn_frame, text="Browse…",
             command=lambda: self._browse_backup_dir(
                 self._backup_restore_path_var, "Pick backup folder to restore",
             ),
-        ).grid(row=0, column=2, sticky="w", padx=6, pady=2)
+        ).pack(side="left")
 
         self._backup_use_current_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -2484,6 +2491,33 @@ class _SpinDoctorGUI:
             # paths copy-pasted into a Windows shell don't trip on
             # forward slashes.
             var.set(str(Path(path)))
+
+    def _scan_backup_folders(self) -> None:
+        """Populate the restore Combobox by scanning the configured backup target."""
+        target = self._backup_target_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "No target folder",
+                "Set the backup target folder at the top of this tab first.",
+            )
+            return
+        target_path = Path(target)
+        if not target_path.exists():
+            self.messagebox.showwarning(
+                "Folder not found",
+                f"Backup target folder does not exist:\n{target_path}",
+            )
+            return
+        folders = sorted(
+            [str(p) for p in target_path.iterdir() if p.is_dir()],
+            reverse=True,
+        )
+        if not folders:
+            self.messagebox.showinfo("No backups found", f"No subdirectories in {target_path}.")
+            return
+        self._backup_restore_combo["values"] = folders
+        if not self._backup_restore_path_var.get():
+            self._backup_restore_path_var.set(folders[0])
 
     def _selected_backup_components(self) -> Optional[str]:
         """Return a comma-separated `--include` value, or None for "all".
@@ -2704,24 +2738,28 @@ class _SpinDoctorGUI:
             row=0, column=0, sticky="w", padx=6, pady=2,
         )
         self._migrate_undo_var = self.tk.StringVar(value="latest")
-        self.ttk.Entry(
-            undo_frame, textvariable=self._migrate_undo_var, width=40,
-        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
+        self._migrate_undo_combo = self.ttk.Combobox(
+            undo_frame, textvariable=self._migrate_undo_var, width=50,
+        )
+        self._migrate_undo_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            undo_frame, text="Refresh",
+            command=self._refresh_migrate_manifests,
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
         self.ttk.Label(
             undo_frame,
-            text="'latest' to undo the most recent migration, or a path "
-                 "under ~/.spindoctor/migrations/.",
+            text="Select a manifest or leave as 'latest'. Click Refresh to load available manifests.",
             foreground="#666",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6)
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6)
 
         self._migrate_undo_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             undo_frame, text="Apply (uncheck for dry-run)",
             variable=self._migrate_undo_apply_var,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
         btn_row = self.ttk.Frame(undo_frame)
-        btn_row.grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
         self.ttk.Button(
             btn_row, text="List manifests",
             command=lambda: self._run_cli(
@@ -2785,13 +2823,23 @@ class _SpinDoctorGUI:
         if not manifest:
             self.messagebox.showwarning(
                 "Manifest required",
-                "Type 'latest' or paste a manifest path before running Undo.",
+                "Select a manifest or type 'latest' before running Undo.",
             )
             return
         args = ["migrate", "--undo", manifest]
         if self._migrate_undo_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _refresh_migrate_manifests(self) -> None:
+        """Populate the undo Combobox with manifests from the migrations dir."""
+        from .config import CONFIG_DIR
+        migrations_dir = CONFIG_DIR / "migrations"
+        manifests = sorted(migrations_dir.glob("migrate-*.json"), reverse=True)
+        names = ["latest"] + [p.name for p in manifests]
+        self._migrate_undo_combo["values"] = names
+        if not self._migrate_undo_var.get():
+            self._migrate_undo_var.set("latest")
 
     # ── Main Menu tab ─────────────────────────────────────────────────────────
 
@@ -4462,12 +4510,18 @@ class _SpinDoctorGUI:
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
         self._lg_target_var = self.tk.StringVar()
-        self.ttk.Entry(
-            cfg_frame, textvariable=self._lg_target_var, width=30,
+        _DEMUL_TARGETS = [
+            "", "mame", "demul07a", "model2", "supermodel",
+            "lindbergh", "flycast", "chihiro", "dolphin",
+            "ringedge2", "globalvr",
+        ]
+        self.ttk.Combobox(
+            cfg_frame, textvariable=self._lg_target_var,
+            values=_DEMUL_TARGETS, width=28,
         ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Label(
             cfg_frame,
-            text="DemulShooter -target value. Auto-detected for known systems.",
+            text="DemulShooter -target value. Leave blank to auto-detect from system name.",
             foreground="#666",
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6)
 
