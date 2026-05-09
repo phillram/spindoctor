@@ -3327,6 +3327,21 @@ class _SpinDoctorGUI:
             command=self._run_generate_config,
         ).pack(side="left", padx=6)
 
+        # ── Full refresh shortcut ─────────────────────────────────────────────
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=(10, 6))
+        full_row = self.ttk.Frame(frame)
+        full_row.pack(anchor="w", pady=(0, 4))
+        self.ttk.Button(
+            full_row, text="Full metadata refresh",
+            command=self._run_full_metadata_refresh,
+        ).pack(side="left")
+        self.ttk.Label(
+            full_row,
+            text="  Runs fetch-meta → fetch-media → update-db in sequence. "
+                 "Stops on first error.",
+            foreground="#666",
+        ).pack(side="left")
+
         return frame
 
     def _meta_system_args(self) -> Optional[list[str]]:
@@ -3405,6 +3420,61 @@ class _SpinDoctorGUI:
         if self._meta_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _run_full_metadata_refresh(self) -> None:
+        """Chain fetch-meta → fetch-media → update-db, stopping on first error."""
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+
+        fetch_meta_args = ["fetch-meta", *sys_args]
+        if self._meta_auto_best_var.get():
+            fetch_meta_args.append("--auto-best")
+        if self._meta_all_games_var.get():
+            fetch_meta_args.append("--all-games")
+        if self._meta_apply_var.get():
+            fetch_meta_args.append("--apply")
+
+        fetch_media_args = ["fetch-media", *sys_args]
+        selected_types = ",".join(
+            t for t, v in self._meta_type_vars.items() if v.get()
+        )
+        if selected_types:
+            fetch_media_args += ["--types", selected_types]
+        if self._meta_overwrite_var.get():
+            fetch_media_args.append("--overwrite")
+        if self._meta_apply_var.get():
+            fetch_media_args.append("--apply")
+
+        update_db_args = ["update-db", *sys_args]
+        if self._meta_remove_orphans_var.get():
+            update_db_args.append("--remove-orphans")
+        if self._meta_strip_variant_var.get():
+            update_db_args.append("--strip-variant-tags")
+        if self._meta_apply_var.get():
+            update_db_args.append("--apply")
+
+        steps: list[list[str]] = [
+            fetch_meta_args,
+            fetch_media_args,
+            update_db_args,
+        ]
+
+        def run_next(remaining: list[list[str]], rc: int) -> None:
+            if rc != 0:
+                self._append_output(
+                    f"\nFull refresh stopped — previous step exited with code {rc}.\n"
+                )
+                return
+            if not remaining:
+                self._append_output("\nFull metadata refresh complete.\n")
+                return
+            self._run_cli(
+                "spindoctor", remaining[0],
+                on_complete=lambda code: run_next(remaining[1:], code),
+            )
+
+        run_next(steps, 0)
 
     # ── Curate tab ────────────────────────────────────────────────────────────
 
