@@ -345,6 +345,11 @@ class _SpinDoctorGUI:
         self._run_history: list[_RunRecord] = []
         self._current_run: Optional[_RunRecord] = None
 
+        # Tab-badge state — tracks which notebook tab launched the
+        # currently running command so we can stamp ✓/✗ on finish.
+        self._tab_base_names: list[str] = []  # base label per tab index
+        self._running_tab_idx: Optional[int] = None
+
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
 
@@ -383,6 +388,7 @@ class _SpinDoctorGUI:
         main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
 
         nb = self.ttk.Notebook(main_paned)
+        self._nb = nb
         # Wrap each tab in a Canvas + always-visible Scrollbar so
         # cabinet owners on smaller screens (1024×768, 1280×720) can
         # still reach widgets that overflow the window. Each tab
@@ -405,6 +411,7 @@ class _SpinDoctorGUI:
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
+        self._tab_base_names.append("Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
         main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
 
@@ -517,6 +524,7 @@ class _SpinDoctorGUI:
         canvas.bind("<Leave>", _unbind_wheel)
 
         nb.add(container, text=label)
+        self._tab_base_names.append(label)
 
     # ── Logs tab ──────────────────────────────────────────────────────────────
 
@@ -4840,6 +4848,8 @@ class _SpinDoctorGUI:
             f"{'[DRY RUN] ' if is_dry_run else ''}Running: "
             f"{binary} {' '.join(args)}"
         )
+        self._running_tab_idx = self._nb.index("current")
+        self._set_tab_badge(self._running_tab_idx, "⟳")
         self._stop_btn.configure(state="normal")
         # Logs tab refreshes itself from _run_history when it's open;
         # nudge it now so the new row appears immediately.
@@ -4943,6 +4953,13 @@ class _SpinDoctorGUI:
         else:
             self._set_status(f"Last command exited with code {marker.rc}.")
 
+        if self._running_tab_idx is not None:
+            self._set_tab_badge(
+                self._running_tab_idx,
+                "✓" if marker.rc == 0 else "✗",
+            )
+            self._running_tab_idx = None
+
         # Re-render the Logs tab so the row's exit-code column updates.
         self._refresh_logs_tab()
 
@@ -4976,6 +4993,13 @@ class _SpinDoctorGUI:
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)
+
+    def _set_tab_badge(self, idx: int, badge: str) -> None:
+        """Append a status glyph to a notebook tab label (main thread only)."""
+        if idx < 0 or idx >= len(self._tab_base_names):
+            return
+        base = self._tab_base_names[idx]
+        self._nb.tab(idx, text=f"{base} {badge}" if badge else base)
 
     def _fit_geometry(self, win, ideal_w: int, ideal_h: int) -> None:
         """Set dialog geometry capped to the current screen size minus margins.
