@@ -115,6 +115,14 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
 )
 
+# Scraper credential fields shown below the path fields in the Setup tab.
+# Tuples: (config_key, label, is_password)
+_CRED_FIELDS: tuple[tuple[str, str, bool], ...] = (
+    ("screenscraper_user", "ScreenScraper username", False),
+    ("screenscraper_pass", "ScreenScraper password", True),
+    ("thegamesdb_key",     "TheGamesDB API key",     True),
+)
+
 
 # Components offered as checkboxes on the Backup tab. Mirrors
 # `backup.ALL_COMPONENTS` and the `--include` choices in
@@ -1987,10 +1995,38 @@ class _SpinDoctorGUI:
                 command=lambda v=var, k=key: self._browse_dir(v, k),
             ).grid(row=i, column=2, sticky="w", pady=2)
 
+        # ── Scraper credentials ───────────────────────────────────────────────
+        cred_sep_row = len(_SETUP_FIELDS) + 1
+        self.ttk.Separator(frame, orient="horizontal").grid(
+            row=cred_sep_row, column=0, columnspan=3, sticky="ew", pady=(10, 4)
+        )
+        self.ttk.Label(
+            frame, text="Scraper credentials",
+            font=("TkDefaultFont", 9, "bold"),
+        ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
+        self.ttk.Label(
+            frame,
+            text=("Used by `spindoctor fetch-meta` and `spindoctor fetch-media`. "
+                  "Leave blank if you don't use those commands."),
+            wraplength=780, justify="left",
+        ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        for j, (key, label, is_password) in enumerate(_CRED_FIELDS):
+            row = cred_sep_row + 3 + j
+            existing = getattr(cfg, key, "") or ""
+            var = self.tk.StringVar(value=existing)
+            self._setup_vars[key] = var
+            self.ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=2)
+            self.ttk.Entry(
+                frame, textvariable=var, width=60,
+                show="*" if is_password else "",
+            ).grid(row=row, column=1, sticky="ew", padx=6, pady=2)
+
         frame.columnconfigure(1, weight=1)
 
         btn_row = self.ttk.Frame(frame)
-        btn_row.grid(row=len(_SETUP_FIELDS) + 1, column=0, columnspan=3, sticky="w", pady=(12, 0))
+        btn_row_index = cred_sep_row + 3 + len(_CRED_FIELDS)
+        btn_row.grid(row=btn_row_index, column=0, columnspan=3, sticky="w", pady=(12, 0))
         self.ttk.Button(btn_row, text="Save configuration", command=self._save_setup).pack(side="left")
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
@@ -2032,6 +2068,8 @@ class _SpinDoctorGUI:
     def _save_setup(self) -> None:
         cfg = load_config()
         for key, _label, _default, _allow_blank in _SETUP_FIELDS:
+            setattr(cfg, key, self._setup_vars[key].get().strip())
+        for key, _label, _is_password in _CRED_FIELDS:
             setattr(cfg, key, self._setup_vars[key].get().strip())
         save_config(cfg)
         ok, errors = cfg.is_valid()
