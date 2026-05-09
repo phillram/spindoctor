@@ -2311,6 +2311,7 @@ class _SpinDoctorGUI:
             ("_led_system_combo",      "_led_system_var",      "MAME"),
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
+            ("_systems_old_combo",     "_systems_old_var",     None),
         ]
         for combo_attr, var_attr, default in combos_and_vars:
             combo = getattr(self, combo_attr, None)
@@ -3201,18 +3202,23 @@ class _SpinDoctorGUI:
         media_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             media_frame,
-            text=("Comma-separated types (wheel, background, snap, "
-                  "video, trailer, title, theme, fade, sound). Leave "
-                  "blank for the project default."),
+            text="Media types to fetch (leave all unchecked for project default):",
             foreground="#666",
-        ).pack(anchor="w", padx=6, pady=(2, 0))
-        types_row = self.ttk.Frame(media_frame)
-        types_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(types_row, text="Types").pack(side="left")
-        self._meta_types_var = self.tk.StringVar(value="wheel,background")
-        self.ttk.Entry(
-            types_row, textvariable=self._meta_types_var, width=40,
-        ).pack(side="left", padx=6)
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        types_grid = self.ttk.Frame(media_frame)
+        types_grid.pack(anchor="w", padx=6, pady=(0, 2))
+        _MEDIA_TYPES = [
+            "wheel", "background", "snap", "video",
+            "trailer", "title", "theme", "fade", "sound",
+        ]
+        _MEDIA_DEFAULTS = {"wheel", "background"}
+        self._meta_type_vars: dict[str, "tk_mod.BooleanVar"] = {}
+        for col, mtype in enumerate(_MEDIA_TYPES):
+            var = self.tk.BooleanVar(value=(mtype in _MEDIA_DEFAULTS))
+            self._meta_type_vars[mtype] = var
+            self.ttk.Checkbutton(
+                types_grid, text=mtype, variable=var,
+            ).grid(row=0, column=col, sticky="w", padx=(0, 8))
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             media_frame, text="Overwrite existing files (--overwrite)",
@@ -3309,9 +3315,11 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
         args = ["fetch-media", *sys_args]
-        types = self._meta_types_var.get().strip()
-        if types:
-            args += ["--types", types]
+        selected_types = ",".join(
+            t for t, v in self._meta_type_vars.items() if v.get()
+        )
+        if selected_types:
+            args += ["--types", selected_types]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
         if self._meta_apply_var.get():
@@ -3388,18 +3396,30 @@ class _SpinDoctorGUI:
             cur_top, text="All systems", variable=self._curate_all_var,
         ).pack(side="left", padx=6)
 
+        cur_regions_label = self.ttk.Frame(cur_frame)
+        cur_regions_label.pack(fill="x", padx=6, pady=(4, 0))
+        self.ttk.Label(
+            cur_regions_label,
+            text="Regions to prefer (none checked = use config default):",
+        ).pack(side="left")
+        cur_regions_grid = self.ttk.Frame(cur_frame)
+        cur_regions_grid.pack(fill="x", padx=6, pady=(2, 2))
+        _CURATE_REGIONS = [
+            "USA", "World", "Europe", "Japan",
+            "Korea", "Brazil", "Australia", "Spain",
+            "France", "Germany", "Italy",
+        ]
+        self._curate_region_vars: dict[str, "tk_mod.BooleanVar"] = {}
+        for col, region in enumerate(_CURATE_REGIONS):
+            var = self.tk.BooleanVar(value=False)
+            self._curate_region_vars[region] = var
+            self.ttk.Checkbutton(
+                cur_regions_grid, text=region, variable=var,
+            ).grid(row=0, column=col, sticky="w", padx=(0, 6))
+
         cur_opts = self.ttk.Frame(cur_frame)
         cur_opts.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(cur_opts, text="Regions (comma-separated, optional)").pack(
-            side="left",
-        )
-        self._curate_regions_var = self.tk.StringVar()
-        self.ttk.Entry(
-            cur_opts, textvariable=self._curate_regions_var, width=20,
-        ).pack(side="left", padx=6)
-        self.ttk.Label(cur_opts, text="Prefer revision").pack(
-            side="left", padx=(10, 0),
-        )
+        self.ttk.Label(cur_opts, text="Prefer revision").pack(side="left")
         self._curate_revision_var = self.tk.StringVar(value="latest")
         self.ttk.Combobox(
             cur_opts, textvariable=self._curate_revision_var,
@@ -3463,8 +3483,9 @@ class _SpinDoctorGUI:
             side="left",
         )
         self._cleanup_older_var = self.tk.StringVar()
-        self.ttk.Entry(
-            cln_opts, textvariable=self._cleanup_older_var, width=6,
+        self.tk.Spinbox(
+            cln_opts, from_=1, to=365, textvariable=self._cleanup_older_var,
+            width=6,
         ).pack(side="left", padx=6)
         self._cleanup_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -3546,7 +3567,9 @@ class _SpinDoctorGUI:
             return
         args = ["curate", *sys_args,
                 "--prefer-revision", self._curate_revision_var.get()]
-        regions = self._curate_regions_var.get().strip()
+        regions = ",".join(
+            r for r, v in self._curate_region_vars.items() if v.get()
+        )
         if regions:
             args += ["--regions", regions]
         if self._curate_proto_var.get():
@@ -3602,7 +3625,9 @@ class _SpinDoctorGUI:
             )
             return
 
-        regions = self._curate_regions_var.get().strip()
+        regions = ",".join(
+            r for r, v in self._curate_region_vars.items() if v.get()
+        )
         prefer_latest = self._curate_revision_var.get() == "latest"
         prefer_no_proto = not self._curate_proto_var.get()
 
@@ -4107,9 +4132,11 @@ class _SpinDoctorGUI:
         rn_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(rn_row, text="Old name").pack(side="left")
         self._systems_old_var = self.tk.StringVar()
-        self.ttk.Entry(
-            rn_row, textvariable=self._systems_old_var, width=20,
-        ).pack(side="left", padx=6)
+        self._systems_old_combo = self.ttk.Combobox(
+            rn_row, textvariable=self._systems_old_var,
+            state="readonly", width=24,
+        )
+        self._systems_old_combo.pack(side="left", padx=6)
         self.ttk.Label(rn_row, text="New name").pack(side="left", padx=(10, 0))
         self._systems_new_var = self.tk.StringVar()
         self.ttk.Entry(
@@ -4488,8 +4515,9 @@ class _SpinDoctorGUI:
                 side="left",
             )
             self._tools_delay_var = self.tk.StringVar(value="2")
-            self.ttk.Entry(
-                delay_row, textvariable=self._tools_delay_var, width=6,
+            self.tk.Spinbox(
+                delay_row, from_=0, to=60, textvariable=self._tools_delay_var,
+                width=6,
             ).pack(side="left", padx=6)
 
             sched_btns = self.ttk.Frame(sched_frame)
