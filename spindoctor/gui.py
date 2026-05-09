@@ -2324,6 +2324,13 @@ class _SpinDoctorGUI:
             if systems and not var.get():
                 var.set(default if default and default not in systems else (systems[0] if systems else ""))
 
+        # Migrate systems Listbox — different widget type, handled separately.
+        lb = getattr(self, "_migrate_systems_lb", None)
+        if lb is not None:
+            lb.delete(0, self.tk.END)
+            for s in systems:
+                lb.insert(self.tk.END, s)
+
     def _run_audit(self) -> None:
         system = self._system_var.get().strip()
         if not system:
@@ -2602,31 +2609,58 @@ class _SpinDoctorGUI:
         opt_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         opt_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(opt_frame, text="Systems filter (optional)").grid(
-            row=0, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._migrate_systems_var = self.tk.StringVar()
-        self.ttk.Entry(
-            opt_frame, textvariable=self._migrate_systems_var, width=40,
-        ).grid(row=0, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Label(
             opt_frame,
-            text="Comma-separated. Only applies to the roms component.",
+            text="Systems filter (optional — only applies to roms component):",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 0))
+        migrate_list_frame = self.ttk.Frame(opt_frame)
+        migrate_list_frame.grid(
+            row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(2, 0),
+        )
+        migrate_list_frame.columnconfigure(0, weight=1)
+        self._migrate_systems_lb = self.tk.Listbox(
+            migrate_list_frame,
+            selectmode=self.tk.MULTIPLE,
+            height=5,
+            exportselection=False,
+        )
+        migrate_lb_vsb = self.ttk.Scrollbar(
+            migrate_list_frame, orient="vertical",
+            command=self._migrate_systems_lb.yview,
+        )
+        self._migrate_systems_lb.configure(yscrollcommand=migrate_lb_vsb.set)
+        self._migrate_systems_lb.grid(row=0, column=0, sticky="ew")
+        migrate_lb_vsb.grid(row=0, column=1, sticky="ns")
+        migrate_lb_btns = self.ttk.Frame(opt_frame)
+        migrate_lb_btns.grid(
+            row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 4),
+        )
+        self.ttk.Button(
+            migrate_lb_btns, text="Select all",
+            command=lambda: self._migrate_systems_lb.selection_set(0, self.tk.END),
+        ).pack(side="left")
+        self.ttk.Button(
+            migrate_lb_btns, text="Clear",
+            command=lambda: self._migrate_systems_lb.selection_clear(0, self.tk.END),
+        ).pack(side="left", padx=6)
+        self.ttk.Label(
+            migrate_lb_btns,
+            text="(nothing selected = migrate all systems)",
             foreground="#666",
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6)
+        ).pack(side="left", padx=4)
 
         self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             opt_frame, text="Copy instead of move (--keep-source)",
             variable=self._migrate_keep_source_var,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self._migrate_verify_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             opt_frame,
             text="SHA1-verify after copy (--verify; only with Copy)",
             variable=self._migrate_verify_var,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self._migrate_no_update_config_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -2634,24 +2668,24 @@ class _SpinDoctorGUI:
             text="Don't rewrite config.json with new paths "
                  "(--no-update-config)",
             variable=self._migrate_no_update_config_var,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             opt_frame,
             text="Keep original folder names (--preserve-names)",
             variable=self._migrate_preserve_names_var,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self._migrate_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             opt_frame, text="Apply (uncheck for dry-run)",
             variable=self._migrate_apply_var,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self.ttk.Button(
             opt_frame, text="Run migration", command=self._run_migrate,
-        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=8, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         # ── Undo / list manifests ────────────────────────────────────────────
         undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
@@ -2720,8 +2754,11 @@ class _SpinDoctorGUI:
         args = ["migrate", "--target", target]
         if include is not None:
             args += ["--include", include]
-        systems = self._migrate_systems_var.get().strip()
-        if systems:
+        selected_indices = self._migrate_systems_lb.curselection()
+        if selected_indices:
+            systems = ",".join(
+                self._migrate_systems_lb.get(i) for i in selected_indices
+            )
             args += ["--systems", systems]
         if self._migrate_keep_source_var.get():
             args.append("--keep-source")
