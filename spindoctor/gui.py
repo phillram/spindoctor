@@ -152,6 +152,26 @@ _MIGRATE_COMPONENTS: tuple[tuple[str, str], ...] = (
     ("ledblinky",       "LEDBlinky install"),
 )
 
+# Cleanup categories exposed as checkboxes on the Curate tab.
+# Each entry: (cli-key, friendly-label, safe-by-default).
+# Safe categories are pre-checked; unsafe ones start unchecked with a
+# warning that they remove undo/recovery options.
+_CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
+    ("metadata-cache",        "Scraper API responses",          True),
+    ("match-cache",           "Match decisions",                True),
+    ("media-pick-cache",      "Media picker decisions",         True),
+    ("pc-titles-cache",       "PC/Steam title confirmations",   True),
+    ("listxml-cache",         "MAME -listxml cache",            True),
+    ("preview-temp",          "Preview thumbnails",             True),
+    ("partial-downloads",     "Interrupted downloads",          True),
+    ("misplaced-manifests",   "Misplaced-ROM reports",          True),
+    ("audit-exports",         "Audit CSV exports",              True),
+    ("migration-manifests",   "Migration undo manifests",       False),
+    ("restructure-manifests", "Restructure undo manifests",     False),
+    ("db-backups",            "HyperSpin DB backups",           False),
+    ("ledblinky-backups",     "LEDBlinky file backups",         False),
+)
+
 
 # Curated dropdown for the Custom Command tab. Each entry is the argv
 # string the user would type after `spindoctor` on the command line, in
@@ -2108,21 +2128,25 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 12))
 
-        for label, binary, args in (
-            ("Refresh Favorites",       "spindoctor-fav",    ["rebuild", "--apply"]),
-            ("Refresh Recently Played", "spindoctor-recent", ["rebuild", "--apply"]),
-            ("Refresh Most Played",     "spindoctor-stats",  ["build-wheel", "--apply"]),
+        wheels_checks = self.ttk.Frame(frame)
+        wheels_checks.pack(anchor="w", pady=(0, 6))
+        self._wheel_fav_var    = self.tk.BooleanVar(value=True)
+        self._wheel_recent_var = self.tk.BooleanVar(value=True)
+        self._wheel_stats_var  = self.tk.BooleanVar(value=True)
+        for var, label in (
+            (self._wheel_fav_var,    "Favorites"),
+            (self._wheel_recent_var, "Recently Played"),
+            (self._wheel_stats_var,  "Most Played"),
         ):
-            self.ttk.Button(
-                frame, text=label, width=28,
-                command=lambda b=binary, a=args: self._run_cli(b, a),
-            ).pack(anchor="w", pady=3)
+            self.ttk.Checkbutton(
+                wheels_checks, text=label, variable=var,
+            ).pack(anchor="w", pady=2)
 
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
         self.ttk.Button(
-            frame, text="Refresh All Three", width=28,
+            frame, text="Refresh selected", width=28,
             command=self._refresh_all_wheels,
         ).pack(anchor="w", pady=3)
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
 
         # ── HyperSpin integration helpers ────────────────────────────────────
         # The custom wheels (Favorites / Recently Played / Most Played) write
@@ -2193,22 +2217,35 @@ class _SpinDoctorGUI:
         run_next(steps, 0)
 
     def _refresh_all_wheels(self) -> None:
-        # Chained via a callback queue so each subprocess runs to completion
-        # before the next starts and they share the output panel cleanly.
-        steps: list[tuple[str, list[str]]] = [
-            ("spindoctor-fav",    ["rebuild", "--apply"]),
-            ("spindoctor-recent", ["rebuild", "--apply"]),
-            ("spindoctor-stats",  ["build-wheel", "--apply"]),
+        all_steps: list[tuple[str, str, list[str]]] = [
+            ("Favorites",        "spindoctor-fav",    ["rebuild", "--apply"]),
+            ("Recently Played",  "spindoctor-recent", ["rebuild", "--apply"]),
+            ("Most Played",      "spindoctor-stats",  ["build-wheel", "--apply"]),
         ]
+        check_vars = [self._wheel_fav_var, self._wheel_recent_var, self._wheel_stats_var]
+        steps = [
+            (name, binary, args)
+            for (name, binary, args), var in zip(all_steps, check_vars)
+            if var.get()
+        ]
+        if not steps:
+            self.messagebox.showwarning(
+                "Nothing selected",
+                "Tick at least one wheel to refresh.",
+            )
+            return
+        total = len(steps)
 
-        def run_next(remaining: list[tuple[str, list[str]]], rc: int) -> None:
+        def run_next(remaining: list[tuple[str, str, list[str]]], rc: int) -> None:
             if rc != 0:
                 self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
                 return
             if not remaining:
-                self._append_output("\nAll wheels refreshed.\n")
+                self._append_output("\nWheel refresh complete.\n")
                 return
-            binary, args = remaining[0]
+            step_num = total - len(remaining) + 1
+            name, binary, args = remaining[0]
+            self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
 
         run_next(steps, 0)
@@ -2518,6 +2555,7 @@ class _SpinDoctorGUI:
         self._backup_restore_combo["values"] = folders
         if not self._backup_restore_path_var.get():
             self._backup_restore_path_var.set(folders[0])
+        self._set_status(f"Found {len(folders)} backup(s) in {target_path.name}.")
 
     def _selected_backup_components(self) -> Optional[str]:
         """Return a comma-separated `--include` value, or None for "all".
@@ -2933,7 +2971,7 @@ class _SpinDoctorGUI:
         ).grid(row=0, column=1, sticky="w", padx=4)
         self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            sort_frame, text="Apply (uncheck = dry-run)",
+            sort_frame, text="Apply (uncheck for dry-run)",
             variable=self._mainmenu_apply_var,
         ).grid(row=0, column=2, sticky="w", padx=8)
         self.ttk.Button(
@@ -3525,13 +3563,14 @@ class _SpinDoctorGUI:
         if self._meta_apply_var.get():
             update_db_args.append("--apply")
 
-        steps: list[list[str]] = [
-            fetch_meta_args,
-            fetch_media_args,
-            update_db_args,
+        step_defs: list[tuple[str, list[str]]] = [
+            ("fetch-meta",  fetch_meta_args),
+            ("fetch-media", fetch_media_args),
+            ("update-db",   update_db_args),
         ]
+        total = len(step_defs)
 
-        def run_next(remaining: list[list[str]], rc: int) -> None:
+        def run_next(remaining: list[tuple[str, list[str]]], rc: int) -> None:
             if rc != 0:
                 self._append_output(
                     f"\nFull refresh stopped — previous step exited with code {rc}.\n"
@@ -3540,12 +3579,15 @@ class _SpinDoctorGUI:
             if not remaining:
                 self._append_output("\nFull metadata refresh complete.\n")
                 return
+            step_num = total - len(remaining) + 1
+            name, args = remaining[0]
+            self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(
-                "spindoctor", remaining[0],
+                "spindoctor", args,
                 on_complete=lambda code: run_next(remaining[1:], code),
             )
 
-        run_next(steps, 0)
+        run_next(step_defs, 0)
 
     # ── Curate tab ────────────────────────────────────────────────────────────
 
@@ -3662,22 +3704,45 @@ class _SpinDoctorGUI:
         # ── cleanup ──────────────────────────────────────────────────────────
         cln_frame = self.ttk.LabelFrame(frame, text="Cache cleanup")
         cln_frame.pack(fill="x", pady=(4, 4))
+
+        # Category checkboxes — safe ones pre-checked, unsafe unchecked.
+        cln_cats_frame = self.ttk.Frame(cln_frame)
+        cln_cats_frame.pack(fill="x", padx=6, pady=(4, 2))
+        self._cleanup_cat_vars: dict[str, "tk.BooleanVar"] = {}
+        safe_cats  = [(k, lbl) for k, lbl, s in _CLEANUP_CATEGORIES if s]
+        unsafe_cats = [(k, lbl) for k, lbl, s in _CLEANUP_CATEGORIES if not s]
+        cols = 3
+        for i, (key, lbl) in enumerate(safe_cats):
+            var = self.tk.BooleanVar(value=True)
+            self._cleanup_cat_vars[key] = var
+            self.ttk.Checkbutton(
+                cln_cats_frame, text=lbl, variable=var,
+            ).grid(row=i // cols, column=i % cols, sticky="w", padx=4, pady=1)
+
+        unsafe_row = (len(safe_cats) + cols - 1) // cols
         self.ttk.Label(
-            cln_frame,
-            text=("Categories: metadata_cache, mame_listxml_cache, "
-                  "match_cache, media_pick_cache, pc_titles_cache, "
-                  "old manifests."),
-            foreground="#666",
-        ).pack(anchor="w", padx=6, pady=(2, 0))
+            cln_cats_frame,
+            text="Unsafe (removes undo/recovery options):",
+            foreground="#888",
+        ).grid(row=unsafe_row, column=0, columnspan=cols, sticky="w",
+               padx=4, pady=(6, 1))
+        unsafe_row += 1
+        for i, (key, lbl) in enumerate(unsafe_cats):
+            var = self.tk.BooleanVar(value=False)
+            self._cleanup_cat_vars[key] = var
+            self.ttk.Checkbutton(
+                cln_cats_frame, text=lbl, variable=var, foreground="#888",
+            ).grid(row=unsafe_row + i // cols, column=i % cols,
+                   sticky="w", padx=4, pady=1)
 
         cln_opts = self.ttk.Frame(cln_frame)
-        cln_opts.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(cln_opts, text="Older than (days, optional)").pack(
+        cln_opts.pack(fill="x", padx=6, pady=(4, 2))
+        self.ttk.Label(cln_opts, text="Older than (days, 0 = any age)").pack(
             side="left",
         )
-        self._cleanup_older_var = self.tk.StringVar()
+        self._cleanup_older_var = self.tk.StringVar(value="30")
         self.tk.Spinbox(
-            cln_opts, from_=1, to=365, textvariable=self._cleanup_older_var,
+            cln_opts, from_=0, to=365, textvariable=self._cleanup_older_var,
             width=6,
         ).pack(side="left", padx=6)
         self._cleanup_apply_var = self.tk.BooleanVar(value=False)
@@ -3686,18 +3751,19 @@ class _SpinDoctorGUI:
             variable=self._cleanup_apply_var,
         ).pack(side="left", padx=10)
 
+        cln_reset_row = self.ttk.Frame(cln_frame)
+        cln_reset_row.pack(anchor="w", padx=6, pady=(0, 2))
+        self.ttk.Button(
+            cln_reset_row, text="Reset to defaults",
+            command=self._cleanup_reset_cats,
+        ).pack(side="left")
+
         cln_btns = self.ttk.Frame(cln_frame)
         cln_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            cln_btns, text="List categories",
-            command=lambda: self._run_cli(
-                "spindoctor", ["cleanup", "categories"],
-            ),
-        ).pack(side="left")
-        self.ttk.Button(
             cln_btns, text="Audit caches",
             command=lambda: self._run_cli("spindoctor", ["cleanup", "audit"]),
-        ).pack(side="left", padx=6)
+        ).pack(side="left")
         self.ttk.Button(
             cln_btns, text="Run cleanup",
             command=self._run_cleanup,
@@ -4086,10 +4152,28 @@ class _SpinDoctorGUI:
         )
         win.destroy()
 
+    def _cleanup_reset_cats(self) -> None:
+        for key, _lbl, safe in _CLEANUP_CATEGORIES:
+            var = self._cleanup_cat_vars.get(key)
+            if var is not None:
+                var.set(safe)
+
     def _run_cleanup(self) -> None:
+        selected_safe   = [k for k, _l, s in _CLEANUP_CATEGORIES if s     and self._cleanup_cat_vars.get(k, self.tk.BooleanVar()).get()]
+        selected_unsafe = [k for k, _l, s in _CLEANUP_CATEGORIES if not s and self._cleanup_cat_vars.get(k, self.tk.BooleanVar()).get()]
+        selected = selected_safe + selected_unsafe
+        if not selected:
+            self.messagebox.showwarning(
+                "Nothing selected",
+                "Tick at least one category before running cleanup.",
+            )
+            return
         args = ["cleanup", "run"]
+        args += ["--include", ",".join(selected)]
+        if selected_unsafe:
+            args.append("--include-unsafe")
         older = self._cleanup_older_var.get().strip()
-        if older:
+        if older and older != "0":
             if not older.isdigit():
                 self.messagebox.showwarning(
                     "Invalid value",
