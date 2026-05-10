@@ -31,7 +31,7 @@ The `.py` wrappers in `scripts/` themselves require a Python install — they're
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
-> **Want a windowed alternative to the `.bat` files?** The Wheels tab in `spindoctor-gui` (binary route) or `spindoctor-gui.exe` (pip route) has a button per refresh and a Refresh All Three — same outcome as `Refresh Both.bat`, no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
+> **Want a windowed alternative to the `.bat` files?** The Wheels tab in `spindoctor-gui` has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh Both.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
 
 ## `spindoctor-fav`
 
