@@ -2268,7 +2268,7 @@ class _SpinDoctorGUI:
             frame, textvariable=self._system_var, state="readonly", width=40
         )
         self._system_combo.grid(row=1, column=1, sticky="w", padx=6)
-        self.ttk.Button(frame, text="Reload list", command=self._refresh_systems).grid(
+        self.ttk.Button(frame, text="Reload list", command=lambda: self._refresh_systems(notify=True)).grid(
             row=1, column=2, sticky="w"
         )
 
@@ -2337,7 +2337,7 @@ class _SpinDoctorGUI:
             missing_label=f"roms_dir/{system}",
         )
 
-    def _refresh_systems(self) -> None:
+    def _refresh_systems(self, *, notify: bool = False) -> None:
         try:
             systems = get_systems(load_config())
         except Exception as exc:  # noqa: BLE001 — surface any config error to UI
@@ -2375,6 +2375,12 @@ class _SpinDoctorGUI:
             lb.delete(0, self.tk.END)
             for s in systems:
                 lb.insert(self.tk.END, s)
+
+        if notify:
+            if systems:
+                self._set_status(f"Reloaded {len(systems)} system(s).")
+            else:
+                self._set_status("No systems found — check paths in the Setup tab.")
 
     def _run_audit(self) -> None:
         system = self._system_var.get().strip()
@@ -3202,11 +3208,17 @@ class _SpinDoctorGUI:
         ]
         grid = self.ttk.Frame(frame)
         grid.pack(anchor="w", pady=4)
+        def _scan_done(code: int) -> None:
+            if code == 0:
+                self._set_status("Scan complete — see output for results.")
+            else:
+                self._set_status(f"Scan finished with errors (exit {code}) — see output for details.")
+
         for i, (label, args) in enumerate(rows):
             r, c = divmod(i, 2)
             self.ttk.Button(
                 grid, text=label, width=32,
-                command=lambda a=args: self._run_cli("spindoctor", a),
+                command=lambda a=args: self._run_cli("spindoctor", a, on_complete=_scan_done),
             ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
 
         # ── Find global ──────────────────────────────────────────────────────
@@ -3578,6 +3590,7 @@ class _SpinDoctorGUI:
                 return
             if not remaining:
                 self._append_output("\nFull metadata refresh complete.\n")
+                self._set_status("Full metadata refresh complete.")
                 return
             step_num = total - len(remaining) + 1
             name, args = remaining[0]
@@ -4338,6 +4351,10 @@ class _SpinDoctorGUI:
             self._append_output(
                 f"\n[ignore viewer] removed {removed}/{len(names)} entr"
                 f"{'y' if len(names) == 1 else 'ies'} from '{target}'.\n"
+            )
+            self._set_status(
+                f"Removed {removed} entr{'y' if removed == 1 else 'ies'} "
+                f"from '{target}'."
             )
             refresh_systems()
             refresh_list()
