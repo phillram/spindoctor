@@ -9,11 +9,13 @@
 #
 #   docs/images/gui-launcher-setup-tab.png
 #       Setup tab populated with cabinet paths (ROMs, HyperSpin, Emulators,
-#       RocketLauncher, ...). Browse buttons visible on the right.
+#       RocketLauncher, ...) and the scraper-credentials section below
+#       (ScreenScraper user/pass, TheGamesDB key — masked). Browse buttons
+#       visible on the right.
 #
 #   docs/images/gui-launcher-wheels-tab.png
-#       Wheels tab — Refresh Favorites / Recently Played / Most Played
-#       buttons stacked, plus "Refresh All Three" below a separator.
+#       Wheels tab — three checkboxes (Favorites / Recently Played /
+#       Most Played, all ticked) with a "Refresh selected" button below.
 #
 #   docs/images/gui-launcher-audit-tab.png
 #       Audit & Doctor tab — system dropdown expanded showing several
