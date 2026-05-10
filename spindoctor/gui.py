@@ -2595,6 +2595,14 @@ class _SpinDoctorGUI:
                 "Tick at least one component to restore.",
             )
             return
+        if self._backup_restore_apply_var.get():
+            if not self.messagebox.askyesno(
+                "Restore backup?",
+                f"This will restore files from:\n{backup_path}\n\n"
+                "Existing files on disk may be overwritten. "
+                "This cannot be undone.\n\nContinue?",
+            ):
+                return
         args = ["backup", "restore", "--backup", backup_path]
         if include is not None:
             args += ["--include", include]
@@ -3024,7 +3032,11 @@ class _SpinDoctorGUI:
 
     def _mm_move_up(self) -> None:
         idx = self._mm_selected_index()
-        if idx <= 0:
+        if idx < 0:
+            self._set_status("Select a row in the table first.")
+            return
+        if idx == 0:
+            self._set_status("Already at the top.")
             return
         self._mm_data[idx], self._mm_data[idx - 1] = (
             self._mm_data[idx - 1], self._mm_data[idx]
@@ -3036,7 +3048,11 @@ class _SpinDoctorGUI:
 
     def _mm_move_down(self) -> None:
         idx = self._mm_selected_index()
-        if idx < 0 or idx >= len(self._mm_data) - 1:
+        if idx < 0:
+            self._set_status("Select a row in the table first.")
+            return
+        if idx >= len(self._mm_data) - 1:
+            self._set_status("Already at the bottom.")
             return
         self._mm_data[idx], self._mm_data[idx + 1] = (
             self._mm_data[idx + 1], self._mm_data[idx]
@@ -3049,6 +3065,7 @@ class _SpinDoctorGUI:
     def _mm_toggle_visible(self) -> None:
         idx = self._mm_selected_index()
         if idx < 0:
+            self._set_status("Select a row in the table first.")
             return
         current = self._mm_data[idx]["enabled"].strip().lower()
         self._mm_data[idx]["enabled"] = "No" if current != "no" else "Yes"
@@ -3068,6 +3085,12 @@ class _SpinDoctorGUI:
             return
         if not self._mm_data:
             self.messagebox.showwarning("Nothing to save", "No systems loaded.")
+            return
+        if not self.messagebox.askyesno(
+            "Save Main Menu order",
+            f"This will overwrite {xml_path.name} with the current table order "
+            "and visibility settings.\n\nContinue?",
+        ):
             return
         try:
             tree = self._mm_ET.parse(str(xml_path))
@@ -3609,6 +3632,13 @@ class _SpinDoctorGUI:
             variable=self._curate_apply_var,
         ).pack(side="left", padx=10)
 
+        self.ttk.Label(
+            cur_frame,
+            text="archive = moves duplicates to a zip archive (reversible via Undo)."
+                 "  delete = permanently removes ROMs from disk.",
+            foreground="#888",
+        ).pack(anchor="w", padx=6, pady=(0, 2))
+
         cur_btns = self.ttk.Frame(cur_frame)
         cur_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
@@ -3741,9 +3771,21 @@ class _SpinDoctorGUI:
         if action != "archive":
             args += ["--action", action]
         if self._curate_apply_var.get():
-            args.append("--apply")
             if action == "delete":
+                system_label = (
+                    "ALL systems" if self._curate_all_var.get()
+                    else self._curate_system_var.get()
+                )
+                if not self.messagebox.askyesno(
+                    "Permanently delete ROMs?",
+                    f"Action is set to delete with Apply enabled.\n\n"
+                    f"Duplicate ROMs for {system_label} will be permanently "
+                    "removed from disk and cannot be recovered.\n\n"
+                    "Are you sure you want to continue?",
+                ):
+                    return
                 args.append("--yes")
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_curate_undo(self) -> None:
@@ -3826,6 +3868,14 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
+
+        self.ttk.Label(
+            win,
+            text=(f"  {self._CURATE_RETIRE_GLYPH} = will be retired  "
+                  f"  {self._CURATE_SKIP_GLYPH} = kept (vetoed)  "
+                  "  — Click a retire row and press Space or double-click to toggle."),
+            foreground="#666",
+        ).pack(anchor="w", padx=8, pady=(0, 2))
 
         # iid → (group_index, retire_path). Only retire rows are in here;
         # keep rows aren't toggleable so don't need an entry.
