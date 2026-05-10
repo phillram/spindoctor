@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [1.7.0] - 2026-05-09
+
 ### Added
 
 - **GUI status-bar feedback improvements.** Four gaps where the UI went silent after an action are now closed: (1) The "Reload list" button in the Audit & Doctor tab writes "Reloaded N system(s)." to the status bar on success, or "No systems found — check paths in the Setup tab." when config is incomplete; (2) The "Full metadata refresh" chain writes "Full metadata refresh complete." to the status bar when all three steps finish, making the end state visible without switching to the output panel; (3) Removing entries from the Ignore list viewer now writes "Removed N entry/entries from '<system>'." to the status bar immediately after the list refreshes; (4) All eight Diagnose tab scan buttons (Find duplicate ROMs, Find misplaced ROMs, etc.) now write "Scan complete — see output for results." to the status bar on exit 0, or a brief error note on non-zero exit.
@@ -257,7 +261,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/phillram/spindoctor/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/phillram/spindoctor/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/phillram/spindoctor/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/phillram/spindoctor/compare/v1.3.0...v1.4.0
