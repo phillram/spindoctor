@@ -2059,11 +2059,18 @@ class _SpinDoctorGUI:
         intro.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
         cfg = load_config()
+        # Tracks whether any setup field has been edited since last save.
+        # The Save button label flips to "Save configuration *" when True
+        # so the user gets immediate feedback that there are pending edits
+        # — switching tabs without clicking Save used to silently lose
+        # changes.
+        self._setup_dirty = False
         for i, (key, label, win_default, _allow_blank) in enumerate(_SETUP_FIELDS, start=1):
             existing = getattr(cfg, key, "") or ""
             initial = existing or win_default
             var = self.tk.StringVar(value=initial)
             self._setup_vars[key] = var
+            var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
             self.ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=2)
             self.ttk.Entry(frame, textvariable=var, width=60).grid(
                 row=i, column=1, sticky="ew", padx=6, pady=2
@@ -2094,6 +2101,7 @@ class _SpinDoctorGUI:
             existing = getattr(cfg, key, "") or ""
             var = self.tk.StringVar(value=existing)
             self._setup_vars[key] = var
+            var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
             self.ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=2)
             self.ttk.Entry(
                 frame, textvariable=var, width=60,
@@ -2105,7 +2113,13 @@ class _SpinDoctorGUI:
         btn_row = self.ttk.Frame(frame)
         btn_row_index = cred_sep_row + 3 + len(_CRED_FIELDS)
         btn_row.grid(row=btn_row_index, column=0, columnspan=3, sticky="w", pady=(12, 0))
-        self.ttk.Button(btn_row, text="Save configuration", command=self._save_setup).pack(side="left")
+        # Save button label gets a trailing " *" when any field is dirty
+        # so the user can tell at a glance that there are unsaved edits.
+        # See _setup_mark_dirty / _setup_mark_clean below.
+        self._setup_save_btn = self.ttk.Button(
+            btn_row, text="Save configuration", command=self._save_setup,
+        )
+        self._setup_save_btn.pack(side="left")
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
@@ -2143,6 +2157,27 @@ class _SpinDoctorGUI:
             # downstream path comparisons don't trip over the mix.
             var.set(str(Path(path)))
 
+    def _setup_mark_dirty(self) -> None:
+        """Flip the Save button label to indicate unsaved edits.
+
+        Called from a write-trace on every Setup tab StringVar. We only
+        re-configure the button when the state actually changes, since
+        keystrokes fire the trace on every character.
+        """
+        if self._setup_dirty:
+            return
+        self._setup_dirty = True
+        btn = getattr(self, "_setup_save_btn", None)
+        if btn is not None:
+            btn.configure(text="Save configuration *")
+
+    def _setup_mark_clean(self) -> None:
+        """Clear the unsaved-edits indicator after a successful save."""
+        self._setup_dirty = False
+        btn = getattr(self, "_setup_save_btn", None)
+        if btn is not None:
+            btn.configure(text="Save configuration")
+
     def _save_setup(self) -> None:
         cfg = load_config()
         for key, _label, _default, _allow_blank in _SETUP_FIELDS:
@@ -2150,6 +2185,7 @@ class _SpinDoctorGUI:
         for key, _label, _is_password in _CRED_FIELDS:
             setattr(cfg, key, self._setup_vars[key].get().strip())
         save_config(cfg)
+        self._setup_mark_clean()
         ok, errors = cfg.is_valid()
         self._append_output(f"Saved {CONFIG_FILE}\n")
         if ok:
