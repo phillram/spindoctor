@@ -1144,7 +1144,7 @@ class _SpinDoctorGUI:
         # 15 tabs means a lot of clicking otherwise. bind_all so the
         # shortcut works from any focused widget.
         for n in range(1, 10):
-            self.root.bind_all(
+            self._safe_bind_all(
                 f"<Control-Key-{n}>",
                 lambda _evt, idx=n - 1: self._select_tab(idx),
             )
@@ -1152,31 +1152,34 @@ class _SpinDoctorGUI:
         # UI-scale keyboard shortcuts.
         # Ctrl++ / Ctrl+= → zoom in; Ctrl+- → zoom out; Ctrl+0 → reset.
         # bind_all so the shortcut works from any focused widget.
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-equal>", lambda _e: self._ui_scale_step(+0.1),
         )
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-plus>", lambda _e: self._ui_scale_step(+0.1),
         )
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-KP_Add>", lambda _e: self._ui_scale_step(+0.1),
         )
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-minus>", lambda _e: self._ui_scale_step(-0.1),
         )
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-KP_Subtract>", lambda _e: self._ui_scale_step(-0.1),
         )
-        self.root.bind_all(
+        self._safe_bind_all(
             "<Control-Key-0>", lambda _e: self._set_ui_scale(1.0),
         )
 
         # Ctrl+` → toggle the Output panel — standard "show/hide terminal"
-        # shortcut (VS Code, JetBrains). bind_all so the shortcut works
-        # from any focused widget.
-        self.root.bind_all(
-            "<Control-grave>", lambda _e: self._toggle_output(),
-        )
+        # shortcut (VS Code, JetBrains). The backtick key has different
+        # keysym names across Tk builds (X11 ships `grave`; some Windows
+        # Tk builds, notably the Tcl/Tk that ships with Python 3.8, only
+        # know `quoteleft` or `asciigrave`). Try each so the binding
+        # lands on whichever the running Tk recognises.
+        for _seq in ("<Control-grave>", "<Control-quoteleft>",
+                     "<Control-asciigrave>"):
+            self._safe_bind_all(_seq, lambda _e: self._toggle_output())
 
         # If the user previously hid the output pane, honour that
         # preference now (after the initial sash placement runs).
@@ -1193,6 +1196,24 @@ class _SpinDoctorGUI:
             _walk_attach_context_menus(self.root, self.tk)
         except Exception:  # noqa: BLE001 — never block startup
             pass
+
+    def _safe_bind_all(self, sequence: str, callback) -> bool:
+        """Best-effort ``root.bind_all`` that never crashes startup.
+
+        Different Tk builds ship different keysym tables — most painfully,
+        the Tcl/Tk bundled with Python 3.8 on Windows (which the frozen
+        cabinet build still uses) doesn't recognise the X11 keysym
+        ``grave`` for the backtick key, so a bare ``bind_all`` raises
+        ``TclError`` and the whole GUI fails to construct. Keyboard
+        shortcuts are conveniences, not load-bearing; swallow the error
+        and let the rest of the layout finish. Returns True if the
+        binding was accepted.
+        """
+        try:
+            self.root.bind_all(sequence, callback)
+            return True
+        except self.tk.TclError:
+            return False
 
     def _select_tab(self, idx: int) -> None:
         """Switch to tab at zero-based index, ignoring out-of-range."""

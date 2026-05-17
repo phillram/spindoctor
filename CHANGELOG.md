@@ -8,6 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [1.9.1] - 2026-05-17
+
+### Fixed
+
+- **GUI crash on Windows: `_tkinter.TclError: bad event type or keysym "grave"`.** `_build_layout` called `root.bind_all("<Control-grave>", …)` for the Ctrl+\` Output-panel toggle. The X11 keysym `grave` (backtick) isn't present in the Tcl/Tk that ships with Python 3.8 on Windows — which is the exact interpreter PyInstaller bundles into the frozen cabinet exe — so the binding raised `TclError` and the whole GUI failed to construct before the main window appeared. CI ran on Python 3.12 / Windows whose newer Tk *does* know `grave`, so the bug slipped through. Introduced `_safe_bind_all`, a defensive wrapper around `root.bind_all` that swallows `TclError` so a missing keysym never crashes startup, and routed every shortcut binding (`Ctrl+1..9`, `Ctrl++/-/=/0`, `Ctrl+KP_Add`, `Ctrl+KP_Subtract`, `Ctrl+\``) through it. The Ctrl+\` binding additionally tries three keysym aliases (`grave`, `quoteleft`, `asciigrave`) so it lands on whichever the running Tk recognises.
+
+### Tooling
+
+- **CI: GUI smoke test now runs on Python 3.8.10 / Windows** (the build-smoke job) in addition to the existing 3.12 matrix. This is the exact Python/Tcl/Tk combo the released exe ships with, so keysym / option-table differences between bundled-Tk versions surface at PR time instead of via end-user crash reports. The v1.9.0 → v1.9.1 keysym bug would have failed this step.
+- **Test: `test_gui_survives_missing_keysym_in_bind_all`** monkeypatches `tk.Misc.bind_all` to reject "grave"-style keysyms and asserts the GUI still constructs — a portable regression guard for the whole class of bug, runnable on any platform with a display.
+
+---
+
 ## [1.9.0] - 2026-05-17
 
 ### Added
@@ -317,7 +330,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/phillram/spindoctor/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/phillram/spindoctor/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/phillram/spindoctor/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/phillram/spindoctor/compare/v1.7.1...v1.7.2

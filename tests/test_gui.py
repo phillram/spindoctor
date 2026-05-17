@@ -469,6 +469,94 @@ def test_gui_constructs_against_real_tk():
         app.root.destroy()
 
 
+def test_gui_survives_missing_keysym_in_bind_all():
+    """Simulate a Tk build whose keysym table is missing ``grave`` — the
+    exact failure mode that shipped to Windows users on v1.9.0, where
+    the Python 3.8 Tcl/Tk that PyInstaller bundles doesn't know the X11
+    ``grave`` keysym and ``bind_all("<Control-grave>", ...)`` raised
+    ``TclError: bad event type or keysym "grave"``, crashing startup
+    before the main window appeared.
+
+    Windows CI runs Python 3.12 (a newer Tk that *does* recognise
+    ``grave``), so the smoke test above passes on Windows even though
+    the frozen 3.8 build is broken. This test patches ``bind_all`` to
+    reject any "grave-ish" keysym and asserts the GUI still constructs
+    — proving keyboard shortcuts degrade gracefully instead of taking
+    the whole app down with them.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, scrolledtext, ttk
+    except ImportError:
+        pytest.skip("Tkinter not available")
+
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
+
+    try:
+        root_probe = tk.Tk()
+    except tk.TclError as exc:
+        msg = str(exc).lower()
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+            pytest.skip(f"Tk display unavailable: {exc}")
+        raise
+    root_probe.destroy()
+
+    original_bind_all = tk.Misc.bind_all
+
+    def picky_bind_all(self, sequence=None, func=None, add=None):
+        if sequence and "grave" in sequence:
+            raise tk.TclError(f'bad event type or keysym "grave"')
+        return original_bind_all(self, sequence, func, add)
+
+    tk.Misc.bind_all = picky_bind_all
+    try:
+        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+        try:
+            app.root.update_idletasks()
+            assert len(app._tab_base_names) == 15
+        finally:
+            app.root.destroy()
+    finally:
+        tk.Misc.bind_all = original_bind_all
+
+
+def test_safe_bind_all_swallows_tclerror():
+    """Pure-unit guard: ``_safe_bind_all`` must never propagate a
+    ``TclError`` to the caller, regardless of which keysym Tk rejects.
+
+    The whole-GUI smoke above is the integration check; this one runs
+    everywhere (no display required) and protects the helper itself
+    from being "simplified" back into a bare ``bind_all`` during a
+    future refactor.
+    """
+    class _FakeTclError(Exception):
+        pass
+
+    class _FakeTk:
+        TclError = _FakeTclError
+
+    class _FakeRoot:
+        def __init__(self):
+            self.accepted = []
+
+        def bind_all(self, sequence, callback):
+            if "grave" in sequence:
+                raise _FakeTclError(f'bad event type or keysym "grave"')
+            self.accepted.append(sequence)
+
+    stub = type("Stub", (), {})()
+    stub.tk = _FakeTk
+    stub.root = _FakeRoot()
+
+    # Bound method invocation mirrors how `_build_layout` calls it.
+    assert gui._SpinDoctorGUI._safe_bind_all(
+        stub, "<Control-Key-1>", lambda _e: None) is True
+    assert gui._SpinDoctorGUI._safe_bind_all(
+        stub, "<Control-grave>", lambda _e: None) is False
+    assert stub.root.accepted == ["<Control-Key-1>"]
+
+
 # ─── module-level helpers reachable without Tk ────────────────────────────────
 
 def test_clamp_ui_scale_clamps_extremes():

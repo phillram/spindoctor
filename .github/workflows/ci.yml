@@ -94,6 +94,19 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -e .[all]
           pip install -r build/requirements-build.txt
+          pip install pytest pytest-xdist
+
+      # Run the Tk-construction smoke against Python 3.8.10's bundled
+      # Tcl/Tk — the *exact* Tk the frozen exe ships with. The main test
+      # matrix above uses Python 3.12, whose Tk keysym/option tables are
+      # wider; bugs that depend on the older surface (e.g. v1.9.0's
+      # `bad event type or keysym "grave"` on Ctrl+`) only fire here.
+      # Without this step the bug only shows up to end users running the
+      # frozen installer. We run only the GUI tests to keep this job
+      # focused — the broader suite already runs on 3.8/Linux.
+      - name: GUI smoke (Python 3.8 Tk surface)
+        shell: cmd
+        run: pytest -q tests/test_gui.py
 
       - name: Build
         shell: bash
