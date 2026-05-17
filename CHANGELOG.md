@@ -8,6 +8,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [1.8.0] - 2026-05-17
+
+### Added
+
+- **GUI Tk-construction smoke test (CI guard).** `tests/test_gui.py::test_gui_constructs_against_real_tk` actually instantiates `_SpinDoctorGUI` against a real `Tk()` root and asserts all 15 tabs build. CI installs `xvfb` + `python3-tk` on Linux runners and wraps pytest with `xvfb-run -a`; Windows runs unwrapped. The smoke catches the whole class of "GUI crashes on launch" regressions (the v1.7.0 `_output` AttributeError and the v1.7.2 `-foreground` TclError would both have failed this test at PR time).
+- **GUI Setup tab unsaved-changes indicator.** Editing any field on the Setup tab — paths or scraper credentials — flips the Save button label to `Save configuration *`. Switching tabs without saving used to silently lose the change. The label clears on a successful save.
+- **GUI Ctrl+1..9 tab shortcuts.** Press Ctrl+1 through Ctrl+9 to jump to the first nine notebook tabs from any focused widget. With 15 tabs, this saves a lot of clicking — especially on touchscreen cabinets.
+- **GUI Copy output button.** A new Copy output button in the bottom status bar (next to Clear / Stop) copies the entire Output panel to the system clipboard. Mirrors the Logs tab's existing copy pattern.
+- **GUI status-bar run summary.** When a command finishes the status bar reports the command name, result, and elapsed wall-clock — e.g. `doctor — OK in 3.2s.`, `migrate — FAILED (exit 1) in 1m12s.`, `audit — dry run OK in 0.4s. View results in Output…`. Uses `time.monotonic()` so a wall-clock adjustment during a long migration doesn't skew the displayed elapsed.
+- **GUI startup health checks.** `_SpinDoctorGUI.__init__` now runs `Config.is_valid()` and a `resolve_cli_command("spindoctor")` probe before the status bar lands on "Ready.", so missing paths or a misplaced CLI binary surface at first paint instead of on the user's first Run click.
+- **GUI `Compare to live` button on Backup & Restore tab.** Exposes the existing `spindoctor diff <backup>` subcommand (CLI-only since v1.5.0) alongside Show backup info and Restore backup. Same picker, read-only command, no Apply check.
+- **GUI Batch-edit panel on Metadata & Media tab.** A minimal panel covering the 80% case for `spindoctor batch-edit`: one filter clause, one set clause, optional CSV report path, using the existing System selector and shared Apply checkbox.
+
+### Fixed
+
+- **GUI Curate tab `_tkinter.TclError: unknown option "-foreground"`.** `_build_curate_tab` passed `foreground="#888"` to `ttk.Checkbutton` to grey out the "unsafe" cleanup categories. `ttk.Checkbutton` has no `-foreground` constructor option — that's style-only on every ttk widget except `ttk.Label` / `ttk.Entry`. Launching v1.7.2 raised the TclError before the window painted. Configured a named `Unsafe.TCheckbutton` style in `__init__`; same visual result, no crash.
+- **GUI `_refresh_systems` combo defaults inverted.** The condition `default and default not in systems` meant LEDBlinky / Tools combos defaulted to `'MAME'` / `'Toolkit'` even when those systems weren't configured, producing invalid argv on Run. Flipped to `default if default in systems else systems[0]`.
+- **GUI Main Menu Add / Remove had no safety prompt.** Both subcommands rewrote `Main Menu.xml` on every click with no dry-run option and no confirmation, inconsistent with the existing safety pattern (Save Order, Curate delete, Backup Restore). Added an `askyesno` prompt before each action.
+- **GUI Theme Apply blocked the Tk main thread.** `themes_mod.apply_plan` ran synchronously, freezing the entire window for large packs (sometimes minutes). Moved to a daemon worker thread; results marshalled back via `root.after(0, …)` so widget calls stay on the main thread. Curate Apply (`curate_mod.apply_curation`) got the same treatment.
+- **GUI 'Revert just <SYSTEM>' raw traceback on manifest error.** `themes_mod.list_systems_in_manifest` was imported and called without exception handling, so any failure leaked a Python traceback to stderr instead of a messagebox. Wrapped in try/except → `messagebox.showerror`.
+- **GUI inflated elapsed-time after a failed launch.** When `subprocess.Popen` raised `OSError` (binary missing, permission denied, etc.), `_run_cli`'s OSError handler bailed without clearing `_run_started_monotonic` / `_run_label`. The next successful run's `_on_proc_done` then picked up the stale monotonic timestamp and reported an inflated `OK in 142s` for a run that took 2s. Clear both before returning.
+- **GUI dead code: unused `Config` import in `spindoctor/gui.py`** and seven unused imports across the test suite (`PreviewItem`, `EMULATOR_MAP`, `json`, `pytest` ×2, `Path` ×2) removed. No behavioural change; keeps pyflakes clean.
+
+---
+
 ## [1.7.2] - 2026-05-17
 
 ### Fixed
@@ -277,7 +302,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/phillram/spindoctor/compare/v1.7.2...v1.8.0
 [1.7.2]: https://github.com/phillram/spindoctor/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/phillram/spindoctor/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/phillram/spindoctor/compare/v1.6.0...v1.7.0
