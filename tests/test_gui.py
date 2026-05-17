@@ -166,6 +166,23 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
+def test_custom_command_presets_match_actual_cli_syntax():
+    """Preset hints must use real flag names — `media-add` was shipped
+    with `--source` in earlier presets even though the CLI flag is
+    `--file`. Fail loud if a similar drift happens again.
+    """
+    presets = set(gui._CUSTOM_COMMAND_PRESETS)
+    media_add = next((p for p in presets if p.startswith("media-add")), None)
+    assert media_add is not None
+    # The CLI is `media-add --system X --game Y --type Z --file PATH`;
+    # if a future refactor renames any of these flags the preset will
+    # be wrong again. Pin the current shape.
+    assert "--file" in media_add
+    assert "--game" in media_add
+    assert "--type" in media_add
+    assert "--source" not in media_add  # the old, wrong flag name
+
+
 # ─── _is_read_only_invocation ─────────────────────────────────────────────────
 
 
@@ -191,6 +208,28 @@ def test_read_only_invocations_are_recognised(args):
     think `cleanup run` without --apply was a real apply).
     """
     assert gui._is_read_only_invocation(args) is True
+
+
+@pytest.mark.parametrize("args", [
+    # match list is read-only — match clear isn't (it deletes cache
+    # files), but the GUI invokes it with --yes so the confirmation
+    # dialog the GUI shows is the only safety gate. The DRY RUN banner
+    # would only confuse users since --yes already commits.
+    ("match", "list"),
+    ("organize", "MAME"),  # organize without --restructure --apply is XML-only
+])
+def test_extra_read_only_invocations(args):
+    # match list and bare `organize` write sort wheels but don't move
+    # ROMs — close enough to "read-only" that the DRY RUN banner is
+    # noise. Confirms _is_read_only_invocation handles both shapes.
+    if args[0] == "match":
+        assert gui._is_read_only_invocation(args) is True
+    else:
+        # `organize` without sub-tokens isn't in the read-only set
+        # (it does touch XML); the banner is acceptable for it.
+        # This test pins the negative case so a future "should be
+        # read-only" expansion is intentional.
+        assert gui._is_read_only_invocation(args) is False
 
 
 @pytest.mark.parametrize("args", [

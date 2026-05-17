@@ -8,6 +8,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI: Curate tab → metadata-match cache controls.** "List cached matches" and "Clear cache…" buttons drive `spindoctor match list|clear` with an optional system filter. The clear button shows a confirmation dialog scoped to the selected system (or "ALL systems" if blank).
+- **GUI: Systems tab → Organize a system.** Drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the tab's existing Apply toggle, plus a separate "Undo latest restructure" button for the `--undo` flow.
+- **GUI: Metadata & Media tab → Add one local media file.** System + game + media-type dropdowns plus file picker drive `spindoctor media-add`. Tickable "Move" and "Overwrite if target exists" flags. Useful for one-shot media additions (a manually-grabbed trailer, a hand-picked wheel) without dropping to the CLI.
+- **GUI: Audit tab → CSV report path + flag toggles.** "Report CSV (optional)" entry + Browse… button feeds `audit --report`; new checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output). Both `Audit selected system` and `Audit all systems` use the same options.
+- **GUI: Diagnose tab → "Find cross-system dupes" button** drives `find-dupes --cross-systems` so users don't have to drop to Custom Command for cross-system duplicate detection.
+- **GUI: Metadata tab → Fetch-meta source / threshold / no-cache.** A "Source" dropdown picks `screenscraper` / `thegamesdb` / config default; a "Threshold" entry overrides the project-default fuzzy-match floor; a "Skip cache" checkbox forces every game to hit the API. Threshold input is validated client-side (0.0–1.0) before launching the subprocess.
+- **GUI: Setup tab → "Open" button next to every path field.** Verifies what the user just configured by jumping to the path in Explorer / Finder. For `mame_executable` it opens the containing folder, since that's what users actually want to see.
+- **GUI: Update notification → one-click "Download…" button in the status bar.** When an update is available, a Download… button appears next to Stop and opens the release page directly. Previously users had to dig through Help → Check for updates and confirm a messagebox.
+- **GUI: Tooltips on the most-confusing controls.** New `_attach_tooltip` helper shows a small dark Label after a 500 ms hover. Applied to fetch-meta's three checkboxes (`--auto-best`, `--all-games`, `--no-cache`) where the flag names alone don't capture what they actually do.
+
+### Fixed
+
+- **Windows 7 / older Tk: `iconbitmap(default=…)` switched to positional path.** Some Tk 8.5 builds bundled with Python 3.8 on Win7 silently ignore the `default=` keyword, so the app icon never set. Now uses `iconbitmap(str(ico))` directly — already wrapped in `try/except TclError`, so behaviour is unchanged on newer Tk that does accept the keyword.
+- **Windows 7 / older Tk: `TNotebook` tabmargins switched from tuple to string.** Some Tk 8.5 builds reject the tuple form (`(2, 4, 2, 0)`) with a `bad screen distance` error and fall back to the default margins; the space-joined string form (`"2 4 2 0"`) is accepted everywhere.
+- **Update check now enforces TLS 1.2+.** `update_check._fetch_latest_release` builds an explicit `ssl.create_default_context()` with `minimum_version = TLSv1_2` and passes it to `urlopen`. GitHub requires TLS 1.2 since 2018; without the explicit floor, frozen Win7 builds with older bundled OpenSSL could negotiate TLS 1.0 and get a cryptic "EOF occurred in violation of protocol" instead of a clean handshake.
+- **GUI: `media-add` Custom Command preset corrected.** Old preset advertised `--source` but the CLI flag is `--file`; fixed. Pinned in tests so the same drift can't ship again.
+
+### Tooling
+
+- **Tests: 3 new GUI cases** covering `match list` / bare `organize` read-only classification and `media-add` preset flag-name accuracy. Suite: 590 → 593.
+
+---
+
+## [Unreleased — earlier entries]
+
+### Added
+
 - **GUI: Inspect-a-single-game controls on the Diagnose tab.** A system dropdown + optional ROM entry + Inspect button drives `spindoctor inspect` directly — the highest-value diagnostic command after audit was previously only reachable via Custom Command.
 - **GUI: Manage individual favorites on the Wheels tab.** System / ROM entry plus Add / Remove / List buttons wired to `spindoctor fav add|remove|list`, so curating the cross-system Favorites wheel doesn't require dropping to a terminal.
 - **GUI: Rename and clone a single game on the Systems tab.** System / Game / New name fields drive `spindoctor rename` and `spindoctor clone` with the tab's existing Apply checkbox. Both commands write an undo manifest, so even a wrong rename is reversible from the Logs tab.
