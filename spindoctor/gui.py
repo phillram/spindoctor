@@ -354,6 +354,13 @@ class _SpinDoctorGUI:
         self.root.geometry("960x720")
         self.root.minsize(720, 540)
 
+        # ttk widgets (Checkbutton, Radiobutton, Button, …) don't accept
+        # `foreground=` as a direct constructor option — it must come
+        # from a named ttk.Style. Define the styles we need up front so
+        # tab builders can reference them by name (`style="Unsafe…"`).
+        self._ttk_style = ttk_mod.Style(self.root)
+        self._ttk_style.configure("Unsafe.TCheckbutton", foreground="#888")
+
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
@@ -3755,8 +3762,12 @@ class _SpinDoctorGUI:
         for i, (key, lbl) in enumerate(unsafe_cats):
             var = self.tk.BooleanVar(value=False)
             self._cleanup_cat_vars[key] = var
+            # ttk.Checkbutton has no `-foreground` constructor option;
+            # the grey tint comes from the Unsafe.TCheckbutton style
+            # configured in __init__.
             self.ttk.Checkbutton(
-                cln_cats_frame, text=lbl, variable=var, foreground="#888",
+                cln_cats_frame, text=lbl, variable=var,
+                style="Unsafe.TCheckbutton",
             ).grid(row=unsafe_row + i // cols, column=i % cols,
                    sticky="w", padx=4, pady=1)
 

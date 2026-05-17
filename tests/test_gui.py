@@ -1,12 +1,20 @@
-"""Tests for spindoctor.gui — kept headless so they run on every CI matrix.
+"""Tests for spindoctor.gui — mostly headless, plus one Tk-construction smoke.
 
-The tests deliberately avoid spinning up Tk: they exercise the argument-
-parsing and CLI-resolution helpers that constitute the testable surface of
-the GUI module. The Tk window itself is covered by manual launch + the
-release workflow's frozen-binary smoke test.
+Most of the tests deliberately avoid spinning up Tk: they exercise the
+argument-parsing and CLI-resolution helpers that constitute the testable
+surface of the GUI module.
+
+The Tk-construction smoke at the bottom (``test_gui_constructs_against_real_tk``)
+is the exception — it actually instantiates ``_SpinDoctorGUI`` so that
+class-of-bug regressions like ``AttributeError: ... has no attribute
+'_output'`` or ``_tkinter.TclError: unknown option "-foreground"`` get
+caught at PR time instead of by users running the frozen exe. On Linux
+CI the workflow installs xvfb so a virtual display is available; in
+environments without any display the test self-skips.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -373,3 +381,52 @@ def test_format_argv_quotes_args_with_spaces():
 
 def test_format_argv_leaves_simple_args_unquoted():
     assert gui._format_argv(["spindoctor", "doctor"]) == "spindoctor doctor"
+
+
+# ─── Tk-construction smoke test ───────────────────────────────────────────────
+
+
+def test_gui_constructs_against_real_tk():
+    """Actually instantiate the GUI against a Tk root.
+
+    This is the regression guard for whole-class bugs that only surface
+    once the layout is built — e.g. tab builders referencing widgets
+    that don't exist yet (the ``_output`` AttributeError, v1.7.0 → v1.7.1),
+    or ttk widgets configured with options they don't accept (the
+    Checkbutton ``-foreground`` TclError, v1.7.1 → v1.7.2 → v1.7.3).
+    Both bugs slipped through earlier because every other test stops
+    short of constructing a window. Skips if the host has no display
+    (typical bare CI runner without xvfb; Linux CI here installs xvfb
+    explicitly so this branch is exercised).
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, scrolledtext, ttk
+    except ImportError:
+        pytest.skip("Tkinter not available")
+
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
+
+    try:
+        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    except tk.TclError as exc:
+        # macOS without an active GUI session, or Windows headless CI
+        # without a windowstation, both raise TclError on Tk() init —
+        # treat that the same as "no display".
+        msg = str(exc).lower()
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+            pytest.skip(f"Tk display unavailable: {exc}")
+        raise
+
+    try:
+        app.root.update_idletasks()
+        # Sanity: every tab builder ran without exception, including the
+        # Curate tab (foreground TclError) and the Main Menu tab
+        # (_output AttributeError). 15 = the documented tab count.
+        assert len(app._tab_base_names) == 15
+        # The hoisted widgets that have crashed in past releases:
+        assert app._output is not None
+        assert app._status_var is not None
+    finally:
+        app.root.destroy()
