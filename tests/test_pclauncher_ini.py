@@ -9,7 +9,6 @@ from spindoctor.config import Config
 from spindoctor.rocketlauncher import (
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
-    EMULATOR_MAP,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,

@@ -34,7 +34,7 @@ from typing import Callable, Optional, Sequence
 
 from . import __app_name__, __version__
 from .config import (
-    CONFIG_DIR, CONFIG_FILE, Config, get_systems, load_config, save_config,
+    CONFIG_DIR, CONFIG_FILE, get_systems, load_config, save_config,
 )
 
 
@@ -1481,8 +1481,15 @@ class _SpinDoctorGUI:
             )
             return
 
-        from . import themes as themes_mod
-        systems = themes_mod.list_systems_in_manifest(path)
+        try:
+            from . import themes as themes_mod
+            systems = themes_mod.list_systems_in_manifest(path)
+        except Exception as exc:  # noqa: BLE001 — surface in UI, not stderr
+            self.messagebox.showerror(
+                "Could not read manifest",
+                f"{type(exc).__name__}: {exc}",
+            )
+            return
         if not systems:
             self.messagebox.showwarning(
                 "No systems found",
@@ -1976,31 +1983,55 @@ class _SpinDoctorGUI:
                 "Manifests viewer (or `theme-apply --undo latest`).",
             ):
                 return
-            try:
-                result = themes_mod.apply_plan(plans_holder)
-            except Exception as exc:  # noqa: BLE001 — surface in UI
-                self.messagebox.showerror(
-                    "Apply failed", f"{type(exc).__name__}: {exc}",
+            # apply_plan does the actual disk copies — on a big theme pack
+            # this can take many seconds. Run it on a worker thread so
+            # the Tk event loop keeps drawing; marshal results back to
+            # the main thread via root.after(0, …) (Tk widget calls are
+            # only safe from the main thread).
+            self._set_status(
+                f"Applying {len(plans_holder)} theme swap(s)…"
+            )
+
+            def _worker(plans=list(plans_holder)):
+                try:
+                    return themes_mod.apply_plan(plans), None
+                except Exception as exc:  # noqa: BLE001 — surface in UI
+                    return None, exc
+
+            def _on_done(result, exc):
+                if exc is not None:
+                    self._set_status("Theme apply failed.")
+                    self.messagebox.showerror(
+                        "Apply failed", f"{type(exc).__name__}: {exc}",
+                    )
+                    return
+                self._append_output(
+                    f"\n[theme-apply] swapped {result.swapped} file(s)"
+                    + (f", skipped {len(result.skipped)}"
+                       if result.skipped else "")
+                    + (f"\n  manifest: {result.manifest_path}"
+                       if result.manifest_path else "")
+                    + "\n"
                 )
-                return
-            self._append_output(
-                f"\n[theme-apply] swapped {result.swapped} file(s)"
-                + (f", skipped {len(result.skipped)}"
-                   if result.skipped else "")
-                + (f"\n  manifest: {result.manifest_path}"
-                   if result.manifest_path else "")
-                + "\n"
-            )
-            self.messagebox.showinfo(
-                "Theme applied",
-                f"Swapped {result.swapped} file(s).\n\n"
-                + (f"Manifest: {result.manifest_path}\n"
-                   "Undo via File → View logs & manifests… → Theme "
-                   "swaps → Undo this run."
-                   if result.manifest_path else
-                   "No manifest written."),
-            )
-            win.destroy()
+                self._set_status(
+                    f"Theme apply: swapped {result.swapped} file(s)."
+                )
+                self.messagebox.showinfo(
+                    "Theme applied",
+                    f"Swapped {result.swapped} file(s).\n\n"
+                    + (f"Manifest: {result.manifest_path}\n"
+                       "Undo via File → View logs & manifests… → Theme "
+                       "swaps → Undo this run."
+                       if result.manifest_path else
+                       "No manifest written."),
+                )
+                win.destroy()
+
+            def _run_in_thread():
+                result, exc = _worker()
+                self.root.after(0, _on_done, result, exc)
+
+            threading.Thread(target=_run_in_thread, daemon=True).start()
 
         btn_row = self.ttk.Frame(win)
         btn_row.pack(fill="x", padx=8, pady=(0, 8))
@@ -2386,7 +2417,12 @@ class _SpinDoctorGUI:
             if var is None:
                 continue
             if systems and not var.get():
-                var.set(default if default and default not in systems else (systems[0] if systems else ""))
+                # If a default is supplied AND that default is in the list,
+                # use it. Otherwise fall back to systems[0] — never set the
+                # var to a value that isn't in the dropdown, or the user
+                # sees a system that doesn't exist and the resulting argv
+                # references it.
+                var.set(default if default in systems else systems[0])
 
         # Migrate systems Listbox — different widget type, handled separately.
         lb = getattr(self, "_migrate_systems_lb", None)
@@ -3195,6 +3231,20 @@ class _SpinDoctorGUI:
                 "System required",
                 "Select a system from the dropdown before clicking Add or Remove.",
             )
+            return
+        # Add / Remove rewrite Main Menu.xml on every click — there's no
+        # CLI dry-run path for these two subcommands and a mis-click can
+        # silently corrupt the wheel order. Mirror the Save Order /
+        # Curate delete / Backup Restore safety pattern with an explicit
+        # confirmation prompt.
+        verb = "add to" if sub == "add" else "remove from"
+        if not self.messagebox.askyesno(
+            f"Confirm Main Menu {sub}",
+            f"{sub.capitalize()} '{system}' {verb} Main Menu.xml?\n\n"
+            "This writes the file immediately. If "
+            "config.backup_before_modify is enabled (the default), a "
+            "timestamped .bak is kept next to the file.",
+        ):
             return
         args = ["mainmenu", sub, system, "--apply"]
         self._run_cli("spindoctor", args)
@@ -4156,37 +4206,60 @@ class _SpinDoctorGUI:
             ):
                 return
 
-        try:
-            cfg = load_config()
-            result, manifest = curate_mod.apply_curation(
-                filtered, cfg, system, action=action,
-            )
-        except Exception as exc:  # noqa: BLE001 — surface in UI
-            self.messagebox.showerror(
-                "Curate failed", f"{type(exc).__name__}: {exc}",
-            )
-            return
+        # apply_curation moves or deletes ROM files — on a large run
+        # this can block for many seconds. Run on a worker thread so
+        # the window keeps redrawing; marshal results back via after(0).
+        cfg = load_config()
+        self._set_status(
+            f"Curating {sum(len(g.retire) for g in filtered)} file(s) "
+            f"({action})…"
+        )
 
-        msg_parts = []
-        if result.archived:
-            msg_parts.append(f"{len(result.archived)} archived")
-        if result.deleted:
-            msg_parts.append(f"{len(result.deleted)} deleted")
-        if result.skipped:
-            msg_parts.append(f"{len(result.skipped)} skipped")
-        msg = ", ".join(msg_parts) or "nothing"
-        self._append_output(
-            f"\n[curate preview] {system}: {msg}.\n"
-            f"  manifest: {manifest}\n" if manifest else f"\n[curate preview] {system}: {msg}.\n"
-        )
-        self.messagebox.showinfo(
-            "Curate done",
-            f"{msg}.\n\n"
-            + (f"Manifest: {manifest}\n"
-               "Reverse via Logs & Manifests viewer → Undo this run."
-               if manifest else "No manifest written (delete leaves no undo)."),
-        )
-        win.destroy()
+        def _worker(filtered=filtered, cfg=cfg, system=system, action=action):
+            try:
+                return curate_mod.apply_curation(
+                    filtered, cfg, system, action=action,
+                ), None
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                return None, exc
+
+        def _on_done(payload, exc):
+            if exc is not None:
+                self._set_status("Curate failed.")
+                self.messagebox.showerror(
+                    "Curate failed", f"{type(exc).__name__}: {exc}",
+                )
+                return
+            result, manifest = payload
+            msg_parts = []
+            if result.archived:
+                msg_parts.append(f"{len(result.archived)} archived")
+            if result.deleted:
+                msg_parts.append(f"{len(result.deleted)} deleted")
+            if result.skipped:
+                msg_parts.append(f"{len(result.skipped)} skipped")
+            msg = ", ".join(msg_parts) or "nothing"
+            self._append_output(
+                f"\n[curate preview] {system}: {msg}.\n"
+                f"  manifest: {manifest}\n" if manifest
+                else f"\n[curate preview] {system}: {msg}.\n"
+            )
+            self._set_status(f"Curate done: {msg}.")
+            self.messagebox.showinfo(
+                "Curate done",
+                f"{msg}.\n\n"
+                + (f"Manifest: {manifest}\n"
+                   "Reverse via Logs & Manifests viewer → Undo this run."
+                   if manifest
+                   else "No manifest written (delete leaves no undo)."),
+            )
+            win.destroy()
+
+        def _run_in_thread():
+            payload, exc = _worker()
+            self.root.after(0, _on_done, payload, exc)
+
+        threading.Thread(target=_run_in_thread, daemon=True).start()
 
     def _cleanup_reset_cats(self) -> None:
         for key, _lbl, safe in _CLEANUP_CATEGORIES:
