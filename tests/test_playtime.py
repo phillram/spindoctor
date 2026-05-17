@@ -188,7 +188,8 @@ def test_export_csv_writes_all_rows(tmp_path):
     ]
     out = tmp_path / "stats.csv"
     export_csv(stats, out)
-    rows = list(csv.DictReader(out.open()))
+    with out.open() as fh:
+        rows = list(csv.DictReader(fh))
     assert len(rows) == 2
     pac = next(r for r in rows if r["game"] == "Pac-Man")
     assert pac["total_seconds"] == "600"

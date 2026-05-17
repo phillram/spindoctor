@@ -60,6 +60,9 @@ def _run_schtasks(args: Sequence[str]) -> subprocess.CompletedProcess:
         capture_output=True,
         text=True,
         check=False,
+        # Hide the cmd window — these calls only ever happen on Windows
+        # and a flashing console is jarring when the GUI is open.
+        creationflags=0x08000000,  # CREATE_NO_WINDOW
     )
 
 

@@ -94,12 +94,20 @@ class HyperspinDatabase:
             self._loaded = True
             return
         try:
+            # Open the file ourselves and pass the handle into the
+            # parser so the OS lock is released as soon as parsing
+            # finishes. Passing a *path* to lxml/ET keeps the file
+            # open on Windows until the tree is GC'd — which then
+            # blocks any concurrent rename / save / migrate touching
+            # the same XML.
             if _HAS_LXML:
                 parser = LET.XMLParser(remove_comments=False, remove_blank_text=False)
-                self._tree = LET.parse(str(self.xml_path), parser)
+                with open(self.xml_path, "rb") as fh:
+                    self._tree = LET.parse(fh, parser)
             else:
                 _warn_no_lxml_once()
-                self._tree = ET.parse(self.xml_path)
+                with open(self.xml_path, "rb") as fh:
+                    self._tree = ET.parse(fh)
 
             self._root = self._tree.getroot()
             for game_el in self._root.findall("game"):

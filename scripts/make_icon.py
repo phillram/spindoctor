@@ -42,10 +42,10 @@ def _load_source() -> Image.Image:
             f"Source PNG missing: {SOURCE}\n"
             "Drop the master artwork at this path and re-run."
         )
-    img = Image.open(SOURCE)
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-    return img
+    with Image.open(SOURCE) as src:
+        if src.mode != "RGBA":
+            return src.convert("RGBA")
+        return src.copy()
 
 
 def _resample(src: Image.Image, size: int) -> Image.Image:

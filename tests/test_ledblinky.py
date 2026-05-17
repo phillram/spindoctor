@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import textwrap
 
+from spindoctor import ledblinky
 from spindoctor.ledblinky import (
     parse_ini_sections,
     parse_listxml,
@@ -106,3 +107,34 @@ def test_emit_ini_roundtrip(tmp_path):
     assert "[foo]" in text
     assert "[bar]" in text
     assert "description=Foo" in text
+
+
+def test_run_mame_listxml_hides_console_window(monkeypatch):
+    """``run_mame_listxml`` must pass ``CREATE_NO_WINDOW`` to ``subprocess.run``.
+
+    A full MAME ``-listxml`` dump takes 10-30 seconds on a hot ROM
+    set; without ``CREATE_NO_WINDOW`` the cabinet owner stares at a
+    black ``cmd`` window for that whole time every time they run
+    ``audit`` from the GUI. The flag is harmless on non-Windows
+    (Python's ``subprocess`` ignores it).
+    """
+    captured: dict = {}
+
+    class _FakeProc:
+        returncode = 0
+        stdout = b"<mame></mame>"
+        stderr = b""
+
+    def fake_run(_args, **kwargs):
+        captured.update(kwargs)
+        return _FakeProc()
+
+    # Pretend we're on Windows so ``_CREATE_NO_WINDOW`` resolves to
+    # the real flag value instead of 0 on the host CI runner.
+    monkeypatch.setattr(ledblinky, "_CREATE_NO_WINDOW", 0x08000000)
+    monkeypatch.setattr(ledblinky.subprocess, "run", fake_run)
+    out = ledblinky.run_mame_listxml("mame")
+    assert out == b"<mame></mame>"
+    # 0x08000000 == CREATE_NO_WINDOW. Assert the literal value so a
+    # refactor that accidentally drops the kwarg fails loudly.
+    assert captured.get("creationflags") == 0x08000000
