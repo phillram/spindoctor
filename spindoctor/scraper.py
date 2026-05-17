@@ -562,6 +562,119 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         return results
 
 
+# ─── credential verification ──────────────────────────────────────────────────
+#
+# Lightweight "do these credentials work?" probes used by the GUI Setup tab's
+# "Test credentials" button. Each returns (ok, message); never raises so the
+# UI can render the result without wrapping in try/except.
+
+def verify_screenscraper(
+    username: str, password: str, timeout: float = 8.0,
+) -> tuple[bool, str]:
+    """Probe ScreenScraper's ssuserInfos.php to validate credentials.
+
+    Hits the same authenticated endpoint the live clients use, so a pass
+    here means the credentials are good for real fetches too. Read-only,
+    one HTTP GET, ~1s on a healthy network.
+    """
+    if not username or not password:
+        return False, "username and password are required"
+
+    params = {
+        "devid": "SpinDoctor",
+        "devpassword": "SpinDoctor",
+        "softname": "SpinDoctor",
+        "ssid": username,
+        "sspassword": password,
+        "output": "json",
+    }
+    try:
+        resp = requests.get(
+            f"{SCREENSCRAPER_API}/ssuserInfos.php",
+            params=params, timeout=timeout,
+            headers={"User-Agent": "SpinDoctor/1.0"},
+        )
+    except requests.RequestException as e:
+        return False, f"Network error: {e}"
+
+    if resp.status_code in (401, 403):
+        return False, f"Authentication rejected (HTTP {resp.status_code})"
+    if resp.status_code >= 500:
+        return False, f"ScreenScraper server error (HTTP {resp.status_code})"
+    if resp.status_code != 200:
+        return False, f"Unexpected HTTP {resp.status_code}"
+
+    # ScreenScraper signals auth errors via a JSON `erreur` key with a 200
+    # status, or sometimes via a plain-text body that doesn't parse as JSON.
+    try:
+        data = resp.json()
+    except ValueError:
+        text = (resp.text or "").strip()
+        # The auth-failure body is short ("Erreur de login : ..."). Anything
+        # else is more useful as a truncated snippet than as "ok".
+        snippet = text[:200] if text else "no response body"
+        return False, f"Unexpected response: {snippet}"
+
+    response = data.get("response") or {}
+    if "erreur" in data:
+        return False, str(data["erreur"]).strip() or "ScreenScraper rejected the credentials"
+    ssuser = response.get("ssuser")
+    if not isinstance(ssuser, dict):
+        return False, "ScreenScraper response did not include ssuser"
+
+    user_id = ssuser.get("id") or username
+    level = ssuser.get("niveau") or ssuser.get("level") or "?"
+    max_threads = ssuser.get("maxthreads") or ssuser.get("requestsmax") or ""
+    extra = f", threads {max_threads}" if max_threads else ""
+    return True, f"OK \u2014 user '{user_id}', level {level}{extra}"
+
+
+def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
+    """Probe TheGamesDB to validate an API key.
+
+    Hits ``/Games/ByGameName`` with a trivial query — the same endpoint
+    used by the live client — and inspects the response code + remaining
+    monthly-allowance counter.
+    """
+    if not api_key:
+        return False, "API key is required"
+
+    params = {"apikey": api_key, "name": "test"}
+    try:
+        resp = requests.get(
+            f"{THEGAMESDB_API}/Games/ByGameName",
+            params=params, timeout=timeout,
+            headers={"User-Agent": "SpinDoctor/1.0"},
+        )
+    except requests.RequestException as e:
+        return False, f"Network error: {e}"
+
+    if resp.status_code in (401, 403):
+        return False, "Invalid API key (HTTP 403)"
+    if resp.status_code == 429:
+        return False, "Rate limited (HTTP 429) — key may be exhausted"
+    if resp.status_code >= 500:
+        return False, f"TheGamesDB server error (HTTP {resp.status_code})"
+    if resp.status_code != 200:
+        return False, f"Unexpected HTTP {resp.status_code}"
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return False, "Response was not valid JSON"
+
+    code = data.get("code")
+    if code in (401, 403):
+        return False, str(data.get("status") or "Invalid API key")
+    if code and code != 200:
+        return False, f"{data.get('status') or 'Error'} (code {code})"
+
+    remaining = data.get("remaining_monthly_allowance")
+    if remaining is None:
+        return True, "OK"
+    return True, f"OK \u2014 {remaining} monthly requests remaining"
+
+
 # ─── factory ──────────────────────────────────────────────────────────────────
 
 def build_client(

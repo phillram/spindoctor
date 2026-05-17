@@ -213,4 +213,13 @@ Open the GUI and use **`File → View logs & manifests…`**. The window groups 
 
 ### Menubar reference
 
-`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `Help`: About SpinDoctor / Check for updates. Full descriptions at [Windows binaries → Menubar](windows-binaries.md#menubar).
+`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: About SpinDoctor / Check for updates. Full descriptions at [Windows binaries → Menubar](windows-binaries.md#menubar).
+
+### GUI looks cramped on a 720p (1280×720) cabinet screen
+
+By default the window opens at 960×720 (minsize 720×540), which is fine on most 1080p / 1200p panels but tight on 720p with the Output panel mounted. Two new controls in the GUI fix this without resizing the window:
+
+- **`View → UI scale → 0.9×`** (or press `Ctrl+-` once) shrinks fonts and widget metrics across the board so a full tab fits without scrolling. `Ctrl++` zooms back in, `Ctrl+0` resets. The chosen scale persists across restarts via the `ui_scale` config key. Range is `0.6`–`2.0`.
+- **`Hide output`** (status-bar button, `View → Show output pane`, or `Ctrl+`` `) collapses the bottom panel and gives the active tab the full window height. Re-show with the same control. Persisted across restarts via the `output_visible` config key.
+
+The two together typically clear another 200–300 vertical pixels on a 720p cabinet display.

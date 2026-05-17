@@ -100,6 +100,172 @@ def resolve_cli_command(name: str) -> list[str]:
     return [sys.executable, "-m", _DEV_MODULE_MAP[name]]
 
 
+# ─── Dark-mode palette (module-level so tests can reach in too) ───────────────
+#
+# Hand-picked from the VS Code Dark+ ecosystem so the colours have already
+# been validated for readability and colour-blind contrast. Apply with
+# :func:`_SpinDoctorGUI._apply_dark_theme`. There is no light-mode toggle —
+# everywhere that previously hard-coded "#444" / "#666" / "#888" / "gray"
+# for dimmed text is now redirected at ``_FG_DIM`` / ``_FG_DIMMER`` so the
+# values stay readable against the dark background.
+
+_DARK_BG          = "#1e1e1e"  # primary window background
+_DARK_BG_RAISE    = "#252526"  # raised panels (LabelFrame, status bar, tab strip)
+_DARK_BG_INPUT    = "#2d2d30"  # Entry, Combobox, Text, Listbox
+_DARK_BG_BUTTON   = "#3a3a3c"  # ttk.Button face
+_DARK_BG_ACTIVE   = "#505052"  # hover / pressed
+_DARK_BG_SELECT   = "#094771"  # selection highlight (VS Code blue)
+_DARK_FG          = "#dcdcdc"  # primary text
+_FG_DIM           = "#aaaaaa"  # subdued text (replaces #444 / #666 on light)
+_FG_DIMMER        = "#7a7a7a"  # disabled-look text (replaces #888 / "gray")
+_DARK_BORDER      = "#3c3c3c"
+_DARK_ACCENT      = "#007acc"  # focus ring / progress bar / hyperlink-ish
+
+
+# ─── UI scale helpers (module-level for test access) ──────────────────────────
+
+# Hard clamp for `ui_scale`. Below 0.6 the UI is unreadable; above 2.0 the
+# layout starts overflowing minsize on most cabinet displays.
+UI_SCALE_MIN = 0.6
+UI_SCALE_MAX = 2.0
+UI_SCALE_PRESETS: tuple[float, ...] = (0.8, 0.9, 1.0, 1.1, 1.25, 1.5)
+
+
+def _clamp_ui_scale(value: float) -> float:
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(UI_SCALE_MIN, min(UI_SCALE_MAX, round(f, 2)))
+
+
+# Named Tk fonts whose sizes we scale alongside `ui_scale`. Keeping the
+# list central means any widget that uses a non-default font (e.g. the
+# bold headings) opts into scaling just by referencing the right name.
+_SCALED_FONT_NAMES: tuple[str, ...] = (
+    "TkDefaultFont",
+    "TkTextFont",
+    "TkFixedFont",
+    "TkMenuFont",
+    "TkHeadingFont",
+    "TkSmallCaptionFont",
+    "TkCaptionFont",
+    "TkTooltipFont",
+    "TkIconFont",
+)
+
+
+# ─── Tk context-menu helper (module-level so smoke tests can call it) ─────────
+
+def _attach_context_menu(widget, tk_mod) -> None:
+    """Attach a Cut/Copy/Paste/Select-All right-click context menu.
+
+    Behaviour rules:
+
+    * Read-only ``Text`` widgets (``state="disabled"``) and password
+      ``Entry`` widgets (``show="*"``) get a stripped-down menu — no
+      Cut/Paste for read-only, no Copy/Cut for masked fields (so the
+      mask can't be trivially bypassed via right-click).
+    * Binds both ``<Button-3>`` (Linux/Windows + modern macOS) and
+      ``<Button-2>`` (legacy macOS / some trackpad configs).
+    * Idempotent: tagging widgets we've already handled with a custom
+      attribute keeps the tree walker from double-binding.
+    """
+    if getattr(widget, "_spindoctor_ctxmenu_attached", False):
+        return
+
+    def _post(event):
+        # Build the menu lazily so widget state (show=, state=) is read
+        # at popup time rather than at attach time — that way the
+        # eyeball toggle's `entry.config(show="")` immediately enables
+        # Copy without the entry having to be re-attached.
+        try:
+            cls = type(widget).__name__
+        except Exception:  # noqa: BLE001
+            cls = ""
+
+        is_entry = cls in ("Entry", "TEntry")
+        is_text = cls in ("Text", "ScrolledText")
+        try:
+            state = str(widget.cget("state"))
+        except tk_mod.TclError:
+            state = "normal"
+        editable = state not in ("disabled", "readonly")
+        masked = bool(is_entry and widget.cget("show"))
+
+        menu = tk_mod.Menu(widget, tearoff=0)
+        if editable and not masked:
+            menu.add_command(
+                label="Cut",
+                command=lambda: widget.event_generate("<<Cut>>"),
+            )
+        if not masked:
+            menu.add_command(
+                label="Copy",
+                command=lambda: widget.event_generate("<<Copy>>"),
+            )
+        if editable:
+            menu.add_command(
+                label="Paste",
+                command=lambda: widget.event_generate("<<Paste>>"),
+            )
+        if menu.index("end") is not None:
+            menu.add_separator()
+        menu.add_command(
+            label="Select all",
+            command=lambda: _select_all(widget, is_entry=is_entry, is_text=is_text),
+        )
+        try:
+            widget.focus_set()
+        except tk_mod.TclError:
+            pass
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    # Button-3 covers Win/Linux/modern macOS; Button-2 catches legacy mac.
+    widget.bind("<Button-3>", _post, add="+")
+    widget.bind("<Button-2>", _post, add="+")
+    # macOS sometimes reports right-click as Control-Button-1.
+    widget.bind("<Control-Button-1>", _post, add="+")
+    widget._spindoctor_ctxmenu_attached = True  # type: ignore[attr-defined]
+
+
+def _select_all(widget, *, is_entry: bool, is_text: bool) -> None:
+    """Best-effort 'Select All' that works for both Entry and Text."""
+    try:
+        if is_entry:
+            widget.select_range(0, "end")
+            widget.icursor("end")
+        elif is_text:
+            widget.tag_add("sel", "1.0", "end-1c")
+        else:
+            widget.event_generate("<<SelectAll>>")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _walk_attach_context_menus(root_widget, tk_mod) -> None:
+    """Recursively attach the context menu to every Entry/Text descendant.
+
+    Called once after the whole window is built; future-proofs new
+    fields because nothing has to be wired up at construction time.
+    """
+    try:
+        cls = type(root_widget).__name__
+    except Exception:  # noqa: BLE001
+        cls = ""
+    if cls in ("Entry", "TEntry", "Text", "ScrolledText"):
+        _attach_context_menu(root_widget, tk_mod)
+    try:
+        children = root_widget.winfo_children()
+    except Exception:  # noqa: BLE001
+        children = []
+    for child in children:
+        _walk_attach_context_menus(child, tk_mod)
+
+
 # ─── Tk GUI (lazy imports so the helpers above stay test-importable) ──────────
 
 # Wizard fields used by the Setup tab. Mirrors `_INIT_FIELDS` in cli.py so
@@ -352,15 +518,51 @@ class _SpinDoctorGUI:
 
         self.root = tk_mod.Tk()
         self.root.title(f"{__app_name__} {__version__}")
-        self.root.geometry("960x720")
-        self.root.minsize(720, 540)
+
+        # Load persisted GUI prefs once, before any widgets are built —
+        # tk scaling and the initial geometry both have to honour the
+        # saved ui_scale, and tk scaling MUST be applied before widget
+        # construction to take effect on geometry metrics.
+        try:
+            _bootstrap_cfg = load_config()
+            self._ui_scale = _clamp_ui_scale(getattr(_bootstrap_cfg, "ui_scale", 1.0))
+            self._output_visible = bool(getattr(_bootstrap_cfg, "output_visible", True))
+        except Exception:  # noqa: BLE001 — never let a bad config block launch
+            self._ui_scale = 1.0
+            self._output_visible = True
+
+        # Named-font baseline (captured once so subsequent zooms don't
+        # compound rounding error). Filled in by _apply_ui_scale().
+        self._base_font_sizes: dict[str, int] = {}
+        self._base_tk_scaling: float = 1.0
+        self._apply_ui_scale(self._ui_scale, initial=True)
+
+        # Geometry honours the persisted scale so 1.5× on a small screen
+        # still opens to a usable size, not a Postage-stamp.
+        base_w, base_h = 960, 720
+        min_w, min_h = 720, 540
+        scaled_w = max(min_w, int(base_w * self._ui_scale))
+        scaled_h = max(min_h, int(base_h * self._ui_scale))
+        self.root.geometry(f"{scaled_w}x{scaled_h}")
+        self.root.minsize(min_w, min_h)
+
+        # Window icon — cosmetic, must never block startup.
+        self._load_window_icon()
 
         # ttk widgets (Checkbutton, Radiobutton, Button, …) don't accept
         # `foreground=` as a direct constructor option — it must come
         # from a named ttk.Style. Define the styles we need up front so
         # tab builders can reference them by name (`style="Unsafe…"`).
         self._ttk_style = ttk_mod.Style(self.root)
-        self._ttk_style.configure("Unsafe.TCheckbutton", foreground="#888")
+
+        # Apply dark theme BEFORE any tab builders run so every widget
+        # they create inherits the palette. _apply_dark_theme installs
+        # the ttk style overrides AND the option_add defaults that
+        # non-ttk widgets (Menu, Listbox, Text, Canvas, PanedWindow,
+        # Toplevel) read at construction time.
+        self._apply_dark_theme()
+
+        self._ttk_style.configure("Unsafe.TCheckbutton", foreground=_FG_DIMMER)
 
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -394,6 +596,387 @@ class _SpinDoctorGUI:
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
         self._start_update_check()
+
+    # ── Dark theme ────────────────────────────────────────────────────────────
+
+    def _apply_dark_theme(self) -> None:
+        """Apply the dark palette to ttk styles and tk widget defaults.
+
+        Two pieces:
+
+        * ``ttk.Style`` overrides — themed widgets read these.
+        * ``option_add`` defaults for ``Menu`` / ``Listbox`` / ``Text`` /
+          ``Canvas`` / ``Toplevel`` — these are classic Tk widgets that
+          ttk doesn't theme. The defaults take effect for any widget
+          *constructed after* ``option_add`` runs, which is why this
+          method must run before the tab builders touch anything.
+
+        Idempotent: safe to call more than once. There's no light-mode
+        toggle — dark is always on. The native macOS menubar can't be
+        themed by Tk; that's an OS limitation.
+        """
+        # Force the `clam` theme as the base — it's the only stock Tk
+        # theme that fully respects custom backgrounds across all
+        # widgets (the platform-native themes "aqua" / "vista" /
+        # "winnative" override our colours on buttons, scrollbars, and
+        # combobox internals).
+        try:
+            self._ttk_style.theme_use("clam")
+        except self.tk.TclError:
+            pass
+
+        s = self._ttk_style
+
+        # ── Root + every container ──────────────────────────────────────────
+        self.root.configure(background=_DARK_BG)
+        s.configure(".", background=_DARK_BG, foreground=_DARK_FG,
+                    fieldbackground=_DARK_BG_INPUT, bordercolor=_DARK_BORDER,
+                    lightcolor=_DARK_BG_RAISE, darkcolor=_DARK_BORDER,
+                    troughcolor=_DARK_BG_RAISE, insertcolor=_DARK_FG,
+                    selectbackground=_DARK_BG_SELECT, selectforeground=_DARK_FG)
+        s.configure("TFrame", background=_DARK_BG)
+        s.configure("TLabel", background=_DARK_BG, foreground=_DARK_FG)
+        s.configure("TLabelframe", background=_DARK_BG,
+                    bordercolor=_DARK_BORDER)
+        s.configure("TLabelframe.Label", background=_DARK_BG,
+                    foreground=_DARK_FG)
+        s.configure("TSeparator", background=_DARK_BORDER)
+
+        # ── Buttons ──────────────────────────────────────────────────────────
+        s.configure("TButton", background=_DARK_BG_BUTTON,
+                    foreground=_DARK_FG, bordercolor=_DARK_BORDER,
+                    lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON,
+                    focusthickness=1, focuscolor=_DARK_ACCENT, padding=4)
+        s.map("TButton",
+              background=[("active", _DARK_BG_ACTIVE),
+                          ("pressed", _DARK_BG_ACTIVE),
+                          ("disabled", _DARK_BG_RAISE)],
+              foreground=[("disabled", _FG_DIMMER)])
+
+        # ── Entry / Combobox / Spinbox ───────────────────────────────────────
+        s.configure("TEntry", fieldbackground=_DARK_BG_INPUT,
+                    foreground=_DARK_FG, bordercolor=_DARK_BORDER,
+                    insertcolor=_DARK_FG, lightcolor=_DARK_BORDER,
+                    darkcolor=_DARK_BORDER)
+        s.map("TEntry",
+              fieldbackground=[("disabled", _DARK_BG_RAISE)],
+              foreground=[("disabled", _FG_DIMMER)])
+        s.configure("TCombobox", fieldbackground=_DARK_BG_INPUT,
+                    background=_DARK_BG_BUTTON, foreground=_DARK_FG,
+                    arrowcolor=_DARK_FG, bordercolor=_DARK_BORDER,
+                    lightcolor=_DARK_BORDER, darkcolor=_DARK_BORDER,
+                    insertcolor=_DARK_FG)
+        s.map("TCombobox",
+              fieldbackground=[("readonly", _DARK_BG_INPUT),
+                               ("disabled", _DARK_BG_RAISE)],
+              foreground=[("disabled", _FG_DIMMER)],
+              selectbackground=[("readonly", _DARK_BG_SELECT)],
+              selectforeground=[("readonly", _DARK_FG)])
+        s.configure("TSpinbox", fieldbackground=_DARK_BG_INPUT,
+                    foreground=_DARK_FG, bordercolor=_DARK_BORDER,
+                    arrowcolor=_DARK_FG)
+
+        # ── Check / Radio buttons ────────────────────────────────────────────
+        s.configure("TCheckbutton", background=_DARK_BG, foreground=_DARK_FG,
+                    indicatorbackground=_DARK_BG_INPUT,
+                    indicatorforeground=_DARK_FG, focuscolor=_DARK_ACCENT)
+        s.map("TCheckbutton",
+              background=[("active", _DARK_BG)],
+              indicatorbackground=[("selected", _DARK_BG_SELECT),
+                                   ("pressed", _DARK_BG_ACTIVE)])
+        s.configure("TRadiobutton", background=_DARK_BG, foreground=_DARK_FG,
+                    indicatorbackground=_DARK_BG_INPUT,
+                    indicatorforeground=_DARK_FG)
+        s.map("TRadiobutton",
+              background=[("active", _DARK_BG)],
+              indicatorbackground=[("selected", _DARK_BG_SELECT)])
+
+        # ── Notebook (tab strip) ─────────────────────────────────────────────
+        s.configure("TNotebook", background=_DARK_BG, borderwidth=0,
+                    tabmargins=(2, 4, 2, 0))
+        s.configure("TNotebook.Tab", background=_DARK_BG_RAISE,
+                    foreground=_FG_DIM, padding=(10, 4),
+                    bordercolor=_DARK_BORDER, lightcolor=_DARK_BG_RAISE)
+        s.map("TNotebook.Tab",
+              background=[("selected", _DARK_BG),
+                          ("active", _DARK_BG_ACTIVE)],
+              foreground=[("selected", _DARK_FG),
+                          ("active", _DARK_FG)],
+              expand=[("selected", (1, 1, 1, 0))])
+
+        # ── Scrollbars / Progressbar / Separator ─────────────────────────────
+        s.configure("Vertical.TScrollbar",
+                    background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
+                    bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
+                    lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+        s.configure("Horizontal.TScrollbar",
+                    background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
+                    bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
+                    lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+        s.map("Vertical.TScrollbar",
+              background=[("active", _DARK_BG_ACTIVE)])
+        s.map("Horizontal.TScrollbar",
+              background=[("active", _DARK_BG_ACTIVE)])
+        s.configure("TProgressbar", background=_DARK_ACCENT,
+                    troughcolor=_DARK_BG_RAISE, bordercolor=_DARK_BORDER,
+                    lightcolor=_DARK_ACCENT, darkcolor=_DARK_ACCENT)
+
+        # ── Treeview (Logs tab, Main Menu, Log viewer dialog) ────────────────
+        s.configure("Treeview", background=_DARK_BG_INPUT,
+                    fieldbackground=_DARK_BG_INPUT, foreground=_DARK_FG,
+                    bordercolor=_DARK_BORDER, rowheight=22)
+        s.map("Treeview",
+              background=[("selected", _DARK_BG_SELECT)],
+              foreground=[("selected", _DARK_FG)])
+        s.configure("Treeview.Heading", background=_DARK_BG_RAISE,
+                    foreground=_DARK_FG, bordercolor=_DARK_BORDER,
+                    relief="flat")
+        s.map("Treeview.Heading",
+              background=[("active", _DARK_BG_ACTIVE)])
+
+        # ── PanedWindow sash (themed indirectly via Tk options) ──────────────
+        s.configure("TPanedwindow", background=_DARK_BG)
+        s.configure("Sash", background=_DARK_BORDER, sashthickness=6)
+
+        # ── option_add defaults for the classic-Tk widgets ───────────────────
+        # These take effect at widget construction time, so the call MUST
+        # run before _build_layout(). That's enforced by the call site in
+        # __init__.
+        opts = {
+            "*background": _DARK_BG,
+            "*foreground": _DARK_FG,
+            "*Toplevel.background": _DARK_BG,
+            "*Menu.background": _DARK_BG_RAISE,
+            "*Menu.foreground": _DARK_FG,
+            "*Menu.activeBackground": _DARK_BG_SELECT,
+            "*Menu.activeForeground": _DARK_FG,
+            "*Menu.selectColor": _DARK_FG,
+            "*Menu.borderWidth": 0,
+            "*Menu.relief": "flat",
+            "*Menubutton.background": _DARK_BG_RAISE,
+            "*Menubutton.foreground": _DARK_FG,
+            "*Listbox.background": _DARK_BG_INPUT,
+            "*Listbox.foreground": _DARK_FG,
+            "*Listbox.selectBackground": _DARK_BG_SELECT,
+            "*Listbox.selectForeground": _DARK_FG,
+            "*Listbox.highlightBackground": _DARK_BORDER,
+            "*Listbox.highlightColor": _DARK_ACCENT,
+            "*Listbox.borderWidth": 1,
+            "*Listbox.relief": "flat",
+            "*Text.background": _DARK_BG_INPUT,
+            "*Text.foreground": _DARK_FG,
+            "*Text.selectBackground": _DARK_BG_SELECT,
+            "*Text.selectForeground": _DARK_FG,
+            "*Text.insertBackground": _DARK_FG,
+            "*Text.highlightBackground": _DARK_BORDER,
+            "*Text.highlightColor": _DARK_ACCENT,
+            "*Text.borderWidth": 1,
+            "*Text.relief": "flat",
+            "*Canvas.background": _DARK_BG,
+            "*Canvas.highlightBackground": _DARK_BG,
+            "*Entry.background": _DARK_BG_INPUT,
+            "*Entry.foreground": _DARK_FG,
+            "*Entry.insertBackground": _DARK_FG,
+            "*Entry.selectBackground": _DARK_BG_SELECT,
+            "*Entry.selectForeground": _DARK_FG,
+            "*PanedWindow.background": _DARK_BORDER,
+            "*PanedWindow.sashRelief": "flat",
+            # ScrolledText is two widgets stacked — these set the *frame*
+            # backgrounds; the inner Text widget picks up *Text.* above.
+            "*ScrolledText.background": _DARK_BG,
+            "*Frame.background": _DARK_BG,
+            "*LabelFrame.background": _DARK_BG,
+            "*Label.background": _DARK_BG,
+            "*Label.foreground": _DARK_FG,
+        }
+        for key, value in opts.items():
+            try:
+                self.root.option_add(key, value)
+            except self.tk.TclError:
+                pass
+
+    # ── UI scale ──────────────────────────────────────────────────────────────
+
+    def _apply_ui_scale(self, scale: float, *, initial: bool = False) -> None:
+        """Apply ``scale`` to named fonts (live) and tk scaling (initial only).
+
+        See the plan: ``tk scaling`` only takes effect when applied before
+        widget construction, so we set it once during __init__ and never
+        again. Mid-session zoom updates only touch the named-font sizes,
+        which Tk's geometry managers pick up on the next idle tick.
+        """
+        scale = _clamp_ui_scale(scale)
+        try:
+            from tkinter import font as tkfont
+        except ImportError:
+            return
+
+        # Capture baselines on first call so repeated zooms stay precise.
+        if not self._base_font_sizes:
+            for name in _SCALED_FONT_NAMES:
+                try:
+                    f = tkfont.nametofont(name)
+                    size = int(f.cget("size"))
+                except Exception:  # noqa: BLE001
+                    continue
+                # Tk reports negative sizes when the font was created in
+                # pixels rather than points; preserve sign on rescale.
+                self._base_font_sizes[name] = size if size != 0 else 9
+
+        if initial:
+            try:
+                self._base_tk_scaling = float(
+                    self.root.tk.call("tk", "scaling")
+                )
+                self.root.tk.call(
+                    "tk", "scaling", self._base_tk_scaling * scale,
+                )
+            except Exception:  # noqa: BLE001
+                self._base_tk_scaling = 1.0
+
+        for name, base in self._base_font_sizes.items():
+            try:
+                f = tkfont.nametofont(name)
+            except Exception:  # noqa: BLE001
+                continue
+            sign = -1 if base < 0 else 1
+            new = int(round(abs(base) * scale)) * sign
+            if abs(new) < 6:
+                new = 6 * sign
+            try:
+                f.configure(size=new)
+            except Exception:  # noqa: BLE001
+                continue
+
+        self._ui_scale = scale
+        if not initial:
+            # Force pending geometry recomputations to flush now so the
+            # window resizes immediately rather than on the next event.
+            try:
+                self.root.update_idletasks()
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _set_ui_scale(self, scale: float) -> None:
+        """Apply a new scale, refresh the View menu radio, and persist."""
+        scale = _clamp_ui_scale(scale)
+        if abs(scale - self._ui_scale) < 1e-3:
+            # Still refresh the radio var in case the user clicked the
+            # currently-active preset — keeps the UI consistent.
+            if hasattr(self, "_ui_scale_var"):
+                self._ui_scale_var.set(f"{scale:g}")
+            return
+        self._apply_ui_scale(scale)
+        if hasattr(self, "_ui_scale_var"):
+            self._ui_scale_var.set(f"{scale:g}")
+        self._persist_ui_pref(ui_scale=scale)
+        self._set_status(f"UI scale set to {scale:g}\u00d7.")
+
+    def _ui_scale_step(self, delta: float) -> None:
+        """Bump scale by ``delta`` (clamped). Snaps to one decimal place."""
+        new = round(self._ui_scale + delta, 1)
+        self._set_ui_scale(new)
+
+    def _persist_ui_pref(self, **kwargs) -> None:
+        """Save one or more GUI preferences back to config.json.
+
+        Read-modify-write so we don't clobber settings other tabs may
+        have just changed — the Setup tab writes the full config, but
+        the View menu only touches its own keys.
+        """
+        try:
+            cfg = load_config()
+            for key, value in kwargs.items():
+                if hasattr(cfg, key):
+                    setattr(cfg, key, value)
+            save_config(cfg)
+        except Exception as exc:  # noqa: BLE001 — non-critical
+            self._append_output(
+                f"Note: could not persist UI preference: {exc}\n"
+            )
+
+    # ── Output pane toggle ────────────────────────────────────────────────────
+
+    def _toggle_output(self, visible: Optional[bool] = None) -> None:
+        """Show/hide the bottom Output panel.
+
+        Called from the status-bar button, the View menu checkbutton, and
+        the Ctrl+\\` shortcut. State is persisted so it survives restarts.
+        """
+        if visible is None:
+            visible = not self._output_visible
+
+        out_frame = getattr(self, "_out_frame", None)
+        paned = getattr(self, "_main_paned", None)
+        if out_frame is None or paned is None:
+            return
+
+        try:
+            if visible:
+                # paned.add() is a no-op if the pane is already managed.
+                try:
+                    paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
+                except self.tk.TclError:
+                    pass
+                # Restore the saved sash position on next idle tick so
+                # the geometry has settled by the time we move it.
+                target = getattr(self, "_output_saved_sash", None)
+                if target is not None:
+                    def _restore_sash():
+                        try:
+                            paned.sash_place(0, 0, target)
+                        except self.tk.TclError:
+                            pass
+                    self.root.after_idle(_restore_sash)
+            else:
+                # Capture the current sash so re-showing puts the output
+                # back at the same height the user dragged it to.
+                try:
+                    coords = paned.sash_coord(0)
+                    if coords and len(coords) >= 2:
+                        self._output_saved_sash = int(coords[1])
+                except self.tk.TclError:
+                    pass
+                try:
+                    paned.forget(out_frame)
+                except self.tk.TclError:
+                    pass
+        finally:
+            self._output_visible = bool(visible)
+
+        # Update the status-bar button label + View menu checkbox so all
+        # three entry points stay in lockstep.
+        btn = getattr(self, "_output_toggle_btn", None)
+        if btn is not None:
+            btn.configure(text="Hide output" if visible else "Show output")
+        var = getattr(self, "_output_visible_var", None)
+        if var is not None:
+            var.set(bool(visible))
+
+        self._persist_ui_pref(output_visible=bool(visible))
+
+    # ── Window icon ───────────────────────────────────────────────────────────
+
+    def _load_window_icon(self) -> None:
+        """Set the window icon if an asset is shipped with the package.
+
+        Pure cosmetic — never propagate a failure. Stash the PhotoImage
+        on ``self`` so Python's GC doesn't reclaim it (a classic Tk
+        footgun: drop the reference and the icon disappears).
+        """
+        icon_dir = Path(__file__).parent / "assets"
+        try:
+            if sys.platform == "win32":
+                ico = icon_dir / "icon.ico"
+                if ico.exists():
+                    self.root.iconbitmap(default=str(ico))
+                    return
+            png = icon_dir / "icon.png"
+            if png.exists():
+                self._icon_photo = self.tk.PhotoImage(file=str(png))
+                self.root.iconphoto(True, self._icon_photo)
+        except self.tk.TclError:
+            pass
 
     def _startup_health_checks(self) -> None:
         """Surface obvious environment problems at first paint.
@@ -460,6 +1043,9 @@ class _SpinDoctorGUI:
             borderwidth=0,
         )
         main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
+        # Stash the paned window so _toggle_output can forget/add the
+        # output pane and restore the sash on demand.
+        self._main_paned = main_paned
 
         nb = self.ttk.Notebook(main_paned)
         self._nb = nb
@@ -475,9 +1061,13 @@ class _SpinDoctorGUI:
         # doesn't exist yet, that raises AttributeError and the GUI
         # never paints. See also the matching note at _append_output.
         out_frame = self.ttk.LabelFrame(main_paned, text="Output")
-        mono = "Consolas" if sys.platform == "win32" else "Menlo"
+        self._out_frame = out_frame
+        # Use TkFixedFont so the Output panel honours the UI scale knob
+        # alongside the rest of the window. The named-font path also
+        # picks up platform-appropriate monospace defaults (Consolas on
+        # Windows, Menlo on macOS) without us hardcoding family names.
         self._output = self.scrolledtext.ScrolledText(
-            out_frame, height=14, wrap="word", font=(mono, 10),
+            out_frame, height=14, wrap="word", font="TkFixedFont",
         )
         self._output.configure(state="disabled")
         self._output.pack(fill="both", expand=True, padx=4, pady=4)
@@ -539,6 +1129,15 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             bar, text="Copy output", command=self._copy_output,
         ).pack(side="right", padx=(0, 6))
+        # Hide / Show output toggle — sits at the left of the cluster so
+        # muscle-memory positions of Copy/Clear/Stop don't shift when
+        # cabinet owners reach for the familiar buttons.
+        self._output_toggle_btn = self.ttk.Button(
+            bar,
+            text=("Hide output" if self._output_visible else "Show output"),
+            command=self._toggle_output,
+        )
+        self._output_toggle_btn.pack(side="right", padx=(0, 6))
 
         # Ctrl+1..9 jump to notebook tabs by 1-based index. Cabinet
         # owners on touchscreens benefit from a keyboard fallback, and
@@ -549,6 +1148,51 @@ class _SpinDoctorGUI:
                 f"<Control-Key-{n}>",
                 lambda _evt, idx=n - 1: self._select_tab(idx),
             )
+
+        # UI-scale keyboard shortcuts.
+        # Ctrl++ / Ctrl+= → zoom in; Ctrl+- → zoom out; Ctrl+0 → reset.
+        # bind_all so the shortcut works from any focused widget.
+        self.root.bind_all(
+            "<Control-equal>", lambda _e: self._ui_scale_step(+0.1),
+        )
+        self.root.bind_all(
+            "<Control-plus>", lambda _e: self._ui_scale_step(+0.1),
+        )
+        self.root.bind_all(
+            "<Control-KP_Add>", lambda _e: self._ui_scale_step(+0.1),
+        )
+        self.root.bind_all(
+            "<Control-minus>", lambda _e: self._ui_scale_step(-0.1),
+        )
+        self.root.bind_all(
+            "<Control-KP_Subtract>", lambda _e: self._ui_scale_step(-0.1),
+        )
+        self.root.bind_all(
+            "<Control-Key-0>", lambda _e: self._set_ui_scale(1.0),
+        )
+
+        # Ctrl+` → toggle the Output panel — standard "show/hide terminal"
+        # shortcut (VS Code, JetBrains). bind_all so the shortcut works
+        # from any focused widget.
+        self.root.bind_all(
+            "<Control-grave>", lambda _e: self._toggle_output(),
+        )
+
+        # If the user previously hid the output pane, honour that
+        # preference now (after the initial sash placement runs).
+        if not self._output_visible:
+            # Defer slightly so the placement helper has set the sash;
+            # otherwise the captured "saved sash" would be the
+            # uninitialised default.
+            self.root.after(150, lambda: self._toggle_output(visible=False))
+
+        # Right-click context menus on every Entry/Text widget — walked
+        # post-construction so future tabs pick this up for free without
+        # touching every call site.
+        try:
+            _walk_attach_context_menus(self.root, self.tk)
+        except Exception:  # noqa: BLE001 — never block startup
+            pass
 
     def _select_tab(self, idx: int) -> None:
         """Switch to tab at zero-based index, ignoring out-of-range."""
@@ -706,9 +1350,8 @@ class _SpinDoctorGUI:
 
         # Right pane: full output of the selected run.
         viewer_frame = self.ttk.Frame(paned)
-        mono = "Consolas" if sys.platform == "win32" else "Menlo"
         viewer = self.scrolledtext.ScrolledText(
-            viewer_frame, wrap="word", font=(mono, 10),
+            viewer_frame, wrap="word", font="TkFixedFont",
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
@@ -859,6 +1502,50 @@ class _SpinDoctorGUI:
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self.root.destroy)
         menubar.add_cascade(label="File", menu=file_menu)
+
+        # ── View menu ────────────────────────────────────────────────────────
+        # UI scale + output-pane visibility. Both also have keyboard
+        # shortcuts; the menu exists for discoverability.
+        view_menu = self.tk.Menu(menubar, tearoff=0)
+
+        # Output pane visibility (checkbutton, two-way bound).
+        self._output_visible_var = self.tk.BooleanVar(value=self._output_visible)
+        view_menu.add_checkbutton(
+            label="Show output pane",
+            variable=self._output_visible_var,
+            command=lambda: self._toggle_output(
+                visible=self._output_visible_var.get(),
+            ),
+            accelerator="Ctrl+`",
+        )
+        view_menu.add_separator()
+
+        # UI-scale presets (radio group). The radio var stores the scale
+        # as a string ("1.0", "1.25", ...) so radiobuttons can compare it
+        # by value reliably across platforms.
+        self._ui_scale_var = self.tk.StringVar(value=f"{self._ui_scale:g}")
+        scale_menu = self.tk.Menu(view_menu, tearoff=0)
+        for preset in UI_SCALE_PRESETS:
+            scale_menu.add_radiobutton(
+                label=f"{preset:g}\u00d7",
+                value=f"{preset:g}",
+                variable=self._ui_scale_var,
+                command=lambda p=preset: self._set_ui_scale(p),
+            )
+        view_menu.add_cascade(label="UI scale", menu=scale_menu)
+        view_menu.add_command(
+            label="Zoom in", accelerator="Ctrl+=",
+            command=lambda: self._ui_scale_step(+0.1),
+        )
+        view_menu.add_command(
+            label="Zoom out", accelerator="Ctrl+-",
+            command=lambda: self._ui_scale_step(-0.1),
+        )
+        view_menu.add_command(
+            label="Reset zoom", accelerator="Ctrl+0",
+            command=lambda: self._set_ui_scale(1.0),
+        )
+        menubar.add_cascade(label="View", menu=view_menu)
 
         help_menu = self.tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
@@ -1452,7 +2139,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             win,
             text=f"Timestamp: {data.get('timestamp', 'unknown')}",
-            foreground="#666", padding=(10, 0),
+            foreground=_FG_DIM, padding=(10, 0),
         ).pack(anchor="w")
 
         tree_frame = self.ttk.Frame(win)
@@ -1904,7 +2591,7 @@ class _SpinDoctorGUI:
                   "Media/Frontend/Images; a system name = that "
                   "system's Special A/B; comma-separated names = "
                   "multiple systems at once (e.g. 'MAME,Sega Naomi')."),
-            foreground="#666", wraplength=580, justify="left",
+            foreground=_FG_DIM, wraplength=580, justify="left",
         ).pack(side="left", padx=6)
 
         # ── Plan tree ─────────────────────────────────────────────────
@@ -2178,6 +2865,12 @@ class _SpinDoctorGUI:
             wraplength=780, justify="left",
         ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
+        # Track credential entries so the eyeball toggle and the Test
+        # credentials button can address them by key. Built lazily so a
+        # second build (e.g. tab re-render) doesn't leak old references.
+        self._cred_entries: dict = {}
+        self._cred_pw_shown: dict = {}
+
         for j, (key, label, is_password) in enumerate(_CRED_FIELDS):
             row = cred_sep_row + 3 + j
             existing = getattr(cfg, key, "") or ""
@@ -2185,15 +2878,46 @@ class _SpinDoctorGUI:
             self._setup_vars[key] = var
             var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
             self.ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=2)
-            self.ttk.Entry(
+            entry = self.ttk.Entry(
                 frame, textvariable=var, width=60,
                 show="*" if is_password else "",
-            ).grid(row=row, column=1, sticky="ew", padx=6, pady=2)
+            )
+            entry.grid(row=row, column=1, sticky="ew", padx=6, pady=2)
+            self._cred_entries[key] = entry
+            if is_password:
+                # Eyeball toggle — column 2 is otherwise empty for
+                # credential rows (Browse… lives there for paths). Show
+                # button starts on "Show" (entry is masked); clicking
+                # flips both the entry's `show` option and the label.
+                self._cred_pw_shown[key] = False
+                btn = self.ttk.Button(
+                    frame, text="Show", width=6,
+                    command=lambda k=key: self._toggle_password_visibility(k),
+                )
+                btn.grid(row=row, column=2, sticky="w", pady=2)
+                # Stash the button on the entry so the toggle handler
+                # can flip its label without a second lookup table.
+                entry._spindoctor_eye_btn = btn  # type: ignore[attr-defined]
+
+        # ── Credential test result line ──────────────────────────────────────
+        # Lives directly under the credential rows so test output is
+        # adjacent to the inputs it references. Set when the user clicks
+        # "Test credentials"; empty otherwise.
+        test_row = cred_sep_row + 3 + len(_CRED_FIELDS)
+        self._cred_test_var = self.tk.StringVar(value="")
+        self._cred_test_label = self.ttk.Label(
+            frame, textvariable=self._cred_test_var,
+            justify="left", wraplength=780,
+        )
+        self._cred_test_label.grid(
+            row=test_row, column=0, columnspan=3, sticky="w", pady=(4, 0),
+        )
 
         frame.columnconfigure(1, weight=1)
 
         btn_row = self.ttk.Frame(frame)
-        btn_row_index = cred_sep_row + 3 + len(_CRED_FIELDS)
+        # +1 because the credential test-result label takes one row now.
+        btn_row_index = cred_sep_row + 4 + len(_CRED_FIELDS)
         btn_row.grid(row=btn_row_index, column=0, columnspan=3, sticky="w", pady=(12, 0))
         # Save button label gets a trailing " *" when any field is dirty
         # so the user can tell at a glance that there are unsaved edits.
@@ -2202,6 +2926,13 @@ class _SpinDoctorGUI:
             btn_row, text="Save configuration", command=self._save_setup,
         )
         self._setup_save_btn.pack(side="left")
+        # Test credentials — pings ScreenScraper + TheGamesDB with the
+        # values currently in the entries (not from disk) so the user
+        # can verify a key before Saving. Async to keep the UI snappy.
+        self._cred_test_btn = self.ttk.Button(
+            btn_row, text="Test credentials", command=self._test_credentials,
+        )
+        self._cred_test_btn.pack(side="left", padx=6)
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
@@ -2259,6 +2990,83 @@ class _SpinDoctorGUI:
         btn = getattr(self, "_setup_save_btn", None)
         if btn is not None:
             btn.configure(text="Save configuration")
+
+    def _toggle_password_visibility(self, key: str) -> None:
+        """Flip the show=* mask on a credential Entry and its button label.
+
+        Used by the eyeball-style toggle on the Setup tab so the user can
+        verify what they pasted into a password / API-key field without
+        having to clear and re-type.
+        """
+        entry = self._cred_entries.get(key)
+        if entry is None:
+            return
+        shown = self._cred_pw_shown.get(key, False)
+        if shown:
+            entry.configure(show="*")
+            self._cred_pw_shown[key] = False
+        else:
+            entry.configure(show="")
+            self._cred_pw_shown[key] = True
+        btn = getattr(entry, "_spindoctor_eye_btn", None)
+        if btn is not None:
+            btn.configure(text=("Hide" if self._cred_pw_shown[key] else "Show"))
+
+    def _test_credentials(self) -> None:
+        """Ping ScreenScraper and TheGamesDB to verify the entered creds.
+
+        Reads from the in-memory Setup vars (NOT disk) so users can test
+        a value they haven't saved yet. Runs on a worker thread; results
+        marshal back to the Tk main thread via ``root.after``.
+        """
+        btn = getattr(self, "_cred_test_btn", None)
+        if btn is None:
+            return
+
+        # Snapshot the values up-front so the worker doesn't touch Tk vars
+        # from a non-main thread.
+        ss_user = (self._setup_vars.get("screenscraper_user")
+                   or self.tk.StringVar()).get().strip()
+        ss_pass = (self._setup_vars.get("screenscraper_pass")
+                   or self.tk.StringVar()).get().strip()
+        tgdb_key = (self._setup_vars.get("thegamesdb_key")
+                    or self.tk.StringVar()).get().strip()
+
+        btn.configure(state="disabled", text="Testing\u2026")
+        self._cred_test_var.set("Contacting ScreenScraper and TheGamesDB\u2026")
+
+        def _worker() -> None:
+            # Defer the scraper import so test_credentials doesn't drag
+            # in `requests` for users who never click this button.
+            from . import scraper as scraper_mod
+
+            if ss_user or ss_pass:
+                ss_ok, ss_msg = scraper_mod.verify_screenscraper(ss_user, ss_pass)
+                ss_line = (
+                    f"\u2713 ScreenScraper: {ss_msg}"
+                    if ss_ok else f"\u2717 ScreenScraper: {ss_msg}"
+                )
+            else:
+                ss_line = "\u2014 ScreenScraper: skipped (no credentials entered)"
+
+            if tgdb_key:
+                tg_ok, tg_msg = scraper_mod.verify_thegamesdb(tgdb_key)
+                tg_line = (
+                    f"\u2713 TheGamesDB: {tg_msg}"
+                    if tg_ok else f"\u2717 TheGamesDB: {tg_msg}"
+                )
+            else:
+                tg_line = "\u2014 TheGamesDB: skipped (no API key entered)"
+
+            def _finish() -> None:
+                self._cred_test_var.set(f"{ss_line}\n{tg_line}")
+                btn.configure(state="normal", text="Test credentials")
+                self._set_status("Credential test complete.")
+
+            self.root.after(0, _finish)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
 
     def _save_setup(self) -> None:
         cfg = load_config()
@@ -2341,7 +3149,7 @@ class _SpinDoctorGUI:
                 "the rebuild commands via Windows Task Scheduler "
                 "(trigger: 'At log on') for hands-off updates."
             ),
-            wraplength=860, justify="left", foreground="#444",
+            wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 6))
 
         btn_row = self.ttk.Frame(frame)
@@ -2462,7 +3270,7 @@ class _SpinDoctorGUI:
         browse_row.grid(row=3, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.ttk.Label(
             browse_row, text="Browse on disk:",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(side="left")
         self.ttk.Button(
             browse_row, text="Open Media folder for selected system",
@@ -2935,7 +3743,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             migrate_lb_btns,
             text="(nothing selected = migrate all systems)",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(side="left", padx=4)
 
         self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
@@ -2996,7 +3804,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             undo_frame,
             text="Select a manifest or leave as 'latest'. Click Refresh to load available manifests.",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6)
 
         self._migrate_undo_apply_var = self.tk.BooleanVar(value=False)
@@ -3125,7 +3933,7 @@ class _SpinDoctorGUI:
         self._mm_tree.column("pos",     width=50,  stretch=False, anchor="center")
         self._mm_tree.column("system",  width=340, stretch=True,  anchor="w")
         self._mm_tree.column("visible", width=80,  stretch=False, anchor="center")
-        self._mm_tree.tag_configure("hidden", foreground="gray")
+        self._mm_tree.tag_configure("hidden", foreground=_FG_DIMMER)
 
         vsb = self.ttk.Scrollbar(tree_frame, orient="vertical",
                                  command=self._mm_tree.yview)
@@ -3439,7 +4247,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             frame,
             text="Search every system's database for a ROM or display name.",
-            foreground="#444",
+            foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 4))
         search_row = self.ttk.Frame(frame)
         search_row.pack(fill="x", pady=2)
@@ -3578,7 +4386,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             media_frame,
             text="Media types to fetch (leave all unchecked for project default):",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 2))
         types_grid = self.ttk.Frame(media_frame)
         types_grid.pack(anchor="w", padx=6, pady=(0, 2))
@@ -3669,7 +4477,7 @@ class _SpinDoctorGUI:
             full_row,
             text="  Runs fetch-meta → fetch-media → update-db in sequence. "
                  "Stops on first error.",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(side="left")
 
         # ── batch-edit ───────────────────────────────────────────────────────
@@ -3971,7 +4779,7 @@ class _SpinDoctorGUI:
             cur_frame,
             text="archive = moves duplicates to a zip archive (reversible via Undo)."
                  "  delete = permanently removes ROMs from disk.",
-            foreground="#888",
+            foreground=_FG_DIMMER,
         ).pack(anchor="w", padx=6, pady=(0, 2))
 
         cur_btns = self.ttk.Frame(cur_frame)
@@ -4016,7 +4824,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             cln_cats_frame,
             text="Unsafe (removes undo/recovery options):",
-            foreground="#888",
+            foreground=_FG_DIMMER,
         ).grid(row=unsafe_row, column=0, columnspan=cols, sticky="w",
                padx=4, pady=(6, 1))
         unsafe_row += 1
@@ -4237,7 +5045,7 @@ class _SpinDoctorGUI:
             text=(f"  {self._CURATE_RETIRE_GLYPH} = will be retired  "
                   f"  {self._CURATE_SKIP_GLYPH} = kept (vetoed)  "
                   "  — Click a retire row and press Space or double-click to toggle."),
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(anchor="w", padx=8, pady=(0, 2))
 
         # iid → (group_index, retire_path). Only retire rows are in here;
@@ -4743,7 +5551,7 @@ class _SpinDoctorGUI:
             add_btns,
             text=("(add-pc-system runs an interactive title-picker "
                   "via --auto-best where possible.)"),
-            foreground="#666",
+            foreground=_FG_DIM,
         ).pack(side="left", padx=10)
 
         # ── pc-rename ─────────────────────────────────────────────────────────
@@ -4880,7 +5688,7 @@ class _SpinDoctorGUI:
                   "LEDBlinky install isn't at the default location. The "
                   "Backup tab can snapshot the LEDBlinky install before "
                   "you run Generate with --overwrite."),
-            wraplength=860, justify="left", foreground="#666",
+            wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 
         return frame
@@ -4980,7 +5788,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             cfg_frame,
             text="DemulShooter -target value. Leave blank to auto-detect from system name.",
-            foreground="#666",
+            foreground=_FG_DIM,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6)
 
         self.ttk.Label(cfg_frame, text="Extra args (optional)").grid(
@@ -5052,7 +5860,7 @@ class _SpinDoctorGUI:
                 "  • Refresh Most Played.bat      → spindoctor-stats build-wheel --apply\n"
                 "  • Refresh Both.bat             → all three in sequence"
             ),
-            justify="left", foreground="#444",
+            justify="left", foreground=_FG_DIM,
             font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
         ).pack(anchor="w", pady=(0, 8))
 
@@ -5068,7 +5876,7 @@ class _SpinDoctorGUI:
                   "if blank. After installing, register the .bat files in "
                   "HyperHQ → Tools tab so they show up in the in-cabinet "
                   "Tools menu."),
-            wraplength=860, justify="left", foreground="#666",
+            wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(2, 4))
 
         out_row = self.ttk.Frame(hhq_frame)
@@ -5102,7 +5910,7 @@ class _SpinDoctorGUI:
                   "are maintenance tasks). The system must already exist "
                   "under <hyperspin_dir>/Databases/<NAME>/<NAME>.xml and "
                   "use PCLauncher as its emulator."),
-            wraplength=860, justify="left", foreground="#666",
+            wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(2, 4))
 
         sys_row = self.ttk.Frame(wheel_frame)
@@ -5133,7 +5941,7 @@ class _SpinDoctorGUI:
                       "privileges (no UAC prompt). Optional delay lets "
                       "HyperSpin / RocketLauncher settle before the "
                       "rebuild kicks in."),
-                wraplength=860, justify="left", foreground="#666",
+                wraplength=860, justify="left", foreground=_FG_DIM,
             ).pack(anchor="w", padx=6, pady=(2, 4))
 
             delay_row = self.ttk.Frame(sched_frame)
@@ -5172,7 +5980,7 @@ class _SpinDoctorGUI:
                       "spindoctor-recent rebuild --apply && "
                       "spindoctor-stats build-wheel --apply` line in "
                       "`crontab -e`, or a systemd-user unit."),
-                wraplength=860, justify="left", foreground="#666",
+                wraplength=860, justify="left", foreground=_FG_DIM,
             ).pack(anchor="w", padx=6, pady=(2, 6))
 
         # ── Manual fallback instructions ──────────────────────────────────────
@@ -5200,7 +6008,7 @@ class _SpinDoctorGUI:
                 "spindoctor-stats build-wheel --apply\n"
                 "  5. Settings → uncheck 'Stop the task if it runs longer than'."
             ),
-            justify="left", foreground="#444",
+            justify="left", foreground=_FG_DIM,
             font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
@@ -5349,7 +6157,7 @@ class _SpinDoctorGUI:
             text=("Tip: anything in <ANGLE_BRACKETS> is a placeholder you "
                   "need to replace before running. Append --help to any "
                   "command to see its full option list in the Output panel."),
-            wraplength=860, justify="left", foreground="#666",
+            wraplength=860, justify="left", foreground=_FG_DIM,
         )
         hint.pack(anchor="w", pady=(8, 0))
 

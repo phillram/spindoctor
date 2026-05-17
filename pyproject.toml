@@ -75,6 +75,11 @@ spindoctor-gui = "spindoctor.gui:main"
 include = ["spindoctor*"]
 exclude = ["tests*", "build*", "scripts*"]
 
+[tool.setuptools.package-data]
+# Ship the window-icon assets with the wheel so iconbitmap/iconphoto
+# can find them at runtime (Path(__file__).parent / "assets").
+spindoctor = ["assets/*.png", "assets/*.ico"]
+
 [tool.bandit]
 # B324 (weak hash): SHA-1 / MD5 are used for *non-cryptographic* integrity
 #   checks — ROM verification against No-Intro DAT (the DATs themselves

@@ -191,15 +191,25 @@ The status bar at the bottom switches to `Dry run finished — nothing changed. 
 
 ### Menubar
 
-A `File` / `Help` menubar runs across the top of the window:
+A `File` / `View` / `Help` menubar runs across the top of the window:
 
 - **File → Open config.json** — opens `~/.spindoctor/config.json` in your OS default editor.
 - **File → Open SpinDoctor folder** — opens `~/.spindoctor/` (where caches, manifests, and ignore lists live) in Explorer / Finder / xdg-open.
 - **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`. Falls back to a warning dialog if the path doesn't exist (e.g. an unmounted drive).
 - **File → View logs & manifests…** — opens a Toplevel window listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. These are the files `--undo` reads to reverse a run; the viewer is read-only on purpose so you don't accidentally break a future undo. Three buttons at the bottom: **Undo this run** runs the matching `--undo` command for the selected manifest (e.g. `migrate --undo <path>`, `theme-apply --undo <path>`, `curate --undo`); **Show diff** renders the selected manifest's changes as a before/after table (Source / Target / Scope / Bucket columns for theme swaps, Component / From / To for migrations) instead of raw JSON; **Revert just \<SYSTEM\>…** (Theme swaps only) opens a listbox of the systems in the manifest and runs `theme-apply --undo <path> --revert-system <picked>` so you can roll back a single wheel without undoing the whole run. For categories whose CLI always reverses the *most recent* run (curate, media-scan), a confirmation dialog warns you when you pick an older row so you don't accidentally reverse the wrong one.
 - **File → Browse HyperSpin themes…** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`. Sortable Treeview with a live filter box (type "xbox" to find Xbox glyphs, etc.); double-click a row to open the file in your OS image viewer. The **Apply replacement pack…** button opens a Plan/Apply window for swapping a community theme pack onto the cabinet — every overwritten file is backed up under `~/.spindoctor/themes/` so the run is reversible from the Logs & Manifests viewer.
+- **View → Show output pane** — checkbutton (also bound to `Ctrl+`` `) that collapses or restores the bottom Output panel. The status-bar **Hide output** / **Show output** button does the same. Useful on 1280×720 cabinet displays where the panel eats 200+ vertical pixels. State persists across restarts via the `output_visible` config key.
+- **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×` that multiplies font sizes (and therefore widget metrics) across the whole window. `Ctrl+=` / `Ctrl+-` step by 0.1; `Ctrl+0` resets to 1.0×. Mid-session changes are applied live to the named system fonts so widgets re-flow on the next idle tick. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG.
 - **Help → Check for updates** — pings `api.github.com/repos/phillram/spindoctor/releases/latest` and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every GUI launch — when newer, the status bar shows "Update available: vX.Y.Z" and the Output panel logs the URL. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable both for cabinets behind a strict firewall.
+
+### Dark mode
+
+The GUI is dark by default — no toggle, no setting. The palette (deep grey background, off-white text, blue selection / focus accents) is applied via `ttk.Style` overrides on the `clam` theme plus `option_add` defaults for the non-themed Tk widgets (Menu, Listbox, Text, Canvas, PanedWindow). The macOS native menubar still uses the system appearance because Tk can't override it.
+
+### Right-click in any text input
+
+Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scraper credentials, the Output panel, log viewers — has a right-click (or `Button-2` on macOS) context menu with Cut / Copy / Paste / Select-All. Read-only views show only Copy + Select-All; masked password fields suppress Copy/Cut so right-click can't bypass the mask. The Setup tab's password and API-key rows get a `Show` / `Hide` eyeball-style button to unmask the field for verification, and a `Test credentials` button under the rows that pings ScreenScraper and TheGamesDB and reports ✓ / ✗ inline before you click Save.
 
 ### Stopping a long-running command
 

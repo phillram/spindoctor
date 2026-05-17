@@ -429,5 +429,56 @@ def test_gui_constructs_against_real_tk():
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
         assert app._status_var is not None
+
+        # v1.9: live UI-scale changes must not raise and must round-trip
+        # back to the named-font sizes. Pick a non-default scale, then
+        # reset — we only care that the API works without exceptions.
+        app._set_ui_scale(0.8)
+        app.root.update_idletasks()
+        assert abs(app._ui_scale - 0.8) < 1e-6
+        app._set_ui_scale(1.25)
+        app.root.update_idletasks()
+        assert abs(app._ui_scale - 1.25) < 1e-6
+        app._set_ui_scale(1.0)
+
+        # Output pane toggle must flip both ways and update the button
+        # label so the status-bar control stays in sync.
+        assert app._output_visible is True
+        app._toggle_output(False)
+        assert app._output_visible is False
+        assert app._output_toggle_btn.cget("text") == "Show output"
+        app._toggle_output(True)
+        assert app._output_visible is True
+        assert app._output_toggle_btn.cget("text") == "Hide output"
+
+        # Eyeball toggle: flipping must clear and restore show="*".
+        # The setup tab builds the credential entries lazily, but the
+        # construction above triggers _build_setup_tab so they exist.
+        pw_entry = app._cred_entries.get("screenscraper_pass")
+        assert pw_entry is not None
+        assert str(pw_entry.cget("show")) == "*"
+        app._toggle_password_visibility("screenscraper_pass")
+        assert str(pw_entry.cget("show")) == ""
+        app._toggle_password_visibility("screenscraper_pass")
+        assert str(pw_entry.cget("show")) == "*"
+
+        # Right-click context menu must be attached to credential
+        # entries (covered by the walker, not a per-call-site attach).
+        assert getattr(pw_entry, "_spindoctor_ctxmenu_attached", False)
     finally:
         app.root.destroy()
+
+
+# ─── module-level helpers reachable without Tk ────────────────────────────────
+
+def test_clamp_ui_scale_clamps_extremes():
+    assert gui._clamp_ui_scale(0.1) == gui.UI_SCALE_MIN
+    assert gui._clamp_ui_scale(5.0) == gui.UI_SCALE_MAX
+    assert gui._clamp_ui_scale(1.0) == 1.0
+    assert gui._clamp_ui_scale("garbage") == 1.0
+
+
+def test_ui_scale_presets_includes_1x():
+    # The reset action snaps to 1.0; if the presets ever lose that entry
+    # the View menu radio would have no preset corresponding to "default".
+    assert 1.0 in gui.UI_SCALE_PRESETS

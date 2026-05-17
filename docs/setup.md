@@ -128,6 +128,8 @@ spindoctor config set thegamesdb_key your_api_key
 spindoctor config set default_metadata_source thegamesdb
 ```
 
+In the GUI, the same fields live at the bottom of the Setup tab under **Scraper credentials**. Password / API-key entries are masked by default — click **Show** next to a field to verify what you pasted, and **Hide** to re-mask. Once both fields are populated, click **Test credentials**: SpinDoctor makes a single authenticated call to ScreenScraper and TheGamesDB and prints a ✓ / ✗ summary directly under the rows, so you catch a bad key before the first `fetch-meta` run instead of after it.
+
 ## 11. Bootstrap your wheel
 
 For each system that has ROMs but no database:
