@@ -4148,6 +4148,7 @@ class _SpinDoctorGUI:
             ("_match_system_combo",    "_match_system_var",    None),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
+            ("_ovr_system_combo",      "_ovr_system_var",      None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_led_system_combo",      "_led_system_var",      "MAME"),
@@ -7058,6 +7059,95 @@ class _SpinDoctorGUI:
             command=self._run_organize_undo,
         ).pack(side="left", padx=6)
 
+        # ── Per-system overrides ─────────────────────────────────────────────
+        # Surfaces `config system set` so users with niche systems
+        # (homebrew consoles, PC libraries, custom MAME variants) can
+        # configure scraper IDs, ROM extensions, layout, and emulator
+        # without crafting an exact CLI invocation. Most cabinet owners
+        # never need this — stock systems Just Work — but for the ~5%
+        # who do, this was previously CLI-only territory.
+        ovr_frame = self.ttk.LabelFrame(frame, text="Per-system overrides")
+        ovr_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            ovr_frame,
+            text=("Customise scraper IDs, ROM extensions, layout, "
+                  "and emulator for one system. Leave any field blank "
+                  "to inherit SpinDoctor's defaults. Run 'Show config "
+                  "— system list' above to see what's currently set."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        ovr_top = self.ttk.Frame(ovr_frame)
+        ovr_top.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(ovr_top, text="System").pack(side="left")
+        self._ovr_system_var = self.tk.StringVar()
+        self._ovr_system_combo = self.ttk.Combobox(
+            ovr_top, textvariable=self._ovr_system_var,
+            state="readonly", width=28,
+        )
+        self._ovr_system_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            ovr_top, text="Load current values",
+            command=self._load_system_override,
+        ).pack(side="left", padx=10)
+
+        ovr_form = self.ttk.Frame(ovr_frame)
+        ovr_form.pack(fill="x", padx=6, pady=4)
+        # Compact 2-column grid keeps the form scannable.
+        self._ovr_ss_id_var = self.tk.StringVar()
+        self._ovr_tgdb_id_var = self.tk.StringVar()
+        self._ovr_exts_var = self.tk.StringVar()
+        self._ovr_layout_var = self.tk.StringVar()
+        self._ovr_emulator_var = self.tk.StringVar()
+
+        rows: list[tuple[str, "tk_mod.StringVar", str]] = [
+            ("ScreenScraper ID (int)",   self._ovr_ss_id_var,    ""),
+            ("TheGamesDB ID (int)",      self._ovr_tgdb_id_var,  ""),
+            ("ROM extensions (csv)",     self._ovr_exts_var,
+             "e.g. .ps7,iso  — leading dot optional"),
+            ("Emulator",                 self._ovr_emulator_var,
+             "RocketLauncher emulator name (RetroArch, RPCS3, …)"),
+        ]
+        for r, (label, var, hint) in enumerate(rows):
+            self.ttk.Label(ovr_form, text=label).grid(
+                row=r, column=0, sticky="w", padx=(0, 6), pady=2,
+            )
+            self.ttk.Entry(
+                ovr_form, textvariable=var, width=24,
+            ).grid(row=r, column=1, sticky="w", pady=2)
+            if hint:
+                self.ttk.Label(
+                    ovr_form, text=hint, foreground=_FG_DIMMER,
+                ).grid(row=r, column=2, sticky="w", padx=8, pady=2)
+
+        # Layout is a closed set; render as a Combobox so users don't
+        # have to memorise the three valid strings.
+        layout_row = len(rows)
+        self.ttk.Label(ovr_form, text="Layout").grid(
+            row=layout_row, column=0, sticky="w", padx=(0, 6), pady=2,
+        )
+        self.ttk.Combobox(
+            ovr_form, textvariable=self._ovr_layout_var,
+            values=["", "per-game-folder", "multi-disc-m3u", "flat"],
+            state="readonly", width=22,
+        ).grid(row=layout_row, column=1, sticky="w", pady=2)
+        self.ttk.Label(
+            ovr_form,
+            text="(blank = inherit default; 'flat' disables a built-in rule)",
+            foreground=_FG_DIMMER,
+        ).grid(row=layout_row, column=2, sticky="w", padx=8, pady=2)
+
+        ovr_btns = self.ttk.Frame(ovr_frame)
+        ovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            ovr_btns, text="Save override",
+            command=self._save_system_override,
+        ).pack(side="left")
+        self.ttk.Button(
+            ovr_btns, text="Clear form",
+            command=self._clear_system_override_form,
+        ).pack(side="left", padx=6)
+
         # ── List existing systems ─────────────────────────────────────────────
         list_frame = self.ttk.LabelFrame(frame, text="Inspect")
         list_frame.pack(fill="x", pady=(4, 4))
@@ -7075,6 +7165,109 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         return frame
+
+    def _load_system_override(self) -> None:
+        """Populate the override form from the saved overrides for
+        the currently-picked system."""
+        sys_ = self._ovr_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "Pick a system",
+                "Choose a system from the dropdown first.",
+            )
+            return
+        try:
+            from .config import get_system_overrides, reset_override_cache
+            reset_override_cache()  # force re-read from disk
+            overrides = get_system_overrides()
+        except Exception as exc:  # noqa: BLE001
+            self.messagebox.showerror(
+                "Could not load overrides", str(exc),
+            )
+            return
+        current = overrides.get(sys_, {})
+        # Numeric IDs render as strings in the entry; blank if absent.
+        ss = current.get("screenscraper_id")
+        self._ovr_ss_id_var.set("" if ss is None else str(ss))
+        tg = current.get("thegamesdb_id")
+        self._ovr_tgdb_id_var.set("" if tg is None else str(tg))
+        exts = current.get("rom_extensions") or []
+        # Strip leading dots when displaying — the CLI accepts both
+        # with and without; the form-builder reads them back the same.
+        self._ovr_exts_var.set(",".join(
+            e.lstrip(".") for e in exts
+        ))
+        self._ovr_layout_var.set(current.get("layout") or "")
+        self._ovr_emulator_var.set(current.get("emulator") or "")
+        if not current:
+            self._set_status(
+                f"No override saved for '{sys_}' yet — fill the form "
+                "and click Save."
+            )
+
+    def _clear_system_override_form(self) -> None:
+        for var in (
+            self._ovr_ss_id_var, self._ovr_tgdb_id_var,
+            self._ovr_exts_var, self._ovr_layout_var,
+            self._ovr_emulator_var,
+        ):
+            var.set("")
+
+    def _save_system_override(self) -> None:
+        """Build a `config system set` argv from the form and run it.
+
+        Only fields the user filled in get forwarded — empty entries
+        leave the corresponding CLI flag off, which (per the CLI's
+        own semantics) means "don't touch that key".
+        """
+        sys_ = self._ovr_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "Pick a system",
+                "Choose a system from the dropdown first.",
+            )
+            return
+        args = ["config", "system", "set", sys_]
+        ss = self._ovr_ss_id_var.get().strip()
+        if ss:
+            try:
+                int(ss)
+            except ValueError:
+                self.messagebox.showerror(
+                    "Invalid ScreenScraper ID",
+                    f"Must be an integer; got {ss!r}.",
+                )
+                return
+            args += ["--screenscraper-id", ss]
+        tg = self._ovr_tgdb_id_var.get().strip()
+        if tg:
+            try:
+                int(tg)
+            except ValueError:
+                self.messagebox.showerror(
+                    "Invalid TheGamesDB ID",
+                    f"Must be an integer; got {tg!r}.",
+                )
+                return
+            args += ["--thegamesdb-id", tg]
+        exts = self._ovr_exts_var.get().strip()
+        if exts:
+            args += ["--rom-extensions", exts]
+        layout = self._ovr_layout_var.get().strip()
+        if layout:
+            args += ["--layout", layout]
+        emu = self._ovr_emulator_var.get().strip()
+        if emu:
+            args += ["--emulator", emu]
+        # No field provided beyond the system name? Bail with a hint.
+        if len(args) == 4:
+            self.messagebox.showinfo(
+                "Nothing to save",
+                "Fill in at least one field before saving — the "
+                "CLI only touches keys you provide.",
+            )
+            return
+        self._run_cli("spindoctor", args)
 
     def _run_organize(self) -> None:
         sys_ = self._organize_system_var.get().strip()
