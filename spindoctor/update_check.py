@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -108,10 +109,28 @@ def fetch_latest_release(
             "User-Agent": "spindoctor-gui-update-check",
         },
     )
+    # Explicit TLS 1.2+ context. GitHub's HTTPS endpoint requires TLS
+    # 1.2 since 2018; the default-context fallback in older OpenSSL
+    # builds (notably those bundled into Python 3.8 frozen-for-Win7
+    # exes) can negotiate TLS 1.0/1.1, get rejected, and produce a
+    # cryptic "EOF occurred in violation of protocol" rather than a
+    # clean handshake error. `create_default_context()` plus the
+    # explicit `TLSv1_2` floor avoids that on every shipping platform.
+    ssl_ctx = ssl.create_default_context()
+    try:
+        ssl_ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    except (AttributeError, ValueError):
+        # Older Python builds (3.6 and earlier) lacked `TLSVersion`.
+        # The supported floor here is 3.8 so this branch only fires on
+        # exotic OpenSSL builds that don't expose the enum — fall back
+        # silently rather than refuse to check.
+        pass
     # nosec B310 — URL is the hardcoded GitHub Releases endpoint, not
     # user input. Bandit otherwise flags every urlopen because it
     # *could* be handed a file:// URL by a caller.
-    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310
+    with urllib.request.urlopen(  # nosec B310
+        req, timeout=timeout, context=ssl_ctx,
+    ) as resp:
         payload = json.loads(resp.read().decode("utf-8", errors="replace"))
     return payload["tag_name"], payload.get("html_url", "")
 

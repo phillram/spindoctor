@@ -247,6 +247,77 @@ def _select_all(widget, *, is_entry: bool, is_text: bool) -> None:
         pass
 
 
+def _attach_tooltip(widget, text: str, tk_mod) -> None:
+    """Show *text* in a floating Label while the cursor hovers over *widget*.
+
+    Implemented with a single hidden ``Toplevel`` per attachment, shown
+    on ``<Enter>`` (after a 500 ms grace period so cursors merely
+    passing through don't flash) and destroyed on ``<Leave>`` or
+    ``<ButtonPress>``. No third-party tooltip library — the cabinet
+    target ships a frozen exe and every extra dependency bloats the
+    install.
+    """
+    if not text:
+        return
+    state = {"tip": None, "after_id": None}
+
+    def _show(_event=None):
+        if state["tip"] is not None:
+            return
+        try:
+            x = widget.winfo_rootx() + 20
+            y = widget.winfo_rooty() + widget.winfo_height() + 4
+            tip = tk_mod.Toplevel(widget)
+            tip.wm_overrideredirect(True)
+            tip.wm_geometry(f"+{x}+{y}")
+            # Match the dark palette without importing the colour
+            # constants — the literals here mirror _DARK_BG_RAISE +
+            # _DARK_FG so the tooltip blends with the rest of the UI.
+            lbl = tk_mod.Label(
+                tip, text=text, justify="left",
+                background="#2d2d30", foreground="#dcdcdc",
+                relief="solid", borderwidth=1,
+                padx=6, pady=3, wraplength=360,
+            )
+            lbl.pack()
+            state["tip"] = tip
+        except Exception:  # noqa: BLE001 - never block UI on tooltip failure
+            state["tip"] = None
+
+    def _schedule(event=None):
+        # 500 ms feels right — long enough that drive-by hover doesn't
+        # flicker, short enough that an intentional pause produces help
+        # before the user gives up.
+        _cancel()
+        try:
+            state["after_id"] = widget.after(500, _show)
+        except Exception:  # noqa: BLE001
+            state["after_id"] = None
+
+    def _cancel(_event=None):
+        aid = state["after_id"]
+        if aid is not None:
+            try:
+                widget.after_cancel(aid)
+            except Exception:  # noqa: BLE001
+                pass
+            state["after_id"] = None
+
+    def _hide(_event=None):
+        _cancel()
+        tip = state["tip"]
+        if tip is not None:
+            try:
+                tip.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            state["tip"] = None
+
+    widget.bind("<Enter>", _schedule, add="+")
+    widget.bind("<Leave>", _hide, add="+")
+    widget.bind("<ButtonPress>", _hide, add="+")
+
+
 def _walk_attach_context_menus(root_widget, tk_mod) -> None:
     """Recursively attach the context menu to every Entry/Text descendant.
 
@@ -418,11 +489,12 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "cleanup run --apply",
     "ignore list",
     "match list",
+    "match clear --yes",
     # Metadata & media
     "fetch-meta --all",
     "fetch-media --all",
     "media-scan --all",
-    "media-add <SYSTEM> <ROM> --type wheel --source <PATH>",
+    "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH>",
     "update-db --system <SYSTEM>",
     "generate-config",
     # Wheels (favorites / recent / most-played)
@@ -744,8 +816,12 @@ class _SpinDoctorGUI:
               indicatorbackground=[("selected", _DARK_BG_SELECT)])
 
         # ── Notebook (tab strip) ─────────────────────────────────────────────
+        # Pass tabmargins as a space-joined string rather than a tuple
+        # — some older Tk 8.5 builds (Python 3.8 on Win7) reject the
+        # tuple form with `bad screen distance`; the string form is
+        # accepted everywhere.
         s.configure("TNotebook", background=_DARK_BG, borderwidth=0,
-                    tabmargins=(2, 4, 2, 0))
+                    tabmargins="2 4 2 0")
         s.configure("TNotebook.Tab", background=_DARK_BG_RAISE,
                     foreground=_FG_DIM, padding=(10, 4),
                     bordercolor=_DARK_BORDER, lightcolor=_DARK_BG_RAISE)
@@ -1021,7 +1097,11 @@ class _SpinDoctorGUI:
             if sys.platform == "win32":
                 ico = icon_dir / "icon.ico"
                 if ico.exists():
-                    self.root.iconbitmap(default=str(ico))
+                    # Pass the path positionally rather than via
+                    # `default=` — older Tk 8.5 builds (Python 3.8.10
+                    # for some Win7 cabinet setups) silently ignore
+                    # the `default=` keyword and the icon never sets.
+                    self.root.iconbitmap(str(ico))
                     return
             png = icon_dir / "icon.png"
             if png.exists():
@@ -1733,8 +1813,37 @@ class _SpinDoctorGUI:
                 f"available. Current: {__version__}.\n"
                 f"  {result.release_url or 'https://github.com/phillram/spindoctor/releases'}\n"
             )
+            # Surface a one-click Download button in the status bar so
+            # users don't have to dig through the Help menu. Removed
+            # automatically the first time `_set_status` runs without
+            # an update message — see _clear_update_download_button.
+            self._show_update_download_button(
+                result.release_url
+                or "https://github.com/phillram/spindoctor/releases/latest"
+            )
         # When the user is up to date, stay quiet — no point cluttering
         # the output panel with an "all good" line on every launch.
+
+    def _show_update_download_button(self, url: str) -> None:
+        # Lazily-created — only built when an update is actually
+        # available, so no widget overhead on up-to-date launches.
+        existing = getattr(self, "_update_download_btn", None)
+        if existing is not None:
+            try:
+                existing.destroy()
+            except Exception:  # noqa: BLE001 - widget race during teardown
+                pass
+        btn = self.ttk.Button(
+            self._status_bar_frame
+            if hasattr(self, "_status_bar_frame")
+            else self._stop_btn.master,
+            text="Download…",
+            command=lambda u=url: self._open_url(u),
+        )
+        # Sit immediately to the left of Stop so it's the first thing
+        # the user's eye lands on when checking the bottom bar.
+        btn.pack(side="right", padx=(0, 6), before=self._stop_btn)
+        self._update_download_btn = btn
 
     def _manual_update_check(self) -> None:
         """Help → Check for updates: background variant with feedback.
@@ -2962,10 +3071,22 @@ class _SpinDoctorGUI:
             self.ttk.Entry(frame, textvariable=var, width=60).grid(
                 row=i, column=1, sticky="ew", padx=6, pady=2
             )
+            btn_cell = self.ttk.Frame(frame)
+            btn_cell.grid(row=i, column=2, sticky="w", pady=2)
             self.ttk.Button(
-                frame, text="Browse…",
+                btn_cell, text="Browse…",
                 command=lambda v=var, k=key: self._browse_dir(v, k),
-            ).grid(row=i, column=2, sticky="w", pady=2)
+            ).pack(side="left")
+            # Open-folder button — lets the user verify what they
+            # configured by jumping to it in Explorer/Finder. Common
+            # post-setup workflow: "did I really pick the right HyperSpin
+            # folder?" Previously required clicking Browse… and reading
+            # the dialog's current selection. Disabled visually-only via
+            # the `?` label when the path is blank.
+            self.ttk.Button(
+                btn_cell, text="Open",
+                command=lambda v=var, k=key: self._open_setup_path(v, k),
+            ).pack(side="left", padx=(4, 0))
 
         # ── Scraper credentials ───────────────────────────────────────────────
         cred_sep_row = len(_SETUP_FIELDS) + 1
@@ -3068,6 +3189,30 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         return frame
+
+    def _open_setup_path(self, var, key: str) -> None:
+        """Open the path currently in *var* in Explorer / Finder.
+
+        Mirrors the Browse… button next to it, but for verification:
+        a cabinet owner who has just typed (or pasted) a path can
+        confirm visually that it points where they expect — no need
+        to re-open the file dialog.
+        """
+        path = var.get().strip()
+        if not path:
+            self.messagebox.showinfo(
+                "Nothing to open",
+                f"The {key} field is empty. Use Browse… to pick a path "
+                "first, or type one in.",
+            )
+            return
+        target = Path(path)
+        # For file paths (currently just mame_executable) open the
+        # containing folder instead — most users want to see "where
+        # is this exe?" not "launch it".
+        if target.is_file():
+            target = target.parent
+        self._open_path(target, missing_label=key)
 
     def _browse_dir(self, var, key: str) -> None:
         # mame_executable is a file, not a directory; everything else is a dir.
@@ -3440,7 +3585,7 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Audit selected system",
                         command=self._run_audit).pack(side="left")
         self.ttk.Button(btn_row, text="Audit all systems",
-                        command=lambda: self._run_cli("spindoctor", ["audit", "--all"])
+                        command=self._run_audit_all,
                         ).pack(side="left", padx=6)
         self.ttk.Button(btn_row, text="Run doctor",
                         command=lambda: self._run_cli("spindoctor", ["doctor"])
@@ -3468,7 +3613,49 @@ class _SpinDoctorGUI:
             command=self._open_audit_roms_folder,
         ).pack(side="left", padx=6)
 
+        # ── Audit options: CSV report + flag toggles ─────────────────────────
+        # `audit --report path.csv` writes a machine-readable summary of
+        # every missing / extra / mismatched file. Cabinet owners use it
+        # to share findings, paste into a spreadsheet, or feed into a
+        # follow-up cleanup script. Without this row it was Custom-
+        # Command-only territory.
+        opts_row = self.ttk.Frame(frame)
+        opts_row.grid(row=4, column=0, columnspan=3, sticky="w", pady=(6, 0))
+        self.ttk.Label(opts_row, text="Report CSV (optional)").pack(side="left")
+        self._audit_report_var = self.tk.StringVar()
+        _rep_entry = self.ttk.Entry(
+            opts_row, textvariable=self._audit_report_var, width=42,
+        )
+        _rep_entry.pack(side="left", padx=6, fill="x", expand=True)
+        self.ttk.Button(
+            opts_row, text="Browse…",
+            command=self._browse_audit_report,
+        ).pack(side="left")
+
+        flags_row = self.ttk.Frame(frame)
+        flags_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(2, 0))
+        self._audit_no_media_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Skip media checks (--no-media)",
+            variable=self._audit_no_media_var,
+        ).pack(side="left")
+        self._audit_detailed_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Detailed output (--detailed)",
+            variable=self._audit_detailed_var,
+        ).pack(side="left", padx=10)
+
         return frame
+
+    def _browse_audit_report(self) -> None:
+        path = self.filedialog.asksaveasfilename(
+            title="Save audit CSV as…",
+            defaultextension=".csv",
+            initialfile="audit.csv",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if path:
+            self._audit_report_var.set(str(Path(path)))
 
     def _open_audit_media_folder(self) -> None:
         system = self._system_var.get().strip()
@@ -3517,6 +3704,9 @@ class _SpinDoctorGUI:
             ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
             ("_rename_system_combo",   "_rename_system_var",   None),
+            ("_match_system_combo",    "_match_system_var",    None),
+            ("_organize_system_combo", "_organize_system_var", None),
+            ("_madd_system_combo",     "_madd_system_var",     None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_led_system_combo",      "_led_system_var",      "MAME"),
@@ -3553,6 +3743,11 @@ class _SpinDoctorGUI:
             else:
                 self._set_status("No systems found — check paths in the Setup tab.")
 
+    def _run_audit_all(self) -> None:
+        args = ["audit", "--all"]
+        self._audit_args_extend(args)
+        self._run_cli("spindoctor", args)
+
     def _run_audit(self) -> None:
         system = self._system_var.get().strip()
         if not system:
@@ -3562,7 +3757,27 @@ class _SpinDoctorGUI:
                 "after configuring paths in the Setup tab).",
             )
             return
-        self._run_cli("spindoctor", ["audit", "--system", system])
+        args = ["audit", "--system", system]
+        self._audit_args_extend(args)
+        self._run_cli("spindoctor", args)
+
+    def _audit_args_extend(self, args: list[str]) -> None:
+        """Append the shared audit-options row's flags to *args*.
+
+        Used by both `Audit selected system` and `Audit all systems`
+        so the CSV / no-media / detailed toggles work for either.
+        """
+        report = getattr(self, "_audit_report_var", None)
+        if report is not None:
+            path = report.get().strip()
+            if path:
+                args += ["--report", path]
+        no_media = getattr(self, "_audit_no_media_var", None)
+        if no_media is not None and no_media.get():
+            args.append("--no-media")
+        detailed = getattr(self, "_audit_detailed_var", None)
+        if detailed is not None and detailed.get():
+            args.append("--detailed")
 
     # ── Backup & Restore tab ──────────────────────────────────────────────────
 
@@ -4448,6 +4663,7 @@ class _SpinDoctorGUI:
         # change in one command doesn't ripple here.
         rows: list[tuple[str, list[str]]] = [
             ("Find duplicate ROMs",        ["find-dupes", "--all"]),
+            ("Find cross-system dupes",    ["find-dupes", "--cross-systems"]),
             ("Find misplaced ROMs",        ["find-misplaced", "--all"]),
             ("Find orphan media",          ["find-orphan-media", "--all"]),
             ("Check disc-set consistency", ["check-discs", "--all"]),
@@ -4654,16 +4870,70 @@ class _SpinDoctorGUI:
         meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
         meta_frame.pack(fill="x", pady=(4, 4))
         self._meta_auto_best_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _meta_ab = self.ttk.Checkbutton(
             meta_frame, text="Auto-pick best match (--auto-best)",
             variable=self._meta_auto_best_var,
-        ).pack(anchor="w", padx=6, pady=2)
+        )
+        _meta_ab.pack(anchor="w", padx=6, pady=2)
+        _attach_tooltip(
+            _meta_ab,
+            "When the scraper returns multiple candidates, pick the "
+            "highest-confidence one automatically instead of prompting. "
+            "Fast for big libraries; risks the occasional wrong match — "
+            "review the audit afterwards.",
+            self.tk,
+        )
         self._meta_all_games_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _meta_ag = self.ttk.Checkbutton(
             meta_frame,
             text="Refresh complete entries too (--all-games)",
             variable=self._meta_all_games_var,
-        ).pack(anchor="w", padx=6, pady=2)
+        )
+        _meta_ag.pack(anchor="w", padx=6, pady=2)
+        _attach_tooltip(
+            _meta_ag,
+            "By default fetch-meta only touches games that are missing "
+            "fields. Tick this to re-scrape every game, overwriting "
+            "existing metadata (useful when scraper data improves).",
+            self.tk,
+        )
+        self._meta_no_cache_var = self.tk.BooleanVar(value=False)
+        _meta_nc = self.ttk.Checkbutton(
+            meta_frame,
+            text="Skip cache, hit the API every game (--no-cache)",
+            variable=self._meta_no_cache_var,
+        )
+        _meta_nc.pack(anchor="w", padx=6, pady=2)
+        _attach_tooltip(
+            _meta_nc,
+            "Bypass the local metadata cache for this run. Slower and "
+            "uses more API quota; use when you suspect the cache holds "
+            "stale data from a scraper outage.",
+            self.tk,
+        )
+        # Source + threshold inputs sit in their own row so the
+        # checkbox column above doesn't get visually crowded.
+        meta_opts_row = self.ttk.Frame(meta_frame)
+        meta_opts_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(meta_opts_row, text="Source").pack(side="left")
+        self._meta_source_var = self.tk.StringVar(value="config default")
+        self.ttk.Combobox(
+            meta_opts_row, textvariable=self._meta_source_var,
+            values=["config default", "screenscraper", "thegamesdb"],
+            state="readonly", width=18,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(meta_opts_row, text="Threshold").pack(
+            side="left", padx=(10, 0),
+        )
+        self._meta_threshold_var = self.tk.StringVar(value="")
+        self.ttk.Entry(
+            meta_opts_row, textvariable=self._meta_threshold_var, width=6,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(
+            meta_opts_row,
+            text="(0.0–1.0, blank = config default)",
+            foreground=_FG_DIMMER,
+        ).pack(side="left")
         self.ttk.Button(
             meta_frame, text="Run fetch-meta",
             command=self._run_fetch_meta,
@@ -4815,7 +5085,116 @@ class _SpinDoctorGUI:
             command=self._run_batch_edit,
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
+        # ── media-add ────────────────────────────────────────────────────────
+        # `media-add` registers ONE local file (wheel/snap/trailer/etc.)
+        # for ONE game by copying it into the correct HyperSpin Media
+        # folder. Common workflow: user grabs a trailer manually, or
+        # repairs a missing wheel — they shouldn't have to drop to the
+        # terminal for a one-shot media file.
+        madd_frame = self.ttk.LabelFrame(frame, text="Add one local media file")
+        madd_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            madd_frame,
+            text=("Copy a single file into HyperSpin's Media folder for "
+                  "one game. Tick 'Move' to remove the source after "
+                  "copy. Doesn't honour the Apply checkbox — it always "
+                  "writes (the chosen file is the user's explicit input)."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        madd_row1 = self.ttk.Frame(madd_frame)
+        madd_row1.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(madd_row1, text="System").pack(side="left")
+        self._madd_system_var = self.tk.StringVar()
+        self._madd_system_combo = self.ttk.Combobox(
+            madd_row1, textvariable=self._madd_system_var,
+            state="readonly", width=22,
+        )
+        self._madd_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(madd_row1, text="Game").pack(side="left", padx=(8, 0))
+        self._madd_game_var = self.tk.StringVar()
+        self.ttk.Entry(
+            madd_row1, textvariable=self._madd_game_var, width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(madd_row1, text="Type").pack(side="left", padx=(8, 0))
+        self._madd_type_var = self.tk.StringVar(value="wheel")
+        self.ttk.Combobox(
+            madd_row1, textvariable=self._madd_type_var,
+            values=["wheel", "background", "artwork", "title", "snap",
+                    "fade", "video", "trailer", "sound", "theme"],
+            state="readonly", width=10,
+        ).pack(side="left", padx=6)
+
+        madd_row2 = self.ttk.Frame(madd_frame)
+        madd_row2.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(madd_row2, text="File").pack(side="left")
+        self._madd_file_var = self.tk.StringVar()
+        self.ttk.Entry(
+            madd_row2, textvariable=self._madd_file_var,
+        ).pack(side="left", fill="x", expand=True, padx=6)
+        self.ttk.Button(
+            madd_row2, text="Browse…",
+            command=self._browse_media_file,
+        ).pack(side="left")
+
+        madd_opts = self.ttk.Frame(madd_frame)
+        madd_opts.pack(fill="x", padx=6, pady=2)
+        self._madd_move_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            madd_opts, text="Move (remove source after copy)",
+            variable=self._madd_move_var,
+        ).pack(side="left")
+        self._madd_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            madd_opts, text="Overwrite if target exists",
+            variable=self._madd_overwrite_var,
+        ).pack(side="left", padx=10)
+
+        madd_btns = self.ttk.Frame(madd_frame)
+        madd_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            madd_btns, text="Add media file",
+            command=self._run_media_add,
+        ).pack(side="left")
+
         return frame
+
+    def _browse_media_file(self) -> None:
+        path = self.filedialog.askopenfilename(
+            title="Pick a media file",
+            initialdir=str(Path.home()),
+            filetypes=[("All files", "*.*")],
+        )
+        if path:
+            self._madd_file_var.set(str(Path(path)))
+
+    def _run_media_add(self) -> None:
+        sys_ = self._madd_system_var.get().strip()
+        game = self._madd_game_var.get().strip()
+        path = self._madd_file_var.get().strip()
+        if not (sys_ and game and path):
+            self.messagebox.showwarning(
+                "Missing arguments",
+                "Pick a system, type a game name, and pick a file.",
+            )
+            return
+        if not Path(path).exists():
+            self.messagebox.showerror(
+                "File not found", f"No such file:\n{path}",
+            )
+            return
+        args = [
+            "media-add",
+            "--system", sys_,
+            "--game", game,
+            "--type", self._madd_type_var.get(),
+            "--file", path,
+        ]
+        if self._madd_move_var.get():
+            args.append("--move")
+        if self._madd_overwrite_var.get():
+            args.append("--overwrite")
+        self._run_cli("spindoctor", args)
 
     def _run_batch_edit(self) -> None:
         sys_args = self._meta_system_args()
@@ -4864,6 +5243,29 @@ class _SpinDoctorGUI:
             args.append("--auto-best")
         if self._meta_all_games_var.get():
             args.append("--all-games")
+        if self._meta_no_cache_var.get():
+            args.append("--no-cache")
+        source = self._meta_source_var.get().strip()
+        if source and source != "config default":
+            args += ["--source", source]
+        thresh = self._meta_threshold_var.get().strip()
+        if thresh:
+            try:
+                t = float(thresh)
+            except ValueError:
+                self.messagebox.showerror(
+                    "Invalid threshold",
+                    f"Threshold must be a number between 0.0 and 1.0; "
+                    f"got {thresh!r}.",
+                )
+                return
+            if not (0.0 <= t <= 1.0):
+                self.messagebox.showerror(
+                    "Invalid threshold",
+                    f"Threshold must be between 0.0 and 1.0; got {t}.",
+                )
+                return
+            args += ["--threshold", str(t)]
         if self._meta_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -5200,7 +5602,69 @@ class _SpinDoctorGUI:
             command=self._show_ignore_viewer,
         ).pack(side="left", padx=6)
 
+        # ── match cache ──────────────────────────────────────────────────────
+        # Cached scraper-match decisions live in ~/.spindoctor/match_cache/.
+        # After fetch-meta the user's pick for each game is remembered so
+        # re-running fetch-meta doesn't re-prompt. List shows the cache;
+        # Clear wipes it so games get re-evaluated (e.g. after scraper
+        # data improves). Doctor already prunes stale cache entries;
+        # this surface is for deliberate full resets.
+        match_frame = self.ttk.LabelFrame(frame, text="Metadata-match cache")
+        match_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            match_frame,
+            text=("Each fetch-meta run remembers which scraper result you "
+                  "picked per game. Clear the cache (for one system or "
+                  "all) when scraper data improves and you want fresh "
+                  "matches. Doctor --fix already drops stale entries."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        match_row = self.ttk.Frame(match_frame)
+        match_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(match_row, text="System (blank = all)").pack(side="left")
+        self._match_system_var = self.tk.StringVar()
+        self._match_system_combo = self.ttk.Combobox(
+            match_row, textvariable=self._match_system_var,
+            state="readonly", width=24,
+        )
+        self._match_system_combo.pack(side="left", padx=6)
+
+        match_btns = self.ttk.Frame(match_frame)
+        match_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            match_btns, text="List cached matches",
+            command=self._match_list,
+        ).pack(side="left")
+        self.ttk.Button(
+            match_btns, text="Clear cache…",
+            command=self._match_clear,
+        ).pack(side="left", padx=6)
+
         return frame
+
+    def _match_list(self) -> None:
+        args = ["match", "list"]
+        system = self._match_system_var.get().strip()
+        if system:
+            args.extend(["--system", system])
+        self._run_cli("spindoctor", args)
+
+    def _match_clear(self) -> None:
+        system = self._match_system_var.get().strip()
+        scope = f"the '{system}' system" if system else "ALL systems"
+        if not self.messagebox.askyesno(
+            "Clear match cache?",
+            f"This will delete cached scraper-match selections for "
+            f"{scope}. The next 'fetch-meta' run will re-evaluate "
+            "every game (and may re-prompt on ambiguous matches).\n\n"
+            "Continue?",
+        ):
+            return
+        args = ["match", "clear", "--yes"]
+        if system:
+            args.extend(["--system", system])
+        self._run_cli("spindoctor", args)
 
     def _curate_system_args(self) -> Optional[list[str]]:
         if self._curate_all_var.get():
@@ -5912,6 +6376,58 @@ class _SpinDoctorGUI:
             command=lambda: self._run_rename_or_clone("clone"),
         ).pack(side="left", padx=6)
 
+        # ── Organize a system ────────────────────────────────────────────────
+        # `organize` does two things: (a) writes sort wheels (per-axis
+        # sub-databases under Databases/<sys>/{Genre,Year,...}) so
+        # HyperSpin can show "Sort by …", (b) for systems that need
+        # per-game folders (PS3, multi-disc PS2/Saturn/Dreamcast) plans
+        # ROM restructuring with an undo manifest. Restructure honours
+        # the tab-level Apply checkbox.
+        org_frame = self.ttk.LabelFrame(
+            frame, text="Organize a system (sort wheels + optional restructure)",
+        )
+        org_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            org_frame,
+            text=("Sort wheels add 'Sort by Genre / Year / Letter / "
+                  "Manufacturer' sub-wheels to HyperSpin without touching "
+                  "ROMs. Restructure (opt-in) plans per-game folders for "
+                  "PS3 / multi-disc systems; honours Apply above for "
+                  "real file moves and writes an undo manifest."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        org_row = self.ttk.Frame(org_frame)
+        org_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(org_row, text="System").pack(side="left")
+        self._organize_system_var = self.tk.StringVar()
+        self._organize_system_combo = self.ttk.Combobox(
+            org_row, textvariable=self._organize_system_var,
+            state="readonly", width=24,
+        )
+        self._organize_system_combo.pack(side="left", padx=6)
+        self._organize_no_sort_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            org_row, text="Skip sort wheels (--no-sort)",
+            variable=self._organize_no_sort_var,
+        ).pack(side="left", padx=10)
+        self._organize_restructure_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            org_row, text="Restructure ROMs (--restructure)",
+            variable=self._organize_restructure_var,
+        ).pack(side="left", padx=10)
+
+        org_btns = self.ttk.Frame(org_frame)
+        org_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            org_btns, text="Run organize",
+            command=self._run_organize,
+        ).pack(side="left")
+        self.ttk.Button(
+            org_btns, text="Undo latest restructure",
+            command=self._run_organize_undo,
+        ).pack(side="left", padx=6)
+
         # ── List existing systems ─────────────────────────────────────────────
         list_frame = self.ttk.LabelFrame(frame, text="Inspect")
         list_frame.pack(fill="x", pady=(4, 4))
@@ -5929,6 +6445,43 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         return frame
+
+    def _run_organize(self) -> None:
+        sys_ = self._organize_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "System required", "Pick a system from the dropdown.",
+            )
+            return
+        args = ["organize", sys_]
+        if self._organize_no_sort_var.get():
+            args.append("--no-sort")
+        if self._organize_restructure_var.get():
+            args.append("--restructure")
+            # Restructure honours the same Apply checkbox as add-system /
+            # rename / clone above so users don't accidentally move ROMs
+            # while learning the tool. Sort-wheel writes are XML-only and
+            # always live (no apply flag exists for them).
+            if self._systems_apply_var.get():
+                args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_organize_undo(self) -> None:
+        sys_ = self._organize_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "System required",
+                "Pick the system whose restructure you want to undo.",
+            )
+            return
+        if not self.messagebox.askyesno(
+            "Undo restructure?",
+            f"Reverse the latest 'organize --restructure --apply' for "
+            f"'{sys_}'? Files will be moved back to their original "
+            "locations using the saved manifest.",
+        ):
+            return
+        self._run_cli("spindoctor", ["organize", sys_, "--undo"])
 
     def _run_rename_or_clone(self, verb: str) -> None:
         """Shared dispatcher for the `rename` / `clone` buttons.
