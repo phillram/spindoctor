@@ -152,3 +152,26 @@ def test_delete_logon_task_returns_output_on_success(monkeypatch):
     )
     out = autostart.delete_logon_task()
     assert "SUCCESS" in out
+
+
+def test_run_schtasks_hides_console_window(monkeypatch):
+    """``_run_schtasks`` must pass ``CREATE_NO_WINDOW`` to ``subprocess.run``.
+
+    Without it, every ``task_exists`` / ``create_logon_task`` /
+    ``delete_logon_task`` call from the GUI pops a black ``cmd``
+    window on Windows — jarring for cabinet owners and the exact
+    UX papercut we hide for the main CLI subprocess in
+    ``gui.py``.
+    """
+    captured: dict = {}
+
+    def fake_run(_args, **kwargs):
+        captured.update(kwargs)
+        return _FakeProc(returncode=0)
+
+    monkeypatch.setattr(autostart.subprocess, "run", fake_run)
+    autostart._run_schtasks(["/Query", "/TN", "x"])
+    # 0x08000000 == CREATE_NO_WINDOW. Hardcoded in the source rather
+    # than imported from a constant — guard against the value being
+    # accidentally cleared back to 0 in a refactor.
+    assert captured.get("creationflags") == 0x08000000

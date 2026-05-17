@@ -258,8 +258,8 @@ def test_render_contact_sheet_png_with_pillow(isolated_config, tmp_path):
     written = render_contact_sheet_png(items, out, columns=2)
     assert written == out
     assert out.exists()
-    img = Image.open(out)
-    assert img.size[0] > 0 and img.size[1] > 0
+    with Image.open(out) as img:
+        assert img.size[0] > 0 and img.size[1] > 0
 
 
 def test_render_contact_sheet_png_falls_back_when_pillow_missing(

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import struct
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +17,13 @@ from typing import Optional
 
 from .config import MEDIA_TYPES
 from .database import GameEntry
+
+# Hide the console window when ``ffprobe`` is invoked from the GUI on
+# Windows. Without ``CREATE_NO_WINDOW`` the user sees a black ``cmd``
+# window flash on every video duration probe — and ``audit`` /
+# ``preview`` can call this hundreds of times in a row. 0 elsewhere
+# so the flag is a no-op on macOS / Linux.
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 from .media import MEDIA_DIR_MAP
 
 
@@ -349,6 +357,7 @@ def _has_ffprobe() -> bool:
                 ["ffprobe", "-version"],
                 capture_output=True,
                 timeout=5,
+                creationflags=_CREATE_NO_WINDOW,
             )
             _ffprobe_ok = True
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
@@ -361,6 +370,7 @@ def _duration_ffprobe(path: Path) -> Optional[float]:
         result = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_format", str(path)],
             capture_output=True, text=True, timeout=15,
+            creationflags=_CREATE_NO_WINDOW,
         )
         data = json.loads(result.stdout)
         raw = data.get("format", {}).get("duration")

@@ -33,6 +33,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import sys
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -41,6 +42,13 @@ from typing import Iterable, Optional
 
 from ._compat import et_indent
 from .config import CONFIG_DIR, Config
+
+# Hide the console window when ``subprocess.run`` launches MAME from
+# the GUI on Windows. Without this, every ``audit`` / ``controls
+# export`` run pops a black ``cmd.exe`` window that flashes for the
+# duration of ``mame -listxml`` (can be many seconds for a full set).
+# 0 on non-Windows so the flag is harmless to pass on macOS / Linux.
+_CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 
@@ -140,6 +148,7 @@ def run_mame_listxml(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, check=False, timeout=300,
+            creationflags=_CREATE_NO_WINDOW,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         raise RuntimeError(f"Failed to run MAME: {e}") from e
@@ -620,7 +629,13 @@ def _ensure_controls_xml_entries(
     """
     if src_path.exists():
         try:
-            tree = ET.parse(src_path)
+            # Read-then-parse so the file handle releases before the
+            # in-place write below. ET.parse(path) keeps the file
+            # open on Windows until the tree is GC'd, which can
+            # collide with the subsequent ``open(dst_path, "wb")``
+            # when ``src_path == dst_path``.
+            with open(src_path, "rb") as fh:
+                tree = ET.parse(fh)
             root = tree.getroot()
         except ET.ParseError as e:
             raise ValueError(f"Failed to parse {src_path}: {e}") from e

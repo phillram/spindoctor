@@ -453,6 +453,14 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
             f"[yellow]{no_input}[/yellow] no-input · "
             f"[red]{not_listed}[/red] not listed",
         )
+    elif result.listxml_error:
+        # MAME enrichment was requested but failed — surface the cause
+        # so users don't read the (empty) control rows as "every ROM
+        # lacks input mappings".
+        grid.add_row(
+            "[red]MAME controls (-listxml):[/red]",
+            f"[red]unavailable —[/red] {result.listxml_error}",
+        )
     console.print(grid)
 
     if result.fuzzy_matches:
@@ -6743,10 +6751,17 @@ def find_global(query: str, limit: int, exact: bool):
     tbl.add_column("Description", style="dim")
 
     total = 0
+    skipped: list[tuple[str, str]] = []
     for sys_name in systems:
         try:
             db = load_database(sys_name, config.databases_dir)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — report, don't suppress
+            # The original code silently skipped systems whose XML
+            # failed to parse — users wondered why "Mario" matched on
+            # NES but not SNES with an obvious typo in the file. Keep
+            # the loop going so other systems still match, but
+            # surface what was skipped at the bottom.
+            skipped.append((sys_name, f"{type(exc).__name__}: {exc}"))
             continue
         per_system = 0
         for name, entry in sorted(db.games().items()):
@@ -6765,6 +6780,12 @@ def find_global(query: str, limit: int, exact: bool):
 
     if total == 0:
         console.print(f"[yellow]No matches for '{query}'.[/yellow]")
-        return
-    console.print(tbl)
-    console.print(f"[dim]{total} match(es) across {len(systems)} system(s).[/dim]")
+    else:
+        console.print(tbl)
+        console.print(f"[dim]{total} match(es) across {len(systems)} system(s).[/dim]")
+    if skipped:
+        console.print(
+            f"[red]Skipped {len(skipped)} database(s) due to load errors:[/red]"
+        )
+        for sys_name, reason in skipped:
+            console.print(f"  [dim]{sys_name}:[/dim] [yellow]{reason}[/yellow]")
