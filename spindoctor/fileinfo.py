@@ -322,25 +322,52 @@ def _png_dimensions(path: Path) -> tuple[int, int]:
 
 
 def _jpeg_dimensions(path: Path) -> tuple[int, int]:
+    """Read width/height from a JPEG by walking the segment markers.
+
+    The SOF marker can sit far past the file header in progressive or
+    high-resolution JPEGs with large comment/EXIF segments. We walk
+    the segment chain via seek() so we don't have to slurp the whole
+    file into memory or guess a buffer size.
+    """
+    _SOF_MARKERS = {0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                    0xC9, 0xCA, 0xCB}
     with open(path, "rb") as f:
-        data = f.read(65536)
-    if data[:2] != b"\xff\xd8":
-        raise ValueError("Not a JPEG")
-    i = 2
-    while i < len(data) - 4:
-        if data[i] != 0xFF:
-            break
-        marker = data[i + 1]
-        # SOF markers that contain dimensions
-        if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB):
-            if i + 9 <= len(data):
-                height = struct.unpack(">H", data[i + 5:i + 7])[0]
-                width = struct.unpack(">H", data[i + 7:i + 9])[0]
+        if f.read(2) != b"\xff\xd8":
+            raise ValueError("Not a JPEG")
+        while True:
+            byte = f.read(1)
+            if not byte:
+                break
+            if byte != b"\xff":
+                # Marker bytes must start with 0xFF; misaligned data
+                # means the file is corrupt or not actually a JPEG.
+                raise ValueError("Malformed JPEG (missing marker)")
+            # Skip any padding 0xFF bytes between segments.
+            marker_byte = f.read(1)
+            while marker_byte == b"\xff":
+                marker_byte = f.read(1)
+            if not marker_byte:
+                break
+            marker = marker_byte[0]
+            if marker in _SOF_MARKERS:
+                # SOF: 2-byte length, 1-byte precision, 2-byte height,
+                # 2-byte width.
+                payload = f.read(7)
+                if len(payload) < 7:
+                    break
+                height = struct.unpack(">H", payload[3:5])[0]
+                width = struct.unpack(">H", payload[5:7])[0]
                 return width, height
-        if i + 3 >= len(data):
-            break
-        seg_len = struct.unpack(">H", data[i + 2:i + 4])[0]
-        i += 2 + seg_len
+            if marker in (0xD8, 0xD9):
+                # SOI/EOI carry no payload.
+                continue
+            seg_len_bytes = f.read(2)
+            if len(seg_len_bytes) < 2:
+                break
+            seg_len = struct.unpack(">H", seg_len_bytes)[0]
+            if seg_len < 2:
+                break
+            f.seek(seg_len - 2, 1)
     raise ValueError("No SOF marker found")
 
 
@@ -363,6 +390,18 @@ def _has_ffprobe() -> bool:
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             _ffprobe_ok = False
     return _ffprobe_ok
+
+
+def reset_ffprobe_cache() -> None:
+    """Drop the cached ffprobe-availability flag.
+
+    The flag is set once per process. Tests that patch ``subprocess.run``
+    to simulate a missing/present ffprobe must call this before and
+    after, otherwise the first test's verdict sticks for the rest of
+    the suite.
+    """
+    global _ffprobe_ok
+    _ffprobe_ok = None
 
 
 def _duration_ffprobe(path: Path) -> Optional[float]:
@@ -398,22 +437,29 @@ def _walk_boxes(data: bytes) -> Optional[float]:
             break
         name = data[i + 4:i + 8]
 
+        # An atom's body begins after the header. The header is 8 bytes
+        # for the common case (size+type) and 16 bytes when size==1
+        # (the 64-bit "extended-size" variant carries an extra
+        # 8-byte length immediately after the type).
+        header_len = 8
         if size == 0:
             break
         if size == 1:
-            # Extended size (64-bit)
             if i + 16 <= len(data):
                 size = struct.unpack(">Q", data[i + 8:i + 16])[0]
+                header_len = 16
             else:
                 break
 
         if name == b"moov":
-            return _walk_boxes(data[i + 8: i + size])
+            return _walk_boxes(data[i + header_len: i + size])
 
         if name == b"mvhd":
-            return _parse_mvhd(data[i:i + size])
+            # mvhd in the wild is never 64-bit (it's <100 bytes), but
+            # slicing from the body start keeps both shapes consistent.
+            return _parse_mvhd(data[i: i + size])
 
-        if size < 8:
+        if size < header_len:
             break
         i += size
     return None

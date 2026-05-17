@@ -165,15 +165,40 @@ def config_set(key: str, value: str):
     ):
         err_console.print(f"[red]Unknown config key:[/red] {key}")
         sys.exit(1)
+    # Per-key validation: catch out-of-range values at set time so the
+    # user gets a clear error here, not a confusing failure deep inside
+    # a download/match loop later. Bounds match the docstring above.
+    _CONFIG_BOUNDS: dict[str, tuple[float, float]] = {
+        "match_threshold": (0.0, 1.0),
+        "max_concurrent_downloads": (1, 64),
+        "metadata_cache_ttl_days": (0, 3650),
+        "ui_scale": (0.6, 2.0),
+    }
     current = getattr(config, key)
-    if isinstance(current, bool):
-        setattr(config, key, value.lower() in ("1", "true", "yes"))
-    elif isinstance(current, int):
-        setattr(config, key, int(value))
-    elif isinstance(current, float):
-        setattr(config, key, float(value))
-    else:
-        setattr(config, key, value)
+    try:
+        if isinstance(current, bool):
+            new_val: object = value.lower() in ("1", "true", "yes")
+        elif isinstance(current, int):
+            new_val = int(value)
+        elif isinstance(current, float):
+            new_val = float(value)
+        else:
+            new_val = value
+    except ValueError:
+        err_console.print(
+            f"[red]Invalid value for[/red] {key}: {value!r} "
+            f"(expected {type(current).__name__})"
+        )
+        sys.exit(1)
+    if key in _CONFIG_BOUNDS and isinstance(new_val, (int, float)) and not isinstance(new_val, bool):
+        lo, hi = _CONFIG_BOUNDS[key]
+        if not (lo <= float(new_val) <= hi):
+            err_console.print(
+                f"[red]Out of range for[/red] {key}: {new_val} "
+                f"(must be between {lo} and {hi})"
+            )
+            sys.exit(1)
+    setattr(config, key, new_val)
     save_config(config)
     console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {value!r}")
 

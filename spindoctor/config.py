@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import json
+import shutil
+import sys
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -245,8 +248,22 @@ def load_config() -> Config:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return Config.from_dict(json.load(f))
-        except (json.JSONDecodeError, TypeError):
-            pass
+        except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+            # Preserve the corrupt file so the user can recover hand-edited
+            # values; falling through to Config() would overwrite it on the
+            # next save with no trace of what was there.
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup = CONFIG_FILE.with_suffix(f".corrupt-{stamp}.json")
+            try:
+                shutil.copy2(CONFIG_FILE, backup)
+                backup_note = f" Backed up to {backup}."
+            except OSError:
+                backup_note = ""
+            print(
+                f"spindoctor: warning — {CONFIG_FILE} is unreadable ({exc}); "
+                f"using defaults.{backup_note}",
+                file=sys.stderr,
+            )
     return Config()
 
 

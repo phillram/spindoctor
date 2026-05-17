@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Main Menu.xml save is now atomic with a backup.** `_mm_save_order` previously called `tree.write(xml_path, …)` directly, so a power cut, full disk, or other I/O failure between starting the write and `fsync` could leave HyperSpin's top-level wheel half-written. The save path now mirrors the rest of the codebase: when `backup_before_modify` is on, copy the live file to `<name>.<stamp>.bak`, write the new content to `<name>.xml.tmp`, then `os.replace()` over the original.
+- **`spindoctor doctor` (and every other read-only command) no longer shows a misleading "DRY RUN" banner in the GUI.** The Custom Command tab tagged any invocation lacking `--apply` as a dry run, even when the command itself never accepts `--apply`. Users running `doctor`, `audit`, `find-dupes`, `lint`, `theme-scan`, etc. saw "DRY RUN COMPLETE — nothing was written. Re-run with --apply to commit" — nonsense for a read-only check. Added a curated `_READ_ONLY_COMMANDS` set (matched at both verb and verb+subverb level) so the banner only fires for commands that genuinely have an apply mode.
+- **GUI no longer raises `TclError` on close while a command is mid-stream.** `_drain_queue` rescheduled itself with `self.root.after(50, …)` but the pending callback fired on a destroyed root after the user closed the window, dumping a traceback to stderr. The `after` id is now tracked and cancelled in a `WM_DELETE_WINDOW` handler.
+- **Corrupt `config.json` no longer silently overwrites itself with defaults.** `load_config()` now copies the unreadable file to `config.corrupt-<stamp>.json` and prints a warning to stderr before falling back to defaults — previously the next `save_config()` call would erase the hand-edited values without a trace.
+- **`config set` now validates numeric ranges at write time.** Setting `match_threshold=99.0`, `max_concurrent_downloads=-5`, or any other out-of-range numeric value was silently accepted and only surfaced as a confusing failure deep inside a download/match loop later. Range checks now produce a clear error from the CLI immediately.
+- **`_jpeg_dimensions` reads chunked instead of truncating at 64 KiB.** High-resolution progressive JPEGs (large EXIF / comment segments before the SOF marker) reported `width=None, height=None` in the Inspect tab because the SOF sat past the 65 536-byte buffer. The reader now walks segment markers via `seek()`, so the inspect/preview/audit columns work for any well-formed JPEG.
+- **MP4 box walker handles 64-bit "extended-size" atoms correctly.** Big recordings (>4 GiB) use `size=1` with an 8-byte trailing length, but the recursion stepped 8 bytes past the type instead of 16 — the inner walk landed on garbage and `_duration_mp4_native` returned `None`. The header length is now computed per atom.
+- **`_compat.et_indent` no longer relies on a leaked for-loop variable.** The Python 3.8 fallback indented the last child with `child.tail = i` after a `for child in elem:` loop, suppressed by `# noqa: F821`. Replaced with an explicit `last_child` accumulator so the polyfill is well-defined regardless of loop-variable persistence semantics.
+- **`HyperspinDatabase.load` cleaned up redundant `except (ET.ParseError, Exception)` clause.** The tuple unconditionally caught both, then ran `isinstance` re-dispatch inside the handler — replaced with two separate `except` clauses for clarity.
+
+### Changed
+
+- **GUI hard-coded `Consolas` / `Menlo` font references replaced with `TkFixedFont`.** Three widgets (theme viewer, helper-script panel, scheduler help text) were pinned to a literal family and therefore bypassed the View → UI scale knob. They now use the named font alias that resolves to the platform monospace default *and* honours the scale setting.
+- **GUI run-history switched from `list` + `pop(0)` to `collections.deque(maxlen=200)`.** Append-and-evict is now O(1) at both call sites, and the explicit `if len(...) > 200: pop(0)` blocks went away.
+- **Added `spindoctor.fileinfo.reset_ffprobe_cache()`.** The module-level `_ffprobe_ok` flag is set once per process; tests that patch `subprocess.run` to simulate a missing/present `ffprobe` would otherwise poison every later test in the same process. The reset is also useful from the GUI after a user installs ffmpeg without restarting.
+
+### Tooling
+
+- **New tests: 88 cases across `tests/test_config.py`, `tests/test_health.py`, `tests/test_fileinfo.py`, `tests/test_compat.py`.** The `health` (`doctor`) and `fileinfo` (`inspect`, `preview`, `audit` columns) modules previously had zero coverage; now every individual check plus the full orchestration path is exercised, including the destructive `check_match_cache --fix` branch. Total suite: 473 → 561 tests, still under 2 s.
+- **`tests/test_themes.py::test_list_manifests_sorts_newest_first` no longer sleeps 1.1 s.** The test was using filesystem mtime second-resolution as a synchronization primitive; replaced with an injected `datetime.now()` shim and explicit `os.utime` calls. Shaves >1 s off every CI run.
+
 ---
 
 ## [1.9.1] - 2026-05-17

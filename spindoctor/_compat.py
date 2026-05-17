@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import ast
 import xml.etree.ElementTree as ET
-from typing import Union
+from typing import Optional, Union
 
 
 def et_indent(tree: Union[ET.ElementTree, ET.Element], space: str = "  ") -> None:
@@ -27,10 +27,14 @@ def et_indent(tree: Union[ET.ElementTree, ET.Element], space: str = "  ") -> Non
                 elem.text = i + space
             if not elem.tail or not elem.tail.strip():
                 elem.tail = i
+            last_child: Optional[ET.Element] = None
             for child in elem:
                 _walk(child, level + 1)
-            if not child.tail or not child.tail.strip():  # noqa: F821
-                child.tail = i  # noqa: F821
+                last_child = child
+            if last_child is not None and (
+                not last_child.tail or not last_child.tail.strip()
+            ):
+                last_child.tail = i
         else:
             if level and (not elem.tail or not elem.tail.strip()):
                 elem.tail = i

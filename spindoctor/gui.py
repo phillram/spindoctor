@@ -30,8 +30,9 @@ import subprocess
 import sys
 import threading
 import time
+from collections import deque
 from pathlib import Path
-from typing import Callable, Optional, Sequence
+from typing import Callable, Deque, Optional, Sequence
 
 from . import __app_name__, __version__
 from .config import (
@@ -340,6 +341,45 @@ _CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
 )
 
 
+# Verbs that never modify disk state and therefore never accept --apply.
+# Used to suppress the "DRY RUN" banner the GUI prepends to commands that
+# lack --apply — the banner would mislead users into thinking a read-only
+# check (e.g. `doctor`) was a preview of something that could be committed.
+#
+# Single-token entries match `args[0]`. Two-token entries (e.g.
+# "mainmenu show") match `"args[0] args[1]"`. Verbs that *do* have an
+# --apply mode (e.g. `cleanup run`, `mainmenu sort`) are deliberately
+# absent so the banner still appears for their preview invocations.
+_READ_ONLY_COMMANDS: frozenset[str] = frozenset({
+    "--help", "--version",
+    "doctor", "tools-audit", "systems", "report", "preview",
+    "audit", "inspect", "find-dupes", "find-misplaced",
+    "find-orphan-media", "check-discs", "verify", "lint", "stats",
+    "find-global", "theme-scan", "theme-pack-create", "diff",
+    "install-tools", "generate-config", "stats-report",
+    "cleanup categories", "cleanup audit",
+    "ignore list", "match list",
+    "fav list", "recent list",
+    "mainmenu show", "mainmenu edit",
+    "ledblinky audit", "ledblinky check",
+    "lightgun detect", "lightgun audit", "lightgun configure",
+    "config show", "config init", "config set", "config system",
+    "backup list", "backup info",
+    "migrate --list-manifests", "theme-apply --list-manifests",
+    "add-system", "add-pc-system", "pc-rename", "batch-edit",
+})
+
+
+def _is_read_only_invocation(args: tuple) -> bool:
+    if not args:
+        return True
+    if args[0] in _READ_ONLY_COMMANDS:
+        return True
+    if len(args) >= 2 and f"{args[0]} {args[1]}" in _READ_ONLY_COMMANDS:
+        return True
+    return False
+
+
 # Curated dropdown for the Custom Command tab. Each entry is the argv
 # string the user would type after `spindoctor` on the command line, in
 # canonical form. Picking one populates the entry field; the user can
@@ -572,7 +612,9 @@ class _SpinDoctorGUI:
         # at the bottom of the window only shows the current run; the
         # Logs tab indexes everything since launch so you can scroll
         # back to "what did that dry-run say?" without re-running.
-        self._run_history: list[_RunRecord] = []
+        # 200 is hours of cabinet use — more than the user scrolls; the
+        # bounded deque caps memory without explicit pop(0) calls.
+        self._run_history: Deque[_RunRecord] = deque(maxlen=200)
         self._current_run: Optional[_RunRecord] = None
 
         # Tab-badge state — tracks which notebook tab launched the
@@ -591,7 +633,15 @@ class _SpinDoctorGUI:
         # user sees that instead of a vacuous "Ready.".
         self._startup_health_checks()
         # 50 ms polling is fast enough to feel real-time without busy-looping.
-        self.root.after(50, self._drain_queue)
+        # Track the `after` id so _on_close can cancel it; otherwise the
+        # callback re-fires on a destroyed root and raises TclError.
+        self._drain_after_id: Optional[str] = self.root.after(
+            50, self._drain_queue
+        )
+        try:
+            self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        except Exception:  # noqa: BLE001 - protocol() can fail in test stubs
+            pass
         # Kick off the GitHub release-tag check on a background thread
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
@@ -1947,9 +1997,11 @@ class _SpinDoctorGUI:
 
         # ── Right pane: viewer ───────────────────────────────────────────────
         viewer_frame = self.ttk.Frame(paned)
-        mono = "Consolas" if sys.platform == "win32" else "Menlo"
+        # TkFixedFont resolves to the platform monospace default and
+        # honours the user's ui_scale setting (Consolas/Menlo hard-codes
+        # bypass the scale knob — papercut from earlier releases).
         viewer = self.scrolledtext.ScrolledText(
-            viewer_frame, wrap="none", font=(mono, 9),
+            viewer_frame, wrap="none", font="TkFixedFont",
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
@@ -2782,8 +2834,6 @@ class _SpinDoctorGUI:
             record.append(footer)
             record.exit_code = 0
             self._run_history.append(record)
-            if len(self._run_history) > 200:
-                self._run_history.pop(0)
             self._refresh_logs_tab()
             self._set_status(
                 f"Dry run: {len(plans)} swap(s) planned. "
@@ -4213,7 +4263,22 @@ class _SpinDoctorGUI:
                 el = by_name[name]
                 el.set("enabled", entry["enabled"])
                 root.append(el)
-            tree.write(str(xml_path), encoding="unicode", xml_declaration=False)
+            # Backup + atomic write so an interrupted save (power cut, full
+            # disk) can't leave Main Menu.xml half-written.
+            import os
+            import shutil
+            from datetime import datetime
+            try:
+                cfg = load_config()
+                want_backup = bool(cfg.backup_before_modify)
+            except Exception:
+                want_backup = True
+            if want_backup and xml_path.exists():
+                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                shutil.copy2(xml_path, xml_path.with_suffix(f".{stamp}.bak"))
+            tmp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
+            tree.write(str(tmp_path), encoding="unicode", xml_declaration=False)
+            os.replace(str(tmp_path), str(xml_path))
         except Exception as exc:
             self.messagebox.showerror("Save failed", str(exc))
             return
@@ -5916,7 +5981,7 @@ class _SpinDoctorGUI:
                 "  • Refresh Both.bat             → all three in sequence"
             ),
             justify="left", foreground=_FG_DIM,
-            font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
+            font="TkFixedFont",
         ).pack(anchor="w", pady=(0, 8))
 
         # ── HyperHQ → Tools install (default) ─────────────────────────────────
@@ -6064,7 +6129,7 @@ class _SpinDoctorGUI:
                 "  5. Settings → uncheck 'Stop the task if it runs longer than'."
             ),
             justify="left", foreground=_FG_DIM,
-            font=("Consolas" if sys.platform == "win32" else "Menlo", 9),
+            font="TkFixedFont",
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
         return frame
@@ -6269,7 +6334,13 @@ class _SpinDoctorGUI:
         # apply-mode commands. Tag the run so the Logs tab can label
         # it, and prepend a banner to the streaming output so the
         # user can't miss "this was a preview, not a real change".
-        is_dry_run = "--apply" not in args
+        # Read-only verbs (doctor, audit, find-dupes, etc.) never
+        # accept --apply, so suppress the banner for them — otherwise
+        # `spindoctor doctor` shows "DRY RUN COMPLETE — re-run with
+        # --apply to commit", which is nonsense for a read-only check.
+        is_dry_run = "--apply" not in args and not _is_read_only_invocation(
+            tuple(args)
+        )
         argv_str = _format_argv(argv)
         from datetime import datetime
         record = _RunRecord(
@@ -6277,14 +6348,10 @@ class _SpinDoctorGUI:
             argv_str=argv_str,
             dry_run=is_dry_run,
         )
+        # _run_history is a bounded deque(maxlen=200) — append is O(1)
+        # and oldest entries are evicted automatically.
         self._run_history.append(record)
         self._current_run = record
-        # Cap history at 200 entries — that's hours of cabinet use,
-        # far more than the user will scroll back through. Without a
-        # cap, a long-running GUI session leaks memory through the
-        # output buffers.
-        if len(self._run_history) > 200:
-            self._run_history.pop(0)
 
         banner = "\n=== DRY RUN ===\n" if is_dry_run else ""
         self._append_output(f"{banner}\n$ {argv_str}\n")
@@ -6377,7 +6444,25 @@ class _SpinDoctorGUI:
                         self._current_run.append(item)
         except queue.Empty:
             pass
-        self.root.after(50, self._drain_queue)
+        self._drain_after_id = self.root.after(50, self._drain_queue)
+
+    def _on_close(self) -> None:
+        """Cancel the pending _drain_queue and let the window destroy.
+
+        Without this, the next ``after`` callback fires on a destroyed
+        root and raises ``TclError`` on stderr, which startles users
+        closing the GUI while a command is mid-stream.
+        """
+        try:
+            if getattr(self, "_drain_after_id", None) is not None:
+                self.root.after_cancel(self._drain_after_id)
+                self._drain_after_id = None
+        except Exception:  # noqa: BLE001 - after_cancel can race on destroy
+            pass
+        try:
+            self.root.destroy()
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         self._proc = None
