@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from spindoctor import themes
 from spindoctor.config import Config
 
