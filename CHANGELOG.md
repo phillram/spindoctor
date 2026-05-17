@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [1.7.1] - 2026-05-17
+
+### Fixed
+
+- **GUI launch crash on v1.7.0.** Starting `spindoctor-gui` raised `AttributeError: '_SpinDoctorGUI' object has no attribute '_output'` before the window painted. The Main Menu tab's builder (added in v1.7.0) calls `_mm_refresh()` during construction, which writes to the Output panel — but the panel widget was created *after* the tab-add block in `_build_layout`. Hoisted `self._output` and `self._status_var` creation to before the tab loop so any tab builder can safely call `_append_output` / `_set_status` at construction time. No visible layout changes.
+
+---
+
 ## [1.7.0] - 2026-05-09
 
 ### Added
@@ -261,7 +269,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/phillram/spindoctor/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/phillram/spindoctor/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/phillram/spindoctor/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/phillram/spindoctor/compare/v1.4.0...v1.5.0
