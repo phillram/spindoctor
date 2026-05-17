@@ -5464,6 +5464,12 @@ class _SpinDoctorGUI:
         except OSError as exc:
             self.messagebox.showerror("Could not launch", f"{argv[0]}: {exc}")
             self._stop_btn.configure(state="disabled")
+            # Clear the per-run timing state before bailing — otherwise
+            # the next successful run's _on_proc_done picks up the
+            # stale monotonic timestamp and reports a hugely inflated
+            # "OK in N s" elapsed.
+            self._run_started_monotonic = None
+            self._run_label = ""
             self._set_status("Ready.")
             return
 

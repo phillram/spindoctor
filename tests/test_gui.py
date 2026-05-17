@@ -391,9 +391,10 @@ def test_gui_constructs_against_real_tk():
 
     This is the regression guard for whole-class bugs that only surface
     once the layout is built — e.g. tab builders referencing widgets
-    that don't exist yet (the ``_output`` AttributeError, v1.7.0 → v1.7.1),
-    or ttk widgets configured with options they don't accept (the
-    Checkbutton ``-foreground`` TclError, v1.7.1 → v1.7.2 → v1.7.3).
+    that don't exist yet (the ``_output`` AttributeError, shipped in
+    v1.7.0, fixed in v1.7.1), or ttk widgets configured with options
+    they don't accept (the Checkbutton ``-foreground`` TclError,
+    shipped in v1.7.2, fixed in v1.8.0).
     Both bugs slipped through earlier because every other test stops
     short of constructing a window. Skips if the host has no display
     (typical bare CI runner without xvfb; Linux CI here installs xvfb
