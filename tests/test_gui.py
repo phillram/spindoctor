@@ -166,6 +166,59 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
+# ─── _is_read_only_invocation ─────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("args", [
+    ("doctor",),
+    ("audit", "--all"),
+    ("find-dupes", "--all"),
+    ("lint",),
+    ("preview",),
+    ("mainmenu", "show"),
+    ("mainmenu", "edit"),
+    ("backup", "list", "--target", "/x"),
+    ("fav", "list"),
+    ("curate", "--list-manifests"),
+    ("config", "show"),
+])
+def test_read_only_invocations_are_recognised(args):
+    """Read-only commands must NOT get the DRY RUN banner.
+
+    Regressions here either drown the user in fake "preview" banners
+    on read-only checks (annoying) or, the other direction, hide the
+    DRY RUN banner on a real preview run (dangerous — the user could
+    think `cleanup run` without --apply was a real apply).
+    """
+    assert gui._is_read_only_invocation(args) is True
+
+
+@pytest.mark.parametrize("args", [
+    # Commands that *do* accept --apply must be flagged as dry-run-able
+    # so the banner appears for their preview invocations.
+    ("cleanup", "run"),
+    ("mainmenu", "sort", "alpha"),
+    ("mainmenu", "reorder", "SNES", "3"),
+    ("fav", "rebuild"),
+    ("recent", "rebuild"),
+    ("backup", "create", "--target", "/x"),
+    ("migrate", "--target", "/x"),
+    ("theme-apply", "/some/pack"),
+    ("rename", "--system", "MAME", "--game", "x", "--to", "y"),
+    ("clone", "--system", "MAME", "--game", "x", "--to", "y"),
+    ("add-system", "NES"),
+    ("add-pc-system", "Steam"),
+    ("pc-rename", "Old", "New"),
+    ("batch-edit", "--system", "MAME"),
+    ("ledblinky", "fix"),
+    ("organize", "--all"),
+    ("media-scan", "--all"),
+    ("fetch-meta", "--all"),
+])
+def test_dry_run_capable_invocations_are_not_read_only(args):
+    assert gui._is_read_only_invocation(args) is False
+
+
 # ─── Folder-open helpers ──────────────────────────────────────────────────────
 
 def test_open_path_uses_platform_specific_command(monkeypatch, tmp_path):
