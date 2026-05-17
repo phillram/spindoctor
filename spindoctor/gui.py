@@ -2691,6 +2691,10 @@ class _SpinDoctorGUI:
             command=self._run_backup_info,
         ).pack(side="left")
         self.ttk.Button(
+            btn_row, text="Compare to live",
+            command=self._run_backup_diff,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Restore backup",
             command=self._run_backup_restore,
         ).pack(side="left", padx=6)
@@ -2796,6 +2800,24 @@ class _SpinDoctorGUI:
             )
             return
         self._run_cli("spindoctor", ["backup", "info", "--backup", backup_path])
+
+    def _run_backup_diff(self) -> None:
+        """Run `spindoctor diff <backup>` against the current selection.
+
+        Surfaces the existing CLI-only `diff` subcommand alongside the
+        Show backup info / Restore controls — same picker, no extra
+        config required. Pure read-only command, so no confirmation
+        and no Apply check.
+        """
+        backup_path = self._backup_restore_path_var.get().strip()
+        if not backup_path:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick a backup folder first — diff compares its "
+                "contents against the live cabinet tree.",
+            )
+            return
+        self._run_cli("spindoctor", ["diff", backup_path])
 
     def _run_backup_restore(self) -> None:
         backup_path = self._backup_restore_path_var.get().strip()
@@ -3650,7 +3672,78 @@ class _SpinDoctorGUI:
             foreground="#666",
         ).pack(side="left")
 
+        # ── batch-edit ───────────────────────────────────────────────────────
+        # Minimal exposure of the batch-edit CLI command — one filter,
+        # one set clause, optional CSV report path. Power users with
+        # multiple filters / sets can still drop into Custom Command.
+        be_frame = self.ttk.LabelFrame(frame, text="Batch edit metadata")
+        be_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            be_frame,
+            text=("Bulk-edit DB fields across many games (uses the System "
+                  "selector above). Examples: filter=year=1980-1989 + "
+                  "set=genre=Action ; filter=missing=rating + set=rating=3."),
+            wraplength=820, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+
+        be_grid = self.ttk.Frame(be_frame)
+        be_grid.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(be_grid, text="Filter (e.g. genre=Action)").grid(
+            row=0, column=0, sticky="w", pady=2
+        )
+        self._batch_edit_filter_var = self.tk.StringVar()
+        self.ttk.Entry(
+            be_grid, textvariable=self._batch_edit_filter_var, width=40,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(be_grid, text="Set (e.g. rating=5)").grid(
+            row=1, column=0, sticky="w", pady=2
+        )
+        self._batch_edit_set_var = self.tk.StringVar()
+        self.ttk.Entry(
+            be_grid, textvariable=self._batch_edit_set_var, width=40,
+        ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(be_grid, text="Report CSV (optional path)").grid(
+            row=2, column=0, sticky="w", pady=2
+        )
+        self._batch_edit_report_var = self.tk.StringVar()
+        self.ttk.Entry(
+            be_grid, textvariable=self._batch_edit_report_var, width=40,
+        ).grid(row=2, column=1, sticky="ew", padx=6, pady=2)
+        be_grid.columnconfigure(1, weight=1)
+
+        self.ttk.Button(
+            be_frame, text="Run batch-edit",
+            command=self._run_batch_edit,
+        ).pack(anchor="w", padx=6, pady=(2, 6))
+
         return frame
+
+    def _run_batch_edit(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        filter_clause = self._batch_edit_filter_var.get().strip()
+        set_clause = self._batch_edit_set_var.get().strip()
+        report = self._batch_edit_report_var.get().strip()
+        if not filter_clause and not set_clause and not report:
+            self.messagebox.showwarning(
+                "Nothing to do",
+                "Provide at least one of: filter clause, set clause, "
+                "or report path.",
+            )
+            return
+        args = ["batch-edit", *sys_args]
+        if filter_clause:
+            args += ["--filter", filter_clause]
+        if set_clause:
+            args += ["--set", set_clause]
+        if report:
+            args += ["--report", report]
+        if self._meta_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _meta_system_args(self) -> Optional[list[str]]:
         """Return the `--system X` or `--all` argv tail, or None on error."""
