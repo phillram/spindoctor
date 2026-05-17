@@ -96,6 +96,15 @@ class Config:
     metadata_cache_ttl_days: int = 30
     metadata_cache_enabled: bool = True
 
+    # GUI preferences
+    # ui_scale multiplies the named-font sizes (TkDefaultFont, etc.) and
+    # the initial window geometry, so cabinet owners on 1280x720 (or
+    # ultra-HD) can fit the whole tab on screen. Clamped to [0.6, 2.0].
+    ui_scale: float = 1.0
+    # Hides the bottom Output panel when False. Persisted so the
+    # preference survives restarts.
+    output_visible: bool = True
+
     # LEDBlinky default per-button color palette (hex RGB strings)
     ledblinky_default_colors: dict[str, str] = field(
         default_factory=lambda: dict(DEFAULT_LEDBLINKY_COLORS)

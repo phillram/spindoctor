@@ -39,6 +39,8 @@ spindoctor config set <key> <value>
 | `region_preferences` | Default region order for `curate` (default `["USA", "World", "Europe", "Japan"]`) |
 | `demulshooter_path` | Explicit path to `DemulShooter.exe` if auto-detection misses it |
 | `demulshooter_extra_args` | Default extra args appended to DemulShooter (default `-noresize`, Sinden-friendly) |
+| `ui_scale` | GUI font/widget scale multiplier (float, `0.6`–`2.0`, default `1.0`). Set from `View → UI scale` or `Ctrl++` / `Ctrl+-` / `Ctrl+0` in the GUI. Cabinet owners on 1280×720 typically want `0.9` to fit more on screen. |
+| `output_visible` | Whether the GUI's bottom Output panel is shown (bool, default `true`). Toggled from `View → Show output pane`, the status-bar button, or `Ctrl+`` ` ``. |
 
 ## Per-system overrides
 
