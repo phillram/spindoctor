@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import time
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -486,6 +487,41 @@ class _SpinDoctorGUI:
         self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
             side="right", padx=(0, 6)
         )
+        # Copy-to-clipboard mirrors the Logs tab's copy pattern. Lives
+        # next to Clear so long audit / migrate output can be grabbed
+        # without scrolling-and-selecting.
+        self.ttk.Button(
+            bar, text="Copy output", command=self._copy_output,
+        ).pack(side="right", padx=(0, 6))
+
+        # Ctrl+1..9 jump to notebook tabs by 1-based index. Cabinet
+        # owners on touchscreens benefit from a keyboard fallback, and
+        # 15 tabs means a lot of clicking otherwise. bind_all so the
+        # shortcut works from any focused widget.
+        for n in range(1, 10):
+            self.root.bind_all(
+                f"<Control-Key-{n}>",
+                lambda _evt, idx=n - 1: self._select_tab(idx),
+            )
+
+    def _select_tab(self, idx: int) -> None:
+        """Switch to tab at zero-based index, ignoring out-of-range."""
+        if 0 <= idx < len(self._tab_base_names):
+            self._nb.select(idx)
+
+    def _copy_output(self) -> None:
+        """Copy the current Output panel contents to the clipboard."""
+        try:
+            text = self._output.get("1.0", "end-1c")
+        except self.tk.TclError:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        # update() forces the X11/Win32 clipboard owner to update before
+        # the Tk window deletes the buffer on exit. Otherwise on Linux
+        # the clipboard goes empty as soon as the GUI closes.
+        self.root.update()
+        self._set_status(f"Copied {len(text)} char(s) from output.")
 
     def _add_scrollable_tab(self, nb, builder, label: str) -> None:
         """Add a Notebook tab that scrolls vertically when content overflows.
@@ -5251,6 +5287,11 @@ class _SpinDoctorGUI:
         banner = "\n=== DRY RUN ===\n" if is_dry_run else ""
         self._append_output(f"{banner}\n$ {argv_str}\n")
         record.append(f"$ {argv_str}\n")
+        # Monotonic clock so we can report "OK in 3s" / "FAILED in 12s"
+        # when the run finishes, without being skewed by wall-clock
+        # adjustments during a long migration.
+        self._run_started_monotonic = time.monotonic()
+        self._run_label = f"{binary} {args[0] if args else ''}".strip()
         self._set_status(
             f"{'[DRY RUN] ' if is_dry_run else ''}Running: "
             f"{binary} {' '.join(args)}"
@@ -5352,13 +5393,34 @@ class _SpinDoctorGUI:
                 self._current_run.append(footer)
         self._current_run = None
 
+        # Compute elapsed wall-clock for the status bar summary.
+        # Falls back to '' if _run_cli wasn't called via the normal path
+        # (e.g. older code paths that didn't stamp the monotonic clock).
+        start = getattr(self, "_run_started_monotonic", None)
+        elapsed_str = ""
+        if start is not None:
+            elapsed = time.monotonic() - start
+            if elapsed < 60:
+                elapsed_str = f" in {elapsed:.1f}s"
+            else:
+                mins, secs = divmod(int(elapsed), 60)
+                elapsed_str = f" in {mins}m{secs:02d}s"
+        label = getattr(self, "_run_label", "") or "Last command"
+        self._run_started_monotonic = None
+        self._run_label = ""
+
         if marker.rc == 0:
-            self._set_status(
-                "Dry run finished — nothing changed. View results in "
-                "Output or the Logs tab." if was_dry_run else "Ready."
-            )
+            if was_dry_run:
+                self._set_status(
+                    f"{label} — dry run OK{elapsed_str}. "
+                    "View results in Output or the Logs tab."
+                )
+            else:
+                self._set_status(f"{label} — OK{elapsed_str}.")
         else:
-            self._set_status(f"Last command exited with code {marker.rc}.")
+            self._set_status(
+                f"{label} — FAILED (exit {marker.rc}){elapsed_str}."
+            )
 
         if self._running_tab_idx is not None:
             self._set_tab_badge(
