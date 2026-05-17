@@ -1674,20 +1674,54 @@ class _SpinDoctorGUI:
         # the output panel with an "all good" line on every launch.
 
     def _manual_update_check(self) -> None:
-        """Help → Check for updates: synchronous variant with feedback.
+        """Help → Check for updates: background variant with feedback.
 
         The launch check runs silently on success, but a manual
         invocation should always tell the user *something* — otherwise
         clicking the menu entry feels broken when the user is up to
-        date.
+        date. Runs the network call on a worker thread so a slow or
+        unreachable GitHub doesn't freeze the Tk main loop (a 5 s
+        urllib timeout is plenty of time for the window to feel hung).
         """
         from . import update_check
 
-        try:
-            result = update_check.check_for_update(__version__)
-        except update_check.UpdateCheckDisabled as exc:
-            self.messagebox.showinfo("Update check disabled", str(exc))
-            return
+        self._set_status("Checking for updates…")
+
+        def worker() -> None:
+            try:
+                result = update_check.check_for_update(__version__)
+            except update_check.UpdateCheckDisabled as exc:
+                # Capture into the closure so the main-thread handler
+                # can render the messagebox without re-raising.
+                self.root.after(
+                    0, self._on_manual_update_disabled, str(exc),
+                )
+                return
+            except Exception as exc:  # noqa: BLE001 — surface in UI
+                self.root.after(
+                    0, self._on_manual_update_failed, str(exc),
+                )
+                return
+            self.root.after(0, self._on_manual_update_result, result)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_manual_update_disabled(self, message: str) -> None:
+        self._set_status("Ready.")
+        self.messagebox.showinfo("Update check disabled", message)
+
+    def _on_manual_update_failed(self, _message: str) -> None:
+        self._set_status("Ready.")
+        self.messagebox.showinfo(
+            "Update check failed",
+            "Could not reach GitHub. Check your connection and try "
+            "again, or visit "
+            "https://github.com/phillram/spindoctor/releases/latest "
+            "manually.",
+        )
+
+    def _on_manual_update_result(self, result) -> None:
+        self._set_status("Ready.")
         if result is None:
             self.messagebox.showinfo(
                 "Update check failed",

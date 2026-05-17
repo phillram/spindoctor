@@ -600,7 +600,15 @@ def render_contact_sheet_png(
 
         if item.wheel is not None:
             try:
-                wheel_img = Image.open(item.wheel).convert("RGBA")
+                # `with` closes the on-disk file handle as soon as we
+                # have the in-memory RGBA copy. Without it, large
+                # contact sheets (500+ wheels) hold every PNG file open
+                # until the Python GC reaps them — exhausts file
+                # descriptors on Windows and blocks `migrate` /
+                # `backup` operations that try to move the same files
+                # in a sibling subprocess.
+                with Image.open(item.wheel) as src:
+                    wheel_img = src.convert("RGBA")
                 wheel_img.thumbnail((cell_width, cell_height))
                 wx = ox + pad + (cell_width - wheel_img.width) // 2
                 wy = oy + pad + (cell_height - wheel_img.height) // 2

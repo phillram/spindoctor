@@ -469,6 +469,190 @@ def test_gui_constructs_against_real_tk():
         app.root.destroy()
 
 
+def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
+    """Walk every File / View / Help menu entry and invoke it.
+
+    Regression guard for menu commands that reference widgets or
+    methods that don't exist — same class of bug as v1.7.0's `_output`
+    AttributeError, but for the menubar rather than tab builders. The
+    base smoke test exercises construction; this one proves every
+    menu item can actually be clicked.
+
+    External side effects are stubbed at the module level (``gui.os``,
+    ``gui.subprocess``), heavy Toplevel-opening handlers that scan
+    the filesystem are stubbed on the instance, and ``Exit`` is
+    skipped (it destroys ``root`` and would tear down the test).
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, scrolledtext, ttk
+    except ImportError:
+        pytest.skip("Tkinter not available")
+
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
+
+    # Patch external surfaces before the GUI is constructed so the
+    # post-construction startup checks don't fire real OS commands.
+    monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: None)
+    monkeypatch.setattr(gui.os, "startfile",
+                        lambda *_a, **_k: None, raising=False)
+    from spindoctor import update_check
+    monkeypatch.setattr(update_check, "check_for_update", lambda _v: None)
+    # The heavy Toplevel-opening menu commands spawn worker threads
+    # that hit the filesystem and call ``root.after`` — neither is
+    # safe in a unit test that destroys the root immediately after.
+    # Stub them out on the CLASS *before* construction so the
+    # ``command=self._show_…`` references the menu captures point at
+    # the no-op, not the real method.
+    monkeypatch.setattr(gui._SpinDoctorGUI,
+                        "_show_log_viewer", lambda self: None)
+    monkeypatch.setattr(gui._SpinDoctorGUI,
+                        "_show_theme_browser", lambda self: None)
+    # ``_manual_update_check`` spawns a worker thread that calls
+    # ``root.after(...)`` to marshal its result back to the main loop;
+    # if that thread fires after the test destroys ``root`` it leaks
+    # a thread-level exception. The dedicated
+    # ``test_manual_update_check_does_not_block_main_thread`` already
+    # covers the behaviour — here we only need the menu command to
+    # resolve without blowing up.
+    monkeypatch.setattr(gui._SpinDoctorGUI,
+                        "_manual_update_check", lambda self: None)
+
+    try:
+        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    except tk.TclError as exc:
+        msg = str(exc).lower()
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+            pytest.skip(f"Tk display unavailable: {exc}")
+        raise
+
+    try:
+        # Silence the messagebox dialogs that some handlers open — they
+        # would otherwise block until the user clicks OK.
+        for fn in ("showinfo", "showwarning", "showerror"):
+            monkeypatch.setattr(app.messagebox, fn,
+                                lambda *_a, **_k: None, raising=False)
+        monkeypatch.setattr(app.messagebox, "askyesno",
+                            lambda *_a, **_k: False, raising=False)
+        # Suppress preference persistence — the View menu's UI-scale
+        # radiobuttons and "Show output pane" checkbutton would
+        # otherwise write to the real ``~/.spindoctor/config.json``,
+        # leaking state into subsequent tests that read it back.
+        monkeypatch.setattr(app, "_persist_ui_pref", lambda **_k: None)
+
+        # Walk the menubar and invoke every command-bearing entry.
+        # ``Menu.invoke`` is the documented way to fire a menu entry
+        # from code — it's exactly what Tk does on a real click.
+        menubar = app.root.nametowidget(app.root.cget("menu"))
+        invoked = 0
+        for sub_name in menubar.children:
+            submenu = menubar.children[sub_name]
+            last = submenu.index("end")
+            if last is None:
+                continue
+            for i in range(last + 1):
+                entry_type = submenu.type(i)
+                if entry_type not in ("command", "checkbutton", "radiobutton"):
+                    continue
+                # Skip Exit — it destroys root and would kill the test.
+                try:
+                    label = submenu.entrycget(i, "label")
+                except tk.TclError:
+                    label = ""
+                if label == "Exit":
+                    continue
+                submenu.invoke(i)
+                invoked += 1
+        # Sanity: at least every File/Help/View entry minus Exit got
+        # invoked. If this drops to a tiny number the walker is silently
+        # skipping things.
+        assert invoked >= 10, f"only invoked {invoked} menu entries"
+        # Pump the loop so background `root.after(0, …)` callbacks
+        # (e.g. the manual update check's result handler) run before
+        # we destroy the root.
+        app.root.update_idletasks()
+        app.root.update()
+    finally:
+        app.root.destroy()
+
+
+def test_manual_update_check_does_not_block_main_thread():
+    """`_manual_update_check` must run the network call on a worker
+    thread so a slow GitHub doesn't freeze the GUI.
+
+    Regression guard: the original implementation called
+    ``update_check.check_for_update`` synchronously on the menu-click
+    handler. With urllib's 5 s timeout that meant the entire window
+    hung for up to 5 s on offline machines (the exact target user is
+    cabinet owners with intermittent network). Make this test fail if
+    anyone "simplifies" the helper back to a synchronous call.
+    """
+    import threading
+    import time
+    from spindoctor import update_check
+
+    # Stub the GUI's external surfaces just enough that the handler
+    # can run without a real Tk root.
+    class _Root:
+        def after(self, _delay, func, *args):
+            # Run the marshalled callback inline so the worker's
+            # "hop back to the main thread" path completes promptly —
+            # we're testing that the *outer* call doesn't block, not
+            # the after-marshal mechanics.
+            func(*args)
+
+    class _Messagebox:
+        @staticmethod
+        def showinfo(*_a, **_k):
+            pass
+
+        @staticmethod
+        def askyesno(*_a, **_k):
+            return False
+
+    worker_done = threading.Event()
+    started = threading.Event()
+    finish_check = threading.Event()
+
+    stub = type("Stub", (), {})()
+    stub.root = _Root()
+    stub.messagebox = _Messagebox
+    stub._set_status = lambda _msg: None
+    stub._open_url = lambda _u: None
+    # The worker hits one of these after ``check_for_update`` returns;
+    # provide no-op stubs so the worker thread doesn't raise on exit.
+    stub._on_manual_update_result = lambda _r: worker_done.set()
+    stub._on_manual_update_failed = lambda _m: worker_done.set()
+    stub._on_manual_update_disabled = lambda _m: worker_done.set()
+
+    def slow_check(_version):
+        started.set()
+        # Block until the test releases us — proves the call is on a
+        # worker thread, not the test thread.
+        finish_check.wait(timeout=5.0)
+        return None
+
+    original = update_check.check_for_update
+    update_check.check_for_update = slow_check
+    try:
+        t0 = time.monotonic()
+        gui._SpinDoctorGUI._manual_update_check(stub)
+        elapsed = time.monotonic() - t0
+        # Must return promptly — if it blocked on the network call
+        # this would be ≥ 5 s. Even a generous bound catches the
+        # regression while staying robust on slow CI.
+        assert elapsed < 0.5, f"_manual_update_check blocked for {elapsed:.2f}s"
+        # And the worker thread must have actually been started.
+        assert started.wait(timeout=2.0), "worker thread never started"
+    finally:
+        finish_check.set()
+        # Wait for the worker to drain so it doesn't surface as an
+        # unhandled thread exception after the test returns.
+        worker_done.wait(timeout=2.0)
+        update_check.check_for_update = original
+
+
 def test_gui_survives_missing_keysym_in_bind_all():
     """Simulate a Tk build whose keysym table is missing ``grave`` — the
     exact failure mode that shipped to Windows users on v1.9.0, where
@@ -504,9 +688,15 @@ def test_gui_survives_missing_keysym_in_bind_all():
 
     original_bind_all = tk.Misc.bind_all
 
+    # Simulate every X11-only keysym we use in shortcut bindings —
+    # any of these may be absent from the Tcl/Tk that ships with
+    # Python 3.8 on Windows. The GUI must degrade gracefully on all
+    # of them, not just `grave`.
+    missing = ("grave", "quoteleft", "asciigrave", "KP_Add", "KP_Subtract")
+
     def picky_bind_all(self, sequence=None, func=None, add=None):
-        if sequence and "grave" in sequence:
-            raise tk.TclError(f'bad event type or keysym "grave"')
+        if sequence and any(name in sequence for name in missing):
+            raise tk.TclError(f'bad event type or keysym in "{sequence}"')
         return original_bind_all(self, sequence, func, add)
 
     tk.Misc.bind_all = picky_bind_all

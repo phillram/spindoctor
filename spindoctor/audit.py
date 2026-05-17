@@ -87,6 +87,12 @@ class SystemAuditResult:
     ignored_count: int = 0
     entries: list[GameAuditEntry] = field(default_factory=list)
     fuzzy_matches: list[FuzzyMatchEntry] = field(default_factory=list)
+    # Populated when MAME -listxml enrichment was requested but failed
+    # (mame_executable misconfigured, MAME crashed, system not recognised
+    # by the installed MAME, etc.). Without surfacing this, every ROM
+    # silently reports "no control data" — indistinguishable from a real
+    # MAME entry that genuinely lacks input mappings.
+    listxml_error: Optional[str] = None
 
     @property
     def roms_only(self) -> list[GameAuditEntry]:
@@ -211,8 +217,11 @@ def audit_system(
             listxml_lookup = {
                 name: info.has_input for name, info in info_map.items()
             }
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 — surface via result
+            # Capture the failure so callers can report it; without
+            # this, every ROM gets a misleading "no control data" tag.
             listxml_lookup = {}
+            result.listxml_error = f"{type(exc).__name__}: {exc}"
 
     result.total_roms = len(roms)
     result.total_db_entries = len(db_games)
