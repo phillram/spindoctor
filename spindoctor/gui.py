@@ -409,6 +409,25 @@ class _SpinDoctorGUI:
 
         nb = self.ttk.Notebook(main_paned)
         self._nb = nb
+
+        # StringVar backing the status bar label — created early so
+        # tab builders can safely call self._set_status() during
+        # construction, mirroring the self._output hoist below.
+        self._status_var = self.tk.StringVar(value="")
+
+        # Create the Output panel widget BEFORE any tab builders run.
+        # Tab builders (e.g. Main Menu's _mm_refresh) may call
+        # self._append_output during construction; if self._output
+        # doesn't exist yet, that raises AttributeError and the GUI
+        # never paints. See also the matching note at _append_output.
+        out_frame = self.ttk.LabelFrame(main_paned, text="Output")
+        mono = "Consolas" if sys.platform == "win32" else "Menlo"
+        self._output = self.scrolledtext.ScrolledText(
+            out_frame, height=14, wrap="word", font=(mono, 10),
+        )
+        self._output.configure(state="disabled")
+        self._output.pack(fill="both", expand=True, padx=4, pady=4)
+
         # Wrap each tab in a Canvas + always-visible Scrollbar so
         # cabinet owners on smaller screens (1024×768, 1280×720) can
         # still reach widgets that overflow the window. Each tab
@@ -434,14 +453,6 @@ class _SpinDoctorGUI:
         self._tab_base_names.append("Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
         main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
-
-        out_frame = self.ttk.LabelFrame(main_paned, text="Output")
-        mono = "Consolas" if sys.platform == "win32" else "Menlo"
-        self._output = self.scrolledtext.ScrolledText(
-            out_frame, height=14, wrap="word", font=(mono, 10),
-        )
-        self._output.configure(state="disabled")
-        self._output.pack(fill="both", expand=True, padx=4, pady=4)
         main_paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
 
         # Set initial sash position after the window has been painted so
@@ -454,9 +465,10 @@ class _SpinDoctorGUI:
         self.root.after(100, _place_initial_sash)
 
         # Status bar — grid row 1, always visible.
+        # NB: self._status_var is created earlier in this method so
+        # tab builders can call _set_status() during construction.
         bar = self.ttk.Frame(self.root)
         bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        self._status_var = self.tk.StringVar(value="")
         self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
             side="left", fill="x", expand=True
         )
