@@ -382,13 +382,59 @@ class _SpinDoctorGUI:
 
         self._build_layout()
         self._refresh_systems()
-        self._set_status("Ready.")
+        # Run startup health checks BEFORE setting "Ready." so the
+        # status bar lands on the most informative message — if either
+        # the config is incomplete or the CLI binary is missing, the
+        # user sees that instead of a vacuous "Ready.".
+        self._startup_health_checks()
         # 50 ms polling is fast enough to feel real-time without busy-looping.
         self.root.after(50, self._drain_queue)
         # Kick off the GitHub release-tag check on a background thread
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
         self._start_update_check()
+
+    def _startup_health_checks(self) -> None:
+        """Surface obvious environment problems at first paint.
+
+        Two problems used to hide until the user tried to do something:
+
+        - Config paths missing / unset. Previously silent — the user
+          only saw the error when they clicked Run on a tab that needed
+          the missing path. Now we run cfg.is_valid() at startup and
+          report any errors in the status bar.
+        - The spindoctor CLI binary missing from PATH (frozen builds
+          that got separated from their sibling exes, dev installs
+          without `pip install -e .`). Previously raised CliNotFoundError
+          on the user's first Run click. Now we probe at startup and
+          surface a persistent status message.
+
+        Both checks are read-only and fast — no subprocess, no disk
+        writes — so doing them inline during __init__ is fine.
+        """
+        problems: list[str] = []
+        try:
+            ok, errors = load_config().is_valid()
+            if not ok:
+                problems.append(
+                    f"Setup incomplete — {len(errors)} path(s) need "
+                    "attention. Check the Setup tab."
+                )
+        except Exception as exc:  # noqa: BLE001 — surface in UI
+            problems.append(f"Could not read config: {exc}")
+
+        try:
+            resolve_cli_command("spindoctor")
+        except CliNotFoundError as exc:
+            problems.append(f"spindoctor CLI not found — {exc}")
+
+        if problems:
+            # If there's more than one problem, join them with ' · '.
+            # The status bar is a single line so a longer string gets
+            # truncated visually, but the user can still hover or copy.
+            self._set_status(" · ".join(problems))
+        else:
+            self._set_status("Ready.")
 
     # ── layout ────────────────────────────────────────────────────────────────
 
