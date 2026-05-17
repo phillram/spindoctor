@@ -48,10 +48,28 @@ jobs:
           pip install -e .[all]
           pip install pytest pytest-xdist
 
+      # The Tk-construction smoke test (test_gui_constructs_against_real_tk)
+      # needs a display server. Linux runners are headless by default, so
+      # install xvfb here and run pytest through xvfb-run. Without this
+      # the smoke test self-skips and the whole point of having it — to
+      # catch widget-construction regressions at PR time — is lost.
+      # python3-tk gives Tk itself (tkinter is stdlib but the underlying
+      # Tcl/Tk libraries are not bundled with the actions/setup-python build).
+      - name: Install Tk + xvfb (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends xvfb python3-tk tk
+
       # -n auto fans tests across the runner's CPUs. On the Windows runner
       # this roughly halves wall time; on Linux it's a smaller win but
-      # still positive.
-      - name: Run tests
+      # still positive. xvfb-run wraps the whole pytest invocation so the
+      # GUI smoke gets a virtual display while every other test sees a
+      # normal env. Windows has a real windowstation, so no wrapper there.
+      - name: Run tests (Linux, under xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a pytest -q -n auto
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
         run: pytest -q -n auto
 
   build-smoke:
