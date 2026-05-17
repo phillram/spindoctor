@@ -6,7 +6,6 @@ import pytest
 import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.preview import (
-    PreviewItem,
     collect_previews,
     collect_previews_including_missing,
     render_contact_sheet_html,

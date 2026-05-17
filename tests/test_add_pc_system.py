@@ -6,8 +6,6 @@ tmp_path.  Network calls (system-media fetch) are disabled with --no-system-medi
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 from click.testing import CliRunner
 
