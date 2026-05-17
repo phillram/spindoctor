@@ -6,7 +6,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI: Inspect-a-single-game controls on the Diagnose tab.** A system dropdown + optional ROM entry + Inspect button drives `spindoctor inspect` directly — the highest-value diagnostic command after audit was previously only reachable via Custom Command.
+- **GUI: Manage individual favorites on the Wheels tab.** System / ROM entry plus Add / Remove / List buttons wired to `spindoctor fav add|remove|list`, so curating the cross-system Favorites wheel doesn't require dropping to a terminal.
+- **GUI: Rename and clone a single game on the Systems tab.** System / Game / New name fields drive `spindoctor rename` and `spindoctor clone` with the tab's existing Apply checkbox. Both commands write an undo manifest, so even a wrong rename is reversible from the Logs tab.
+- **GUI: Indeterminate progress bar in the status bar.** Appears next to the Stop button while a subprocess is streaming, vanishes when it exits. Multi-hour migrate / audit runs no longer look like a hung GUI when the output panel is quiet.
+
 ### Fixed
+
+- **GUI: `_mm_save_order` runs on a worker thread.** Saving a reordered Main Menu used to parse, mutate, and rewrite the XML on the Tk main thread; on a HDD-backed cabinet this froze the UI for several seconds. The worker handles parse + backup + atomic rename and marshals success/failure back to the main thread via `root.after(0, …)`.
+- **GUI: Main Menu tab no longer blocks first paint.** `_mm_refresh` (XML parse + tree population) was called inline from the tab builder. It now runs via `after_idle`, so the window appears immediately and the table populates a moment later.
+- **GUI: `Esc` dismisses every Toplevel dialog.** About, Logs viewer, Diff viewer, Curate preview, Theme browser, Ignore viewer, "revert one system" picker — all now bind `<Escape>` to `destroy`, previously only the OS window-manager close box would dismiss them.
+- **GUI: `Return` in the Verify-DAT entry triggers Verify.** Matches the existing behaviour of the Global Search entry; the Verify-DAT entry previously required a mouse click on the Verify button after typing the path.
+- **GUI: Backup Restore dropdown filters to `spindoctor-backup-*` folders only.** Pointing the backup target at a drive root (e.g. `E:\`) used to spam the dropdown with every unrelated subdirectory; now only SpinDoctor backups show up.
+- **GUI: `tk.Spinbox` widgets switched to `ttk.Spinbox`.** The classic-Tk variants bypassed the dark-mode `ttk.Style` overrides, so their arrows rendered with the system's light chrome on macOS/Linux.
+- **GUI: indeterminate Progressbar starts/stops with `_run_cli` / `_on_proc_done`.** See Added entry above — wires the new widget into the existing lifecycle.
+- **GUI: Stop button disables itself immediately after click.** Previously it stayed armed for the ~50 ms drain delay before `_on_proc_done` fired; a frantic double-click could land on the next process before it was even spawned.
+- **GUI: removed duplicate `Separator` on the Wheels tab.** Two consecutive `Separator` widgets with no content between them rendered as a slightly thicker line — visual noise, fixed.
+- **GUI: `_pump_output` no longer relies on a stripped-out `assert`.** `assert proc.stdout is not None` would disappear under `python -O` (used in some PyInstaller builds) and the next iteration would throw a confusing `AttributeError` from a worker thread. Replaced with an explicit guard that posts a `DoneMarker` and returns.
+- **GUI: `_READ_ONLY_COMMANDS` no longer hides the DRY RUN banner for dry-run-able verbs.** `add-system`, `add-pc-system`, `pc-rename`, and `batch-edit` were inadvertently listed there from the previous pass — they accept `--apply` and their preview output deserves the banner. Removed.
+- **GUI: `curate --list-manifests` is now recognised as read-only.** It used to get a spurious "DRY RUN COMPLETE — re-run with --apply" footer even though listing manifests modifies nothing.
 
 - **Main Menu.xml save is now atomic with a backup.** `_mm_save_order` previously called `tree.write(xml_path, …)` directly, so a power cut, full disk, or other I/O failure between starting the write and `fsync` could leave HyperSpin's top-level wheel half-written. The save path now mirrors the rest of the codebase: when `backup_before_modify` is on, copy the live file to `<name>.<stamp>.bak`, write the new content to `<name>.xml.tmp`, then `os.replace()` over the original.
 - **`spindoctor doctor` (and every other read-only command) no longer shows a misleading "DRY RUN" banner in the GUI.** The Custom Command tab tagged any invocation lacking `--apply` as a dry run, even when the command itself never accepts `--apply`. Users running `doctor`, `audit`, `find-dupes`, `lint`, `theme-scan`, etc. saw "DRY RUN COMPLETE — nothing was written. Re-run with --apply to commit" — nonsense for a read-only check. Added a curated `_READ_ONLY_COMMANDS` set (matched at both verb and verb+subverb level) so the banner only fires for commands that genuinely have an apply mode.
@@ -26,6 +46,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Tooling
 
+- **Tests: 29 new GUI cases covering `_is_read_only_invocation`** across read-only verbs, multi-token forms (`mainmenu show`, `fav list`, `curate --list-manifests`), and dry-run-able verbs that must *not* be flagged read-only.
 - **New tests: 88 cases across `tests/test_config.py`, `tests/test_health.py`, `tests/test_fileinfo.py`, `tests/test_compat.py`.** The `health` (`doctor`) and `fileinfo` (`inspect`, `preview`, `audit` columns) modules previously had zero coverage; now every individual check plus the full orchestration path is exercised, including the destructive `check_match_cache --fix` branch. Total suite: 473 → 561 tests, still under 2 s.
 - **`tests/test_themes.py::test_list_manifests_sorts_newest_first` no longer sleeps 1.1 s.** The test was using filesystem mtime second-resolution as a synchronization primitive; replaced with an injected `datetime.now()` shim and explicit `os.utime` calls. Shaves >1 s off every CI run.
 

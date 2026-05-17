@@ -366,7 +366,9 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "config show", "config init", "config set", "config system",
     "backup list", "backup info",
     "migrate --list-manifests", "theme-apply --list-manifests",
-    "add-system", "add-pc-system", "pc-rename", "batch-edit",
+    # `curate --list-manifests` is a separate flag-only invocation, not
+    # a subcommand — match it as the verb+token form.
+    "curate --list-manifests",
 })
 
 
@@ -1166,6 +1168,16 @@ class _SpinDoctorGUI:
         self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
             side="left", fill="x", expand=True
         )
+        # Indeterminate progress bar sits between the status text and
+        # the Stop button. Hidden by default; _run_cli starts it and
+        # _on_proc_done stops it. Without this the only visual cue that
+        # a long migrate/audit is doing work is the streaming Output
+        # panel — a hung process and a quiet one are indistinguishable.
+        self._busy_bar = self.ttk.Progressbar(
+            bar, mode="indeterminate", length=120,
+        )
+        # _busy_bar is packed lazily by _set_busy(True) so the slot
+        # doesn't take up status-bar width while idle.
         self._stop_btn = self.ttk.Button(
             bar, text="Stop", command=self._stop_running, state="disabled"
         )
@@ -1635,6 +1647,7 @@ class _SpinDoctorGUI:
         win.title(f"About {__app_name__}")
         win.transient(self.root)
         win.resizable(False, False)
+        win.bind("<Escape>", lambda _e: win.destroy())
 
         body = self.ttk.Frame(win, padding=18)
         body.pack(fill="both", expand=True)
@@ -3227,7 +3240,6 @@ class _SpinDoctorGUI:
             frame, text="Refresh selected", width=28,
             command=self._refresh_all_wheels,
         ).pack(anchor="w", pady=3)
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
 
         # ── HyperSpin integration helpers ────────────────────────────────────
         # The custom wheels (Favorites / Recently Played / Most Played) write
@@ -3268,7 +3280,77 @@ class _SpinDoctorGUI:
             command=lambda: self._run_cli("spindoctor", ["install-tools"]),
         ).pack(side="left", padx=6)
 
+        # ── Manage individual favorites ──────────────────────────────────────
+        # The CLI exposes `fav add/remove/list/sync`; surfacing them here
+        # means users don't have to drop to Custom Command just to flag
+        # one game as a favorite. After any change, `fav rebuild` (above)
+        # actually writes the synthetic HyperSpin system to disk.
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="Manage individual favorites",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(0, 4))
+        self.ttk.Label(
+            frame,
+            text=("Add or remove single games in the cross-system "
+                  "Favorites wheel. Run 'Refresh selected' (with "
+                  "Favorites checked) afterwards to push the change "
+                  "into HyperSpin."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", pady=(0, 4))
+
+        fav_row = self.ttk.Frame(frame)
+        fav_row.pack(fill="x", pady=2)
+        self.ttk.Label(fav_row, text="System").pack(side="left")
+        self._fav_system_var = self.tk.StringVar()
+        self._fav_system_combo = self.ttk.Combobox(
+            fav_row, textvariable=self._fav_system_var,
+            state="readonly", width=22,
+        )
+        self._fav_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(fav_row, text="ROM").pack(side="left", padx=(8, 0))
+        self._fav_rom_var = self.tk.StringVar()
+        _fav_entry = self.ttk.Entry(
+            fav_row, textvariable=self._fav_rom_var,
+        )
+        _fav_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _fav_entry.bind("<Return>", lambda _e: self._fav_add())
+        self.ttk.Button(
+            fav_row, text="Add", command=self._fav_add,
+        ).pack(side="left")
+        self.ttk.Button(
+            fav_row, text="Remove", command=self._fav_remove,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            fav_row, text="List", command=self._fav_list,
+        ).pack(side="left")
+
         return frame
+
+    def _fav_add(self) -> None:
+        sys_ = self._fav_system_var.get().strip()
+        rom = self._fav_rom_var.get().strip()
+        if not sys_ or not rom:
+            self.messagebox.showwarning(
+                "Missing arguments",
+                "Pick a system and type a ROM name.",
+            )
+            return
+        self._run_cli("spindoctor", ["fav", "add", sys_, rom])
+
+    def _fav_remove(self) -> None:
+        sys_ = self._fav_system_var.get().strip()
+        rom = self._fav_rom_var.get().strip()
+        if not sys_ or not rom:
+            self.messagebox.showwarning(
+                "Missing arguments",
+                "Pick a system and type a ROM name.",
+            )
+            return
+        self._run_cli("spindoctor", ["fav", "remove", sys_, rom])
+
+    def _fav_list(self) -> None:
+        self._run_cli("spindoctor", ["fav", "list"])
 
     def _register_wheels_in_main_menu(self) -> None:
         # Each `mainmenu add` runs only after the previous one finishes so
@@ -3432,6 +3514,9 @@ class _SpinDoctorGUI:
             ("_mainmenu_system_combo", "_mainmenu_system_var", None),
             ("_meta_system_combo",     "_meta_system_var",     None),
             ("_verify_system_combo",   "_verify_system_var",   None),
+            ("_inspect_system_combo",  "_inspect_system_var",  None),
+            ("_fav_system_combo",      "_fav_system_var",      None),
+            ("_rename_system_combo",   "_rename_system_var",   None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_led_system_combo",      "_led_system_var",      "MAME"),
@@ -3641,12 +3726,20 @@ class _SpinDoctorGUI:
                 f"Backup target folder does not exist:\n{target_path}",
             )
             return
+        # Only surface SpinDoctor backup folders — when the user points
+        # at a drive root (e.g. ``E:\``), the bare iterdir() loop would
+        # otherwise drown the dropdown in unrelated subdirectories.
+        from .backup import BACKUP_DIR_PREFIX
         folders = sorted(
-            [str(p) for p in target_path.iterdir() if p.is_dir()],
+            [str(p) for p in target_path.iterdir()
+             if p.is_dir() and p.name.startswith(BACKUP_DIR_PREFIX)],
             reverse=True,
         )
         if not folders:
-            self.messagebox.showinfo("No backups found", f"No subdirectories in {target_path}.")
+            self.messagebox.showinfo(
+                "No backups found",
+                f"No '{BACKUP_DIR_PREFIX}*' folders in {target_path}.",
+            )
             return
         self._backup_restore_combo["values"] = folders
         if not self._backup_restore_path_var.get():
@@ -4118,7 +4211,11 @@ class _SpinDoctorGUI:
         frame.columnconfigure(0, weight=1)
         frame.rowconfigure(1, weight=1)
 
-        self._mm_refresh()
+        # Defer the XML parse + tree population until the rest of the
+        # GUI has painted. Doing it inline used to delay first-paint by
+        # 1–3 seconds on slow drives (HyperSpin's Main Menu.xml lives on
+        # the cabinet's storage drive, not a fast local disk).
+        self.root.after_idle(self._mm_refresh)
         return frame
 
     # ── Main Menu table helpers ───────────────────────────────────────────────
@@ -4244,46 +4341,62 @@ class _SpinDoctorGUI:
             "and visibility settings.\n\nContinue?",
         ):
             return
+        # Snapshot the data the worker needs before leaving the main
+        # thread — Tk objects can't be touched from a worker.
+        data_snapshot = [dict(entry) for entry in self._mm_data]
         try:
-            tree = self._mm_ET.parse(str(xml_path))
-            root = tree.getroot()
-            # Index existing <game> elements by name
-            by_name = {
-                (el.get("name") or "").strip(): el
-                for el in root.findall("game")
-            }
-            # Remove all <game> children
-            for el in list(root.findall("game")):
-                root.remove(el)
-            # Re-insert in new order, applying any visibility changes
-            for entry in self._mm_data:
-                name = entry["system"]
-                if name not in by_name:
-                    continue
-                el = by_name[name]
-                el.set("enabled", entry["enabled"])
-                root.append(el)
-            # Backup + atomic write so an interrupted save (power cut, full
-            # disk) can't leave Main Menu.xml half-written.
+            cfg = load_config()
+            want_backup = bool(cfg.backup_before_modify)
+        except Exception:  # noqa: BLE001 - corrupt config shouldn't block save
+            want_backup = True
+        self._set_status(f"Saving {xml_path.name}…")
+
+        def _worker():
             import os
             import shutil
             from datetime import datetime
             try:
-                cfg = load_config()
-                want_backup = bool(cfg.backup_before_modify)
-            except Exception:
-                want_backup = True
-            if want_backup and xml_path.exists():
-                stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                shutil.copy2(xml_path, xml_path.with_suffix(f".{stamp}.bak"))
-            tmp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
-            tree.write(str(tmp_path), encoding="unicode", xml_declaration=False)
-            os.replace(str(tmp_path), str(xml_path))
-        except Exception as exc:
-            self.messagebox.showerror("Save failed", str(exc))
-            return
+                tree = self._mm_ET.parse(str(xml_path))
+                root = tree.getroot()
+                by_name = {
+                    (el.get("name") or "").strip(): el
+                    for el in root.findall("game")
+                }
+                for el in list(root.findall("game")):
+                    root.remove(el)
+                for entry in data_snapshot:
+                    name = entry["system"]
+                    if name not in by_name:
+                        continue
+                    el = by_name[name]
+                    el.set("enabled", entry["enabled"])
+                    root.append(el)
+                if want_backup and xml_path.exists():
+                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                    shutil.copy2(
+                        xml_path,
+                        xml_path.with_suffix(f".{stamp}.bak"),
+                    )
+                tmp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
+                tree.write(
+                    str(tmp_path), encoding="unicode", xml_declaration=False,
+                )
+                os.replace(str(tmp_path), str(xml_path))
+            except Exception as exc:  # noqa: BLE001 - report to UI thread
+                self.root.after(0, self._mm_save_failed, str(exc))
+                return
+            self.root.after(0, self._mm_save_succeeded, xml_path)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _mm_save_succeeded(self, xml_path) -> None:
         self._append_output(f"Main Menu order saved to {xml_path}\n")
+        self._set_status(f"Saved {xml_path.name}.")
         self.messagebox.showinfo("Saved", "Main Menu order saved.")
+
+    def _mm_save_failed(self, msg: str) -> None:
+        self._set_status("Save failed.")
+        self.messagebox.showerror("Save failed", msg)
 
     def _run_mainmenu_sort(self) -> None:
         strategy = self._mainmenu_sort_var.get()
@@ -4400,9 +4513,11 @@ class _SpinDoctorGUI:
         self._verify_system_combo.pack(side="left", padx=6)
         self.ttk.Label(verify_row, text="DAT path").pack(side="left", padx=(8, 0))
         self._verify_dat_var = self.tk.StringVar()
-        self.ttk.Entry(
+        _verify_entry = self.ttk.Entry(
             verify_row, textvariable=self._verify_dat_var,
-        ).pack(side="left", fill="x", expand=True, padx=6)
+        )
+        _verify_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _verify_entry.bind("<Return>", lambda _e: self._run_verify())
         self.ttk.Button(
             verify_row, text="Browse…",
             command=self._browse_verify_dat,
@@ -4412,7 +4527,61 @@ class _SpinDoctorGUI:
             command=self._run_verify,
         ).pack(side="left", padx=6)
 
+        # ── Inspect a single game ──────────────────────────────────────────────
+        # `spindoctor inspect` is one of the highest-leverage diagnostic
+        # commands — given a system (and optionally a ROM) it dumps DB
+        # entry + ROM + every media file's path, size, dimensions, and
+        # duration. Surfacing it here keeps users from dropping to the
+        # Custom Command tab for what's a routine triage workflow.
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="Inspect a single game (or whole system)",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(0, 4))
+        self.ttk.Label(
+            frame,
+            text=("Pick a system; leave ROM blank for `inspect --all`. "
+                  "Read-only — never modifies disk."),
+            foreground=_FG_DIM,
+        ).pack(anchor="w", pady=(0, 4))
+        inspect_row = self.ttk.Frame(frame)
+        inspect_row.pack(fill="x", pady=2)
+        self.ttk.Label(inspect_row, text="System").pack(side="left")
+        self._inspect_system_var = self.tk.StringVar()
+        self._inspect_system_combo = self.ttk.Combobox(
+            inspect_row, textvariable=self._inspect_system_var,
+            state="readonly", width=24,
+        )
+        self._inspect_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(inspect_row, text="ROM (optional)").pack(
+            side="left", padx=(8, 0),
+        )
+        self._inspect_rom_var = self.tk.StringVar()
+        _inspect_entry = self.ttk.Entry(
+            inspect_row, textvariable=self._inspect_rom_var,
+        )
+        _inspect_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _inspect_entry.bind("<Return>", lambda _e: self._run_inspect())
+        self.ttk.Button(
+            inspect_row, text="Inspect", command=self._run_inspect,
+        ).pack(side="left", padx=6)
+
         return frame
+
+    def _run_inspect(self) -> None:
+        system = self._inspect_system_var.get().strip()
+        rom = self._inspect_rom_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "Pick a system", "Select a system from the dropdown first.",
+            )
+            return
+        args = ["inspect", "--system", system]
+        if rom:
+            args.append(rom)
+        else:
+            args.append("--all")
+        self._run_cli("spindoctor", args)
 
     def _browse_verify_dat(self) -> None:
         path = self.filedialog.askopenfilename(
@@ -4966,7 +5135,7 @@ class _SpinDoctorGUI:
             side="left",
         )
         self._cleanup_older_var = self.tk.StringVar(value="30")
-        self.tk.Spinbox(
+        self.ttk.Spinbox(
             cln_opts, from_=0, to=365, textvariable=self._cleanup_older_var,
             width=6,
         ).pack(side="left", padx=6)
@@ -5696,6 +5865,53 @@ class _SpinDoctorGUI:
             command=self._run_pc_rename,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
+        # ── Rename / Clone a single game ──────────────────────────────────────
+        # Common follow-up to an audit ("this ROM is mis-named" / "let me
+        # keep a Speed Hack alongside the clean dump"). Previously only
+        # reachable via Custom Command, which made these high-value ops
+        # feel like power-user-only territory.
+        rc_frame = self.ttk.LabelFrame(frame, text="Rename or clone a game")
+        rc_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            rc_frame,
+            text=("Rename moves the ROM, DB entry, and every media file "
+                  "in one shot (and writes an undo manifest). Clone "
+                  "duplicates them under a new name. Both are dry-run "
+                  "until you tick Apply at the top of the tab."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        rc_row = self.ttk.Frame(rc_frame)
+        rc_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(rc_row, text="System").pack(side="left")
+        self._rename_system_var = self.tk.StringVar()
+        self._rename_system_combo = self.ttk.Combobox(
+            rc_row, textvariable=self._rename_system_var,
+            state="readonly", width=20,
+        )
+        self._rename_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(rc_row, text="Game").pack(side="left", padx=(8, 0))
+        self._rename_game_var = self.tk.StringVar()
+        self.ttk.Entry(
+            rc_row, textvariable=self._rename_game_var, width=20,
+        ).pack(side="left", padx=6)
+        self.ttk.Label(rc_row, text="→ New name").pack(side="left", padx=(8, 0))
+        self._rename_to_var = self.tk.StringVar()
+        self.ttk.Entry(
+            rc_row, textvariable=self._rename_to_var, width=20,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+
+        rc_btns = self.ttk.Frame(rc_frame)
+        rc_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            rc_btns, text="Run rename",
+            command=lambda: self._run_rename_or_clone("rename"),
+        ).pack(side="left")
+        self.ttk.Button(
+            rc_btns, text="Run clone",
+            command=lambda: self._run_rename_or_clone("clone"),
+        ).pack(side="left", padx=6)
+
         # ── List existing systems ─────────────────────────────────────────────
         list_frame = self.ttk.LabelFrame(frame, text="Inspect")
         list_frame.pack(fill="x", pady=(4, 4))
@@ -5713,6 +5929,26 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         return frame
+
+    def _run_rename_or_clone(self, verb: str) -> None:
+        """Shared dispatcher for the `rename` / `clone` buttons.
+
+        Both CLI commands accept the same `--system / --game / --to`
+        flag triple; only the verb differs.
+        """
+        sys_ = self._rename_system_var.get().strip()
+        game = self._rename_game_var.get().strip()
+        to = self._rename_to_var.get().strip()
+        if not (sys_ and game and to):
+            self.messagebox.showwarning(
+                "Missing arguments",
+                "Pick a system and fill in both Game and New name.",
+            )
+            return
+        args = [verb, "--system", sys_, "--game", game, "--to", to]
+        if self._systems_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _run_add_system(self, pc: bool) -> None:
         name = self._systems_name_var.get().strip()
@@ -6070,7 +6306,7 @@ class _SpinDoctorGUI:
                 side="left",
             )
             self._tools_delay_var = self.tk.StringVar(value="2")
-            self.tk.Spinbox(
+            self.ttk.Spinbox(
                 delay_row, from_=0, to=60, textvariable=self._tools_delay_var,
                 width=6,
             ).pack(side="left", padx=6)
@@ -6368,6 +6604,7 @@ class _SpinDoctorGUI:
         self._running_tab_idx = self._nb.index("current")
         self._set_tab_badge(self._running_tab_idx, "⟳")
         self._stop_btn.configure(state="normal")
+        self._set_busy(True)
         # Logs tab refreshes itself from _run_history when it's open;
         # nudge it now so the new row appears immediately.
         self._refresh_logs_tab()
@@ -6394,6 +6631,7 @@ class _SpinDoctorGUI:
         except OSError as exc:
             self.messagebox.showerror("Could not launch", f"{argv[0]}: {exc}")
             self._stop_btn.configure(state="disabled")
+            self._set_busy(False)
             # Clear the per-run timing state before bailing — otherwise
             # the next successful run's _on_proc_done picks up the
             # stale monotonic timestamp and reports a hugely inflated
@@ -6417,7 +6655,13 @@ class _SpinDoctorGUI:
     ) -> None:
         # Runs on a worker thread; everything it touches goes through the queue
         # so the Tk main loop stays the only thread mutating widgets.
-        assert proc.stdout is not None
+        # Explicit guard rather than `assert` — assertions are stripped
+        # under `python -O` (used in some PyInstaller builds) and the
+        # NoneType iteration below would otherwise throw a confusing
+        # AttributeError into the worker.
+        if proc.stdout is None:
+            self._line_queue.put(_DoneMarker(proc.wait(), on_complete))
+            return
         try:
             for line in proc.stdout:
                 self._line_queue.put(line)
@@ -6467,6 +6711,7 @@ class _SpinDoctorGUI:
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         self._proc = None
         self._stop_btn.configure(state="disabled")
+        self._set_busy(False)
 
         # Stamp the exit code on the run record + emit a closing
         # banner for dry-runs so the user always sees "preview done,
@@ -6539,6 +6784,32 @@ class _SpinDoctorGUI:
         except OSError:
             pass
         self._set_status("Stopping…")
+        # Disable Stop immediately so a frantic double-click doesn't
+        # land on the next process before it's even spawned. The
+        # eventual _on_proc_done sets state back to disabled too, but
+        # without this the button stays "armed" while we wait for the
+        # 50 ms drain to deliver the DoneMarker.
+        self._stop_btn.configure(state="disabled")
+
+    def _set_busy(self, busy: bool) -> None:
+        """Show / hide the indeterminate progress bar in the status bar.
+
+        Called by ``_run_cli`` when a subprocess is launched and by
+        ``_on_proc_done`` when it exits. Failures are swallowed because
+        Tk widgets can race with window destruction during shutdown.
+        """
+        bar = getattr(self, "_busy_bar", None)
+        if bar is None:
+            return
+        try:
+            if busy:
+                bar.pack(side="right", padx=(0, 6))
+                bar.start(80)
+            else:
+                bar.stop()
+                bar.pack_forget()
+        except Exception:  # noqa: BLE001 - widget race during teardown
+            pass
 
     # ── output panel helpers ──────────────────────────────────────────────────
 
@@ -6569,12 +6840,21 @@ class _SpinDoctorGUI:
         Hard-coded pixel values (960x600, 1100x650 …) overflow on arcade
         cabinet monitors at 1024×768. This method uses the real screen
         dimensions so dialogs are always fully on-screen and resizable.
+
+        Also wires Escape → destroy so every Toplevel that calls this
+        method (which is all of them in this codebase) can be dismissed
+        from the keyboard — previously dialogs only closed via the OS
+        window-manager close box.
         """
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
         w = min(ideal_w, sw - 40)
         h = min(ideal_h, sh - 80)
         win.geometry(f"{w}x{h}")
+        try:
+            win.bind("<Escape>", lambda _e, _w=win: _w.destroy())
+        except Exception:  # noqa: BLE001 - bind() can race during teardown
+            pass
 
     def mainloop(self) -> None:
         self.root.mainloop()
