@@ -127,10 +127,10 @@ class HyperspinDatabase:
                     enabled=_text(game_el, "enabled") or "Yes",
                 )
                 self._game_elements[name] = game_el
-        except (ET.ParseError, Exception) as e:
+        except ET.ParseError as e:
+            raise ValueError(f"Failed to parse {self.xml_path}: {e}") from e
+        except Exception as e:  # noqa: BLE001 - re-raise non-parse errors
             if _HAS_LXML and isinstance(e, LET.XMLSyntaxError):
-                raise ValueError(f"Failed to parse {self.xml_path}: {e}") from e
-            if isinstance(e, ET.ParseError):
                 raise ValueError(f"Failed to parse {self.xml_path}: {e}") from e
             raise
         self._loaded = True

@@ -281,18 +281,36 @@ def test_apply_plan_no_swaps_leaves_no_manifest(tmp_path):
         assert not any(manifest_dir.iterdir())
 
 
-def test_list_manifests_sorts_newest_first(tmp_path):
-    import time
+def test_list_manifests_sorts_newest_first(tmp_path, monkeypatch):
+    import os
+    from datetime import datetime, timedelta
     cfg = _make_cabinet(tmp_path)
     pack = _make_replacement_pack(tmp_path)
     manifest_dir = tmp_path / "spindoctor_state" / "themes"
 
     plans = themes.plan_apply(cfg, pack)
 
-    # Two consecutive runs — the second should sort first.
+    # Inject two distinct timestamps two seconds apart so the manifest
+    # folders sort deterministically. Replaces the previous time.sleep(1.1)
+    # which added ~1.1 s of unconditional wall-time to every test run.
+    fake_now = [datetime(2025, 1, 1, 12, 0, 0)]
+
+    class _FakeDateTime:
+        @classmethod
+        def now(cls):
+            value = fake_now[0]
+            fake_now[0] = value + timedelta(seconds=2)
+            return value
+
+    monkeypatch.setattr(themes, "datetime", _FakeDateTime)
+
     first = themes.apply_plan(plans, manifest_dir=manifest_dir)
-    time.sleep(1.1)  # Manifest filenames include only second-resolution.
     second = themes.apply_plan(plans, manifest_dir=manifest_dir)
+
+    # Bump mtimes so list_manifests' stat-based sort matches the
+    # timestamps embedded in the folder names.
+    os.utime(first.manifest_path, (1_700_000_000, 1_700_000_000))
+    os.utime(second.manifest_path, (1_700_000_002, 1_700_000_002))
 
     listed = themes.list_manifests(manifest_dir)
     assert listed[0] == second.manifest_path
