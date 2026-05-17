@@ -107,6 +107,11 @@ class Config:
     # Hides the bottom Output panel when False. Persisted so the
     # preference survives restarts.
     output_visible: bool = True
+    # Set the first time the GUI's first-run wizard finishes (or is
+    # skipped). Stops the wizard from re-opening on every launch.
+    # Older configs (pre-wizard) auto-promote to True the first time
+    # they validate cleanly, so existing installs never see it.
+    first_run_complete: bool = False
 
     # LEDBlinky default per-button color palette (hex RGB strings)
     ledblinky_default_colors: dict[str, str] = field(
