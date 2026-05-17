@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [1.7.2] - 2026-05-17
+
+### Fixed
+
+- **`pyproject.toml` version metadata back in sync.** `pyproject.toml` had been stuck at `version = "1.6.0"` since the v1.6.0 release — both v1.7.0 and v1.7.1 bumped `spindoctor/__init__.py` but missed the project metadata. As a result `pip show spindoctor` reported `1.6.0` while `spindoctor --version` reported `1.7.x`. Bumped `pyproject.toml` to match `__version__`. No code changes.
+
+---
+
 ## [1.7.1] - 2026-05-17
 
 ### Fixed
@@ -269,7 +277,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.7.2...HEAD
+[1.7.2]: https://github.com/phillram/spindoctor/compare/v1.7.1...v1.7.2
 [1.7.1]: https://github.com/phillram/spindoctor/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/phillram/spindoctor/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/phillram/spindoctor/compare/v1.5.0...v1.6.0
