@@ -281,6 +281,26 @@ def test_get_systems_ignores_missing_paths(tmp_path):
 # ─── first-run wizard flag ───────────────────────────────────────────────────
 
 
+def test_gui_geometry_round_trips(isolated_config):
+    """Persisted window geometry / last-active tab survive a save+load
+    cycle so the next launch can restore them."""
+    config_mod.save_config(Config(
+        gui_window_geometry="1280x800+100+50",
+        gui_last_active_tab=4,
+    ))
+    cfg = config_mod.load_config()
+    assert cfg.gui_window_geometry == "1280x800+100+50"
+    assert cfg.gui_last_active_tab == 4
+
+
+def test_gui_geometry_defaults():
+    """Fresh configs default to no saved geometry (empty string) and a
+    sentinel tab index of -1 ('don't restore anything')."""
+    cfg = Config()
+    assert cfg.gui_window_geometry == ""
+    assert cfg.gui_last_active_tab == -1
+
+
 def test_first_run_complete_default_false():
     """Fresh configs default to False so the wizard opens on first launch."""
     assert Config().first_run_complete is False
