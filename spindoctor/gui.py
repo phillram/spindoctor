@@ -647,7 +647,23 @@ class _SpinDoctorGUI:
         self.messagebox = messagebox_mod
         self.scrolledtext = scrolledtext_mod
 
-        self.root = tk_mod.Tk()
+        # Use tkinterdnd2's TkinterDnD.Tk() when available so Setup-tab
+        # path Entries can accept dragged folders from Explorer/Finder.
+        # Falls back to plain tk.Tk() when the dependency isn't
+        # installed — DnD is a nice-to-have, not a hard requirement.
+        # Detected once, cached on self so _build_setup_tab knows
+        # whether to register drop targets.
+        self._dnd_available = False
+        try:
+            from tkinterdnd2 import TkinterDnD  # type: ignore
+
+            self.root = TkinterDnD.Tk()
+            self._dnd_available = True
+            # Stash the module ref so the Setup tab can call
+            # `tkinterdnd2.DND_FILES` without re-importing.
+            self._tkdnd = __import__("tkinterdnd2")
+        except Exception:  # noqa: BLE001 - any import failure → no DnD
+            self.root = tk_mod.Tk()
         self.root.title(f"{__app_name__} {__version__}")
 
         # Load persisted GUI prefs once, before any widgets are built —
@@ -1076,6 +1092,85 @@ class _SpinDoctorGUI:
             )
 
     # ── Output pane toggle ────────────────────────────────────────────────────
+
+    def _register_path_drop_target(self, widget, var) -> None:
+        """Wire a Setup-tab path Entry as a drag-drop target for folders.
+
+        No-op when ``tkinterdnd2`` isn't installed — the GUI still
+        works, the user just has to type / paste / Browse like before.
+        Available everywhere when the optional dep is installed; on
+        Windows the user can drag a folder from Explorer onto the
+        Entry and the absolute path lands in the StringVar.
+        """
+        if not getattr(self, "_dnd_available", False):
+            return
+        tkdnd = getattr(self, "_tkdnd", None)
+        if tkdnd is None:
+            return
+        try:
+            widget.drop_target_register(tkdnd.DND_FILES)
+        except Exception:  # noqa: BLE001 - tkdnd APIs vary across versions
+            return
+
+        def _on_drop(event, _var=var):
+            # event.data is a brace-quoted string for paths with spaces:
+            #   "{C:/Games/My ROMs}" or "C:/Games/ROMs"
+            # Tk's splitlist handles both shapes.
+            try:
+                parts = self.root.tk.splitlist(event.data)
+            except Exception:  # noqa: BLE001
+                parts = [event.data]
+            if not parts:
+                return event.action
+            path = str(parts[0]).strip()
+            # Strip the file:// URI scheme some platforms wrap around it.
+            if path.startswith("file://"):
+                from urllib.parse import unquote
+                path = unquote(path[len("file://"):])
+            _var.set(path)
+            return event.action
+
+        try:
+            widget.dnd_bind("<<Drop>>", _on_drop)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _toggle_system_filter(self) -> None:
+        """Show / hide the system quick-filter bar.
+
+        Toggle via Ctrl+Shift+F (Cmd+Shift+F on macOS). On open the bar
+        is added above the notebook (the PanedWindow keeps the
+        notebook + output panel below it pushed down), the Entry takes
+        focus, and any existing filter is preserved. On close the
+        filter pattern is cleared so the next launch starts with a
+        full system list.
+        """
+        paned = getattr(self, "_main_paned", None)
+        frame = getattr(self, "_system_filter_frame", None)
+        if paned is None or frame is None:
+            return
+        if self._system_filter_visible:
+            try:
+                paned.forget(frame)
+            except self.tk.TclError:
+                pass
+            self._system_filter_visible = False
+            # Clear the filter on close so re-opening starts fresh.
+            try:
+                self._system_filter_var.set("")
+            except self.tk.TclError:
+                pass
+            return
+        try:
+            # Insert at index 0 so the filter sits above the notebook.
+            paned.add(frame, before=self._nb, sticky="ew", minsize=32)
+        except self.tk.TclError:
+            return
+        self._system_filter_visible = True
+        try:
+            self._system_filter_entry.focus_set()
+        except self.tk.TclError:
+            pass
 
     def _toggle_output(self, visible: Optional[bool] = None) -> None:
         """Show/hide the bottom Output panel.
@@ -1589,6 +1684,44 @@ class _SpinDoctorGUI:
         # output pane and restore the sash on demand.
         self._main_paned = main_paned
 
+        # System quick-filter bar. Hidden by default; toggled via
+        # Ctrl+Shift+F / Cmd+Shift+F. When visible, typing into it
+        # narrows every system combobox across every tab to entries
+        # whose name contains the filter text (case-insensitive). Lives
+        # above the notebook so it's discoverable but doesn't steal
+        # vertical space when not in use. The trace on the var calls
+        # `_refresh_systems` so the dropdowns update live as the user
+        # types — no commit-and-search step.
+        self._system_filter_var = self.tk.StringVar(value="")
+        self._system_filter_frame = self.ttk.Frame(main_paned)
+        self._system_filter_visible = False
+        self.ttk.Label(
+            self._system_filter_frame,
+            text="Filter systems: ", foreground=_FG_DIM,
+        ).pack(side="left", padx=(8, 4))
+        self._system_filter_entry = self.ttk.Entry(
+            self._system_filter_frame,
+            textvariable=self._system_filter_var,
+            width=32,
+        )
+        self._system_filter_entry.pack(side="left", fill="x", expand=True)
+        self.ttk.Button(
+            self._system_filter_frame, text="Clear",
+            command=lambda: self._system_filter_var.set(""),
+        ).pack(side="left", padx=(4, 4))
+        self.ttk.Button(
+            self._system_filter_frame, text="Close",
+            command=self._toggle_system_filter,
+        ).pack(side="left", padx=(0, 8))
+        # Trace fires on every keystroke (write mode). _refresh_systems
+        # is cheap (≤ 1 ms for typical cabinets) so this stays snappy.
+        self._system_filter_var.trace_add(
+            "write", lambda *_a: self._refresh_systems(),
+        )
+        self._system_filter_entry.bind(
+            "<Escape>", lambda _e: self._toggle_system_filter(),
+        )
+
         nb = self.ttk.Notebook(main_paned)
         self._nb = nb
 
@@ -1788,6 +1921,18 @@ class _SpinDoctorGUI:
         for _seq in ("<Control-grave>", "<Control-quoteleft>",
                      "<Control-asciigrave>"):
             self._safe_bind_all(_seq, lambda _e: self._toggle_output())
+
+        # Ctrl+Shift+F (Cmd+Shift+F on macOS) → toggle the system
+        # quick-filter bar at the top of the window. Narrows every
+        # system combobox across every tab. The shortcut is distinct
+        # from Ctrl+F (output find bar) and Ctrl+1..9 (jump-to-tab) so
+        # there's no muscle-memory collision.
+        self._safe_bind_all(
+            "<Control-F>", lambda _e: self._toggle_system_filter(),
+        )
+        self._safe_bind_all(
+            "<Command-F>", lambda _e: self._toggle_system_filter(),
+        )
 
         # Ctrl+F (Cmd+F on macOS) → toggle the Output panel's find bar.
         # Standard text-editor shortcut — same key opens it and Esc
@@ -3566,12 +3711,17 @@ class _SpinDoctorGUI:
 
     def _build_setup_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
+        intro_text = (
+            "Point SpinDoctor at your library. These map 1:1 to "
+            f"`spindoctor config init`. Saves to {CONFIG_FILE}."
+        )
+        if getattr(self, "_dnd_available", False):
+            intro_text += (
+                "  💡 Drag a folder from Explorer / Finder onto any "
+                "path field to fill it in."
+            )
         intro = self.ttk.Label(
-            frame,
-            text=("Point SpinDoctor at your library. These map 1:1 to "
-                  "`spindoctor config init`. Saves to "
-                  f"{CONFIG_FILE}."),
-            wraplength=860, justify="left",
+            frame, text=intro_text, wraplength=860, justify="left",
         )
         intro.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
 
@@ -3589,9 +3739,14 @@ class _SpinDoctorGUI:
             self._setup_vars[key] = var
             var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
             self.ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=2)
-            self.ttk.Entry(frame, textvariable=var, width=60).grid(
-                row=i, column=1, sticky="ew", padx=6, pady=2
-            )
+            entry = self.ttk.Entry(frame, textvariable=var, width=60)
+            entry.grid(row=i, column=1, sticky="ew", padx=6, pady=2)
+            # Register the Entry as a drop target if tkinterdnd2 loaded
+            # at startup. Dropping a folder from Explorer/Finder fills
+            # the path field with the dropped folder's absolute path —
+            # massively shorter than the typical "click Browse, navigate
+            # through five levels, click OK" flow.
+            self._register_path_drop_target(entry, var)
             btn_cell = self.ttk.Frame(frame)
             btn_cell.grid(row=i, column=2, sticky="w", pady=2)
             self.ttk.Button(
@@ -4019,6 +4174,19 @@ class _SpinDoctorGUI:
                 "Pick a system and type a ROM name.",
             )
             return
+        # Confirm before removing — matches the pattern used by the
+        # other destructive controls (ignore remove, mainmenu remove,
+        # curate delete). The favorite itself is reversible via
+        # `fav add` but the user shouldn't have to know that to feel
+        # safe clicking the button.
+        if not self.messagebox.askyesno(
+            "Remove favorite?",
+            f"Remove {rom!r} (from {sys_}) from the cross-system "
+            f"Favorites wheel?\n\nThe next `fav rebuild --apply` will "
+            "regenerate the wheel without this entry. Adding it back "
+            "later is a one-click operation via the Add button above.",
+        ):
+            return
         self._run_cli("spindoctor", ["fav", "remove", sys_, rom])
 
     def _fav_list(self) -> None:
@@ -4341,6 +4509,25 @@ class _SpinDoctorGUI:
             systems = []
             self._set_status(f"Could not list systems: {exc}")
 
+        # Apply the optional quick-filter (toggled by Ctrl+Shift+F).
+        # Case-insensitive substring match against the system name.
+        # When the filter is empty, every system shows — matches the
+        # behaviour before the filter existed.
+        filter_pattern = ""
+        try:
+            filter_pattern = self._system_filter_var.get().strip().lower()
+        except Exception:  # noqa: BLE001 - var may not exist on early calls
+            filter_pattern = ""
+        if filter_pattern:
+            unfiltered_count = len(systems)
+            systems = [s for s in systems if filter_pattern in s.lower()]
+            # Cheap user feedback: show what's actually visible vs hidden.
+            if notify or unfiltered_count != len(systems):
+                self._set_status(
+                    f"System filter: {filter_pattern!r} → "
+                    f"{len(systems)} of {unfiltered_count} systems shown."
+                )
+
         # Every tab that has a system picker. Attributes may not exist yet
         # on the first call (tabs build lazily), so we guard with getattr.
         combos_and_vars = [
@@ -4540,10 +4727,21 @@ class _SpinDoctorGUI:
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
         self._backup_restore_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _restore_apply_check = self.ttk.Checkbutton(
             restore_frame, text="Apply (uncheck for dry-run)",
             variable=self._backup_restore_apply_var,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        )
+        _restore_apply_check.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        _attach_tooltip(
+            _restore_apply_check,
+            "Unchecked: dry-run — print every file that *would* be "
+            "copied back, but touch nothing on disk. Checked: actually "
+            "overwrite the live cabinet's folders with the backup's "
+            "contents. There is NO undo for restore — the live state "
+            "is replaced wholesale. Run a fresh backup first if you're "
+            "not sure.",
+            self.tk,
+        )
 
         # Two button rows: read-only inspection on top, destructive
         # action (Restore) on its own row beneath a Separator. Sharing
@@ -4839,17 +5037,38 @@ class _SpinDoctorGUI:
         ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
         self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _mig_preserve = self.ttk.Checkbutton(
             opt_frame,
             text="Keep original folder names (--preserve-names)",
             variable=self._migrate_preserve_names_var,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        )
+        _mig_preserve.grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        _attach_tooltip(
+            _mig_preserve,
+            "Default off: the migrated layout uses canonical folder "
+            "names (Games / HyperSpin / Emulators / RocketLauncher / "
+            "LEDBlinky) under the target root regardless of what your "
+            "source folders were called. Tick to carry the exact source "
+            "folder names through — useful when scripts elsewhere on "
+            "the cabinet reference those names by path.",
+            self.tk,
+        )
 
         self._migrate_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _mig_apply = self.ttk.Checkbutton(
             opt_frame, text="Apply (uncheck for dry-run)",
             variable=self._migrate_apply_var,
-        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        )
+        _mig_apply.grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        _attach_tooltip(
+            _mig_apply,
+            "Unchecked: dry-run — print the move plan, change nothing. "
+            "Checked: actually move every file. Migrate writes a "
+            "manifest under ~/.spindoctor/migrations/ so the entire "
+            "operation is reversible via 'migrate --undo' even if you "
+            "later move things around at the destination.",
+            self.tk,
+        )
 
         self.ttk.Button(
             opt_frame, text="Run migration", command=self._run_migrate,
@@ -6305,15 +6524,35 @@ class _SpinDoctorGUI:
         ).pack(side="left")
         self.ttk.Label(cur_flags, text="Action").pack(side="left", padx=(20, 0))
         self._curate_action_var = self.tk.StringVar(value="archive")
-        self.ttk.Combobox(
+        _curate_action_combo = self.ttk.Combobox(
             cur_flags, textvariable=self._curate_action_var,
             values=["archive", "delete"], state="readonly", width=10,
-        ).pack(side="left", padx=4)
+        )
+        _curate_action_combo.pack(side="left", padx=4)
+        _attach_tooltip(
+            _curate_action_combo,
+            "archive (default, recommended): retired ROMs are moved to "
+            "a per-system zip under ~/.spindoctor/curate-archive/ and "
+            "are fully recoverable via 'Undo most recent curate'. "
+            "delete: ROMs are permanently removed from disk with no "
+            "undo path. Pick delete only when you've already curated "
+            "the system once and confirmed the archive is correct.",
+            self.tk,
+        )
         self._curate_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
+        _curate_apply_check = self.ttk.Checkbutton(
             cur_flags, text="Apply (uncheck for dry-run)",
             variable=self._curate_apply_var,
-        ).pack(side="left", padx=10)
+        )
+        _curate_apply_check.pack(side="left", padx=10)
+        _attach_tooltip(
+            _curate_apply_check,
+            "Unchecked: dry-run — show the plan but make no changes. "
+            "Checked: actually archive (or delete) the duplicates "
+            "according to the Action selector above. Every apply run "
+            "writes a manifest under ~/.spindoctor/curate/ for undo.",
+            self.tk,
+        )
 
         self.ttk.Label(
             cur_frame,
