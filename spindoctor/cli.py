@@ -4274,6 +4274,32 @@ def doctor(apply_changes):
         sys.exit(2)
 
 
+@cli.command("self-doctor")
+@click.option(
+    "--fix", is_flag=True,
+    help="Delete stale rescue copies and orphan .part files older than "
+         "the documented thresholds (30 days / 7 days). Never touches "
+         "config.json, current backups, manifests, or the metadata cache.",
+)
+def self_doctor(fix):
+    """Diagnose SpinDoctor's own state (not the cabinet library).
+
+    `spindoctor doctor` checks the library. This command checks the
+    state SpinDoctor accumulates inside `~/.spindoctor/` — orphan
+    backup folders, corrupt-config rescue copies, manifest dirs,
+    expired metadata cache, leftover `.part` files. Read-only by
+    default; pass `--fix` to clean up the categories explicitly
+    flagged as safe to delete.
+    """
+    from .self_doctor import Status as _S, render_report, run_self_checks
+
+    config = _cfg()
+    report = run_self_checks(config, fix=fix)
+    render_report(report, console)
+    if report.overall() == _S.FAIL:
+        sys.exit(2)
+
+
 # ─── ledblinky ────────────────────────────────────────────────────────────────
 
 @cli.group("ledblinky")
