@@ -64,6 +64,12 @@ HIDDEN_IMPORTS = [
     "lxml.etree",
     "rich.logging",
     "click",
+    # tkinterdnd2 ships native Tcl shared libraries (tkdnd2.9.x) that
+    # PyInstaller doesn't auto-bundle. The GUI imports the module
+    # conditionally, so a missing module is non-fatal — but the frozen
+    # GUI exe should include it so end-users get the drag-drop
+    # affordance without a separate install step.
+    "tkinterdnd2",
 ]
 
 

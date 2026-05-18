@@ -53,8 +53,14 @@ archives = ["py7zr>=0.20", "rarfile>=4.0"]
 # Without it the preview command still works, but only the HTML
 # output mode is available (the PNG path falls back with a warning).
 preview = ["pillow>=9.0"]
-all = ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0", "pillow>=9.0"]
+all = ["lxml>=4.9", "py7zr>=0.20", "rarfile>=4.0", "pillow>=9.0", "tkinterdnd2>=0.4"]
 dev = ["pytest>=7.0", "lxml>=4.9"]
+# Drag-and-drop folder support on the GUI's Setup tab. Optional —
+# the GUI works without it (you just lose the drag-from-Explorer
+# affordance, Browse + paste still work). Bundled into the frozen
+# Windows .exe; pip users install with `pip install spindoctor[gui]`
+# or `pip install spindoctor[all]`.
+gui = ["tkinterdnd2>=0.4"]
 
 [project.urls]
 Homepage = "https://github.com/phillram/spindoctor"
