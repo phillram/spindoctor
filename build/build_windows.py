@@ -39,7 +39,7 @@ TARGETS = [
     ("spindoctor.gui:main",           "spindoctor-gui",    True),
     ("spindoctor.favorites:main",     "spindoctor-fav",    False),
     ("spindoctor.recent:main",        "spindoctor-recent", False),
-    ("spindoctor.playtime:main_cli",  "spindoctor-stats",  False),
+    ("spindoctor.playtime:main",      "spindoctor-stats",  False),
 ]
 
 # Modules PyInstaller's static analysis can miss because they're imported
