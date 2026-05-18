@@ -1,7 +1,6 @@
 """User-supplied system overrides extend the four hardcoded lookups."""
 from __future__ import annotations
 
-import json
 
 import pytest
 
