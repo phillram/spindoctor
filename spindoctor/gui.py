@@ -695,6 +695,13 @@ class _SpinDoctorGUI:
         # currently running command so we can stamp ✓/✗ on finish.
         self._tab_base_names: list[str] = []  # base label per tab index
         self._running_tab_idx: Optional[int] = None
+        # Per-tab status overlays. Run badges (⟳/✓/✗) are stamped by
+        # _run_cli / _on_proc_done; health badges (✓/⚠/✗/·) are stamped
+        # by the startup doctor pass and reflect the overall health of
+        # the area each tab covers. Both render through _render_tab_label
+        # so neither one overwrites the other.
+        self._tab_run_badges: dict[int, str] = {}
+        self._tab_health_badges: dict[int, str] = {}
 
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
@@ -1158,6 +1165,15 @@ class _SpinDoctorGUI:
         else:
             self._set_status("Ready.")
 
+        # Kick off the deeper doctor pass on a worker thread so per-tab
+        # health badges can populate without delaying first paint.
+        # `_startup_health_checks` (this method) is cheap and runs
+        # synchronously; `_compute_tab_health_badges` calls `doctor`
+        # which touches disk and may take 100+ ms on a slow drive.
+        threading.Thread(
+            target=self._compute_tab_health_badges, daemon=True,
+        ).start()
+
     # ── First-run wizard ──────────────────────────────────────────────────────
 
     def _maybe_show_first_run_wizard(self) -> None:
@@ -1429,6 +1445,83 @@ class _SpinDoctorGUI:
 
         show_step(0)
         win.bind("<Escape>", lambda _e: _save_and_close(skip=True))
+
+    # ── tab health badges ─────────────────────────────────────────────────────
+    #
+    # Maps each doctor check name to one or more tabs that surface that
+    # area. Maintained alongside `health.run_health_checks` — when a new
+    # check ships there, add an entry here (or accept the default
+    # "unmapped checks don't badge any tab" behaviour).
+    _HEALTH_TO_TABS: dict[str, tuple[str, ...]] = {
+        "Paths":                  ("Setup",),
+        "External binaries":      ("Tools", "Setup"),
+        "HyperSpin databases":    ("Audit & Doctor",),
+        "Match cache":            ("Curate",),
+        "Global Emulators.ini":   ("Metadata & Media",),
+        "LEDBlinky":              ("LEDBlinky",),
+        "Metadata APIs":          ("Setup",),
+        "Media folders":          ("Metadata & Media",),
+        # "lxml", "Archive support", "Preview support" are install-level
+        # — no single tab owns them, so they don't badge anything. They
+        # still surface via the Audit & Doctor tab's "Run doctor" output.
+    }
+
+    _HEALTH_BADGE = {
+        # "ok" → no badge; user shouldn't need to see anything for
+        # working areas (the absence of a warning IS the signal).
+        "warn": "⚠",
+        "fail": "✗",
+        # "info" → no badge; not actionable enough to draw attention.
+    }
+
+    def _compute_tab_health_badges(self) -> None:
+        """Run `doctor` in the background and stamp tabs with the
+        worst status of every check that maps to them.
+
+        Runs on a worker thread. Widget mutations marshal back to the
+        main thread via `root.after(0, …)`.
+        """
+        try:
+            from . import health
+            cfg = load_config()
+            report = health.run_health_checks(cfg, fix=False)
+        except Exception:  # noqa: BLE001 - badges are best-effort
+            return
+
+        order = {"ok": 0, "info": 0, "warn": 1, "fail": 2}
+        # tab label → worst seen status string
+        worst_per_tab: dict[str, str] = {}
+        for check in report.checks:
+            tabs = self._HEALTH_TO_TABS.get(check.name)
+            if not tabs:
+                continue
+            for tab_label in tabs:
+                current = worst_per_tab.get(tab_label, "ok")
+                if order[check.status.value] > order[current]:
+                    worst_per_tab[tab_label] = check.status.value
+
+        # Resolve tab labels → indices and schedule the badge update.
+        updates: list[tuple[int, str]] = []
+        for tab_label, status_str in worst_per_tab.items():
+            try:
+                idx = self._tab_base_names.index(tab_label)
+            except ValueError:
+                continue
+            badge = self._HEALTH_BADGE.get(status_str, "")
+            updates.append((idx, badge))
+
+        if updates:
+            try:
+                self.root.after(0, self._apply_tab_health_badges, updates)
+            except Exception:  # noqa: BLE001 - root may be destroyed in tests
+                pass
+
+    def _apply_tab_health_badges(self, updates: list) -> None:
+        try:
+            for idx, badge in updates:
+                self._set_tab_health_badge(idx, badge)
+        except Exception:  # noqa: BLE001 - widget race during teardown
+            pass
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -3635,6 +3728,12 @@ class _SpinDoctorGUI:
             )
         # System dropdown depends on roms_dir/hyperspin_dir; refresh it.
         self._refresh_systems()
+        # Health badges may have just changed (e.g. user set the
+        # previously-missing ledblinky_dir). Re-compute in the
+        # background so the tab strip stays accurate.
+        threading.Thread(
+            target=self._compute_tab_health_badges, daemon=True,
+        ).start()
 
     # ── Wheels tab ────────────────────────────────────────────────────────────
 
@@ -7662,11 +7761,48 @@ class _SpinDoctorGUI:
         self._status_var.set(text)
 
     def _set_tab_badge(self, idx: int, badge: str) -> None:
-        """Append a status glyph to a notebook tab label (main thread only)."""
+        """Stamp the run-progress glyph (⟳/✓/✗) on a tab (main thread only)."""
+        if idx < 0 or idx >= len(self._tab_base_names):
+            return
+        if badge:
+            self._tab_run_badges[idx] = badge
+        else:
+            self._tab_run_badges.pop(idx, None)
+        self._render_tab_label(idx)
+
+    def _set_tab_health_badge(self, idx: int, badge: str) -> None:
+        """Stamp the area-health glyph (✓/⚠/✗) on a tab.
+
+        Health badges persist across runs (they're driven by the
+        startup `doctor` pass, not by command outcomes), so a tab can
+        show both a run badge AND a health badge at once — e.g.
+        "LEDBlinky ⚠ ⟳" means "the LEDBlinky area has a configuration
+        warning, and a command is currently streaming output from
+        this tab".
+        """
+        if idx < 0 or idx >= len(self._tab_base_names):
+            return
+        if badge:
+            self._tab_health_badges[idx] = badge
+        else:
+            self._tab_health_badges.pop(idx, None)
+        self._render_tab_label(idx)
+
+    def _render_tab_label(self, idx: int) -> None:
+        """Combine base + health badge + run badge into the tab title."""
         if idx < 0 or idx >= len(self._tab_base_names):
             return
         base = self._tab_base_names[idx]
-        self._nb.tab(idx, text=f"{base} {badge}" if badge else base)
+        health = self._tab_health_badges.get(idx, "")
+        run = self._tab_run_badges.get(idx, "")
+        # Health sits closer to the base name (semantic state),
+        # run sits at the far right (transient activity).
+        parts = [base]
+        if health:
+            parts.append(health)
+        if run:
+            parts.append(run)
+        self._nb.tab(idx, text=" ".join(parts))
 
     def _fit_geometry(self, win, ideal_w: int, ideal_h: int) -> None:
         """Set dialog geometry capped to the current screen size minus margins.

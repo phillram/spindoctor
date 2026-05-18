@@ -166,6 +166,38 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
+def test_health_to_tabs_only_references_real_tab_labels():
+    """Every tab label in `_HEALTH_TO_TABS` must be a real tab name
+    the GUI builds, otherwise `_tab_base_names.index(label)` raises
+    ValueError and silently drops the badge. Pin the mapping so a
+    rename of any tab triggers a test failure."""
+    # Tab labels SpinDoctor's `_build_layout` adds to `_tab_base_names`.
+    # Kept in sync manually — mirroring the order in `_build_layout`.
+    expected_tabs = {
+        "Setup", "Wheels", "Main Menu", "Audit & Doctor", "Diagnose",
+        "Metadata & Media", "Curate", "Systems", "LEDBlinky", "Lightgun",
+        "Tools", "Backup & Restore", "Migrate", "Logs", "Custom Command",
+    }
+    for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
+        for label in tab_labels:
+            assert label in expected_tabs, (
+                f"_HEALTH_TO_TABS[{check_name!r}] references unknown "
+                f"tab {label!r}; tab strip has: {sorted(expected_tabs)}"
+            )
+
+
+def test_health_badge_mapping_covers_warn_and_fail():
+    badges = gui._SpinDoctorGUI._HEALTH_BADGE
+    # `ok` and `info` are deliberately absent — clean areas should NOT
+    # decorate their tab. Pin the absence so a future "always show ✓"
+    # change is intentional.
+    assert "ok" not in badges
+    assert "info" not in badges
+    # warn and fail must produce visible glyphs.
+    assert badges["warn"]
+    assert badges["fail"]
+
+
 def test_custom_command_presets_match_actual_cli_syntax():
     """Preset hints must use real flag names — `media-add` was shipped
     with `--source` in earlier presets even though the CLI flag is
