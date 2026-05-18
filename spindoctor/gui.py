@@ -1397,7 +1397,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             welcome,
             text=(
-                f"Looks like this is your first run. Let's set up the "
+                "Looks like this is your first run. Let's set up the "
                 "paths SpinDoctor needs, then run a quick health check. "
                 "Takes about 90 seconds.\n\n"
                 "You can change everything later from the Setup tab, "
@@ -3361,7 +3361,14 @@ class _SpinDoctorGUI:
                 assets = themes_mod.scan_frontend_art(cfg)
                 has_swfs = themes_mod.has_swf_themes(cfg)
             except Exception as exc:  # noqa: BLE001 — surface in UI
-                self.root.after(0, lambda: count_var.set(f"Error: {exc}"))
+                # Bind `exc` at lambda-creation time. Without the
+                # `_exc=exc` default arg, the lambda would close over
+                # the name `exc`, which is deleted when the `except`
+                # block exits (PEP 3134) — so the deferred callback
+                # would raise NameError instead of showing the error.
+                self.root.after(
+                    0, lambda _exc=exc: count_var.set(f"Error: {_exc}"),
+                )
                 return
             self.root.after(0, on_scan_done, assets, has_swfs)
 
@@ -5852,7 +5859,7 @@ class _SpinDoctorGUI:
             "trailer", "title", "theme", "fade", "sound",
         ]
         _MEDIA_DEFAULTS = {"wheel", "background"}
-        self._meta_type_vars: dict[str, "tk_mod.BooleanVar"] = {}
+        self._meta_type_vars: dict[str, "tk_mod.BooleanVar"] = {}  # noqa: F821 - string annotation, runtime is self.tk.BooleanVar
         for col, mtype in enumerate(_MEDIA_TYPES):
             var = self.tk.BooleanVar(value=(mtype in _MEDIA_DEFAULTS))
             self._meta_type_vars[mtype] = var
@@ -6497,7 +6504,7 @@ class _SpinDoctorGUI:
             "Korea", "Brazil", "Australia", "Spain",
             "France", "Germany", "Italy",
         ]
-        self._curate_region_vars: dict[str, "tk_mod.BooleanVar"] = {}
+        self._curate_region_vars: dict[str, "tk_mod.BooleanVar"] = {}  # noqa: F821
         for col, region in enumerate(_CURATE_REGIONS):
             var = self.tk.BooleanVar(value=False)
             self._curate_region_vars[region] = var
@@ -6588,7 +6595,7 @@ class _SpinDoctorGUI:
         # Category checkboxes — safe ones pre-checked, unsafe unchecked.
         cln_cats_frame = self.ttk.Frame(cln_frame)
         cln_cats_frame.pack(fill="x", padx=6, pady=(4, 2))
-        self._cleanup_cat_vars: dict[str, "tk.BooleanVar"] = {}
+        self._cleanup_cat_vars: dict[str, "tk.BooleanVar"] = {}  # noqa: F821
         safe_cats  = [(k, lbl) for k, lbl, s in _CLEANUP_CATEGORIES if s]
         unsafe_cats = [(k, lbl) for k, lbl, s in _CLEANUP_CATEGORIES if not s]
         cols = 3
@@ -6909,8 +6916,12 @@ class _SpinDoctorGUI:
                     prefer_no_proto=prefer_no_proto,
                 )
             except Exception as exc:  # noqa: BLE001 — surface in UI
-                self.root.after(0, lambda: status_var.set(
-                    f"Error scanning {system}: {exc}",
+                # `exc` is deleted when the except block exits (PEP
+                # 3134), and `root.after(0, ...)` fires asynchronously
+                # — bind `exc` at lambda-creation time so the deferred
+                # callback can still read it.
+                self.root.after(0, lambda _exc=exc: status_var.set(
+                    f"Error scanning {system}: {_exc}",
                 ))
                 return
             self.root.after(0, populate, groups)
@@ -7557,7 +7568,7 @@ class _SpinDoctorGUI:
         self._ovr_layout_var = self.tk.StringVar()
         self._ovr_emulator_var = self.tk.StringVar()
 
-        rows: list[tuple[str, "tk_mod.StringVar", str]] = [
+        rows: list[tuple[str, "tk_mod.StringVar", str]] = [  # noqa: F821
             ("ScreenScraper ID (int)",   self._ovr_ss_id_var,    ""),
             ("TheGamesDB ID (int)",      self._ovr_tgdb_id_var,  ""),
             ("ROM extensions (csv)",     self._ovr_exts_var,

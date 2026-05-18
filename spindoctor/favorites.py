@@ -171,7 +171,6 @@ def _resolve_target_names(entries: Iterable[FavoriteEntry]) -> dict[str, str]:
     used: set[str] = set()
     out: dict[str, str] = {}
     for e in entries:
-        key = (e.system, e.rom_name)
         candidate = e.rom_name if counts[e.rom_name] == 1 else f"{e.rom_name} ({e.system})"
         # Guard against pathological collisions (same display in same system twice)
         n = 2

@@ -8,7 +8,6 @@ which is what we assert on macOS/Linux runners.
 from __future__ import annotations
 
 import sys
-import types
 from dataclasses import dataclass
 
 import pytest

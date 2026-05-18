@@ -268,7 +268,7 @@ class HyperspinDatabase:
         _set_text(hdr, "exporterversion", "SpinDoctor")
 
         for game in sorted(self._games.values(), key=lambda g: g.name.lower()):
-            el = _new_game_element(game, root=root)
+            _new_game_element(game, root=root)
 
         if _HAS_LXML:
             tree = LET.ElementTree(root)

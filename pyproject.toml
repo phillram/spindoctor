@@ -88,6 +88,34 @@ exclude = ["tests*", "build*", "scripts*"]
 # can find them at runtime (Path(__file__).parent / "assets").
 spindoctor = ["assets/*.png", "assets/*.ico"]
 
+[tool.ruff]
+# Ruff is the project's linter. Black-style formatting is deliberately
+# NOT enforced (yet) — the codebase has 100+ comments aligned with
+# `#` markers that an auto-formatter would mangle. A separate cleanup
+# pass can enable formatting later.
+#
+# Line length is generous (120) so we don't have to wrap docstrings
+# and comment-rich code that's already readable in a 120-col terminal.
+# Tightening to 100 would force a sweeping reformat that isn't worth
+# the churn for this codebase's audience (single maintainer + a
+# handful of contributors).
+line-length = 120
+target-version = "py38"
+
+[tool.ruff.lint]
+# Start with the lowest-noise, highest-signal rules and expand later.
+# F = pyflakes (real bugs: unused imports, undefined names, unused vars).
+# W = pycodestyle warnings (trailing whitespace, etc.).
+#
+# Not selected (would trigger sweeping reformats):
+#   E501 - line too long (47 violations today; would force a reformat pass)
+#   E402 - module-level import not at top (1 violation; legitimate in build_windows.py)
+#   E701 - multiple statements on one line (1 violation; type-stub style)
+#
+# Future expansion: add B (bugbear), SIM (simplification), UP (pyupgrade)
+# once the baseline is clean.
+select = ["F", "W"]
+
 [tool.bandit]
 # B324 (weak hash): SHA-1 / MD5 are used for *non-cryptographic* integrity
 #   checks — ROM verification against No-Intro DAT (the DATs themselves

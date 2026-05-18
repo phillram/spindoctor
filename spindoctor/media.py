@@ -240,6 +240,18 @@ class MediaDownloader:
                     game_name=label, media_type=media_type,
                     success=False, error=last_error,
                 )
+            except OSError as e:
+                # Disk full, antivirus lock, permission denied, etc. The
+                # atomic-write contract guarantees the destination file
+                # (if any pre-existed) is intact — os.replace is atomic
+                # on POSIX and on Windows since Python 3.3. Surface the
+                # OS error as a clean DownloadResult so callers don't
+                # see a stack trace; leave the .part file in place so
+                # the next run can resume.
+                return DownloadResult(
+                    game_name=label, media_type=media_type,
+                    success=False, error=f"OSError: {e}",
+                )
 
         return DownloadResult(
             game_name=label, media_type=media_type,

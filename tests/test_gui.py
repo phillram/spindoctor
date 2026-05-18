@@ -15,7 +15,6 @@ environments without any display the test self-skips.
 from __future__ import annotations
 
 import os
-import shutil
 import sys
 from pathlib import Path
 
@@ -982,7 +981,7 @@ def test_safe_bind_all_swallows_tclerror():
 
         def bind_all(self, sequence, callback):
             if "grave" in sequence:
-                raise _FakeTclError(f'bad event type or keysym "grave"')
+                raise _FakeTclError('bad event type or keysym "grave"')
             self.accepted.append(sequence)
 
     stub = type("Stub", (), {})()
