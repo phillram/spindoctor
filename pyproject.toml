@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "spindoctor"
 version = "1.9.1"
-description = "Command-line librarian for HyperSpin + RocketLauncher arcade cabinets."
+description = "Tkinter GUI + CLI librarian for HyperSpin + RocketLauncher arcade cabinets."
 readme = "README.md"
 # 3.8 is the floor because that was the last Python release to officially
 # support Windows 7 — the cabinet target. The frozen Windows binaries in
@@ -17,6 +17,8 @@ keywords = ["hyperspin", "rocketlauncher", "arcade", "mame", "emulation"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Environment :: Win32 (MS Windows)",
+    "Environment :: X11 Applications",
     "Intended Audience :: End Users/Desktop",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: POSIX",

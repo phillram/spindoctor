@@ -38,6 +38,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Tooling
 
 - **Tests: 3 new GUI cases** covering `match list` / bare `organize` read-only classification and `media-add` preset flag-name accuracy. Suite: 590 → 593.
+- **Docs: stale references in `docs/index.md` and `docs/windows-binaries.md` corrected.** Read-only command list in `index.md` was missing `mainmenu show`, `find-misplaced`, `find-global`, and `theme-scan` (drift vs. `commands.md`). Wheels-tab screenshot alt-text said "four refresh buttons" but the tab has been "three checkboxes + Refresh selected" since 1.7.0. Added a "Find a control on the GUI launcher" row to the where-to-start table so pip-installed users find the tab tour without hunting through the Windows binaries page.
+- **Packaging: `pyproject.toml` description + classifiers reflect GUI parity with CLI.** Description was "Command-line librarian" — now "Tkinter GUI + CLI librarian". Added `Environment :: Win32 (MS Windows)` and `Environment :: X11 Applications` classifiers alongside `Environment :: Console` so PyPI / pip search surface the project for both audiences.
+- **Scripts: `Refresh Both.bat` fails loudly on any step's error.** Previously only paused if the *last* step (Most Played) exited non-zero — a Favorites or Recently Played failure silently passed through to the next step, then the window closed before the user saw anything. Each step now pauses with a step-named message on failure and exits non-zero.
 
 ---
 

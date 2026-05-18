@@ -1,8 +1,8 @@
 # SpinDoctor Documentation
 
-A command-line librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
+A Tkinter GUI + CLI librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
 
-> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`) need no flag and never modify anything.
+> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-misplaced`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `theme-scan`, `mainmenu show`, `lightgun detect`, `lightgun audit`) need no flag and never modify anything.
 
 ## Pick your install route
 
@@ -26,6 +26,7 @@ Then pick how to launch:
 | If you want to… | Read |
 |---|---|
 | Stand up a cabinet from a blank Windows PC | [First-time setup](setup.md) |
+| Find a control on the GUI launcher | [GUI launcher → Tab tour](windows-binaries.md#tab-tour) |
 | Look up a specific command | [Command reference](commands.md) |
 | See or change configuration | [Configuration](configuration.md) |
 | Do something common (backup, migrate, daily refresh, recovery) | [Workflows](workflows.md) |
