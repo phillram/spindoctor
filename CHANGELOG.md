@@ -28,6 +28,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI: Update notification → one-click "Download…" button in the status bar.** When an update is available, a Download… button appears next to Stop and opens the release page directly. Previously users had to dig through Help → Check for updates and confirm a messagebox.
 - **GUI: Tooltips on the most-confusing controls.** New `_attach_tooltip` helper shows a small dark Label after a 500 ms hover. Applied to fetch-meta's three checkboxes (`--auto-best`, `--all-games`, `--no-cache`) where the flag names alone don't capture what they actually do.
 
+### Changed
+
+- **GUI: Tabs reordered for a workflow-oriented sequence.** The old order put `Wheels` and `Main Menu` (front-end composition) before `Audit & Doctor` (read-only diagnostics) — backwards for a new cabinet owner whose first instinct after Setup is to confirm the cabinet is healthy before touching anything. The two read-only-check tabs (`Audit & Doctor` and `Diagnose`) now sit adjacent right after Setup. New order: Setup → Audit & Doctor → Diagnose → Metadata & Media → Curate → Wheels → Main Menu → Systems → LEDBlinky → Lightgun → Backup & Restore → Tools → Migrate → Logs → Custom Command. Pinned in the Tk smoke test so a drive-by reorder can't regress it silently. No behaviour change beyond the visual sequence.
+
 ### Fixed
 
 - **Windows 7 / older Tk: `iconbitmap(default=…)` switched to positional path.** Some Tk 8.5 builds bundled with Python 3.8 on Win7 silently ignore the `default=` keyword, so the app icon never set. Now uses `iconbitmap(str(ico))` directly — already wrapped in `try/except TclError`, so behaviour is unchanged on newer Tk that does accept the keyword.
