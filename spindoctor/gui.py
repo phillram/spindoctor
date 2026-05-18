@@ -4070,6 +4070,101 @@ class _SpinDoctorGUI:
 
         run_next(steps, 0)
 
+    def _run_preflight(self) -> None:
+        """One-button "is the cabinet ready for guests?" health check.
+
+        Chains the three high-signal read-only commands — `doctor`,
+        `tools-audit`, `audit --all` — through the existing chained-
+        workflow infrastructure (so the user sees a determinate "step
+        2 of 3" progress bar). Tallies pass / fail by exit code and
+        pops a verdict messagebox at the end.
+
+        The chain continues past a non-zero exit code (unlike the wheel
+        workflows) because a partial cab state is still informative:
+        if `tools-audit` reports missing MAME, the user wants to know
+        about that *and* whether `audit --all` flagged broken media too.
+        Cabinet owners about to ship cabs to LAN events have repeatedly
+        asked for "one button that tells me everything's OK" — this is
+        that button.
+        """
+        steps: list[tuple[str, list[str]]] = [
+            ("doctor",      ["doctor"]),
+            ("tools-audit", ["tools-audit"]),
+            ("audit --all", ["audit", "--all"]),
+        ]
+        total = len(steps)
+        self._chain_start(total)
+        results: list[tuple[str, int]] = []
+
+        self._append_output(
+            "\n=== Preflight check — running "
+            f"{total} read-only diagnostics. ===\n"
+        )
+
+        def run_next(remaining: list[tuple[str, list[str]]], last_rc: int) -> None:
+            # Record the previous step's result before deciding next.
+            if results or last_rc != 0:
+                # Skip the synthetic "kicked off chain" rc=0 on first call.
+                if results:
+                    pass  # already recorded by the inline append below
+            if not remaining:
+                self._chain_end()
+                self._summarise_preflight(results)
+                return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
+            name, args = remaining[0]
+            self._set_status(f"Preflight step {step_num}/{total}: {name}…")
+            self._append_output(
+                f"\n--- Preflight {step_num}/{total}: spindoctor {name} ---\n"
+            )
+
+            def on_complete(code: int, _name=name) -> None:
+                results.append((_name, code))
+                # Continue past failures — partial cab health is still
+                # information the user needs to act on.
+                run_next(remaining[1:], code)
+
+            self._run_cli(
+                "spindoctor", args, on_complete=on_complete,
+            )
+
+        run_next(steps, 0)
+
+    def _summarise_preflight(self, results: list[tuple[str, int]]) -> None:
+        """Render the final pass/fail verdict for a preflight chain."""
+        failed = [(name, rc) for name, rc in results if rc != 0]
+        if not failed:
+            self._append_output(
+                "\n=== Preflight complete — all 3 checks passed. "
+                "Cabinet is ready. ===\n"
+            )
+            self._set_status("Preflight: all checks passed.")
+            self.messagebox.showinfo(
+                "Preflight passed",
+                "All preflight checks passed.\n\n"
+                "doctor, tools-audit, and audit --all reported no errors. "
+                "The cabinet is ready to ship.",
+            )
+            return
+        body = "\n".join(f"  ✗ {name}  (exit {rc})" for name, rc in failed)
+        self._append_output(
+            f"\n=== Preflight complete — {len(failed)} of "
+            f"{len(results)} check(s) failed: ===\n{body}\n"
+            "Read the per-step output above (or open the Logs tab) for "
+            "details.\n"
+        )
+        self._set_status(
+            f"Preflight: {len(failed)} of {len(results)} check(s) failed."
+        )
+        self.messagebox.showwarning(
+            "Preflight: issues found",
+            f"{len(failed)} of {len(results)} preflight check(s) failed:\n\n"
+            f"{body}\n\n"
+            "Read the Output panel for per-check details, then drill into "
+            "the relevant tab (Audit & Doctor, Tools) to fix.",
+        )
+
     # ── Audit & Doctor tab ────────────────────────────────────────────────────
 
     def _build_audit_tab(self, parent):
@@ -4105,6 +4200,21 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Tools audit",
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
+
+        # Preflight — the one-button "is the cab ready for guests?" check.
+        # Chains doctor → tools-audit → audit --all so a user about to
+        # haul the cab to an event or hand it off to a friend can get a
+        # single green/red verdict without remembering which read-only
+        # commands to run in which order.
+        preflight_row = self.ttk.Frame(frame)
+        preflight_row.grid(row=2, column=3, sticky="e", pady=12)
+        self.ttk.Separator(preflight_row, orient="vertical").pack(
+            side="left", fill="y", padx=(8, 8),
+        )
+        self.ttk.Button(
+            preflight_row, text="✈  Preflight check…",
+            command=self._run_preflight,
+        ).pack(side="left")
 
         # Browse buttons — when an audit reports "wrong wheel" or
         # "missing video", jumping to the relevant folder in Explorer
