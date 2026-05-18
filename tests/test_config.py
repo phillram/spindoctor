@@ -168,6 +168,45 @@ def test_load_config_handles_wrong_type(isolated_config):
     assert cfg.roms_dir == ""  # defaults
 
 
+# ─── config set bounds validation ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("key,bad_value", [
+    ("match_threshold", "99.0"),       # 0.0–1.0
+    ("match_threshold", "-0.5"),
+    ("max_concurrent_downloads", "0"), # 1–64
+    ("max_concurrent_downloads", "-5"),
+    ("max_concurrent_downloads", "100"),
+    ("metadata_cache_ttl_days", "-1"), # 0–3650
+])
+def test_config_set_rejects_out_of_range_value(isolated_config, key, bad_value):
+    """Regression: out-of-range numeric values used to be accepted at write
+    time and only surfaced as a confusing failure deep inside a download
+    or match loop later. The CLI must fail at set time with a clear error.
+    """
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    runner = CliRunner()
+    # `--` so Click doesn't try to parse a leading-dash value as a flag.
+    result = runner.invoke(cli, ["config", "set", "--", key, bad_value])
+    assert result.exit_code != 0
+    assert "Out of range" in result.output or "out of range" in result.output.lower()
+
+
+def test_config_set_accepts_in_range_value(isolated_config):
+    """Sanity check: legal values still pass the new bounds check."""
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["config", "set", "match_threshold", "0.75"])
+    assert result.exit_code == 0
+    assert config_mod.load_config().match_threshold == pytest.approx(0.75)
+
+
 # ─── system override cache ───────────────────────────────────────────────────
 
 
