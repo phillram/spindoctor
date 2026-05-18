@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .config import CONFIG_DIR, Config, load_config, save_config
+from .fileinfo import _dir_size
 
 
 COMPONENT_TO_CONFIG_KEY: dict[str, str] = {
@@ -145,22 +146,6 @@ def _resolve_subfolder(component: str, src: Path, preserve_names: bool) -> str:
     return COMPONENT_SUBFOLDER[component]
 
 
-def _dir_size(path: Path) -> int:
-    total = 0
-    if not path.exists():
-        return 0
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
-    for p in path.rglob("*"):
-        try:
-            if p.is_file():
-                total += p.stat().st_size
-        except OSError:
-            pass
-    return total
 
 
 # ─── planning ─────────────────────────────────────────────────────────────────

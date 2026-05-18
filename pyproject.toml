@@ -66,7 +66,7 @@ spindoctor = "spindoctor.cli:cli"
 # Tools menu without loading the full CLI.
 spindoctor-fav = "spindoctor.favorites:main"
 spindoctor-recent = "spindoctor.recent:main"
-spindoctor-stats = "spindoctor.playtime:main_cli"
+spindoctor-stats = "spindoctor.playtime:main"
 # Tkinter GUI launcher for cabinet owners who'd rather not drop into cmd.
 # Shells out to the CLI binaries above rather than re-implementing logic.
 spindoctor-gui = "spindoctor.gui:main"

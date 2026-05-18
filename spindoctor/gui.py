@@ -31,6 +31,7 @@ import sys
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Deque, Optional, Sequence
 
@@ -2991,7 +2992,6 @@ class _SpinDoctorGUI:
 
     @staticmethod
     def _format_mtime(ts: float) -> str:
-        from datetime import datetime
         return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
@@ -3358,11 +3358,10 @@ class _SpinDoctorGUI:
             # Mirror plan results to the Output panel and Logs tab so
             # users can answer "what would that plan have swapped?" after
             # closing this window, and the row shows in the Logs timeline.
-            from datetime import datetime as _dt
             scope_label = scope or "all"
             argv_display = f"theme-apply plan ← {src_path.name}  (scope: {scope_label})"
             record = _RunRecord(
-                started_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 argv_str=argv_display,
                 dry_run=True,
             )
@@ -5009,9 +5008,6 @@ class _SpinDoctorGUI:
         self._set_status(f"Saving {xml_path.name}…")
 
         def _worker():
-            import os
-            import shutil
-            from datetime import datetime
             try:
                 tree = self._mm_ET.parse(str(xml_path))
                 root = tree.getroot()
@@ -7954,7 +7950,6 @@ class _SpinDoctorGUI:
             tuple(args)
         )
         argv_str = _format_argv(argv)
-        from datetime import datetime
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             argv_str=argv_str,

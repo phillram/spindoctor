@@ -28,6 +28,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI: Update notification → one-click "Download…" button in the status bar.** When an update is available, a Download… button appears next to Stop and opens the release page directly. Previously users had to dig through Help → Check for updates and confirm a messagebox.
 - **GUI: Tooltips on the most-confusing controls.** New `_attach_tooltip` helper shows a small dark Label after a 500 ms hover. Applied to fetch-meta's three checkboxes (`--auto-best`, `--all-games`, `--no-cache`) where the flag names alone don't capture what they actually do.
 
+### Changed
+
+- **Internal cleanup: deduplicated `_dir_size`, PCLauncher `[exe info]` body, and stray module-level re-imports.** `_dir_size` was implemented three times across `backup.py`, `migrate.py`, and `fileinfo.py` (the third copy was a one-liner that didn't tolerate missing paths or permission errors); the canonical version now lives in `fileinfo.py` and the other two import it. The `[exe info]` PCLauncher INI body was inlined in both `favorites.py` and `cli.py`; both now call a new `pclauncher_exe_info_text()` in `rocketlauncher.py`. The GUI's `_mm_save_order` worker thread re-imported `os` / `shutil` / `datetime` despite all three being available at module scope; `datetime` is now a top-level GUI import and the four inline `from datetime import datetime` statements scattered through `gui.py` are gone. No behaviour change.
+- **`spindoctor.playtime.main_cli` alias removed.** The `spindoctor-stats` entry point now points directly at `spindoctor.playtime:main` (the alias was a vestige of a since-removed setup.py wrapper).
+
 ### Fixed
 
 - **Windows 7 / older Tk: `iconbitmap(default=…)` switched to positional path.** Some Tk 8.5 builds bundled with Python 3.8 on Win7 silently ignore the `default=` keyword, so the app icon never set. Now uses `iconbitmap(str(ico))` directly — already wrapped in `try/except TclError`, so behaviour is unchanged on newer Tk that does accept the keyword.

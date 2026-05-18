@@ -512,9 +512,5 @@ def main(argv: Optional[list[str]] = None) -> int:
     return 0
 
 
-# Alias for the console_scripts entry point in setup.py.
-main_cli = main
-
-
 if __name__ == "__main__":
     sys.exit(main())
