@@ -198,6 +198,30 @@ def test_health_badge_mapping_covers_warn_and_fail():
     assert badges["fail"]
 
 
+@pytest.mark.parametrize("s,expected", [
+    ("1024x768", True),
+    ("1280x800+120+60", True),
+    ("960x720+0+0", True),
+    ("1920x1080-50+200", True),       # negative X offset (multi-monitor)
+    ("1920x1080+50-200", True),       # negative Y offset
+    ("960x720+-30+-40", True),        # the form Tk emits for negative offsets
+    # rejections
+    ("", False),
+    ("garbage", False),
+    ("x", False),
+    ("1024", False),                  # no height
+    ("1024x", False),
+    ("1024x800x", False),             # trailing junk
+    ("1x1", False),                   # too small (require 2+ digits)
+    ("100000x100000", False),         # implausibly huge
+])
+def test_is_plausible_geometry(s, expected):
+    """Persisted geometry strings are revalidated on launch — a
+    hand-corrupted config.json must not be able to raise TclError out
+    of the splash path."""
+    assert gui._is_plausible_geometry(s) is expected
+
+
 def test_build_fetch_meta_args_round_trip():
     """The fetch-meta arg builder is the single source of truth shared
     by the single-system Run button and the multi-system chainer.
@@ -612,6 +636,26 @@ def test_gui_constructs_against_real_tk():
         # Curate tab (foreground TclError) and the Main Menu tab
         # (_output AttributeError). 15 = the documented tab count.
         assert len(app._tab_base_names) == 15
+        # Pin the workflow-oriented order so a drive-by reorder doesn't
+        # regress UX without anyone noticing. See `_build_layout` for
+        # the rationale behind the sequencing.
+        assert app._tab_base_names == [
+            "Setup",
+            "Audit & Doctor",
+            "Diagnose",
+            "Metadata & Media",
+            "Curate",
+            "Wheels",
+            "Main Menu",
+            "Systems",
+            "LEDBlinky",
+            "Lightgun",
+            "Backup & Restore",
+            "Tools",
+            "Migrate",
+            "Logs",
+            "Custom Command",
+        ]
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
         assert app._status_var is not None
@@ -891,6 +935,26 @@ def test_gui_survives_missing_keysym_in_bind_all():
         try:
             app.root.update_idletasks()
             assert len(app._tab_base_names) == 15
+            # Pin the workflow-oriented order so a future drive-by
+            # reorder doesn't regress UX without anyone noticing.
+            # See `_build_layout` for the rationale.
+            assert app._tab_base_names == [
+                "Setup",
+                "Audit & Doctor",
+                "Diagnose",
+                "Metadata & Media",
+                "Curate",
+                "Wheels",
+                "Main Menu",
+                "Systems",
+                "LEDBlinky",
+                "Lightgun",
+                "Backup & Restore",
+                "Tools",
+                "Migrate",
+                "Logs",
+                "Custom Command",
+            ]
         finally:
             app.root.destroy()
     finally:

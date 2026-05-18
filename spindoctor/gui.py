@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import shlex
 import shutil
 import subprocess
@@ -31,6 +32,7 @@ import sys
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Deque, Optional, Sequence
 
@@ -138,6 +140,21 @@ def _clamp_ui_scale(value: float) -> float:
     except (TypeError, ValueError):
         return 1.0
     return max(UI_SCALE_MIN, min(UI_SCALE_MAX, round(f, 2)))
+
+
+# Matches Tk's "WIDTHxHEIGHT" or "WIDTHxHEIGHT+X+Y" / "...-X-Y" geometry
+# string form. Used to validate persisted geometry before handing it
+# back to Tk on the next launch — a malformed string would raise
+# `TclError` and break the splash, so we'd rather drop the saved value
+# and use the scaled default.
+_GEOMETRY_RE = re.compile(
+    r"^\d{2,5}x\d{2,5}([+-]-?\d{1,5}[+-]-?\d{1,5})?$"
+)
+
+
+def _is_plausible_geometry(s: str) -> bool:
+    """True iff *s* looks like a Tk geometry string we'd be safe to apply."""
+    return bool(_GEOMETRY_RE.match(s or ""))
 
 
 # Named Tk fonts whose sizes we scale alongside `ui_scale`. Keeping the
@@ -657,8 +674,24 @@ class _SpinDoctorGUI:
         min_w, min_h = 720, 540
         scaled_w = max(min_w, int(base_w * self._ui_scale))
         scaled_h = max(min_h, int(base_h * self._ui_scale))
-        self.root.geometry(f"{scaled_w}x{scaled_h}")
+        # If the user resized / moved the window last session, restore
+        # that geometry instead of the scaled default. Validate it's a
+        # plausible "WxH+X+Y" or "WxH" string so a hand-corrupted
+        # config.json can't pass garbage to Tk.
+        restored = False
+        saved_geom = getattr(_bootstrap_cfg, "gui_window_geometry", "") or ""
+        if saved_geom and _is_plausible_geometry(saved_geom):
+            try:
+                self.root.geometry(saved_geom)
+                restored = True
+            except Exception:  # noqa: BLE001 - Tk rejects malformed strings
+                restored = False
+        if not restored:
+            self.root.geometry(f"{scaled_w}x{scaled_h}")
         self.root.minsize(min_w, min_h)
+        # Stash the persisted last-active tab for _build_layout to read
+        # after the notebook is built.
+        self._restore_tab_idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
 
         # Window icon — cosmetic, must never block startup.
         self._load_window_icon()
@@ -681,6 +714,12 @@ class _SpinDoctorGUI:
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
+
+        # Chained-workflow state. None means "single command — show the
+        # indeterminate spinner"; a (step, total) tuple means "switch
+        # the progress bar to determinate at step/total of the way". See
+        # `_chain_start` / `_chain_advance` / `_chain_end`.
+        self._chain_progress: Optional[tuple[int, int]] = None
 
         # Per-run history buffered for the Logs tab. The Output panel
         # at the bottom of the window only shows the current run; the
@@ -1629,18 +1668,25 @@ class _SpinDoctorGUI:
         # still reach widgets that overflow the window. Each tab
         # builder creates its frame as before; the helper just bolts
         # a vertical scrollbar onto whichever container holds it.
+        # Tab order is workflow-oriented for a new cabinet owner:
+        # Setup once, then daily-driver tabs (read-only checks first so
+        # the user can confirm "is the cab healthy?" before touching
+        # anything), then curation surfaces, then wheel / front-end
+        # composition, then per-system overrides and peripheral tabs
+        # (LEDBlinky / Lightgun), then infrastructure (Backup → Tools →
+        # Migrate) trailing into Logs / Custom Command at the end.
         self._add_scrollable_tab(nb, self._build_setup_tab,    "Setup")
-        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
-        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
         self._add_scrollable_tab(nb, self._build_audit_tab,    "Audit & Doctor")
         self._add_scrollable_tab(nb, self._build_diagnose_tab, "Diagnose")
         self._add_scrollable_tab(nb, self._build_metadata_tab, "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_curate_tab,   "Curate")
+        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
+        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
         self._add_scrollable_tab(nb, self._build_systems_tab,  "Systems")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab, "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab, "Lightgun")
-        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
         self._add_scrollable_tab(nb, self._build_backup_tab,   "Backup & Restore")
+        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
         self._add_scrollable_tab(nb, self._build_migrate_tab,  "Migrate")
         # Logs tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
@@ -1770,6 +1816,17 @@ class _SpinDoctorGUI:
             _walk_attach_context_menus(self.root, self.tk)
         except Exception:  # noqa: BLE001 — never block startup
             pass
+
+        # If the previous session saved a last-active tab, restore it
+        # now. Done at the end of layout so every tab builder has run
+        # (touching a not-yet-built tab is fine — the notebook can
+        # select an unrealised pane — but the user-visible result is
+        # cleaner when we restore after all pages exist).
+        if 0 <= self._restore_tab_idx < len(self._tab_base_names):
+            try:
+                self._nb.select(self._restore_tab_idx)
+            except Exception:  # noqa: BLE001 - guard against teardown races
+                pass
 
     def _safe_bind_all(self, sequence: str, callback) -> bool:
         """Best-effort ``root.bind_all`` that never crashes startup.
@@ -1994,6 +2051,18 @@ class _SpinDoctorGUI:
             btn_row, text="Clear in-memory log",
             command=self._clear_logs,
         ).pack(side="left", padx=6)
+        # The in-memory log doesn't track manifest paths, but the
+        # File → View logs & manifests… modal does — and it has the
+        # "Undo this run" button per manifest. Surface a shortcut here
+        # so users discovering the Logs tab for the first time don't
+        # have to hunt through the menu for the undo workflow.
+        self.ttk.Separator(btn_row, orient="vertical").pack(
+            side="left", fill="y", padx=6,
+        )
+        self.ttk.Button(
+            btn_row, text="Browse manifests / undo…",
+            command=self._show_log_viewer,
+        ).pack(side="left")
 
         # First paint.
         self._refresh_logs_tab()
@@ -2991,7 +3060,6 @@ class _SpinDoctorGUI:
 
     @staticmethod
     def _format_mtime(ts: float) -> str:
-        from datetime import datetime
         return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
@@ -3358,11 +3426,10 @@ class _SpinDoctorGUI:
             # Mirror plan results to the Output panel and Logs tab so
             # users can answer "what would that plan have swapped?" after
             # closing this window, and the row shows in the Logs timeline.
-            from datetime import datetime as _dt
             scope_label = scope or "all"
             argv_display = f"theme-apply plan ← {src_path.name}  (scope: {scope_label})"
             record = _RunRecord(
-                started_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 argv_str=argv_display,
                 dry_run=True,
             )
@@ -3414,6 +3481,16 @@ class _SpinDoctorGUI:
                 "Manifests viewer (or `theme-apply --undo latest`).",
             ):
                 return
+            # Guard against double-click: the user can click Apply, then
+            # the messagebox-askyesno spins the event loop and the click
+            # registers a second time before the first run's worker
+            # thread starts. Two concurrent threads doing file copies
+            # would corrupt the manifest. Disable on entry; re-enable in
+            # _on_done's finally clause.
+            try:
+                apply_btn.configure(state="disabled")
+            except Exception:  # noqa: BLE001 - widget may not exist yet on first call
+                pass
             # apply_plan does the actual disk copies — on a big theme pack
             # this can take many seconds. Run it on a worker thread so
             # the Tk event loop keeps drawing; marshal results back to
@@ -3430,33 +3507,41 @@ class _SpinDoctorGUI:
                     return None, exc
 
             def _on_done(result, exc):
-                if exc is not None:
-                    self._set_status("Theme apply failed.")
-                    self.messagebox.showerror(
-                        "Apply failed", f"{type(exc).__name__}: {exc}",
+                try:
+                    if exc is not None:
+                        self._set_status("Theme apply failed.")
+                        self.messagebox.showerror(
+                            "Apply failed", f"{type(exc).__name__}: {exc}",
+                        )
+                        return
+                    self._append_output(
+                        f"\n[theme-apply] swapped {result.swapped} file(s)"
+                        + (f", skipped {len(result.skipped)}"
+                           if result.skipped else "")
+                        + (f"\n  manifest: {result.manifest_path}"
+                           if result.manifest_path else "")
+                        + "\n"
                     )
-                    return
-                self._append_output(
-                    f"\n[theme-apply] swapped {result.swapped} file(s)"
-                    + (f", skipped {len(result.skipped)}"
-                       if result.skipped else "")
-                    + (f"\n  manifest: {result.manifest_path}"
-                       if result.manifest_path else "")
-                    + "\n"
-                )
-                self._set_status(
-                    f"Theme apply: swapped {result.swapped} file(s)."
-                )
-                self.messagebox.showinfo(
-                    "Theme applied",
-                    f"Swapped {result.swapped} file(s).\n\n"
-                    + (f"Manifest: {result.manifest_path}\n"
-                       "Undo via File → View logs & manifests… → Theme "
-                       "swaps → Undo this run."
-                       if result.manifest_path else
-                       "No manifest written."),
-                )
-                win.destroy()
+                    self._set_status(
+                        f"Theme apply: swapped {result.swapped} file(s)."
+                    )
+                    self.messagebox.showinfo(
+                        "Theme applied",
+                        f"Swapped {result.swapped} file(s).\n\n"
+                        + (f"Manifest: {result.manifest_path}\n"
+                           "Undo via File → View logs & manifests… → Theme "
+                           "swaps → Undo this run."
+                           if result.manifest_path else
+                           "No manifest written."),
+                    )
+                    win.destroy()
+                finally:
+                    # Re-enable so the user can retry (e.g. after fixing a
+                    # write-protected source) without reopening the dialog.
+                    try:
+                        apply_btn.configure(state="normal")
+                    except Exception:  # noqa: BLE001 - window may be destroyed
+                        pass
 
             def _run_in_thread():
                 result, exc = _worker()
@@ -3469,9 +3554,10 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             btn_row, text="Plan", command=run_plan,
         ).pack(side="left")
-        self.ttk.Button(
+        apply_btn = self.ttk.Button(
             btn_row, text="Apply", command=run_apply,
-        ).pack(side="left", padx=6)
+        )
+        apply_btn.pack(side="left", padx=6)
         self.ttk.Button(
             btn_row, text="Close", command=win.destroy,
         ).pack(side="right")
@@ -3947,16 +4033,22 @@ class _SpinDoctorGUI:
             ("Recently Played",  ["mainmenu", "add", "Recently Played", "--apply"]),
             ("Most Played",      ["mainmenu", "add", "Most Played", "--apply"]),
         ]
+        total = len(steps)
+        self._chain_start(total)
 
         def run_next(remaining, rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(
                     f"\nStopped — previous step exited with code {rc}.\n"
                 )
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nWheels registered in Main Menu.\n")
                 return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             _label, args = remaining[0]
             self._run_cli(
                 "spindoctor", args,
@@ -3984,20 +4076,119 @@ class _SpinDoctorGUI:
             )
             return
         total = len(steps)
+        self._chain_start(total)
 
         def run_next(remaining: list[tuple[str, str, list[str]]], rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nWheel refresh complete.\n")
                 return
             step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             name, binary, args = remaining[0]
             self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
 
         run_next(steps, 0)
+
+    def _run_preflight(self) -> None:
+        """One-button "is the cabinet ready for guests?" health check.
+
+        Chains the three high-signal read-only commands — `doctor`,
+        `tools-audit`, `audit --all` — through the existing chained-
+        workflow infrastructure (so the user sees a determinate "step
+        2 of 3" progress bar). Tallies pass / fail by exit code and
+        pops a verdict messagebox at the end.
+
+        The chain continues past a non-zero exit code (unlike the wheel
+        workflows) because a partial cab state is still informative:
+        if `tools-audit` reports missing MAME, the user wants to know
+        about that *and* whether `audit --all` flagged broken media too.
+        Cabinet owners about to ship cabs to LAN events have repeatedly
+        asked for "one button that tells me everything's OK" — this is
+        that button.
+        """
+        steps: list[tuple[str, list[str]]] = [
+            ("doctor",      ["doctor"]),
+            ("tools-audit", ["tools-audit"]),
+            ("audit --all", ["audit", "--all"]),
+        ]
+        total = len(steps)
+        self._chain_start(total)
+        results: list[tuple[str, int]] = []
+
+        self._append_output(
+            "\n=== Preflight check — running "
+            f"{total} read-only diagnostics. ===\n"
+        )
+
+        def run_next(remaining: list[tuple[str, list[str]]], last_rc: int) -> None:
+            # Record the previous step's result before deciding next.
+            if results or last_rc != 0:
+                # Skip the synthetic "kicked off chain" rc=0 on first call.
+                if results:
+                    pass  # already recorded by the inline append below
+            if not remaining:
+                self._chain_end()
+                self._summarise_preflight(results)
+                return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
+            name, args = remaining[0]
+            self._set_status(f"Preflight step {step_num}/{total}: {name}…")
+            self._append_output(
+                f"\n--- Preflight {step_num}/{total}: spindoctor {name} ---\n"
+            )
+
+            def on_complete(code: int, _name=name) -> None:
+                results.append((_name, code))
+                # Continue past failures — partial cab health is still
+                # information the user needs to act on.
+                run_next(remaining[1:], code)
+
+            self._run_cli(
+                "spindoctor", args, on_complete=on_complete,
+            )
+
+        run_next(steps, 0)
+
+    def _summarise_preflight(self, results: list[tuple[str, int]]) -> None:
+        """Render the final pass/fail verdict for a preflight chain."""
+        failed = [(name, rc) for name, rc in results if rc != 0]
+        if not failed:
+            self._append_output(
+                "\n=== Preflight complete — all 3 checks passed. "
+                "Cabinet is ready. ===\n"
+            )
+            self._set_status("Preflight: all checks passed.")
+            self.messagebox.showinfo(
+                "Preflight passed",
+                "All preflight checks passed.\n\n"
+                "doctor, tools-audit, and audit --all reported no errors. "
+                "The cabinet is ready to ship.",
+            )
+            return
+        body = "\n".join(f"  ✗ {name}  (exit {rc})" for name, rc in failed)
+        self._append_output(
+            f"\n=== Preflight complete — {len(failed)} of "
+            f"{len(results)} check(s) failed: ===\n{body}\n"
+            "Read the per-step output above (or open the Logs tab) for "
+            "details.\n"
+        )
+        self._set_status(
+            f"Preflight: {len(failed)} of {len(results)} check(s) failed."
+        )
+        self.messagebox.showwarning(
+            "Preflight: issues found",
+            f"{len(failed)} of {len(results)} preflight check(s) failed:\n\n"
+            f"{body}\n\n"
+            "Read the Output panel for per-check details, then drill into "
+            "the relevant tab (Audit & Doctor, Tools) to fix.",
+        )
 
     # ── Audit & Doctor tab ────────────────────────────────────────────────────
 
@@ -4034,6 +4225,21 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Tools audit",
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
+
+        # Preflight — the one-button "is the cab ready for guests?" check.
+        # Chains doctor → tools-audit → audit --all so a user about to
+        # haul the cab to an event or hand it off to a friend can get a
+        # single green/red verdict without remembering which read-only
+        # commands to run in which order.
+        preflight_row = self.ttk.Frame(frame)
+        preflight_row.grid(row=2, column=3, sticky="e", pady=12)
+        self.ttk.Separator(preflight_row, orient="vertical").pack(
+            side="left", fill="y", padx=(8, 8),
+        )
+        self.ttk.Button(
+            preflight_row, text="✈  Preflight check…",
+            command=self._run_preflight,
+        ).pack(side="left")
 
         # Browse buttons — when an audit reports "wrong wheel" or
         # "missing video", jumping to the relevant folder in Explorer
@@ -4339,8 +4545,12 @@ class _SpinDoctorGUI:
             variable=self._backup_restore_apply_var,
         ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
+        # Two button rows: read-only inspection on top, destructive
+        # action (Restore) on its own row beneath a Separator. Sharing
+        # the row with Info / Compare made it easy to fat-finger Restore
+        # while reaching for a safe button.
         btn_row = self.ttk.Frame(restore_frame)
-        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
         self.ttk.Button(
             btn_row, text="Show backup info",
             command=self._run_backup_info,
@@ -4349,10 +4559,16 @@ class _SpinDoctorGUI:
             btn_row, text="Compare to live",
             command=self._run_backup_diff,
         ).pack(side="left", padx=6)
+
+        self.ttk.Separator(restore_frame, orient="horizontal").grid(
+            row=5, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 4),
+        )
+        destructive_row = self.ttk.Frame(restore_frame)
+        destructive_row.grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            btn_row, text="Restore backup",
+            destructive_row, text="Restore backup",
             command=self._run_backup_restore,
-        ).pack(side="left", padx=6)
+        ).pack(side="left")
 
         frame.columnconfigure(1, weight=1)
         return frame
@@ -5009,9 +5225,6 @@ class _SpinDoctorGUI:
         self._set_status(f"Saving {xml_path.name}…")
 
         def _worker():
-            import os
-            import shutil
-            from datetime import datetime
             try:
                 tree = self._mm_ET.parse(str(xml_path))
                 root = tree.getroot()
@@ -5958,13 +6171,14 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
 
-        fetch_meta_args = ["fetch-meta", *sys_args]
-        if self._meta_auto_best_var.get():
-            fetch_meta_args.append("--auto-best")
-        if self._meta_all_games_var.get():
-            fetch_meta_args.append("--all-games")
-        if self._meta_apply_var.get():
-            fetch_meta_args.append("--apply")
+        # Reuse the single-system Run path's builder so the chained
+        # version honours --source, --threshold, and --no-cache too.
+        # Earlier this composed a hand-rolled argv list that silently
+        # dropped those flags — users who set them and clicked "Full
+        # refresh" got a default-config run with no warning.
+        fetch_meta_args = self._build_fetch_meta_args(sys_args)
+        if fetch_meta_args is None:
+            return
 
         fetch_media_args = ["fetch-media", *sys_args]
         selected_types = ",".join(
@@ -5991,18 +6205,22 @@ class _SpinDoctorGUI:
             ("update-db",   update_db_args),
         ]
         total = len(step_defs)
+        self._chain_start(total)
 
         def run_next(remaining: list[tuple[str, list[str]]], rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(
                     f"\nFull refresh stopped — previous step exited with code {rc}.\n"
                 )
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nFull metadata refresh complete.\n")
                 self._set_status("Full metadata refresh complete.")
                 return
             step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             name, args = remaining[0]
             self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(
@@ -7954,7 +8172,6 @@ class _SpinDoctorGUI:
             tuple(args)
         )
         argv_str = _format_argv(argv)
-        from datetime import datetime
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             argv_str=argv_str,
@@ -8067,22 +8284,73 @@ class _SpinDoctorGUI:
         self._drain_after_id = self.root.after(50, self._drain_queue)
 
     def _on_close(self) -> None:
-        """Cancel the pending _drain_queue and let the window destroy.
+        """Persist GUI state, cancel the pending _drain_queue, terminate
+        any running child, then let the window destroy.
 
-        Without this, the next ``after`` callback fires on a destroyed
-        root and raises ``TclError`` on stderr, which startles users
-        closing the GUI while a command is mid-stream.
+        Without the after-cancel guard, the next ``after`` callback fires
+        on a destroyed root and raises ``TclError`` on stderr, which
+        startles users closing the GUI while a command is mid-stream.
+
+        Without the process terminate, closing the window while a
+        multi-minute audit or migrate is mid-stream leaves the child
+        running headless on Windows (the reader thread is daemonic, so
+        its parent GUI process exits cleanly, but the orphan
+        ``spindoctor.exe`` keeps eating CPU until it finishes on its own).
+
+        Window geometry and the last-active tab are saved here (not on
+        every Configure / TabChanged event) so we don't thrash
+        config.json during a window-edge drag.
         """
+        # Best-effort save — never block close on an I/O error.
+        try:
+            self._save_gui_state()
+        except Exception:  # noqa: BLE001 - persistence is non-load-bearing
+            pass
         try:
             if getattr(self, "_drain_after_id", None) is not None:
                 self.root.after_cancel(self._drain_after_id)
                 self._drain_after_id = None
         except Exception:  # noqa: BLE001 - after_cancel can race on destroy
             pass
+        # Terminate the child if one is still running. SIGTERM-equivalent
+        # on POSIX, TerminateProcess on Windows — either way the child
+        # gets a chance to flush stdout (the reader thread is daemonic
+        # and we don't wait, so a slow flush just drops on the floor).
+        proc = getattr(self, "_proc", None)
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except (OSError, AttributeError):
+                pass
         try:
             self.root.destroy()
         except Exception:  # noqa: BLE001
             pass
+
+    def _save_gui_state(self) -> None:
+        """Persist window geometry + last-active tab into config.json.
+
+        Called from `_on_close` only — not on every <Configure> event —
+        so the save happens once per session and config.json doesn't
+        thrash during a window-edge drag.
+        """
+        try:
+            geom = self.root.geometry()
+        except Exception:  # noqa: BLE001
+            geom = ""
+        try:
+            tab_idx = int(self._nb.index("current"))
+        except Exception:  # noqa: BLE001
+            tab_idx = -1
+        cfg = load_config()
+        if (
+            getattr(cfg, "gui_window_geometry", "") == geom
+            and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
+        ):
+            return
+        cfg.gui_window_geometry = geom
+        cfg.gui_last_active_tab = tab_idx
+        save_config(cfg)
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         self._proc = None
@@ -8168,24 +8436,68 @@ class _SpinDoctorGUI:
         self._stop_btn.configure(state="disabled")
 
     def _set_busy(self, busy: bool) -> None:
-        """Show / hide the indeterminate progress bar in the status bar.
+        """Show / hide the progress bar in the status bar.
 
         Called by ``_run_cli`` when a subprocess is launched and by
-        ``_on_proc_done`` when it exits. Failures are swallowed because
-        Tk widgets can race with window destruction during shutdown.
+        ``_on_proc_done`` when it exits. Defaults to the indeterminate
+        spinner; when ``_chain_progress`` is set (active chained workflow,
+        e.g. Full Metadata Refresh's fetch-meta → fetch-media → update-db),
+        switches to a determinate bar so the user can see "step 2 of 3"
+        progress visually, not just in the status text.
+
+        Failures are swallowed because Tk widgets can race with window
+        destruction during shutdown.
         """
         bar = getattr(self, "_busy_bar", None)
         if bar is None:
             return
         try:
             if busy:
+                chain = getattr(self, "_chain_progress", None)
                 bar.pack(side="right", padx=(0, 6))
-                bar.start(80)
+                if chain is not None:
+                    step, total = chain
+                    # Determinate fill: the bar advances at the *start*
+                    # of each step (step-1)/total → step/total just
+                    # before _on_proc_done would tick it forward. So at
+                    # step 2 of 3 we show ~33% (the previous step
+                    # finished), filling toward 67% as the user waits.
+                    bar.stop()  # in case it was already animating
+                    bar.configure(mode="determinate", maximum=total)
+                    bar["value"] = max(0, step - 1)
+                else:
+                    bar.configure(mode="indeterminate")
+                    bar.start(80)
             else:
                 bar.stop()
                 bar.pack_forget()
         except Exception:  # noqa: BLE001 - widget race during teardown
             pass
+
+    def _chain_start(self, total: int) -> None:
+        """Open a chained-workflow progress session.
+
+        Records the total step count so subsequent `_run_cli` calls
+        in the chain render a determinate progress bar instead of an
+        indeterminate spinner. Cleared by `_chain_end`.
+        """
+        self._chain_progress = (0, max(1, total))
+
+    def _chain_advance(self, step: int) -> None:
+        """Move the chained progress bar to *step* / total."""
+        chain = getattr(self, "_chain_progress", None)
+        if chain is None:
+            return
+        _, total = chain
+        self._chain_progress = (min(step, total), total)
+
+    def _chain_end(self) -> None:
+        """Close a chained-workflow progress session.
+
+        Reverts `_set_busy(True)` to the indeterminate spinner so the
+        next standalone command's bar behaves normally.
+        """
+        self._chain_progress = None
 
     # ── output panel helpers ──────────────────────────────────────────────────
 

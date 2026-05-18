@@ -197,15 +197,15 @@ def _generate_pclauncher_ini(
     overlays, save paths) is reused — we don't have to know which
     emulator the source system uses.
     """
+    from .rocketlauncher import pclauncher_exe_info_text
+
     module_dir = rocketlauncher_dir / "Modules" / "PCLauncher" / target_system
     module_dir.mkdir(parents=True, exist_ok=True)
     ini = module_dir / f"{target_name}.ini"
     rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
-    contents = (
-        "[exe info]\n"
-        f"applicationpath={rl_exe}\n"
-        f"rompath=\n"
-        f"parameters=-s \"{source_system}\" -r \"{source_rom}\" -p HyperSpin\n"
+    contents = pclauncher_exe_info_text(
+        rl_exe,
+        parameters=f'-s "{source_system}" -r "{source_rom}" -p HyperSpin',
     )
     ini.write_text(contents, encoding="utf-8")
     return ini
