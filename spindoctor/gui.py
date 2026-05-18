@@ -5240,6 +5240,24 @@ class _SpinDoctorGUI:
         self.ttk.Checkbutton(
             sys_row, text="All systems", variable=self._meta_all_var,
         ).pack(side="left", padx=6)
+        # Multi-system selector — for cabinets with 20+ systems where
+        # the user wants to refresh metadata for an arbitrary subset
+        # (often "the 5 systems whose scraper data just got better"),
+        # neither single-pick nor --all is right. The button opens a
+        # multi-select Listbox; on OK the subset is stored and a
+        # "Run fetch-meta on subset" button below chains a per-system
+        # invocation. Empty subset = button hidden, normal single/all
+        # behaviour applies.
+        self._meta_subset: list[str] = []
+        self.ttk.Button(
+            sys_row, text="Pick subset…",
+            command=self._pick_meta_subset,
+        ).pack(side="left", padx=(10, 6))
+        self._meta_subset_label_var = self.tk.StringVar(value="")
+        self.ttk.Label(
+            sys_row, textvariable=self._meta_subset_label_var,
+            foreground=_FG_DIM,
+        ).pack(side="left")
         self._meta_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             sys_row, text="Apply (uncheck for dry-run)",
@@ -5314,10 +5332,16 @@ class _SpinDoctorGUI:
             text="(0.0–1.0, blank = config default)",
             foreground=_FG_DIMMER,
         ).pack(side="left")
+        meta_run_row = self.ttk.Frame(meta_frame)
+        meta_run_row.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            meta_frame, text="Run fetch-meta",
+            meta_run_row, text="Run fetch-meta",
             command=self._run_fetch_meta,
-        ).pack(anchor="w", padx=6, pady=(4, 6))
+        ).pack(side="left")
+        self.ttk.Button(
+            meta_run_row, text="Run on subset…",
+            command=self._run_fetch_meta_subset,
+        ).pack(side="left", padx=6)
 
         # ── fetch-media ──────────────────────────────────────────────────────
         media_frame = self.ttk.LabelFrame(frame, text="Fetch media")
@@ -5614,10 +5638,14 @@ class _SpinDoctorGUI:
             return None
         return ["--system", system]
 
-    def _run_fetch_meta(self) -> None:
-        sys_args = self._meta_system_args()
-        if sys_args is None:
-            return
+    def _build_fetch_meta_args(self, sys_args: list[str]) -> Optional[list[str]]:
+        """Compose the full `fetch-meta` argv given a system selector.
+
+        Shared by the single-system Run button and the multi-system
+        subset chainer so they always feed the same flags to the CLI.
+        Returns None if the threshold field fails validation (caller
+        renders the error and aborts).
+        """
         args = ["fetch-meta", *sys_args]
         if self._meta_auto_best_var.get():
             args.append("--auto-best")
@@ -5638,17 +5666,178 @@ class _SpinDoctorGUI:
                     f"Threshold must be a number between 0.0 and 1.0; "
                     f"got {thresh!r}.",
                 )
-                return
+                return None
             if not (0.0 <= t <= 1.0):
                 self.messagebox.showerror(
                     "Invalid threshold",
                     f"Threshold must be between 0.0 and 1.0; got {t}.",
                 )
-                return
+                return None
             args += ["--threshold", str(t)]
         if self._meta_apply_var.get():
             args.append("--apply")
+        return args
+
+    def _run_fetch_meta(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        args = self._build_fetch_meta_args(sys_args)
+        if args is None:
+            return
         self._run_cli("spindoctor", args)
+
+    def _run_fetch_meta_subset(self) -> None:
+        """Chain `fetch-meta --system X` once per system in the picked subset.
+
+        Aborts the chain on the first non-zero exit code — failing fast
+        is friendlier than silently rolling through 20 systems while
+        only the first one produced useful output.
+        """
+        if not self._meta_subset:
+            self.messagebox.showinfo(
+                "No subset picked",
+                "Click 'Pick subset…' above and tick the systems you "
+                "want to refresh, then try again.",
+            )
+            return
+
+        # Confirm before launching — chained fetch-meta on 20 systems
+        # can take an hour, and the apply toggle is easy to miss.
+        n = len(self._meta_subset)
+        will_apply = self._meta_apply_var.get()
+        mode = "WRITING (--apply)" if will_apply else "DRY RUN"
+        if not self.messagebox.askyesno(
+            "Run fetch-meta on subset?",
+            f"Run fetch-meta on {n} system(s) sequentially, in "
+            f"{mode} mode?\n\n"
+            + "\n".join(f"  · {s}" for s in self._meta_subset[:10])
+            + ("\n  …" if n > 10 else "")
+            + "\n\nThe chain stops on the first failure.",
+        ):
+            return
+
+        # Snapshot the queue so a user editing the subset mid-run
+        # doesn't change what the chain is doing.
+        queue = list(self._meta_subset)
+        total = len(queue)
+
+        def run_next(remaining: list[str], rc: int) -> None:
+            if rc != 0:
+                self._append_output(
+                    f"\nStopped — previous step exited with code {rc}.\n"
+                )
+                self._set_status(f"fetch-meta chain stopped at exit {rc}.")
+                return
+            if not remaining:
+                self._append_output(
+                    f"\nfetch-meta subset chain complete ({total} system(s)).\n"
+                )
+                self._set_status(
+                    f"fetch-meta on {total} system(s) done."
+                )
+                return
+            head, *rest = remaining
+            step_num = total - len(remaining) + 1
+            self._set_status(f"Step {step_num}/{total}: {head}…")
+            args = self._build_fetch_meta_args(["--system", head])
+            if args is None:
+                # Threshold validation already showed an error; abort.
+                return
+            self._run_cli(
+                "spindoctor", args,
+                on_complete=lambda code: run_next(rest, code),
+            )
+
+        run_next(queue, 0)
+
+    def _pick_meta_subset(self) -> None:
+        """Modal Listbox picker for the multi-system fetch-meta selector."""
+        try:
+            systems = get_systems(load_config())
+        except Exception as exc:  # noqa: BLE001 - surface in dialog
+            self.messagebox.showerror(
+                "Could not list systems", str(exc),
+            )
+            return
+        if not systems:
+            self.messagebox.showinfo(
+                "No systems",
+                "Configure the Setup tab first — no systems were "
+                "found under your roms_dir / hyperspin_dir.",
+            )
+            return
+
+        win = self.tk.Toplevel(self.root)
+        win.title("Pick systems for fetch-meta")
+        win.transient(self.root)
+        self._fit_geometry(win, 360, 520)
+        try:
+            win.grab_set()
+        except Exception:  # noqa: BLE001
+            pass
+
+        self.ttk.Label(
+            win, padding=(12, 8, 12, 4),
+            text=(
+                "Tick the systems you want to refresh. The run chains "
+                "them sequentially; on the first failure it stops so "
+                "you can fix the cause before continuing."
+            ),
+            wraplength=320, justify="left",
+        ).pack(anchor="w")
+
+        lb_frame = self.ttk.Frame(win, padding=(12, 4))
+        lb_frame.pack(fill="both", expand=True)
+        lb = self.tk.Listbox(
+            lb_frame, selectmode="extended", height=14,
+            exportselection=False,
+        )
+        sb = self.ttk.Scrollbar(
+            lb_frame, orient="vertical", command=lb.yview,
+        )
+        lb.configure(yscrollcommand=sb.set)
+        lb.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        for s in systems:
+            lb.insert("end", s)
+        # Pre-select whatever the user picked last time.
+        for i, s in enumerate(systems):
+            if s in self._meta_subset:
+                lb.selection_set(i)
+
+        btns = self.ttk.Frame(win, padding=(12, 4, 12, 12))
+        btns.pack(fill="x")
+
+        def _select_all() -> None:
+            lb.selection_set(0, "end")
+
+        def _clear_all() -> None:
+            lb.selection_clear(0, "end")
+
+        def _commit() -> None:
+            picks = [lb.get(i) for i in lb.curselection()]
+            self._meta_subset = picks
+            if picks:
+                self._meta_subset_label_var.set(
+                    f"({len(picks)} picked)"
+                )
+            else:
+                self._meta_subset_label_var.set("")
+            win.destroy()
+
+        self.ttk.Button(btns, text="Select all", command=_select_all).pack(
+            side="left",
+        )
+        self.ttk.Button(btns, text="Clear", command=_clear_all).pack(
+            side="left", padx=6,
+        )
+        self.ttk.Button(btns, text="Cancel", command=win.destroy).pack(
+            side="right",
+        )
+        self.ttk.Button(btns, text="OK", command=_commit).pack(
+            side="right", padx=6,
+        )
 
     def _run_fetch_media(self) -> None:
         sys_args = self._meta_system_args()

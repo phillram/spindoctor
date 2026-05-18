@@ -198,6 +198,68 @@ def test_health_badge_mapping_covers_warn_and_fail():
     assert badges["fail"]
 
 
+def test_build_fetch_meta_args_round_trip():
+    """The fetch-meta arg builder is the single source of truth shared
+    by the single-system Run button and the multi-system chainer.
+    Smoke-check that it produces the canonical CLI shape for a typical
+    invocation."""
+    # Construct a minimal mock with just the vars the method reads.
+    class _FakeVar:
+        def __init__(self, v): self._v = v
+        def get(self): return self._v
+
+    class _FakeGUI:
+        _meta_auto_best_var = _FakeVar(True)
+        _meta_all_games_var = _FakeVar(False)
+        _meta_no_cache_var = _FakeVar(True)
+        _meta_source_var = _FakeVar("screenscraper")
+        _meta_threshold_var = _FakeVar("0.5")
+        _meta_apply_var = _FakeVar(True)
+        messagebox = type("M", (), {
+            "showerror": staticmethod(lambda *_a, **_k: None),
+        })
+
+    args = gui._SpinDoctorGUI._build_fetch_meta_args(
+        _FakeGUI, ["--system", "NES"],
+    )
+    assert args is not None
+    assert args[0] == "fetch-meta"
+    assert "--system" in args and "NES" in args
+    assert "--auto-best" in args
+    assert "--no-cache" in args
+    assert "--source" in args and "screenscraper" in args
+    assert "--threshold" in args and "0.5" in args
+    assert "--apply" in args
+
+
+def test_build_fetch_meta_args_rejects_out_of_range_threshold():
+    class _FakeVar:
+        def __init__(self, v): self._v = v
+        def get(self): return self._v
+
+    captured: dict = {}
+
+    class _FakeGUI:
+        _meta_auto_best_var = _FakeVar(False)
+        _meta_all_games_var = _FakeVar(False)
+        _meta_no_cache_var = _FakeVar(False)
+        _meta_source_var = _FakeVar("config default")
+        _meta_threshold_var = _FakeVar("1.5")  # out of range
+        _meta_apply_var = _FakeVar(False)
+        messagebox = type("M", (), {
+            "showerror": staticmethod(
+                lambda *a, **_k: captured.update({"err": a}),
+            ),
+        })
+
+    args = gui._SpinDoctorGUI._build_fetch_meta_args(
+        _FakeGUI, ["--all"],
+    )
+    # Returns None on validation failure so the caller can abort.
+    assert args is None
+    assert "err" in captured
+
+
 def test_custom_command_presets_match_actual_cli_syntax():
     """Preset hints must use real flag names — `media-add` was shipped
     with `--source` in earlier presets even though the CLI flag is
