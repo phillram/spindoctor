@@ -314,6 +314,25 @@ def _pclauncher_ini_text(executable) -> str:
     )
 
 
+def pclauncher_exe_info_text(
+    applicationpath, parameters: str = "", rompath: str = "",
+) -> str:
+    """Render an `[exe info]`-style PCLauncher INI body.
+
+    PCLauncher accepts two INI dialects: the standard `[Settings]` form
+    (see `_pclauncher_ini_text`) and `[exe info]`, which is what the
+    favorites/recent/most-played helpers use when they need PCLauncher
+    to invoke RLaunch (delegating through to the real emulator) or a
+    plain .bat. Single source of truth for both call sites.
+    """
+    return (
+        "[exe info]\n"
+        f"applicationpath={applicationpath}\n"
+        f"rompath={rompath}\n"
+        f"parameters={parameters}\n"
+    )
+
+
 def generate_pclauncher_inis(
     system_name: str,
     title_to_path: dict,

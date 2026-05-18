@@ -494,4 +494,23 @@ def _video_duration(path: Path) -> Optional[float]:
 # ─── utility ──────────────────────────────────────────────────────────────────
 
 def _dir_size(path: Path) -> int:
-    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    # Single source of truth — backup.py and migrate.py import this rather
+    # than carrying their own copies. Tolerates a missing path and skips
+    # files the OS refuses to stat (permission errors on Windows cabinets
+    # with leftover read-only attributes are common enough to be worth
+    # swallowing rather than aborting a 50 GB backup pre-flight).
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            pass
+    return total

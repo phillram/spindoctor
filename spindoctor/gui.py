@@ -32,6 +32,7 @@ import sys
 import threading
 import time
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Deque, Optional, Sequence
 
@@ -3052,7 +3053,6 @@ class _SpinDoctorGUI:
 
     @staticmethod
     def _format_mtime(ts: float) -> str:
-        from datetime import datetime
         return datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M:%S")
 
     @staticmethod
@@ -3419,11 +3419,10 @@ class _SpinDoctorGUI:
             # Mirror plan results to the Output panel and Logs tab so
             # users can answer "what would that plan have swapped?" after
             # closing this window, and the row shows in the Logs timeline.
-            from datetime import datetime as _dt
             scope_label = scope or "all"
             argv_display = f"theme-apply plan ← {src_path.name}  (scope: {scope_label})"
             record = _RunRecord(
-                started_at=_dt.now().strftime("%Y-%m-%d %H:%M:%S"),
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 argv_str=argv_display,
                 dry_run=True,
             )
@@ -3475,6 +3474,16 @@ class _SpinDoctorGUI:
                 "Manifests viewer (or `theme-apply --undo latest`).",
             ):
                 return
+            # Guard against double-click: the user can click Apply, then
+            # the messagebox-askyesno spins the event loop and the click
+            # registers a second time before the first run's worker
+            # thread starts. Two concurrent threads doing file copies
+            # would corrupt the manifest. Disable on entry; re-enable in
+            # _on_done's finally clause.
+            try:
+                apply_btn.configure(state="disabled")
+            except Exception:  # noqa: BLE001 - widget may not exist yet on first call
+                pass
             # apply_plan does the actual disk copies — on a big theme pack
             # this can take many seconds. Run it on a worker thread so
             # the Tk event loop keeps drawing; marshal results back to
@@ -3491,33 +3500,41 @@ class _SpinDoctorGUI:
                     return None, exc
 
             def _on_done(result, exc):
-                if exc is not None:
-                    self._set_status("Theme apply failed.")
-                    self.messagebox.showerror(
-                        "Apply failed", f"{type(exc).__name__}: {exc}",
+                try:
+                    if exc is not None:
+                        self._set_status("Theme apply failed.")
+                        self.messagebox.showerror(
+                            "Apply failed", f"{type(exc).__name__}: {exc}",
+                        )
+                        return
+                    self._append_output(
+                        f"\n[theme-apply] swapped {result.swapped} file(s)"
+                        + (f", skipped {len(result.skipped)}"
+                           if result.skipped else "")
+                        + (f"\n  manifest: {result.manifest_path}"
+                           if result.manifest_path else "")
+                        + "\n"
                     )
-                    return
-                self._append_output(
-                    f"\n[theme-apply] swapped {result.swapped} file(s)"
-                    + (f", skipped {len(result.skipped)}"
-                       if result.skipped else "")
-                    + (f"\n  manifest: {result.manifest_path}"
-                       if result.manifest_path else "")
-                    + "\n"
-                )
-                self._set_status(
-                    f"Theme apply: swapped {result.swapped} file(s)."
-                )
-                self.messagebox.showinfo(
-                    "Theme applied",
-                    f"Swapped {result.swapped} file(s).\n\n"
-                    + (f"Manifest: {result.manifest_path}\n"
-                       "Undo via File → View logs & manifests… → Theme "
-                       "swaps → Undo this run."
-                       if result.manifest_path else
-                       "No manifest written."),
-                )
-                win.destroy()
+                    self._set_status(
+                        f"Theme apply: swapped {result.swapped} file(s)."
+                    )
+                    self.messagebox.showinfo(
+                        "Theme applied",
+                        f"Swapped {result.swapped} file(s).\n\n"
+                        + (f"Manifest: {result.manifest_path}\n"
+                           "Undo via File → View logs & manifests… → Theme "
+                           "swaps → Undo this run."
+                           if result.manifest_path else
+                           "No manifest written."),
+                    )
+                    win.destroy()
+                finally:
+                    # Re-enable so the user can retry (e.g. after fixing a
+                    # write-protected source) without reopening the dialog.
+                    try:
+                        apply_btn.configure(state="normal")
+                    except Exception:  # noqa: BLE001 - window may be destroyed
+                        pass
 
             def _run_in_thread():
                 result, exc = _worker()
@@ -3530,9 +3547,10 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             btn_row, text="Plan", command=run_plan,
         ).pack(side="left")
-        self.ttk.Button(
+        apply_btn = self.ttk.Button(
             btn_row, text="Apply", command=run_apply,
-        ).pack(side="left", padx=6)
+        )
+        apply_btn.pack(side="left", padx=6)
         self.ttk.Button(
             btn_row, text="Close", command=win.destroy,
         ).pack(side="right")
@@ -4410,8 +4428,12 @@ class _SpinDoctorGUI:
             variable=self._backup_restore_apply_var,
         ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
+        # Two button rows: read-only inspection on top, destructive
+        # action (Restore) on its own row beneath a Separator. Sharing
+        # the row with Info / Compare made it easy to fat-finger Restore
+        # while reaching for a safe button.
         btn_row = self.ttk.Frame(restore_frame)
-        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
         self.ttk.Button(
             btn_row, text="Show backup info",
             command=self._run_backup_info,
@@ -4420,10 +4442,16 @@ class _SpinDoctorGUI:
             btn_row, text="Compare to live",
             command=self._run_backup_diff,
         ).pack(side="left", padx=6)
+
+        self.ttk.Separator(restore_frame, orient="horizontal").grid(
+            row=5, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 4),
+        )
+        destructive_row = self.ttk.Frame(restore_frame)
+        destructive_row.grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            btn_row, text="Restore backup",
+            destructive_row, text="Restore backup",
             command=self._run_backup_restore,
-        ).pack(side="left", padx=6)
+        ).pack(side="left")
 
         frame.columnconfigure(1, weight=1)
         return frame
@@ -5080,9 +5108,6 @@ class _SpinDoctorGUI:
         self._set_status(f"Saving {xml_path.name}…")
 
         def _worker():
-            import os
-            import shutil
-            from datetime import datetime
             try:
                 tree = self._mm_ET.parse(str(xml_path))
                 root = tree.getroot()
@@ -6029,13 +6054,14 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
 
-        fetch_meta_args = ["fetch-meta", *sys_args]
-        if self._meta_auto_best_var.get():
-            fetch_meta_args.append("--auto-best")
-        if self._meta_all_games_var.get():
-            fetch_meta_args.append("--all-games")
-        if self._meta_apply_var.get():
-            fetch_meta_args.append("--apply")
+        # Reuse the single-system Run path's builder so the chained
+        # version honours --source, --threshold, and --no-cache too.
+        # Earlier this composed a hand-rolled argv list that silently
+        # dropped those flags — users who set them and clicked "Full
+        # refresh" got a default-config run with no warning.
+        fetch_meta_args = self._build_fetch_meta_args(sys_args)
+        if fetch_meta_args is None:
+            return
 
         fetch_media_args = ["fetch-media", *sys_args]
         selected_types = ",".join(
@@ -8029,7 +8055,6 @@ class _SpinDoctorGUI:
             tuple(args)
         )
         argv_str = _format_argv(argv)
-        from datetime import datetime
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             argv_str=argv_str,
@@ -8142,12 +8167,18 @@ class _SpinDoctorGUI:
         self._drain_after_id = self.root.after(50, self._drain_queue)
 
     def _on_close(self) -> None:
-        """Persist GUI state, cancel the pending _drain_queue, and let
-        the window destroy.
+        """Persist GUI state, cancel the pending _drain_queue, terminate
+        any running child, then let the window destroy.
 
         Without the after-cancel guard, the next ``after`` callback fires
         on a destroyed root and raises ``TclError`` on stderr, which
         startles users closing the GUI while a command is mid-stream.
+
+        Without the process terminate, closing the window while a
+        multi-minute audit or migrate is mid-stream leaves the child
+        running headless on Windows (the reader thread is daemonic, so
+        its parent GUI process exits cleanly, but the orphan
+        ``spindoctor.exe`` keeps eating CPU until it finishes on its own).
 
         Window geometry and the last-active tab are saved here (not on
         every Configure / TabChanged event) so we don't thrash
@@ -8164,6 +8195,16 @@ class _SpinDoctorGUI:
                 self._drain_after_id = None
         except Exception:  # noqa: BLE001 - after_cancel can race on destroy
             pass
+        # Terminate the child if one is still running. SIGTERM-equivalent
+        # on POSIX, TerminateProcess on Windows — either way the child
+        # gets a chance to flush stdout (the reader thread is daemonic
+        # and we don't wait, so a slow flush just drops on the floor).
+        proc = getattr(self, "_proc", None)
+        if proc is not None and proc.poll() is None:
+            try:
+                proc.terminate()
+            except (OSError, AttributeError):
+                pass
         try:
             self.root.destroy()
         except Exception:  # noqa: BLE001
