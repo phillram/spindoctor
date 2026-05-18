@@ -2125,7 +2125,7 @@ def theme_scan(system, keyword, output):
         )
     console.print(tbl)
     console.print(
-        f"\n[dim]Tip:[/dim] pass [cyan]--keyword <STRING>[/cyan] to "
+        "\n[dim]Tip:[/dim] pass [cyan]--keyword <STRING>[/cyan] to "
         "narrow the list (e.g. 'xbox', 'arcade', 'controller'). "
         "Replace any of these with a community pack via "
         "[cyan]spindoctor theme-apply[/cyan]."
@@ -3810,7 +3810,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         console.print(tbl)
 
     if gen_menu:
-        console.print(f"\n[blue bold]HyperSpin Main Menu[/blue bold]")
+        console.print("\n[blue bold]HyperSpin Main Menu[/blue bold]")
         if not apply_changes:
             db_base = out_base / "Databases" if out_base else config.databases_dir
             console.print(f"  [dim]Would write:[/dim] {db_base / 'Main Menu' / 'Main Menu.xml'}")
@@ -3821,7 +3821,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             console.print(f"  [green]✓[/green] {p}")
 
     if gen_global:
-        console.print(f"\n[blue bold]Global Emulators.ini[/blue bold]")
+        console.print("\n[blue bold]Global Emulators.ini[/blue bold]")
         if not apply_changes:
             rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
             if rl_base:
@@ -3848,7 +3848,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                 console.print(f"  [red]{e}[/red]")
 
     if gen_stubs:
-        console.print(f"\n[blue bold]Database stubs[/blue bold]")
+        console.print("\n[blue bold]Database stubs[/blue bold]")
         if not apply_changes:
             console.print(f"  [dim]Would create stubs for:[/dim] {', '.join(systems)}")
         else:
@@ -5989,7 +5989,7 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
       spindoctor migrate --list-manifests
     """
     from .migrate import (
-        ALL_COMPONENTS, MIGRATIONS_DIR, apply_migration, find_latest_manifest,
+        MIGRATIONS_DIR, apply_migration, find_latest_manifest,
         format_bytes, free_bytes, list_manifests as list_migrate_manifests,
         normalize_components, plan_migration, undo_migration,
     )
