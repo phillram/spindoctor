@@ -43,6 +43,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Tooling
 
 - **Tests: 3 new GUI cases** covering `match list` / bare `organize` read-only classification and `media-add` preset flag-name accuracy. Suite: 590 → 593.
+- **Tests: regression coverage for the TLS 1.2 and `config set` bounds Fixed entries above.** `test_update_check.test_fetch_latest_release_enforces_tls_1_2` mocks `urlopen` and asserts the SSL context's `minimum_version` is `TLSv1_2`. `test_config.test_config_set_rejects_out_of_range_value` (6 parametrized cases) covers `match_threshold`, `max_concurrent_downloads`, and `metadata_cache_ttl_days`; a paired `test_config_set_accepts_in_range_value` pins the happy path. Suite: 600 → 608.
 
 ---
 
