@@ -208,3 +208,85 @@ def test_existing_complete_file_is_skipped_without_network(tmp_path, monkeypatch
     r = dl.download("1942", "MAME", "wheel", "https://x/1942.png")
     assert r.success and r.skipped
     assert r.path == dest
+
+
+# ─── atomic-write fault injection ────────────────────────────────────────────
+
+
+def test_os_replace_failure_preserves_existing_destination(tmp_path, monkeypatch):
+    """If `os.replace(part, dest)` raises (disk full, antivirus lock, etc.)
+    a pre-existing destination must remain bit-identical.
+
+    Pins the atomic-write contract: SpinDoctor must never corrupt a real
+    file with a half-written replacement. The `.part` sidecar is allowed
+    to remain on disk — that's how resumable downloads work — but `dest`
+    must be intact.
+    """
+    import os as _os
+
+    dl = _make_downloader(tmp_path)
+    dest = dl.media_path("MAME", "1942", "wheel")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    original = b"original-bytes-do-not-touch"
+    dest.write_bytes(original)
+
+    payload = b"replacement-payload"
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        return _FakeResp(payload, status_code=200)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    # Surgical fault injection: only fail the rename targeting *our* dest.
+    real_replace = _os.replace
+
+    def boom(src, dst, *a, **kw):
+        if str(dst) == str(dest):
+            raise OSError(28, "No space left on device")
+        return real_replace(src, dst, *a, **kw)
+
+    monkeypatch.setattr(_os, "replace", boom)
+
+    # The download must complete with `overwrite=True` (default `False`
+    # short-circuits before fetching since `dest` exists).
+    r = dl.download(
+        "1942", "MAME", "wheel", "https://x/1942.png", overwrite=True,
+    )
+
+    # The destination is the load-bearing assertion: under no
+    # circumstances does an exception during the atomic swap corrupt
+    # the file the user already had.
+    assert dest.read_bytes() == original
+    # And the failure surfaces as a non-success DownloadResult — not a
+    # silent partial swallow.
+    assert r.success is False
+
+
+def test_os_replace_failure_when_dest_absent_leaves_no_dest(tmp_path, monkeypatch):
+    """The other half of the atomic-write contract: a failed swap must
+    not leave a partially-written file *appearing* at `dest` (which would
+    fool a subsequent skip-if-exists check on the next run)."""
+    import os as _os
+
+    dl = _make_downloader(tmp_path)
+    dest = dl.media_path("MAME", "1942", "wheel")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    # No pre-existing dest.
+
+    payload = b"partial-replacement"
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        return _FakeResp(payload, status_code=200)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    def boom(src, dst, *a, **kw):
+        raise OSError(13, "Permission denied")
+
+    monkeypatch.setattr(_os, "replace", boom)
+
+    r = dl.download(
+        "1942", "MAME", "wheel", "https://x/1942.png", overwrite=False,
+    )
+    assert not dest.exists()
+    assert r.success is False

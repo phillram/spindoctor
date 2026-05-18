@@ -1,0 +1,53 @@
+# Pre-commit hooks for SpinDoctor.
+#
+# Install once with:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Then every `git commit` runs the hooks below. They're intentionally
+# fast (sub-second on this codebase) so they never feel like friction.
+#
+# To run all hooks against every file on demand:
+#   pre-commit run --all-files
+#
+# To skip hooks for a single commit (don't make a habit of it):
+#   git commit --no-verify
+
+repos:
+  # Trim trailing whitespace, ensure files end in a newline, prevent
+  # giant accidental commits — the stdlib of pre-commit hooks.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=512"]
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  # Ruff: fast Python linter (rules selected in pyproject.toml).
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.13
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  # Local hooks live in this repo. Currently just the CHANGELOG guard.
+  - repo: local
+    hooks:
+      # Block commits that introduce a second `## [Unreleased]` section
+      # in CHANGELOG.md. The two-block pattern silently drops entries
+      # from the release notes (the extractor script only reads the
+      # first matching block) and caused PR conflict churn during the
+      # 2.0 cycle. One block per "Unreleased" — that's the contract.
+      - id: changelog-single-unreleased
+        name: CHANGELOG.md has exactly one [Unreleased] block
+        entry: python scripts/check_changelog_unreleased.py
+        language: system
+        files: ^CHANGELOG\.md$
+        pass_filenames: false
