@@ -1565,12 +1565,61 @@ class _SpinDoctorGUI:
         # never paints. See also the matching note at _append_output.
         out_frame = self.ttk.LabelFrame(main_paned, text="Output")
         self._out_frame = out_frame
+
+        # Find bar — hidden by default; toggled via Ctrl+F / Cmd+F.
+        # Lives ABOVE the ScrolledText so showing it doesn't shrink the
+        # output area (just nudges it down by one row).
+        self._find_bar = self.ttk.Frame(out_frame)
+        self.ttk.Label(self._find_bar, text="Find:").pack(side="left", padx=(4, 2))
+        self._find_var = self.tk.StringVar(value="")
+        self._find_entry = self.ttk.Entry(
+            self._find_bar, textvariable=self._find_var, width=30,
+        )
+        self._find_entry.pack(side="left", padx=2)
+        self._find_entry.bind("<Return>", lambda _e: self._find_next())
+        self._find_entry.bind("<Shift-Return>", lambda _e: self._find_prev())
+        self._find_entry.bind("<Escape>", lambda _e: self._find_close())
+        # Refresh match highlights as the user types so the count
+        # updates live. Trace on the StringVar fires on every change,
+        # including programmatic ones (so the seed-from-selection in
+        # _find_open also triggers a refresh).
+        self._find_var.trace_add(
+            "write", lambda *_a: self._refresh_find_matches(),
+        )
+        self.ttk.Button(
+            self._find_bar, text="Next",
+            command=self._find_next,
+        ).pack(side="left", padx=2)
+        self.ttk.Button(
+            self._find_bar, text="Prev",
+            command=self._find_prev,
+        ).pack(side="left", padx=2)
+        self._find_match_var = self.tk.StringVar(value="")
+        self.ttk.Label(
+            self._find_bar, textvariable=self._find_match_var,
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            self._find_bar, text="✕",
+            width=3, command=self._find_close,
+        ).pack(side="right", padx=4)
+        # Find-bar is packed/unpacked lazily by _find_open/_find_close.
+
         # Use TkFixedFont so the Output panel honours the UI scale knob
         # alongside the rest of the window. The named-font path also
         # picks up platform-appropriate monospace defaults (Consolas on
         # Windows, Menlo on macOS) without us hardcoding family names.
         self._output = self.scrolledtext.ScrolledText(
             out_frame, height=14, wrap="word", font="TkFixedFont",
+        )
+        # Tags for find-bar match highlighting. Configured here so the
+        # palette stays consistent with the dark theme without needing
+        # to know which theme is active at tag-create time.
+        self._output.tag_configure(
+            "find-match", background="#503010", foreground=_DARK_FG,
+        )
+        self._output.tag_configure(
+            "find-current", background="#a06000", foreground="#ffffff",
         )
         self._output.configure(state="disabled")
         self._output.pack(fill="both", expand=True, padx=4, pady=4)
@@ -1693,6 +1742,18 @@ class _SpinDoctorGUI:
         for _seq in ("<Control-grave>", "<Control-quoteleft>",
                      "<Control-asciigrave>"):
             self._safe_bind_all(_seq, lambda _e: self._toggle_output())
+
+        # Ctrl+F (Cmd+F on macOS) → toggle the Output panel's find bar.
+        # Standard text-editor shortcut — same key opens it and Esc
+        # closes it. The bind_all path means the user can be focused
+        # anywhere (a tab's Entry, the Custom Command field, …) and
+        # still pull the find bar up; the entry steals focus on open.
+        self._safe_bind_all(
+            "<Control-f>", lambda _e: self._find_open(),
+        )
+        self._safe_bind_all(
+            "<Command-f>", lambda _e: self._find_open(),
+        )
 
         # If the user previously hid the output pane, honour that
         # preference now (after the initial sash placement runs).
@@ -7945,6 +8006,153 @@ class _SpinDoctorGUI:
         self._output.configure(state="normal")
         self._output.delete("1.0", "end")
         self._output.configure(state="disabled")
+        # If the find bar is open, drop its match state — the indices
+        # captured for the old buffer are stale now.
+        self._find_matches = []
+        self._find_cursor = -1
+        if getattr(self, "_find_match_var", None) is not None:
+            self._find_match_var.set("")
+
+    # ── find-in-output ────────────────────────────────────────────────────────
+
+    _find_matches: list[str] = []  # list of "line.col" start indices
+    _find_cursor: int = -1
+
+    def _find_open(self) -> None:
+        """Show the find bar above the Output panel and focus its Entry.
+
+        If the panel is currently hidden (Ctrl+`), reveal it first so
+        the find bar isn't operating on an invisible widget. Pre-fills
+        the entry with the user's current text selection when one
+        exists — matches the find-on-selection idiom of every text
+        editor since the 90s.
+        """
+        try:
+            self._toggle_output(visible=True)
+        except Exception:  # noqa: BLE001 - toggle_output is defensive enough
+            pass
+        if not self._find_bar.winfo_ismapped():
+            self._find_bar.pack(
+                fill="x", padx=4, pady=(4, 0),
+                before=self._output,
+            )
+        try:
+            seed = self._output.get("sel.first", "sel.last")
+        except Exception:  # noqa: BLE001 - no selection is fine
+            seed = ""
+        if seed and "\n" not in seed:
+            self._find_var.set(seed)
+        self._find_entry.focus_set()
+        self._find_entry.selection_range(0, "end")
+        self._refresh_find_matches()
+
+    def _find_close(self) -> None:
+        """Hide the find bar and remove every highlight tag."""
+        try:
+            self._output.tag_remove("find-match", "1.0", "end")
+            self._output.tag_remove("find-current", "1.0", "end")
+        except Exception:  # noqa: BLE001 - widget race during teardown
+            pass
+        self._find_matches = []
+        self._find_cursor = -1
+        if getattr(self, "_find_match_var", None) is not None:
+            self._find_match_var.set("")
+        if self._find_bar.winfo_ismapped():
+            self._find_bar.pack_forget()
+        # Return focus to the output panel so the user can keep
+        # scrolling with the keyboard.
+        try:
+            self._output.focus_set()
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _refresh_find_matches(self) -> None:
+        """Re-scan the Output buffer for the current query string.
+
+        Called on every keystroke in the find Entry (via a trace) and
+        on Next/Prev so adding output mid-search updates the count.
+        """
+        query = self._find_var.get()
+        try:
+            self._output.tag_remove("find-match", "1.0", "end")
+            self._output.tag_remove("find-current", "1.0", "end")
+        except Exception:  # noqa: BLE001
+            pass
+        if not query:
+            self._find_matches = []
+            self._find_cursor = -1
+            self._find_match_var.set("")
+            return
+
+        # Walk the buffer with Text.search(); each match advances `pos`
+        # by the match length to avoid infinite loops on overlapping
+        # patterns (the Tk text widget allows them, we don't want them).
+        matches: list[str] = []
+        pos = "1.0"
+        count_var = self.tk.IntVar()
+        while True:
+            try:
+                idx = self._output.search(
+                    query, pos, stopindex="end",
+                    nocase=1, count=count_var,
+                )
+            except Exception:  # noqa: BLE001
+                break
+            if not idx:
+                break
+            length = count_var.get() or len(query)
+            end_idx = f"{idx}+{length}c"
+            try:
+                self._output.tag_add("find-match", idx, end_idx)
+            except Exception:  # noqa: BLE001
+                break
+            matches.append(idx)
+            pos = end_idx
+
+        self._find_matches = matches
+        if not matches:
+            self._find_cursor = -1
+            self._find_match_var.set("0 matches")
+            return
+        # Re-center on first match (or preserve cursor if it's still valid).
+        if self._find_cursor < 0 or self._find_cursor >= len(matches):
+            self._find_cursor = 0
+        self._highlight_current_match()
+
+    def _highlight_current_match(self) -> None:
+        if not self._find_matches:
+            return
+        try:
+            self._output.tag_remove("find-current", "1.0", "end")
+        except Exception:  # noqa: BLE001
+            return
+        idx = self._find_matches[self._find_cursor]
+        query = self._find_var.get()
+        end_idx = f"{idx}+{len(query)}c"
+        try:
+            self._output.tag_add("find-current", idx, end_idx)
+            self._output.see(idx)
+        except Exception:  # noqa: BLE001
+            pass
+        self._find_match_var.set(
+            f"{self._find_cursor + 1} of {len(self._find_matches)}"
+        )
+
+    def _find_next(self) -> None:
+        if not self._find_matches:
+            self._refresh_find_matches()
+            if not self._find_matches:
+                return
+        self._find_cursor = (self._find_cursor + 1) % len(self._find_matches)
+        self._highlight_current_match()
+
+    def _find_prev(self) -> None:
+        if not self._find_matches:
+            self._refresh_find_matches()
+            if not self._find_matches:
+                return
+        self._find_cursor = (self._find_cursor - 1) % len(self._find_matches)
+        self._highlight_current_match()
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)
