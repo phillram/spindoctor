@@ -246,7 +246,7 @@ def synth_controls_section(info: ControlInfo) -> IniSection:
     lines = [
         f"description={info.description}",
         f"numPlayers={info.num_players}",
-        f"alternating=0",
+        "alternating=0",
     ]
 
     # Per-player rollup

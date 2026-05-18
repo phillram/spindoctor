@@ -394,7 +394,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rec = sub.add_parser("recent", help="Most recently played")
     p_rec.add_argument("--top", type=int, default=DEFAULT_TOP_N)
 
-    p_sys = sub.add_parser("system", help="Per-system breakdown")
+    sub.add_parser("system", help="Per-system breakdown")
 
     p_bw = sub.add_parser("build-wheel",
                           help="Generate the Most Played HyperSpin wheel")

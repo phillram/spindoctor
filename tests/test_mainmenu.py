@@ -105,7 +105,7 @@ def test_move_up_and_down(tmp_path):
 
 
 def test_hide_and_show_toggle_enabled(tmp_path):
-    path = _seed_menu(tmp_path)
+    _seed_menu(tmp_path)
     cfg = _config(tmp_path)
     menu = load_main_menu(cfg)
     hide(menu, "Sony Playstation")
