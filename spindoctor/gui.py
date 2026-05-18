@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import os
 import queue
+import re
 import shlex
 import shutil
 import subprocess
@@ -138,6 +139,21 @@ def _clamp_ui_scale(value: float) -> float:
     except (TypeError, ValueError):
         return 1.0
     return max(UI_SCALE_MIN, min(UI_SCALE_MAX, round(f, 2)))
+
+
+# Matches Tk's "WIDTHxHEIGHT" or "WIDTHxHEIGHT+X+Y" / "...-X-Y" geometry
+# string form. Used to validate persisted geometry before handing it
+# back to Tk on the next launch — a malformed string would raise
+# `TclError` and break the splash, so we'd rather drop the saved value
+# and use the scaled default.
+_GEOMETRY_RE = re.compile(
+    r"^\d{2,5}x\d{2,5}([+-]-?\d{1,5}[+-]-?\d{1,5})?$"
+)
+
+
+def _is_plausible_geometry(s: str) -> bool:
+    """True iff *s* looks like a Tk geometry string we'd be safe to apply."""
+    return bool(_GEOMETRY_RE.match(s or ""))
 
 
 # Named Tk fonts whose sizes we scale alongside `ui_scale`. Keeping the
@@ -657,8 +673,24 @@ class _SpinDoctorGUI:
         min_w, min_h = 720, 540
         scaled_w = max(min_w, int(base_w * self._ui_scale))
         scaled_h = max(min_h, int(base_h * self._ui_scale))
-        self.root.geometry(f"{scaled_w}x{scaled_h}")
+        # If the user resized / moved the window last session, restore
+        # that geometry instead of the scaled default. Validate it's a
+        # plausible "WxH+X+Y" or "WxH" string so a hand-corrupted
+        # config.json can't pass garbage to Tk.
+        restored = False
+        saved_geom = getattr(_bootstrap_cfg, "gui_window_geometry", "") or ""
+        if saved_geom and _is_plausible_geometry(saved_geom):
+            try:
+                self.root.geometry(saved_geom)
+                restored = True
+            except Exception:  # noqa: BLE001 - Tk rejects malformed strings
+                restored = False
+        if not restored:
+            self.root.geometry(f"{scaled_w}x{scaled_h}")
         self.root.minsize(min_w, min_h)
+        # Stash the persisted last-active tab for _build_layout to read
+        # after the notebook is built.
+        self._restore_tab_idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
 
         # Window icon — cosmetic, must never block startup.
         self._load_window_icon()
@@ -681,6 +713,12 @@ class _SpinDoctorGUI:
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
+
+        # Chained-workflow state. None means "single command — show the
+        # indeterminate spinner"; a (step, total) tuple means "switch
+        # the progress bar to determinate at step/total of the way". See
+        # `_chain_start` / `_chain_advance` / `_chain_end`.
+        self._chain_progress: Optional[tuple[int, int]] = None
 
         # Per-run history buffered for the Logs tab. The Output panel
         # at the bottom of the window only shows the current run; the
@@ -1771,6 +1809,17 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 — never block startup
             pass
 
+        # If the previous session saved a last-active tab, restore it
+        # now. Done at the end of layout so every tab builder has run
+        # (touching a not-yet-built tab is fine — the notebook can
+        # select an unrealised pane — but the user-visible result is
+        # cleaner when we restore after all pages exist).
+        if 0 <= self._restore_tab_idx < len(self._tab_base_names):
+            try:
+                self._nb.select(self._restore_tab_idx)
+            except Exception:  # noqa: BLE001 - guard against teardown races
+                pass
+
     def _safe_bind_all(self, sequence: str, callback) -> bool:
         """Best-effort ``root.bind_all`` that never crashes startup.
 
@@ -1994,6 +2043,18 @@ class _SpinDoctorGUI:
             btn_row, text="Clear in-memory log",
             command=self._clear_logs,
         ).pack(side="left", padx=6)
+        # The in-memory log doesn't track manifest paths, but the
+        # File → View logs & manifests… modal does — and it has the
+        # "Undo this run" button per manifest. Surface a shortcut here
+        # so users discovering the Logs tab for the first time don't
+        # have to hunt through the menu for the undo workflow.
+        self.ttk.Separator(btn_row, orient="vertical").pack(
+            side="left", fill="y", padx=6,
+        )
+        self.ttk.Button(
+            btn_row, text="Browse manifests / undo…",
+            command=self._show_log_viewer,
+        ).pack(side="left")
 
         # First paint.
         self._refresh_logs_tab()
@@ -3947,16 +4008,22 @@ class _SpinDoctorGUI:
             ("Recently Played",  ["mainmenu", "add", "Recently Played", "--apply"]),
             ("Most Played",      ["mainmenu", "add", "Most Played", "--apply"]),
         ]
+        total = len(steps)
+        self._chain_start(total)
 
         def run_next(remaining, rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(
                     f"\nStopped — previous step exited with code {rc}.\n"
                 )
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nWheels registered in Main Menu.\n")
                 return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             _label, args = remaining[0]
             self._run_cli(
                 "spindoctor", args,
@@ -3984,15 +4051,19 @@ class _SpinDoctorGUI:
             )
             return
         total = len(steps)
+        self._chain_start(total)
 
         def run_next(remaining: list[tuple[str, str, list[str]]], rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nWheel refresh complete.\n")
                 return
             step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             name, binary, args = remaining[0]
             self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
@@ -5991,18 +6062,22 @@ class _SpinDoctorGUI:
             ("update-db",   update_db_args),
         ]
         total = len(step_defs)
+        self._chain_start(total)
 
         def run_next(remaining: list[tuple[str, list[str]]], rc: int) -> None:
             if rc != 0:
+                self._chain_end()
                 self._append_output(
                     f"\nFull refresh stopped — previous step exited with code {rc}.\n"
                 )
                 return
             if not remaining:
+                self._chain_end()
                 self._append_output("\nFull metadata refresh complete.\n")
                 self._set_status("Full metadata refresh complete.")
                 return
             step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
             name, args = remaining[0]
             self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(
@@ -8067,12 +8142,22 @@ class _SpinDoctorGUI:
         self._drain_after_id = self.root.after(50, self._drain_queue)
 
     def _on_close(self) -> None:
-        """Cancel the pending _drain_queue and let the window destroy.
+        """Persist GUI state, cancel the pending _drain_queue, and let
+        the window destroy.
 
-        Without this, the next ``after`` callback fires on a destroyed
-        root and raises ``TclError`` on stderr, which startles users
-        closing the GUI while a command is mid-stream.
+        Without the after-cancel guard, the next ``after`` callback fires
+        on a destroyed root and raises ``TclError`` on stderr, which
+        startles users closing the GUI while a command is mid-stream.
+
+        Window geometry and the last-active tab are saved here (not on
+        every Configure / TabChanged event) so we don't thrash
+        config.json during a window-edge drag.
         """
+        # Best-effort save — never block close on an I/O error.
+        try:
+            self._save_gui_state()
+        except Exception:  # noqa: BLE001 - persistence is non-load-bearing
+            pass
         try:
             if getattr(self, "_drain_after_id", None) is not None:
                 self.root.after_cancel(self._drain_after_id)
@@ -8083,6 +8168,31 @@ class _SpinDoctorGUI:
             self.root.destroy()
         except Exception:  # noqa: BLE001
             pass
+
+    def _save_gui_state(self) -> None:
+        """Persist window geometry + last-active tab into config.json.
+
+        Called from `_on_close` only — not on every <Configure> event —
+        so the save happens once per session and config.json doesn't
+        thrash during a window-edge drag.
+        """
+        try:
+            geom = self.root.geometry()
+        except Exception:  # noqa: BLE001
+            geom = ""
+        try:
+            tab_idx = int(self._nb.index("current"))
+        except Exception:  # noqa: BLE001
+            tab_idx = -1
+        cfg = load_config()
+        if (
+            getattr(cfg, "gui_window_geometry", "") == geom
+            and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
+        ):
+            return
+        cfg.gui_window_geometry = geom
+        cfg.gui_last_active_tab = tab_idx
+        save_config(cfg)
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         self._proc = None
@@ -8168,24 +8278,68 @@ class _SpinDoctorGUI:
         self._stop_btn.configure(state="disabled")
 
     def _set_busy(self, busy: bool) -> None:
-        """Show / hide the indeterminate progress bar in the status bar.
+        """Show / hide the progress bar in the status bar.
 
         Called by ``_run_cli`` when a subprocess is launched and by
-        ``_on_proc_done`` when it exits. Failures are swallowed because
-        Tk widgets can race with window destruction during shutdown.
+        ``_on_proc_done`` when it exits. Defaults to the indeterminate
+        spinner; when ``_chain_progress`` is set (active chained workflow,
+        e.g. Full Metadata Refresh's fetch-meta → fetch-media → update-db),
+        switches to a determinate bar so the user can see "step 2 of 3"
+        progress visually, not just in the status text.
+
+        Failures are swallowed because Tk widgets can race with window
+        destruction during shutdown.
         """
         bar = getattr(self, "_busy_bar", None)
         if bar is None:
             return
         try:
             if busy:
+                chain = getattr(self, "_chain_progress", None)
                 bar.pack(side="right", padx=(0, 6))
-                bar.start(80)
+                if chain is not None:
+                    step, total = chain
+                    # Determinate fill: the bar advances at the *start*
+                    # of each step (step-1)/total → step/total just
+                    # before _on_proc_done would tick it forward. So at
+                    # step 2 of 3 we show ~33% (the previous step
+                    # finished), filling toward 67% as the user waits.
+                    bar.stop()  # in case it was already animating
+                    bar.configure(mode="determinate", maximum=total)
+                    bar["value"] = max(0, step - 1)
+                else:
+                    bar.configure(mode="indeterminate")
+                    bar.start(80)
             else:
                 bar.stop()
                 bar.pack_forget()
         except Exception:  # noqa: BLE001 - widget race during teardown
             pass
+
+    def _chain_start(self, total: int) -> None:
+        """Open a chained-workflow progress session.
+
+        Records the total step count so subsequent `_run_cli` calls
+        in the chain render a determinate progress bar instead of an
+        indeterminate spinner. Cleared by `_chain_end`.
+        """
+        self._chain_progress = (0, max(1, total))
+
+    def _chain_advance(self, step: int) -> None:
+        """Move the chained progress bar to *step* / total."""
+        chain = getattr(self, "_chain_progress", None)
+        if chain is None:
+            return
+        _, total = chain
+        self._chain_progress = (min(step, total), total)
+
+    def _chain_end(self) -> None:
+        """Close a chained-workflow progress session.
+
+        Reverts `_set_busy(True)` to the indeterminate spinner so the
+        next standalone command's bar behaves normally.
+        """
+        self._chain_progress = None
 
     # ── output panel helpers ──────────────────────────────────────────────────
 

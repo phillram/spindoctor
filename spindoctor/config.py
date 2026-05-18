@@ -112,6 +112,13 @@ class Config:
     # Older configs (pre-wizard) auto-promote to True the first time
     # they validate cleanly, so existing installs never see it.
     first_run_complete: bool = False
+    # Persisted Tk geometry string (e.g. "1280x800+120+60") and last
+    # active notebook tab index. Restored on the next launch so a
+    # cabinet owner who lives in the Curate or Wheels tab doesn't have
+    # to re-navigate every time. Empty string = "use the calculated
+    # default geometry"; a negative tab index disables restore.
+    gui_window_geometry: str = ""
+    gui_last_active_tab: int = -1
 
     # LEDBlinky default per-button color palette (hex RGB strings)
     ledblinky_default_colors: dict[str, str] = field(
