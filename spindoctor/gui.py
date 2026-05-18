@@ -720,6 +720,12 @@ class _SpinDoctorGUI:
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
         self._start_update_check()
+        # First-run wizard — if there's no config yet, or the saved
+        # config can't reach the required paths, open a guided picker
+        # so a brand-new cabinet owner has something to click instead
+        # of staring at 15 tabs full of "setup incomplete" status bars.
+        # Deferred via after_idle so the main window paints first.
+        self.root.after_idle(self._maybe_show_first_run_wizard)
 
     # ── Dark theme ────────────────────────────────────────────────────────────
 
@@ -1151,6 +1157,278 @@ class _SpinDoctorGUI:
             self._set_status(" · ".join(problems))
         else:
             self._set_status("Ready.")
+
+    # ── First-run wizard ──────────────────────────────────────────────────────
+
+    def _maybe_show_first_run_wizard(self) -> None:
+        """Open the wizard if (a) no config file exists or (b) the
+        saved config still has the placeholder ``D:\\…`` defaults
+        showing — i.e. the user has never actually set anything up.
+
+        The user can dismiss the wizard via Skip; we set
+        ``first_run_complete`` in config so it never auto-opens again
+        even if the paths remain invalid. Help → "First-run setup…"
+        re-opens it manually.
+        """
+        try:
+            cfg = load_config()
+        except Exception:  # noqa: BLE001 - corrupt config: still show wizard
+            cfg = None
+
+        # Already completed → user dismissed it; never auto-open again.
+        if cfg is not None and getattr(cfg, "first_run_complete", False):
+            return
+
+        # If we somehow have a valid config without the flag (older
+        # installs from before this field existed), just mark it
+        # complete silently so we don't pester long-term users.
+        if cfg is not None:
+            try:
+                ok, _errors = cfg.is_valid()
+            except Exception:  # noqa: BLE001
+                ok = False
+            if ok:
+                try:
+                    cfg.first_run_complete = True
+                    save_config(cfg)
+                except Exception:  # noqa: BLE001
+                    pass
+                return
+
+        self._show_first_run_wizard()
+
+    def _show_first_run_wizard(self) -> None:
+        """Three-step modal: welcome → pick paths → run doctor."""
+        try:
+            cfg = load_config()
+        except Exception:  # noqa: BLE001
+            cfg = None
+
+        win = self.tk.Toplevel(self.root)
+        win.title(f"Welcome to {__app_name__}")
+        win.transient(self.root)
+        self._fit_geometry(win, 640, 480)
+        try:
+            win.grab_set()
+        except Exception:  # noqa: BLE001 - WM that can't grab is fine
+            pass
+
+        # Stepped container — only one ttk.Frame is packed at a time;
+        # navigation buttons swap which one is visible.
+        step_holder = self.ttk.Frame(win, padding=18)
+        step_holder.pack(fill="both", expand=True)
+
+        nav = self.ttk.Frame(win, padding=(18, 8))
+        nav.pack(fill="x")
+
+        state: dict = {
+            "step": 0,
+            "frames": [],
+            "path_vars": {},
+            "doctor_text": None,
+        }
+
+        def show_step(idx: int) -> None:
+            for f in state["frames"]:
+                f.pack_forget()
+            state["frames"][idx].pack(fill="both", expand=True)
+            state["step"] = idx
+            for child in nav.winfo_children():
+                child.destroy()
+            _nav_buttons(idx)
+
+        # ── step 0: welcome ──────────────────────────────────────────────────
+        welcome = self.ttk.Frame(step_holder)
+        state["frames"].append(welcome)
+        self.ttk.Label(
+            welcome, text=f"Welcome to {__app_name__}!",
+            font=("TkDefaultFont", 14, "bold"),
+        ).pack(anchor="w", pady=(0, 8))
+        self.ttk.Label(
+            welcome,
+            text=(
+                f"Looks like this is your first run. Let's set up the "
+                "paths SpinDoctor needs, then run a quick health check. "
+                "Takes about 90 seconds.\n\n"
+                "You can change everything later from the Setup tab, "
+                "and re-open this wizard from Help → First-run setup…"
+            ),
+            wraplength=560, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        # ── step 1: pick the two required paths ──────────────────────────────
+        paths = self.ttk.Frame(step_holder)
+        state["frames"].append(paths)
+        self.ttk.Label(
+            paths, text="Step 1 / 2 — Pick your cabinet folders",
+            font=("TkDefaultFont", 12, "bold"),
+        ).pack(anchor="w", pady=(0, 6))
+        self.ttk.Label(
+            paths,
+            text=("These two paths are required. Optional paths "
+                  "(emulators, RocketLauncher, LEDBlinky) can be filled "
+                  "in later from the Setup tab."),
+            wraplength=560, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", pady=(0, 8))
+
+        for key, label, win_default, _allow_blank in _SETUP_FIELDS:
+            if key not in ("roms_dir", "hyperspin_dir"):
+                continue
+            initial = (getattr(cfg, key, "") if cfg else "") or win_default
+            var = self.tk.StringVar(value=initial)
+            state["path_vars"][key] = var
+            row = self.ttk.Frame(paths)
+            row.pack(fill="x", pady=4)
+            self.ttk.Label(row, text=label, width=18).pack(side="left")
+            self.ttk.Entry(row, textvariable=var, width=40).pack(
+                side="left", padx=6, fill="x", expand=True,
+            )
+            self.ttk.Button(
+                row, text="Browse…",
+                command=lambda v=var, k=key: self._browse_dir(v, k),
+            ).pack(side="left")
+
+        # ── step 2: doctor output ────────────────────────────────────────────
+        doctor = self.ttk.Frame(step_holder)
+        state["frames"].append(doctor)
+        self.ttk.Label(
+            doctor, text="Step 2 / 2 — Health check",
+            font=("TkDefaultFont", 12, "bold"),
+        ).pack(anchor="w", pady=(0, 6))
+        self.ttk.Label(
+            doctor,
+            text=("Running spindoctor doctor — checks every dependency "
+                  "and reports anything missing. Read the results below; "
+                  "you can re-run this any time from the Audit tab."),
+            wraplength=560, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", pady=(0, 6))
+        doctor_txt = self.scrolledtext.ScrolledText(
+            doctor, height=14, wrap="word", font="TkFixedFont",
+        )
+        doctor_txt.pack(fill="both", expand=True, pady=(0, 4))
+        doctor_txt.insert("end", "Running doctor…\n")
+        doctor_txt.configure(state="disabled")
+        state["doctor_text"] = doctor_txt
+
+        # ── nav-button factory (rebuilt on each step transition) ─────────────
+        def _save_and_close(skip: bool = False) -> None:
+            try:
+                cfg2 = load_config()
+            except Exception:  # noqa: BLE001
+                from .config import Config
+                cfg2 = Config()
+            if not skip:
+                for key, var in state["path_vars"].items():
+                    setattr(cfg2, key, var.get().strip())
+            cfg2.first_run_complete = True
+            try:
+                save_config(cfg2)
+            except Exception as exc:  # noqa: BLE001
+                self.messagebox.showerror(
+                    "Could not save config", str(exc),
+                )
+                return
+            try:
+                win.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            # Refresh tabs that depend on config (system pickers, etc.)
+            self._refresh_systems()
+            self._startup_health_checks()
+            if not skip:
+                self._set_status(
+                    "Setup saved. Try Audit → Run doctor next."
+                )
+
+        def _run_doctor_async() -> None:
+            from . import health
+            try:
+                cfg2 = load_config()
+                report = health.run_health_checks(cfg2, fix=False)
+            except Exception as exc:  # noqa: BLE001
+                self.root.after(
+                    0, _doctor_done,
+                    f"Could not run doctor: {exc}\n", health.Status.FAIL,
+                )
+                return
+            # Render a tiny summary the user can act on.
+            lines: list[str] = []
+            symbol = {
+                health.Status.OK: "✓",
+                health.Status.WARN: "⚠",
+                health.Status.FAIL: "✗",
+                health.Status.INFO: "·",
+            }
+            for c in report.checks:
+                lines.append(
+                    f"{symbol.get(c.status, '·')} {c.name}: {c.detail}"
+                )
+                for child in c.children:
+                    lines.append(
+                        f"    {symbol.get(child.status, '·')} "
+                        f"{child.name}: {child.detail}"
+                    )
+            text = "\n".join(lines) + "\n"
+            self.root.after(0, _doctor_done, text, report.overall())
+
+        def _doctor_done(text: str, _overall) -> None:
+            doctor_txt.configure(state="normal")
+            doctor_txt.delete("1.0", "end")
+            doctor_txt.insert("end", text)
+            doctor_txt.configure(state="disabled")
+
+        def _nav_buttons(idx: int) -> None:
+            if idx == 0:
+                self.ttk.Button(
+                    nav, text="Skip", command=lambda: _save_and_close(skip=True),
+                ).pack(side="left")
+                self.ttk.Button(
+                    nav, text="Next →", command=lambda: show_step(1),
+                ).pack(side="right")
+            elif idx == 1:
+                self.ttk.Button(
+                    nav, text="← Back", command=lambda: show_step(0),
+                ).pack(side="left")
+                self.ttk.Button(
+                    nav, text="Skip", command=lambda: _save_and_close(skip=True),
+                ).pack(side="left", padx=8)
+                self.ttk.Button(
+                    nav, text="Save and continue →",
+                    command=lambda: (
+                        _save_paths_and_advance()
+                    ),
+                ).pack(side="right")
+            elif idx == 2:
+                self.ttk.Button(
+                    nav, text="← Back", command=lambda: show_step(1),
+                ).pack(side="left")
+                self.ttk.Button(
+                    nav, text="Finish", command=lambda: _save_and_close(),
+                ).pack(side="right")
+
+        def _save_paths_and_advance() -> None:
+            # Persist the two paths immediately so the doctor run sees
+            # them — without this, doctor would re-read the OLD config
+            # from disk and complain about missing roms_dir/hyperspin_dir.
+            try:
+                cfg2 = load_config()
+            except Exception:  # noqa: BLE001
+                from .config import Config
+                cfg2 = Config()
+            for key, var in state["path_vars"].items():
+                setattr(cfg2, key, var.get().strip())
+            try:
+                save_config(cfg2)
+            except Exception as exc:  # noqa: BLE001
+                self.messagebox.showerror(
+                    "Could not save config", str(exc),
+                )
+                return
+            show_step(2)
+            threading.Thread(target=_run_doctor_async, daemon=True).start()
+
+        show_step(0)
+        win.bind("<Escape>", lambda _e: _save_and_close(skip=True))
 
     # ── layout ────────────────────────────────────────────────────────────────
 
@@ -1714,6 +1992,9 @@ class _SpinDoctorGUI:
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
         help_menu.add_command(
             label="Check for updates", command=self._manual_update_check,
+        )
+        help_menu.add_command(
+            label="First-run setup…", command=self._show_first_run_wizard,
         )
         menubar.add_cascade(label="Help", menu=help_menu)
 

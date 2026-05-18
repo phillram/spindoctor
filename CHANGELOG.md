@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI: First-run wizard.** On first launch (no `config.json`, or saved config still has the placeholder `D:\…` defaults), a 3-step modal opens: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `spindoctor doctor` inline and show a per-check ✓/⚠/✗ summary the user can read before clicking Finish. Sets `first_run_complete = True` so the wizard never auto-opens again; existing installs with a valid config silently promote the flag so long-term users aren't pestered. Re-openable any time via **Help → First-run setup…**. New `Config.first_run_complete: bool` field.
+
 - **GUI: Curate tab → metadata-match cache controls.** "List cached matches" and "Clear cache…" buttons drive `spindoctor match list|clear` with an optional system filter. The clear button shows a confirmation dialog scoped to the selected system (or "ALL systems" if blank).
 - **GUI: Systems tab → Organize a system.** Drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the tab's existing Apply toggle, plus a separate "Undo latest restructure" button for the `--undo` flow.
 - **GUI: Metadata & Media tab → Add one local media file.** System + game + media-type dropdowns plus file picker drive `spindoctor media-add`. Tickable "Move" and "Overwrite if target exists" flags. Useful for one-shot media additions (a manually-grabbed trailer, a hand-picked wheel) without dropping to the CLI.

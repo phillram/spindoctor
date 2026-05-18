@@ -237,3 +237,28 @@ def test_get_systems_unions_roms_and_databases(tmp_path):
 def test_get_systems_ignores_missing_paths(tmp_path):
     cfg = Config(roms_dir=str(tmp_path / "no"), hyperspin_dir=str(tmp_path / "nope"))
     assert config_mod.get_systems(cfg) == []
+
+
+# ─── first-run wizard flag ───────────────────────────────────────────────────
+
+
+def test_first_run_complete_default_false():
+    """Fresh configs default to False so the wizard opens on first launch."""
+    assert Config().first_run_complete is False
+
+
+def test_first_run_complete_round_trips(isolated_config):
+    config_mod.save_config(Config(first_run_complete=True))
+    assert config_mod.load_config().first_run_complete is True
+
+
+def test_first_run_complete_omitted_keys_are_false(isolated_config):
+    """Older configs written before the field existed must load cleanly
+    with the default value rather than crashing."""
+    # Simulate a v1.9.x config that has no `first_run_complete` key.
+    raw = {"roms_dir": "/r", "hyperspin_dir": "/h"}
+    isolated_config.parent.mkdir(parents=True, exist_ok=True)
+    isolated_config.write_text(__import__("json").dumps(raw), encoding="utf-8")
+    cfg = config_mod.load_config()
+    assert cfg.first_run_complete is False
+    assert cfg.roms_dir == "/r"
