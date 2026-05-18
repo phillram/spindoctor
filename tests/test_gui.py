@@ -636,6 +636,26 @@ def test_gui_constructs_against_real_tk():
         # Curate tab (foreground TclError) and the Main Menu tab
         # (_output AttributeError). 15 = the documented tab count.
         assert len(app._tab_base_names) == 15
+        # Pin the workflow-oriented order so a drive-by reorder doesn't
+        # regress UX without anyone noticing. See `_build_layout` for
+        # the rationale behind the sequencing.
+        assert app._tab_base_names == [
+            "Setup",
+            "Audit & Doctor",
+            "Diagnose",
+            "Metadata & Media",
+            "Curate",
+            "Wheels",
+            "Main Menu",
+            "Systems",
+            "LEDBlinky",
+            "Lightgun",
+            "Backup & Restore",
+            "Tools",
+            "Migrate",
+            "Logs",
+            "Custom Command",
+        ]
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
         assert app._status_var is not None
@@ -915,6 +935,26 @@ def test_gui_survives_missing_keysym_in_bind_all():
         try:
             app.root.update_idletasks()
             assert len(app._tab_base_names) == 15
+            # Pin the workflow-oriented order so a future drive-by
+            # reorder doesn't regress UX without anyone noticing.
+            # See `_build_layout` for the rationale.
+            assert app._tab_base_names == [
+                "Setup",
+                "Audit & Doctor",
+                "Diagnose",
+                "Metadata & Media",
+                "Curate",
+                "Wheels",
+                "Main Menu",
+                "Systems",
+                "LEDBlinky",
+                "Lightgun",
+                "Backup & Restore",
+                "Tools",
+                "Migrate",
+                "Logs",
+                "Custom Command",
+            ]
         finally:
             app.root.destroy()
     finally:

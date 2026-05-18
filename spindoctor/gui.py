@@ -1668,18 +1668,25 @@ class _SpinDoctorGUI:
         # still reach widgets that overflow the window. Each tab
         # builder creates its frame as before; the helper just bolts
         # a vertical scrollbar onto whichever container holds it.
+        # Tab order is workflow-oriented for a new cabinet owner:
+        # Setup once, then daily-driver tabs (read-only checks first so
+        # the user can confirm "is the cab healthy?" before touching
+        # anything), then curation surfaces, then wheel / front-end
+        # composition, then per-system overrides and peripheral tabs
+        # (LEDBlinky / Lightgun), then infrastructure (Backup → Tools →
+        # Migrate) trailing into Logs / Custom Command at the end.
         self._add_scrollable_tab(nb, self._build_setup_tab,    "Setup")
-        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
-        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
         self._add_scrollable_tab(nb, self._build_audit_tab,    "Audit & Doctor")
         self._add_scrollable_tab(nb, self._build_diagnose_tab, "Diagnose")
         self._add_scrollable_tab(nb, self._build_metadata_tab, "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_curate_tab,   "Curate")
+        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
+        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
         self._add_scrollable_tab(nb, self._build_systems_tab,  "Systems")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab, "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab, "Lightgun")
-        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
         self._add_scrollable_tab(nb, self._build_backup_tab,   "Backup & Restore")
+        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
         self._add_scrollable_tab(nb, self._build_migrate_tab,  "Migrate")
         # Logs tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
