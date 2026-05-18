@@ -29,6 +29,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from .fileinfo import _dir_size
+
 from .config import CONFIG_DIR, Config
 
 
@@ -221,24 +223,6 @@ def normalize_components(values: Iterable[str]) -> list[str]:
         for c in expanded:
             _add(c)
     return out
-
-
-def _dir_size(path: Path) -> int:
-    if not path.exists():
-        return 0
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
-    total = 0
-    for p in path.rglob("*"):
-        try:
-            if p.is_file():
-                total += p.stat().st_size
-        except OSError:
-            pass
-    return total
 
 
 def free_bytes(path: Path) -> int:

@@ -5,6 +5,9 @@ monkeypatching, so the suite never actually hits api.github.com.
 """
 from __future__ import annotations
 
+import io
+import json
+import ssl
 import urllib.error
 
 import pytest
@@ -100,6 +103,49 @@ def test_check_for_update_returns_none_on_unparseable_tag(monkeypatch):
     # a "rolling" or build-hash tag, fail closed instead of crying
     # wolf about an "update".
     assert update_check.check_for_update("1.3.0") is None
+
+
+def test_fetch_latest_release_enforces_tls_1_2(monkeypatch):
+    """Regression: frozen Win7 exes were negotiating TLS 1.0 on the
+    default context and getting cryptic "EOF occurred in violation of
+    protocol" handshakes. The fetcher must build an explicit SSLContext
+    with `minimum_version = TLSv1_2` before opening the URL.
+    """
+    captured: dict = {}
+
+    class _FakeResponse:
+        def __init__(self, payload: bytes) -> None:
+            self._buf = io.BytesIO(payload)
+
+        def read(self) -> bytes:
+            return self._buf.read()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> None:
+            self._buf.close()
+
+    def _fake_urlopen(req, *, timeout, context):
+        captured["context"] = context
+        captured["timeout"] = timeout
+        body = json.dumps(
+            {"tag_name": "v2.0.0", "html_url": "https://example/v2.0.0"}
+        ).encode("utf-8")
+        return _FakeResponse(body)
+
+    monkeypatch.setattr(update_check.urllib.request, "urlopen", _fake_urlopen)
+
+    tag, url = update_check.fetch_latest_release()
+    assert tag == "v2.0.0"
+    assert url == "https://example/v2.0.0"
+
+    ctx = captured["context"]
+    assert isinstance(ctx, ssl.SSLContext)
+    # `minimum_version` exists from Python 3.7 onwards; the code does a
+    # try/except for older OpenSSL builds that lack the enum, but the
+    # supported floor is 3.8 so the attribute should always be set here.
+    assert ctx.minimum_version == ssl.TLSVersion.TLSv1_2
 
 
 def test_check_for_update_respects_env_opt_out(monkeypatch):

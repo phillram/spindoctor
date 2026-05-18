@@ -2027,12 +2027,8 @@ def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     so the INI just points ``applicationpath`` at the bat itself and lets
     PCLauncher run it.
     """
-    return (
-        "[exe info]\n"
-        f"applicationpath={bat_path}\n"
-        f"rompath=\n"
-        f"parameters=\n"
-    )
+    from .rocketlauncher import pclauncher_exe_info_text
+    return pclauncher_exe_info_text(bat_path)
 
 
 @cli.command("theme-scan")

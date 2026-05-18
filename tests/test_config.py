@@ -168,6 +168,45 @@ def test_load_config_handles_wrong_type(isolated_config):
     assert cfg.roms_dir == ""  # defaults
 
 
+# ─── config set bounds validation ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("key,bad_value", [
+    ("match_threshold", "99.0"),       # 0.0–1.0
+    ("match_threshold", "-0.5"),
+    ("max_concurrent_downloads", "0"), # 1–64
+    ("max_concurrent_downloads", "-5"),
+    ("max_concurrent_downloads", "100"),
+    ("metadata_cache_ttl_days", "-1"), # 0–3650
+])
+def test_config_set_rejects_out_of_range_value(isolated_config, key, bad_value):
+    """Regression: out-of-range numeric values used to be accepted at write
+    time and only surfaced as a confusing failure deep inside a download
+    or match loop later. The CLI must fail at set time with a clear error.
+    """
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    runner = CliRunner()
+    # `--` so Click doesn't try to parse a leading-dash value as a flag.
+    result = runner.invoke(cli, ["config", "set", "--", key, bad_value])
+    assert result.exit_code != 0
+    assert "Out of range" in result.output or "out of range" in result.output.lower()
+
+
+def test_config_set_accepts_in_range_value(isolated_config):
+    """Sanity check: legal values still pass the new bounds check."""
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["config", "set", "match_threshold", "0.75"])
+    assert result.exit_code == 0
+    assert config_mod.load_config().match_threshold == pytest.approx(0.75)
+
+
 # ─── system override cache ───────────────────────────────────────────────────
 
 
@@ -240,6 +279,26 @@ def test_get_systems_ignores_missing_paths(tmp_path):
 
 
 # ─── first-run wizard flag ───────────────────────────────────────────────────
+
+
+def test_gui_geometry_round_trips(isolated_config):
+    """Persisted window geometry / last-active tab survive a save+load
+    cycle so the next launch can restore them."""
+    config_mod.save_config(Config(
+        gui_window_geometry="1280x800+100+50",
+        gui_last_active_tab=4,
+    ))
+    cfg = config_mod.load_config()
+    assert cfg.gui_window_geometry == "1280x800+100+50"
+    assert cfg.gui_last_active_tab == 4
+
+
+def test_gui_geometry_defaults():
+    """Fresh configs default to no saved geometry (empty string) and a
+    sentinel tab index of -1 ('don't restore anything')."""
+    cfg = Config()
+    assert cfg.gui_window_geometry == ""
+    assert cfg.gui_last_active_tab == -1
 
 
 def test_first_run_complete_default_false():
