@@ -5478,6 +5478,16 @@ class _SpinDoctorGUI:
                     str(tmp_path), encoding="unicode", xml_declaration=False,
                 )
                 os.replace(str(tmp_path), str(xml_path))
+            except OSError as exc:
+                # OSError (file in use, disk full, etc.) — humanize for
+                # the user rather than dumping the bare repr. Most
+                # frequent cause is HyperSpin holding Main Menu.xml open.
+                from ._errors import humanize_oserror
+                self.root.after(
+                    0, self._mm_save_failed,
+                    humanize_oserror(exc, action="save Main Menu.xml"),
+                )
+                return
             except Exception as exc:  # noqa: BLE001 - report to UI thread
                 self.root.after(0, self._mm_save_failed, str(exc))
                 return
@@ -8472,7 +8482,11 @@ class _SpinDoctorGUI:
                 creationflags=_CREATE_NO_WINDOW,
             )
         except OSError as exc:
-            self.messagebox.showerror("Could not launch", f"{argv[0]}: {exc}")
+            from ._errors import humanize_oserror
+            self.messagebox.showerror(
+                "Could not launch",
+                humanize_oserror(exc, action=f"launch {argv[0]}"),
+            )
             self._stop_btn.configure(state="disabled")
             self._set_busy(False)
             # Clear the per-run timing state before bailing — otherwise
