@@ -49,15 +49,19 @@ def choose_match(
     system_name: str,
     auto_best: bool = False,
     interactive: bool = True,
+    skip_ambiguous: bool = False,
 ) -> "Optional[GameMetadata]":
     """Return the best/chosen GameMetadata for *rom_name*.
 
     Decision hierarchy:
     1. Cached choice → return that candidate (or None if previously skipped).
     2. Single candidate → return it directly.
-    3. auto_best=True → return top candidate without prompting.
-    4. interactive=True → show a selection table and prompt the user.
-    5. Fallback → return top candidate silently.
+    3. skip_ambiguous=True → return None (caller logs and moves on).
+       Required from non-TTY contexts (GUI subprocesses, cron, CI) so
+       the `input()` prompt below is never reached.
+    4. auto_best=True → return top candidate without prompting.
+    5. interactive=True → show a selection table and prompt the user.
+    6. Fallback → return top candidate silently.
     """
     if not candidates:
         return None
@@ -75,6 +79,11 @@ def choose_match(
 
     if len(candidates) == 1:
         return candidates[0]
+
+    if skip_ambiguous:
+        # Explicit skip — log and move on. Caller can re-run with
+        # --auto-best or --interactive on a TTY to resolve.
+        return None
 
     if auto_best or not interactive:
         return candidates[0]
@@ -172,6 +181,7 @@ def pick_media(
     system_name: str,
     *,
     interactive: bool = True,
+    skip_ambiguous: bool = False,
     previewer: Optional[Callable[["MediaCandidate", int], None]] = None,
 ) -> "Optional[MediaCandidate]":
     """Pick one media candidate; cache the choice keyed by item+type+url.
@@ -179,6 +189,11 @@ def pick_media(
     ``item_name`` is the game (or system) name used as the cache key prefix.
     ``previewer`` is an optional callback invoked as ``previewer(candidate, idx)``
     when the user types ``p<N>`` to preview candidate N before picking.
+
+    ``skip_ambiguous`` returns ``None`` when there are 2+ candidates instead
+    of either auto-picking the top one (``interactive=False``) or prompting
+    (``interactive=True``). Used by non-TTY callers (GUI subprocesses,
+    cron, CI) so the ``input()`` prompt is never reached.
 
     Returns the chosen MediaCandidate, or ``None`` if the user skipped.
     """
@@ -197,7 +212,13 @@ def pick_media(
                 return c
         # Cached URL no longer in the result set — fall through to re-prompt
 
-    if len(candidates) == 1 or not interactive:
+    if len(candidates) == 1:
+        return candidates[0]
+
+    if skip_ambiguous:
+        return None
+
+    if not interactive:
         return candidates[0]
 
     return _prompt_media(item_name, media_type, candidates,

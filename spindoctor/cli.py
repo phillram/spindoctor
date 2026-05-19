@@ -3195,11 +3195,15 @@ def fetch_meta(system, all_systems, source, fetch_all,
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple "
                    "candidates (different regions / artwork variants).")
+@click.option("--skip-ambiguous", is_flag=True,
+              help=("Skip media slots with multiple candidates instead of "
+                    "prompting (--pick-media) or auto-picking. Useful from "
+                    "non-TTY contexts (the GUI, cron, CI)."))
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 def fetch_media(system, all_systems, types, source, overwrite, pick_media,
-                apply_changes, output_dir):
+                skip_ambiguous, apply_changes, output_dir):
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
@@ -3355,7 +3359,9 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
                 dest = downloader.media_path(sys_name, game_name, mt)
                 r = downloader.download_with_picker(
                     game_name, sys_name, mt, cands, dest,
-                    interactive=True, overwrite=overwrite,
+                    interactive=not skip_ambiguous,
+                    skip_ambiguous=skip_ambiguous,
+                    overwrite=overwrite,
                 )
                 if r.skipped:
                     total_skip += 1
@@ -5051,6 +5057,11 @@ def _propose_pc_titles(
 @click.argument("system_name", required=False, default="PC Games")
 @click.option("--rename/--no-rename", "rename", default=True,
               help="Interactively confirm/edit derived titles before writing the DB.")
+@click.option("--no-interactive", is_flag=True,
+              help=("Auto-accept every proposed title without prompting. "
+                    "Use from non-TTY contexts (GUI subprocesses, cron, "
+                    "CI) — the interactive review path calls input() "
+                    "and blocks on stdin otherwise."))
 @click.option("--no-menu", is_flag=True, help="Skip the Main Menu upsert step.")
 @click.option("--no-system-media", is_flag=True,
               help="Skip downloading wheel/background/video for the new system.")
@@ -5066,8 +5077,8 @@ def _propose_pc_titles(
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
-def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
-                  no_game_media, no_pclauncher, overwrite_pclauncher,
+def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
+                  no_db, no_game_media, no_pclauncher, overwrite_pclauncher,
                   pick_media, source, apply_changes, output_dir):
     """Bootstrap a PC/Windows/Steam games system end-to-end.
 
@@ -5157,7 +5168,10 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
 
     if rename and apply_changes:
         from .pc_titles import review_titles
-        title_to_path = review_titles(system_name, proposals, interactive=True)
+        title_to_path = review_titles(
+            system_name, proposals,
+            interactive=not no_interactive,
+        )
     elif rename:
         console.print(
             f"  [yellow]would review {len(proposals)} title(s) interactively[/yellow]"
@@ -5262,7 +5276,10 @@ def add_pc_system(system_name, rename, no_menu, no_system_media, no_db,
               help="Skip regenerating PCLauncher INIs after rename.")
 @click.option("--overwrite-pclauncher", is_flag=True,
               help="Overwrite existing PCLauncher INIs.")
-def pc_rename(system_name, no_pclauncher, overwrite_pclauncher):
+@click.option("--no-interactive", is_flag=True,
+              help=("Auto-accept the proposed title for every game without "
+                    "prompting. Use from non-TTY contexts (GUI, cron, CI)."))
+def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive):
     """Re-run the title picker for an existing PC system.
 
     \b
@@ -5279,7 +5296,9 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher):
         return
 
     from .pc_titles import review_titles
-    title_to_path = review_titles(system_name, proposals, interactive=True)
+    title_to_path = review_titles(
+        system_name, proposals, interactive=not no_interactive,
+    )
 
     by_title: dict[str, Path] = {}
     for path, title in title_to_path.items():
