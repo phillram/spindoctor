@@ -107,11 +107,6 @@ class Config:
     # Hides the bottom Output panel when False. Persisted so the
     # preference survives restarts.
     output_visible: bool = True
-    # Set the first time the GUI's first-run wizard finishes (or is
-    # skipped). Stops the wizard from re-opening on every launch.
-    # Older configs (pre-wizard) auto-promote to True the first time
-    # they validate cleanly, so existing installs never see it.
-    first_run_complete: bool = False
     # Persisted Tk geometry string (e.g. "1280x800+120+60") and last
     # active notebook tab index. Restored on the next launch so a
     # cabinet owner who lives in the Curate or Wheels tab doesn't have
