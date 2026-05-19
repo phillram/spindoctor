@@ -7942,6 +7942,12 @@ class _SpinDoctorGUI:
             args.append("--no-system-media")
         if self._systems_no_game_media_var.get():
             args.append("--no-game-media")
+        if pc:
+            # The CLI's title-review step calls input() on each game.
+            # The GUI can't satisfy stdin, so always auto-accept the
+            # proposed title. Users who want to curate titles can run
+            # `spindoctor pc-rename <system>` from a terminal.
+            args.append("--no-interactive")
         if self._systems_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
