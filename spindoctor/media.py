@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import requests
 
+from ._net import make_session
 from .config import Config
 
 
@@ -86,8 +87,7 @@ class MediaDownloader:
     def __init__(self, config: Config, output_dir_override: Optional[Path] = None):
         self.config = config
         self._output_override = output_dir_override
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SpinDoctor/1.0"
+        self._session = make_session()
 
     def _media_base(self) -> Path:
         if self._output_override:

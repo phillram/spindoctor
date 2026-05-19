@@ -42,7 +42,7 @@ def test_screenscraper_happy_path():
             "ssuser": {"id": "phillipr", "niveau": "1", "maxthreads": "4"},
         },
     }
-    with patch.object(requests, "get", return_value=_FakeResponse(200, payload)):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_screenscraper("phillipr", "hunter2")
     assert ok is True
     assert "phillipr" in msg
@@ -51,7 +51,7 @@ def test_screenscraper_happy_path():
 
 
 def test_screenscraper_rejects_401():
-    with patch.object(requests, "get", return_value=_FakeResponse(401, {})):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(401, {})):
         ok, msg = scraper.verify_screenscraper("u", "p")
     assert ok is False
     assert "401" in msg or "rejected" in msg.lower()
@@ -59,7 +59,7 @@ def test_screenscraper_rejects_401():
 
 def test_screenscraper_handles_erreur_payload():
     payload = {"erreur": "Erreur de login : mauvais mot de passe"}
-    with patch.object(requests, "get", return_value=_FakeResponse(200, payload)):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_screenscraper("u", "p")
     assert ok is False
     assert "mauvais" in msg.lower() or "erreur" in msg.lower()
@@ -69,7 +69,7 @@ def test_screenscraper_handles_network_error():
     def boom(*_a, **_k):
         raise requests.ConnectionError("dns failed")
 
-    with patch.object(requests, "get", side_effect=boom):
+    with patch.object(scraper, "request_get", side_effect=boom):
         ok, msg = scraper.verify_screenscraper("u", "p")
     assert ok is False
     assert "network" in msg.lower()
@@ -77,7 +77,7 @@ def test_screenscraper_handles_network_error():
 
 def test_screenscraper_handles_non_json_body():
     with patch.object(
-        requests, "get",
+        scraper, "request_get",
         return_value=_FakeResponse(200, payload=None, text="Erreur"),
     ):
         ok, msg = scraper.verify_screenscraper("u", "p")
@@ -100,14 +100,14 @@ def test_thegamesdb_happy_path():
         "data": {"games": []},
         "remaining_monthly_allowance": 957,
     }
-    with patch.object(requests, "get", return_value=_FakeResponse(200, payload)):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_thegamesdb("good-key")
     assert ok is True
     assert "957" in msg
 
 
 def test_thegamesdb_rejects_invalid_key_via_http():
-    with patch.object(requests, "get", return_value=_FakeResponse(403, {})):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(403, {})):
         ok, msg = scraper.verify_thegamesdb("bad-key")
     assert ok is False
     assert "invalid" in msg.lower()
@@ -115,14 +115,14 @@ def test_thegamesdb_rejects_invalid_key_via_http():
 
 def test_thegamesdb_rejects_invalid_key_via_payload_code():
     payload = {"code": 403, "status": "Invalid API Key"}
-    with patch.object(requests, "get", return_value=_FakeResponse(200, payload)):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_thegamesdb("bad-key")
     assert ok is False
     assert "invalid" in msg.lower()
 
 
 def test_thegamesdb_rate_limited():
-    with patch.object(requests, "get", return_value=_FakeResponse(429, {})):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(429, {})):
         ok, msg = scraper.verify_thegamesdb("k")
     assert ok is False
     assert "429" in msg or "rate" in msg.lower()
@@ -132,7 +132,7 @@ def test_thegamesdb_handles_network_error():
     def boom(*_a, **_k):
         raise requests.Timeout("slow")
 
-    with patch.object(requests, "get", side_effect=boom):
+    with patch.object(scraper, "request_get", side_effect=boom):
         ok, msg = scraper.verify_thegamesdb("k")
     assert ok is False
     assert "network" in msg.lower()
@@ -142,7 +142,7 @@ def test_thegamesdb_handles_missing_remaining_field():
     # Some early TheGamesDB responses omit the `remaining_*` counter —
     # success path should still report OK rather than fail on KeyError.
     payload = {"code": 200, "data": {"games": []}}
-    with patch.object(requests, "get", return_value=_FakeResponse(200, payload)):
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_thegamesdb("k")
     assert ok is True
     assert msg == "OK"
