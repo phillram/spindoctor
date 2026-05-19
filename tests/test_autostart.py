@@ -174,3 +174,51 @@ def test_run_schtasks_hides_console_window(monkeypatch):
     # than imported from a constant — guard against the value being
     # accidentally cleared back to 0 in a refactor.
     assert captured.get("creationflags") == 0x08000000
+
+
+# ─── friendly schtasks error interpretation (PR E polish) ────────────────────
+
+
+def test_interpret_schtasks_access_denied_suggests_admin():
+    from spindoctor.autostart import _interpret_schtasks_error
+
+    msg = _interpret_schtasks_error(
+        "create the task",
+        "ERROR: Access is denied.",
+    )
+    assert "access denied" in msg.lower()
+    assert "administrator" in msg.lower()
+
+
+def test_interpret_schtasks_already_exists_points_at_remove():
+    from spindoctor.autostart import _interpret_schtasks_error
+
+    msg = _interpret_schtasks_error(
+        "create the task",
+        "ERROR: The task XML contains a value which is incorrectly formatted "
+        "or out of range. The task with name X already exists.",
+    )
+    assert "already" in msg.lower()
+    assert "remove" in msg.lower()
+
+
+def test_interpret_schtasks_does_not_exist_suggests_schedule():
+    from spindoctor.autostart import _interpret_schtasks_error
+
+    msg = _interpret_schtasks_error(
+        "remove the task",
+        "ERROR: The system cannot find the file specified.\n"
+        "The specified task does not exist.",
+    )
+    assert "does not exist" in msg.lower() or "no auto-refresh task" in msg.lower()
+
+
+def test_interpret_schtasks_unknown_error_falls_back_to_raw():
+    from spindoctor.autostart import _interpret_schtasks_error
+
+    msg = _interpret_schtasks_error(
+        "create the task",
+        "ERROR: Some bizarre Windows error code 0x80070043.",
+    )
+    # Falls back to including the raw output for power-user diagnosis.
+    assert "0x80070043" in msg
