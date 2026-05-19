@@ -3007,6 +3007,10 @@ def match_clear(system: Optional[str]):
               help="Refresh metadata for every game, even complete ones.")
 @click.option("--interactive/--auto-best", "interactive", default=None,
               help="Prompt when multiple matches exist (default: from config).")
+@click.option("--skip-ambiguous", is_flag=True,
+              help=("Skip ambiguous matches instead of prompting or auto-"
+                    "picking. Useful from non-TTY contexts (the GUI uses "
+                    "this to avoid stdin hangs)."))
 @click.option("--threshold", default=None, type=float,
               help="Fuzzy confidence required for auto-accept (default: from config).")
 @click.option("--no-cache", is_flag=True,
@@ -3017,7 +3021,7 @@ def match_clear(system: Optional[str]):
               help="Commit metadata writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
 def fetch_meta(system, all_systems, source, fetch_all,
-               interactive, threshold, no_cache, clear_cache,
+               interactive, skip_ambiguous, threshold, no_cache, clear_cache,
                apply_changes, output_dir):
     """Fetch and update game metadata in the Hyperspin XML databases.
 
@@ -3108,7 +3112,16 @@ def fetch_meta(system, all_systems, source, fetch_all,
             candidates_map, auto_threshold=match_thresh
         )
 
-        if ambiguous and do_interactive:
+        if ambiguous and skip_ambiguous:
+            # Explicit skip mode — log and move on. Used by the GUI so
+            # the subprocess never blocks on stdin. The skipped games
+            # remain incomplete and surface in the next `audit` pass.
+            console.print(
+                f"\n[yellow]Skipping {len(ambiguous)} ambiguous "
+                f"match(es)[/yellow] (--skip-ambiguous). Review with "
+                f"[cyan]audit[/cyan] or re-run without the flag."
+            )
+        elif ambiguous and do_interactive:
             console.print(
                 f"\n[yellow]{len(ambiguous)}[/yellow] game(s) need manual selection "
                 f"(confidence < {match_thresh:.0%}):"

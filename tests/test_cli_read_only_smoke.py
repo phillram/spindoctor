@@ -303,3 +303,17 @@ def test_add_system_dry_run_does_not_create_dirs(tmp_path, isolated_config):
     assert not any(
         p for p in (roms_dir.rglob("*")) if "snes" in p.name.lower() and p.is_dir()
     ), "add-system created roms/snes/ without --apply"
+
+
+def test_fetch_meta_skip_ambiguous_flag_is_registered():
+    """The --skip-ambiguous flag exists on fetch-meta — the GUI relies
+    on it to avoid hanging the subprocess on stdin. Help-output check
+    is enough to pin the wiring without firing a real network call.
+    """
+    from click.testing import CliRunner
+    from spindoctor.cli import cli
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["fetch-meta", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--skip-ambiguous" in result.output
