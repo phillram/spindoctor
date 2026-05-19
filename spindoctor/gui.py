@@ -816,10 +816,6 @@ class _SpinDoctorGUI:
         # of staring at 15 tabs full of "setup incomplete" status bars.
         # Deferred via after_idle so the main window paints first.
         self.root.after_idle(self._maybe_show_first_run_wizard)
-        # Second after_idle so the wizard wins if both would fire — a
-        # fresh install shouldn't see "What's new" before they've even
-        # picked paths.
-        self.root.after_idle(self._maybe_show_whats_new)
 
     # ── Dark theme ────────────────────────────────────────────────────────────
 
@@ -2408,9 +2404,6 @@ class _SpinDoctorGUI:
         help_menu = self.tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
         help_menu.add_command(
-            label="What's new", command=self._show_whats_new,
-        )
-        help_menu.add_command(
             label="Keyboard shortcuts", command=self._show_keyboard_shortcuts,
         )
         help_menu.add_command(
@@ -2487,110 +2480,6 @@ class _SpinDoctorGUI:
 
         self.ttk.Button(body, text="Close", command=win.destroy).pack(
             anchor="e", pady=(12, 0),
-        )
-
-    # ── What's new ────────────────────────────────────────────────────────────
-
-    def _maybe_show_whats_new(self) -> None:
-        """Open the "What's new" dialog once per upgraded version.
-
-        Suppressed on fresh installs (``last_seen_version == ""``) so
-        the first-run wizard isn't immediately stacked on top of a
-        dialog. Also suppressed when the running version is identical
-        to the last-seen one.
-        """
-        try:
-            cfg = load_config()
-        except Exception:  # noqa: BLE001
-            return
-
-        last_seen = getattr(cfg, "last_seen_version", "") or ""
-        if last_seen == __version__:
-            return
-
-        # Distinguish "fresh install" from "long-time user upgrading from
-        # a pre-`last_seen_version` build". Both have last_seen == "",
-        # but the upgrader has `first_run_complete=True` already (set
-        # automatically the first time their config validated). Fresh
-        # installs see the first-run wizard instead — piling the
-        # What's-new dialog on top is noisy and they have nothing to
-        # compare against anyway.
-        first_run_complete = bool(
-            getattr(cfg, "first_run_complete", False)
-        )
-        is_fresh_install = last_seen == "" and not first_run_complete
-
-        if is_fresh_install:
-            try:
-                cfg.last_seen_version = __version__
-                save_config(cfg)
-            except Exception:  # noqa: BLE001
-                pass
-            return
-
-        self._show_whats_new()
-        try:
-            cfg.last_seen_version = __version__
-            save_config(cfg)
-        except Exception:  # noqa: BLE001
-            pass
-
-    def _show_whats_new(self) -> None:
-        win = self.tk.Toplevel(self.root)
-        win.title(f"What's new in {__app_name__}")
-        win.transient(self.root)
-        win.bind("<Escape>", lambda _e: win.destroy())
-        self._fit_geometry(win, 620, 460)
-
-        body = self.ttk.Frame(win, padding=18)
-        body.pack(fill="both", expand=True)
-
-        self.ttk.Label(
-            body, text=f"What's new in {__app_name__} {__version__}",
-            font=("TkDefaultFont", 13, "bold"),
-        ).pack(anchor="w", pady=(0, 8))
-
-        text = self.scrolledtext.ScrolledText(
-            body, wrap="word", height=16,
-        )
-        text.pack(fill="both", expand=True)
-        text.insert("1.0", self._whats_new_body())
-        text.configure(state="disabled")
-
-        btn_row = self.ttk.Frame(body)
-        btn_row.pack(fill="x", pady=(10, 0))
-        self.ttk.Button(
-            btn_row, text="Open full CHANGELOG",
-            command=lambda: self._open_url(
-                "https://github.com/phillram/spindoctor/blob/main/CHANGELOG.md",
-            ),
-        ).pack(side="left")
-        self.ttk.Button(btn_row, text="Close", command=win.destroy).pack(
-            side="right",
-        )
-
-    def _whats_new_body(self) -> str:
-        # Curated highlights — keep this short. The full CHANGELOG is one
-        # click away via the button. Bullet text is plain so it survives
-        # the read-only ScrolledText without needing tag styling.
-        return (
-            "Highlights since your last launch:\n\n"
-            "• GUI-first launcher — the GUI is now the primary surface.\n"
-            "  Setup, Doctor, Curate, Audit, Backup, Migrate, Wheels,\n"
-            "  Media, Favorites, Cleanup, Stats, Systems, Logs, Tools.\n\n"
-            "• First-run wizard guides new users through picking paths\n"
-            "  and running their first health check.\n\n"
-            "• Per-tab health badges flag setup or data problems at a\n"
-            "  glance without diving in.\n\n"
-            "• System quick-filter (Ctrl+Shift+F) narrows every system\n"
-            "  combobox across every tab.\n\n"
-            "• Output find bar (Ctrl+F) searches long audit / migrate\n"
-            "  logs.\n\n"
-            "• Drag and drop folders onto Setup-tab path fields.\n\n"
-            "• Multi-system fetch-meta selector, per-system overrides\n"
-            "  form, persistent window geometry, preflight checks,\n"
-            "  chained-workflow progress bar, single-instance lock.\n\n"
-            "Full CHANGELOG is one click away."
         )
 
     # ── Keyboard shortcuts ────────────────────────────────────────────────────

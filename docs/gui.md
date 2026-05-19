@@ -187,7 +187,6 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel. State persists across restarts via the `output_visible` config key.
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
-- **Help → What's new** — one-shot dialog with the highlights of the current SpinDoctor version, plus a button to open the full CHANGELOG. Fires automatically on first launch after an upgrade (tracked via the `last_seen_version` config field) and any time from the menu after that. Suppressed on fresh installs — the first-run wizard owns that conversation.
 - **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
 - **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download…** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
 - **Help → First-run setup…** — re-opens the first-run wizard manually.
@@ -203,7 +202,7 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 | `Ctrl++` / `Ctrl+=` | Zoom in (step UI scale by +0.1). Both keys are bound. |
 | `Ctrl+-` | Zoom out (step UI scale by -0.1). |
 | `Ctrl+0` | Reset UI scale to 1.0×. |
-| `Esc` | Close any open dialog (About, What's new, Keyboard shortcuts, find bar, etc.). |
+| `Esc` | Close any open dialog (About, Keyboard shortcuts, find bar, etc.). |
 
 The same table is reachable in-app via **Help → Keyboard shortcuts**.
 

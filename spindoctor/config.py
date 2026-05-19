@@ -119,12 +119,6 @@ class Config:
     # default geometry"; a negative tab index disables restore.
     gui_window_geometry: str = ""
     gui_last_active_tab: int = -1
-    # Last SpinDoctor version that this user saw the "What's new" dialog
-    # for. Compared to __version__ at GUI launch — when they differ, a
-    # one-shot dialog appears with the recent CHANGELOG highlights. Set
-    # to "" for fresh installs, which suppresses the dialog (first-run
-    # wizard covers them instead).
-    last_seen_version: str = ""
 
     # LEDBlinky default per-button color palette (hex RGB strings)
     ledblinky_default_colors: dict[str, str] = field(
