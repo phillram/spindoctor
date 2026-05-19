@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Tests
+
+- **CliRunner smoke pass for 12 read-only / dry-run-by-default CLI commands.** New `tests/test_cli_read_only_smoke.py` exercises `audit`, `inspect`, `find-dupes`, `lint`, `find-orphan-media`, `cleanup audit`, `report` (summary + CSV), `doctor`, `tools-audit`, `systems`, plus dry-run gates for `update-db` and `add-system`. Closes the gap the 2.0 audit flagged — 60+ commands had zero end-to-end CLI coverage; the most-used diagnostic and database-mutating commands now have plumbing-level pins so an import error or option-parsing regression fails CI at PR time instead of on a user's cabinet. Per-command behaviour is still covered by the dedicated library-layer tests; this file's job is the CLI plumbing.
+- **GUI 2.0-surface tests.** New tests in `tests/test_gui.py` cover the four multi-widget surfaces that shipped during the 2.0 cycle and previously had only the construction-smoke as coverage: the Output-panel find bar (`_find_open` → type → Next/Prev → `_find_close`), the first-run wizard (Help → First-run setup… dialog construction), the preflight chain button (`_run_preflight` dispatches `doctor` → `tools-audit` → `audit --all` then summarises), and the Setup-tab drag-and-drop wiring (`_register_path_drop_target` no-ops without `tkinterdnd2`, wires the StringVar from a brace-quoted or `file://`-prefixed drop payload when present). Same class of multi-widget construction bug as the v1.7.0 `_output` AttributeError that project memory warns about; previously zero coverage.
+
 ### Fixed
 
 - **Win7 cabinet TLS handshake.** Outbound HTTPS sessions in `scraper.py` (ScreenScraper, TheGamesDB) and `media.py` (asset CDNs) now pin a TLS 1.2 floor via a shared `spindoctor._net.make_session()` helper, matching the same floor `update_check.py` already enforces for its urllib path. Frozen Win7 binaries ship Python 3.8.10 + OpenSSL 1.0.2u, which on a bare `requests.Session()` could otherwise negotiate TLS 1.0/1.1 against endpoints that have since dropped them — surfacing as a cryptic `EOF occurred in violation of protocol` rather than a clean handshake error. Credential-verify probes (`verify_screenscraper`, `verify_thegamesdb`) inherit the same floor via a new `request_get()` helper.
