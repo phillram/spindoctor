@@ -41,6 +41,9 @@ spindoctor config set <key> <value>
 | `demulshooter_extra_args` | Default extra args appended to DemulShooter (default `-noresize`, Sinden-friendly) |
 | `ui_scale` | GUI font/widget scale multiplier (float, `0.6`–`2.0`, default `1.0`). Set from `View → UI scale` or `Ctrl++` / `Ctrl+-` / `Ctrl+0` in the GUI. Cabinet owners on 1280×720 typically want `0.9` to fit more on screen. |
 | `output_visible` | Whether the GUI's bottom Output panel is shown (bool, default `true`). Toggled from `View → Show output pane`, the status-bar button, or `Ctrl+`` ` ``. |
+| `gui_window_geometry` | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed (string, default unset). Restored on the next launch so cabinet owners don't re-resize / re-position every session. Managed automatically — delete it to reset window state. Hand-corrupted values are revalidated against a regex and silently discarded. |
+| `gui_last_active_tab` | Index of the tab that was open the last time the GUI closed (int, default unset). Restored on the next launch so users who live in the Curate or Wheels tab don't re-navigate from Setup every time. Managed automatically — delete it to default back to the Setup tab. |
+| `first_run_complete` | Whether the first-run wizard has been dismissed (bool, default `false`). Set to `true` after the wizard finishes; existing installs with a valid config silently flip it on first launch of the 2.0 GUI so long-term users aren't pestered. Reset it to `false` to re-trigger the wizard on next launch (or use `Help → First-run setup…`). |
 
 ## Per-system overrides
 

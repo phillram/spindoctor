@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Documentation
+
+- **New `docs/gui.md` — canonical GUI walkthrough.** The tab tour, menubar reference, keyboard-shortcut map, find bar, system quick-filter, dark-mode notes, dry-run-feedback walkthrough, first-run wizard, and per-tab health-badge legend now live in one platform-neutral page. Previously the tab tour lived inside `docs/windows-binaries.md` under the implicit assumption "GUI = Windows binary"; pip and source installs had no canonical home. The Windows-binaries page now links to `gui.md` instead of duplicating it.
+- **New `docs/migrating-from-1.x.md` — upgrade guide.** Documents the visible 2.0 differences for existing 1.x users: tab reorder (with the keyboard-shortcut note that `Ctrl+1`…`Ctrl+9` still works), three new GUI config keys (`first_run_complete`, `gui_window_geometry`, `gui_last_active_tab`), new GUI affordances (find bar, drag-drop, badges, preflight, multi-system fetch-meta), new CLI commands (`self-doctor`) and audit flags (`--no-media`, `--detailed`, `--report`), and the rollback recipe.
+- **`docs/commands.md` — `self-doctor` now has a Maintenance entry.** Previously the command was only mentioned in passing in the README. The new section explains the diff from `doctor` (cabinet vs SpinDoctor's own state), what `--fix` is allowed to delete (only orphan rescue copies + stale `.part` files — manifests are never auto-deleted), and the recommended cadence.
+- **`docs/configuration.md` — three new GUI config keys.** `gui_window_geometry`, `gui_last_active_tab`, `first_run_complete` all documented with their semantics, defaults, and reset instructions.
+- **`docs/setup.md` step 9 is now GUI-first.** Cabinet owners who land on the walkthrough fresh get pointed at `spindoctor-gui` (Setup tab + Save) as the primary path; CLI is listed as the equivalent power-user path rather than the equally-recommended alternative.
+- **Read-only command lists in `docs/index.md` and `docs/commands.md` updated** to include `find-global`, `self-doctor`, `tools-audit`, and `lightgun detect` / `audit` — all of which were technically read-only but missed the canonical convention header.
+
 ### Changed
 
 - **GUI: end-user-facing text no longer leaks CLI command names at cabinet owners.** The Setup tab intro previously said "These map 1:1 to `spindoctor config init`" and the scraper-credentials note pointed at "`spindoctor fetch-meta` and `spindoctor fetch-media`" — neither is meaningful to someone who only opens the GUI. Both now read as plain-English summaries of what the controls do. The undo dialog that pops on an unrecognised manifest type stopped pointing users at "`spindoctor --help`"; the curate-archive confirmation stopped saying "`spindoctor curate --undo`". Both now describe the GUI path (Help → About, Logs tab → Browse manifests / undo…).
