@@ -22,7 +22,6 @@ answers "is my SpinDoctor install OK?".
 from __future__ import annotations
 
 import json
-import shutil
 import time
 from dataclasses import dataclass, field
 from enum import Enum

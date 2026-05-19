@@ -5450,17 +5450,6 @@ def backup_group():
     """
 
 
-def _backup_format_includes() -> str:
-    from .backup import ALL_COMPONENTS, COMPONENT_ALIASES
-    return (
-        ", ".join(ALL_COMPONENTS)
-        + ", all"
-        + " (aliases: "
-        + ", ".join(sorted(COMPONENT_ALIASES))
-        + ")"
-    )
-
-
 @backup_group.command("create")
 @click.option("--target", type=click.Path(file_okay=False), required=True,
               help="Destination folder for the backup. A new dated subfolder "
