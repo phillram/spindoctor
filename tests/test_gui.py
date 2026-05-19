@@ -1452,3 +1452,107 @@ def test_fetch_meta_args_always_avoid_interactive_prompt(monkeypatch):
         assert "--auto-best" not in args
     finally:
         app.root.destroy()
+
+
+# ─── 2.0 loose-ends bundle ────────────────────────────────────────────────────
+
+
+def test_run_migrate_apply_shows_confirm_dialog_keep_source(monkeypatch):
+    """Apply-mode migrate must ask for confirmation before shelling out.
+    The keep-source path uses the "reversible by deleting the
+    destination" wording so the user understands the blast radius is
+    smaller than a destructive move.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._migrate_target_var.set("/tmp/spindoctor-test-dest")
+        app._migrate_keep_source_var.set(True)
+        app._migrate_apply_var.set(True)
+        # All other component checkboxes default to True per the tab
+        # builder, so _selected_migrate_components returns None (which
+        # passes the guard).
+
+        asks: list[str] = []
+        monkeypatch.setattr(
+            app.messagebox, "askyesno",
+            lambda title, msg: asks.append((title, msg)) or False,
+        )
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._run_migrate()
+
+        assert len(asks) == 1, "expected exactly one confirm dialog"
+        assert "Migrate library" in asks[0][0]
+        assert "--keep-source" in asks[0][1] or "originals stay" in asks[0][1]
+        assert not ran, "user said No — subprocess must not start"
+    finally:
+        app.root.destroy()
+
+
+def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
+    """The destructive-move path must warn that originals will be
+    removed AND surface the undo-manifest path as the only recovery."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._migrate_target_var.set("/tmp/spindoctor-test-dest")
+        app._migrate_keep_source_var.set(False)
+        app._migrate_apply_var.set(True)
+
+        asks: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            app.messagebox, "askyesno",
+            lambda title, msg: asks.append((title, msg)) or True,
+        )
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._run_migrate()
+
+        assert len(asks) == 1
+        # The wording must mention the irreversible nature and the
+        # undo-manifest escape hatch — that's the load-bearing UX.
+        body = asks[0][1]
+        assert "MOVE" in body
+        assert "undo" in body.lower()
+        assert "manifest" in body.lower()
+        assert ran and "--apply" in ran[0]
+    finally:
+        app.root.destroy()
+
+
+def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
+    """A malformed Main Menu.xml must trigger a showerror modal so the
+    user actually notices — not just a line in the Output pane.
+    """
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        hyperspin = tmp_path / "HyperSpin"
+        (hyperspin / "Databases" / "Main Menu").mkdir(parents=True)
+        xml = hyperspin / "Databases" / "Main Menu" / "Main Menu.xml"
+        xml.write_text("<menu><game name=", encoding="utf-8")  # malformed
+
+        cfg = cfg_mod.Config()
+        cfg.hyperspin_dir = str(hyperspin)
+
+        monkeypatch.setattr(
+            "spindoctor.gui.load_config", lambda: cfg,
+        )
+
+        errors: list[tuple[str, str]] = []
+        monkeypatch.setattr(
+            app.messagebox, "showerror",
+            lambda title, msg: errors.append((title, msg)),
+        )
+
+        app._mm_refresh()
+
+        assert errors, "malformed XML must trigger an error dialog"
+        title, body = errors[0]
+        assert "Main Menu.xml" in title or "Main Menu.xml" in body
+        # The Treeview must reset so the user doesn't see stale rows.
+        assert app._mm_data == []
+    finally:
+        app.root.destroy()

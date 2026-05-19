@@ -60,6 +60,8 @@ None of these change existing behaviour — they're additive:
 - **Help → Keyboard shortcuts** dialog — in-app reference for the shortcut map; no more digging through docs.
 - **Safe-to-Stop long operations** — interrupting a backup, move-mode migrate, or curate-archive run now leaves a *partial manifest* describing what completed before the interrupt. The backup is still visible in the Restore picker; the migrate is reversible via `Logs → Browse manifests… → Undo`. See `docs/gui.md → Stopping a long-running command` for the full story.
 - **`fetch-meta --skip-ambiguous`** wired into the GUI — unticking "Auto-pick best match" no longer hangs the subprocess on an interactive `input()` prompt; ambiguous matches are logged for the next `audit` pass instead.
+- **Migrate confirm dialog** — Apply now pops a confirmation modal before shelling out, with distinct wording for `--keep-source` (copy, originals stay) and the destructive move (warns explicitly that originals will be removed and points at the undo-manifest escape hatch). Cancel and nothing runs.
+- **Main Menu.xml parse errors surface as a modal** — previously the failure was a single line in the Output pane and the Treeview kept showing stale rows from the last successful load. Now the table empties on failure and a modal names the file path + the parser's error so you can't miss it.
 
 ### New CLI commands and flags
 

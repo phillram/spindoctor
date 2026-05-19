@@ -2,10 +2,6 @@
 
 The canonical reference for `spindoctor-gui` — the same window whether you launched it from `spindoctor-gui.exe` (Windows binary) or `spindoctor-gui` (pip install). Cabinet owners who'd rather click than type live here.
 
-> ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
->
-> *Screenshot: `spindoctor-gui` after launch, with the output panel showing a completed `doctor` run.*
-
 ## Contents
 
 - [Launching](#launching)
@@ -73,8 +69,6 @@ Below the path fields, a **Scraper credentials** section stores your ScreenScrap
 
 Click **Save configuration** to validate and write everything to `config.json` in one step. CLI equivalent: `spindoctor config init`.
 
-> ![Setup tab populated with cabinet paths](images/gui-launcher-setup-tab.png)
-
 ### Audit & Doctor
 
 The cabinet's "is everything OK?" diagnostic surface. Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks. None of these write to disk.
@@ -86,8 +80,6 @@ Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit
 **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
 CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`.
-
-> ![Audit & Doctor tab with the system dropdown expanded](images/gui-launcher-audit-tab.png)
 
 ### Diagnose
 
@@ -127,13 +119,13 @@ A **Favorites** sub-section adds **Add / Remove / List** buttons that drive `fav
 
 CLI equivalents: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
-> ![Wheels tab — three checkboxes (Favorites / Recently Played / Most Played) plus a Refresh selected button](images/gui-launcher-wheels-tab.png)
-
 ### Main Menu
 
 Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
 
 Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
+
+If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
 
 ### Systems
 
@@ -169,6 +161,8 @@ Three sections that cover the HyperSpin-integration surface:
 
 Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, a scrollable multi-select Listbox pre-populated from detected systems for partial-roms migrations (nothing selected = migrate all), toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate **Undo** panel whose manifest dropdown is pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top) and a Refresh button. Dry-run by default. CLI equivalent: `spindoctor migrate`.
 
+Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path. Cancel and nothing runs.
+
 ### Logs
 
 Persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`.
@@ -180,8 +174,6 @@ A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by
 ### Custom Command
 
 Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
-
-> ![Custom Command tab with `audit --all` typed into the entry](images/gui-launcher-custom-tab.png)
 
 ## Menubar
 

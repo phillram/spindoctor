@@ -52,6 +52,16 @@ Folders must exist before they can be configured. Create the folder first, then 
 
 That system has ROMs but no HyperSpin database yet. Run `spindoctor add-system "<exact folder name>"` to bootstrap it (dry-run first; re-run with `--apply`).
 
+### Main Menu tab pops "Main Menu.xml could not be parsed"
+
+The GUI tried to read `<hyperspin_dir>/Databases/Main Menu/Main Menu.xml` and the parser rejected it. The Main Menu table is cleared (so you don't act on stale rows) and the dialog names the file path and the parser's error message. Common causes:
+
+- **HyperHQ is open and holds an exclusive write lock** — close HyperHQ and click Refresh.
+- **Malformed XML** — usually a stray edit, an unclosed tag, or a Windows BOM in the wrong place. Re-save the file from HyperHQ (which always writes valid XML) and retry.
+- **Truncated mid-write** — the file ends partway through a tag because a previous SpinDoctor / HyperHQ run was killed. Restore from your most recent backup (`spindoctor backup list` → `restore --include databases`) or hand-edit the tail back to a valid `</menu>` close tag.
+
+The Output pane also has the raw parser error if you need to share it.
+
 ### `add-system` reports "no ROMs found, drop ROMs in and re-run"
 
 Either the ROM folder is empty, or the file extensions aren't in SpinDoctor's recognized set for that system. Either drop ROMs in or teach SpinDoctor about a custom extension:

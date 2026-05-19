@@ -5380,6 +5380,29 @@ class _SpinDoctorGUI:
         if self._migrate_preserve_names_var.get():
             args.append("--preserve-names")
         if self._migrate_apply_var.get():
+            keep_source = self._migrate_keep_source_var.get()
+            if keep_source:
+                msg = (
+                    f"Migrate library to:\n{target}\n\n"
+                    "This will copy the selected components to the new "
+                    "drive. The originals stay in place (--keep-source). "
+                    "Reversible by deleting the destination copy.\n\n"
+                    "Continue?"
+                )
+            else:
+                msg = (
+                    f"Migrate library to:\n{target}\n\n"
+                    "This will MOVE the selected components — the "
+                    "originals will be removed from their current "
+                    "location, and config paths will be updated to "
+                    "point at the new drive.\n\n"
+                    "Reversible only via the matching undo manifest "
+                    "(Logs → Browse manifests… → Undo, or "
+                    "`spindoctor migrate --undo`).\n\n"
+                    "Continue?"
+                )
+            if not self.messagebox.askyesno("Migrate library?", msg):
+                return
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -5564,8 +5587,26 @@ class _SpinDoctorGUI:
                 for el in root.findall("game")
                 if (el.get("name") or "").strip()
             ]
-        except Exception as exc:
-            self._append_output(f"Error reading Main Menu.xml: {exc}\n")
+        except Exception as exc:  # noqa: BLE001 — surface every parse error
+            # Reset to an empty Treeview so the user doesn't see stale
+            # rows from the last successful load, then surface the error
+            # in BOTH a modal dialog (so they actually notice) and the
+            # Output pane (so the message is grep-able from the log).
+            self._mm_data = []
+            self._mm_repopulate_tree()
+            self._append_output(
+                f"Error reading Main Menu.xml: {exc}\n"
+                f"  Path: {xml_path}\n"
+            )
+            self.messagebox.showerror(
+                "Main Menu.xml could not be parsed",
+                f"Could not read Main Menu.xml:\n  {xml_path}\n\n"
+                f"{exc}\n\n"
+                "Common causes: the file is open in another editor, the "
+                "XML is malformed (re-save it from HyperHQ if so), or the "
+                "file was truncated mid-write. The Output pane has the "
+                "raw error if you need to share it.",
+            )
             return
         self._mm_repopulate_tree()
         self._append_output(
