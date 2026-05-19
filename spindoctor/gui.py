@@ -790,12 +790,15 @@ class _SpinDoctorGUI:
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
 
         self._build_layout()
-        self._refresh_systems()
-        # Run startup health checks BEFORE setting "Ready." so the
-        # status bar lands on the most informative message — if either
-        # the config is incomplete or the CLI binary is missing, the
-        # user sees that instead of a vacuous "Ready.".
-        self._startup_health_checks()
+        # Defer the system scan and health checks until after the first
+        # paint. They touch disk (HyperSpin databases dir) and spawn a
+        # subprocess (resolve_cli_command), which on a slow NAS or
+        # large library can stall the window for noticeable beats.
+        # Status-bar message keeps the user informed; the work then
+        # populates the system combos and writes the real status when
+        # done. See _initial_scan for the orchestration.
+        self._set_status("Scanning library…")
+        self.root.after_idle(self._initial_scan)
         # 50 ms polling is fast enough to feel real-time without busy-looping.
         # Track the `after` id so _on_close can cancel it; otherwise the
         # callback re-fires on a destroyed root and raises TclError.
@@ -1301,6 +1304,18 @@ class _SpinDoctorGUI:
                 self.root.iconphoto(True, self._icon_photo)
         except self.tk.TclError:
             pass
+
+    def _initial_scan(self) -> None:
+        """Deferred startup work: populate system pickers, run health
+        checks. Runs from ``after_idle`` so the first frame paints
+        immediately; on a slow NAS-mounted library this avoids a
+        multi-second "is it frozen?" beat at launch.
+        """
+        try:
+            self._refresh_systems()
+        except Exception as exc:  # noqa: BLE001 — never let scan errors kill the GUI
+            self._append_output(f"[startup scan] error: {exc}\n")
+        self._startup_health_checks()
 
     def _startup_health_checks(self) -> None:
         """Surface obvious environment problems at first paint.
@@ -5876,12 +5891,25 @@ class _SpinDoctorGUI:
         # "Run fetch-meta on subset" button below chains a per-system
         # invocation. Empty subset = button hidden, normal single/all
         # behaviour applies.
-        self._meta_subset: list[str] = []
+        # Restore the last-picked subset from config so cabinet owners
+        # who refresh "the same 5 systems" don't re-tick every launch.
+        try:
+            _persisted_subset = list(
+                getattr(load_config(), "gui_meta_subset", []) or []
+            )
+        except Exception:  # noqa: BLE001
+            _persisted_subset = []
+        self._meta_subset: list[str] = _persisted_subset
         self.ttk.Button(
             sys_row, text="Pick subset…",
             command=self._pick_meta_subset,
         ).pack(side="left", padx=(10, 6))
-        self._meta_subset_label_var = self.tk.StringVar(value="")
+        self._meta_subset_label_var = self.tk.StringVar(
+            value=(
+                f"{len(self._meta_subset)} system(s) picked"
+                if self._meta_subset else ""
+            )
+        )
         self.ttk.Label(
             sys_row, textvariable=self._meta_subset_label_var,
             foreground=_FG_DIM,
@@ -5899,8 +5927,21 @@ class _SpinDoctorGUI:
         # prompt, so the alternative used to be a frozen subprocess. The
         # unchecked path now passes --skip-ambiguous instead so ambiguous
         # matches are logged and surfaced in the next audit pass rather
-        # than hanging the GUI.
-        self._meta_auto_best_var = self.tk.BooleanVar(value=True)
+        # than hanging the GUI. Hydrated from config so the user's last
+        # choice persists across launches.
+        try:
+            _meta_cfg = load_config()
+            _ab_default = bool(getattr(_meta_cfg, "gui_meta_auto_best", True))
+            _ag_default = bool(getattr(_meta_cfg, "gui_meta_all_games", False))
+            _nc_default = bool(getattr(_meta_cfg, "gui_meta_no_cache", False))
+        except Exception:  # noqa: BLE001
+            _ab_default, _ag_default, _nc_default = True, False, False
+        self._meta_auto_best_var = self.tk.BooleanVar(value=_ab_default)
+        self._meta_auto_best_var.trace_add(
+            "write", lambda *_a: self._persist_meta_pref(
+                "gui_meta_auto_best", self._meta_auto_best_var.get(),
+            ),
+        )
         _meta_ab = self.ttk.Checkbutton(
             meta_frame, text="Auto-pick best match for ambiguous results",
             variable=self._meta_auto_best_var,
@@ -5915,7 +5956,12 @@ class _SpinDoctorGUI:
             "review them later instead of auto-picking.",
             self.tk,
         )
-        self._meta_all_games_var = self.tk.BooleanVar(value=False)
+        self._meta_all_games_var = self.tk.BooleanVar(value=_ag_default)
+        self._meta_all_games_var.trace_add(
+            "write", lambda *_a: self._persist_meta_pref(
+                "gui_meta_all_games", self._meta_all_games_var.get(),
+            ),
+        )
         _meta_ag = self.ttk.Checkbutton(
             meta_frame,
             text="Refresh complete entries too (--all-games)",
@@ -5929,7 +5975,12 @@ class _SpinDoctorGUI:
             "existing metadata (useful when scraper data improves).",
             self.tk,
         )
-        self._meta_no_cache_var = self.tk.BooleanVar(value=False)
+        self._meta_no_cache_var = self.tk.BooleanVar(value=_nc_default)
+        self._meta_no_cache_var.trace_add(
+            "write", lambda *_a: self._persist_meta_pref(
+                "gui_meta_no_cache", self._meta_no_cache_var.get(),
+            ),
+        )
         _meta_nc = self.ttk.Checkbutton(
             meta_frame,
             text="Skip cache, hit the API every game (--no-cache)",
@@ -6460,6 +6511,8 @@ class _SpinDoctorGUI:
                 )
             else:
                 self._meta_subset_label_var.set("")
+            # Persist so the same subset is pre-selected next launch.
+            self._persist_meta_pref("gui_meta_subset", list(picks))
             win.destroy()
 
         self.ttk.Button(btns, text="Select all", command=_select_all).pack(
@@ -6639,10 +6692,26 @@ class _SpinDoctorGUI:
             "Korea", "Brazil", "Australia", "Spain",
             "France", "Germany", "Italy",
         ]
+        # Restore the last-picked region set from config (non-destructive
+        # preference). Empty list = no rows ticked = fall back to
+        # config.region_preferences at run time.
+        try:
+            _persisted_regions = set(
+                getattr(load_config(), "gui_curate_regions", []) or []
+            )
+        except Exception:  # noqa: BLE001
+            _persisted_regions = set()
         self._curate_region_vars: dict[str, "tk_mod.BooleanVar"] = {}  # noqa: F821
         for col, region in enumerate(_CURATE_REGIONS):
-            var = self.tk.BooleanVar(value=False)
+            var = self.tk.BooleanVar(value=region in _persisted_regions)
             self._curate_region_vars[region] = var
+            var.trace_add(
+                "write",
+                lambda *_a: self._persist_meta_pref(
+                    "gui_curate_regions",
+                    [r for r, v in self._curate_region_vars.items() if v.get()],
+                ),
+            )
             self.ttk.Checkbutton(
                 cur_regions_grid, text=region, variable=var,
             ).grid(row=0, column=col, sticky="w", padx=(0, 6))
@@ -9089,6 +9158,21 @@ class _SpinDoctorGUI:
                 return
         self._find_cursor = (self._find_cursor - 1) % len(self._find_matches)
         self._highlight_current_match()
+
+    def _persist_meta_pref(self, key: str, value) -> None:
+        """Save a non-destructive GUI preference back into config.json.
+
+        Wraps the load → setattr → save sequence with broad error
+        suppression: persistence failure must never disrupt the user's
+        workflow. Used by tabs that persist UI state (system pickers,
+        non-destructive checkboxes).
+        """
+        try:
+            cfg = load_config()
+            setattr(cfg, key, value)
+            save_config(cfg)
+        except Exception:  # noqa: BLE001 — best-effort save
+            pass
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)

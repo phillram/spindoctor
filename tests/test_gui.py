@@ -1530,3 +1530,81 @@ def test_run_pc_rename_validates_system_picked(monkeypatch):
         assert flashed and "system" in flashed[0].lower()
     finally:
         app.root.destroy()
+
+
+# ─── PR D: async startup + persistent non-destructive selections ─────────────
+
+
+def test_initial_scan_runs_refresh_and_health_checks(monkeypatch):
+    """The startup work that used to run synchronously must still run —
+    just deferred behind after_idle so the window paints first."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        calls: list[str] = []
+        monkeypatch.setattr(app, "_refresh_systems", lambda *a, **k: calls.append("refresh"))
+        monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
+        app._initial_scan()
+        assert calls == ["refresh", "health"]
+    finally:
+        app.root.destroy()
+
+
+def test_initial_scan_swallows_refresh_exception_but_still_runs_health(monkeypatch):
+    """A library scan exception must not prevent the health pass."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        calls: list[str] = []
+
+        def _boom(*_a, **_k):
+            calls.append("refresh-boom")
+            raise OSError("simulated NAS timeout")
+
+        monkeypatch.setattr(app, "_refresh_systems", _boom)
+        monkeypatch.setattr(app, "_startup_health_checks", lambda: calls.append("health"))
+        app._initial_scan()
+        assert calls == ["refresh-boom", "health"]
+    finally:
+        app.root.destroy()
+
+
+def test_persist_meta_pref_writes_to_config(monkeypatch, tmp_path):
+    """_persist_meta_pref must round-trip a value through save_config."""
+    from spindoctor import config as cfg_mod
+    from spindoctor import gui as gui_mod
+
+    cfg_dir = tmp_path / ".spindoctor"
+    cfg_file = cfg_dir / "config.json"
+    monkeypatch.setattr(cfg_mod, "CONFIG_DIR", cfg_dir)
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", cfg_file)
+    monkeypatch.setattr(gui_mod, "CONFIG_FILE", cfg_file)
+    cfg_mod.reset_override_cache()
+    try:
+        app, _tk = _build_gui_for_test(monkeypatch)
+        try:
+            app._persist_meta_pref("gui_meta_auto_best", False)
+            cfg = cfg_mod.load_config()
+            assert cfg.gui_meta_auto_best is False
+
+            app._persist_meta_pref("gui_meta_subset", ["MAME", "SNES"])
+            cfg = cfg_mod.load_config()
+            assert cfg.gui_meta_subset == ["MAME", "SNES"]
+        finally:
+            app.root.destroy()
+    finally:
+        cfg_mod.reset_override_cache()
+
+
+def test_persist_meta_pref_swallows_save_errors(monkeypatch):
+    """Persistence failure must never disrupt the user's workflow."""
+    from spindoctor import gui as gui_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        def _boom(_cfg):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(gui_mod, "save_config", _boom)
+        # Must NOT raise.
+        app._persist_meta_pref("gui_meta_auto_best", False)
+    finally:
+        app.root.destroy()
