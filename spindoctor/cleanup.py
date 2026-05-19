@@ -22,7 +22,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
+from ._utils import format_bytes as _format_bytes
 from .config import CONFIG_DIR, Config
+
+# Public re-export — historical callers say `from .cleanup import format_size`.
+# Keep that surface stable; the implementation now lives in `_utils.format_bytes`.
+format_size = _format_bytes
 
 
 # ─── data model ───────────────────────────────────────────────────────────────
@@ -389,13 +394,5 @@ def prune_empty_dirs(roots: Iterable[Path]) -> int:
     return pruned
 
 
-def format_size(num_bytes: int) -> str:
-    """Render bytes as a short human string ('1.4 MB')."""
-    size = float(num_bytes)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if size < 1024 or unit == "TB":
-            if unit == "B":
-                return f"{int(size)} {unit}"
-            return f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{num_bytes} B"
+# `format_size` is re-exported at the top of this module from
+# `spindoctor._utils.format_bytes` — same implementation, single source.

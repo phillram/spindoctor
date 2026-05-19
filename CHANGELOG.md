@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Internal
+
+- **Shared `spindoctor._utils` module.** `format_bytes` (formerly duplicated in `backup.py` and `migrate.py`) and `free_bytes` (formerly duplicated in the same two modules) now live in `spindoctor._utils`. The byte formatter also subsumes `cleanup.format_size`, which is now an alias for `format_bytes`. Each owning module re-exports the helpers so existing callers like `from .backup import format_bytes` and `from .cleanup import format_size` keep working unchanged.
+- **Dead code removed.** Deleted `cli._backup_format_includes` (defined but never called), the unused `import shutil` in `self_doctor.py`, and the unused `import pytest` in `tests/test_errors.py`. Ruff is now clean across `spindoctor/` and `tests/`.
+
 ### Tests
 
 - **CliRunner smoke pass for 12 read-only / dry-run-by-default CLI commands.** New `tests/test_cli_read_only_smoke.py` exercises `audit`, `inspect`, `find-dupes`, `lint`, `find-orphan-media`, `cleanup audit`, `report` (summary + CSV), `doctor`, `tools-audit`, `systems`, plus dry-run gates for `update-db` and `add-system`. Closes the gap the 2.0 audit flagged — 60+ commands had zero end-to-end CLI coverage; the most-used diagnostic and database-mutating commands now have plumbing-level pins so an import error or option-parsing regression fails CI at PR time instead of on a user's cabinet. Per-command behaviour is still covered by the dedicated library-layer tests; this file's job is the CLI plumbing.

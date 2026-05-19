@@ -31,6 +31,11 @@ from typing import Iterable, Optional
 
 from .fileinfo import _dir_size
 
+# Byte-formatting and free-space helpers live in `_utils` so they can
+# be shared across backup / migrate / cleanup without three copies of
+# the same 6-line loop. Re-exported here so callers like
+# `from .backup import format_bytes` keep working unchanged.
+from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config
 
 
@@ -225,26 +230,10 @@ def normalize_components(values: Iterable[str]) -> list[str]:
     return out
 
 
-def free_bytes(path: Path) -> int:
-    """Return free space in bytes at *path* (or its nearest existing parent)."""
-    p = path
-    while not p.exists():
-        if p.parent == p:
-            break
-        p = p.parent
-    try:
-        return shutil.disk_usage(str(p)).free
-    except OSError:
-        return 0
-
-
-def format_bytes(n: int) -> str:
-    n = float(n)
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
-            return f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
+# `free_bytes` and `format_bytes` live in `spindoctor._utils` — see the
+# import at the top of this module. They used to be defined here as
+# part of three copy-paste pairs (backup / migrate / cleanup); the
+# shared helper deduplicates them without churning call sites.
 
 
 # ─── planning ─────────────────────────────────────────────────────────────────

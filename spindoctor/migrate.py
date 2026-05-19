@@ -29,6 +29,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config, load_config, save_config
 from .fileinfo import _dir_size
 
@@ -272,19 +273,6 @@ def _plan_roms_per_system(
 # ─── apply ────────────────────────────────────────────────────────────────────
 
 
-def free_bytes(path: Path) -> int:
-    """Return free space in bytes at *path* (or its nearest existing parent)."""
-    p = path
-    while not p.exists():
-        if p.parent == p:
-            break
-        p = p.parent
-    try:
-        return shutil.disk_usage(str(p)).free
-    except OSError:
-        return 0
-
-
 def _sha1(path: Path, chunk: int = 1024 * 1024) -> str:
     h = hashlib.sha1()
     with path.open("rb") as f:
@@ -489,12 +477,5 @@ def find_latest_manifest() -> Optional[Path]:
     return manifests[-1] if manifests else None
 
 
-# ─── pretty-printing helper ───────────────────────────────────────────────────
-
-
-def format_bytes(n: int) -> str:
-    for unit in ("B", "KB", "MB", "GB", "TB"):
-        if n < 1024 or unit == "TB":
-            return f"{n:.1f} {unit}" if unit != "B" else f"{n} {unit}"
-        n /= 1024
-    return f"{n:.1f} TB"
+# `format_bytes` is re-exported from `spindoctor._utils` via the import
+# at the top of this module — see the matching note in `backup.py`.
