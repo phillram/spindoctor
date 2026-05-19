@@ -2627,9 +2627,10 @@ class _SpinDoctorGUI:
                     or "https://github.com/phillram/spindoctor/releases/latest",
                 )
         else:
-            self.messagebox.showinfo(
-                "Up to date",
-                f"{__app_name__} {result.current} is the latest release.",
+            # "You're on the latest version" doesn't need a click-through
+            # — the status bar conveys it just as well.
+            self._flash_status(
+                f"{__app_name__} {result.current} is the latest release."
             )
 
     def _open_url(self, url: str) -> None:
@@ -3955,10 +3956,9 @@ class _SpinDoctorGUI:
         """
         path = var.get().strip()
         if not path:
-            self.messagebox.showinfo(
-                "Nothing to open",
-                f"The {key} field is empty. Use Browse… to pick a path "
-                "first, or type one in.",
+            self._flash_validation(
+                f"The {key} field is empty — use Browse… or type a "
+                "path first."
             )
             return
         target = Path(path)
@@ -4098,7 +4098,7 @@ class _SpinDoctorGUI:
         self._append_output(f"Saved {CONFIG_FILE}\n")
         if ok:
             self._append_output("Config validates. Try the Wheels or Audit tabs next.\n")
-            self.messagebox.showinfo("Saved", "Configuration saved.")
+            self._flash_status("Configuration saved.")
         else:
             for err in errors:
                 self._append_output(f"  ! {err}\n")
@@ -4886,9 +4886,8 @@ class _SpinDoctorGUI:
             reverse=True,
         )
         if not folders:
-            self.messagebox.showinfo(
-                "No backups found",
-                f"No '{BACKUP_DIR_PREFIX}*' folders in {target_path}.",
+            self._flash_validation(
+                f"No '{BACKUP_DIR_PREFIX}*' folders in {target_path}."
             )
             return
         self._backup_restore_combo["values"] = folders
@@ -5610,8 +5609,7 @@ class _SpinDoctorGUI:
 
     def _mm_save_succeeded(self, xml_path) -> None:
         self._append_output(f"Main Menu order saved to {xml_path}\n")
-        self._set_status(f"Saved {xml_path.name}.")
-        self.messagebox.showinfo("Saved", "Main Menu order saved.")
+        self._flash_status(f"Saved {xml_path.name}.")
 
     def _mm_save_failed(self, msg: str) -> None:
         self._set_status("Save failed.")
@@ -6330,10 +6328,9 @@ class _SpinDoctorGUI:
         only the first one produced useful output.
         """
         if not self._meta_subset:
-            self.messagebox.showinfo(
-                "No subset picked",
-                "Click 'Pick subset…' above and tick the systems you "
-                "want to refresh, then try again.",
+            self._flash_validation(
+                "No subset picked — click 'Pick subset…' first, then "
+                "try again."
             )
             return
 
@@ -6396,10 +6393,8 @@ class _SpinDoctorGUI:
             )
             return
         if not systems:
-            self.messagebox.showinfo(
-                "No systems",
-                "Configure the Setup tab first — no systems were "
-                "found under your roms_dir / hyperspin_dir.",
+            self._flash_validation(
+                "No systems found — configure the Setup tab first."
             )
             return
 
@@ -6929,12 +6924,22 @@ class _SpinDoctorGUI:
                     "ALL systems" if self._curate_all_var.get()
                     else self._curate_system_var.get()
                 )
+                # Final-confirmation dialog. This is the ONLY destructive
+                # confirm — the Apply checkbox is "I want to do this for
+                # real" and Run is "execute"; this dialog is the last
+                # gate before files are permanently removed (no undo for
+                # delete-mode curate). Kept blunt and short so users who
+                # already meant it can confirm fast.
                 if not self.messagebox.askyesno(
-                    "Permanently delete ROMs?",
-                    f"Action is set to delete with Apply enabled.\n\n"
-                    f"Duplicate ROMs for {system_label} will be permanently "
-                    "removed from disk and cannot be recovered.\n\n"
-                    "Are you sure you want to continue?",
+                    "Permanently delete duplicate ROMs?",
+                    f"Targeting: {system_label}\n"
+                    f"Regions kept: {regions or 'config default'}\n"
+                    f"Revision preference: {self._curate_revision_var.get()}\n\n"
+                    "All ROMs flagged for retirement will be permanently "
+                    "DELETED from disk — there is no undo for delete "
+                    "mode. (Use action=archive instead if you want a "
+                    "reversible operation.)\n\n"
+                    "Proceed?",
                 ):
                     return
                 args.append("--yes")
@@ -6966,13 +6971,10 @@ class _SpinDoctorGUI:
         # Multi-system preview is unwieldy in a single tree and the
         # scan can take minutes. Force one-system-at-a-time here.
         if self._curate_all_var.get():
-            self.messagebox.showinfo(
-                "Pick one system",
-                "The interactive preview only handles one system at a "
-                "time — multi-system would be too slow and too tall a "
-                "tree to navigate. Untick 'All systems' and pick a "
-                "specific system, or use the non-interactive Run "
-                "curate button for a multi-system pass.",
+            self._flash_validation(
+                "Preview handles one system at a time — untick "
+                "'All systems' and pick a specific one (or use Run "
+                "curate for a multi-system pass)."
             )
             return
         system = self._curate_system_var.get().strip()
@@ -7173,11 +7175,10 @@ class _SpinDoctorGUI:
                 retain.setdefault(g_idx, []).append(retire_path)
 
         if not retain:
-            self.messagebox.showinfo(
-                "Nothing to apply",
-                "Every retirement is unchecked — nothing to do. Toggle "
-                "some rows back to "
-                f"{self._CURATE_RETIRE_GLYPH} and try again.",
+            self._flash_validation(
+                "Nothing to apply — every retirement is unchecked. "
+                f"Toggle some rows back to {self._CURATE_RETIRE_GLYPH} "
+                "and try again."
             )
             return
 
@@ -7426,10 +7427,9 @@ class _SpinDoctorGUI:
         def remove_selected() -> None:
             selection = listbox.curselection()
             if not selection:
-                self.messagebox.showinfo(
-                    "Nothing selected",
-                    "Click one or more entries in the list first "
-                    "(Ctrl/Shift-click for multi-select).",
+                self._flash_validation(
+                    "Nothing selected — click one or more entries "
+                    "first (Ctrl/Shift-click for multi-select)."
                 )
                 return
             target = picked_system()
@@ -7863,10 +7863,9 @@ class _SpinDoctorGUI:
             args += ["--emulator", emu]
         # No field provided beyond the system name? Bail with a hint.
         if len(args) == 4:
-            self.messagebox.showinfo(
-                "Nothing to save",
-                "Fill in at least one field before saving — the "
-                "CLI only touches keys you provide.",
+            self._flash_validation(
+                "Nothing to save — fill in at least one field first "
+                "(only the keys you provide get written)."
             )
             return
         self._run_cli("spindoctor", args)
@@ -8439,7 +8438,7 @@ class _SpinDoctorGUI:
             self.messagebox.showerror("Could not remove task", str(exc))
             return
         self._append_output(f"\n[Task Scheduler] removed task.\n{output}\n")
-        self.messagebox.showinfo("Removed", "Auto-refresh task deleted.")
+        self._flash_status("Auto-refresh task deleted.")
 
     def _check_autorefresh(self) -> None:
         from . import autostart
@@ -8453,7 +8452,7 @@ class _SpinDoctorGUI:
             f"{'REGISTERED' if exists else 'not registered'}."
         )
         self._append_output(f"\n[Task Scheduler] {msg}\n")
-        self.messagebox.showinfo("Auto-refresh status", msg)
+        self._flash_status(msg)
 
     # ── Custom command tab ────────────────────────────────────────────────────
 
@@ -8500,7 +8499,7 @@ class _SpinDoctorGUI:
     def _run_custom(self) -> None:
         raw = self._custom_var.get().strip()
         if not raw:
-            self.messagebox.showinfo("Nothing to run", "Type some arguments first.")
+            self._flash_validation("Type some arguments first.")
             return
         # Catch unfilled `<PLACEHOLDER>` tokens before we shell out — the
         # CLI would just complain about a literal "<SYSTEM>" path which is
@@ -9049,6 +9048,40 @@ class _SpinDoctorGUI:
 
     def _set_status(self, text: str) -> None:
         self._status_var.set(text)
+
+    def _flash_validation(self, text: str) -> None:
+        """Status-bar variant of `_flash_status` for "click again with X
+        filled in" prompts. Adds an audible bell so the user notices
+        the bottom-of-window status update even when they're focused
+        on a form widget at the top of the window.
+        """
+        try:
+            self.root.bell()
+        except Exception:  # noqa: BLE001 — silent terminals are fine
+            pass
+        self._flash_status(text)
+
+    def _flash_status(self, text: str, *, revert_after_ms: int = 6000) -> None:
+        """Show a transient status-bar message that reverts to "Ready." after a few seconds.
+
+        Used in place of `messagebox.showinfo` for routine outcomes
+        ("Saved", "Removed", "Up to date") so the user isn't forced to
+        click through a dialog for normal happy-path work. Reverts to
+        the standard "Ready." idle text after `revert_after_ms` so the
+        bar doesn't get stuck on the last operation's name.
+        """
+        self._set_status(text)
+        token = object()
+        self._flash_token = token
+
+        def revert():
+            if getattr(self, "_flash_token", None) is token:
+                self._set_status("Ready.")
+
+        try:
+            self.root.after(revert_after_ms, revert)
+        except Exception:  # noqa: BLE001 — Tk teardown or no main loop
+            pass
 
     def _set_tab_badge(self, idx: int, badge: str) -> None:
         """Stamp the run-progress glyph (⟳/✓/✗) on a tab (main thread only)."""

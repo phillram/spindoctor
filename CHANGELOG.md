@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **GUI: routine success / validation popups demoted to the status bar.** Cabinet owners hit `messagebox.showinfo` modals constantly during normal use — "Saved", "Auto-refresh task deleted", "Up to date", "No subset picked", "Nothing to apply", "Nothing selected", etc. These now use a new `_flash_status` helper (writes to the status bar, auto-reverts to "Ready." after 6 s) for success outcomes, and `_flash_validation` (status + an audible bell) for "fill in the field first" prompts. Multi-line dialogs that convey real result info (Preflight passed, Curate done with manifest, Scheduled with reboot instructions) stay as modals. Net: ~10 unnecessary click-throughs eliminated from a typical session.
+- **GUI: Curate delete confirmation dialog rewritten for clarity.** The final destructive-confirm now includes the target system, the regions kept, and the revision preference so the user can re-verify their intent at a glance — and the wording explicitly notes there is no undo for delete mode and points at archive mode as the reversible alternative.
 - **First-run wizard is now opt-in.** The wizard no longer auto-opens at GUI launch — it's available from a new **Setup tab → Run first-run wizard…** button and from the existing **Help → First-run setup…** menu item. Cabinet owners who already approved the upgrade by launching the binary don't need a modal between them and the Setup tab; the existing startup health-check status-bar message already surfaces missing-config problems. The `first_run_complete` config field is removed (no longer needed for auto-fire gating); pre-existing configs with the key set are silently ignored.
 
 ### Removed
