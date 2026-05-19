@@ -393,6 +393,31 @@ def apply_migration(
         # is more likely to lose data than help. `_ = current_src`
         # silences the unused-name complaint without forcing a refactor.
         _ = current_src
+        # Persist a partial manifest for the moves that DID complete
+        # so `migrate --undo` can still reverse them. In move-mode the
+        # source folders have been destroyed; without a manifest the
+        # only path back is rebuilding by hand. Update config for any
+        # completed moves too, otherwise the config still points at the
+        # (now-empty) old locations.
+        if applied:
+            try:
+                if (
+                    update_config
+                    and not keep_source
+                    and plan.config_updates
+                ):
+                    applied_dests = {m.dest for m in applied}
+                    cfg = load_config()
+                    for key, new_path in plan.config_updates.items():
+                        if new_path in applied_dests:
+                            setattr(cfg, key, new_path)
+                    save_config(cfg)
+            except OSError:
+                pass
+            try:
+                _write_manifest(plan, applied, cfg_before, keep_source)
+            except OSError:
+                pass
         raise
 
     if update_config and not keep_source and plan.config_updates:
