@@ -33,6 +33,8 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 
 The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the three standalone wheel binaries on Windows) for every command. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
 
+**Single-instance lock.** The GUI takes an OS-level file lock at `~/.spindoctor/gui.lock` on startup. Launching a second `spindoctor-gui` on the same machine will show a warning and exit cleanly — two GUIs editing the same HyperSpin XML simultaneously can corrupt the library, so the second instance refuses to start by default. If you genuinely need two windows open (comparing two cabinet configs on one box, for example) set `SPINDOCTOR_DISABLE_SINGLETON=1` in your environment before launching — you're then responsible for not running destructive operations from both. The lock file is released automatically when the process exits, so a crash never poisons future launches.
+
 ## First-run wizard
 
 On the very first launch (no `config.json`, or saved config still has the placeholder `D:\…` defaults), a three-step modal opens:
@@ -192,9 +194,11 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **File → Browse HyperSpin themes…** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
 - **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel. State persists across restarts via the `output_visible` config key.
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
-- **Help → First-run setup…** — re-opens the first-run wizard manually.
-- **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG.
+- **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
+- **Help → What's new** — one-shot dialog with the highlights of the current SpinDoctor version, plus a button to open the full CHANGELOG. Fires automatically on first launch after an upgrade (tracked via the `last_seen_version` config field) and any time from the menu after that. Suppressed on fresh installs — the first-run wizard owns that conversation.
+- **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
 - **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download…** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
+- **Help → First-run setup…** — re-opens the first-run wizard manually.
 
 ## Keyboard shortcuts
 
@@ -204,8 +208,12 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 | `Ctrl+F` | Open the Output-panel find bar (see below). |
 | `Ctrl+Shift+F` | Toggle the system quick-filter bar (see below). |
 | `Ctrl+`` ` `` | Show / hide the bottom Output panel. |
-| `Ctrl++` / `Ctrl+-` | Step UI scale by 0.1. |
+| `Ctrl++` / `Ctrl+=` | Zoom in (step UI scale by +0.1). Both keys are bound. |
+| `Ctrl+-` | Zoom out (step UI scale by -0.1). |
 | `Ctrl+0` | Reset UI scale to 1.0×. |
+| `Esc` | Close any open dialog (About, What's new, Keyboard shortcuts, find bar, etc.). |
+
+The same table is reachable in-app via **Help → Keyboard shortcuts**.
 
 ## Find bar
 
@@ -242,3 +250,11 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 ## Stopping a long-running command
 
 The **Stop** button in the bottom-right of the window terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
+
+Interrupting a long-running `backup`, `migrate`, or `curate` operation is safe — the CLI cleans up the in-flight component and writes a *partial manifest* of whatever finished before it died. That means:
+
+- An interrupted **backup** still shows up in the Restore picker, and you can replay it like any other backup. Only the partially-copied component is missing.
+- An interrupted **move-mode migrate** is reversible via `Logs → Browse manifests… → Undo`. The completed moves are recorded; the source folders that were already migrated can be put back. (Move-mode is the one operation where Stop without this safety net would be unrecoverable, since the source is destroyed during the move.)
+- An interrupted **curate** in archive mode is reversible the same way — files moved to `_retired/` before the interrupt are recorded in the partial manifest.
+
+Stopping does not roll back work already committed — a manifest exists so that *you* can roll it back if you choose to.
