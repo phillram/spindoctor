@@ -114,6 +114,23 @@ class Config:
     # default geometry"; a negative tab index disables restore.
     gui_window_geometry: str = ""
     gui_last_active_tab: int = -1
+    # Last-selected system per tab, keyed by tab label. Saved when the
+    # user changes a combobox; restored on the next launch so cabinet
+    # owners who live in a few systems don't re-pick every session.
+    # Apply checkboxes are deliberately NOT persisted — they control
+    # destructive ops and must always be re-armed by the user.
+    gui_last_systems: dict[str, str] = field(default_factory=dict)
+    # User-chosen ScreenScraper region preferences for the Curate tab.
+    # Restored on next launch; empty list falls back to top-level
+    # region_preferences. Action mode (archive/delete) is NOT persisted.
+    gui_curate_regions: list[str] = field(default_factory=list)
+    # Last picked subset of systems for the Metadata & Media tab's
+    # multi-system fetch-meta selector. Restored on next launch.
+    gui_meta_subset: list[str] = field(default_factory=list)
+    # Fetch-meta preferences (non-destructive — Apply tick is not here).
+    gui_meta_auto_best: bool = True
+    gui_meta_all_games: bool = False
+    gui_meta_no_cache: bool = False
 
     # LEDBlinky default per-button color palette (hex RGB strings)
     ledblinky_default_colors: dict[str, str] = field(
