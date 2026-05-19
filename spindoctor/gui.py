@@ -2944,8 +2944,8 @@ class _SpinDoctorGUI:
                 "No undo for this category",
                 f"Undo isn't wired up for the '{dirname}' manifest "
                 "type. Open the file in your editor and reverse the "
-                "changes manually, or check `spindoctor --help` for "
-                "command-specific options.",
+                "changes manually, or see Help → About for where to "
+                "find the documentation.",
             )
             return
         if not recipe["uses_path"] and not is_most_recent:
@@ -3736,8 +3736,9 @@ class _SpinDoctorGUI:
     def _build_setup_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
         intro_text = (
-            "Point SpinDoctor at your library. These map 1:1 to "
-            f"`spindoctor config init`. Saves to {CONFIG_FILE}."
+            "Point SpinDoctor at your library — fill in the paths below "
+            "and click Save. Settings are stored automatically and you "
+            "can come back to change them any time."
         )
         if getattr(self, "_dnd_available", False):
             intro_text += (
@@ -3799,8 +3800,8 @@ class _SpinDoctorGUI:
         ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.ttk.Label(
             frame,
-            text=("Used by `spindoctor fetch-meta` and `spindoctor fetch-media`. "
-                  "Leave blank if you don't use those commands."),
+            text=("Used by the Metadata & Media tab to fetch artwork, "
+                  "videos, and metadata. Leave blank if you don't need them."),
             wraplength=780, justify="left",
         ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
@@ -7099,8 +7100,8 @@ class _SpinDoctorGUI:
                 f"Archive {sum(len(g.retire) for g in filtered)} ROM "
                 f"file(s) across {len(filtered)} title(s) under "
                 f"<roms_dir>/{system}/_retired/?\n\n"
-                "Reversible via Logs & Manifests viewer → Undo this run, "
-                "or `spindoctor curate --undo`.",
+                "Reversible: open the Logs tab → Browse manifests / undo… "
+                "and pick the run you want to reverse.",
             ):
                 return
 
