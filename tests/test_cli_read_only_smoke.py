@@ -317,3 +317,51 @@ def test_fetch_meta_skip_ambiguous_flag_is_registered():
     result = runner.invoke(cli, ["fetch-meta", "--help"])
     assert result.exit_code == 0, result.output
     assert "--skip-ambiguous" in result.output
+
+
+def test_add_pc_system_no_interactive_flag_is_registered():
+    """add-pc-system --no-interactive must exist so the GUI can avoid
+    the input() prompt in pc_titles.review_titles."""
+    from click.testing import CliRunner
+    from spindoctor.cli import cli
+
+    result = CliRunner().invoke(cli, ["add-pc-system", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--no-interactive" in result.output
+
+
+def test_pc_rename_no_interactive_flag_is_registered():
+    from click.testing import CliRunner
+    from spindoctor.cli import cli
+
+    result = CliRunner().invoke(cli, ["pc-rename", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--no-interactive" in result.output
+
+
+def test_fetch_media_skip_ambiguous_flag_is_registered():
+    from click.testing import CliRunner
+    from spindoctor.cli import cli
+
+    result = CliRunner().invoke(cli, ["fetch-media", "--help"])
+    assert result.exit_code == 0, result.output
+    assert "--skip-ambiguous" in result.output
+
+
+def test_matcher_choose_match_skip_ambiguous_returns_none():
+    """choose_match(skip_ambiguous=True) must return None for ambiguous
+    candidate lists rather than auto-picking or prompting."""
+    from spindoctor.matcher import choose_match
+    from spindoctor.scraper import GameMetadata
+
+    cands = [
+        GameMetadata(name="Game A", source_id="1", match_score=0.9),
+        GameMetadata(name="Game B", source_id="2", match_score=0.8),
+    ]
+    # Cache empty (system name unlikely to collide with anything real)
+    result = choose_match(
+        "Ambiguous ROM Name (xyz)", cands,
+        "TestSystemForSkipAmbiguousFlag",
+        skip_ambiguous=True,
+    )
+    assert result is None

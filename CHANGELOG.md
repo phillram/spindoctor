@@ -6,9 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **CLI: `add-pc-system --no-interactive` and `pc-rename --no-interactive`.** Auto-accept every proposed title without prompting. Required from non-TTY contexts (the GUI uses it by default when adding a PC system, where the interactive `input()` review path would otherwise hang the subprocess).
+- **CLI: `fetch-media --skip-ambiguous`.** Mirrors `fetch-meta --skip-ambiguous`. When a media slot has multiple candidates, skip it instead of either prompting (`--pick-media`) or auto-picking. Cron / CI users now have a no-block escape for the per-media-slot picker.
+- **`matcher.choose_match(skip_ambiguous=True)`** and **`matcher.pick_media(skip_ambiguous=True)`** library kwargs. Public API for callers that need the no-prompt no-auto-pick behaviour (returns `None` for ambiguous candidate lists).
+
 ### Changed
 
 - **First-run wizard is now opt-in.** The wizard no longer auto-opens at GUI launch — it's available from a new **Setup tab → Run first-run wizard…** button and from the existing **Help → First-run setup…** menu item. Cabinet owners who already approved the upgrade by launching the binary don't need a modal between them and the Setup tab; the existing startup health-check status-bar message already surfaces missing-config problems. The `first_run_complete` config field is removed (no longer needed for auto-fire gating); pre-existing configs with the key set are silently ignored.
+
+### Fixed
+
+- **GUI `add-pc-system` no longer hangs on the title-review `input()` prompt.** The Systems tab's "Run add-pc-system" button now always passes `--no-interactive` so the subprocess auto-accepts every proposed title. Users who want to curate titles can run `spindoctor pc-rename <system>` from a terminal.
 
 ### Removed
 

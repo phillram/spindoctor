@@ -392,6 +392,7 @@ class MediaDownloader:
         dest: Path,
         *,
         interactive: bool = True,
+        skip_ambiguous: bool = False,
         overwrite: bool = False,
     ) -> DownloadResult:
         """Pick a candidate (interactive if needed) and download it to *dest*.
@@ -399,6 +400,10 @@ class MediaDownloader:
         Designed for both per-game and system-level media: caller computes the
         destination path (via ``media_path`` or ``system_media_path``) and
         passes the candidate list from ScreenScraper.
+
+        ``skip_ambiguous`` returns a "skipped by user" result when there are
+        multiple candidates, instead of either prompting or auto-picking.
+        Used by non-TTY callers (GUI subprocesses, cron, CI).
 
         Returns a DownloadResult.  When the user skips, returns a skipped
         result with ``error`` set to "skipped by user".
@@ -412,6 +417,7 @@ class MediaDownloader:
         chosen = pick_media(
             item_name, media_type, candidates, system_name,
             interactive=interactive,
+            skip_ambiguous=skip_ambiguous,
             previewer=(self.preview_candidate if interactive else None),
         )
         if chosen is None:
