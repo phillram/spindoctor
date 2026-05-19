@@ -16,6 +16,8 @@ Standalone `.exe` files for cabinets that can't (or shouldn't) install Python. D
 - [Updating](#updating)
 - [Troubleshooting](#troubleshooting)
 - [Building from source](#building-from-source)
+- [GUI walkthrough](gui.md) (tab tour, menubar, shortcuts, dark mode)
+- [Migrating from 1.x](migrating-from-1.x.md)
 
 ---
 
@@ -120,7 +122,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 tabs that cover essentially the entire CLI surface, a `File` / `Help` menubar, and a shared output panel that streams subprocess output as commands run. Every tab scrolls vertically with an always-visible scrollbar, so cabinet owners on smaller screens (1024×768 / 1280×720) can still reach widgets that overflow. The divider between the tab area and the output panel is a draggable sash — drag it up to give the output panel more room, down to give the tabs more room.
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
 > ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
 >
@@ -128,92 +130,13 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all five files in the same folder; the GUI does not require `PATH` to be configured.
 
-### Tab tour
+**For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
-**Setup** — every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run). Each row has a Browse button that opens a native folder picker. Below the path fields, a **Scraper credentials** section stores your ScreenScraper username, ScreenScraper password, and TheGamesDB API key — password and key fields are masked (`***`). Click **Save configuration** to validate and write everything to `config.json` in one step. Equivalent to `spindoctor config init`.
+### Tab tour, menubar, shortcuts, dry-run feedback, dark mode
+
+All moved to the platform-neutral [GUI walkthrough](gui.md). The same window ships on Windows binary, pip, and source installs; documenting it once and linking from each route is clearer than three near-duplicate copies.
 
 > ![Setup tab populated with cabinet paths](images/gui-launcher-setup-tab.png)
-
-**Wheels** — Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels in sequence, showing "Step N/3: &lt;wheel&gt;…" in the status bar as it goes. Untick any you don't need, or leave all three ticked to chain them all. Below is a HyperSpin integration explainer (Most Played auto-registers in the Main Menu, Favorites and Recently Played do not, none auto-fire on cabinet startup) plus two helpers: **Add wheels to Main Menu** (chains `mainmenu add Favorites/Recently Played/Most Played --apply`) and **Install Tools-menu helpers** (a shortcut into the Tools tab's `install-tools` action). Equivalent to `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
-
-> ![Wheels tab — three checkboxes (Favorites / Recently Played / Most Played) plus a Refresh selected button](images/gui-launcher-wheels-tab.png)
-
-**Main Menu** — reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility. Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag — the status bar reports if nothing is selected or a row is already at the boundary. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. Equivalent to the `spindoctor mainmenu *` subcommand group.
-
-**Audit & Doctor** — pick a system from the dropdown to run a per-system audit, or click Run doctor / Tools audit / Audit all systems for library-wide checks. None of these write to disk. A **Reload list** button refreshes the system dropdown from disk and writes "Reloaded N system(s)." to the status bar (or a hint to check Setup paths if none are found). Equivalent to `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`. **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` in Explorer (Finder / xdg-open on macOS / Linux) — useful when an audit row reports "missing wheel" or "wrong title" and you want to eyeball the offending folder.
-
-> ![Audit & Doctor tab with the system dropdown expanded](images/gui-launcher-audit-tab.png)
-
-**Diagnose** — one-click read-only inspectors that don't change anything on disk: Find duplicate ROMs, Find misplaced ROMs, Find orphan media, Check disc-set consistency, Lint, Generate report, Preview HyperSpin XML, Stats. Each button writes "Scan complete — see output for results." to the status bar when it finishes (or a brief error note on failure), so fast scans don't feel silent. Plus a Global Search box (`spindoctor find-global`) and a Verify-against-DAT mini-form (`spindoctor verify --system X --dat …`).
-
-**Metadata & Media** — fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top (pre-populated from detected systems, or "All systems" toggle) plus an Apply checkbox; below, four sections wrap `fetch-meta` (with `--auto-best` / `--all-games`), `fetch-media` (media-type checkboxes — wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background, plus `--overwrite`), `media-scan` (source-folder picker + copy/move/link action), and `update-db` (with `--remove-orphans` / `--strip-variant-tags`). A **Full metadata refresh** button at the bottom chains all three fetch/update steps in sequence, showing "Step N/3: &lt;command&gt;…" in the status bar and "Full metadata refresh complete." when all three finish. A separate `generate-config` button regenerates the HyperSpin Main Menu + RocketLauncher INIs from the current config.
-
-**Curate** — thin out region/revision duplicates, prune library caches, and manage ignore lists. Three sections: **Curate region/revision variants** wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, --include-proto, archive vs delete with an inline hint explaining archive is reversible and delete is permanent, dry-run by default) plus Undo, List manifests, and a **Preview (interactive)…** button that opens a Toplevel with a `☑/☐` per-row keep/skip toggle — a legend below the table explains the glyphs — so you can veto specific retirements before committing. Choosing delete + Apply shows a confirmation dialog naming the target system before anything is removed. **Cache cleanup** shows 13 per-category checkboxes: the 9 safe caches (Scraper API responses, Match decisions, Media picker decisions, PC/Steam title confirmations, MAME -listxml cache, Preview thumbnails, Interrupted downloads, Misplaced-ROM reports, Audit CSV exports) are pre-checked; the 4 unsafe categories (Migration undo manifests, Restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) are unchecked with a warning that selecting them removes recovery options. An "Older than (days, 0 = any age)" spinbox defaults to 30; a Reset to defaults button restores the pre-checked state. An **Audit caches** button shows disk usage before you commit. **Ignore list** wires up `ignore add / remove / list` with system dropdown + game-name fields, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and a multi-select listbox. Removing entries writes "Removed N entry/entries from '&lt;system&gt;'." to the status bar.
-
-**Systems** — add or rename HyperSpin systems. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. **Rename an existing PC system** runs `pc-rename` with old / new fields. Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by default.
-
-**LEDBlinky** — Generate (controls.ini + colors.ini), Audit coverage, Check, and Fix. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. Equivalent to `spindoctor ledblinky generate / audit / check / fix`.
-
-**Lightgun** — Detect installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), Audit per-system wiring, and Configure one system's RocketLauncher INI with optional `-target` / extra-args overrides. Equivalent to `spindoctor lightgun detect / audit / configure`.
-
-**Tools** — three sections that cover the HyperSpin-integration surface:
-
-1. **Install for HyperHQ → Tools menu** — writes the four `Refresh *.bat` helpers into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\` (or a custom output dir). Then register them in HyperHQ → Tools to expose them in the in-cabinet Tools menu.
-2. **Install into an existing wheel system** — adds the four helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel where the "games" are maintenance tasks), with per-game PCLauncher INIs alongside the bats. The target system must already exist and use PCLauncher as its emulator. Equivalent to `spindoctor install-tools --add-to-system <NAME>`.
-3. **Auto-refresh on cabinet startup** (Windows-only) — Schedule auto-refresh registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). Remove scheduled task and Check task status round out the lifecycle. Off-Windows, this section shows launchd / crontab equivalents inline.
-4. **Manual setup** — inline instructions for HyperHQ → Tools and `taskschd.msc` if you'd rather configure them by hand.
-
-**Backup & Restore** — Per-component checkboxes (default: all seven — roms, databases, media, emulators, rocketlauncher, ledblinky, settings), shared target-folder picker for create/list, separate backup-folder picker for info/restore, optional label, dry-run by default. Restore-time toggles for `--use-current-paths` (drive letters changed since backup) and `--overwrite`. Equivalent to `spindoctor backup create / list / info / restore`.
-
-**Migrate** — Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, a scrollable multi-select Listbox pre-populated from detected systems for partial-roms migrations (nothing selected = migrate all), toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate Undo panel whose manifest dropdown is pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top) and a Refresh button. Dry-run by default. Equivalent to `spindoctor migrate`.
-
-**Logs** — persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN` (no `--apply` was passed), `OK` (applied + exit 0), `FAIL <code>`, or `running`. The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **`File → View logs & manifests…`** instead.
-
-**Custom Command** — anything the dedicated tabs don't cover. The entry field is now an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
-
-### Dry-run feedback
-
-Every command without `--apply` is a dry-run. The GUI now bookends those with explicit banners:
-
-```
-=== DRY RUN ===
-
-$ spindoctor curate --all
-
-(plan output…)
-
-=== DRY RUN COMPLETE (exit 0) — nothing was written. Re-run with --apply to commit. ===
-```
-
-The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
-
-> ![Custom Command tab with `audit --all` typed into the entry](images/gui-launcher-custom-tab.png)
-
-### Menubar
-
-A `File` / `View` / `Help` menubar runs across the top of the window:
-
-- **File → Open config.json** — opens `~/.spindoctor/config.json` in your OS default editor.
-- **File → Open SpinDoctor folder** — opens `~/.spindoctor/` (where caches, manifests, and ignore lists live) in Explorer / Finder / xdg-open.
-- **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`. Falls back to a warning dialog if the path doesn't exist (e.g. an unmounted drive).
-- **File → View logs & manifests…** — opens a Toplevel window listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. These are the files `--undo` reads to reverse a run; the viewer is read-only on purpose so you don't accidentally break a future undo. Three buttons at the bottom: **Undo this run** runs the matching `--undo` command for the selected manifest (e.g. `migrate --undo <path>`, `theme-apply --undo <path>`, `curate --undo`); **Show diff** renders the selected manifest's changes as a before/after table (Source / Target / Scope / Bucket columns for theme swaps, Component / From / To for migrations) instead of raw JSON; **Revert just \<SYSTEM\>…** (Theme swaps only) opens a listbox of the systems in the manifest and runs `theme-apply --undo <path> --revert-system <picked>` so you can roll back a single wheel without undoing the whole run. For categories whose CLI always reverses the *most recent* run (curate, media-scan), a confirmation dialog warns you when you pick an older row so you don't accidentally reverse the wrong one.
-- **File → Browse HyperSpin themes…** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`. Sortable Treeview with a live filter box (type "xbox" to find Xbox glyphs, etc.); double-click a row to open the file in your OS image viewer. The **Apply replacement pack…** button opens a Plan/Apply window for swapping a community theme pack onto the cabinet — every overwritten file is backed up under `~/.spindoctor/themes/` so the run is reversible from the Logs & Manifests viewer.
-- **View → Show output pane** — checkbutton (also bound to `Ctrl+`` `) that collapses or restores the bottom Output panel. The status-bar **Hide output** / **Show output** button does the same. Useful on 1280×720 cabinet displays where the panel eats 200+ vertical pixels. State persists across restarts via the `output_visible` config key.
-- **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×` that multiplies font sizes (and therefore widget metrics) across the whole window. `Ctrl+=` / `Ctrl+-` step by 0.1; `Ctrl+0` resets to 1.0×. Mid-session changes are applied live to the named system fonts so widgets re-flow on the next idle tick. Persisted via the `ui_scale` config key.
-- **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG.
-- **Help → Check for updates** — pings `api.github.com/repos/phillram/spindoctor/releases/latest` and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every GUI launch — when newer, the status bar shows "Update available: vX.Y.Z" and the Output panel logs the URL. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable both for cabinets behind a strict firewall.
-
-### Dark mode
-
-The GUI is dark by default — no toggle, no setting. The palette (deep grey background, off-white text, blue selection / focus accents) is applied via `ttk.Style` overrides on the `clam` theme plus `option_add` defaults for the non-themed Tk widgets (Menu, Listbox, Text, Canvas, PanedWindow). The macOS native menubar still uses the system appearance because Tk can't override it.
-
-### Right-click in any text input
-
-Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scraper credentials, the Output panel, log viewers — has a right-click (or `Button-2` on macOS) context menu with Cut / Copy / Paste / Select-All. Read-only views show only Copy + Select-All; masked password fields suppress Copy/Cut so right-click can't bypass the mask. The Setup tab's password and API-key rows get a `Show` / `Hide` eyeball-style button to unmask the field for verification, and a `Test credentials` button under the rows that pings ScreenScraper and TheGamesDB and reports ✓ / ✗ inline before you click Save.
-
-### Stopping a long-running command
-
-The Stop button in the bottom-right of the window terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
 
 ## Wiring into HyperSpin
 

@@ -1,6 +1,6 @@
 # Command reference
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`) need no flag and never modify anything.
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun detect` / `audit`) need no flag and never modify anything.
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -16,7 +16,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Diff](#diff) — `diff`
 - [LEDBlinky](#ledblinky)
 - [Light guns](#light-guns) — `lightgun detect`, `lightgun audit`, `lightgun configure`
-- [Maintenance](#maintenance) — `doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
+- [Maintenance](#maintenance) — `doctor`, `self-doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
 
 ---
 
@@ -67,7 +67,7 @@ A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_bef
 
 ### `fetch-meta`
 
-> **GUI alternative:** the **Metadata & Media** tab wraps `fetch-meta`, `fetch-media`, `media-scan`, `update-db`, and `generate-config` behind one shared "System (or All systems) + Apply" header. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+> **GUI alternative:** the **Metadata & Media** tab wraps `fetch-meta`, `fetch-media`, `media-scan`, `update-db`, and `generate-config` behind one shared "System (or All systems) + Apply" header. See [GUI walkthrough](gui.md).
 
 Download metadata (description, year, manufacturer, genre, rating, players) and write it into the XML.
 
@@ -284,7 +284,7 @@ spindoctor organize "Sony Playstation 3" --undo                :: revert last ap
 
 ### `add-system`
 
-> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` (with `--no-system-media` / `--no-game-media` toggles, dry-run by default). See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` (with `--no-system-media` / `--no-game-media` toggles, dry-run by default). See [GUI walkthrough](gui.md).
 
 Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and walks the metadata + media fetch flow.
 
@@ -411,7 +411,7 @@ spindoctor find-misplaced --undo                 :: reverse the most recent --ap
 
 ### `curate` — region & version curation
 
-> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)…** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore…** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)…** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore…** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [GUI walkthrough](gui.md).
 
 Where `find-dupes` only reports collisions, `curate` actively picks one canonical variant per game (by region preference and revision number) and groups the rest as retirement candidates.
 
@@ -790,6 +790,19 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs
 
 `--apply` only does safe, idempotent repairs (prune stale cache, create media folder skeletons, regen `Global Emulators.ini`) — never deletes ROMs/DBs/media.
 
+### `self-doctor`
+
+Diagnose SpinDoctor's *own* state (not the cabinet library). Inspects `~/.spindoctor/` for orphan corrupt-config rescue copies (older than 30 days), oversized manifest dirs (curate / migrations / edits / renames / themes / media_imports / restructures over 50 MB), expired metadata cache size, broken `config.json` / `favorites.json`, and stray `.part` files older than 7 days under `<HyperSpin>/Media/`. Each finding renders with the reclaimable bytes so you can decide whether a cleanup is worth it.
+
+```bat
+spindoctor self-doctor              :: read-only diagnosis
+spindoctor self-doctor --fix        :: also delete orphan rescue copies + stale .part files
+```
+
+Read-only by default. `--fix` performs **only** safe deletions — orphan corrupt-config rescue copies (`config.json.broken-*`) and stale `.part` download sidecars. Manifests are never auto-deleted because they're the undo path for every destructive command; if a manifest dir is oversized, use `cleanup run` with the category checkboxes you want pruned.
+
+Complements `doctor` (which checks the cabinet library): `self-doctor` answers "is my SpinDoctor install healthy?" while `doctor` answers "is my cabinet healthy?". Run both periodically.
+
 ### `tools-audit`
 
 Read-only inventory of third-party arcade tools installed on this PC. Scans `HyperSpin\Tools`, `RocketLauncher\Modules` / `Plugins`, `<emulators_dir>`, Program Files, and the Start Menu for known utilities (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Sinden, DemulShooter, XPadder, JoyToKey, …) and groups them by category — flagging which spindoctor command supersedes each one.
@@ -806,7 +819,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 ### `ignore`
 
-> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. See [Windows binaries → Tab tour](windows-binaries.md#tab-tour).
+> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. See [GUI walkthrough](gui.md).
 
 Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
 

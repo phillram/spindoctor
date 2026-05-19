@@ -99,15 +99,21 @@ See [Installation](installation.md) for à-la-carte extras.
 
 ## 9. Configure paths
 
-Either drive the wizard from the GUI or the CLI — both write the same `%USERPROFILE%\.spindoctor\config.json`:
+**Recommended path — the GUI.** Launch SpinDoctor and fill out the Setup tab:
 
 ```bat
-spindoctor-gui            :: GUI: fill in the Setup tab, click Save configuration
-:: ── or ──
-spindoctor config init    :: CLI: walks every key in order, asks at the prompt
+spindoctor-gui
 ```
 
-The wizard prompts for every path (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled. In the CLI, press Enter to accept, type `-` to leave an optional path blank; in the GUI, each row has a Browse button.
+A first-run wizard opens automatically on a fresh cabinet: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `doctor` and read the per-check ✓/⚠/✗ summary. Click Finish and you land on the Setup tab where every other path field has a Browse button. Each row also has an **Open** button next to it that jumps to the configured path in Explorer / Finder so you can verify you picked the right folder. Drag a folder from Explorer / Finder onto any path field to fill it in (Windows binary install; pip users `pip install spindoctor[gui]` or `[all]` for drag-and-drop). Press **Save configuration** and you're done.
+
+**Power users — the CLI.** Same effect, every key prompted in order at the terminal. Both routes write the same `%USERPROFILE%\.spindoctor\config.json`:
+
+```bat
+spindoctor config init    :: CLI wizard equivalent of the Setup tab
+```
+
+The wizard (either route) prompts for every path (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled. In the CLI, press Enter to accept, type `-` to leave an optional path blank.
 
 **All paths must already exist** — that's why steps 2–7 come first. If a path is rejected, create the folder and re-run.
 

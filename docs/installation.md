@@ -54,14 +54,14 @@ spindoctor-gui --version   :: confirms the GUI binary loads (without opening a w
 | Command | Purpose |
 |---|---|
 | `spindoctor` | Full CLI |
-| `spindoctor-gui` | Tkinter GUI launcher with 15 tabs: Setup · Wheels · Main Menu · Audit & Doctor · Diagnose · Metadata & Media · Curate · Systems · LEDBlinky · Lightgun · Tools · Backup & Restore · Migrate · Logs (per-run history) · Custom Command. Every tab scrolls vertically when content overflows. File / Help menus add shortcuts to config / logs (with click-to-undo) / HyperSpin theme browser / About / Check for updates. |
+| `spindoctor-gui` | Tkinter GUI launcher with 15 tabs in workflow order: Setup · Audit & Doctor · Diagnose · Metadata & Media · Curate · Wheels · Main Menu · Systems · LEDBlinky · Lightgun · Backup & Restore · Tools · Migrate · Logs (per-run history) · Custom Command. First-run wizard auto-opens on a fresh cabinet; per-tab health badges show ⚠/✗ next to tabs whose area `doctor` flagged; Ctrl+F find bar over Output, Ctrl+Shift+F quick-filter narrowing every system combobox at once. Every tab scrolls vertically when content overflows. File / Help menus add shortcuts to config / logs (with click-to-undo) / HyperSpin theme browser / About / Check for updates. See [GUI walkthrough](gui.md) for the full tab tour. |
 | `spindoctor-fav` | Standalone Favorites wheel manager |
 | `spindoctor-recent` | Standalone Recently Played rebuild |
 | `spindoctor-stats` | Standalone playtime reports + Most Played wheel |
 
 The three standalone wheel scripts are minimal `argparse` wrappers around the same library functions — useful for boot triggers and Tools menu entries because they skip the rich/click overhead. See [Standalone tools](standalone-tools.md).
 
-`spindoctor-gui` shells out to `spindoctor` (and the wheel scripts) under the hood, so anything you can do via a button or form in the window is also available — and identical — on the command line. See [Windows binaries → GUI launcher](windows-binaries.md#gui-launcher) for a tab-by-tab tour (the layout is the same on all platforms).
+`spindoctor-gui` shells out to `spindoctor` (and the wheel scripts) under the hood, so anything you can do via a button or form in the window is also available — and identical — on the command line. See the [GUI walkthrough](gui.md) for a tab-by-tab tour (the layout is the same on all platforms).
 
 Other commonly-used commands that ship only inside the full `spindoctor` CLI (no separate console script):
 
