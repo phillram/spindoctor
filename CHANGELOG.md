@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI single-instance lock.** Launching `spindoctor-gui` while another window is already open now shows a warning and exits cleanly instead of starting a second process. Two windows editing the same HyperSpin XML at the same time can corrupt the library — the lock is a `fcntl.flock` / `msvcrt.locking` exclusive file handle stamped at `~/.spindoctor/gui.lock`, which the OS releases automatically when the process exits (so a crashed instance never poisons future launches). The check can be bypassed with `SPINDOCTOR_DISABLE_SINGLETON=1` for the rare power-user multi-window case.
+- **GUI: Help → "What's new" dialog tied to `last_seen_version`.** First launch after an upgrade auto-opens a one-shot dialog with the version's highlights (GUI-first launcher, first-run wizard, per-tab health badges, system quick-filter, find bar, drag-drop, multi-system fetch-meta, persistent window geometry, preflight, chained-workflow progress bar, single-instance lock) and a button to open the full CHANGELOG. Suppressed on fresh installs (the first-run wizard owns that conversation) and after the user has already seen the dialog for the running version. Re-openable manually from Help → "What's new".
+- **GUI: Help → "Keyboard shortcuts" dialog.** Surfaces the full shortcut map (`Ctrl+1`…`Ctrl+9` jump to tab, `Ctrl+=` / `Ctrl++` / `Ctrl+-` / `Ctrl+0` zoom, `` Ctrl+` `` toggle Output, `Ctrl+F` open find bar, `Ctrl+Shift+F` toggle system quick-filter, `Esc` close dialogs). Previously defined in code but only documented in `docs/gui.md` — cabinet owners had no in-app discovery path.
+- **GUI: About dialog now shows the app icon** next to the title when the bundled PNG icon loaded at startup.
+
+### Fixed
+
+- **Ctrl+C cleanup for `backup`, `migrate`, and `curate`.** Interrupting a long-running operation mid-copy previously left half-written state behind: a partial component directory in the backup root, a half-copied destination tree from `migrate --keep-source`, or files stranded in `_retired/` with no manifest record so `curate --undo` couldn't roll them back. `apply_backup` and `apply_migration` (keep-source mode) now `rmtree` the in-flight destination on `KeyboardInterrupt` before re-raising; `apply_curation` writes a partial manifest of the files it managed to archive so undo still works. Already-completed components are deliberately left in place — the user may want them — and `migrate`'s non-keep-source move path is deliberately not cleaned up (a partially-moved source is the one thing worth NOT making worse).
+
 ### Documentation
 
 - **New `docs/gui.md` — canonical GUI walkthrough.** The tab tour, menubar reference, keyboard-shortcut map, find bar, system quick-filter, dark-mode notes, dry-run-feedback walkthrough, first-run wizard, and per-tab health-badge legend now live in one platform-neutral page. Previously the tab tour lived inside `docs/windows-binaries.md` under the implicit assumption "GUI = Windows binary"; pip and source installs had no canonical home. The Windows-binaries page now links to `gui.md` instead of duplicating it.

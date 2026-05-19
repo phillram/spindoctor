@@ -336,37 +336,64 @@ def apply_migration(
     cfg_before = load_config().to_dict()
 
     applied: list[MigrateMove] = []
-    for move in plan.moves:
-        if progress_cb:
-            progress_cb(move, "start")
+    current_dest: Optional[Path] = None
+    current_src: Optional[Path] = None
+    try:
+        for move in plan.moves:
+            if progress_cb:
+                progress_cb(move, "start")
 
-        src = Path(move.src)
-        dest = Path(move.dest)
-        if dest.exists():
-            if dest.is_dir() and not any(dest.iterdir()):
-                dest.rmdir()
+            src = Path(move.src)
+            dest = Path(move.dest)
+            if dest.exists():
+                if dest.is_dir() and not any(dest.iterdir()):
+                    dest.rmdir()
+                else:
+                    raise FileExistsError(f"Destination already exists: {dest}")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            current_dest = dest
+            current_src = src
+            if keep_source:
+                if src.is_dir():
+                    shutil.copytree(str(src), str(dest))
+                else:
+                    shutil.copy2(str(src), str(dest))
+                if verify:
+                    errors = _verify_tree(src, dest)
+                    if errors:
+                        raise RuntimeError(
+                            f"Verification failed for {move.component}: "
+                            f"{len(errors)} file(s) differ. First: {errors[0]}"
+                        )
             else:
-                raise FileExistsError(f"Destination already exists: {dest}")
-        dest.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(src), str(dest))
+            current_dest = None
+            current_src = None
 
-        if keep_source:
-            if src.is_dir():
-                shutil.copytree(str(src), str(dest))
-            else:
-                shutil.copy2(str(src), str(dest))
-            if verify:
-                errors = _verify_tree(src, dest)
-                if errors:
-                    raise RuntimeError(
-                        f"Verification failed for {move.component}: "
-                        f"{len(errors)} file(s) differ. First: {errors[0]}"
-                    )
-        else:
-            shutil.move(str(src), str(dest))
-
-        applied.append(move)
-        if progress_cb:
-            progress_cb(move, "done")
+            applied.append(move)
+            if progress_cb:
+                progress_cb(move, "done")
+    except KeyboardInterrupt:
+        # Ctrl+C mid-move can leave a half-copied dest. Best-effort
+        # cleanup of the in-flight dest only — never touch already-
+        # applied moves (the user may want to keep them) and never
+        # touch the src tree (a moved-and-half-deleted source is the
+        # one thing worth NOT making worse). Re-raise after cleanup.
+        if current_dest is not None and keep_source:
+            try:
+                if current_dest.is_dir():
+                    shutil.rmtree(str(current_dest), ignore_errors=True)
+                elif current_dest.exists():
+                    current_dest.unlink()
+            except OSError:
+                pass
+        # For non-keep-source moves we deliberately leave whatever
+        # partial state shutil.move left behind — recovering it here
+        # is more likely to lose data than help. `_ = current_src`
+        # silences the unused-name complaint without forcing a refactor.
+        _ = current_src
+        raise
 
     if update_config and not keep_source and plan.config_updates:
         cfg = load_config()
