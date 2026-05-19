@@ -1480,3 +1480,53 @@ def test_flash_validation_rings_bell_and_sets_status(monkeypatch):
         assert app._status_var.get() == "Pick a system first."
     finally:
         app.root.destroy()
+
+
+# ─── PR E: pc-rename arity fix + friendly schtasks errors ────────────────────
+
+
+def test_run_pc_rename_passes_single_positional_arg(monkeypatch):
+    """pc-rename CLI takes ONE positional arg (system_name) — older GUI
+    code passed two and the button was effectively broken. Verify the
+    argv shape matches what the CLI accepts."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._systems_old_var.set("PC Games")
+        app._systems_apply_var.set(False)
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._run_pc_rename()
+
+        assert len(ran) == 1
+        argv = ran[0]
+        assert argv[0] == "pc-rename"
+        # Single positional: the system name. No second positional.
+        assert argv[1] == "PC Games"
+        # Two slots: command + one positional. Any further args must be
+        # options (start with --).
+        for a in argv[2:]:
+            assert a.startswith("--"), f"unexpected positional: {a!r}"
+        # GUI must pass --no-interactive so the title-review input() loop
+        # never blocks the subprocess.
+        assert "--no-interactive" in argv
+    finally:
+        app.root.destroy()
+
+
+def test_run_pc_rename_validates_system_picked(monkeypatch):
+    """Empty system → flash a validation prompt, don't shell out."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._systems_old_var.set("   ")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+        flashed: list[str] = []
+        monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
+
+        app._run_pc_rename()
+
+        assert ran == []
+        assert flashed and "system" in flashed[0].lower()
+    finally:
+        app.root.destroy()
