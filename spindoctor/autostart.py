@@ -31,6 +31,47 @@ class NotSupportedError(RuntimeError):
     """Raised when called on a platform without Task Scheduler (i.e. not Windows)."""
 
 
+def _interpret_schtasks_error(operation: str, output: str) -> str:
+    """Turn an `schtasks.exe` failure into a friendly, actionable hint.
+
+    schtasks's raw output is technically correct but rarely actionable
+    for a cabinet owner — common failures (access denied, task already
+    exists, syntax errors) each map to a one-line "do this next"
+    explanation. Falls back to including the raw output verbatim when
+    no rule matches so power users can still diagnose obscure issues.
+    """
+    lower = (output or "").lower()
+    if "access is denied" in lower or "access denied" in lower:
+        return (
+            f"Could not {operation} — access denied by Windows.\n\n"
+            "Run SpinDoctor as Administrator (right-click the binary, "
+            '"Run as administrator") and try again. Task Scheduler '
+            "writes to a system-wide store that requires admin rights."
+        )
+    if "already exists" in lower:
+        return (
+            f"Could not {operation} — a task with this name is already "
+            "registered. Use the Remove auto-refresh button first, then "
+            "try again."
+        )
+    if "does not exist" in lower or "specified task does not exist" in lower:
+        return (
+            f"Could not {operation} — no auto-refresh task is currently "
+            "registered. Use the Schedule auto-refresh button to create "
+            "one."
+        )
+    if "the system cannot find" in lower:
+        return (
+            f"Could not {operation} — Windows reported a missing "
+            "component, usually a path that no longer exists.\n\n"
+            f"Raw schtasks output:\n{output.strip() or '(no output)'}"
+        )
+    return (
+        f"Could not {operation} (schtasks failed).\n\n"
+        f"Raw output:\n{output.strip() or '(no output)'}"
+    )
+
+
 @dataclass
 class TaskCreateResult:
     name: str
@@ -116,8 +157,7 @@ def create_logon_task(
     output = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"schtasks /Create exited with code {proc.returncode}.\n"
-            f"Output:\n{output.strip() or '(no output)'}"
+            _interpret_schtasks_error("create the auto-refresh task", output)
         )
     return TaskCreateResult(name=name, command=command, output=output.strip())
 
@@ -134,7 +174,6 @@ def delete_logon_task(name: str = DEFAULT_LOGON_TASK) -> str:
     output = (proc.stdout or "") + (proc.stderr or "")
     if proc.returncode != 0:
         raise RuntimeError(
-            f"schtasks /Delete exited with code {proc.returncode}.\n"
-            f"Output:\n{output.strip() or '(no output)'}"
+            _interpret_schtasks_error("remove the auto-refresh task", output)
         )
     return output.strip()

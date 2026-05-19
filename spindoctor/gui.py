@@ -3064,7 +3064,13 @@ class _SpinDoctorGUI:
         try:
             data = _json.loads(path.read_text(encoding="utf-8", errors="replace"))
         except (OSError, ValueError) as exc:
-            self.messagebox.showerror("Could not read manifest", str(exc))
+            from ._errors import humanize_oserror
+            self.messagebox.showerror(
+                "Could not read manifest",
+                humanize_oserror(exc, action=f"read {path.name}")
+                if isinstance(exc, OSError) else
+                f"The manifest is not valid JSON:\n  {path}\n\n{exc}",
+            )
             return
 
         win = self.tk.Toplevel(self.root)
@@ -7540,23 +7546,32 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left", padx=10)
 
-        # ── pc-rename ─────────────────────────────────────────────────────────
-        rename_frame = self.ttk.LabelFrame(frame, text="Rename an existing PC system")
+        # ── pc-rename (re-review titles for a PC system) ──────────────────────
+        # The CLI command is misleadingly named — it doesn't rename the
+        # *system*; it re-runs the per-game title picker for an existing
+        # PC system so the user can fix derived titles or pick up newly-
+        # dropped installs. Reflect that in the form: one system dropdown,
+        # no Old/New fields. (Earlier versions had a two-field form that
+        # was actually broken — the CLI takes one positional arg.)
+        rename_frame = self.ttk.LabelFrame(frame, text="Re-review titles for a PC system")
         rename_frame.pack(fill="x", pady=(4, 4))
         rn_row = self.ttk.Frame(rename_frame)
         rn_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(rn_row, text="Old name").pack(side="left")
+        self.ttk.Label(rn_row, text="PC system").pack(side="left")
         self._systems_old_var = self.tk.StringVar()
+        # Kept for back-compat: _systems_new_var is referenced by an
+        # older code path (and by the system-quick-filter on launch).
+        # It's now ignored by _run_pc_rename.
+        self._systems_new_var = self.tk.StringVar()
         self._systems_old_combo = self.ttk.Combobox(
             rn_row, textvariable=self._systems_old_var,
-            state="readonly", width=24,
+            state="readonly", width=28,
         )
         self._systems_old_combo.pack(side="left", padx=6)
-        self.ttk.Label(rn_row, text="New name").pack(side="left", padx=(10, 0))
-        self._systems_new_var = self.tk.StringVar()
-        self.ttk.Entry(
-            rn_row, textvariable=self._systems_new_var, width=20,
-        ).pack(side="left", padx=6)
+        self.ttk.Label(
+            rn_row, text="(re-runs the title picker for this PC system)",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
             rename_frame, text="Run pc-rename",
             command=self._run_pc_rename,
@@ -7952,15 +7967,18 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_pc_rename(self) -> None:
-        old = self._systems_old_var.get().strip()
-        new = self._systems_new_var.get().strip()
-        if not old or not new:
-            self.messagebox.showwarning(
-                "Both names required",
-                "pc-rename needs both Old and New names.",
+        system = self._systems_old_var.get().strip()
+        if not system:
+            self._flash_validation(
+                "Pick a PC system first (the dropdown shows the systems "
+                "you've added via add-pc-system)."
             )
             return
-        args = ["pc-rename", old, new]
+        # pc-rename takes ONE positional arg (the system name). Older
+        # GUI code passed two — that was always broken.
+        # GUI also passes --no-interactive so the per-game review path
+        # doesn't hang on stdin; matches the add-pc-system pattern.
+        args = ["pc-rename", system, "--no-interactive"]
         if self._systems_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -8523,7 +8541,12 @@ class _SpinDoctorGUI:
             # backslashes in paths don't get eaten as escapes).
             args = shlex.split(raw, posix=(sys.platform != "win32"))
         except ValueError as exc:
-            self.messagebox.showerror("Couldn't parse arguments", str(exc))
+            self.messagebox.showerror(
+                "Couldn't parse arguments",
+                f"Could not split your command into arguments:\n  {exc}\n\n"
+                "Common cause: an unmatched quote — make sure every "
+                '"" or \'\' you opened is closed.',
+            )
             return
         self._run_cli("spindoctor", args)
 
@@ -8546,7 +8569,22 @@ class _SpinDoctorGUI:
         try:
             argv = resolve_cli_command(binary) + list(args)
         except CliNotFoundError as exc:
-            self.messagebox.showerror("Binary not found", str(exc))
+            # CliNotFoundError already carries an actionable message
+            # explaining where the binary was looked for; surface that
+            # plus the most common fix (pip install -e .) for dev
+            # checkouts and (keep all 5 exes in one folder) for frozen
+            # builds.
+            self.messagebox.showerror(
+                "SpinDoctor CLI not found",
+                f"{exc}\n\n"
+                "Common fixes:\n"
+                "• Frozen / Windows binary install: keep all five exes "
+                "(spindoctor.exe, spindoctor-gui.exe, spindoctor-fav.exe, "
+                "spindoctor-recent.exe, spindoctor-stats.exe) in the same "
+                "folder.\n"
+                "• Source install: re-run `pip install -e .` from the "
+                "repo root so the console scripts get registered.",
+            )
             return
 
         # Heuristic: anything without `--apply` is a dry-run for our
