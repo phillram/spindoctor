@@ -124,10 +124,6 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 `spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
-> ![SpinDoctor GUI showing the Setup tab and the output panel](images/gui-launcher-overview.png)
->
-> *Screenshot: `spindoctor-gui.exe` after launch, with the output panel showing a completed `doctor` run.*
-
 The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all five files in the same folder; the GUI does not require `PATH` to be configured.
 
 **For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
@@ -135,8 +131,6 @@ The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standal
 ### Tab tour, menubar, shortcuts, dry-run feedback, dark mode
 
 All moved to the platform-neutral [GUI walkthrough](gui.md). The same window ships on Windows binary, pip, and source installs; documenting it once and linking from each route is clearer than three near-duplicate copies.
-
-> ![Setup tab populated with cabinet paths](images/gui-launcher-setup-tab.png)
 
 ## Wiring into HyperSpin
 
