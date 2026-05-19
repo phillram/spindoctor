@@ -5567,7 +5567,10 @@ def backup_create(target, include, label, apply_changes):
         try:
             backup_root = apply_backup(plan, config, progress_cb=_cb)
         except (FileExistsError, OSError) as e:
-            err_console.print(f"[red]Aborted:[/red] {e}")
+            from ._errors import humanize_oserror
+            err_console.print(
+                f"[red]Aborted:[/red] {humanize_oserror(e, action='write the backup')}"
+            )
             sys.exit(1)
 
     console.print(f"\n[green]✓[/green] Backup complete: {backup_root}")
@@ -5769,7 +5772,10 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
         try:
             restored = apply_restore(plan, overwrite=overwrite, progress_cb=_cb)
         except (FileExistsError, OSError) as e:
-            err_console.print(f"[red]Aborted:[/red] {e}")
+            from ._errors import humanize_oserror
+            err_console.print(
+                f"[red]Aborted:[/red] {humanize_oserror(e, action='restore from the backup')}"
+            )
             sys.exit(1)
 
     console.print(f"\n[green]✓[/green] Restored {restored} component(s).")
@@ -6140,7 +6146,9 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
                 progress_cb=_cb,
             )
         except (FileExistsError, RuntimeError, OSError) as e:
-            err_console.print(f"[red]Aborted:[/red] {e}")
+            from ._errors import humanize_oserror
+            msg = humanize_oserror(e, action="migrate the library") if isinstance(e, OSError) else str(e)
+            err_console.print(f"[red]Aborted:[/red] {msg}")
             sys.exit(1)
 
     console.print(f"\n[green]✓[/green] Migration complete. Manifest: {manifest}")
@@ -6432,7 +6440,9 @@ def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
     try:
         applied, manifest = apply_rename(plan, config, output_dir=out_path)
     except (FileExistsError, RuntimeError, OSError) as e:
-        err_console.print(f"[red]Aborted:[/red] {e}")
+        from ._errors import humanize_oserror
+        msg = humanize_oserror(e, action="apply the rename") if isinstance(e, OSError) else str(e)
+        err_console.print(f"[red]Aborted:[/red] {msg}")
         sys.exit(1)
 
     console.print(f"\n[green]+[/green] {verb} complete — {len(applied)} change(s)")

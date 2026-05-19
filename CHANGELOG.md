@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI: end-user-facing text no longer leaks CLI command names at cabinet owners.** The Setup tab intro previously said "These map 1:1 to `spindoctor config init`" and the scraper-credentials note pointed at "`spindoctor fetch-meta` and `spindoctor fetch-media`" — neither is meaningful to someone who only opens the GUI. Both now read as plain-English summaries of what the controls do. The undo dialog that pops on an unrecognised manifest type stopped pointing users at "`spindoctor --help`"; the curate-archive confirmation stopped saying "`spindoctor curate --undo`". Both now describe the GUI path (Help → About, Logs tab → Browse manifests / undo…).
+
+### Fixed
+
+- **CLI: `backup create`, `backup restore`, `migrate`, and `rename` / `clone` now humanize OSError output.** Previously these four `except (FileExistsError, OSError)` blocks printed `str(e)` verbatim — on Windows that surfaced as `[WinError 32] The process cannot access the file …`, technically correct and useless to a cabinet owner. They now route the exception through `spindoctor._errors.humanize_oserror`, matching the GUI's Main Menu save worker and "Could not launch" subprocess-spawn path. WinError 32 reads as "currently in use — close HyperSpin and try again"; ENOSPC reads as "free up some space"; EACCES reads as "Properties → untick Read-only"; etc.
+
 ### Internal
 
 - **Shared `spindoctor._utils` module.** `format_bytes` (formerly duplicated in `backup.py` and `migrate.py`) and `free_bytes` (formerly duplicated in the same two modules) now live in `spindoctor._utils`. The byte formatter also subsumes `cleanup.format_size`, which is now an alias for `format_bytes`. Each owning module re-exports the helpers so existing callers like `from .backup import format_bytes` and `from .cleanup import format_size` keep working unchanged.
