@@ -30,16 +30,15 @@ A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) 
 
 ### New GUI config keys
 
-Four new keys in `config.json`:
+Three new keys in `config.json`:
 
 | Key | Default | Purpose |
 |---|---|---|
 | `first_run_complete` | `false` → flipped to `true` on 2.0 first launch | Suppresses the auto-opening first-run wizard. |
 | `gui_window_geometry` | unset | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed. Restored on the next launch. |
 | `gui_last_active_tab` | unset | Index of the tab that was open the last time the GUI closed. Restored on the next launch. |
-| `last_seen_version` | unset | SpinDoctor version the user last saw the **Help → What's new** dialog for. Auto-stamped after the dialog appears. Pre-2.0 configs (no field, plus `first_run_complete=true`) are treated as upgraders and shown the dialog on first 2.0 launch. |
 
-All four are managed by the GUI; hand-editing them is fine but not necessary. Delete any of them to reset that piece of state. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
+All three are managed by the GUI; hand-editing them is fine but not necessary. Delete any of them to reset that piece of state. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
 
 ### New GUI affordances
 
@@ -56,7 +55,6 @@ None of these change existing behaviour — they're additive:
 - **One-click "Download…"** button in the status-bar update notification.
 - **Determinate progress bar** for chained workflows (Refresh all wheels, Full metadata refresh, etc.).
 - **Single-instance lock** — a second `spindoctor-gui` on the same machine refuses to start so two windows can't race on the same HyperSpin XML. Override with `SPINDOCTOR_DISABLE_SINGLETON=1` if you genuinely need both open.
-- **Help → What's new** dialog — version-pegged highlights of what shipped, fired automatically the first time you launch a new version. Re-openable from the menu.
 - **Help → Keyboard shortcuts** dialog — in-app reference for the shortcut map; no more digging through docs.
 - **Safe-to-Stop long operations** — interrupting a backup, move-mode migrate, or curate-archive run now leaves a *partial manifest* describing what completed before the interrupt. The backup is still visible in the Restore picker; the migrate is reversible via `Logs → Browse manifests… → Undo`. See `docs/gui.md → Stopping a long-running command` for the full story.
 - **`fetch-meta --skip-ambiguous`** wired into the GUI — unticking "Auto-pick best match" no longer hangs the subprocess on an interactive `input()` prompt; ambiguous matches are logged for the next `audit` pass instead.
