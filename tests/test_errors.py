@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import errno
 
-import pytest
-
 from spindoctor._errors import humanize_oserror
 
 
