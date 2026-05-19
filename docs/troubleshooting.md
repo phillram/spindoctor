@@ -32,6 +32,18 @@ The `.exe` was built against a Windows SDK newer than Win 7 supports. The offici
 
 Releases aren't code-signed yet, so Windows 10/11 may flag the binaries as unrecognised. Click **More info** → **Run anyway**. (Code signing is on the roadmap.)
 
+### Win 7: `fetch-meta` or update check fails with `EOF in violation of protocol` / `SSL: WRONG_VERSION_NUMBER`
+
+The remote scraper (ScreenScraper, TheGamesDB) refused the connection because Win 7's bundled OpenSSL 1.0.2 negotiated TLS 1.0 or 1.1 by default, and the server requires TLS 1.2+. SpinDoctor 2.0 pins TLS 1.2 as the floor on every HTTP session it creates, which fixes this — confirm you're on the latest binary. If you're on an older build, upgrade. Self-built `spindoctor.exe` on a custom Python should be fine as long as the Python install has TLS 1.2 enabled (Python 3.8.10 on Win 7 SP1 does).
+
+### Second GUI window won't open ("Another SpinDoctor is already running")
+
+By design — the GUI takes a single-instance file lock at `~/.spindoctor/gui.lock` because two windows writing to the same HyperSpin XML can corrupt the library. Bring the existing window to the front (Alt+Tab) or close it first. If you genuinely need two windows (comparing two cabinet configs on one machine), set `SPINDOCTOR_DISABLE_SINGLETON=1` before launching — you're then responsible for not running destructive operations from both. The lock is released when the process exits; it does not survive a crash.
+
+### `~/.spindoctor/gui.lock` exists after a crash
+
+That's expected and harmless. The OS released the lock on process exit; the file is just a stamped PID. Launching the GUI again will overwrite it and acquire the lock cleanly.
+
 ### `config init` rejects a path
 
 Folders must exist before they can be configured. Create the folder first, then re-run.

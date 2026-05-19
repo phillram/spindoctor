@@ -4,6 +4,8 @@ Every `spindoctor` command, grouped by purpose. Commands that modify files defau
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
+**Interrupting a long run is safe.** Hitting `Ctrl+C` (or the GUI's Stop button) mid-`backup`, mid-`migrate`, or mid-`curate` cleans up the in-flight component and writes a *partial manifest* for whatever finished. The backup still appears in the Restore picker; an interrupted move-mode migrate is reversible via `migrate --undo`; an interrupted curate-archive is reversible via `curate --undo`. The completed work is committed by design — the manifest exists so *you* can decide whether to roll it back.
+
 ## Contents
 
 - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
@@ -77,12 +79,19 @@ spindoctor fetch-meta --system MAME --apply                  :: commit
 spindoctor fetch-meta --all --apply
 spindoctor fetch-meta --all --output-dir D:\Output --apply
 spindoctor fetch-meta --all --auto-best --apply              :: never prompt — pick top result
+spindoctor fetch-meta --all --skip-ambiguous --apply         :: log ambiguous matches, don't prompt or auto-pick
 spindoctor fetch-meta --system SNES --all-games --apply      :: refresh complete entries too
 ```
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
-When multiple results match, the picker prompts you (or use `--auto-best`). Choices are cached at `~/.spindoctor/match_cache/<system>.json` so re-runs are silent.
+When multiple results match the picker prompts you. Three ways to override:
+
+- `--auto-best` — pick the top candidate silently. Fast for big libraries; risks the occasional wrong match (review afterwards with `audit`).
+- `--skip-ambiguous` — log ambiguous matches and move on without touching them. They stay incomplete and surface in the next `audit` pass for manual review. Required from non-TTY contexts (cron, CI, the GUI when "Auto-pick best match" is unticked) because the prompt path calls `input()` and would block.
+- `--interactive` — force-prompt even when `config.interactive_matching=false`. Terminal users only.
+
+Choices are cached at `~/.spindoctor/match_cache/<system>.json` so re-runs are silent.
 
 ### `fetch-media`
 

@@ -44,6 +44,7 @@ spindoctor config set <key> <value>
 | `gui_window_geometry` | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed (string, default unset). Restored on the next launch so cabinet owners don't re-resize / re-position every session. Managed automatically — delete it to reset window state. Hand-corrupted values are revalidated against a regex and silently discarded. |
 | `gui_last_active_tab` | Index of the tab that was open the last time the GUI closed (int, default unset). Restored on the next launch so users who live in the Curate or Wheels tab don't re-navigate from Setup every time. Managed automatically — delete it to default back to the Setup tab. |
 | `first_run_complete` | Whether the first-run wizard has been dismissed (bool, default `false`). Set to `true` after the wizard finishes; existing installs with a valid config silently flip it on first launch of the 2.0 GUI so long-term users aren't pestered. Reset it to `false` to re-trigger the wizard on next launch (or use `Help → First-run setup…`). |
+| `last_seen_version` | Last SpinDoctor version that this user saw the GUI's `Help → What's new` dialog for (string, default unset). The dialog auto-opens once per upgraded version on first launch and then stamps this field with `__version__`. Pre-2.0 configs that lack the field are treated as upgraders (combined with `first_run_complete=True`) and shown the dialog on first 2.0 launch; fresh installs (no `first_run_complete`) are skipped because the first-run wizard owns that conversation. Delete the field to force the dialog on the next launch. |
 
 ## Per-system overrides
 
@@ -105,6 +106,7 @@ A small handful of runtime knobs live in environment variables rather than `conf
 | Variable | Effect |
 |---|---|
 | `SPINDOCTOR_NO_UPDATE_CHECK=1` | Disables the GUI's GitHub release-tag check on launch and from `Help → Check for updates`. Useful for cabinets behind strict firewalls or when you want a fully hermetic launch. The CLI doesn't run any update check, so this only affects `spindoctor-gui`. |
+| `SPINDOCTOR_DISABLE_SINGLETON=1` | Disables the GUI single-instance lock. By default a second `spindoctor-gui` launch on the same machine refuses to start because two GUIs writing to the same HyperSpin XML can corrupt the library. Set this to `1` if you genuinely need two windows open at once (e.g. comparing two separate cabinet configs on one machine) — you're then responsible for not running destructive operations from both. |
 | `PYTHONIOENCODING=utf-8` | Forced internally on the frozen Windows exe to keep Rich's tree glyphs (`✓ ⚠ ✗`) rendering on cmd.exe with cp1252. You don't normally need to set it yourself. |
 | `PYTHONUNBUFFERED=1` | Set automatically when the GUI shells out so per-row progress (`fetch-meta`, `audit`) streams in real time instead of being buffered until the child exits. |
 
