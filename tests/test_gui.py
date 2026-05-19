@@ -1391,3 +1391,64 @@ def test_maybe_show_whats_new_fires_on_version_change(monkeypatch):
         assert saved and saved[0] != "1.0.0-ancient"
     finally:
         app.root.destroy()
+
+
+# ─── 2.0 follow-up fixes ──────────────────────────────────────────────────────
+
+
+def test_maybe_show_whats_new_fires_for_pre_2_0_upgrader(monkeypatch):
+    """A long-time 1.x user has first_run_complete=True but no
+    last_seen_version field (defaults to ""). The dialog must NOT
+    suppress them as if they were a fresh install — they're exactly the
+    population the dialog was built to reach.
+    """
+    from spindoctor import gui as gui_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        called: list[bool] = []
+        monkeypatch.setattr(
+            app, "_show_whats_new", lambda: called.append(True),
+        )
+
+        class _Cfg:
+            last_seen_version = ""
+            first_run_complete = True
+
+        saved: list[str] = []
+
+        def fake_save(c):
+            saved.append(c.last_seen_version)
+
+        monkeypatch.setattr(gui_mod, "load_config", lambda: _Cfg())
+        monkeypatch.setattr(gui_mod, "save_config", fake_save)
+
+        app._maybe_show_whats_new()
+        assert called == [True], "upgrader should see What's new"
+        assert saved and saved[0] != ""
+    finally:
+        app.root.destroy()
+
+
+def test_fetch_meta_args_always_avoid_interactive_prompt(monkeypatch):
+    """The GUI can't drive an interactive input() prompt. The argv MUST
+    contain either --auto-best (checkbox on) or --skip-ambiguous
+    (checkbox off) — never the bare default which would prompt.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Default (checkbox on) → --auto-best
+        app._meta_auto_best_var.set(True)
+        args = app._build_fetch_meta_args(["--system", "MAME"])
+        assert args is not None
+        assert "--auto-best" in args
+        assert "--skip-ambiguous" not in args
+
+        # Checkbox off → --skip-ambiguous (NOT bare default)
+        app._meta_auto_best_var.set(False)
+        args = app._build_fetch_meta_args(["--system", "MAME"])
+        assert args is not None
+        assert "--skip-ambiguous" in args
+        assert "--auto-best" not in args
+    finally:
+        app.root.destroy()

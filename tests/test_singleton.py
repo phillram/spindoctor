@@ -23,8 +23,11 @@ def test_acquire_then_release_round_trip(tmp_path: Path) -> None:
     assert lock.acquire() is True
     assert lock_path.exists()
     lock.release()
-    # release removes the file so a fresh launch never sees stale PID
-    assert not lock_path.exists()
+    # The lock file is deliberately left on disk — release() only drops
+    # the OS-level handle. Unlinking would race with a concurrent
+    # acquire and let a third instance create a new inode (see the
+    # comment in _singleton.release).
+    assert lock_path.exists()
 
 
 def test_second_acquire_in_same_process_succeeds_after_release(

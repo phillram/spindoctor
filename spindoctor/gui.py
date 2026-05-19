@@ -2505,13 +2505,27 @@ class _SpinDoctorGUI:
             return
 
         last_seen = getattr(cfg, "last_seen_version", "") or ""
-        if last_seen == "" or last_seen == __version__:
-            if last_seen != __version__:
-                try:
-                    cfg.last_seen_version = __version__
-                    save_config(cfg)
-                except Exception:  # noqa: BLE001
-                    pass
+        if last_seen == __version__:
+            return
+
+        # Distinguish "fresh install" from "long-time user upgrading from
+        # a pre-`last_seen_version` build". Both have last_seen == "",
+        # but the upgrader has `first_run_complete=True` already (set
+        # automatically the first time their config validated). Fresh
+        # installs see the first-run wizard instead — piling the
+        # What's-new dialog on top is noisy and they have nothing to
+        # compare against anyway.
+        first_run_complete = bool(
+            getattr(cfg, "first_run_complete", False)
+        )
+        is_fresh_install = last_seen == "" and not first_run_complete
+
+        if is_fresh_install:
+            try:
+                cfg.last_seen_version = __version__
+                save_config(cfg)
+            except Exception:  # noqa: BLE001
+                pass
             return
 
         self._show_whats_new()
@@ -5977,18 +5991,24 @@ class _SpinDoctorGUI:
         # ── fetch-meta ───────────────────────────────────────────────────────
         meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
         meta_frame.pack(fill="x", pady=(4, 4))
-        self._meta_auto_best_var = self.tk.BooleanVar(value=False)
+        # Defaults to True: the GUI cannot drive an interactive `input()`
+        # prompt, so the alternative used to be a frozen subprocess. The
+        # unchecked path now passes --skip-ambiguous instead so ambiguous
+        # matches are logged and surfaced in the next audit pass rather
+        # than hanging the GUI.
+        self._meta_auto_best_var = self.tk.BooleanVar(value=True)
         _meta_ab = self.ttk.Checkbutton(
-            meta_frame, text="Auto-pick best match (--auto-best)",
+            meta_frame, text="Auto-pick best match for ambiguous results",
             variable=self._meta_auto_best_var,
         )
         _meta_ab.pack(anchor="w", padx=6, pady=2)
         _attach_tooltip(
             _meta_ab,
             "When the scraper returns multiple candidates, pick the "
-            "highest-confidence one automatically instead of prompting. "
-            "Fast for big libraries; risks the occasional wrong match — "
-            "review the audit afterwards.",
+            "highest-confidence one automatically. Fast for big "
+            "libraries; risks the occasional wrong match — review the "
+            "audit afterwards. Untick to skip ambiguous matches and "
+            "review them later instead of auto-picking.",
             self.tk,
         )
         self._meta_all_games_var = self.tk.BooleanVar(value=False)
@@ -6359,6 +6379,11 @@ class _SpinDoctorGUI:
         args = ["fetch-meta", *sys_args]
         if self._meta_auto_best_var.get():
             args.append("--auto-best")
+        else:
+            # GUI can't satisfy an interactive `input()` prompt — the
+            # subprocess would hang. Skip mode logs ambiguous matches
+            # and surfaces them in the next audit instead.
+            args.append("--skip-ambiguous")
         if self._meta_all_games_var.get():
             args.append("--all-games")
         if self._meta_no_cache_var.get():

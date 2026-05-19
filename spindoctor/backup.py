@@ -339,14 +339,22 @@ def apply_backup(
                 progress_cb(item, "done")
     except KeyboardInterrupt:
         # Ctrl+C mid-copy leaves the in-flight component half-written.
-        # Sweep it before re-raising so the backup root only contains
-        # whole components — restore semantics depend on it.
+        # Sweep it so the backup root only contains whole components.
         if current_dest is not None:
             try:
                 if current_dest.is_dir():
                     shutil.rmtree(str(current_dest), ignore_errors=True)
                 elif current_dest.exists():
                     current_dest.unlink()
+            except OSError:
+                pass
+        # Persist a manifest for whatever DID complete so `list_backups`
+        # can see it and `restore` can replay it. Without this the
+        # finished components are invisible (list_backups filters on
+        # manifest.json existing) and effectively orphaned.
+        if completed:
+            try:
+                _write_manifest(backup_root, plan, completed, config)
             except OSError:
                 pass
         raise

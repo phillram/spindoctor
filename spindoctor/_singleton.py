@@ -92,10 +92,13 @@ class SingletonLock:
         except OSError:
             pass
         self._fh = None
-        try:
-            self.lock_path.unlink()
-        except OSError:
-            pass
+        # We deliberately do NOT unlink the lock file. The OS released
+        # the lock on close(); leaving the file path in place avoids a
+        # narrow race where a second instance opens the file after our
+        # close() and before our unlink(), then we delete it out from
+        # under them — letting a *third* instance create a new inode
+        # and acquire its own lock. The stamped PID is overwritten on
+        # the next acquire().
 
     def __enter__(self) -> "SingletonLock":
         return self
