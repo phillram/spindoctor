@@ -1445,3 +1445,38 @@ def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
         assert app._mm_data == []
     finally:
         app.root.destroy()
+
+
+# ─── status-bar flash helpers (replaces routine showinfo popups) ─────────────
+
+
+def test_flash_status_sets_message_and_schedules_revert(monkeypatch):
+    """_flash_status updates the status bar and schedules a revert to Ready."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        scheduled: list[int] = []
+        original_after = app.root.after
+        monkeypatch.setattr(
+            app.root, "after",
+            lambda ms, fn: scheduled.append(ms) or original_after(ms, fn),
+        )
+        app._flash_status("Configuration saved.")
+        assert app._status_var.get() == "Configuration saved."
+        assert scheduled, "_flash_status must schedule a revert"
+        assert scheduled[0] >= 1000  # in milliseconds — not microseconds by accident
+    finally:
+        app.root.destroy()
+
+
+def test_flash_validation_rings_bell_and_sets_status(monkeypatch):
+    """_flash_validation calls bell() AND updates status, so users notice
+    the validation message even if focused on a form widget."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        bells: list[bool] = []
+        monkeypatch.setattr(app.root, "bell", lambda: bells.append(True))
+        app._flash_validation("Pick a system first.")
+        assert bells == [True], "validation flash must ring the bell"
+        assert app._status_var.get() == "Pick a system first."
+    finally:
+        app.root.destroy()
