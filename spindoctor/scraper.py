@@ -11,6 +11,7 @@ from typing import Optional
 
 import requests
 
+from ._net import make_session, request_get
 from .config import (
     CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_system_overrides,
 )
@@ -371,8 +372,7 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         self.username = username
         self.password = password
         self._limiter = RateLimiter(rate_limit)
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SpinDoctor/1.0"
+        self._session = make_session()
         self._cache = cache
 
     def _base_params(self) -> dict:
@@ -497,8 +497,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
     ):
         self.api_key = api_key
         self._limiter = RateLimiter(rate_limit)
-        self._session = requests.Session()
-        self._session.headers["User-Agent"] = "SpinDoctor/1.0"
+        self._session = make_session()
         self._cache = cache
 
     def _platform_id(self, system_name: str) -> Optional[int]:
@@ -589,10 +588,9 @@ def verify_screenscraper(
         "output": "json",
     }
     try:
-        resp = requests.get(
+        resp = request_get(
             f"{SCREENSCRAPER_API}/ssuserInfos.php",
             params=params, timeout=timeout,
-            headers={"User-Agent": "SpinDoctor/1.0"},
         )
     except requests.RequestException as e:
         return False, f"Network error: {e}"
@@ -641,10 +639,9 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
 
     params = {"apikey": api_key, "name": "test"}
     try:
-        resp = requests.get(
+        resp = request_get(
             f"{THEGAMESDB_API}/Games/ByGameName",
             params=params, timeout=timeout,
-            headers={"User-Agent": "SpinDoctor/1.0"},
         )
     except requests.RequestException as e:
         return False, f"Network error: {e}"

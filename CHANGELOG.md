@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Win7 cabinet TLS handshake.** Outbound HTTPS sessions in `scraper.py` (ScreenScraper, TheGamesDB) and `media.py` (asset CDNs) now pin a TLS 1.2 floor via a shared `spindoctor._net.make_session()` helper, matching the same floor `update_check.py` already enforces for its urllib path. Frozen Win7 binaries ship Python 3.8.10 + OpenSSL 1.0.2u, which on a bare `requests.Session()` could otherwise negotiate TLS 1.0/1.1 against endpoints that have since dropped them — surfacing as a cryptic `EOF occurred in violation of protocol` rather than a clean handshake error. Credential-verify probes (`verify_screenscraper`, `verify_thegamesdb`) inherit the same floor via a new `request_get()` helper.
+- **GUI dark-theme init on Tk 8.5.** `_apply_dark_theme` now strips Tk 8.6-only `arrowcolor` keys via a `_safe_configure` wrapper when the running Tk doesn't accept them, instead of raising mid-init and leaving the rest of the dark theme unapplied. Python 3.8 on Win7 ships Tk 8.5 where `arrowcolor` on `TCombobox` / `TSpinbox` / `T*Scrollbar` is unknown; previously the configure would raise a `TclError` partway through theming and the window would render with default light colours.
+
 ### Added
 
 - **GUI: First-run wizard.** On first launch (no `config.json`, or saved config still has the placeholder `D:\…` defaults), a 3-step modal opens: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `spindoctor doctor` inline and show a per-check ✓/⚠/✗ summary the user can read before clicking Finish. Sets `first_run_complete = True` so the wizard never auto-opens again; existing installs with a valid config silently promote the flag so long-term users aren't pestered. Re-openable any time via **Help → First-run setup…**. New `Config.first_run_complete: bool` field.

@@ -819,6 +819,23 @@ class _SpinDoctorGUI:
 
         s = self._ttk_style
 
+        # Tk 8.5 (Python 3.8 on Win7 cabinets) doesn't recognise some
+        # clam-theme style options that landed in 8.6 — `arrowcolor` is
+        # the one we use. Passing it to `style.configure` on 8.5 raises
+        # a TclError mid-init and the rest of the theming below would
+        # never apply, leaving the window with default colours. Wrap
+        # the at-risk configures so we strip the unknown key and retry,
+        # rather than letting the whole dark theme silently break.
+        def _safe_configure(style_name, **kwargs):
+            try:
+                s.configure(style_name, **kwargs)
+            except self.tk.TclError:
+                kwargs.pop("arrowcolor", None)
+                try:
+                    s.configure(style_name, **kwargs)
+                except self.tk.TclError:
+                    pass
+
         # ── Root + every container ──────────────────────────────────────────
         self.root.configure(background=_DARK_BG)
         s.configure(".", background=_DARK_BG, foreground=_DARK_FG,
@@ -853,20 +870,20 @@ class _SpinDoctorGUI:
         s.map("TEntry",
               fieldbackground=[("disabled", _DARK_BG_RAISE)],
               foreground=[("disabled", _FG_DIMMER)])
-        s.configure("TCombobox", fieldbackground=_DARK_BG_INPUT,
-                    background=_DARK_BG_BUTTON, foreground=_DARK_FG,
-                    arrowcolor=_DARK_FG, bordercolor=_DARK_BORDER,
-                    lightcolor=_DARK_BORDER, darkcolor=_DARK_BORDER,
-                    insertcolor=_DARK_FG)
+        _safe_configure("TCombobox", fieldbackground=_DARK_BG_INPUT,
+                        background=_DARK_BG_BUTTON, foreground=_DARK_FG,
+                        arrowcolor=_DARK_FG, bordercolor=_DARK_BORDER,
+                        lightcolor=_DARK_BORDER, darkcolor=_DARK_BORDER,
+                        insertcolor=_DARK_FG)
         s.map("TCombobox",
               fieldbackground=[("readonly", _DARK_BG_INPUT),
                                ("disabled", _DARK_BG_RAISE)],
               foreground=[("disabled", _FG_DIMMER)],
               selectbackground=[("readonly", _DARK_BG_SELECT)],
               selectforeground=[("readonly", _DARK_FG)])
-        s.configure("TSpinbox", fieldbackground=_DARK_BG_INPUT,
-                    foreground=_DARK_FG, bordercolor=_DARK_BORDER,
-                    arrowcolor=_DARK_FG)
+        _safe_configure("TSpinbox", fieldbackground=_DARK_BG_INPUT,
+                        foreground=_DARK_FG, bordercolor=_DARK_BORDER,
+                        arrowcolor=_DARK_FG)
 
         # ── Check / Radio buttons ────────────────────────────────────────────
         s.configure("TCheckbutton", background=_DARK_BG, foreground=_DARK_FG,
@@ -901,14 +918,14 @@ class _SpinDoctorGUI:
               expand=[("selected", (1, 1, 1, 0))])
 
         # ── Scrollbars / Progressbar / Separator ─────────────────────────────
-        s.configure("Vertical.TScrollbar",
-                    background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
-                    bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
-                    lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
-        s.configure("Horizontal.TScrollbar",
-                    background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
-                    bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
-                    lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+        _safe_configure("Vertical.TScrollbar",
+                        background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
+                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
+                        lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+        _safe_configure("Horizontal.TScrollbar",
+                        background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
+                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
+                        lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
         s.map("Vertical.TScrollbar",
               background=[("active", _DARK_BG_ACTIVE)])
         s.map("Horizontal.TScrollbar",
