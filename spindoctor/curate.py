@@ -254,57 +254,72 @@ def apply_curation(
     roms_root = Path(config.roms_dir)
     retired_dir = roms_root / system_name / RETIRED_SUBFOLDER
 
-    for group in groups:
-        for path in group.retire:
-            if not path.exists():
-                result.skipped.append((path, "source missing"))
-                continue
-            if action == "delete":
+    def _write_partial_manifest() -> Optional[Path]:
+        if not entries:
+            return None
+        out_dir = manifest_dir or CURATION_DIR
+        out_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = out_dir / f"{MANIFEST_PREFIX}{stamp}.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "timestamp": stamp,
+                    "system": system_name,
+                    "action": action,
+                    "moves": entries,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        return path
+
+    try:
+        for group in groups:
+            for path in group.retire:
+                if not path.exists():
+                    result.skipped.append((path, "source missing"))
+                    continue
+                if action == "delete":
+                    try:
+                        path.unlink()
+                        result.deleted.append(path)
+                    except OSError as e:
+                        result.skipped.append((path, f"delete failed: {e}"))
+                    continue
+
+                # archive
+                dest = retired_dir / path.name
+                if dest.exists():
+                    result.skipped.append((path, f"target exists: {dest}"))
+                    continue
                 try:
-                    path.unlink()
-                    result.deleted.append(path)
+                    retired_dir.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(path), str(dest))
                 except OSError as e:
-                    result.skipped.append((path, f"delete failed: {e}"))
-                continue
+                    result.skipped.append((path, f"move failed: {e}"))
+                    continue
+                result.archived.append((path, dest))
+                entries.append({
+                    "src": str(path),
+                    "dest": str(dest),
+                    "title": group.title,
+                    "kept": str(group.keep),
+                })
+    except KeyboardInterrupt:
+        # Persist whatever we've already archived so `curate --undo`
+        # can roll them back. Without this, a Ctrl+C mid-archive
+        # leaves files stranded in _retired with no manifest record.
+        try:
+            _write_partial_manifest()
+        except OSError:
+            pass
+        raise
 
-            # archive
-            dest = retired_dir / path.name
-            if dest.exists():
-                result.skipped.append((path, f"target exists: {dest}"))
-                continue
-            try:
-                retired_dir.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(path), str(dest))
-            except OSError as e:
-                result.skipped.append((path, f"move failed: {e}"))
-                continue
-            result.archived.append((path, dest))
-            entries.append({
-                "src": str(path),
-                "dest": str(dest),
-                "title": group.title,
-                "kept": str(group.keep),
-            })
-
-    if not entries:
+    manifest_path = _write_partial_manifest()
+    if manifest_path is None:
         return result, None
-
-    out_dir = manifest_dir or CURATION_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = out_dir / f"{MANIFEST_PREFIX}{stamp}.json"
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "timestamp": stamp,
-                "system": system_name,
-                "action": action,
-                "moves": entries,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
     return result, manifest_path
 
 

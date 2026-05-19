@@ -310,29 +310,46 @@ def apply_backup(
     backup_root.mkdir(parents=True, exist_ok=True)
 
     completed: list[BackupItem] = []
-    for item in plan.items:
-        if progress_cb:
-            progress_cb(item, "start")
+    current_dest: Optional[Path] = None
+    try:
+        for item in plan.items:
+            if progress_cb:
+                progress_cb(item, "start")
 
-        src = Path(item.src)
-        dest = Path(item.dest)
-        dest.parent.mkdir(parents=True, exist_ok=True)
+            src = Path(item.src)
+            dest = Path(item.dest)
+            dest.parent.mkdir(parents=True, exist_ok=True)
 
-        if dest.exists():
-            # Refuse to overwrite an existing component subfolder — manifests
-            # become ambiguous. Caller should choose a different target.
-            raise FileExistsError(
-                f"Backup destination already exists: {dest}"
-            )
+            if dest.exists():
+                # Refuse to overwrite an existing component subfolder — manifests
+                # become ambiguous. Caller should choose a different target.
+                raise FileExistsError(
+                    f"Backup destination already exists: {dest}"
+                )
 
-        if src.is_dir():
-            shutil.copytree(str(src), str(dest))
-        else:
-            shutil.copy2(str(src), str(dest))
+            current_dest = dest
+            if src.is_dir():
+                shutil.copytree(str(src), str(dest))
+            else:
+                shutil.copy2(str(src), str(dest))
+            current_dest = None
 
-        completed.append(item)
-        if progress_cb:
-            progress_cb(item, "done")
+            completed.append(item)
+            if progress_cb:
+                progress_cb(item, "done")
+    except KeyboardInterrupt:
+        # Ctrl+C mid-copy leaves the in-flight component half-written.
+        # Sweep it before re-raising so the backup root only contains
+        # whole components — restore semantics depend on it.
+        if current_dest is not None:
+            try:
+                if current_dest.is_dir():
+                    shutil.rmtree(str(current_dest), ignore_errors=True)
+                elif current_dest.exists():
+                    current_dest.unlink()
+            except OSError:
+                pass
+        raise
 
     _write_manifest(backup_root, plan, completed, config)
     return backup_root

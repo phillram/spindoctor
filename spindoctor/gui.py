@@ -632,8 +632,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         )
         return 1
 
-    app = _SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
-    app.mainloop()
+    from ._singleton import SingletonLock, default_lock_path
+
+    lock = SingletonLock(default_lock_path())
+    if not lock.acquire():
+        try:
+            import tkinter as _tk_warn
+            from tkinter import messagebox as _mb_warn
+
+            _root = _tk_warn.Tk()
+            _root.withdraw()
+            _mb_warn.showwarning(
+                f"{__app_name__} already running",
+                f"Another {__app_name__} window is already open on this "
+                "machine. Two GUIs editing the same HyperSpin XML at the "
+                "same time can corrupt your library. Bring the existing "
+                "window to the front instead, or close it and re-launch.",
+            )
+            _root.destroy()
+        except Exception:  # noqa: BLE001 — last-ditch user notice
+            print(
+                f"{__app_name__} is already running on this machine.",
+                file=sys.stderr,
+            )
+        return 1
+
+    try:
+        app = _SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+        app.mainloop()
+    finally:
+        lock.release()
     return 0
 
 
@@ -788,6 +816,10 @@ class _SpinDoctorGUI:
         # of staring at 15 tabs full of "setup incomplete" status bars.
         # Deferred via after_idle so the main window paints first.
         self.root.after_idle(self._maybe_show_first_run_wizard)
+        # Second after_idle so the wizard wins if both would fire — a
+        # fresh install shouldn't see "What's new" before they've even
+        # picked paths.
+        self.root.after_idle(self._maybe_show_whats_new)
 
     # ── Dark theme ────────────────────────────────────────────────────────────
 
@@ -2376,6 +2408,12 @@ class _SpinDoctorGUI:
         help_menu = self.tk.Menu(menubar, tearoff=0)
         help_menu.add_command(label="About SpinDoctor", command=self._show_about)
         help_menu.add_command(
+            label="What's new", command=self._show_whats_new,
+        )
+        help_menu.add_command(
+            label="Keyboard shortcuts", command=self._show_keyboard_shortcuts,
+        )
+        help_menu.add_command(
             label="Check for updates", command=self._manual_update_check,
         )
         help_menu.add_command(
@@ -2398,10 +2436,21 @@ class _SpinDoctorGUI:
         body = self.ttk.Frame(win, padding=18)
         body.pack(fill="both", expand=True)
 
+        # Show the app icon next to the title if the PNG icon loaded at
+        # startup. The .ico path used on Windows won't help here — Tk's
+        # PhotoImage doesn't read .ico — but the PNG fallback does.
+        icon = getattr(self, "_icon_photo", None)
+        header = self.ttk.Frame(body)
+        header.pack(anchor="w", fill="x")
+        if icon is not None:
+            try:
+                self.ttk.Label(header, image=icon).pack(side="left", padx=(0, 10))
+            except self.tk.TclError:
+                pass
         self.ttk.Label(
-            body, text=f"{__app_name__}",
+            header, text=f"{__app_name__}",
             font=("TkDefaultFont", 14, "bold"),
-        ).pack(anchor="w")
+        ).pack(side="left", anchor="w")
         self.ttk.Label(body, text=f"version {__version__}").pack(
             anchor="w", pady=(0, 8),
         )
@@ -2435,6 +2484,138 @@ class _SpinDoctorGUI:
                 "https://github.com/phillram/spindoctor/blob/main/CHANGELOG.md",
             ),
         ).pack(side="left", padx=6)
+
+        self.ttk.Button(body, text="Close", command=win.destroy).pack(
+            anchor="e", pady=(12, 0),
+        )
+
+    # ── What's new ────────────────────────────────────────────────────────────
+
+    def _maybe_show_whats_new(self) -> None:
+        """Open the "What's new" dialog once per upgraded version.
+
+        Suppressed on fresh installs (``last_seen_version == ""``) so
+        the first-run wizard isn't immediately stacked on top of a
+        dialog. Also suppressed when the running version is identical
+        to the last-seen one.
+        """
+        try:
+            cfg = load_config()
+        except Exception:  # noqa: BLE001
+            return
+
+        last_seen = getattr(cfg, "last_seen_version", "") or ""
+        if last_seen == "" or last_seen == __version__:
+            if last_seen != __version__:
+                try:
+                    cfg.last_seen_version = __version__
+                    save_config(cfg)
+                except Exception:  # noqa: BLE001
+                    pass
+            return
+
+        self._show_whats_new()
+        try:
+            cfg.last_seen_version = __version__
+            save_config(cfg)
+        except Exception:  # noqa: BLE001
+            pass
+
+    def _show_whats_new(self) -> None:
+        win = self.tk.Toplevel(self.root)
+        win.title(f"What's new in {__app_name__}")
+        win.transient(self.root)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        self._fit_geometry(win, 620, 460)
+
+        body = self.ttk.Frame(win, padding=18)
+        body.pack(fill="both", expand=True)
+
+        self.ttk.Label(
+            body, text=f"What's new in {__app_name__} {__version__}",
+            font=("TkDefaultFont", 13, "bold"),
+        ).pack(anchor="w", pady=(0, 8))
+
+        text = self.scrolledtext.ScrolledText(
+            body, wrap="word", height=16,
+        )
+        text.pack(fill="both", expand=True)
+        text.insert("1.0", self._whats_new_body())
+        text.configure(state="disabled")
+
+        btn_row = self.ttk.Frame(body)
+        btn_row.pack(fill="x", pady=(10, 0))
+        self.ttk.Button(
+            btn_row, text="Open full CHANGELOG",
+            command=lambda: self._open_url(
+                "https://github.com/phillram/spindoctor/blob/main/CHANGELOG.md",
+            ),
+        ).pack(side="left")
+        self.ttk.Button(btn_row, text="Close", command=win.destroy).pack(
+            side="right",
+        )
+
+    def _whats_new_body(self) -> str:
+        # Curated highlights — keep this short. The full CHANGELOG is one
+        # click away via the button. Bullet text is plain so it survives
+        # the read-only ScrolledText without needing tag styling.
+        return (
+            "Highlights since your last launch:\n\n"
+            "• GUI-first launcher — the GUI is now the primary surface.\n"
+            "  Setup, Doctor, Curate, Audit, Backup, Migrate, Wheels,\n"
+            "  Media, Favorites, Cleanup, Stats, Systems, Logs, Tools.\n\n"
+            "• First-run wizard guides new users through picking paths\n"
+            "  and running their first health check.\n\n"
+            "• Per-tab health badges flag setup or data problems at a\n"
+            "  glance without diving in.\n\n"
+            "• System quick-filter (Ctrl+Shift+F) narrows every system\n"
+            "  combobox across every tab.\n\n"
+            "• Output find bar (Ctrl+F) searches long audit / migrate\n"
+            "  logs.\n\n"
+            "• Drag and drop folders onto Setup-tab path fields.\n\n"
+            "• Multi-system fetch-meta selector, per-system overrides\n"
+            "  form, persistent window geometry, preflight checks,\n"
+            "  chained-workflow progress bar, single-instance lock.\n\n"
+            "Full CHANGELOG is one click away."
+        )
+
+    # ── Keyboard shortcuts ────────────────────────────────────────────────────
+
+    def _show_keyboard_shortcuts(self) -> None:
+        win = self.tk.Toplevel(self.root)
+        win.title("Keyboard shortcuts")
+        win.transient(self.root)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        self._fit_geometry(win, 520, 460)
+
+        body = self.ttk.Frame(win, padding=18)
+        body.pack(fill="both", expand=True)
+
+        self.ttk.Label(
+            body, text="Keyboard shortcuts",
+            font=("TkDefaultFont", 13, "bold"),
+        ).pack(anchor="w", pady=(0, 8))
+
+        shortcuts = [
+            ("Ctrl+1 … Ctrl+9", "Jump to notebook tab 1–9"),
+            ("Ctrl+=  /  Ctrl++", "Zoom in (larger UI)"),
+            ("Ctrl+-", "Zoom out (smaller UI)"),
+            ("Ctrl+0", "Reset zoom to 1.0×"),
+            ("Ctrl+`", "Show or hide the Output panel"),
+            ("Ctrl+F", "Open the Output find bar"),
+            ("Ctrl+Shift+F", "Toggle the system quick-filter bar"),
+            ("Esc", "Close any open dialog"),
+        ]
+
+        grid = self.ttk.Frame(body)
+        grid.pack(fill="both", expand=True, pady=(4, 0))
+        for row, (keys, desc) in enumerate(shortcuts):
+            self.ttk.Label(
+                grid, text=keys, font=("TkFixedFont", 10, "bold"),
+            ).grid(row=row, column=0, sticky="w", padx=(0, 18), pady=2)
+            self.ttk.Label(grid, text=desc).grid(
+                row=row, column=1, sticky="w", pady=2,
+            )
 
         self.ttk.Button(body, text="Close", command=win.destroy).pack(
             anchor="e", pady=(12, 0),
