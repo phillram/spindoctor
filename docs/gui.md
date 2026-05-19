@@ -33,13 +33,13 @@ The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the thr
 
 ## First-run wizard
 
-On the very first launch (no `config.json`, or saved config still has the placeholder `D:\…` defaults), a three-step modal opens:
+The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Setup tab → Run first-run wizard…** button; the same dialog is also available from **Help → First-run setup…** at any time. A three-step modal opens:
 
 1. **Welcome** — a one-sentence intro and a "Skip" / "Next" pair.
 2. **Pick paths** — required: `roms_dir` and `hyperspin_dir`. Browse… buttons next to each field; drag-and-drop a folder from Explorer / Finder also fills the field.
 3. **Run doctor** — runs `spindoctor doctor` inline against the just-saved paths and renders the per-check ✓/⚠/✗ summary so you can fix anything obvious before clicking Finish.
 
-The wizard sets `first_run_complete = true` in `config.json` so it never auto-opens again. Existing installs with a valid config silently flip the flag on first launch of the 2.0 GUI so long-term users aren't pestered. **Help → First-run setup…** re-opens the wizard manually any time.
+Existing installs and re-runs use the same dialog. There is no auto-open behaviour and no `first_run_complete` flag — start it when you want it.
 
 ## Layout primer
 

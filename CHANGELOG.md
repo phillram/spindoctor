@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **First-run wizard is now opt-in.** The wizard no longer auto-opens at GUI launch — it's available from a new **Setup tab → Run first-run wizard…** button and from the existing **Help → First-run setup…** menu item. Cabinet owners who already approved the upgrade by launching the binary don't need a modal between them and the Setup tab; the existing startup health-check status-bar message already surfaces missing-config problems. The `first_run_complete` config field is removed (no longer needed for auto-fire gating); pre-existing configs with the key set are silently ignored.
+
 ### Removed
 
 - **GUI: Help → "What's new" dialog and the `last_seen_version` config field.** The auto-opening one-shot dialog (added earlier in the 2.0 cycle) was extra friction for cabinet owners who'd already approved the upgrade by launching the binary — they don't need a wall of bullets on launch. The full CHANGELOG is still one click away (Help → About → CHANGELOG link). The `last_seen_version` config key is removed; existing configs that have it set are silently ignored.

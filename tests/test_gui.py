@@ -1133,9 +1133,8 @@ def test_find_bar_handles_no_matches_gracefully(monkeypatch):
 def test_first_run_wizard_dialog_constructs(monkeypatch):
     """`_show_first_run_wizard` opens a three-step Toplevel without raising.
 
-    The auto-trigger path (`_maybe_show_first_run_wizard`) is config-
-    driven; this test exercises the manually-invoked path (Help →
-    First-run setup…) which constructs the same dialog. Construction-
+    The wizard is opt-in (Setup-tab button or Help menu) — no auto-
+    fire. This test exercises the manually-invoked path. Construction-
     time bugs in this dialog are the precise shape of the
     `_output`-style AttributeError the project memory warns about.
     """
