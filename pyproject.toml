@@ -116,6 +116,27 @@ target-version = "py38"
 # once the baseline is clean.
 select = ["F", "W"]
 
+[tool.pytest.ini_options]
+# Suppress the Python 3.12 + Tkinter + pytest tracemalloc flake.
+#
+# Tkinter's `Variable.__del__` raises `RuntimeError: main thread is
+# not in main loop` when GC fires after Tk's main loop has exited.
+# The exception goes to `sys.unraisablehook`; pytest's hook then
+# tries `tracemalloc.get_object_traceback`, which on Py 3.12 trips
+# a "partially initialized module 'tracemalloc' has no attribute
+# 'get_object_traceback'" circular-import quirk. That second crash
+# gets re-raised as a test failure even though the test itself
+# passed — and lands non-deterministically on whichever GUI-touching
+# test pytest happened to be running when GC ran.
+#
+# Demoting the warning to `default` (instead of pytest's implicit
+# `error`) means the unraisable is reported as a warning but does
+# not fail the run. Production code is unaffected — this is a
+# test-runner-only knob.
+filterwarnings = [
+    "default::pytest.PytestUnraisableExceptionWarning",
+]
+
 [tool.bandit]
 # B324 (weak hash): SHA-1 / MD5 are used for *non-cryptographic* integrity
 #   checks — ROM verification against No-Intro DAT (the DATs themselves
