@@ -213,7 +213,7 @@ Open the GUI and use **`File → View logs & manifests…`**. The window groups 
 
 ### Menubar reference
 
-`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: About SpinDoctor / Check for updates. Full descriptions at [Windows binaries → Menubar](windows-binaries.md#menubar).
+`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: First-run setup… / About SpinDoctor / Check for updates. Full descriptions at [GUI walkthrough → Menubar](gui.md#menubar).
 
 ### GUI looks cramped on a 720p (1280×720) cabinet screen
 
