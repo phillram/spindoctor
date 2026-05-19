@@ -24,21 +24,20 @@ Backup & Restore → Tools → Migrate → Logs → Custom Command
 
 If you have muscle memory for the old order, the keyboard shortcut `Ctrl+1`…`Ctrl+9` still jumps to the Nth tab — just the Nth has changed.
 
-### First-run wizard
+### First-run wizard (opt-in)
 
-A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) opens automatically on a fresh cabinet, or any time the GUI detects placeholder defaults in `config.json`. The wizard sets a new `first_run_complete` flag so it never auto-opens again. Existing 1.x installs with a valid config silently flip the flag on first launch of the 2.0 GUI — you won't see it unless you re-open it manually via **Help → First-run setup…**.
+A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) is available from the **Setup tab → Run first-run wizard…** button and from **Help → First-run setup…**. It does NOT auto-fire at launch (an early 2.0 build did; cabinet owners didn't need a modal between them and the Setup tab). Existing 1.x installs see nothing on first launch — open the wizard manually whenever you like.
 
 ### New GUI config keys
 
-Three new keys in `config.json`:
+Two new keys in `config.json`:
 
 | Key | Default | Purpose |
 |---|---|---|
-| `first_run_complete` | `false` → flipped to `true` on 2.0 first launch | Suppresses the auto-opening first-run wizard. |
 | `gui_window_geometry` | unset | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed. Restored on the next launch. |
 | `gui_last_active_tab` | unset | Index of the tab that was open the last time the GUI closed. Restored on the next launch. |
 
-All three are managed by the GUI; hand-editing them is fine but not necessary. Delete any of them to reset that piece of state. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
+Both are managed by the GUI; hand-editing them is fine but not necessary. Delete either to reset that piece of state. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
 
 ### New GUI affordances
 

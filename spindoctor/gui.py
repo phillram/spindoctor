@@ -810,12 +810,12 @@ class _SpinDoctorGUI:
         # so a slow / unreachable GitHub doesn't delay the first paint.
         # Result lands in the status bar via _on_update_check_done.
         self._start_update_check()
-        # First-run wizard — if there's no config yet, or the saved
-        # config can't reach the required paths, open a guided picker
-        # so a brand-new cabinet owner has something to click instead
-        # of staring at 15 tabs full of "setup incomplete" status bars.
-        # Deferred via after_idle so the main window paints first.
-        self.root.after_idle(self._maybe_show_first_run_wizard)
+        # First-run wizard is opt-in via the Setup-tab button and the
+        # Help menu — no longer auto-fires at launch. Cabinet owners who
+        # already approved the upgrade by launching the binary don't
+        # need a modal in their face on first paint; `_startup_health_
+        # checks` already surfaces missing-config problems in the
+        # status bar, and the Setup tab is the natural starting point.
 
     # ── Dark theme ────────────────────────────────────────────────────────────
 
@@ -1355,43 +1355,6 @@ class _SpinDoctorGUI:
 
     # ── First-run wizard ──────────────────────────────────────────────────────
 
-    def _maybe_show_first_run_wizard(self) -> None:
-        """Open the wizard if (a) no config file exists or (b) the
-        saved config still has the placeholder ``D:\\…`` defaults
-        showing — i.e. the user has never actually set anything up.
-
-        The user can dismiss the wizard via Skip; we set
-        ``first_run_complete`` in config so it never auto-opens again
-        even if the paths remain invalid. Help → "First-run setup…"
-        re-opens it manually.
-        """
-        try:
-            cfg = load_config()
-        except Exception:  # noqa: BLE001 - corrupt config: still show wizard
-            cfg = None
-
-        # Already completed → user dismissed it; never auto-open again.
-        if cfg is not None and getattr(cfg, "first_run_complete", False):
-            return
-
-        # If we somehow have a valid config without the flag (older
-        # installs from before this field existed), just mark it
-        # complete silently so we don't pester long-term users.
-        if cfg is not None:
-            try:
-                ok, _errors = cfg.is_valid()
-            except Exception:  # noqa: BLE001
-                ok = False
-            if ok:
-                try:
-                    cfg.first_run_complete = True
-                    save_config(cfg)
-                except Exception:  # noqa: BLE001
-                    pass
-                return
-
-        self._show_first_run_wizard()
-
     def _show_first_run_wizard(self) -> None:
         """Three-step modal: welcome → pick paths → run doctor."""
         try:
@@ -1515,7 +1478,6 @@ class _SpinDoctorGUI:
             if not skip:
                 for key, var in state["path_vars"].items():
                     setattr(cfg2, key, var.get().strip())
-            cfg2.first_run_complete = True
             try:
                 save_config(cfg2)
             except Exception as exc:  # noqa: BLE001
@@ -3960,6 +3922,14 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
+        # Manual entry point for the first-run wizard. The wizard no
+        # longer auto-fires at launch (it was extra friction on a fresh
+        # cabinet that already wanted the Setup tab) — surface it here
+        # for new users and on the Help menu for re-runs.
+        self.ttk.Button(
+            btn_row, text="Run first-run wizard…",
+            command=self._show_first_run_wizard,
+        ).pack(side="left", padx=6)
         # Folder shortcuts — same actions are also under File menu, but
         # surfacing them here saves a click for the Setup-tab use case
         # ("opened the GUI to fix a bad path, want to peek at the
