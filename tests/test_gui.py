@@ -1009,3 +1009,287 @@ def test_ui_scale_presets_includes_1x():
     # The reset action snaps to 1.0; if the presets ever lose that entry
     # the View menu radio would have no preset corresponding to "default".
     assert 1.0 in gui.UI_SCALE_PRESETS
+
+
+# ─── 2.0-era surfaces with no smoke coverage before now ──────────────────────
+#
+# All four of the GUI features added during the 2.0 cycle — the Output
+# find bar, the first-run wizard dialog, the preflight chain button,
+# and the drag-and-drop folder hook — multi-widget surfaces that are
+# *exactly* the shape of bug the project memory flags as having shipped
+# twice already (the v1.7.0 `_output` AttributeError, the v1.7.2
+# Checkbutton `-foreground` TclError). The construction smoke at the
+# top of this file catches whole-window failures; these tests pin the
+# specific construct / invoke / teardown paths for each surface so a
+# refactor can't silently break them.
+
+
+def _build_gui_for_test(monkeypatch):
+    """Construct a real `_SpinDoctorGUI` for the 2.0-surface tests.
+
+    Returns ``(app, tk_module)`` or calls ``pytest.skip`` when no display
+    is available (CI without xvfb, macOS without a GUI session, headless
+    Windows). Mirrors the harness used by ``test_gui_constructs_against_real_tk``
+    and ``test_gui_menu_commands_are_safe_to_invoke``.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox, scrolledtext, ttk
+    except ImportError:
+        pytest.skip("Tkinter not available")
+
+    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
+        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
+
+    # Stub the subprocess + startfile surfaces so any post-construction
+    # callbacks (notably the manual update check on first paint) can't
+    # touch the real shell.
+    monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: None)
+    monkeypatch.setattr(gui.os, "startfile",
+                        lambda *_a, **_k: None, raising=False)
+    from spindoctor import update_check
+    monkeypatch.setattr(update_check, "check_for_update", lambda _v: None)
+
+    try:
+        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
+    except tk.TclError as exc:
+        msg = str(exc).lower()
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+            pytest.skip(f"Tk display unavailable: {exc}")
+        raise
+    return app, tk
+
+
+def test_find_bar_open_navigates_and_close(monkeypatch):
+    """Open the find bar, seed the Output buffer, walk matches, close.
+
+    Regression guard for `_find_open` / `_refresh_find_matches` /
+    `_find_next` / `_find_prev` / `_find_close` — multi-widget
+    construction in `_build_layout` plus runtime tag-management against
+    the ScrolledText. Previously zero coverage despite being a primary
+    Ctrl+F-driven UX surface.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Seed the Output panel with content the find bar can scan over.
+        # Use `_append_output` so the same insert path users hit is
+        # exercised (write to a disabled Text widget via re-enable hack).
+        app._append_output(
+            "Audit complete: nes ok\nAudit complete: snes ok\n"
+            "Audit complete: gba failed\n"
+        )
+
+        # Open: the find bar should be packed (manager set to 'pack'),
+        # the entry focused, and `_refresh_find_matches` should have
+        # run (empty query → 0 matches).
+        app._find_open()
+        app.root.update_idletasks()
+        app.root.update()
+        assert app._find_bar.winfo_manager() == "pack"
+        assert app._find_match_var.get() == ""
+
+        # Typing a query updates the count via the StringVar trace.
+        app._find_var.set("Audit")
+        app.root.update_idletasks()
+        assert app._find_matches, "expected matches for 'Audit'"
+        assert "of" in app._find_match_var.get()
+
+        # Next/Prev rotate the cursor through the match list without raising.
+        starting_cursor = app._find_cursor
+        app._find_next()
+        assert app._find_cursor != starting_cursor or len(app._find_matches) == 1
+        app._find_prev()
+        # Prev from the original position wraps; either way it must not raise.
+
+        # Close clears highlights and unpacks the bar (no manager).
+        app._find_close()
+        app.root.update_idletasks()
+        assert app._find_bar.winfo_manager() == ""
+        assert app._find_matches == []
+        assert app._find_match_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_find_bar_handles_no_matches_gracefully(monkeypatch):
+    """A query that matches nothing should report '0 matches' and not
+    crash subsequent Next/Prev calls (they're guarded against empty match lists).
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._append_output("only the lonely\n")
+        app._find_open()
+        app._find_var.set("zzz-never-matches")
+        app.root.update_idletasks()
+        assert app._find_match_var.get() == "0 matches"
+        # Both navigation calls should no-op rather than raise.
+        app._find_next()
+        app._find_prev()
+        app._find_close()
+    finally:
+        app.root.destroy()
+
+
+def test_first_run_wizard_dialog_constructs(monkeypatch):
+    """`_show_first_run_wizard` opens a three-step Toplevel without raising.
+
+    The auto-trigger path (`_maybe_show_first_run_wizard`) is config-
+    driven; this test exercises the manually-invoked path (Help →
+    First-run setup…) which constructs the same dialog. Construction-
+    time bugs in this dialog are the precise shape of the
+    `_output`-style AttributeError the project memory warns about.
+    """
+    app, tk_mod = _build_gui_for_test(monkeypatch)
+    try:
+        # `_show_first_run_wizard` opens a modal Toplevel; we want to
+        # build it and immediately destroy it. Capture the new Toplevel
+        # by snapshotting the root's children before/after.
+        before = set(app.root.winfo_children())
+        app._show_first_run_wizard()
+        app.root.update_idletasks()
+        after = set(app.root.winfo_children())
+        new_windows = after - before
+        # At least one Toplevel should have been created; the wizard's
+        # path-step Browse buttons can lazily build a hidden filedialog
+        # Toplevel as a side effect on some Tk builds, so we don't pin
+        # an exact count — just that the wizard window itself exists.
+        toplevels = [
+            w for w in new_windows
+            if isinstance(w, tk_mod.Toplevel)
+        ]
+        assert toplevels, f"expected a wizard Toplevel, got {new_windows}"
+        wizard_windows = [w for w in toplevels if "Welcome" in w.title()]
+        assert wizard_windows, (
+            f"expected a Welcome window, got titles {[w.title() for w in toplevels]}"
+        )
+        for w in toplevels:
+            w.destroy()
+    finally:
+        app.root.destroy()
+
+
+def test_run_preflight_dispatches_three_step_chain(monkeypatch):
+    """`_run_preflight` chains `doctor`, `tools-audit`, `audit --all`.
+
+    Mock `_run_cli` so the actual subprocesses never fire — we only
+    want to verify that the chain *would* invoke the three commands in
+    the documented order and the summariser runs at the end.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        calls: list[tuple[str, tuple[str, ...]]] = []
+
+        def fake_run_cli(binary, args, on_complete=None):
+            calls.append((binary, tuple(args)))
+            # Simulate a synchronous successful run so the chain
+            # advances without spinning on a real process.
+            if on_complete is not None:
+                on_complete(0)
+
+        summaries: list[list[tuple[str, int]]] = []
+        original_summarise = app._summarise_preflight
+
+        def fake_summarise(results):
+            summaries.append(list(results))
+            # Suppress the messagebox the real summariser opens.
+
+        monkeypatch.setattr(app, "_run_cli", fake_run_cli)
+        monkeypatch.setattr(app, "_summarise_preflight", fake_summarise)
+        # Sanity reference so the linter doesn't strip the import-style
+        # binding above — the original is restored on tearDown.
+        _ = original_summarise
+
+        app._run_preflight()
+        app.root.update_idletasks()
+
+        # The three documented steps, in order:
+        assert [c[1][0] for c in calls] == ["doctor", "tools-audit", "audit"]
+        # Final step should be `audit --all`.
+        assert calls[-1] == ("spindoctor", ("audit", "--all"))
+        # Summariser received one (name, exit_code) tuple per step.
+        assert summaries, "summariser never ran"
+        assert [r[0] for r in summaries[-1]] == [
+            "doctor", "tools-audit", "audit --all",
+        ]
+        assert all(rc == 0 for _, rc in summaries[-1])
+    finally:
+        app.root.destroy()
+
+
+def test_register_path_drop_target_no_op_without_tkdnd(monkeypatch):
+    """When `tkinterdnd2` isn't available, `_register_path_drop_target`
+    must silently no-op rather than raising. This is the most common
+    code path for the binary install (where tkdnd ships) and for the
+    pip install (where it doesn't ship unless `[gui]` or `[all]` was
+    specified) — both have to behave.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Force the "no tkdnd" branch even on a machine that has it.
+        app._dnd_available = False
+        app._tkdnd = None
+        # A dummy widget with no drop_target_register attribute would
+        # crash a non-defensive implementation. The function must
+        # short-circuit before touching the widget.
+
+        class _DummyWidget:
+            def drop_target_register(self, *_a, **_k):  # pragma: no cover
+                raise AssertionError(
+                    "drop_target_register called when tkdnd is unavailable"
+                )
+
+        dummy_var = app.tk.StringVar()
+        # Should return without raising and without touching the widget.
+        app._register_path_drop_target(_DummyWidget(), dummy_var)
+    finally:
+        app.root.destroy()
+
+
+def test_register_path_drop_target_wires_callback_when_tkdnd_present(monkeypatch):
+    """With a fake tkdnd module, `_register_path_drop_target` should
+    register the widget for DND_FILES and bind a `<<Drop>>` callback
+    whose body sets the StringVar from a parsed event payload.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        registered: list[object] = []
+        bindings: dict[str, object] = {}
+
+        class _FakeTkDnd:
+            DND_FILES = "DND_Files"
+
+        class _FakeWidget:
+            def drop_target_register(self, *types):
+                registered.append(types)
+
+            def dnd_bind(self, sequence, callback):
+                bindings[sequence] = callback
+
+        app._dnd_available = True
+        app._tkdnd = _FakeTkDnd()
+        var = app.tk.StringVar()
+        widget = _FakeWidget()
+        app._register_path_drop_target(widget, var)
+
+        assert registered == [("DND_Files",)]
+        assert "<<Drop>>" in bindings
+
+        # Simulate a drop event with a brace-quoted path containing spaces.
+        class _Event:
+            data = "{C:/Games/My ROMs}"
+            action = "copy"
+
+        callback = bindings["<<Drop>>"]
+        result = callback(_Event())
+        assert result == "copy"
+        assert var.get() == "C:/Games/My ROMs"
+
+        # And a plain (non-brace) drop with a file:// scheme prefix.
+        class _Event2:
+            data = "file:///tmp/MyFolder"
+            action = "link"
+
+        callback(_Event2())
+        assert var.get() == "/tmp/MyFolder"
+    finally:
+        app.root.destroy()
