@@ -85,14 +85,15 @@ class Config:
     # Metadata API credentials
     screenscraper_user: str = ""
     screenscraper_pass: str = ""
-    # Advanced: per-app developer credentials sent alongside the user
-    # credentials on every ScreenScraper request. ScreenScraper's api2
-    # requires *both* a per-user pair (ssid/sspassword) and a per-app pair
-    # (devid/devpassword). The "SpinDoctor" defaults are the historical
-    # values; if ScreenScraper has issued you a real registered developer
-    # credential — or the defaults stop being accepted — override these via
-    # `spindoctor config set screenscraper_devid <value>`. Surfaces only as
-    # a Custom Command preset; no Setup-tab field.
+    # Per-app developer credentials sent alongside the user credentials on
+    # every ScreenScraper request. ScreenScraper's api2 requires *both*
+    # a per-user pair (ssid/sspassword) and a per-app pair (devid/devpassword).
+    # The literal "SpinDoctor" defaults below are historical placeholders —
+    # they are NOT a registered developer account and ScreenScraper rejects
+    # every request that ships them with HTTP 403. Register your own dev
+    # account at https://www.screenscraper.fr/membreinscription.php and set
+    # the values via the Setup tab (ScreenScraper devid / devpassword) or
+    # `spindoctor config set screenscraper_devid <value>`.
     screenscraper_devid: str = "SpinDoctor"
     screenscraper_devpassword: str = "SpinDoctor"
     thegamesdb_key: str = ""
