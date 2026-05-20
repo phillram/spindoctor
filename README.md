@@ -84,7 +84,7 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-15 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~70 canonical CLI invocations — anything described under [CLI cheatsheet](#cli-cheatsheet) below also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
+15 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~70 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
 
 ### Tabs
 

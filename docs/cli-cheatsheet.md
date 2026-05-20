@@ -304,7 +304,7 @@ spindoctor-stats report
 spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply
 ```
 
-Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [recent](commands.md#recent), [stats-report](commands.md#stats-report).
+Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [recent](commands.md#recent), [stats-report](commands.md#playtime-stats).
 
 ### `install-tools` — wire wheels into Windows log-on
 
