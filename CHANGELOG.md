@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-05-20
+
+### Fixed
+
+- **Main Menu.xml now matches the format HyperSpin itself ships.** Toggling "hide system" on the Main Menu tab was rewriting `Main Menu.xml` in the verbose HyperHQ schema — empty `<description>` / `<cloneof>` / `<crc>` / `<manufacturer>` / `<year>` / `<genre>` / `<rating>` children on every entry, `enabled="True"` on visible games, an XML declaration, and unknown attributes like `exe="true"` on the **Search** entry silently dropped. Without `exe="true"`, Hyperspin tried to render Search as a regular system wheel and bailed out with **"Error creating main menu"** (black screen). Main Menu entries now emit as `<game name="..."/>` — `enabled="False"` *only* on hidden entries, no children, no XML declaration, no `<header>` — exactly the shape HyperSpin's native Main Menu uses. `GameEntry` gains an `extra_attrs` round-trip bag so `exe="true"` (and any third-party HyperHQ-extension attributes) survive a rewrite end-to-end. The provisioning writer in `rocketlauncher.generate_hs_main_menu` / `upsert_main_menu_system` was rewritten to match, so freshly added systems aren't born broken.
+
+### Changed
+
+- **Per-system database round-trip preserves unknown `<game>` attributes.** Real-world per-system XMLs (HyperList exporter output, third-party HyperHQ tools) attach attributes like `index="true"` and `image="<letter>"` to game entries. These were previously dropped on first save through SpinDoctor; they now round-trip via the same `extra_attrs` mechanism. Per-system schema (full child elements + `<enabled>Yes|No</enabled>`) is otherwise unchanged.
+
 ## [2.2.0] - 2026-05-20
 
 ### Added
@@ -576,7 +586,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.1...HEAD
+[2.2.1]: https://github.com/phillram/spindoctor/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/phillram/spindoctor/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/phillram/spindoctor/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/phillram/spindoctor/compare/v2.0.0...v2.0.1
