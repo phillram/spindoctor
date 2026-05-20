@@ -1411,11 +1411,10 @@ def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
 
 
 def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path):
-    """Hiding a Main Menu item and saving must write the HyperHQ-style
-    ``enabled="False"`` attribute on ``<game>``. The child-element form
-    is what per-system game databases use, but the Main Menu loader
-    honours the attribute — writing only the child meant Hyperspin
-    silently ignored the hide flag.
+    """Hiding a Main Menu item and saving must write HyperSpin's native
+    minimal format: ``enabled="False"`` only on the hidden entry, no
+    ``enabled`` attribute on visible entries, no ``<enabled>`` child,
+    and no XML declaration. This is what HyperSpin itself ships.
     """
     import xml.etree.ElementTree as ET
     from spindoctor import config as cfg_mod
@@ -1488,16 +1487,12 @@ def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path)
         app._mm_save_order()
         assert captured == ["started"]
 
-        # Round-trip: re-read the file and verify the HyperHQ-style
-        # ``enabled="True"|"False"`` attribute is what was written.
-        # The ``<enabled>`` child element must be absent on Main Menu
-        # entries — Hyperspin's Main Menu loader reads the attribute.
+        # Round-trip: re-read the file. Visible entries carry no enabled
+        # attribute; hidden entries carry enabled="False". No <enabled>
+        # child element appears anywhere — HyperSpin's Main Menu loader
+        # reads the attribute form only.
         re_root = ET.parse(xml_path).getroot()
         for game in re_root.findall("game"):
-            assert "enabled" in game.attrib, (
-                "writer missing enabled attribute on "
-                f"<game name='{game.get('name')}'>"
-            )
             assert game.find("enabled") is None, (
                 "writer should not emit <enabled> child for Main Menu "
                 f"<game name='{game.get('name')}'>"
@@ -1511,14 +1506,12 @@ def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path)
             g for g in re_root.findall("game")
             if g.get("name") == "MAME"
         )
-        assert mame.get("enabled") == "True"
+        assert mame.get("enabled") is None, (
+            "visible Main Menu entries must not carry an enabled attribute"
+        )
 
-        # The file must carry an XML declaration so HyperSpin's parser
-        # sees the same shape the CLI writer produces.
-        raw = xml_path.read_bytes()
-        head = raw[:40]
-        assert head.lstrip().startswith(b"<?xml"), head
         # Pretty-print sanity: not collapsed to one line.
+        raw = xml_path.read_bytes()
         assert raw.count(b"\n") >= 4, raw
     finally:
         app.root.destroy()
@@ -1526,8 +1519,9 @@ def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path)
 
 def test_main_menu_save_migrates_legacy_enabled_child(monkeypatch, tmp_path):
     """A file written by an older SpinDoctor uses the ``<enabled>`` child
-    element. Re-saving from the GUI must migrate it to the HyperHQ-style
-    ``enabled="True"|"False"`` attribute and drop the stale child.
+    element. Re-saving from the GUI must migrate to HyperSpin's native
+    minimal format: drop the ``<enabled>`` child, write ``enabled="False"``
+    only on hidden entries, leave visible entries with no enabled attribute.
     """
     import xml.etree.ElementTree as ET
     from spindoctor import config as cfg_mod
@@ -1586,12 +1580,18 @@ def test_main_menu_save_migrates_legacy_enabled_child(monkeypatch, tmp_path):
             assert game.find("enabled") is None, (
                 "legacy <enabled> child must be removed on save"
             )
-            assert "enabled" in game.attrib
         sony = next(
             g for g in re_root.findall("game")
             if g.get("name") == "Sony Playstation"
         )
         assert sony.get("enabled") == "False"
+        mame = next(
+            g for g in re_root.findall("game")
+            if g.get("name") == "MAME"
+        )
+        assert mame.get("enabled") is None, (
+            "visible entries must not carry an enabled attribute"
+        )
     finally:
         app.root.destroy()
 

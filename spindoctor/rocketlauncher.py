@@ -219,23 +219,22 @@ def _read_main_menu_systems(path: Path) -> list[str]:
 
 
 def _write_main_menu(systems: list[str], out_path: Path) -> Path:
+    """Write Main Menu.xml in HyperSpin's native minimal format.
+
+    Native shape: a bare ``<menu>`` containing ``<game name="..."/>`` entries,
+    no XML declaration, no ``<header>``, no child elements. This is what
+    HyperSpin ships and what its parser expects; bloated formats (with empty
+    ``<description>``/``<enabled>`` children) cause "Error creating main menu"
+    on some HyperSpin builds.
+    """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     root = ET.Element("menu")
-    hdr = ET.SubElement(root, "header")
-    _set(hdr, "listname", "Main Menu")
-    _set(hdr, "lastlistupdate", datetime.now().strftime("%Y-%m-%d"))
-    _set(hdr, "listversion", "2.0")
-    _set(hdr, "exporterversion", "SpinDoctor")
-
     for sys_name in sorted(systems):
-        el = ET.SubElement(root, "game", name=sys_name)
-        _set(el, "description", sys_name)
-        _set(el, "enabled", "Yes")
+        ET.SubElement(root, "game", name=sys_name)
 
     tree = ET.ElementTree(root)
     et_indent(tree)
     with open(out_path, "wb") as f:
-        f.write(b'<?xml version="1.0"?>\n')
         tree.write(f, encoding="utf-8", xml_declaration=False)
     return out_path
 

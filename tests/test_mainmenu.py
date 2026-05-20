@@ -198,6 +198,96 @@ def test_save_creates_backup_when_configured(tmp_path):
     assert backups, "expected a .bak file alongside Main Menu.xml"
 
 
+MINIMAL_HYPERSPIN_MENU_XML = textwrap.dedent("""\
+    <menu>
+      <game name="Search" exe="true" />
+      <game name="MAME" />
+      <game name="Sony Playstation" />
+      <game name="Atari 2600" enabled="False" />
+    </menu>
+    """)
+
+
+def test_minimal_native_format_roundtrip_preserves_exe_attr(tmp_path):
+    """HyperSpin native minimal format must round-trip without losing
+    ``exe="true"`` on the Search entry or adding empty child elements."""
+    _seed_menu(tmp_path, MINIMAL_HYPERSPIN_MENU_XML)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    save_main_menu(menu, cfg)
+
+    path = tmp_path / "Databases" / "Main Menu" / "Main Menu.xml"
+    text = path.read_text(encoding="utf-8")
+
+    assert "<?xml" not in text, "Main Menu must not have an XML declaration"
+    assert "<header" not in text, "Main Menu must not have a <header> block"
+    assert "<description>" not in text, "Main Menu entries must not carry empty <description>"
+    assert "<cloneof>" not in text
+    assert "<crc>" not in text
+    assert 'exe="true"' in text, "Search entry must keep its exe attribute"
+    assert 'enabled="False"' in text, "Hidden entry must keep enabled='False'"
+    # Visible entries must not carry an enabled attribute.
+    root = ET.fromstring(text)
+    games = {g.get("name"): g for g in root.findall("game")}
+    assert games["MAME"].get("enabled") is None
+    assert games["Sony Playstation"].get("enabled") is None
+    assert games["Search"].get("exe") == "true"
+    assert games["Atari 2600"].get("enabled") == "False"
+
+
+def test_hide_in_minimal_format_only_changes_target(tmp_path):
+    """Hiding one system must not disturb other entries' attributes."""
+    _seed_menu(tmp_path, MINIMAL_HYPERSPIN_MENU_XML)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    hide(menu, "MAME")
+    save_main_menu(menu, cfg)
+
+    path = tmp_path / "Databases" / "Main Menu" / "Main Menu.xml"
+    root = ET.fromstring(path.read_text(encoding="utf-8"))
+    games = {g.get("name"): g for g in root.findall("game")}
+
+    assert games["MAME"].get("enabled") == "False"
+    assert games["Search"].get("exe") == "true"
+    assert games["Search"].get("enabled") is None
+    assert games["Sony Playstation"].get("enabled") is None
+    # No children should have appeared anywhere.
+    for g in root.findall("game"):
+        assert list(g) == [], f"{g.get('name')} grew unexpected children: {list(g)}"
+
+
+def test_show_in_minimal_format_removes_enabled_attr(tmp_path):
+    """Un-hiding a system must remove the ``enabled`` attribute entirely
+    (matches HyperSpin native: visible entries have no enabled attr)."""
+    _seed_menu(tmp_path, MINIMAL_HYPERSPIN_MENU_XML)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    show(menu, "Atari 2600")
+    save_main_menu(menu, cfg)
+
+    path = tmp_path / "Databases" / "Main Menu" / "Main Menu.xml"
+    root = ET.fromstring(path.read_text(encoding="utf-8"))
+    games = {g.get("name"): g for g in root.findall("game")}
+    assert games["Atari 2600"].get("enabled") is None
+    assert games["Search"].get("exe") == "true"
+
+
+def test_add_system_in_minimal_format_emits_bare_game(tmp_path):
+    """Programmatically added systems must emit ``<game name="X"/>`` with no
+    children and no ``enabled`` attribute."""
+    _seed_menu(tmp_path, MINIMAL_HYPERSPIN_MENU_XML)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    add_system(menu, "Atari Jaguar")
+    save_main_menu(menu, cfg)
+
+    path = tmp_path / "Databases" / "Main Menu" / "Main Menu.xml"
+    root = ET.fromstring(path.read_text(encoding="utf-8"))
+    jaguar = next(g for g in root.findall("game") if g.get("name") == "Atari Jaguar")
+    assert jaguar.get("enabled") is None
+    assert list(jaguar) == [], "newly added entry must have no children"
+
+
 def test_save_to_output_dir_routes_elsewhere(tmp_path):
     _seed_menu(tmp_path)
     cfg = _config(tmp_path)
