@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -284,6 +285,88 @@ def config_init():
         for e in errors:
             err_console.print(f"  [yellow]•[/yellow] {e}")
         console.print("Run [cyan]spindoctor doctor[/cyan] once paths are reachable.")
+
+
+# ─── config: verify scraper credentials ───────────────────────────────────────
+
+
+@config_group.command("verify-credentials")
+@click.option("--ss-user", default=None,
+              help="ScreenScraper username override (defaults to "
+                   "``screenscraper_user`` in config.json).")
+@click.option("--ss-pass", default=None,
+              help="ScreenScraper password override (defaults to "
+                   "``screenscraper_pass`` in config.json).")
+@click.option("--tgdb-key", default=None,
+              help="TheGamesDB API key override (defaults to "
+                   "``thegamesdb_key`` in config.json).")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON for the GUI's Test credentials button to "
+                   "consume.")
+def config_verify_credentials(ss_user, ss_pass, tgdb_key, as_json):
+    """Probe ScreenScraper and TheGamesDB to check the configured credentials.
+
+    Each provider is contacted once. Values from ``--ss-user`` /
+    ``--ss-pass`` / ``--tgdb-key`` override the saved config (so a GUI
+    user can test unsaved Setup-form values before clicking Save).
+    Missing flags fall back to the saved config; missing-everywhere
+    probes are skipped, not failed.
+
+    \b
+    Examples:
+      # Test what's currently saved in config.json
+      spindoctor config verify-credentials
+
+      # Test a candidate ScreenScraper login without saving it first
+      spindoctor config verify-credentials --ss-user alice --ss-pass secret
+
+      # JSON output — the GUI Setup tab's Test credentials button uses this
+      spindoctor config verify-credentials --json
+    """
+    from . import scraper as scraper_mod
+
+    cfg = _cfg()
+    ss_user_eff = ss_user if ss_user is not None else (cfg.screenscraper_user or "")
+    ss_pass_eff = ss_pass if ss_pass is not None else (cfg.screenscraper_pass or "")
+    tgdb_key_eff = tgdb_key if tgdb_key is not None else (cfg.thegamesdb_key or "")
+
+    results: dict[str, dict] = {}
+    if ss_user_eff or ss_pass_eff:
+        ok, msg = scraper_mod.verify_screenscraper(ss_user_eff, ss_pass_eff)
+        results["screenscraper"] = {
+            "ok": ok, "status": "ok" if ok else "fail", "message": msg,
+        }
+    else:
+        results["screenscraper"] = {
+            "ok": None, "status": "skipped",
+            "message": "no credentials provided",
+        }
+    if tgdb_key_eff:
+        ok, msg = scraper_mod.verify_thegamesdb(tgdb_key_eff)
+        results["thegamesdb"] = {
+            "ok": ok, "status": "ok" if ok else "fail", "message": msg,
+        }
+    else:
+        results["thegamesdb"] = {
+            "ok": None, "status": "skipped",
+            "message": "no API key provided",
+        }
+
+    any_failed = any(r["status"] == "fail" for r in results.values())
+    labels = {"screenscraper": "ScreenScraper", "thegamesdb": "TheGamesDB"}
+    if as_json:
+        click.echo(json.dumps(results, indent=2))
+    else:
+        for provider, r in results.items():
+            label = labels.get(provider, provider)
+            if r["status"] == "ok":
+                console.print(f"[green]✓[/green] {label}: {r['message']}")
+            elif r["status"] == "fail":
+                console.print(f"[red]✗[/red] {label}: {r['message']}")
+            else:
+                console.print(f"[dim]— {label}: {r['message']}[/dim]")
+    if any_failed:
+        sys.exit(1)
 
 
 # ─── config system overrides ──────────────────────────────────────────────────
@@ -5637,12 +5720,36 @@ def backup_create(target, include, label, apply_changes):
 @click.option("--target", type=click.Path(file_okay=False), required=True,
               help="Folder where backups live (the same path passed to "
                    "`backup create --target`).")
-def backup_list(target):
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a human-readable table — used by "
+                   "the GUI's Backup tab restore picker.")
+def backup_list(target, as_json):
     """List backups under a target folder."""
     from .backup import format_bytes, list_backups, read_manifest
 
     target_root = Path(target).expanduser()
     backups = list_backups(target_root)
+    if as_json:
+        # The GUI's _scan_backup_folders consumes this shape: a list of
+        # dicts with at least ``name`` + ``path`` so the restore combobox
+        # can populate without re-implementing directory traversal.
+        entries: list[dict] = []
+        for b in backups:
+            entry = {"name": b.name, "path": str(b)}
+            try:
+                data = read_manifest(b)
+                entry["timestamp"] = data.get("timestamp", "")
+                entry["components"] = [
+                    i["component"] for i in data.get("items", [])
+                ]
+                entry["size_bytes"] = sum(
+                    i.get("size_bytes", 0) for i in data.get("items", [])
+                )
+            except (FileNotFoundError, ValueError):
+                entry["malformed"] = True
+            entries.append(entry)
+        click.echo(json.dumps(entries, indent=2))
+        return
     if not backups:
         console.print(f"[yellow]No backups found under {target_root}.[/yellow]")
         return
@@ -5832,6 +5939,169 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
             sys.exit(1)
 
     console.print(f"\n[green]✓[/green] Restored {restored} component(s).")
+
+
+# ─── per-modify sidecar backups (.YYYYMMDD_HHMMSS.bak files) ─────────────────
+
+
+def _sidecar_pattern(path: Path):
+    """Compile the regex that matches sidecar siblings of *path*.
+
+    SpinDoctor's apply commands write ``<stem>.YYYYMMDD_HHMMSS.bak``
+    next to each mutated file via ``Path.with_suffix(...)``. For
+    ``Main Menu.xml`` that's ``Main Menu.20260519_153045.bak`` —
+    ``stem`` is ``Main Menu``, the timestamp is 8+1+6 digits.
+    """
+    import re as _re
+    return _re.compile(
+        rf"^{_re.escape(path.stem)}\.\d{{8}}_\d{{6}}\.bak$"
+    )
+
+
+def _find_sidecars(path: Path) -> list[Path]:
+    """Return sidecar ``.bak`` siblings of *path*, newest first."""
+    if not path.parent.exists():
+        return []
+    pat = _sidecar_pattern(path)
+    matches = [p for p in path.parent.iterdir() if pat.match(p.name)]
+    # The timestamp lexicographically sorts as chronological order, so
+    # ``sort(reverse=True)`` puts newest first without needing mtime.
+    matches.sort(key=lambda p: p.name, reverse=True)
+    return matches
+
+
+@backup_group.group("sidecar")
+def backup_sidecar_group():
+    """List and restore the per-modify ``.YYYYMMDD_HHMMSS.bak`` sidecars
+    SpinDoctor's apply commands write next to each mutated file.
+
+    These are distinct from ``backup create / restore`` — those operate
+    on full library backup folders, while sidecars are tiny per-file
+    snapshots written automatically when ``backup_before_modify`` is on
+    (the default). Use these subcommands to inspect or roll back a
+    single bad edit (e.g. a Main Menu.xml that left HyperSpin throwing
+    "Error creating main menu").
+    """
+
+
+@backup_sidecar_group.command("list")
+@click.argument("file", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a human-readable table — used by "
+                   "the GUI's Restore-from-backup picker.")
+def backup_sidecar_list(file, as_json):
+    """List ``.YYYYMMDD_HHMMSS.bak`` siblings of FILE, newest first.
+
+    \b
+    Examples:
+      # See every Main Menu.xml backup currently on disk
+      spindoctor backup sidecar list "D:/HyperSpin/Databases/Main Menu/Main Menu.xml"
+    """
+    file = file.expanduser()
+    matches = _find_sidecars(file)
+    if as_json:
+        click.echo(json.dumps([
+            {
+                "path": str(p),
+                "name": p.name,
+                "size": p.stat().st_size,
+                "mtime": p.stat().st_mtime,
+            } for p in matches
+        ], indent=2))
+        return
+    if not matches:
+        console.print(
+            f"[yellow]No .bak sidecars found next to {file}.[/yellow]"
+        )
+        return
+    tbl = Table(title=f"Sidecar backups of {file.name}", box=box.SIMPLE)
+    tbl.add_column("Name", style="cyan")
+    tbl.add_column("Size", justify="right")
+    tbl.add_column("Modified", style="dim")
+    for p in matches:
+        st = p.stat()
+        mtime = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+        tbl.add_row(p.name, f"{st.st_size:,} B", mtime)
+    console.print(tbl)
+
+
+@backup_sidecar_group.command("restore")
+@click.argument("file", type=click.Path(dir_okay=False, path_type=Path))
+@click.option("--from", "source",
+              type=click.Path(exists=True, dir_okay=False, path_type=Path),
+              required=True,
+              help="The .YYYYMMDD_HHMMSS.bak sidecar to restore (use "
+                   "``backup sidecar list`` to see options).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Execute the restore. Without this flag, prints the "
+                   "intended copy as a dry-run.")
+def backup_sidecar_restore(file, source, apply_changes):
+    """Restore FILE from a ``.YYYYMMDD_HHMMSS.bak`` sidecar.
+
+    Backs up the current FILE first (when it exists) so the restore
+    itself can be rolled back via another ``backup sidecar restore``
+    call — undo is one of the things the per-modify sidecars exist for
+    and ``--apply`` shouldn't be a one-way door.
+
+    \b
+    Examples:
+      # Dry-run (default) — see what would happen
+      spindoctor backup sidecar restore "D:/.../Main Menu.xml" \\
+          --from "D:/.../Main Menu.20260519_153045.bak"
+
+      # Commit the restore
+      spindoctor backup sidecar restore "D:/.../Main Menu.xml" \\
+          --from "D:/.../Main Menu.20260519_153045.bak" --apply
+    """
+    file = file.expanduser()
+    source = source.expanduser()
+    if not source.name.endswith(".bak"):
+        err_console.print(
+            f"[red]Refusing:[/red] --from must point to a .bak file, "
+            f"got {source.name}."
+        )
+        sys.exit(1)
+    pat = _sidecar_pattern(file)
+    if not pat.match(source.name):
+        err_console.print(
+            f"[red]Refusing:[/red] {source.name} doesn't look like a "
+            f"sidecar of {file.name} (expected ``{file.stem}.YYYYMMDD_HHMMSS.bak``)."
+        )
+        sys.exit(1)
+    if not apply_changes:
+        console.print(
+            f"[yellow]Dry-run.[/yellow] Would copy:\n"
+            f"  [cyan]{source}[/cyan]\n  → [green]{file}[/green]"
+        )
+        if file.exists():
+            console.print(
+                "  (current file would be sidecar-backed-up first.)"
+            )
+        console.print("\nRe-run with [cyan]--apply[/cyan] to commit.")
+        return
+    # Backup the current live file before overwriting it so the user
+    # can undo the restore via another ``sidecar restore`` call.
+    if file.exists():
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        live_backup = file.with_suffix(f".{stamp}.bak")
+        try:
+            shutil.copy2(file, live_backup)
+        except OSError as e:
+            from ._errors import humanize_oserror
+            err_console.print(
+                f"[red]Aborted:[/red] {humanize_oserror(e, action='back up the current file')}"
+            )
+            sys.exit(1)
+        console.print(f"[dim]Saved current file as {live_backup.name}[/dim]")
+    try:
+        shutil.copy2(source, file)
+    except OSError as e:
+        from ._errors import humanize_oserror
+        err_console.print(
+            f"[red]Aborted:[/red] {humanize_oserror(e, action='restore the sidecar')}"
+        )
+        sys.exit(1)
+    console.print(f"[green]✓[/green] Restored {file.name} from {source.name}.")
 
 
 # ─── diff (compare backup to live tree) ──────────────────────────────────────
