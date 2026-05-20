@@ -233,9 +233,27 @@ Open the GUI and use **`File → View logs & manifests…`**. The window groups 
 
 `spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
+### Tools tab → Schedule auto-refresh fails with "access denied"
+
+`schtasks.exe` writes to a system-wide Task Scheduler store that requires admin rights. Run SpinDoctor as Administrator (right-click `spindoctor-gui.exe` → **Run as administrator**) and click Schedule auto-refresh again. The GUI now translates `schtasks` failures into one-line actionable messages: "access is denied" → run as Administrator; "already exists" → use the Remove button first; "specified task does not exist" → there's no task to remove yet; anything else falls back to the raw `schtasks` output so power users can diagnose obscure error codes.
+
+### "I hit Ctrl+C (or Stop) on a backup / migrate / curate — what's recoverable?"
+
+All three commands now write a *partial manifest* of whatever finished before the interrupt:
+
+- **Backup** — completed components remain in the backup folder and the manifest lists them; `backup restore` can replay it like a normal backup.
+- **Migrate (move-mode)** — completed moves are recorded; `migrate --undo <manifest>` puts the source folders back. Without the partial manifest, an interrupted move-mode migrate used to be unrecoverable.
+- **Curate (archive-mode)** — files moved to `_retired/` before the interrupt are recorded; `curate --undo <manifest>` un-archives them.
+
+The in-flight component / move / archive (the one that was running when you hit Stop) is cleaned up automatically. Already-completed work is deliberately left in place — the manifest exists so *you* can choose whether to roll it back.
+
+### Update check pings GitHub but I'd rather it didn't on this cabinet
+
+Set `SPINDOCTOR_NO_UPDATE_CHECK=1` in the environment. The background check on launch silently becomes a no-op, and the manual `Help → Check for updates` action prints "Update check disabled" instead of contacting GitHub. See [Configuration → Environment variables](configuration.md#environment-variables).
+
 ### Menubar reference
 
-`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: First-run setup… / About SpinDoctor / Check for updates. Full descriptions at [GUI walkthrough → Menubar](gui.md#menubar).
+`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: About SpinDoctor / Keyboard shortcuts / Check for updates / First-run setup…. Full descriptions at [GUI walkthrough → Menubar](gui.md#menubar).
 
 ### GUI looks cramped on a 720p (1280×720) cabinet screen
 

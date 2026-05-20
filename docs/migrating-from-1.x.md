@@ -30,14 +30,19 @@ A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) 
 
 ### New GUI config keys
 
-Two new keys in `config.json`:
+Seven new keys in `config.json`:
 
 | Key | Default | Purpose |
 |---|---|---|
 | `gui_window_geometry` | unset | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed. Restored on the next launch. |
 | `gui_last_active_tab` | unset | Index of the tab that was open the last time the GUI closed. Restored on the next launch. |
+| `gui_meta_subset` | `[]` | Last-picked subset of systems for the Metadata & Media tab's "Pick subset…" picker. Restored on next launch. |
+| `gui_curate_regions` | `[]` | Curate-tab region tickboxes (USA, Japan, Europe, …). Empty list = use the top-level `region_preferences`. |
+| `gui_meta_auto_best` | `true` | Persisted state of the Metadata & Media tab's "Auto-pick best match" checkbox. |
+| `gui_meta_all_games` | `false` | Persisted state of the "Refresh complete entries too" checkbox. |
+| `gui_meta_no_cache` | `false` | Persisted state of the "Skip cache, hit the API every game" checkbox. |
 
-Both are managed by the GUI; hand-editing them is fine but not necessary. Delete either to reset that piece of state. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
+All seven are managed by the GUI; hand-editing them is fine but not necessary. **Apply / dry-run toggles for destructive operations are deliberately NOT persisted** — those re-arm to OFF on every launch so cabinet owners always make an explicit per-run opt-in. See [Configuration → Most-used keys](configuration.md#most-used-keys) for full descriptions.
 
 ### New GUI affordances
 
@@ -59,6 +64,12 @@ None of these change existing behaviour — they're additive:
 - **`fetch-meta --skip-ambiguous`** wired into the GUI — unticking "Auto-pick best match" no longer hangs the subprocess on an interactive `input()` prompt; ambiguous matches are logged for the next `audit` pass instead.
 - **Migrate confirm dialog** — Apply now pops a confirmation modal before shelling out, with distinct wording for `--keep-source` (copy, originals stay) and the destructive move (warns explicitly that originals will be removed and points at the undo-manifest escape hatch). Cancel and nothing runs.
 - **Main Menu.xml parse errors surface as a modal** — previously the failure was a single line in the Output pane and the Treeview kept showing stale rows from the last successful load. Now the table empties on failure and a modal names the file path + the parser's error so you can't miss it.
+- **Async startup** — the GUI window paints immediately, then runs the library scan (system combo population) and the startup health checks in the background. Status bar shows "Scanning library…" while it works. On a slow NAS-mounted Databases directory this avoids the "is it frozen?" beat the old synchronous behaviour had.
+- **Fresh-install Setup focus** — on first launch (no `config.json` yet) the GUI auto-selects the Setup tab so a brand-new cabinet owner lands on the form that needs filling. Existing users' `gui_last_active_tab` is restored as usual.
+- **Routine popups demoted to the status bar** — "Saved", "Removed", "Up to date", "No subset picked", "Nothing to apply", etc. now flash in the status bar (auto-reverts to "Ready." after 6 s; validation prompts also ring the system bell) instead of forcing a click-through modal. Multi-line result modals (Preflight passed, Curate done with manifest path, Scheduled with reboot instructions) and destructive-action confirmations stay as modals.
+- **Curate delete confirmation rewritten** — the final destructive-confirm now lists the target system, the regions kept, and the revision preference up front so you can re-verify intent at a glance. Explicit "no undo for delete mode" wording with an archive-mode pointer.
+- **Re-review-titles form (was "Rename") for PC systems** — the Systems tab's pc-rename form is now a single system dropdown with hint text explaining the command *re-runs the title picker for an existing PC system*. Earlier 2.0 builds shipped a misleading two-field "Old/New" form that wasn't wired to the CLI; that's been fixed.
+- **Friendly Task Scheduler errors** — the Tools tab's Schedule auto-refresh button now translates `schtasks.exe` failures into one-line actionable messages: "access denied" → run as Administrator; "already exists" → use the Remove button first; "specified task does not exist" → there's nothing registered yet; anything else falls back to raw `schtasks` output for power-user diagnosis.
 
 ### New CLI commands and flags
 
@@ -69,6 +80,8 @@ Additive only:
 - **`spindoctor audit --detailed`** — append a per-file breakdown (path, size, dimensions, video length) for every game that needs attention.
 - **`spindoctor audit --report path.csv`** — write the audit report as CSV.
 - **`spindoctor fetch-meta --skip-ambiguous`** — log ambiguous matches and move on, instead of either auto-picking the top candidate (`--auto-best`) or prompting (`--interactive`). Required from non-TTY contexts (the GUI uses this by default when "Auto-pick best match" is unticked); useful for cron / CI runs that shouldn't block on stdin.
+- **`spindoctor fetch-media --skip-ambiguous`** — same idea for the per-media-slot picker (regions, artwork variants). Required when running from a GUI subprocess or a cron / CI shell.
+- **`spindoctor add-pc-system --no-interactive`** and **`spindoctor pc-rename --no-interactive`** — auto-accept every proposed title without prompting. Required from non-TTY contexts; the GUI passes `--no-interactive` automatically when adding a PC system, where the interactive review path would otherwise hang the subprocess on stdin.
 
 ### Humanized OSError messages
 
