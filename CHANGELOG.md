@@ -6,18 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-05-19
+
 ### Added
 
 - **Scraper debug log file at `~/.spindoctor/scraper.log`.** Every ScreenScraper and TheGamesDB request now records its (redacted) URL + params, the response status, and the first ~500 chars of the body on any HTTP >= 400. A rotating handler (512 KB × 2 backups) keeps the file from growing. Verify dialog failures also surface the response body inline so the upstream error ("Erreur de login", "Invalid API key", rate-limit notice) is visible without opening the log. Closes the "verify returns 403, dialog says nothing useful" debugging gap.
 - **`screenscraper_devid` / `screenscraper_devpassword` config keys.** Advanced override for ScreenScraper's per-app developer credential pair (separate from the user's `ssid`/`sspassword`). Defaults to the historical `"SpinDoctor"`/`"SpinDoctor"` values, but can now be overridden when ScreenScraper has issued you a real registered developer credential or rejects the defaults. Set from the GUI's Custom Command tab with `config set screenscraper_devid <value>` — no Setup-tab field, because cabinet owners shouldn't need to think about this.
+- **`docs/cli-cheatsheet.md`** — punchy copy-paste cheatsheet grouped by intent (discover & diagnose, edit & curate, metadata & media, backup / diff / migrate, custom wheels, themes, light guns, config), complementing the deep per-flag reference in `docs/commands.md`.
 
 ### Changed
 
 - **GUI: scrollbar thumb is now clearly distinguishable from the trough.** The dark-theme scrollbar had the thumb at `#3a3a3c` against a `#252526` trough with a hand-flattened bevel — readable only if you already knew where to look. New `_DARK_SCROLL_THUMB` (`#6a6a6e`) / `_DARK_SCROLL_THUMB_ACTIVE` (`#8a8a8e`) pair plus the restored clam bevel give the draggable element obvious affordance and a visible hover state.
+- **Docs: README CLI section restructured + doc-wide cleanup pass.** The README's GUI tab description was a single ~1500-word run-on paragraph; now a scannable bullet list. The CLI cheatsheet sampler was moved out of the README into its own `docs/cli-cheatsheet.md`. Cross-doc cleanup removed duplicate Menubar / flashing-window / `schtasks` blocks, collapsed a 130-word `installation.md` table cell, added scannable summaries to `workflows.md` and `configuration.md`, and bullet-listed `setup.md` step 9.
 
 ### Fixed
 
 - **Windows: bundled `.exe` icon now actually appears.** `build/build_windows.py` was invoking PyInstaller without `--icon`, so Explorer / taskbar / Alt-Tab always rendered the default Tk feather even though `spindoctor/assets/icon.ico` had been committed since 1.x. It was also missing `--add-data` for `spindoctor/assets/`, which meant the runtime `iconbitmap()` call in `_apply_icon()` silently failed inside the `--onefile` frozen process (assets weren't extracted alongside `__file__`), so the window-header icon was also the feather. Both flags are now wired into `run_pyinstaller()`; next release rebuild ships the custom icon everywhere Windows shows one.
+- **Docs: broken README anchor + slugified `commands.md` heading anchors.** The README's `[CLI cheatsheet](#cli-cheatsheet)` pointed at a non-existent in-README anchor (the section had moved into its own doc); now links to `docs/cli-cheatsheet.md` directly. Several `commands.md` H3 headings carried em-dash descriptive suffixes (e.g. ``### `batch-edit` — set/clear/append…``) which slugified to long anchors and broke every `commands.md#batch-edit`-style link in the cheatsheet. Suffixes folded into the body text so the simple `#<command>` anchors resolve. The cheatsheet's `commands.md#stats-report` link was also broken (no such heading); now points at the parent `#playtime-stats` section.
 
 ## [2.0.0] - 2026-05-19
 
@@ -527,7 +532,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/phillram/spindoctor/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/phillram/spindoctor/compare/v1.9.1...v2.0.0
 [1.9.1]: https://github.com/phillram/spindoctor/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/phillram/spindoctor/compare/v1.8.0...v1.9.0
