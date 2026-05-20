@@ -71,7 +71,7 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 
 ## Common starting points
 
-First-time launch opens a guided 3-step wizard (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results) so a brand-new cabinet owner has something to click instead of staring at 15 tabs full of "setup incomplete" status bars. The wizard self-dismisses for existing installs whose config is already valid; you can re-open it any time via **Help → First-run setup…**.
+First launch lands you on the **Setup** tab (the GUI auto-focuses it when no `config.json` exists yet). Click **Run first-run wizard…** on the Setup tab for a guided 3-step flow (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results). The wizard is opt-in — it does not auto-open — and is also available any time from **Help → First-run setup…**.
 
 Each tab shows a small ⚠ or ✗ badge next to its name when the area it covers has a problem detected by `spindoctor doctor` — `Setup ⚠` means a path or scraper credential needs attention, `LEDBlinky ✗` means LEDBlinky is configured but its files are missing, and so on. Scan the tab strip on launch to see what needs work; saving the Setup tab re-runs the check so badges stay accurate.
 
