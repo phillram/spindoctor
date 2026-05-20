@@ -1359,6 +1359,19 @@ class _SpinDoctorGUI:
         else:
             self._set_status("Ready.")
 
+        # Fresh install — no config.json on disk at all — has nothing
+        # to read in the status bar at the bottom of the window and no
+        # context on which tab to click. Auto-select the Setup tab so
+        # the new user lands on the form that needs filling in. (Only
+        # on a true fresh install: once any config has been saved we
+        # keep whatever tab was last active per `gui_last_active_tab`.)
+        try:
+            if not CONFIG_FILE.exists():
+                setup_idx = self._tab_base_names.index("Setup")
+                self._nb.select(setup_idx)
+        except Exception:  # noqa: BLE001 — best-effort focus only
+            pass
+
         # Kick off the deeper doctor pass on a worker thread so per-tab
         # health badges can populate without delaying first paint.
         # `_startup_health_checks` (this method) is cheap and runs
@@ -9203,8 +9216,18 @@ class _SpinDoctorGUI:
         self._flash_token = token
 
         def revert():
-            if getattr(self, "_flash_token", None) is token:
+            # The window may have been destroyed between schedule and
+            # fire (cabinet owner closed it inside the 6 s window).
+            # `_status_var.set` on a dead StringVar raises TclError;
+            # swallow it so the unraisable hook doesn't surface a
+            # noise traceback. The `_flash_token` identity check also
+            # short-circuits if a newer flash superseded this one.
+            if getattr(self, "_flash_token", None) is not token:
+                return
+            try:
                 self._set_status("Ready.")
+            except Exception:  # noqa: BLE001 — widget gone, nothing to do
+                pass
 
         try:
             self.root.after(revert_after_ms, revert)
