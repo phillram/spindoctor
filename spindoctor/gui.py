@@ -4292,27 +4292,12 @@ class _SpinDoctorGUI:
             or tgdb_key != saved_key
         )
 
-        # Build the run record + open a row in the Logs tab.
-        record = _RunRecord(
-            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            argv_str="(in-process) Test credentials",
-            dry_run=False,
-        )
-        self._run_history.append(record)
-        self._refresh_logs_tab()
-
-        def emit(line: str) -> None:
-            self._append_output(line)
-            record.append(line)
-
-        emit("\n=== Test credentials ===\n")
         if diverges:
-            warn = (
-                "⚠ These values differ from saved config — "
+            self._append_output(
+                "\n⚠ These values differ from saved config — "
                 "fetch-meta / curate will still use the SAVED values "
                 "until you click Save configuration.\n"
             )
-            emit(warn)
 
         def _source(current: str, saved: str) -> str:
             if not current:
@@ -4321,64 +4306,50 @@ class _SpinDoctorGUI:
                 return "from saved config"
             return "from Setup form (unsaved)"
 
-        emit(
+        self._append_output(
             f"ScreenScraper user: {_source(ss_user, saved_user)}"
             + (f" — '{ss_user}'\n" if ss_user else "\n")
         )
-        emit(
+        self._append_output(
             f"ScreenScraper password: {_source(ss_pass, saved_pass)}"
             f" (set: {'yes' if ss_pass else 'no'})\n"
         )
-        emit(
+        self._append_output(
             f"TheGamesDB API key: {_source(tgdb_key, saved_key)}"
             f" (set: {'yes' if tgdb_key else 'no'})\n"
         )
 
+        # Delegate the actual probes to the CLI. The shared
+        # ``spindoctor.scraper.verify_*`` functions are called from one
+        # place (the CLI subcommand) — no parallel implementation in
+        # the GUI. ``_run_cli`` handles streaming output to the Output
+        # panel, recording in the Logs tab, and finalising busy state.
+        args = ["config", "verify-credentials"]
+        # Pass unsaved Setup-form values as overrides so the user can
+        # test creds before saving. Empty strings mean "no override —
+        # use saved config", which `--ss-user ""` would set explicitly;
+        # so we only add a flag when the GUI has a non-empty value.
+        if ss_user:
+            args += ["--ss-user", ss_user]
+        if ss_pass:
+            args += ["--ss-pass", ss_pass]
+        if tgdb_key:
+            args += ["--tgdb-key", tgdb_key]
+
         btn.configure(state="disabled", text="Testing\u2026")
         self._set_status("Contacting ScreenScraper and TheGamesDB…")
 
-        def _worker() -> None:
-            # Defer the scraper import so test_credentials doesn't drag
-            # in ``requests`` for users who never click this button.
-            from . import scraper as scraper_mod
-
-            if ss_user or ss_pass:
-                ss_ok, ss_msg = scraper_mod.verify_screenscraper(
-                    ss_user, ss_pass,
-                )
-                ss_line = (
-                    f"✓ ScreenScraper: {ss_msg}\n"
-                    if ss_ok else f"✗ ScreenScraper: {ss_msg}\n"
-                )
-                ss_failed = not ss_ok
-            else:
-                ss_line = "— ScreenScraper: skipped (no credentials entered)\n"
-                ss_failed = False
-
-            if tgdb_key:
-                tg_ok, tg_msg = scraper_mod.verify_thegamesdb(tgdb_key)
-                tg_line = (
-                    f"✓ TheGamesDB: {tg_msg}\n"
-                    if tg_ok else f"✗ TheGamesDB: {tg_msg}\n"
-                )
-                tg_failed = not tg_ok
-            else:
-                tg_line = "— TheGamesDB: skipped (no API key entered)\n"
-                tg_failed = False
-
-            def _finish() -> None:
-                emit(ss_line)
-                emit(tg_line)
-                emit("=== Test credentials complete ===\n")
-                record.exit_code = 1 if (ss_failed or tg_failed) else 0
-                self._refresh_logs_tab()
+        def _on_done(rc: int) -> None:
+            try:
                 btn.configure(state="normal", text="Test credentials")
-                self._set_status("Credential test complete.")
+            except Exception:  # noqa: BLE001
+                pass
+            self._set_status(
+                "Credential test complete." if rc == 0 else
+                f"Credential test failed (exit {rc})."
+            )
 
-            self.root.after(0, _finish)
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
+        self._run_cli("spindoctor", args, on_complete=_on_done)
 
     def _save_setup(self) -> None:
         cfg = load_config()
@@ -5159,7 +5130,15 @@ class _SpinDoctorGUI:
             var.set(str(Path(path)))
 
     def _scan_backup_folders(self) -> None:
-        """Populate the restore Combobox by scanning the configured backup target."""
+        """Populate the restore Combobox by shelling out to ``backup list --json``.
+
+        The GUI used to walk the target directory inline — a second
+        implementation of what ``spindoctor backup list`` already does.
+        That kind of drift is exactly the bug pattern that corrupted
+        Main Menu.xml: two implementations diverge silently. The CLI is
+        now the single source of truth for "which SpinDoctor backups
+        exist under <target>"; the GUI just renders the result.
+        """
         target = self._backup_target_var.get().strip()
         if not target:
             self.messagebox.showwarning(
@@ -5174,18 +5153,38 @@ class _SpinDoctorGUI:
                 f"Backup target folder does not exist:\n{target_path}",
             )
             return
-        # Only surface SpinDoctor backup folders — when the user points
-        # at a drive root (e.g. ``E:\``), the bare iterdir() loop would
-        # otherwise drown the dropdown in unrelated subdirectories.
-        from .backup import BACKUP_DIR_PREFIX
+        try:
+            argv = resolve_cli_command("spindoctor") + [
+                "backup", "list", "--target", str(target_path), "--json",
+            ]
+            proc = subprocess.run(
+                argv,
+                check=True, capture_output=True, text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"Failed to enumerate backups via "
+                f"`spindoctor backup list`:\n\n{exc}",
+            )
+            return
+        try:
+            entries = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"`spindoctor backup list --json` produced unparseable "
+                f"output:\n\n{exc}\n\n{proc.stdout!r}",
+            )
+            return
         folders = sorted(
-            [str(p) for p in target_path.iterdir()
-             if p.is_dir() and p.name.startswith(BACKUP_DIR_PREFIX)],
+            (e["path"] for e in entries if isinstance(e, dict) and "path" in e),
             reverse=True,
         )
         if not folders:
             self._flash_validation(
-                f"No '{BACKUP_DIR_PREFIX}*' folders in {target_path}."
+                f"No SpinDoctor backups in {target_path}."
             )
             return
         self._backup_restore_combo["values"] = folders

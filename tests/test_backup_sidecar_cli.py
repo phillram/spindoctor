@@ -187,3 +187,57 @@ def test_restore_when_live_file_missing_still_succeeds(tmp_path):
     )
     assert result.exit_code == 0, result.output
     assert target.read_text(encoding="utf-8") == "payload"
+
+
+# ─── backup list --json (consumed by the GUI's _scan_backup_folders) ─────────
+
+
+def _make_backup_folder(parent: Path, stamp: str) -> Path:
+    """Create a fake spindoctor-backup-XXXX folder with a minimal manifest."""
+    folder = parent / f"spindoctor-backup-{stamp}"
+    folder.mkdir()
+    # ``backup list`` reads ``manifest.json``; a minimal valid one is enough.
+    (folder / "manifest.json").write_text(
+        json.dumps({
+            "timestamp": stamp,
+            "items": [
+                {"component": "settings", "size_bytes": 123},
+            ],
+        }),
+        encoding="utf-8",
+    )
+    return folder
+
+
+def test_backup_list_json_emits_entries_with_paths(tmp_path):
+    """``backup list --json`` produces the shape the GUI expects."""
+    target = tmp_path / "backups"
+    target.mkdir()
+    _make_backup_folder(target, "20260101_120000")
+    _make_backup_folder(target, "20260202_120000")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["backup", "list", "--target", str(target), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    data = json.loads(result.output)
+    assert isinstance(data, list)
+    assert len(data) == 2
+    for entry in data:
+        # GUI consumes ``path`` to populate the restore Combobox.
+        assert "name" in entry and "path" in entry
+        # And ``timestamp`` + ``components`` for the table view.
+        assert entry["name"].startswith("spindoctor-backup-")
+        assert entry["timestamp"]
+        assert entry["components"] == ["settings"]
+
+
+def test_backup_list_json_empty_when_no_backups(tmp_path):
+    target = tmp_path / "backups"
+    target.mkdir()
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["backup", "list", "--target", str(target), "--json"],
+    )
+    assert result.exit_code == 0
+    assert json.loads(result.output) == []

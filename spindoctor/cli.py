@@ -287,6 +287,88 @@ def config_init():
         console.print("Run [cyan]spindoctor doctor[/cyan] once paths are reachable.")
 
 
+# ─── config: verify scraper credentials ───────────────────────────────────────
+
+
+@config_group.command("verify-credentials")
+@click.option("--ss-user", default=None,
+              help="ScreenScraper username override (defaults to "
+                   "``screenscraper_user`` in config.json).")
+@click.option("--ss-pass", default=None,
+              help="ScreenScraper password override (defaults to "
+                   "``screenscraper_pass`` in config.json).")
+@click.option("--tgdb-key", default=None,
+              help="TheGamesDB API key override (defaults to "
+                   "``thegamesdb_key`` in config.json).")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON for the GUI's Test credentials button to "
+                   "consume.")
+def config_verify_credentials(ss_user, ss_pass, tgdb_key, as_json):
+    """Probe ScreenScraper and TheGamesDB to check the configured credentials.
+
+    Each provider is contacted once. Values from ``--ss-user`` /
+    ``--ss-pass`` / ``--tgdb-key`` override the saved config (so a GUI
+    user can test unsaved Setup-form values before clicking Save).
+    Missing flags fall back to the saved config; missing-everywhere
+    probes are skipped, not failed.
+
+    \b
+    Examples:
+      # Test what's currently saved in config.json
+      spindoctor config verify-credentials
+
+      # Test a candidate ScreenScraper login without saving it first
+      spindoctor config verify-credentials --ss-user alice --ss-pass secret
+
+      # JSON output — the GUI Setup tab's Test credentials button uses this
+      spindoctor config verify-credentials --json
+    """
+    from . import scraper as scraper_mod
+
+    cfg = _cfg()
+    ss_user_eff = ss_user if ss_user is not None else (cfg.screenscraper_user or "")
+    ss_pass_eff = ss_pass if ss_pass is not None else (cfg.screenscraper_pass or "")
+    tgdb_key_eff = tgdb_key if tgdb_key is not None else (cfg.thegamesdb_key or "")
+
+    results: dict[str, dict] = {}
+    if ss_user_eff or ss_pass_eff:
+        ok, msg = scraper_mod.verify_screenscraper(ss_user_eff, ss_pass_eff)
+        results["screenscraper"] = {
+            "ok": ok, "status": "ok" if ok else "fail", "message": msg,
+        }
+    else:
+        results["screenscraper"] = {
+            "ok": None, "status": "skipped",
+            "message": "no credentials provided",
+        }
+    if tgdb_key_eff:
+        ok, msg = scraper_mod.verify_thegamesdb(tgdb_key_eff)
+        results["thegamesdb"] = {
+            "ok": ok, "status": "ok" if ok else "fail", "message": msg,
+        }
+    else:
+        results["thegamesdb"] = {
+            "ok": None, "status": "skipped",
+            "message": "no API key provided",
+        }
+
+    any_failed = any(r["status"] == "fail" for r in results.values())
+    labels = {"screenscraper": "ScreenScraper", "thegamesdb": "TheGamesDB"}
+    if as_json:
+        click.echo(json.dumps(results, indent=2))
+    else:
+        for provider, r in results.items():
+            label = labels.get(provider, provider)
+            if r["status"] == "ok":
+                console.print(f"[green]✓[/green] {label}: {r['message']}")
+            elif r["status"] == "fail":
+                console.print(f"[red]✗[/red] {label}: {r['message']}")
+            else:
+                console.print(f"[dim]— {label}: {r['message']}[/dim]")
+    if any_failed:
+        sys.exit(1)
+
+
 # ─── config system overrides ──────────────────────────────────────────────────
 
 # Layout values supported by spindoctor/organize.py.  "flat" disables the
@@ -5638,12 +5720,36 @@ def backup_create(target, include, label, apply_changes):
 @click.option("--target", type=click.Path(file_okay=False), required=True,
               help="Folder where backups live (the same path passed to "
                    "`backup create --target`).")
-def backup_list(target):
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit JSON instead of a human-readable table — used by "
+                   "the GUI's Backup tab restore picker.")
+def backup_list(target, as_json):
     """List backups under a target folder."""
     from .backup import format_bytes, list_backups, read_manifest
 
     target_root = Path(target).expanduser()
     backups = list_backups(target_root)
+    if as_json:
+        # The GUI's _scan_backup_folders consumes this shape: a list of
+        # dicts with at least ``name`` + ``path`` so the restore combobox
+        # can populate without re-implementing directory traversal.
+        entries: list[dict] = []
+        for b in backups:
+            entry = {"name": b.name, "path": str(b)}
+            try:
+                data = read_manifest(b)
+                entry["timestamp"] = data.get("timestamp", "")
+                entry["components"] = [
+                    i["component"] for i in data.get("items", [])
+                ]
+                entry["size_bytes"] = sum(
+                    i.get("size_bytes", 0) for i in data.get("items", [])
+                )
+            except (FileNotFoundError, ValueError):
+                entry["malformed"] = True
+            entries.append(entry)
+        click.echo(json.dumps(entries, indent=2))
+        return
     if not backups:
         console.print(f"[yellow]No backups found under {target_root}.[/yellow]")
         return
