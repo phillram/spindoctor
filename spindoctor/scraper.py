@@ -742,27 +742,40 @@ def verify_screenscraper(
         "sspassword": password,
         "output": "json",
     }
+    # ``devid`` is the developer-credential ScreenScraper issues per
+    # application; surfacing it in every message lets the user
+    # distinguish "my user/password is wrong" from "the SpinDoctor
+    # default devid has been blocked/changed upstream". Never echo
+    # ``devpassword`` — it doesn't belong in any UI surface.
+    devid_str = devid or ""
+    # presence-only summary of what was actually sent on the wire, so a
+    # 403 is debuggable from the failure message alone.
+    sent_summary = (
+        f"sent ssid='{username}' (password set: yes), devid={devid_str}"
+    )
     url = f"{SCREENSCRAPER_API}/ssuserInfos.php"
     try:
         resp = request_get(url, params=params, timeout=timeout)
     except requests.RequestException as e:
         _log_http("screenscraper.verify", "GET", url, params, None, "", error=e)
-        return False, f"Network error: {e}"
+        return False, f"Network error: {e} ({sent_summary})"
 
     body = resp.text or ""
     _log_http("screenscraper.verify", "GET", url, params, resp.status_code, body)
 
     if resp.status_code in (401, 403):
         return False, _failure_with_body(
-            f"Authentication rejected (HTTP {resp.status_code})", body,
+            f"Authentication rejected (HTTP {resp.status_code}, {sent_summary})",
+            body,
         )
     if resp.status_code >= 500:
         return False, _failure_with_body(
-            f"ScreenScraper server error (HTTP {resp.status_code})", body,
+            f"ScreenScraper server error (HTTP {resp.status_code}, devid={devid_str})",
+            body,
         )
     if resp.status_code != 200:
         return False, _failure_with_body(
-            f"Unexpected HTTP {resp.status_code}", body,
+            f"Unexpected HTTP {resp.status_code} ({sent_summary})", body,
         )
 
     # ScreenScraper signals auth errors via a JSON `erreur` key with a 200
@@ -774,20 +787,23 @@ def verify_screenscraper(
         # The auth-failure body is short ("Erreur de login : ..."). Anything
         # else is more useful as a truncated snippet than as "ok".
         snippet = text[:200] if text else "no response body"
-        return False, f"Unexpected response: {snippet}"
+        return False, f"Unexpected response: {snippet} ({sent_summary})"
 
     response = data.get("response") or {}
     if "erreur" in data:
-        return False, str(data["erreur"]).strip() or "ScreenScraper rejected the credentials"
+        err = str(data["erreur"]).strip() or "ScreenScraper rejected the credentials"
+        return False, f"{err} ({sent_summary})"
     ssuser = response.get("ssuser")
     if not isinstance(ssuser, dict):
-        return False, "ScreenScraper response did not include ssuser"
+        return False, f"ScreenScraper response did not include ssuser ({sent_summary})"
 
     user_id = ssuser.get("id") or username
     level = ssuser.get("niveau") or ssuser.get("level") or "?"
     max_threads = ssuser.get("maxthreads") or ssuser.get("requestsmax") or ""
     extra = f", threads {max_threads}" if max_threads else ""
-    return True, f"OK \u2014 user '{user_id}', level {level}{extra}"
+    return True, (
+        f"OK \u2014 user '{user_id}', level {level}{extra}, devid={devid_str}"
+    )
 
 
 def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
@@ -795,10 +811,20 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
 
     Hits ``/Games/ByGameName`` with a trivial query — the same endpoint
     used by the live client — and inspects the response code + remaining
-    monthly-allowance counter.
+    monthly-allowance counter. Conservatively rejects an HTTP 200 that
+    carries no per-key allowance fields at all; TheGamesDB has been
+    observed to return 200 with public/anonymous data for some
+    invalid keys, which would otherwise present as a fake "OK" in the
+    Setup tab Test credentials button.
     """
     if not api_key:
         return False, "API key is required"
+
+    # Obviously-malformed keys never reach TheGamesDB — saves a
+    # round-trip and gives the user a clearer message than the API's
+    # generic error.
+    if any(ch.isspace() for ch in api_key) or len(api_key) < 8:
+        return False, "API key looks malformed — refusing to send."
 
     params = {"apikey": api_key, "name": "test"}
     url = f"{THEGAMESDB_API}/Games/ByGameName"
@@ -836,6 +862,22 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
         return False, str(data.get("status") or "Invalid API key")
     if code and code != 200:
         return False, f"{data.get('status') or 'Error'} (code {code})"
+
+    # A valid authenticated response always carries at least one
+    # ``*allowance*`` field (``remaining_monthly_allowance``,
+    # ``extended_allowance``, ``allowance_refresh_timer``, etc.). If
+    # ``code == 200`` and *none* of those are present, treat as
+    # anonymous / un-authenticated and refuse to report success — this
+    # is the failure mode where TheGamesDB returns OK + public data
+    # for an empty / invalid key.
+    has_allowance = any(
+        k for k in data if isinstance(k, str) and "allowance" in k.lower()
+    )
+    if not has_allowance:
+        return False, (
+            "Suspicious 200 \u2014 response carries no per-key allowance "
+            "counter. Treating as invalid."
+        )
 
     remaining = data.get("remaining_monthly_allowance")
     if remaining is None:
