@@ -4017,6 +4017,23 @@ class _SpinDoctorGUI:
             ctrl_cell = self.ttk.Frame(frame)
             ctrl_cell.grid(row=row, column=2, sticky="w", pady=2)
 
+            # Status hint — tells the user at a glance whether the
+            # field has a saved value behind it. Sits leftmost in the
+            # control cell so the eye matches the field it describes
+            # before the user reaches the Show / Clear buttons.
+            # ``_format_secret_hint`` returns ``"(saved)"`` / ``"(not set)"``.
+            # Flips to ``"(edited — not yet saved)"`` on the first keystroke.
+            hint_var = self.tk.StringVar(value=_format_secret_hint(existing, key))
+            self._cred_hint_vars[key] = hint_var
+            hint_label = self.ttk.Label(
+                ctrl_cell, textvariable=hint_var, foreground=_FG_DIM,
+                width=22, anchor="w",
+            )
+            hint_label.pack(side="left")
+            # First-keystroke trace flips the hint to "edited". Tracked
+            # via a per-key one-shot so subsequent edits don't churn.
+            self._install_cred_hint_trace(key, var, hint_var, existing)
+
             if is_password:
                 # Eyeball toggle — Show button starts on "Show" (entry
                 # is masked); clicking flips both the entry's `show`
@@ -4026,33 +4043,19 @@ class _SpinDoctorGUI:
                     ctrl_cell, text="Show", width=6,
                     command=lambda k=key: self._toggle_password_visibility(k),
                 )
-                btn.pack(side="left")
+                btn.pack(side="left", padx=(6, 0))
                 # Stash the button on the entry so the toggle handler
                 # can flip its label without a second lookup table.
                 entry._spindoctor_eye_btn = btn  # type: ignore[attr-defined]
             else:
                 # Non-masked rows (username, devid) reserve a button-
-                # width spacer so the [Show] [status] [Clear] columns
+                # width spacer so the [status] [Show] [Clear] columns
                 # line up across every credential row. Without this,
-                # the username row's status label sits where password
+                # the username row's Clear button sits where password
                 # rows' Show button sits, and the layout looks ragged.
                 spacer = self.ttk.Frame(ctrl_cell, width=48, height=1)
-                spacer.pack(side="left")
+                spacer.pack(side="left", padx=(6, 0))
                 spacer.pack_propagate(False)
-
-            # Status hint — tells the user at a glance whether the
-            # field has a saved value behind it. ``_format_secret_hint``
-            # returns ``"(saved)"`` / ``"(not set)"``. Flips to
-            # ``"(edited — not yet saved)"`` on the first keystroke.
-            hint_var = self.tk.StringVar(value=_format_secret_hint(existing, key))
-            self._cred_hint_vars[key] = hint_var
-            hint_label = self.ttk.Label(
-                ctrl_cell, textvariable=hint_var, foreground=_FG_DIM,
-            )
-            hint_label.pack(side="left", padx=(6, 0))
-            # First-keystroke trace flips the hint to "edited". Tracked
-            # via a per-key one-shot so subsequent edits don't churn.
-            self._install_cred_hint_trace(key, var, hint_var, existing)
 
             # Clear button — wipes the in-memory StringVar (does NOT
             # touch disk; the user still has to click Save
