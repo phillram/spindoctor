@@ -386,6 +386,25 @@ _CRED_FIELDS: tuple[tuple[str, str, bool], ...] = (
 )
 
 
+def _format_secret_hint(value: str) -> str:
+    """Render a peek-only hint for a masked credential field.
+
+    Masked Entries hide their content by design, so a user reopening
+    the Setup tab can't tell whether the field is empty or stale-but-
+    populated. The hint sits next to the entry and shows just enough
+    of the saved value to recognise it without leaking the secret —
+    ``"…abcd"`` for normal-length values, ``"(short)"`` for values
+    too short to safely truncate, and ``"(empty)"`` for the blank
+    case. The user's TheGamesDB "OK with no key" surprise came from
+    this exact ambiguity.
+    """
+    if not value:
+        return "(empty)"
+    if len(value) < 4:
+        return "(short)"
+    return "…" + value[-4:]
+
+
 # Components offered as checkboxes on the Backup tab. Mirrors
 # `backup.ALL_COMPONENTS` and the `--include` choices in
 # `spindoctor backup create`. Kept here as a static tuple so the GUI
@@ -770,6 +789,12 @@ class _SpinDoctorGUI:
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
         self._reader_thread: Optional[threading.Thread] = None
+        # First monotonic time we saw ``_proc.poll()`` return non-None
+        # without a DoneMarker landing in the queue. The stuck detector
+        # in ``_drain_queue`` uses this to synthesise a marker when the
+        # subprocess has exited but its stdout pipe never produced EOF
+        # (a known Rich-progress-in-pipe-mode failure mode).
+        self._stuck_check_since: Optional[float] = None
 
         # Chained-workflow state. None means "single command — show the
         # indeterminate spinner"; a (step, total) tuple means "switch
@@ -1227,7 +1252,10 @@ class _SpinDoctorGUI:
             return
         try:
             # Insert at index 0 so the filter sits above the notebook.
-            paned.add(frame, before=self._nb, sticky="ew", minsize=32)
+            # ttk.PanedWindow uses ``insert`` for positional inserts; the
+            # filter row carries weight=0 so the notebook + output panel
+            # below it keep their share of the vertical real estate.
+            paned.insert(0, frame, weight=0)
         except self.tk.TclError:
             return
         self._system_filter_visible = True
@@ -1254,7 +1282,7 @@ class _SpinDoctorGUI:
             if visible:
                 # paned.add() is a no-op if the pane is already managed.
                 try:
-                    paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
+                    paned.add(out_frame, weight=1)
                 except self.tk.TclError:
                     pass
                 # Restore the saved sash position on next idle tick so
@@ -1263,7 +1291,7 @@ class _SpinDoctorGUI:
                 if target is not None:
                     def _restore_sash():
                         try:
-                            paned.sash_place(0, 0, target)
+                            paned.sashpos(0, target)
                         except self.tk.TclError:
                             pass
                     self.root.after_idle(_restore_sash)
@@ -1271,9 +1299,9 @@ class _SpinDoctorGUI:
                 # Capture the current sash so re-showing puts the output
                 # back at the same height the user dragged it to.
                 try:
-                    coords = paned.sash_coord(0)
-                    if coords and len(coords) >= 2:
-                        self._output_saved_sash = int(coords[1])
+                    pos = paned.sashpos(0)
+                    if pos:
+                        self._output_saved_sash = int(pos)
                 except self.tk.TclError:
                     pass
                 try:
@@ -1504,7 +1532,7 @@ class _SpinDoctorGUI:
                   "you can re-run this any time from the Audit tab."),
             wraplength=560, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 6))
-        doctor_txt = self.scrolledtext.ScrolledText(
+        doctor_txt = self._make_scrolled_text(
             doctor, height=14, wrap="word", font="TkFixedFont",
         )
         doctor_txt.pack(fill="both", expand=True, pady=(0, 4))
@@ -1708,6 +1736,51 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 - widget race during teardown
             pass
 
+    # ── themed scrolled text ──────────────────────────────────────────────────
+
+    def _make_scrolled_text(self, parent, **text_options):
+        """Build a Text + ttk.Scrollbar pair inside a Frame.
+
+        ``scrolledtext.ScrolledText`` from the stdlib embeds a classic
+        ``tk.Scrollbar``, which on Windows renders with the platform-native
+        Win7 chrome and ignores our clam-based dark theme. This helper
+        replaces it with a themed equivalent: a ``ttk.Frame`` containing
+        a ``tk.Text`` plus a ``ttk.Scrollbar``. The Text widget is
+        ``pack``-ed into the frame and is returned so call sites can
+        keep their existing API (``insert`` / ``delete`` / ``see`` /
+        ``configure`` / ``tag_configure`` / ``yview`` etc.). The owning
+        frame is exposed via ``widget.master`` for layout calls (each
+        call site already uses ``widget.pack(fill="both", …)``, which
+        works because the frame fills its parent and the Text fills the
+        frame).
+        """
+        # Outer frame holds the Text + Scrollbar so call sites get a
+        # single widget to ``pack`` / ``grid``. ``ttk.Frame`` so the
+        # background matches the dark theme without needing option_add.
+        container = self.ttk.Frame(parent)
+        text = self.tk.Text(container, **text_options)
+        vsb = self.ttk.Scrollbar(
+            container, orient="vertical", command=text.yview,
+        )
+        text.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        # Stash the frame on the text so callers that want to ``pack``
+        # the *outer* container (e.g. the Output panel's
+        # ``fill="both", expand=True``) can do so via the same
+        # variable they already hold. Tk's pack/grid on the Text widget
+        # would only fill the inner cell, so we proxy those calls.
+        text._spindoctor_outer_frame = container  # type: ignore[attr-defined]
+        # Override pack / grid / place / pack_forget / grid_forget on
+        # the text widget to operate on the *outer frame* instead, so
+        # the four call sites that previously used a single ScrolledText
+        # don't need to learn about the frame. This mirrors the
+        # stdlib's own ScrolledText approach.
+        for geom in ("pack", "grid", "place", "pack_forget", "grid_forget"):
+            outer_method = getattr(container, geom)
+            setattr(text, geom, outer_method)
+        return text
+
     # ── layout ────────────────────────────────────────────────────────────────
 
     def _build_layout(self) -> None:
@@ -1722,14 +1795,10 @@ class _SpinDoctorGUI:
         self.root.columnconfigure(0, weight=1)
 
         # Vertical PanedWindow splits the tab notebook (top) from the
-        # Output panel (bottom). The raised 6-px sash lets cabinet owners
-        # drag the boundary up or down — useful on smaller screens where
-        # the default output height might be too short to read full output.
-        main_paned = self.tk.PanedWindow(
-            self.root, orient="vertical",
-            sashwidth=6, sashrelief="raised", sashpad=2,
-            borderwidth=0,
-        )
+        # Output panel (bottom). ttk.PanedWindow picks up the dark
+        # ``TPanedwindow`` / ``Sash`` style so the sash matches the rest
+        # of the theme instead of rendering with native Win7 chrome.
+        main_paned = self.ttk.PanedWindow(self.root, orient="vertical")
         main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
         # Stash the paned window so _toggle_output can forget/add the
         # output pane and restore the sash on demand.
@@ -1832,7 +1901,7 @@ class _SpinDoctorGUI:
         # alongside the rest of the window. The named-font path also
         # picks up platform-appropriate monospace defaults (Consolas on
         # Windows, Menlo on macOS) without us hardcoding family names.
-        self._output = self.scrolledtext.ScrolledText(
+        self._output = self._make_scrolled_text(
             out_frame, height=14, wrap="word", font="TkFixedFont",
         )
         # Tags for find-bar match highlighting. Configured here so the
@@ -1878,16 +1947,20 @@ class _SpinDoctorGUI:
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._tab_base_names.append("Logs")
         self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
-        main_paned.add(nb, stretch="always", minsize=200, sticky="nsew")
-        main_paned.add(out_frame, stretch="always", minsize=60, sticky="nsew")
+        main_paned.add(nb, weight=4)
+        main_paned.add(out_frame, weight=1)
 
         # Set initial sash position after the window has been painted so
         # we know the real allocated height. Target: output panel gets
-        # ~160 px; notebook takes the rest.
+        # ~160 px; notebook takes the rest. ttk.PanedWindow uses
+        # ``sashpos`` (not the classic ``sash_place``).
         def _place_initial_sash():
-            h = main_paned.winfo_height()
-            if h > 300:
-                main_paned.sash_place(0, 0, max(200, h - 160))
+            try:
+                h = main_paned.winfo_height()
+                if h > 300:
+                    main_paned.sashpos(0, max(200, h - 160))
+            except Exception:  # noqa: BLE001 - widget race during teardown
+                pass
         self.root.after(100, _place_initial_sash)
 
         # Status bar — grid row 1, always visible.
@@ -2169,11 +2242,7 @@ class _SpinDoctorGUI:
         )
         intro.pack(fill="x")
 
-        paned = self.tk.PanedWindow(
-            frame, orient="horizontal",
-            sashwidth=6, sashrelief="raised", sashpad=2,
-            borderwidth=0,
-        )
+        paned = self.ttk.PanedWindow(frame, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=4, pady=4)
 
         # Left pane: tree of runs.
@@ -2194,16 +2263,16 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=tscroll.set)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
-        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
+        paned.add(tree_frame, weight=1)
 
         # Right pane: full output of the selected run.
         viewer_frame = self.ttk.Frame(paned)
-        viewer = self.scrolledtext.ScrolledText(
+        viewer = self._make_scrolled_text(
             viewer_frame, wrap="word", font="TkFixedFont",
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
+        paned.add(viewer_frame, weight=2)
 
         # Stash widgets so _refresh_logs_tab() can update them.
         self._logs_tree = tree
@@ -2847,11 +2916,7 @@ class _SpinDoctorGUI:
             wraplength=920, justify="left", padding=(10, 6),
         ).pack(fill="x")
 
-        paned = self.tk.PanedWindow(
-            win, orient="horizontal",
-            sashwidth=6, sashrelief="raised", sashpad=2,
-            borderwidth=0,
-        )
+        paned = self.ttk.PanedWindow(win, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=8, pady=4)
 
         # ── Left pane: tree ──────────────────────────────────────────────────
@@ -2872,19 +2937,19 @@ class _SpinDoctorGUI:
         tree.configure(yscrollcommand=scrollbar.set)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
-        paned.add(tree_frame, stretch="always", minsize=200, sticky="nsew")
+        paned.add(tree_frame, weight=1)
 
         # ── Right pane: viewer ───────────────────────────────────────────────
         viewer_frame = self.ttk.Frame(paned)
         # TkFixedFont resolves to the platform monospace default and
         # honours the user's ui_scale setting (Consolas/Menlo hard-codes
         # bypass the scale knob — papercut from earlier releases).
-        viewer = self.scrolledtext.ScrolledText(
+        viewer = self._make_scrolled_text(
             viewer_frame, wrap="none", font="TkFixedFont",
         )
         viewer.configure(state="disabled")
         viewer.pack(fill="both", expand=True, padx=4, pady=4)
-        paned.add(viewer_frame, stretch="always", minsize=200, sticky="nsew")
+        paned.add(viewer_frame, weight=2)
 
         # Path → file text. Cached so re-clicking a row doesn't re-read
         # disk; manifests don't change after they're written.
@@ -3907,6 +3972,12 @@ class _SpinDoctorGUI:
         # second build (e.g. tab re-render) doesn't leak old references.
         self._cred_entries: dict = {}
         self._cred_pw_shown: dict = {}
+        # ``key → StringVar`` for the next-to-the-entry "last-4-chars"
+        # hint that tells the user whether a masked field has a stale
+        # saved value behind the dots. Seeded from the saved config at
+        # build time; flipped to "(edited — not yet saved)" the moment
+        # the entry text changes.
+        self._cred_hint_vars: dict = {}
 
         for j, (key, label, is_password) in enumerate(_CRED_FIELDS):
             row = cred_sep_row + 3 + j
@@ -3921,40 +3992,57 @@ class _SpinDoctorGUI:
             )
             entry.grid(row=row, column=1, sticky="ew", padx=6, pady=2)
             self._cred_entries[key] = entry
+
+            # Per-credential controls live in a small frame in column 2
+            # so eyeball / hint / Clear stack horizontally and don't
+            # fight with the existing grid column layout.
+            ctrl_cell = self.ttk.Frame(frame)
+            ctrl_cell.grid(row=row, column=2, sticky="w", pady=2)
+
             if is_password:
-                # Eyeball toggle — column 2 is otherwise empty for
-                # credential rows (Browse… lives there for paths). Show
-                # button starts on "Show" (entry is masked); clicking
-                # flips both the entry's `show` option and the label.
+                # Eyeball toggle — Show button starts on "Show" (entry
+                # is masked); clicking flips both the entry's `show`
+                # option and the label.
                 self._cred_pw_shown[key] = False
                 btn = self.ttk.Button(
-                    frame, text="Show", width=6,
+                    ctrl_cell, text="Show", width=6,
                     command=lambda k=key: self._toggle_password_visibility(k),
                 )
-                btn.grid(row=row, column=2, sticky="w", pady=2)
+                btn.pack(side="left")
                 # Stash the button on the entry so the toggle handler
                 # can flip its label without a second lookup table.
                 entry._spindoctor_eye_btn = btn  # type: ignore[attr-defined]
 
-        # ── Credential test result line ──────────────────────────────────────
-        # Lives directly under the credential rows so test output is
-        # adjacent to the inputs it references. Set when the user clicks
-        # "Test credentials"; empty otherwise.
-        test_row = cred_sep_row + 3 + len(_CRED_FIELDS)
-        self._cred_test_var = self.tk.StringVar(value="")
-        self._cred_test_label = self.ttk.Label(
-            frame, textvariable=self._cred_test_var,
-            justify="left", wraplength=780,
-        )
-        self._cred_test_label.grid(
-            row=test_row, column=0, columnspan=3, sticky="w", pady=(4, 0),
-        )
+            # Last-4-chars hint — the only way a user can tell that a
+            # masked field is actually populated with a saved value
+            # rather than blank. ``_format_secret_hint`` returns "…abcd"
+            # for typical-length secrets, "(short)" for sub-4-char
+            # values (avoid leaking the whole thing), or "(empty)".
+            # Flips to "(edited — not yet saved)" on first keystroke.
+            hint_var = self.tk.StringVar(value=_format_secret_hint(existing))
+            self._cred_hint_vars[key] = hint_var
+            hint_label = self.ttk.Label(
+                ctrl_cell, textvariable=hint_var, foreground=_FG_DIM,
+            )
+            hint_label.pack(side="left", padx=(6, 0))
+            # First-keystroke trace flips the hint to "edited". Tracked
+            # via a per-key one-shot so subsequent edits don't churn.
+            self._install_cred_hint_trace(key, var, hint_var, existing)
+
+            # Clear button — wipes the in-memory StringVar (does NOT
+            # touch disk; the user still has to click Save
+            # configuration). After Clear the hint reads "(cleared —
+            # not saved)" so the user can definitively test the "no
+            # API key set" scenario.
+            self.ttk.Button(
+                ctrl_cell, text="Clear", width=6,
+                command=lambda k=key: self._clear_cred_field(k),
+            ).pack(side="left", padx=(6, 0))
 
         frame.columnconfigure(1, weight=1)
 
         btn_row = self.ttk.Frame(frame)
-        # +1 because the credential test-result label takes one row now.
-        btn_row_index = cred_sep_row + 4 + len(_CRED_FIELDS)
+        btn_row_index = cred_sep_row + 3 + len(_CRED_FIELDS)
         btn_row.grid(row=btn_row_index, column=0, columnspan=3, sticky="w", pady=(12, 0))
         # Save button label gets a trailing " *" when any field is dirty
         # so the user can tell at a glance that there are unsaved edits.
@@ -4080,12 +4168,98 @@ class _SpinDoctorGUI:
         if btn is not None:
             btn.configure(text=("Hide" if self._cred_pw_shown[key] else "Show"))
 
+    def _install_cred_hint_trace(
+        self, key: str, var, hint_var, initial: str,
+    ) -> None:
+        """Wire the masked-cred Entry's StringVar to the hint label.
+
+        The hint shows last-4-chars of the saved value at build time;
+        the first user keystroke flips it to "(edited — not yet saved)"
+        so the user knows the saved value is no longer what they're
+        about to test. ``_save_setup`` re-seeds the hint from disk.
+        """
+        # One-shot flag — subsequent edits don't re-render the hint.
+        state = {"edited": False, "initial": initial}
+
+        def _on_change(*_args: object) -> None:
+            if state["edited"]:
+                return
+            try:
+                current = var.get()
+            except Exception:  # noqa: BLE001 — Tk teardown race
+                return
+            if current == state["initial"]:
+                return
+            state["edited"] = True
+            try:
+                hint_var.set("(edited — not yet saved)")
+            except Exception:  # noqa: BLE001
+                pass
+
+        var.trace_add("write", _on_change)
+        # Stash the state so ``_save_setup`` / ``_clear_cred_field`` can
+        # reset it after a save / clear.
+        if not hasattr(self, "_cred_hint_state"):
+            self._cred_hint_state: dict = {}
+        self._cred_hint_state[key] = state
+
+    def _clear_cred_field(self, key: str) -> None:
+        """Empty a credential field's in-memory value (does not save).
+
+        Used by the per-field Clear button on the Setup tab. The user
+        still has to click Save configuration to persist the clear to
+        disk — until then ``config.json`` keeps the old value (and any
+        ``spindoctor`` subprocess launched from the GUI will still use
+        the old value). The hint label says so explicitly.
+        """
+        var = self._setup_vars.get(key)
+        if var is None:
+            return
+        var.set("")
+        hint_var = self._cred_hint_vars.get(key)
+        if hint_var is not None:
+            hint_var.set("(cleared — not saved)")
+        # Mark the field as edited so the hint trace doesn't fight back.
+        state = getattr(self, "_cred_hint_state", {}).get(key)
+        if state is not None:
+            state["edited"] = True
+
+    def _reseed_cred_hints_after_save(self) -> None:
+        """Refresh the last-4 hints from the just-saved config.
+
+        After ``_save_setup`` writes to disk, the hint labels should
+        flip from "(edited — not yet saved)" back to "…abcd" / "(empty)"
+        so the user gets immediate visual confirmation that the saved
+        state now matches what's on disk.
+        """
+        try:
+            cfg = load_config()
+        except Exception:  # noqa: BLE001
+            return
+        for key, _label, _is_password in _CRED_FIELDS:
+            hint_var = self._cred_hint_vars.get(key)
+            if hint_var is None:
+                continue
+            saved = getattr(cfg, key, "") or ""
+            try:
+                hint_var.set(_format_secret_hint(saved))
+            except Exception:  # noqa: BLE001
+                continue
+            state = getattr(self, "_cred_hint_state", {}).get(key)
+            if state is not None:
+                state["edited"] = False
+                state["initial"] = saved
+
     def _test_credentials(self) -> None:
         """Ping ScreenScraper and TheGamesDB to verify the entered creds.
 
         Reads from the in-memory Setup vars (NOT disk) so users can test
         a value they haven't saved yet. Runs on a worker thread; results
-        marshal back to the Tk main thread via ``root.after``.
+        marshal back to the Tk main thread via ``root.after``. Output
+        is dual-written to the bottom Output panel **and** the Logs
+        tab's per-run buffer, matching the in-process pattern used by
+        theme-apply — so test output lives where every other run's
+        output lives instead of stuck inline in the Setup form.
         """
         btn = getattr(self, "_cred_test_btn", None)
         if btn is None:
@@ -4100,34 +4274,103 @@ class _SpinDoctorGUI:
         tgdb_key = (self._setup_vars.get("thegamesdb_key")
                     or self.tk.StringVar()).get().strip()
 
+        # Diff the in-memory Setup vars against the saved config so the
+        # user can see whether the values they're testing are what the
+        # CLI will actually use. Resolves the user's "are GUI/CLI creds
+        # actually being used?" confusion at the source.
+        try:
+            saved_cfg = load_config()
+        except Exception:  # noqa: BLE001
+            saved_cfg = None
+        saved_user = (getattr(saved_cfg, "screenscraper_user", "") or "").strip()
+        saved_pass = (getattr(saved_cfg, "screenscraper_pass", "") or "").strip()
+        saved_key = (getattr(saved_cfg, "thegamesdb_key", "") or "").strip()
+        diverges = (
+            ss_user != saved_user
+            or ss_pass != saved_pass
+            or tgdb_key != saved_key
+        )
+
+        # Build the run record + open a row in the Logs tab.
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str="(in-process) Test credentials",
+            dry_run=False,
+        )
+        self._run_history.append(record)
+        self._refresh_logs_tab()
+
+        def emit(line: str) -> None:
+            self._append_output(line)
+            record.append(line)
+
+        emit("\n=== Test credentials ===\n")
+        if diverges:
+            warn = (
+                "⚠ These values differ from saved config — "
+                "fetch-meta / curate will still use the SAVED values "
+                "until you click Save configuration.\n"
+            )
+            emit(warn)
+
+        def _source(current: str, saved: str) -> str:
+            if not current:
+                return "(empty)"
+            if current == saved:
+                return "from saved config"
+            return "from Setup form (unsaved)"
+
+        emit(
+            f"ScreenScraper user: {_source(ss_user, saved_user)}"
+            + (f" — '{ss_user}'\n" if ss_user else "\n")
+        )
+        emit(
+            f"ScreenScraper password: {_source(ss_pass, saved_pass)}"
+            f" (set: {'yes' if ss_pass else 'no'})\n"
+        )
+        emit(
+            f"TheGamesDB API key: {_source(tgdb_key, saved_key)}"
+            f" (set: {'yes' if tgdb_key else 'no'})\n"
+        )
+
         btn.configure(state="disabled", text="Testing\u2026")
-        self._cred_test_var.set("Contacting ScreenScraper and TheGamesDB\u2026")
+        self._set_status("Contacting ScreenScraper and TheGamesDB…")
 
         def _worker() -> None:
             # Defer the scraper import so test_credentials doesn't drag
-            # in `requests` for users who never click this button.
+            # in ``requests`` for users who never click this button.
             from . import scraper as scraper_mod
 
             if ss_user or ss_pass:
-                ss_ok, ss_msg = scraper_mod.verify_screenscraper(ss_user, ss_pass)
-                ss_line = (
-                    f"\u2713 ScreenScraper: {ss_msg}"
-                    if ss_ok else f"\u2717 ScreenScraper: {ss_msg}"
+                ss_ok, ss_msg = scraper_mod.verify_screenscraper(
+                    ss_user, ss_pass,
                 )
+                ss_line = (
+                    f"✓ ScreenScraper: {ss_msg}\n"
+                    if ss_ok else f"✗ ScreenScraper: {ss_msg}\n"
+                )
+                ss_failed = not ss_ok
             else:
-                ss_line = "\u2014 ScreenScraper: skipped (no credentials entered)"
+                ss_line = "— ScreenScraper: skipped (no credentials entered)\n"
+                ss_failed = False
 
             if tgdb_key:
                 tg_ok, tg_msg = scraper_mod.verify_thegamesdb(tgdb_key)
                 tg_line = (
-                    f"\u2713 TheGamesDB: {tg_msg}"
-                    if tg_ok else f"\u2717 TheGamesDB: {tg_msg}"
+                    f"✓ TheGamesDB: {tg_msg}\n"
+                    if tg_ok else f"✗ TheGamesDB: {tg_msg}\n"
                 )
+                tg_failed = not tg_ok
             else:
-                tg_line = "\u2014 TheGamesDB: skipped (no API key entered)"
+                tg_line = "— TheGamesDB: skipped (no API key entered)\n"
+                tg_failed = False
 
             def _finish() -> None:
-                self._cred_test_var.set(f"{ss_line}\n{tg_line}")
+                emit(ss_line)
+                emit(tg_line)
+                emit("=== Test credentials complete ===\n")
+                record.exit_code = 1 if (ss_failed or tg_failed) else 0
+                self._refresh_logs_tab()
                 btn.configure(state="normal", text="Test credentials")
                 self._set_status("Credential test complete.")
 
@@ -4144,6 +4387,10 @@ class _SpinDoctorGUI:
             setattr(cfg, key, self._setup_vars[key].get().strip())
         save_config(cfg)
         self._setup_mark_clean()
+        # Re-seed last-4 hints from the just-saved values so the
+        # masked fields show the new ``…abcd`` (or ``(empty)``)
+        # immediately instead of staying on "(edited — not yet saved)".
+        self._reseed_cred_hints_after_save()
         ok, errors = cfg.is_valid()
         self._append_output(f"Saved {CONFIG_FILE}\n")
         if ok:
@@ -8795,22 +9042,105 @@ class _SpinDoctorGUI:
             self._line_queue.put(_DoneMarker(rc, on_complete))
 
     def _drain_queue(self) -> None:
+        # CRITICAL: this loop is the only path that transitions the GUI
+        # out of the "running" state. If anything inside raises and
+        # propagates, the ``root.after(50, …)`` re-registration at the
+        # bottom never runs, and the user is left with a permanently
+        # busy GUI (the symptom: backup finishes, files appear in the
+        # destination, but the tab badge / Stop button / status bar
+        # never clear). Wrap *everything* in try/except so the loop
+        # always re-arms.
         try:
             while True:
-                item = self._line_queue.get_nowait()
-                if isinstance(item, _DoneMarker):
-                    self._on_proc_done(item)
-                else:
-                    self._append_output(item)
-                    # Mirror into the current run's per-record buffer
-                    # so the Logs tab can replay the same content
-                    # later. The Output panel and the Logs tab show
-                    # identical text at the moment a run finishes.
-                    if self._current_run is not None:
-                        self._current_run.append(item)
-        except queue.Empty:
+                try:
+                    item = self._line_queue.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    if isinstance(item, _DoneMarker):
+                        self._on_proc_done(item)
+                    else:
+                        self._append_output(item)
+                        # Mirror into the current run's per-record buffer
+                        # so the Logs tab can replay the same content
+                        # later. The Output panel and the Logs tab show
+                        # identical text at the moment a run finishes.
+                        if self._current_run is not None:
+                            self._current_run.append(item)
+                except Exception as exc:  # noqa: BLE001 — never break drain
+                    try:
+                        self._append_output(
+                            f"\n[drain error: {exc!r}]\n"
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            # Stuck detector. If the subprocess has exited (poll() is
+            # non-None) but no DoneMarker has shown up after a couple of
+            # drain ticks, Rich's pipe-mode progress output may have
+            # buffered without a trailing newline and the
+            # ``for line in proc.stdout`` loop in _pump_output is still
+            # waiting on EOF. Synthesise a marker so we don't sit in
+            # the running state forever.
+            self._check_stuck_proc()
+        except Exception as exc:  # noqa: BLE001 — outer guard
+            try:
+                self._append_output(f"\n[drain error: {exc!r}]\n")
+            except Exception:  # noqa: BLE001
+                pass
+
+        # Always re-arm, even if the body above raised.
+        try:
+            self._drain_after_id = self.root.after(50, self._drain_queue)
+        except Exception:  # noqa: BLE001 — root may be destroyed
+            self._drain_after_id = None
+
+    def _check_stuck_proc(self) -> None:
+        """Detect a subprocess that exited but never sent a DoneMarker.
+
+        Rich's ``Progress`` in non-tty (pipe) mode can leave the
+        ``for line in proc.stdout`` iterator in ``_pump_output`` waiting
+        on a missing trailing newline, so the ``finally`` block that
+        enqueues the DoneMarker never runs. When we detect that
+        ``self._proc`` has exited but no marker has been processed for
+        ≥ 2 drain ticks (~100 ms), synthesise one so the UI un-sticks.
+        """
+        proc = self._proc
+        if proc is None:
+            self._stuck_check_since = None
+            return
+        try:
+            rc = proc.poll()
+        except Exception:  # noqa: BLE001
+            self._stuck_check_since = None
+            return
+        if rc is None:
+            # Still running — no stuck condition.
+            self._stuck_check_since = None
+            return
+
+        now = time.monotonic()
+        first_seen = getattr(self, "_stuck_check_since", None)
+        if first_seen is None:
+            self._stuck_check_since = now
+            return
+        if now - first_seen < 0.1:
+            return
+        # Subprocess has been exited for at least 100 ms with no
+        # DoneMarker. Force a finalisation. Reset the marker first so
+        # we don't re-fire if a real marker shows up later.
+        self._stuck_check_since = None
+        try:
+            self._append_output(
+                "\n[recovered: subprocess exited but stdout did not "
+                "close cleanly — finalising run anyway]\n"
+            )
+        except Exception:  # noqa: BLE001
             pass
-        self._drain_after_id = self.root.after(50, self._drain_queue)
+        try:
+            self._on_proc_done(_DoneMarker(rc, None))
+        except Exception:  # noqa: BLE001
+            pass
 
     def _on_close(self) -> None:
         """Persist GUI state, cancel the pending _drain_queue, terminate
@@ -8882,72 +9212,102 @@ class _SpinDoctorGUI:
         save_config(cfg)
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
-        self._proc = None
-        self._stop_btn.configure(state="disabled")
-        self._set_busy(False)
+        # CRITICAL: every transition out of the "running" UI state lives
+        # in this method. If any single step raises (e.g. ``_set_tab_badge``
+        # on a destroyed widget, ``_refresh_logs_tab`` after a tab swap),
+        # the rest of the cleanup is skipped and the GUI stays busy
+        # forever. Wrap the body in try/finally and re-do the essentials
+        # in ``finally`` so the user always escapes the running state.
+        try:
+            # Stamp the exit code on the run record + emit a closing
+            # banner for dry-runs so the user always sees "preview done,
+            # nothing changed on disk". Real applies don't get a banner —
+            # the output panel already shows command-specific success
+            # messages and we don't want to drown those out.
+            was_dry_run = False
+            if self._current_run is not None:
+                self._current_run.exit_code = marker.rc
+                was_dry_run = self._current_run.dry_run
+                if was_dry_run:
+                    footer = (
+                        f"\n=== DRY RUN COMPLETE (exit {marker.rc}) — "
+                        "nothing was written. Re-run with --apply to commit. ===\n"
+                    )
+                    self._append_output(footer)
+                    self._current_run.append(footer)
 
-        # Stamp the exit code on the run record + emit a closing
-        # banner for dry-runs so the user always sees "preview done,
-        # nothing changed on disk". Real applies don't get a banner —
-        # the output panel already shows command-specific success
-        # messages and we don't want to drown those out.
-        was_dry_run = False
-        if self._current_run is not None:
-            self._current_run.exit_code = marker.rc
-            was_dry_run = self._current_run.dry_run
-            if was_dry_run:
-                footer = (
-                    f"\n=== DRY RUN COMPLETE (exit {marker.rc}) — "
-                    "nothing was written. Re-run with --apply to commit. ===\n"
-                )
-                self._append_output(footer)
-                self._current_run.append(footer)
-        self._current_run = None
+            # Compute elapsed wall-clock for the status bar summary.
+            # Falls back to '' if _run_cli wasn't called via the normal path
+            # (e.g. older code paths that didn't stamp the monotonic clock).
+            start = getattr(self, "_run_started_monotonic", None)
+            elapsed_str = ""
+            if start is not None:
+                elapsed = time.monotonic() - start
+                if elapsed < 60:
+                    elapsed_str = f" in {elapsed:.1f}s"
+                else:
+                    mins, secs = divmod(int(elapsed), 60)
+                    elapsed_str = f" in {mins}m{secs:02d}s"
+            label = getattr(self, "_run_label", "") or "Last command"
 
-        # Compute elapsed wall-clock for the status bar summary.
-        # Falls back to '' if _run_cli wasn't called via the normal path
-        # (e.g. older code paths that didn't stamp the monotonic clock).
-        start = getattr(self, "_run_started_monotonic", None)
-        elapsed_str = ""
-        if start is not None:
-            elapsed = time.monotonic() - start
-            if elapsed < 60:
-                elapsed_str = f" in {elapsed:.1f}s"
+            if marker.rc == 0:
+                if was_dry_run:
+                    self._set_status(
+                        f"{label} — dry run OK{elapsed_str}. "
+                        "View results in Output or the Logs tab."
+                    )
+                else:
+                    self._set_status(f"{label} — OK{elapsed_str}.")
             else:
-                mins, secs = divmod(int(elapsed), 60)
-                elapsed_str = f" in {mins}m{secs:02d}s"
-        label = getattr(self, "_run_label", "") or "Last command"
-        self._run_started_monotonic = None
-        self._run_label = ""
-
-        if marker.rc == 0:
-            if was_dry_run:
                 self._set_status(
-                    f"{label} — dry run OK{elapsed_str}. "
-                    "View results in Output or the Logs tab."
+                    f"{label} — FAILED (exit {marker.rc}){elapsed_str}."
                 )
-            else:
-                self._set_status(f"{label} — OK{elapsed_str}.")
-        else:
-            self._set_status(
-                f"{label} — FAILED (exit {marker.rc}){elapsed_str}."
-            )
 
-        if self._running_tab_idx is not None:
-            self._set_tab_badge(
-                self._running_tab_idx,
-                "✓" if marker.rc == 0 else "✗",
-            )
-            self._running_tab_idx = None
+            if self._running_tab_idx is not None:
+                try:
+                    self._set_tab_badge(
+                        self._running_tab_idx,
+                        "✓" if marker.rc == 0 else "✗",
+                    )
+                except Exception:  # noqa: BLE001 — widget race
+                    pass
 
-        # Re-render the Logs tab so the row's exit-code column updates.
-        self._refresh_logs_tab()
-
-        if marker.callback is not None:
+            # Re-render the Logs tab so the row's exit-code column updates.
             try:
-                marker.callback(marker.rc)
-            except Exception as exc:  # noqa: BLE001 — never let a callback crash the UI
-                self._append_output(f"\n[callback error: {exc}]\n")
+                self._refresh_logs_tab()
+            except Exception:  # noqa: BLE001 — widget race
+                pass
+
+            if marker.callback is not None:
+                try:
+                    marker.callback(marker.rc)
+                except Exception as exc:  # noqa: BLE001 — never let a callback crash the UI
+                    self._append_output(f"\n[callback error: {exc}]\n")
+        except Exception as exc:  # noqa: BLE001 — surface but never swallow cleanup
+            try:
+                self._append_output(
+                    f"\n[internal error finalising run: {exc!r}]\n"
+                )
+            except Exception:  # noqa: BLE001
+                pass
+        finally:
+            # Guarantee the GUI leaves the running state regardless of
+            # what raised above. Each of these is individually guarded
+            # because a TclError on one widget shouldn't stop the others.
+            self._proc = None
+            self._current_run = None
+            self._run_started_monotonic = None
+            self._run_label = ""
+            self._running_tab_idx = None
+            self._stuck_check_since = None
+            try:
+                self._stop_btn.configure(state="disabled")
+            except Exception:  # noqa: BLE001
+                pass
+            try:
+                self._set_busy(False)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _stop_running(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
