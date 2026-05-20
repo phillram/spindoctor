@@ -111,7 +111,7 @@ You have two equivalent ways to point SpinDoctor at your library — pick whiche
 ```bat
 cd C:\spindoctor
 spindoctor.exe --version
-:: SpinDoctor, version 1.9.1
+:: SpinDoctor, version 2.0.0
 
 spindoctor.exe config init
 ```

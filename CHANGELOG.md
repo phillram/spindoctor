@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-19
+
 ### Fixed
 
 - **GUI: `_flash_status` revert no longer crashes if the window is closed mid-flash.** The 6-second auto-revert (added with the popup → status-bar conversion in #136) was wrapped in `try/except` at `root.after` registration, but the callback *body* (`_set_status` → `StringVar.set`) could still raise `TclError` after teardown — surfacing as a noise traceback via the unraisable hook (Py3.12 + pytest flake territory). The revert body is now guarded.
@@ -512,7 +514,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/phillram/spindoctor/compare/v1.9.1...v2.0.0
 [1.9.1]: https://github.com/phillram/spindoctor/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/phillram/spindoctor/compare/v1.8.0...v1.9.0
 [1.8.0]: https://github.com/phillram/spindoctor/compare/v1.7.2...v1.8.0
