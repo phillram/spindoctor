@@ -124,6 +124,12 @@ _FG_DIMMER        = "#7a7a7a"  # disabled-look text (replaces #888 / "gray")
 _DARK_BORDER      = "#3c3c3c"
 _DARK_ACCENT      = "#007acc"  # focus ring / progress bar / hyperlink-ish
 
+# Scrollbar thumb (the draggable rectangle) needs noticeably more contrast
+# against the trough than the regular button face — picked by eye so the
+# thumb reads as "obviously the grabby part" without yelling.
+_DARK_SCROLL_THUMB        = "#6a6a6e"  # rests well above _DARK_BG_RAISE trough
+_DARK_SCROLL_THUMB_ACTIVE = "#8a8a8e"  # hover / pressed
+
 
 # ─── UI scale helpers (module-level for test access) ──────────────────────────
 
@@ -563,6 +569,12 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "config show",
     "config init",
     "config set <KEY> <VALUE>",
+    # ScreenScraper per-app developer credentials. The "SpinDoctor" defaults
+    # in `Config` are kept for backwards-compat; override these if ScreenScraper
+    # has issued you a real registered developer credential or rejects the
+    # defaults with HTTP 403. Surfaces only here in the dropdown.
+    "config set screenscraper_devid <VALUE>",
+    "config set screenscraper_devpassword <VALUE>",
     "config system list",
     "config system set <SYSTEM> --layout wheel",
     # Tools
@@ -949,18 +961,22 @@ class _SpinDoctorGUI:
               expand=[("selected", (1, 1, 1, 0))])
 
         # ── Scrollbars / Progressbar / Separator ─────────────────────────────
+        # Thumb (_DARK_SCROLL_THUMB) is deliberately much lighter than the
+        # trough (_DARK_BG_RAISE) so the draggable part is obvious. Letting
+        # clam draw its native lightcolor / darkcolor bevel keeps a faint
+        # 3-D edge that helps the thumb pop without looking cartoonish.
         _safe_configure("Vertical.TScrollbar",
-                        background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
-                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
-                        lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+                        background=_DARK_SCROLL_THUMB,
+                        troughcolor=_DARK_BG_RAISE,
+                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG)
         _safe_configure("Horizontal.TScrollbar",
-                        background=_DARK_BG_BUTTON, troughcolor=_DARK_BG_RAISE,
-                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG,
-                        lightcolor=_DARK_BG_BUTTON, darkcolor=_DARK_BG_BUTTON)
+                        background=_DARK_SCROLL_THUMB,
+                        troughcolor=_DARK_BG_RAISE,
+                        bordercolor=_DARK_BORDER, arrowcolor=_DARK_FG)
         s.map("Vertical.TScrollbar",
-              background=[("active", _DARK_BG_ACTIVE)])
+              background=[("active", _DARK_SCROLL_THUMB_ACTIVE)])
         s.map("Horizontal.TScrollbar",
-              background=[("active", _DARK_BG_ACTIVE)])
+              background=[("active", _DARK_SCROLL_THUMB_ACTIVE)])
         s.configure("TProgressbar", background=_DARK_ACCENT,
                     troughcolor=_DARK_BG_RAISE, bordercolor=_DARK_BORDER,
                     lightcolor=_DARK_ACCENT, darkcolor=_DARK_ACCENT)

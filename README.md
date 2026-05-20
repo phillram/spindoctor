@@ -61,6 +61,7 @@ For a complete first-time walkthrough on a blank Windows PC (Python, HyperSpin, 
 | | |
 |---|---|
 | [Configuration](docs/configuration.md) | Config keys, per-system overrides, filesystem considerations |
+| [CLI cheatsheet](docs/cli-cheatsheet.md) | Quick "if you want to do X, run Y" copy-paste sampler, grouped by intent |
 | [Command reference](docs/commands.md) | Every command, grouped by purpose |
 | [Workflows](docs/workflows.md) | First-system add, daily refresh, weekly maintenance, backup, migration, recovery |
 | [Standalone tools](docs/standalone-tools.md) | Favorites / Recent / Most Played wheels — Tools menu and boot wiring; tools-audit for cataloguing other arcade utilities |
@@ -81,24 +82,58 @@ Press **Ctrl+F** (Cmd+F on macOS) any time to open a find bar above the Output p
 
 Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME variants) can configure scraper IDs, ROM extensions, layout, and emulator per-system from the **Systems** tab's *Per-system overrides* form — no need to memorise `config system set` flags.
 
-The CLI commands below — `tools-audit`, `doctor`, `audit`, the wheel refreshes, and any other `spindoctor …` invocation — also work from the GUI's Custom Command tab (whose dropdown ships ~70 canonical commands) if you'd rather click than type. The 15 dedicated GUI tabs cover the most-used workflows directly: **Setup** (paths + scraper credentials — ScreenScraper and TheGamesDB keys, masked with a Show/Hide eyeball toggle and a "Test credentials" button that pings both providers and reports pass/fail), **Wheels** (checkboxes for Favorites / Recently Played / Most Played + a "Refresh selected" button that chains only the ticked ones, with step-counter progress in the status bar; HyperSpin integration helpers below), **Main Menu** (interactive Treeview showing the live system order — select a row, click Move Up / Move Down / Toggle Visible, then Save Order with a confirmation dialog before writing `Main Menu.xml`), **Audit & Doctor**, **Diagnose** (find-dupes, find-misplaced, find-orphan-media, check-discs, lint, report, verify-against-DAT, global search), **Metadata & Media** (fetch-meta, fetch-media with media-type checkboxes, media-scan, update-db, generate-config; "Full metadata refresh" chains all three with step-counter status), **Curate** (region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes with safe caches pre-ticked and unsafe caches unchecked, ignore lifecycle with click-to-un-ignore viewer), **Systems** (add-system, add-pc-system, pc-rename), **LEDBlinky**, **Lightgun**, **Tools** (Tools-menu helpers + Windows auto-refresh on log-on), **Backup & Restore** (Scan button populates restore dropdown from configured backup folder), **Migrate** (multi-select Listbox for systems filter, undo manifest dropdown pre-populated from `~/.spindoctor/migrations/`), **Logs** (per-run timeline tagging each row DRY-RUN / OK / FAIL), **Custom Command**. Every tab scrolls when content overflows the window. Every text input has a right-click Cut / Copy / Paste / Select-All menu. `View` exposes a UI-scale knob (0.8×–1.5×, plus `Ctrl++` / `Ctrl+-` / `Ctrl+0`) and a collapsible Output panel (`Ctrl+`` `), so cabinet owners on 1280×720 can fit a full tab on screen without scrolling. A `File` menu adds shortcuts to `config.json` / `~/.spindoctor` / a Logs & Manifests viewer (with one-click "Undo this run" for any apply-mode command) / a HyperSpin theme browser; a `Help` menu surfaces an About dialog (with the app icon), an in-app **Keyboard shortcuts** reference, and a "Check for updates" action that pings GitHub for newer releases. The GUI also takes a single-instance file lock on startup so two windows can't race on the same HyperSpin XML — override with `SPINDOCTOR_DISABLE_SINGLETON=1` if you genuinely need both open.
+## What's in the GUI
 
-| If you want to… | Run |
-|---|---|
-| See every command and what it does | `spindoctor --help` |
-| Inventory the tools already on this cabinet | `spindoctor tools-audit` |
-| Self-diagnose paths, binaries, and DB integrity | `spindoctor doctor` |
-| Audit one system's ROMs vs. the HyperSpin DB | `spindoctor audit --system MAME` |
-| Verify ROM integrity against a No-Intro / Redump DAT | `spindoctor verify --system NES --dat path\to.dat` |
-| Find a game across every system | `spindoctor find-global "house of the dead"` |
-| Edit metadata across many games at once | `spindoctor batch-edit --system MAME --filter genre=Action --set rating=5 --apply` |
-| Wire a Sinden lightgun for a system | `spindoctor lightgun configure --system "Sega Naomi" --apply` |
-| Refresh Favorites / Recently Played / Most Played | `spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply` |
-| Snapshot the library before risky work | `spindoctor backup create --target E:\Backups --apply` |
-| See what changed since a backup | `spindoctor diff E:\Backups\spindoctor-backup-20260101_120000` |
-| Migrate to a new drive | `spindoctor migrate --target E:\Cab --apply` |
-| Inventory frontend controller-glyph art | `spindoctor theme-scan --keyword xbox` |
-| Replace controller glyphs with a community pack | `spindoctor theme-apply C:\Packs\PS-Buttons --apply` |
+15 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~70 canonical CLI invocations — anything described under [CLI cheatsheet](#cli-cheatsheet) below also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
+
+### Tabs
+
+- **Setup** — paths + scraper credentials (ScreenScraper / TheGamesDB), masked with a Show/Hide eyeball and a **Test credentials** button that pings both providers and reports pass/fail.
+- **Wheels** — checkboxes for Favorites / Recently Played / Most Played + a *Refresh selected* button that chains only the ticked ones, with step-counter progress in the status bar; HyperSpin integration helpers below.
+- **Main Menu** — interactive Treeview of the live system order; select a row, click Move Up / Move Down / Toggle Visible, then Save Order (with confirmation) to write `Main Menu.xml`.
+- **Audit & Doctor** — system-by-system audit and the global `doctor` health check.
+- **Diagnose** — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `verify` against a DAT, global search.
+- **Metadata & Media** — `fetch-meta`, `fetch-media` with media-type checkboxes, `media-scan`, `update-db`, `generate-config`; *Full metadata refresh* chains all three with step-counter status.
+- **Curate** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes (safe caches pre-ticked, unsafe caches unchecked), ignore lifecycle with click-to-un-ignore viewer.
+- **Systems** — `add-system`, `add-pc-system`, `pc-rename`, and the per-system overrides form mentioned above.
+- **LEDBlinky** — generate / audit / check / fix the LED-light configuration.
+- **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
+- **Tools** — Tools-menu helpers and the Windows auto-refresh-on-log-on hook.
+- **Backup & Restore** — *Scan* populates the restore dropdown from your configured backup folder.
+- **Migrate** — multi-select systems filter, undo manifest dropdown pre-populated from `~/.spindoctor/migrations/`.
+- **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
+- **Custom Command** — type-or-pick CLI invocations; the dropdown is a curated tour of the whole CLI surface.
+
+### Chrome and ergonomics
+
+- **Every tab scrolls** when content overflows the window; thumbs are clearly visible against the dark theme and brighten on hover.
+- **Every text input** has a right-click Cut / Copy / Paste / Select-All menu.
+- **`View` menu** — UI-scale knob (0.8×–1.5×, `Ctrl++` / `Ctrl+-` / `Ctrl+0`) and a collapsible Output panel (`Ctrl+`` `), so cabinet owners on 1280×720 can fit a full tab without scrolling.
+- **`File` menu** — shortcuts to `config.json`, `~/.spindoctor`, a Logs & Manifests viewer (with one-click *Undo this run* for any apply-mode command), and a HyperSpin theme browser.
+- **`Help` menu** — About dialog (with the app icon), in-app **Keyboard shortcuts** reference, and *Check for updates* that pings GitHub for newer releases.
+- **Single-instance file lock** on startup so two windows can't race on the same HyperSpin XML — override with `SPINDOCTOR_DISABLE_SINGLETON=1` if you genuinely need both open.
+
+### Diagnostics
+
+If **Test credentials** returns a 403 from ScreenScraper or TheGamesDB, the failure dialog includes a trimmed copy of the upstream error body, and every scraper call is also recorded (with secrets redacted) to `~/.spindoctor/scraper.log`. Full diagnostic flow including the optional `screenscraper_devid` / `screenscraper_devpassword` override at [Troubleshooting → 403 from ScreenScraper or TheGamesDB](docs/troubleshooting.md#403-from-screenscraper-or-thegamesdb).
+
+## CLI commands
+
+A curated cheatsheet with copy-paste examples for every common workflow lives at **[docs/cli-cheatsheet.md](docs/cli-cheatsheet.md)** — grouped by intent (discover & diagnose, edit & curate, metadata & media, backup / diff / migrate, custom wheels, themes, light guns, config). For the full per-command reference with every flag, see **[docs/commands.md](docs/commands.md)**.
+
+A few greatest hits to get oriented:
+
+```bat
+spindoctor --help                              :: every command
+spindoctor doctor                              :: self-diagnose
+spindoctor audit --system MAME                 :: ROMs vs HyperSpin DB
+spindoctor verify --system NES --dat path\to.dat
+spindoctor backup create --target E:\Backups --apply
+spindoctor migrate --target E:\Cab --apply
+spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply
+```
+
+Everything above also works from the GUI's Custom Command tab — the dropdown is pre-populated with ~70 of these.
 
 ## Reporting issues
 

@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
 
@@ -14,11 +16,111 @@ import requests
 from ._net import make_session, request_get
 from .config import (
     CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_system_overrides,
+    load_config,
 )
 from .romutils import normalize, similarity
 
 
 METADATA_CACHE_DIR = CONFIG_DIR / "metadata_cache"
+SCRAPER_LOG_PATH = CONFIG_DIR / "scraper.log"
+
+
+# ─── debug logging ────────────────────────────────────────────────────────────
+#
+# A dedicated logger writes every ScreenScraper / TheGamesDB request and the
+# first slice of its response to ``~/.spindoctor/scraper.log``. The point is to
+# unstick "verify returns 403 and the dialog says nothing useful" debugging
+# without having to teach a cabinet owner to run Wireshark — the upstream JSON
+# error body usually names the failing field ("Erreur de login", "Invalid API
+# Key", rate-limit notice) and that gets surfaced in both the file and the UI
+# dialog. Secrets (passwords, dev passwords, API keys) are redacted before any
+# log line is written.
+
+scraper_logger = logging.getLogger("spindoctor.scraper")
+scraper_logger.setLevel(logging.DEBUG)
+_LOG_HANDLER_INSTALLED = False
+_REDACT_KEYS = frozenset({"sspassword", "devpassword", "apikey"})
+
+
+def _install_scraper_log_handler() -> None:
+    """Attach the rotating file handler once per process.
+
+    Idempotent — every verify click otherwise stacks another handler and the
+    file balloons. Failures (config dir on a read-only mount, permission
+    denied) are swallowed: logging is diagnostic, never load-bearing.
+    """
+    global _LOG_HANDLER_INSTALLED
+    if _LOG_HANDLER_INSTALLED:
+        return
+    try:
+        SCRAPER_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            SCRAPER_LOG_PATH, maxBytes=512_000, backupCount=2, encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s %(message)s",
+        ))
+        handler.setLevel(logging.DEBUG)
+        scraper_logger.addHandler(handler)
+        scraper_logger.propagate = False
+    except OSError:
+        pass
+    _LOG_HANDLER_INSTALLED = True
+
+
+def _redact_params(params: Optional[dict]) -> dict:
+    """Return a copy of *params* with sensitive values replaced by ``***``."""
+    if not params:
+        return {}
+    return {
+        k: ("***" if k in _REDACT_KEYS and v not in ("", None) else v)
+        for k, v in params.items()
+    }
+
+
+def _body_snippet(body: str, limit: int = 500) -> str:
+    """Compact, single-line slice of a response body for log + dialog use."""
+    if not body:
+        return ""
+    cleaned = " ".join(body.split())
+    return cleaned[:limit] + ("\u2026" if len(cleaned) > limit else "")
+
+
+def _log_http(
+    label: str,
+    method: str,
+    url: str,
+    params: Optional[dict],
+    status: Optional[int],
+    body: str,
+    *,
+    error: Optional[BaseException] = None,
+) -> None:
+    """Write a one-line request summary + body snippet on error.
+
+    ``label`` is the human-readable call site (e.g. ``"screenscraper.verify"``).
+    Errors (network failures with no response) log the exception text; HTTP
+    status >= 400 dumps the first slice of the body so the upstream message
+    survives. Healthy 2xx calls just log the URL + status to keep the file
+    skim-friendly.
+    """
+    _install_scraper_log_handler()
+    redacted = _redact_params(params)
+    if error is not None:
+        scraper_logger.error("%s %s %s params=%s — %s",
+                             label, method, url, redacted, error)
+        return
+    size = len(body or "")
+    scraper_logger.info("%s %s %s params=%s → HTTP %s (%d bytes)",
+                        label, method, url, redacted, status, size)
+    if status is not None and (status >= 400 or status == 0):
+        scraper_logger.debug("%s body: %s", label, _body_snippet(body))
+
+
+def _failure_with_body(message: str, body: str) -> str:
+    """Compose ``message`` with a parenthetical raw-body hint when present."""
+    snippet = _body_snippet(body, limit=300)
+    return f"{message} (raw: {snippet})" if snippet else message
 
 
 SCREENSCRAPER_SYSTEMS: dict[str, int] = {
@@ -368,17 +470,21 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         password: str,
         rate_limit: float = 1.0,
         cache: Optional["MetadataCache"] = None,
+        devid: str = "SpinDoctor",
+        devpassword: str = "SpinDoctor",
     ):
         self.username = username
         self.password = password
+        self.devid = devid or "SpinDoctor"
+        self.devpassword = devpassword or "SpinDoctor"
         self._limiter = RateLimiter(rate_limit)
         self._session = make_session()
         self._cache = cache
 
     def _base_params(self) -> dict:
         return {
-            "devid": "SpinDoctor",
-            "devpassword": "SpinDoctor",
+            "devid": self.devid,
+            "devpassword": self.devpassword,
             "softname": "SpinDoctor",
             "ssid": self.username,
             "sspassword": self.password,
@@ -399,8 +505,15 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         if system_id:
             params["systemeid"] = system_id
 
+        url = f"{SCREENSCRAPER_API}/jeuInfos.php"
         try:
-            resp = self._session.get(f"{SCREENSCRAPER_API}/jeuInfos.php", params=params, timeout=15)
+            resp = self._session.get(url, params=params, timeout=15)
+        except requests.RequestException as e:
+            _log_http("screenscraper.fetch", "GET", url, params, None, "", error=e)
+            raise MetadataError(f"ScreenScraper fetch failed: {e}") from e
+        _log_http("screenscraper.fetch", "GET", url, params,
+                  resp.status_code, resp.text or "")
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
@@ -421,8 +534,15 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         if system_id:
             params["systemeid"] = system_id
 
+        url = f"{SCREENSCRAPER_API}/jeuRecherche.php"
         try:
-            resp = self._session.get(f"{SCREENSCRAPER_API}/jeuRecherche.php", params=params, timeout=15)
+            resp = self._session.get(url, params=params, timeout=15)
+        except requests.RequestException as e:
+            _log_http("screenscraper.search", "GET", url, params, None, "", error=e)
+            raise MetadataError(f"ScreenScraper search failed: {e}") from e
+        _log_http("screenscraper.search", "GET", url, params,
+                  resp.status_code, resp.text or "")
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
@@ -454,10 +574,15 @@ class ScreenScraperClient(_FetchWithSearchMixin):
 
         self._limiter.wait()
         params = self._base_params()
+        url = f"{SCREENSCRAPER_API}/systemesListe.php"
         try:
-            resp = self._session.get(
-                f"{SCREENSCRAPER_API}/systemesListe.php", params=params, timeout=15,
-            )
+            resp = self._session.get(url, params=params, timeout=15)
+        except requests.RequestException as e:
+            _log_http("screenscraper.systems", "GET", url, params, None, "", error=e)
+            raise MetadataError(f"ScreenScraper system list failed: {e}") from e
+        _log_http("screenscraper.systems", "GET", url, params,
+                  resp.status_code, resp.text or "")
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
@@ -518,8 +643,15 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         if pid:
             params["filter[platform]"] = pid
 
+        url = f"{THEGAMESDB_API}/Games/ByGameName"
         try:
-            resp = self._session.get(f"{THEGAMESDB_API}/Games/ByGameName", params=params, timeout=15)
+            resp = self._session.get(url, params=params, timeout=15)
+        except requests.RequestException as e:
+            _log_http("thegamesdb.fetch", "GET", url, params, None, "", error=e)
+            raise MetadataError(f"TheGamesDB fetch failed: {e}") from e
+        _log_http("thegamesdb.fetch", "GET", url, params,
+                  resp.status_code, resp.text or "")
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
@@ -544,8 +676,15 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         if pid:
             params["filter[platform]"] = pid
 
+        url = f"{THEGAMESDB_API}/Games/ByGameName"
         try:
-            resp = self._session.get(f"{THEGAMESDB_API}/Games/ByGameName", params=params, timeout=15)
+            resp = self._session.get(url, params=params, timeout=15)
+        except requests.RequestException as e:
+            _log_http("thegamesdb.search", "GET", url, params, None, "", error=e)
+            raise MetadataError(f"TheGamesDB search failed: {e}") from e
+        _log_http("thegamesdb.search", "GET", url, params,
+                  resp.status_code, resp.text or "")
+        try:
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
@@ -569,45 +708,69 @@ class TheGamesDBClient(_FetchWithSearchMixin):
 
 def verify_screenscraper(
     username: str, password: str, timeout: float = 8.0,
+    devid: Optional[str] = None, devpassword: Optional[str] = None,
 ) -> tuple[bool, str]:
     """Probe ScreenScraper's ssuserInfos.php to validate credentials.
 
     Hits the same authenticated endpoint the live clients use, so a pass
     here means the credentials are good for real fetches too. Read-only,
     one HTTP GET, ~1s on a healthy network.
+
+    ``devid`` / ``devpassword`` default to the per-process ``Config`` values
+    (so a user-overridden developer credential is used here too); pass
+    explicit values from tests if you want to bypass disk I/O.
     """
     if not username or not password:
         return False, "username and password are required"
 
+    if devid is None or devpassword is None:
+        try:
+            cfg = load_config()
+        except Exception:
+            cfg = None
+        if devid is None:
+            devid = (getattr(cfg, "screenscraper_devid", None) or "SpinDoctor")
+        if devpassword is None:
+            devpassword = (getattr(cfg, "screenscraper_devpassword", None)
+                           or "SpinDoctor")
+
     params = {
-        "devid": "SpinDoctor",
-        "devpassword": "SpinDoctor",
+        "devid": devid,
+        "devpassword": devpassword,
         "softname": "SpinDoctor",
         "ssid": username,
         "sspassword": password,
         "output": "json",
     }
+    url = f"{SCREENSCRAPER_API}/ssuserInfos.php"
     try:
-        resp = request_get(
-            f"{SCREENSCRAPER_API}/ssuserInfos.php",
-            params=params, timeout=timeout,
-        )
+        resp = request_get(url, params=params, timeout=timeout)
     except requests.RequestException as e:
+        _log_http("screenscraper.verify", "GET", url, params, None, "", error=e)
         return False, f"Network error: {e}"
 
+    body = resp.text or ""
+    _log_http("screenscraper.verify", "GET", url, params, resp.status_code, body)
+
     if resp.status_code in (401, 403):
-        return False, f"Authentication rejected (HTTP {resp.status_code})"
+        return False, _failure_with_body(
+            f"Authentication rejected (HTTP {resp.status_code})", body,
+        )
     if resp.status_code >= 500:
-        return False, f"ScreenScraper server error (HTTP {resp.status_code})"
+        return False, _failure_with_body(
+            f"ScreenScraper server error (HTTP {resp.status_code})", body,
+        )
     if resp.status_code != 200:
-        return False, f"Unexpected HTTP {resp.status_code}"
+        return False, _failure_with_body(
+            f"Unexpected HTTP {resp.status_code}", body,
+        )
 
     # ScreenScraper signals auth errors via a JSON `erreur` key with a 200
     # status, or sometimes via a plain-text body that doesn't parse as JSON.
     try:
         data = resp.json()
     except ValueError:
-        text = (resp.text or "").strip()
+        text = body.strip()
         # The auth-failure body is short ("Erreur de login : ..."). Anything
         # else is more useful as a truncated snippet than as "ok".
         snippet = text[:200] if text else "no response body"
@@ -638,27 +801,35 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
         return False, "API key is required"
 
     params = {"apikey": api_key, "name": "test"}
+    url = f"{THEGAMESDB_API}/Games/ByGameName"
     try:
-        resp = request_get(
-            f"{THEGAMESDB_API}/Games/ByGameName",
-            params=params, timeout=timeout,
-        )
+        resp = request_get(url, params=params, timeout=timeout)
     except requests.RequestException as e:
+        _log_http("thegamesdb.verify", "GET", url, params, None, "", error=e)
         return False, f"Network error: {e}"
 
+    body = resp.text or ""
+    _log_http("thegamesdb.verify", "GET", url, params, resp.status_code, body)
+
     if resp.status_code in (401, 403):
-        return False, "Invalid API key (HTTP 403)"
+        return False, _failure_with_body("Invalid API key (HTTP 403)", body)
     if resp.status_code == 429:
-        return False, "Rate limited (HTTP 429) — key may be exhausted"
+        return False, _failure_with_body(
+            "Rate limited (HTTP 429) \u2014 key may be exhausted", body,
+        )
     if resp.status_code >= 500:
-        return False, f"TheGamesDB server error (HTTP {resp.status_code})"
+        return False, _failure_with_body(
+            f"TheGamesDB server error (HTTP {resp.status_code})", body,
+        )
     if resp.status_code != 200:
-        return False, f"Unexpected HTTP {resp.status_code}"
+        return False, _failure_with_body(
+            f"Unexpected HTTP {resp.status_code}", body,
+        )
 
     try:
         data = resp.json()
     except ValueError:
-        return False, "Response was not valid JSON"
+        return False, _failure_with_body("Response was not valid JSON", body)
 
     code = data.get("code")
     if code in (401, 403):
@@ -691,6 +862,8 @@ def build_client(
             )
         return ScreenScraperClient(
             config.screenscraper_user, config.screenscraper_pass, cache=cache,
+            devid=config.screenscraper_devid or "SpinDoctor",
+            devpassword=config.screenscraper_devpassword or "SpinDoctor",
         )
 
     if source == "thegamesdb":

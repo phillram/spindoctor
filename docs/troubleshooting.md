@@ -78,6 +78,27 @@ See [Configuration → Per-system overrides](configuration.md#per-system-overrid
 
 SpinDoctor caps itself at 1 request/second. The free tier allows 500/day — wait until midnight UTC or upgrade your account.
 
+### 403 from ScreenScraper or TheGamesDB
+
+The Setup tab's **Test credentials** button verifies both providers. When either returns `HTTP 403`, the failure dialog now includes a trimmed copy of the upstream response body — that's usually where the real reason lives ("Erreur de login : mauvais mot de passe", "Invalid API key", a rate-limit notice). If you need the full request / response (e.g. to share with a maintainer), check the rotating log at:
+
+```
+~/.spindoctor/scraper.log
+```
+
+It records every ScreenScraper and TheGamesDB call SpinDoctor makes — `verify`, `fetch`, and `search` — with the URL, redacted query params (passwords and API keys are stripped), the HTTP status, and the first ~500 chars of any error-status body. The file rotates at 512 KB with two backups, so it stays small.
+
+Common 403 causes, in order of likelihood:
+
+1. **Wrong user credentials** — re-check `screenscraper_user` / `screenscraper_pass` (or `thegamesdb_key`). The Custom Command tab's `config show` preset prints the current values.
+2. **Rate-limit exhaustion** — ScreenScraper free tier is 500 req/day, TheGamesDB is on a monthly-allowance budget. The body usually names this explicitly.
+3. **ScreenScraper developer-credential rejection** — every ScreenScraper request also sends a per-app `devid`/`devpassword` pair (separate from the user creds). SpinDoctor defaults both to `"SpinDoctor"`; if the log shows the failure mentions `devid` or `developpeur`, override the pair with your own:
+   ```bat
+   spindoctor config set screenscraper_devid <your-devid>
+   spindoctor config set screenscraper_devpassword <your-devpassword>
+   ```
+   The same Custom Command tab in the GUI takes these. See [Configuration → `screenscraper_devid` / `screenscraper_devpassword`](configuration.md#most-used-keys).
+
 ### Wrong metadata picked during `fetch-meta`
 
 ```bat
@@ -253,7 +274,7 @@ Set `SPINDOCTOR_NO_UPDATE_CHECK=1` in the environment. The background check on l
 
 ### Menubar reference
 
-`File`: Open config.json / Open SpinDoctor folder / Open HyperSpin folder / Open ROMs folder / View logs & manifests… / Browse HyperSpin themes… / Exit. `View`: Show output pane (toggle, `Ctrl+`` `) / UI scale (0.8×–1.5×) / Zoom in (`Ctrl+=`) / Zoom out (`Ctrl+-`) / Reset zoom (`Ctrl+0`). `Help`: About SpinDoctor / Keyboard shortcuts / Check for updates / First-run setup…. Full descriptions at [GUI walkthrough → Menubar](gui.md#menubar).
+See [GUI walkthrough → Menubar](gui.md#menubar) for the canonical list of File / View / Help menu items and their shortcuts.
 
 ### GUI looks cramped on a 720p (1280×720) cabinet screen
 
