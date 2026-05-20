@@ -41,6 +41,13 @@ scraper_logger.setLevel(logging.DEBUG)
 _LOG_HANDLER_INSTALLED = False
 _REDACT_KEYS = frozenset({"sspassword", "devpassword", "apikey"})
 
+# Historical placeholder devid values shipped by SpinDoctor that were
+# never registered with ScreenScraper. ``verify_screenscraper`` uses
+# this set to recognise a 403 caused by missing dev credentials so the
+# error message can point users at the registration page rather than
+# leave them suspecting their own user/password.
+_SCREENSCRAPER_PLACEHOLDER_DEVIDS = frozenset({"SpinDoctor", ""})
+
 
 def _install_scraper_log_handler() -> None:
     """Attach the rotating file handler once per process.
@@ -764,10 +771,24 @@ def verify_screenscraper(
     _log_http("screenscraper.verify", "GET", url, params, resp.status_code, body)
 
     if resp.status_code in (401, 403):
-        return False, _failure_with_body(
-            f"Authentication rejected (HTTP {resp.status_code}, {sent_summary})",
-            body,
-        )
+        msg = f"Authentication rejected (HTTP {resp.status_code}, {sent_summary})"
+        # ScreenScraper rejects the *whole request* with 403 when devid /
+        # devpassword aren't a registered developer pair — regardless of
+        # whether ssid / sspassword would otherwise be valid. The bundled
+        # "SpinDoctor" placeholder is the most common cause of this in
+        # the wild; surface it explicitly so users stop chasing their
+        # user credentials instead of their dev credentials.
+        if devid in _SCREENSCRAPER_PLACEHOLDER_DEVIDS:
+            msg += (
+                ". The bundled developer credentials (devid='SpinDoctor') "
+                "are not registered with ScreenScraper and will never "
+                "authenticate. Register a developer account at "
+                "https://www.screenscraper.fr/membreinscription.php and "
+                "set the values via Setup → ScreenScraper devid / devpassword "
+                "(or `spindoctor config set screenscraper_devid <value>` "
+                "and `screenscraper_devpassword`)."
+            )
+        return False, _failure_with_body(msg, body)
     if resp.status_code >= 500:
         return False, _failure_with_body(
             f"ScreenScraper server error (HTTP {resp.status_code}, devid={devid_str})",
