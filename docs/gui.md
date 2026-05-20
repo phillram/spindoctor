@@ -29,6 +29,10 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 
 The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the three standalone wheel binaries on Windows) for every command. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
 
+**Async startup.** The window paints immediately, then runs the library scan (populating every system combobox across every tab from your HyperSpin Databases directory) and the startup health checks (config validation + CLI-binary probe) in the background. While the scan is in flight the status bar reads "Scanning library…"; once it finishes the bar lands on either "Ready." or the first detected problem (e.g. "Setup incomplete — N path(s) need attention"). On a slow NAS-mounted library this avoids the "is it frozen?" beat the older synchronous behaviour had on launch.
+
+**Fresh-install Setup focus.** When no `config.json` exists yet, the GUI auto-selects the Setup tab so a brand-new cabinet owner lands on the form that needs filling. Once any config has been saved, your last-active tab (`gui_last_active_tab`) is restored as usual.
+
 **Single-instance lock.** The GUI takes an OS-level file lock at `~/.spindoctor/gui.lock` on startup. Launching a second `spindoctor-gui` on the same machine will show a warning and exit cleanly — two GUIs editing the same HyperSpin XML simultaneously can corrupt the library, so the second instance refuses to start by default. If you genuinely need two windows open (comparing two cabinet configs on one box, for example) set `SPINDOCTOR_DISABLE_SINGLETON=1` in your environment before launching — you're then responsible for not running destructive operations from both. The lock file is released automatically when the process exits, so a crash never poisons future launches.
 
 ## First-run wizard
@@ -101,7 +105,7 @@ A **Full metadata refresh** button at the bottom chains all three fetch/update s
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
 
-**Curate region/revision variants** wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). The **Preview (interactive)…** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a confirmation dialog naming the target system before anything is removed.
+**Curate region/revision variants** wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes and the Apply toggle persist across launches via the `gui_curate_regions` config key (Apply is deliberately NOT persisted — destructive opt-ins always re-arm). The **Preview (interactive)…** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog that re-prints the target system, the regions kept, and the revision preference, and explicitly notes there is no undo for delete mode and points at archive mode as the reversible alternative.
 
 **Cache cleanup** shows 13 per-category checkboxes — the 9 safe caches pre-checked; the 4 unsafe categories (migration / restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) unchecked with a warning. **Audit caches** shows disk usage before you commit.
 
@@ -129,7 +133,9 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 ### Systems
 
-Add or rename HyperSpin systems. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. **Rename an existing PC system** runs `pc-rename` with old / new fields.
+Add a system or re-review titles for an existing PC system. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
+
+**Re-review titles for a PC system** wraps `spindoctor pc-rename <system>` (single system dropdown — no Old/New fields; the command re-runs the per-game title picker for an existing PC system so you can fix derived titles or pick up newly-dropped installs). Earlier 2.0 builds shipped a misleading two-field form that wasn't actually wired to the CLI; that's been corrected.
 
 **Per-system overrides** (added in 2.0): surfaces `config system set` with a system dropdown and form fields for ScreenScraper ID, TheGamesDB ID, ROM extensions (comma-separated, leading dot optional), layout (`per-game-folder` / `multi-disc-m3u` / `flat`), and emulator name. **Load current values** prefills the form from the saved override; **Save override** calls the CLI with only the flags the user actually filled in. Designed for niche systems (homebrew consoles, PC libraries, custom MAME variants) that stock SpinDoctor doesn't know.
 
@@ -188,7 +194,7 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
 - **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
-- **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download…** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
+- **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. If you're already on the latest tag, the result is surfaced in the status bar ("vX.Y.Z is the latest release.") rather than a modal — only newer-available results pop a dialog so you can decide whether to open the release page. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download…** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
 - **Help → First-run setup…** — re-opens the first-run wizard manually.
 
 ## Keyboard shortcuts
@@ -231,6 +237,15 @@ $ spindoctor curate --all
 The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
 
 Chained workflows (Refresh all wheels, Register wheels in Main Menu, Full metadata refresh, Preflight check) show a **determinate** progress bar anchored to step/total; single-command runs use the indeterminate spinner.
+
+### Quiet success, audible validation
+
+Routine GUI outcomes are surfaced in the status bar at the bottom of the window rather than a modal you have to click through. Two patterns:
+
+- **Status flash** (`_flash_status`): "Configuration saved.", "Auto-refresh task deleted.", "vX.Y.Z is the latest release.", etc. The bar shows the message and auto-reverts to "Ready." after 6 seconds. No click-through.
+- **Validation flash** (`_flash_validation`): "No subset picked — click 'Pick subset…' first.", "Nothing to apply — every retirement is unchecked.", "Pick a PC system first.", etc. Same status-bar update, plus an audible bell — so a user focused on a form widget at the top of the window doesn't miss the bottom-of-window feedback.
+
+Modal dialogs are reserved for: multi-line result summaries (Preflight passed, Curate done with manifest path, Auto-refresh scheduled with reboot instructions), destructive-action confirmations (Backup restore, Migrate apply, Curate delete), and errors. Up-to-date update checks, save successes, "nothing selected" prompts, and similar one-line outcomes go through the status bar instead.
 
 ## Dark mode and right-click menus
 

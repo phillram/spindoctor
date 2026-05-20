@@ -104,9 +104,16 @@ spindoctor fetch-media --all --apply
 spindoctor fetch-media --all --output-dir D:\Output --apply
 spindoctor fetch-media --system SNES --types trailer --overwrite --apply
 spindoctor fetch-media --system MAME --types theme,fade,sound --apply
+spindoctor fetch-media --all --skip-ambiguous --apply    :: skip multi-candidate slots
 ```
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
+
+When a media slot has multiple candidates (different regions / artwork variants), three modes are available:
+
+- `--pick-media` — prompt interactively for each slot. Terminal-only — would hang from a GUI subprocess.
+- `--skip-ambiguous` — log each ambiguous slot as a skip and move on. Required from non-TTY contexts (cron, CI, the GUI). Mirrors `fetch-meta --skip-ambiguous`.
+- *Default (neither flag)* — auto-pick the first candidate. Fast; risks the occasional wrong pick.
 
 `theme`, `fade`, and `sound` come from ScreenScraper only (TheGamesDB has no equivalents) and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
 
@@ -307,10 +314,14 @@ spindoctor add-system "Sega Saturn" --apply     :: commit
 Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs.
 
 ```bat
-spindoctor add-pc-system "PC Games"             :: dry-run preview
-spindoctor add-pc-system "PC Games" --apply     :: commit
-spindoctor pc-rename "PC Games"   :: re-run the title picker after dropping new games in
+spindoctor add-pc-system "PC Games"                                     :: dry-run preview
+spindoctor add-pc-system "PC Games" --apply                             :: commit (interactive title review)
+spindoctor add-pc-system "PC Games" --no-interactive --apply            :: auto-accept every proposed title
+spindoctor pc-rename "PC Games"                                         :: re-review titles after dropping new games in
+spindoctor pc-rename "PC Games" --no-interactive                        :: auto-accept all (non-TTY contexts)
 ```
+
+Both commands honour `--no-interactive`: skip the per-game `input()` prompt and auto-accept the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default when adding a PC system, where the interactive review path would otherwise hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
 
 ### `migrate`
 

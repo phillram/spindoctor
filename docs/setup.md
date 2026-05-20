@@ -105,7 +105,7 @@ See [Installation](installation.md) for à-la-carte extras.
 spindoctor-gui
 ```
 
-A first-run wizard opens automatically on a fresh cabinet: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `doctor` and read the per-check ✓/⚠/✗ summary. Click Finish and you land on the Setup tab where every other path field has a Browse button. Each row also has an **Open** button next to it that jumps to the configured path in Explorer / Finder so you can verify you picked the right folder. Drag a folder from Explorer / Finder onto any path field to fill it in (Windows binary install; pip users `pip install spindoctor[gui]` or `[all]` for drag-and-drop). Press **Save configuration** and you're done.
+On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. Click **Run first-run wizard…** on the Setup tab if you'd like a guided 3-step flow: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `doctor` and read the per-check ✓/⚠/✗ summary. The wizard is opt-in (no auto-open modal); reach the same dialog any time from **Help → First-run setup…**. Whether or not you use the wizard, the Setup tab itself shows every path field with a Browse button and an **Open** button that jumps to the configured path in Explorer / Finder so you can verify you picked the right folder. Drag a folder from Explorer / Finder onto any path field to fill it in (Windows binary install; pip users `pip install spindoctor[gui]` or `[all]` for drag-and-drop). Press **Save configuration** and you're done.
 
 **Power users — the CLI.** Same effect, every key prompted in order at the terminal. Both routes write the same `%USERPROFILE%\.spindoctor\config.json`:
 
