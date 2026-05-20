@@ -332,6 +332,15 @@ def _set_text(parent, tag: str, text: str):
 def _update_game_element(el, game: "GameEntry") -> None:
     """Update text on existing field children; add any missing fields."""
     el.set("name", game.name)
+    # Self-heal legacy corruption: an older SpinDoctor build (and
+    # third-party tools) sometimes leaked an ``enabled`` XML attribute
+    # onto ``<game>`` elements alongside the canonical ``<enabled>``
+    # child element. HyperSpin reads the child element; the attribute
+    # is meaningless at best and confuses some validators at worst. We
+    # remove it on every save so files self-heal through both the GUI
+    # and the CLI without the user having to touch XML.
+    if "enabled" in el.attrib:
+        del el.attrib["enabled"]
     for field_name in _FIELD_ORDER:
         value = getattr(game, field_name, "") or ""
         # Preserve description fallback to game name (HyperSpin requires a value).

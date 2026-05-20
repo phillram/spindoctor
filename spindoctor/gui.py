@@ -27,6 +27,7 @@ import queue
 import re
 import shlex
 import shutil
+import json
 import subprocess
 import sys
 import threading
@@ -4291,27 +4292,12 @@ class _SpinDoctorGUI:
             or tgdb_key != saved_key
         )
 
-        # Build the run record + open a row in the Logs tab.
-        record = _RunRecord(
-            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            argv_str="(in-process) Test credentials",
-            dry_run=False,
-        )
-        self._run_history.append(record)
-        self._refresh_logs_tab()
-
-        def emit(line: str) -> None:
-            self._append_output(line)
-            record.append(line)
-
-        emit("\n=== Test credentials ===\n")
         if diverges:
-            warn = (
-                "⚠ These values differ from saved config — "
+            self._append_output(
+                "\n⚠ These values differ from saved config — "
                 "fetch-meta / curate will still use the SAVED values "
                 "until you click Save configuration.\n"
             )
-            emit(warn)
 
         def _source(current: str, saved: str) -> str:
             if not current:
@@ -4320,64 +4306,50 @@ class _SpinDoctorGUI:
                 return "from saved config"
             return "from Setup form (unsaved)"
 
-        emit(
+        self._append_output(
             f"ScreenScraper user: {_source(ss_user, saved_user)}"
             + (f" — '{ss_user}'\n" if ss_user else "\n")
         )
-        emit(
+        self._append_output(
             f"ScreenScraper password: {_source(ss_pass, saved_pass)}"
             f" (set: {'yes' if ss_pass else 'no'})\n"
         )
-        emit(
+        self._append_output(
             f"TheGamesDB API key: {_source(tgdb_key, saved_key)}"
             f" (set: {'yes' if tgdb_key else 'no'})\n"
         )
 
+        # Delegate the actual probes to the CLI. The shared
+        # ``spindoctor.scraper.verify_*`` functions are called from one
+        # place (the CLI subcommand) — no parallel implementation in
+        # the GUI. ``_run_cli`` handles streaming output to the Output
+        # panel, recording in the Logs tab, and finalising busy state.
+        args = ["config", "verify-credentials"]
+        # Pass unsaved Setup-form values as overrides so the user can
+        # test creds before saving. Empty strings mean "no override —
+        # use saved config", which `--ss-user ""` would set explicitly;
+        # so we only add a flag when the GUI has a non-empty value.
+        if ss_user:
+            args += ["--ss-user", ss_user]
+        if ss_pass:
+            args += ["--ss-pass", ss_pass]
+        if tgdb_key:
+            args += ["--tgdb-key", tgdb_key]
+
         btn.configure(state="disabled", text="Testing\u2026")
         self._set_status("Contacting ScreenScraper and TheGamesDB…")
 
-        def _worker() -> None:
-            # Defer the scraper import so test_credentials doesn't drag
-            # in ``requests`` for users who never click this button.
-            from . import scraper as scraper_mod
-
-            if ss_user or ss_pass:
-                ss_ok, ss_msg = scraper_mod.verify_screenscraper(
-                    ss_user, ss_pass,
-                )
-                ss_line = (
-                    f"✓ ScreenScraper: {ss_msg}\n"
-                    if ss_ok else f"✗ ScreenScraper: {ss_msg}\n"
-                )
-                ss_failed = not ss_ok
-            else:
-                ss_line = "— ScreenScraper: skipped (no credentials entered)\n"
-                ss_failed = False
-
-            if tgdb_key:
-                tg_ok, tg_msg = scraper_mod.verify_thegamesdb(tgdb_key)
-                tg_line = (
-                    f"✓ TheGamesDB: {tg_msg}\n"
-                    if tg_ok else f"✗ TheGamesDB: {tg_msg}\n"
-                )
-                tg_failed = not tg_ok
-            else:
-                tg_line = "— TheGamesDB: skipped (no API key entered)\n"
-                tg_failed = False
-
-            def _finish() -> None:
-                emit(ss_line)
-                emit(tg_line)
-                emit("=== Test credentials complete ===\n")
-                record.exit_code = 1 if (ss_failed or tg_failed) else 0
-                self._refresh_logs_tab()
+        def _on_done(rc: int) -> None:
+            try:
                 btn.configure(state="normal", text="Test credentials")
-                self._set_status("Credential test complete.")
+            except Exception:  # noqa: BLE001
+                pass
+            self._set_status(
+                "Credential test complete." if rc == 0 else
+                f"Credential test failed (exit {rc})."
+            )
 
-            self.root.after(0, _finish)
-
-        t = threading.Thread(target=_worker, daemon=True)
-        t.start()
+        self._run_cli("spindoctor", args, on_complete=_on_done)
 
     def _save_setup(self) -> None:
         cfg = load_config()
@@ -5158,7 +5130,15 @@ class _SpinDoctorGUI:
             var.set(str(Path(path)))
 
     def _scan_backup_folders(self) -> None:
-        """Populate the restore Combobox by scanning the configured backup target."""
+        """Populate the restore Combobox by shelling out to ``backup list --json``.
+
+        The GUI used to walk the target directory inline — a second
+        implementation of what ``spindoctor backup list`` already does.
+        That kind of drift is exactly the bug pattern that corrupted
+        Main Menu.xml: two implementations diverge silently. The CLI is
+        now the single source of truth for "which SpinDoctor backups
+        exist under <target>"; the GUI just renders the result.
+        """
         target = self._backup_target_var.get().strip()
         if not target:
             self.messagebox.showwarning(
@@ -5173,18 +5153,38 @@ class _SpinDoctorGUI:
                 f"Backup target folder does not exist:\n{target_path}",
             )
             return
-        # Only surface SpinDoctor backup folders — when the user points
-        # at a drive root (e.g. ``E:\``), the bare iterdir() loop would
-        # otherwise drown the dropdown in unrelated subdirectories.
-        from .backup import BACKUP_DIR_PREFIX
+        try:
+            argv = resolve_cli_command("spindoctor") + [
+                "backup", "list", "--target", str(target_path), "--json",
+            ]
+            proc = subprocess.run(
+                argv,
+                check=True, capture_output=True, text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"Failed to enumerate backups via "
+                f"`spindoctor backup list`:\n\n{exc}",
+            )
+            return
+        try:
+            entries = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"`spindoctor backup list --json` produced unparseable "
+                f"output:\n\n{exc}\n\n{proc.stdout!r}",
+            )
+            return
         folders = sorted(
-            [str(p) for p in target_path.iterdir()
-             if p.is_dir() and p.name.startswith(BACKUP_DIR_PREFIX)],
+            (e["path"] for e in entries if isinstance(e, dict) and "path" in e),
             reverse=True,
         )
         if not folders:
             self._flash_validation(
-                f"No '{BACKUP_DIR_PREFIX}*' folders in {target_path}."
+                f"No SpinDoctor backups in {target_path}."
             )
             return
         self._backup_restore_combo["values"] = folders
@@ -5587,8 +5587,10 @@ class _SpinDoctorGUI:
     # ── Main Menu tab ─────────────────────────────────────────────────────────
 
     def _build_mainmenu_tab(self, parent):
-        import xml.etree.ElementTree as _ET  # stdlib — always available
-        self._mm_ET = _ET
+        # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
+        # the same module the CLI uses. The GUI never parses or writes
+        # the XML itself; that would be a parallel implementation and
+        # is exactly what caused the previous Main Menu corruption bug.
         self._mm_data: list[dict] = []  # [{system, enabled}]
 
         frame = self.ttk.Frame(parent, padding=12)
@@ -5652,6 +5654,15 @@ class _SpinDoctorGUI:
             tbl_btn_row, text="Save Order",
             command=self._mm_save_order,
         ).pack(side="left", padx=(20, 0))
+        # Restore from sidecar backup — surfaces the .YYYYMMDD_HHMMSS.bak
+        # files SpinDoctor writes before every Save Order so the user
+        # can recover from a bad edit without leaving the GUI. Shells
+        # out to ``spindoctor backup sidecar`` so the file I/O lives in
+        # one place (CLI / shared library), not duplicated in the GUI.
+        self.ttk.Button(
+            tbl_btn_row, text="Restore from backup…",
+            command=self._mm_restore_from_backup,
+        ).pack(side="left", padx=(6, 0))
 
         # ── Sort ─────────────────────────────────────────────────────────────
         sort_frame = self.ttk.LabelFrame(frame, text="Sort all systems")
@@ -5720,6 +5731,14 @@ class _SpinDoctorGUI:
         return _Path(hdir) / "Databases" / "Main Menu" / "Main Menu.xml"
 
     def _mm_refresh(self) -> None:
+        """Re-read Main Menu.xml via :mod:`spindoctor.mainmenu`.
+
+        Going through the shared module (rather than parsing the XML
+        in-process) ensures the GUI sees the file the same way the CLI
+        does — there's only one reader, so the GUI can't disagree with
+        ``spindoctor mainmenu`` about whether a system is hidden, which
+        previously corrupted Main Menu.xml on save.
+        """
         xml_path = self._mm_xml_path()
         if xml_path is None:
             self._mm_data = []
@@ -5735,28 +5754,9 @@ class _SpinDoctorGUI:
             self._append_output(f"Main Menu.xml not found: {xml_path}\n")
             return
         try:
-            root = self._mm_ET.parse(str(xml_path)).getroot()
-            # HyperSpin stores the enabled flag as a *child element*
-            # ``<enabled>No</enabled>``, not as an attribute on
-            # ``<game>``. Reading from the attribute (which is what the
-            # previous version did) always saw the default "Yes" and the
-            # corresponding write path then stamped a phantom
-            # ``enabled="No"`` attribute onto every game, leaving the
-            # real child element unchanged. The combination corrupts
-            # the file so HyperSpin throws "Error creating main menu".
-            def _enabled_of(el) -> str:
-                child = el.find("enabled")
-                if child is None or child.text is None:
-                    return "Yes"
-                text = child.text.strip()
-                return text or "Yes"
-
-            self._mm_data = [
-                {"system": (el.get("name") or "").strip(),
-                 "enabled": _enabled_of(el)}
-                for el in root.findall("game")
-                if (el.get("name") or "").strip()
-            ]
+            from . import mainmenu as _mm_mod
+            cfg = load_config()
+            menu = _mm_mod.load_main_menu(cfg)
         except Exception as exc:  # noqa: BLE001 — surface every parse error
             # Reset to an empty Treeview so the user doesn't see stale
             # rows from the last successful load, then surface the error
@@ -5778,6 +5778,10 @@ class _SpinDoctorGUI:
                 "raw error if you need to share it.",
             )
             return
+        self._mm_data = [
+            {"system": entry.system, "enabled": entry.enabled or "Yes"}
+            for entry in menu.entries
+        ]
         self._mm_repopulate_tree()
         self._append_output(
             f"Main Menu loaded: {len(self._mm_data)} system(s) from {xml_path}\n"
@@ -5847,6 +5851,15 @@ class _SpinDoctorGUI:
         self._mm_tree.see(iid)
 
     def _mm_save_order(self) -> None:
+        """Persist the table's current order + visibility via
+        :func:`spindoctor.mainmenu.save_main_menu`.
+
+        Single canonical writer (the one the CLI uses) handles backup,
+        XML declaration, lxml comment preservation, and the legacy
+        ``enabled``-attribute self-heal in
+        :func:`spindoctor.database._update_game_element`. The GUI just
+        composes the desired :class:`MainMenu` state and hands it off.
+        """
         xml_path = self._mm_xml_path()
         if xml_path is None or not xml_path.exists():
             self.messagebox.showerror(
@@ -5864,63 +5877,33 @@ class _SpinDoctorGUI:
             "and visibility settings.\n\nContinue?",
         ):
             return
-        # Snapshot the data the worker needs before leaving the main
-        # thread — Tk objects can't be touched from a worker.
+        # Snapshot the table data BEFORE leaving the main thread — Tk
+        # vars can't be touched from a worker. Order matters: the new
+        # ``entries`` list mirrors this list.
         data_snapshot = [dict(entry) for entry in self._mm_data]
-        try:
-            cfg = load_config()
-            want_backup = bool(cfg.backup_before_modify)
-        except Exception:  # noqa: BLE001 - corrupt config shouldn't block save
-            want_backup = True
         self._set_status(f"Saving {xml_path.name}…")
 
         def _worker():
             try:
-                tree = self._mm_ET.parse(str(xml_path))
-                root = tree.getroot()
-                by_name = {
-                    (el.get("name") or "").strip(): el
-                    for el in root.findall("game")
-                }
-                for el in list(root.findall("game")):
-                    root.remove(el)
-                for entry in data_snapshot:
-                    name = entry["system"]
-                    if name not in by_name:
+                from . import mainmenu as _mm_mod
+                cfg = load_config()
+                # Load fresh inside the worker so we get the full
+                # metadata (description / manufacturer / year / genre)
+                # for every entry — not just the {system, enabled} the
+                # GUI table tracks. Without this round-trip the saved
+                # file would drop those fields.
+                menu = _mm_mod.load_main_menu(cfg)
+                by_name = {e.system: e for e in menu.entries}
+                new_entries = []
+                for row in data_snapshot:
+                    name = row["system"]
+                    entry = by_name.get(name)
+                    if entry is None:
                         continue
-                    el = by_name[name]
-                    # Persist enabled as a *child element*
-                    # ``<enabled>Yes|No</enabled>`` — what HyperSpin and
-                    # the CLI ``mainmenu`` writer both expect. Create
-                    # the child if it's missing (older XMLs sometimes
-                    # omit it entirely; HyperSpin defaults to "Yes").
-                    desired = (entry.get("enabled") or "Yes").strip() or "Yes"
-                    child = el.find("enabled")
-                    if child is None:
-                        child = self._mm_ET.SubElement(el, "enabled")
-                    child.text = desired
-                    # Clean up any stale ``enabled`` attribute left
-                    # behind by the previous (broken) writer so files
-                    # touched by an older SpinDoctor self-heal on the
-                    # next Save.
-                    if "enabled" in el.attrib:
-                        del el.attrib["enabled"]
-                    root.append(el)
-                if want_backup and xml_path.exists():
-                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    shutil.copy2(
-                        xml_path,
-                        xml_path.with_suffix(f".{stamp}.bak"),
-                    )
-                tmp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
-                # Emit a proper XML declaration to match the CLI
-                # ``mainmenu`` writer and the format HyperSpin expects.
-                # Bytes-mode (``encoding="utf-8"``) is what ElementTree
-                # needs to honour ``xml_declaration=True``.
-                tree.write(
-                    str(tmp_path), encoding="utf-8", xml_declaration=True,
-                )
-                os.replace(str(tmp_path), str(xml_path))
+                    entry.enabled = (row.get("enabled") or "Yes").strip() or "Yes"
+                    new_entries.append(entry)
+                menu.entries = new_entries
+                saved_path = _mm_mod.save_main_menu(menu, cfg)
             except OSError as exc:
                 # OSError (file in use, disk full, etc.) — humanize for
                 # the user rather than dumping the bare repr. Most
@@ -5934,7 +5917,7 @@ class _SpinDoctorGUI:
             except Exception as exc:  # noqa: BLE001 - report to UI thread
                 self.root.after(0, self._mm_save_failed, str(exc))
                 return
-            self.root.after(0, self._mm_save_succeeded, xml_path)
+            self.root.after(0, self._mm_save_succeeded, saved_path)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -5945,6 +5928,158 @@ class _SpinDoctorGUI:
     def _mm_save_failed(self, msg: str) -> None:
         self._set_status("Save failed.")
         self.messagebox.showerror("Save failed", msg)
+
+    def _mm_restore_from_backup(self) -> None:
+        """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it.
+
+        Talks to ``spindoctor backup sidecar list --json`` to enumerate
+        candidates and ``spindoctor backup sidecar restore --apply`` to
+        commit the restore. The GUI does not touch the files itself —
+        same canonical I/O path the CLI uses.
+        """
+        xml_path = self._mm_xml_path()
+        if xml_path is None:
+            self.messagebox.showerror(
+                "Cannot restore",
+                "HyperSpin directory is not configured — set it in the "
+                "Setup tab first.",
+            )
+            return
+        # Fetch available backups via the CLI so the GUI doesn't grow a
+        # second sidecar-listing implementation.
+        try:
+            argv = resolve_cli_command("spindoctor") + [
+                "backup", "sidecar", "list", str(xml_path), "--json",
+            ]
+            proc = subprocess.run(
+                argv,
+                check=True, capture_output=True, text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"Failed to enumerate backups via "
+                f"`spindoctor backup sidecar list`:\n\n{exc}",
+            )
+            return
+        try:
+            backups = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError as exc:
+            self.messagebox.showerror(
+                "Could not list backups",
+                f"`spindoctor backup sidecar list --json` produced "
+                f"unparseable output:\n\n{exc}\n\n{proc.stdout!r}",
+            )
+            return
+        if not backups:
+            self.messagebox.showinfo(
+                "No backups found",
+                f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
+                f"{xml_path.name}.\n\nSpinDoctor writes one before every "
+                f"Save Order when config.backup_before_modify is on "
+                f"(the default).",
+            )
+            return
+        chosen = self._ask_pick_sidecar(xml_path.name, backups)
+        if chosen is None:
+            return
+        if not self.messagebox.askyesno(
+            "Confirm restore",
+            f"Replace {xml_path.name} with the contents of "
+            f"{Path(chosen).name}?\n\nThe current file will itself be "
+            f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
+            f"action is undoable via the same Restore button.",
+        ):
+            return
+        # Shell out to the CLI to commit the restore. Streams progress
+        # into the Output panel + Logs tab via the standard _run_cli
+        # plumbing — restoring is a "command run" like everything else.
+        self._run_cli("spindoctor", [
+            "backup", "sidecar", "restore", str(xml_path),
+            "--from", str(chosen), "--apply",
+        ], on_complete=self._mm_restore_done)
+
+    def _mm_restore_done(self, rc: int) -> None:
+        if rc == 0:
+            self._mm_refresh()
+            self._flash_status("Main Menu.xml restored from backup.")
+        # Non-zero rc — _on_proc_done already showed the error in
+        # status + output; no extra dialog needed.
+
+    def _ask_pick_sidecar(self, file_name: str, backups: list[dict]) -> Optional[str]:
+        """Modal listing the available sidecar backups; returns chosen path."""
+        win = self.tk.Toplevel(self.root)
+        win.title(f"Restore {file_name} from backup")
+        win.transient(self.root)
+        win.grab_set()
+        self._fit_geometry(win, 720, 320)
+
+        self.ttk.Label(
+            win,
+            text=(f"Pick a backup of {file_name} to restore. Newest "
+                  f"first. The current file will be saved as a fresh "
+                  f"sidecar first so you can re-restore it if needed."),
+            wraplength=680, justify="left", padding=(10, 8),
+        ).pack(fill="x")
+
+        list_frame = self.ttk.Frame(win, padding=(10, 4))
+        list_frame.pack(fill="both", expand=True)
+        tree = self.ttk.Treeview(
+            list_frame, columns=("when", "size"),
+            show="tree headings", selectmode="browse",
+        )
+        tree.heading("#0", text="File")
+        tree.heading("when", text="Modified")
+        tree.heading("size", text="Size")
+        tree.column("#0", width=380, stretch=True)
+        tree.column("when", width=180, stretch=False, anchor="w")
+        tree.column("size", width=90, stretch=False, anchor="e")
+        vsb = self.ttk.Scrollbar(
+            list_frame, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=vsb.set)
+        tree.pack(side="left", fill="both", expand=True)
+        vsb.pack(side="right", fill="y")
+
+        # ``backups`` shape: [{path, name, size, mtime}, ...]
+        iid_to_path: dict[str, str] = {}
+        for i, b in enumerate(backups):
+            iid = str(i)
+            when = datetime.fromtimestamp(b["mtime"]).strftime("%Y-%m-%d %H:%M:%S")
+            tree.insert(
+                "", "end", iid=iid, text=b["name"],
+                values=(when, f"{b['size']:,} B"),
+            )
+            iid_to_path[iid] = b["path"]
+        if iid_to_path:
+            first = next(iter(iid_to_path))
+            tree.selection_set(first)
+            tree.see(first)
+
+        choice: dict = {"path": None}
+
+        def _ok() -> None:
+            sel = tree.selection()
+            if sel:
+                choice["path"] = iid_to_path.get(sel[0])
+            win.destroy()
+
+        def _cancel() -> None:
+            win.destroy()
+
+        btn_row = self.ttk.Frame(win, padding=(10, 8))
+        btn_row.pack(fill="x")
+        self.ttk.Button(btn_row, text="Restore", command=_ok).pack(side="right")
+        self.ttk.Button(btn_row, text="Cancel", command=_cancel).pack(
+            side="right", padx=(0, 6),
+        )
+        tree.bind("<Double-Button-1>", lambda _e: _ok())
+        win.bind("<Escape>", lambda _e: _cancel())
+        win.bind("<Return>", lambda _e: _ok())
+
+        self.root.wait_window(win)
+        return choice["path"]
 
     def _run_mainmenu_sort(self) -> None:
         strategy = self._mainmenu_sort_var.get()
