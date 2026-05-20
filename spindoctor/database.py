@@ -76,9 +76,19 @@ class GameEntry:
 
 
 class HyperspinDatabase:
-    def __init__(self, system_name: str, xml_path: Path):
+    def __init__(
+        self,
+        system_name: str,
+        xml_path: Path,
+        enabled_as_attribute: bool = False,
+    ):
         self.system_name = system_name
         self.xml_path = xml_path
+        # Main Menu.xml uses ``<game name="..." enabled="False"/>`` (attribute),
+        # while per-system game databases use ``<enabled>No</enabled>`` (child).
+        # Hyperspin's two loaders honour different conventions, so callers tell
+        # us which schema to read and write.
+        self._enabled_as_attribute = enabled_as_attribute
         self._games: dict[str, GameEntry] = {}
         self._loaded = False
         # Tracks the parsed tree and per-game element refs for in-place updates
@@ -101,7 +111,11 @@ class HyperspinDatabase:
             # blocks any concurrent rename / save / migrate touching
             # the same XML.
             if _HAS_LXML:
-                parser = LET.XMLParser(remove_comments=False, remove_blank_text=False)
+                # ``remove_blank_text=True`` strips whitespace-only text nodes
+                # at parse time, which is the precondition for lxml's
+                # ``pretty_print=True`` to actually re-indent on write. Without
+                # it, single-line input files round-trip as single-line output.
+                parser = LET.XMLParser(remove_comments=False, remove_blank_text=True)
                 with open(self.xml_path, "rb") as fh:
                     self._tree = LET.parse(fh, parser)
             else:
@@ -124,7 +138,7 @@ class HyperspinDatabase:
                     genre=_text(game_el, "genre"),
                     rating=_text(game_el, "rating"),
                     players=_text(game_el, "players"),
-                    enabled=_text(game_el, "enabled") or "Yes",
+                    enabled=_read_enabled(game_el, self._enabled_as_attribute),
                 )
                 self._game_elements[name] = game_el
         except ET.ParseError as e:
@@ -215,10 +229,11 @@ class HyperspinDatabase:
 
     # Update the existing tree in place to match self._games.
     def _merge_into_tree(self) -> None:
+        attr_mode = self._enabled_as_attribute
         # 1) Update / remove existing <game> elements.
         for name, el in list(self._game_elements.items()):
             if name in self._games:
-                _update_game_element(el, self._games[name])
+                _update_game_element(el, self._games[name], enabled_as_attribute=attr_mode)
             else:
                 self._root.remove(el)
                 del self._game_elements[name]
@@ -226,7 +241,7 @@ class HyperspinDatabase:
         # 2) Append new <game> elements for games not already present.
         for name, game in self._games.items():
             if name not in self._game_elements:
-                el = _new_game_element(game)
+                el = _new_game_element(game, enabled_as_attribute=attr_mode)
                 self._root.append(el)
                 self._game_elements[name] = el
 
@@ -268,7 +283,7 @@ class HyperspinDatabase:
         _set_text(hdr, "exporterversion", "SpinDoctor")
 
         for game in sorted(self._games.values(), key=lambda g: g.name.lower()):
-            _new_game_element(game, root=root)
+            _new_game_element(game, root=root, enabled_as_attribute=self._enabled_as_attribute)
 
         if _HAS_LXML:
             tree = LET.ElementTree(root)
@@ -329,17 +344,18 @@ def _set_text(parent, tag: str, text: str):
     return el
 
 
-def _update_game_element(el, game: "GameEntry") -> None:
-    """Update text on existing field children; add any missing fields."""
+def _update_game_element(el, game: "GameEntry", enabled_as_attribute: bool = False) -> None:
+    """Update text on existing field children; add any missing fields.
+
+    When ``enabled_as_attribute`` is True (Main Menu.xml), the enabled flag is
+    stored as ``enabled="True"|"False"`` on the ``<game>`` tag itself rather
+    than as a ``<enabled>`` child element. Any legacy ``<enabled>`` child is
+    stripped on save so files migrate forward.
+    """
     el.set("name", game.name)
-    # Self-heal legacy corruption: an older SpinDoctor build (and
-    # third-party tools) sometimes leaked an ``enabled`` XML attribute
-    # onto ``<game>`` elements alongside the canonical ``<enabled>``
-    # child element. HyperSpin reads the child element; the attribute
-    # is meaningless at best and confuses some validators at worst. We
-    # remove it on every save so files self-heal through both the GUI
-    # and the CLI without the user having to touch XML.
-    if "enabled" in el.attrib:
+    if not enabled_as_attribute and "enabled" in el.attrib:
+        # Per-system databases: HyperSpin reads the ``<enabled>`` child;
+        # a stray attribute is meaningless and confuses validators.
         del el.attrib["enabled"]
     for field_name in _FIELD_ORDER:
         value = getattr(game, field_name, "") or ""
@@ -348,6 +364,12 @@ def _update_game_element(el, game: "GameEntry") -> None:
             value = game.name
         if field_name == "enabled" and not value:
             value = "Yes"
+        if field_name == "enabled" and enabled_as_attribute:
+            el.set("enabled", _enabled_to_bool_str(value))
+            stale = el.find("enabled")
+            if stale is not None:
+                el.remove(stale)
+            continue
         child = el.find(field_name)
         if child is None:
             # Skip optional fields that have no value rather than emitting
@@ -464,7 +486,7 @@ def _safe_bucket_filename(name: str) -> str:
     return name.strip().rstrip(".") or "_"
 
 
-def _new_game_element(game: "GameEntry", root=None):
+def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool = False):
     """Build a fresh <game> element with all canonical fields."""
     if _HAS_LXML and (root is None or hasattr(root, "nsmap")):
         if root is not None:
@@ -478,6 +500,9 @@ def _new_game_element(game: "GameEntry", root=None):
             el = ET.Element("game")
 
     el.set("name", game.name)
+    if enabled_as_attribute:
+        # Main Menu.xml: HyperHQ-style attribute on <game> instead of <enabled> child.
+        el.set("enabled", _enabled_to_bool_str(game.enabled or "Yes"))
     _set_text(el, "description", game.description or game.name)
     _set_text(el, "cloneof", game.cloneof)
     _set_text(el, "crc", game.crc)
@@ -489,5 +514,34 @@ def _new_game_element(game: "GameEntry", root=None):
     # element as "1 player" in some skins, which is misleading.
     if game.players:
         _set_text(el, "players", game.players)
-    _set_text(el, "enabled", game.enabled or "Yes")
+    if not enabled_as_attribute:
+        _set_text(el, "enabled", game.enabled or "Yes")
     return el
+
+
+def _enabled_to_bool_str(value: str) -> str:
+    """Map internal Yes/No (and tolerated True/False) → HyperHQ True/False."""
+    v = (value or "").strip().lower()
+    if v in ("no", "false", "0", "off"):
+        return "False"
+    return "True"
+
+
+def _read_enabled(game_el, enabled_as_attribute: bool) -> str:
+    """Return the entry's enabled state as the internal Yes/No string.
+
+    Accepts both the attribute form (``enabled="False"``) and the child-element
+    form (``<enabled>No</enabled>``) regardless of mode, so files written by
+    older SpinDoctor builds or third-party tools still load cleanly.
+    """
+    if enabled_as_attribute:
+        attr = (game_el.get("enabled") or "").strip()
+        if attr:
+            return "No" if attr.lower() in ("false", "no", "0", "off") else "Yes"
+    child_text = _text(game_el, "enabled")
+    if child_text:
+        return "No" if child_text.strip().lower() in ("no", "false", "0", "off") else "Yes"
+    attr = (game_el.get("enabled") or "").strip()
+    if attr:
+        return "No" if attr.lower() in ("false", "no", "0", "off") else "Yes"
+    return "Yes"

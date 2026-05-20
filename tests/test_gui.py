@@ -1410,12 +1410,12 @@ def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
         app.root.destroy()
 
 
-def test_main_menu_hide_and_save_writes_enabled_child_element(monkeypatch, tmp_path):
-    """Hiding a Main Menu item and saving must update the ``<enabled>``
-    child element — not stamp an ``enabled`` attribute onto every
-    ``<game>``. The old behaviour wrote ``<game name="…" enabled="No">``
-    while leaving ``<enabled>Yes</enabled>`` intact, which produced an
-    XML shape HyperSpin rejects with "Error creating main menu".
+def test_main_menu_hide_and_save_writes_enabled_attribute(monkeypatch, tmp_path):
+    """Hiding a Main Menu item and saving must write the HyperHQ-style
+    ``enabled="False"`` attribute on ``<game>``. The child-element form
+    is what per-system game databases use, but the Main Menu loader
+    honours the attribute — writing only the child meant Hyperspin
+    silently ignored the hide flag.
     """
     import xml.etree.ElementTree as ET
     from spindoctor import config as cfg_mod
@@ -1456,7 +1456,7 @@ def test_main_menu_hide_and_save_writes_enabled_child_element(monkeypatch, tmp_p
         # The tab is built when constructed; force a refresh now.
         app._mm_refresh()
         assert any(d["system"] == "Sony Playstation" for d in app._mm_data)
-        # Confirm enabled is read from the child element, not the attr.
+        # Internal model still uses Yes/No regardless of on-disk form.
         for entry in app._mm_data:
             assert entry["enabled"] in ("Yes", "No"), entry
 
@@ -1488,39 +1488,46 @@ def test_main_menu_hide_and_save_writes_enabled_child_element(monkeypatch, tmp_p
         app._mm_save_order()
         assert captured == ["started"]
 
-        # Round-trip: re-read the file ourselves and verify the
-        # ``<enabled>`` child element is what was written. Verify NO
-        # ``<game>`` element ended up with an ``enabled="…"`` attribute.
+        # Round-trip: re-read the file and verify the HyperHQ-style
+        # ``enabled="True"|"False"`` attribute is what was written.
+        # The ``<enabled>`` child element must be absent on Main Menu
+        # entries — Hyperspin's Main Menu loader reads the attribute.
         re_root = ET.parse(xml_path).getroot()
         for game in re_root.findall("game"):
-            assert "enabled" not in game.attrib, (
-                "writer leaked enabled attribute onto "
+            assert "enabled" in game.attrib, (
+                "writer missing enabled attribute on "
+                f"<game name='{game.get('name')}'>"
+            )
+            assert game.find("enabled") is None, (
+                "writer should not emit <enabled> child for Main Menu "
                 f"<game name='{game.get('name')}'>"
             )
         sony = next(
             g for g in re_root.findall("game")
             if g.get("name") == "Sony Playstation"
         )
-        assert sony.find("enabled").text == "No"
+        assert sony.get("enabled") == "False"
         mame = next(
             g for g in re_root.findall("game")
             if g.get("name") == "MAME"
         )
-        assert mame.find("enabled").text == "Yes"
+        assert mame.get("enabled") == "True"
 
         # The file must carry an XML declaration so HyperSpin's parser
         # sees the same shape the CLI writer produces.
-        head = xml_path.read_bytes()[:40]
+        raw = xml_path.read_bytes()
+        head = raw[:40]
         assert head.lstrip().startswith(b"<?xml"), head
+        # Pretty-print sanity: not collapsed to one line.
+        assert raw.count(b"\n") >= 4, raw
     finally:
         app.root.destroy()
 
 
-def test_main_menu_save_strips_legacy_enabled_attribute(monkeypatch, tmp_path):
-    """A file written by an older buggy SpinDoctor has both an
-    ``enabled="No"`` attribute and an ``<enabled>Yes</enabled>`` child.
-    Re-saving from the GUI must self-heal: drop the attribute and write
-    the child element with the value the user actually intended.
+def test_main_menu_save_migrates_legacy_enabled_child(monkeypatch, tmp_path):
+    """A file written by an older SpinDoctor uses the ``<enabled>`` child
+    element. Re-saving from the GUI must migrate it to the HyperHQ-style
+    ``enabled="True"|"False"`` attribute and drop the stale child.
     """
     import xml.etree.ElementTree as ET
     from spindoctor import config as cfg_mod
@@ -1533,13 +1540,13 @@ def test_main_menu_save_strips_legacy_enabled_attribute(monkeypatch, tmp_path):
         xml_path.write_text(
             "<menu>\n"
             "  <header><listname>Main Menu</listname></header>\n"
-            "  <game name=\"MAME\" enabled=\"Yes\">\n"
+            "  <game name=\"MAME\">\n"
             "    <description>MAME</description>\n"
             "    <enabled>Yes</enabled>\n"
             "  </game>\n"
-            "  <game name=\"Sony Playstation\" enabled=\"No\">\n"
+            "  <game name=\"Sony Playstation\">\n"
             "    <description>Sony Playstation</description>\n"
-            "    <enabled>Yes</enabled>\n"
+            "    <enabled>No</enabled>\n"
             "  </game>\n"
             "</menu>\n",
             encoding="utf-8",
@@ -1553,18 +1560,14 @@ def test_main_menu_save_strips_legacy_enabled_attribute(monkeypatch, tmp_path):
             app.messagebox, "askyesno", lambda *_a, **_k: True,
         )
 
-        # Drive the read path: enabled is now read from the child
-        # element, so the user sees ``Yes`` / ``Yes`` here (the attribute
-        # is ignored). The child element is the source of truth.
+        # Legacy child element should still be honoured on load.
         app._mm_refresh()
         sony_idx = next(
             i for i, d in enumerate(app._mm_data)
             if d["system"] == "Sony Playstation"
         )
-        assert app._mm_data[sony_idx]["enabled"] == "Yes"
+        assert app._mm_data[sony_idx]["enabled"] == "No"
 
-        # Save unchanged. The writer should drop the stale attribute on
-        # every <game> and reaffirm the child element value.
         class _InlineThread:
             def __init__(self, target=None, **_kw):
                 self._target = target
@@ -1580,7 +1583,15 @@ def test_main_menu_save_strips_legacy_enabled_attribute(monkeypatch, tmp_path):
 
         re_root = ET.parse(xml_path).getroot()
         for game in re_root.findall("game"):
-            assert "enabled" not in game.attrib
+            assert game.find("enabled") is None, (
+                "legacy <enabled> child must be removed on save"
+            )
+            assert "enabled" in game.attrib
+        sony = next(
+            g for g in re_root.findall("game")
+            if g.get("name") == "Sony Playstation"
+        )
+        assert sony.get("enabled") == "False"
     finally:
         app.root.destroy()
 

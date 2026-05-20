@@ -82,7 +82,7 @@ def _main_menu_path(config: Config, output_dir: Optional[Path] = None) -> Path:
 def load_main_menu(config: Config) -> MainMenu:
     """Read the current Main Menu.xml and return an ordered :class:`MainMenu`."""
     path = _main_menu_path(config)
-    db = HyperspinDatabase(MAIN_MENU_FOLDER, path)
+    db = HyperspinDatabase(MAIN_MENU_FOLDER, path, enabled_as_attribute=True)
     db.load()
 
     entries: list[MainMenuEntry] = []
@@ -150,7 +150,7 @@ def save_main_menu(
         # save() will rebuild <game> elements in dict-iteration order.
     else:
         # Fresh file path: build from scratch.
-        db = HyperspinDatabase(MAIN_MENU_FOLDER, target)
+        db = HyperspinDatabase(MAIN_MENU_FOLDER, target, enabled_as_attribute=True)
         db.load()  # noop, file likely missing
         for entry in menu.entries:
             game = _entry_to_game(entry)
