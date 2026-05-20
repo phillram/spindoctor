@@ -5489,9 +5489,24 @@ class _SpinDoctorGUI:
             return
         try:
             root = self._mm_ET.parse(str(xml_path)).getroot()
+            # HyperSpin stores the enabled flag as a *child element*
+            # ``<enabled>No</enabled>``, not as an attribute on
+            # ``<game>``. Reading from the attribute (which is what the
+            # previous version did) always saw the default "Yes" and the
+            # corresponding write path then stamped a phantom
+            # ``enabled="No"`` attribute onto every game, leaving the
+            # real child element unchanged. The combination corrupts
+            # the file so HyperSpin throws "Error creating main menu".
+            def _enabled_of(el) -> str:
+                child = el.find("enabled")
+                if child is None or child.text is None:
+                    return "Yes"
+                text = child.text.strip()
+                return text or "Yes"
+
             self._mm_data = [
                 {"system": (el.get("name") or "").strip(),
-                 "enabled": el.get("enabled", "Yes")}
+                 "enabled": _enabled_of(el)}
                 for el in root.findall("game")
                 if (el.get("name") or "").strip()
             ]
@@ -5627,7 +5642,22 @@ class _SpinDoctorGUI:
                     if name not in by_name:
                         continue
                     el = by_name[name]
-                    el.set("enabled", entry["enabled"])
+                    # Persist enabled as a *child element*
+                    # ``<enabled>Yes|No</enabled>`` — what HyperSpin and
+                    # the CLI ``mainmenu`` writer both expect. Create
+                    # the child if it's missing (older XMLs sometimes
+                    # omit it entirely; HyperSpin defaults to "Yes").
+                    desired = (entry.get("enabled") or "Yes").strip() or "Yes"
+                    child = el.find("enabled")
+                    if child is None:
+                        child = self._mm_ET.SubElement(el, "enabled")
+                    child.text = desired
+                    # Clean up any stale ``enabled`` attribute left
+                    # behind by the previous (broken) writer so files
+                    # touched by an older SpinDoctor self-heal on the
+                    # next Save.
+                    if "enabled" in el.attrib:
+                        del el.attrib["enabled"]
                     root.append(el)
                 if want_backup and xml_path.exists():
                     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -5636,8 +5666,12 @@ class _SpinDoctorGUI:
                         xml_path.with_suffix(f".{stamp}.bak"),
                     )
                 tmp_path = xml_path.with_suffix(xml_path.suffix + ".tmp")
+                # Emit a proper XML declaration to match the CLI
+                # ``mainmenu`` writer and the format HyperSpin expects.
+                # Bytes-mode (``encoding="utf-8"``) is what ElementTree
+                # needs to honour ``xml_declaration=True``.
                 tree.write(
-                    str(tmp_path), encoding="unicode", xml_declaration=False,
+                    str(tmp_path), encoding="utf-8", xml_declaration=True,
                 )
                 os.replace(str(tmp_path), str(xml_path))
             except OSError as exc:

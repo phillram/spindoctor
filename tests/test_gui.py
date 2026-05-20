@@ -1410,6 +1410,181 @@ def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
         app.root.destroy()
 
 
+def test_main_menu_hide_and_save_writes_enabled_child_element(monkeypatch, tmp_path):
+    """Hiding a Main Menu item and saving must update the ``<enabled>``
+    child element — not stamp an ``enabled`` attribute onto every
+    ``<game>``. The old behaviour wrote ``<game name="…" enabled="No">``
+    while leaving ``<enabled>Yes</enabled>`` intact, which produced an
+    XML shape HyperSpin rejects with "Error creating main menu".
+    """
+    import xml.etree.ElementTree as ET
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        hyperspin = tmp_path / "HyperSpin"
+        (hyperspin / "Databases" / "Main Menu").mkdir(parents=True)
+        xml_path = hyperspin / "Databases" / "Main Menu" / "Main Menu.xml"
+        xml_path.write_text(
+            "<?xml version=\"1.0\"?>\n"
+            "<menu>\n"
+            "  <header><listname>Main Menu</listname></header>\n"
+            "  <game name=\"MAME\">\n"
+            "    <description>MAME</description>\n"
+            "    <enabled>Yes</enabled>\n"
+            "  </game>\n"
+            "  <game name=\"Sony Playstation\">\n"
+            "    <description>Sony Playstation</description>\n"
+            "    <enabled>Yes</enabled>\n"
+            "  </game>\n"
+            "</menu>\n",
+            encoding="utf-8",
+        )
+
+        cfg = cfg_mod.Config()
+        cfg.hyperspin_dir = str(hyperspin)
+        cfg.backup_before_modify = False
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+        # No confirmation prompt; auto-approve.
+        monkeypatch.setattr(
+            app.messagebox, "askyesno", lambda *_a, **_k: True,
+        )
+
+        # Build the Main Menu tab so ``_mm_ET`` etc. are populated.
+        # ``_mm_refresh`` is called automatically by the tab builder via
+        # ``after_idle``, but we want to drive it deterministically.
+        # The tab is built when constructed; force a refresh now.
+        app._mm_refresh()
+        assert any(d["system"] == "Sony Playstation" for d in app._mm_data)
+        # Confirm enabled is read from the child element, not the attr.
+        for entry in app._mm_data:
+            assert entry["enabled"] in ("Yes", "No"), entry
+
+        # Hide Sony Playstation (index 1 in original order).
+        for i, entry in enumerate(app._mm_data):
+            if entry["system"] == "Sony Playstation":
+                app._mm_tree.selection_set(str(i + 1))
+                break
+        app._mm_toggle_visible()
+
+        # Save synchronously: monkeypatch threading.Thread so the worker
+        # runs inline on the main thread for the test.
+        captured: list = []
+
+        class _InlineThread:
+            def __init__(self, target=None, daemon=None, **_kw):
+                self._target = target
+
+            def start(self):
+                captured.append("started")
+                self._target()
+
+        monkeypatch.setattr("spindoctor.gui.threading.Thread", _InlineThread)
+        # No after() — the success callback fires immediately too.
+        monkeypatch.setattr(
+            app.root, "after", lambda _ms, fn, *args: fn(*args),
+        )
+
+        app._mm_save_order()
+        assert captured == ["started"]
+
+        # Round-trip: re-read the file ourselves and verify the
+        # ``<enabled>`` child element is what was written. Verify NO
+        # ``<game>`` element ended up with an ``enabled="…"`` attribute.
+        re_root = ET.parse(xml_path).getroot()
+        for game in re_root.findall("game"):
+            assert "enabled" not in game.attrib, (
+                "writer leaked enabled attribute onto "
+                f"<game name='{game.get('name')}'>"
+            )
+        sony = next(
+            g for g in re_root.findall("game")
+            if g.get("name") == "Sony Playstation"
+        )
+        assert sony.find("enabled").text == "No"
+        mame = next(
+            g for g in re_root.findall("game")
+            if g.get("name") == "MAME"
+        )
+        assert mame.find("enabled").text == "Yes"
+
+        # The file must carry an XML declaration so HyperSpin's parser
+        # sees the same shape the CLI writer produces.
+        head = xml_path.read_bytes()[:40]
+        assert head.lstrip().startswith(b"<?xml"), head
+    finally:
+        app.root.destroy()
+
+
+def test_main_menu_save_strips_legacy_enabled_attribute(monkeypatch, tmp_path):
+    """A file written by an older buggy SpinDoctor has both an
+    ``enabled="No"`` attribute and an ``<enabled>Yes</enabled>`` child.
+    Re-saving from the GUI must self-heal: drop the attribute and write
+    the child element with the value the user actually intended.
+    """
+    import xml.etree.ElementTree as ET
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        hyperspin = tmp_path / "HyperSpin"
+        (hyperspin / "Databases" / "Main Menu").mkdir(parents=True)
+        xml_path = hyperspin / "Databases" / "Main Menu" / "Main Menu.xml"
+        xml_path.write_text(
+            "<menu>\n"
+            "  <header><listname>Main Menu</listname></header>\n"
+            "  <game name=\"MAME\" enabled=\"Yes\">\n"
+            "    <description>MAME</description>\n"
+            "    <enabled>Yes</enabled>\n"
+            "  </game>\n"
+            "  <game name=\"Sony Playstation\" enabled=\"No\">\n"
+            "    <description>Sony Playstation</description>\n"
+            "    <enabled>Yes</enabled>\n"
+            "  </game>\n"
+            "</menu>\n",
+            encoding="utf-8",
+        )
+
+        cfg = cfg_mod.Config()
+        cfg.hyperspin_dir = str(hyperspin)
+        cfg.backup_before_modify = False
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+        monkeypatch.setattr(
+            app.messagebox, "askyesno", lambda *_a, **_k: True,
+        )
+
+        # Drive the read path: enabled is now read from the child
+        # element, so the user sees ``Yes`` / ``Yes`` here (the attribute
+        # is ignored). The child element is the source of truth.
+        app._mm_refresh()
+        sony_idx = next(
+            i for i, d in enumerate(app._mm_data)
+            if d["system"] == "Sony Playstation"
+        )
+        assert app._mm_data[sony_idx]["enabled"] == "Yes"
+
+        # Save unchanged. The writer should drop the stale attribute on
+        # every <game> and reaffirm the child element value.
+        class _InlineThread:
+            def __init__(self, target=None, **_kw):
+                self._target = target
+
+            def start(self):
+                self._target()
+
+        monkeypatch.setattr("spindoctor.gui.threading.Thread", _InlineThread)
+        monkeypatch.setattr(
+            app.root, "after", lambda _ms, fn, *args: fn(*args),
+        )
+        app._mm_save_order()
+
+        re_root = ET.parse(xml_path).getroot()
+        for game in re_root.findall("game"):
+            assert "enabled" not in game.attrib
+    finally:
+        app.root.destroy()
+
+
 def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
     """A malformed Main Menu.xml must trigger a showerror modal so the
     user actually notices — not just a line in the Output pane.
