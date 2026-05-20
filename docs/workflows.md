@@ -2,6 +2,13 @@
 
 Common end-to-end flows. Each one is a recipe — copy, paste, edit paths to match your setup.
 
+**Where to start:**
+
+- Standing up a brand-new cabinet? Jump to [New cabinet build](#new-cabinet-build) (then [Adding your first system](#adding-your-first-system)).
+- Already running, looking for daily / weekly maintenance? [Daily wheel refresh](#daily-wheel-refresh) and [Weekly maintenance](#weekly-maintenance).
+- Need to undo something? Skip straight to [Recovery from mistakes](#recovery-from-mistakes) — every destructive command writes a manifest, almost everything is reversible.
+- One-off task (backup, drive migration, finding a game, replacing controller glyphs, wiring a lightgun)? Pick from the ToC below.
+
 ## Contents
 
 - [New cabinet build](#new-cabinet-build)
@@ -76,16 +83,7 @@ Three integration patterns, in roughly increasing order of "how invisible to the
 
 1. **From inside HyperSpin** (HyperHQ → Tools menu, or as games inside an existing wheel) — GUI Tools tab → "Install for HyperHQ → Tools menu" *or* "Install into an existing wheel system" (e.g. a `Toolkit` wheel). CLI equivalents: `spindoctor install-tools` and `spindoctor install-tools --add-to-system Toolkit`. See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 2. **Auto-refresh on cabinet startup** — GUI Tools tab → "Auto-refresh on cabinet startup" → Schedule auto-refresh (Windows-only — wraps `schtasks.exe`, Schedule / Remove / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
-3. **Manual `schtasks` (Windows)** if you'd rather skip the GUI:
-
-```bat
-schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
-  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
-```
-
-(`&` rather than `&&` so a failing favorites rebuild doesn't kill the rest.)
-
-See [Standalone tools](standalone-tools.md) for full wiring details and the macOS / Linux equivalents.
+3. **Manual `schtasks` (Windows)** if you'd rather skip the GUI — see [Standalone tools → Wiring into Windows startup](standalone-tools.md#wiring-into-windows-startup) for the `schtasks /create` invocation, plus the macOS (`launchd` / `crontab @reboot`) and Linux (`systemd --user` / `crontab`) equivalents.
 
 ---
 

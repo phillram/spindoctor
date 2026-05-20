@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Scraper debug log file at `~/.spindoctor/scraper.log`.** Every ScreenScraper and TheGamesDB request now records its (redacted) URL + params, the response status, and the first ~500 chars of the body on any HTTP >= 400. A rotating handler (512 KB × 2 backups) keeps the file from growing. Verify dialog failures also surface the response body inline so the upstream error ("Erreur de login", "Invalid API key", rate-limit notice) is visible without opening the log. Closes the "verify returns 403, dialog says nothing useful" debugging gap.
+- **`screenscraper_devid` / `screenscraper_devpassword` config keys.** Advanced override for ScreenScraper's per-app developer credential pair (separate from the user's `ssid`/`sspassword`). Defaults to the historical `"SpinDoctor"`/`"SpinDoctor"` values, but can now be overridden when ScreenScraper has issued you a real registered developer credential or rejects the defaults. Set from the GUI's Custom Command tab with `config set screenscraper_devid <value>` — no Setup-tab field, because cabinet owners shouldn't need to think about this.
+
+### Changed
+
+- **GUI: scrollbar thumb is now clearly distinguishable from the trough.** The dark-theme scrollbar had the thumb at `#3a3a3c` against a `#252526` trough with a hand-flattened bevel — readable only if you already knew where to look. New `_DARK_SCROLL_THUMB` (`#6a6a6e`) / `_DARK_SCROLL_THUMB_ACTIVE` (`#8a8a8e`) pair plus the restored clam bevel give the draggable element obvious affordance and a visible hover state.
+
+### Fixed
+
+- **Windows: bundled `.exe` icon now actually appears.** `build/build_windows.py` was invoking PyInstaller without `--icon`, so Explorer / taskbar / Alt-Tab always rendered the default Tk feather even though `spindoctor/assets/icon.ico` had been committed since 1.x. It was also missing `--add-data` for `spindoctor/assets/`, which meant the runtime `iconbitmap()` call in `_apply_icon()` silently failed inside the `--onefile` frozen process (assets weren't extracted alongside `__file__`), so the window-header icon was also the feather. Both flags are now wired into `run_pyinstaller()`; next release rebuild ships the custom icon everywhere Windows shows one.
+
 ## [2.0.0] - 2026-05-19
 
 ### Fixed

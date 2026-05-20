@@ -251,6 +251,8 @@ Modal dialogs are reserved for: multi-line result summaries (Preflight passed, C
 
 The GUI is dark by default — no toggle, no setting. The palette (deep grey background, off-white text, blue selection / focus accents) is applied via `ttk.Style` overrides on the `clam` theme plus `option_add` defaults for the non-themed Tk widgets (Menu, Listbox, Text, Canvas, PanedWindow). The macOS native menubar still uses the system appearance because Tk can't override it.
 
+Scrollbar thumbs (the draggable rectangle inside the trough) are intentionally several stops brighter than the surrounding panel so the grabby part is obvious against the dark theme; they also brighten further on hover. If your scrollbars previously felt invisible, you're on an older build — upgrade and the thumb pops.
+
 Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scraper credentials, the Output panel, log viewers — has a right-click (or `Button-2` on macOS) context menu with Cut / Copy / Paste / Select-All. Read-only views show only Copy + Select-All; masked password fields suppress Copy/Cut so right-click can't bypass the mask.
 
 ## Stopping a long-running command

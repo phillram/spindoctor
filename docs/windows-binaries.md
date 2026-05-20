@@ -36,6 +36,8 @@ spindoctor-windows-vX.Y.Z.zip
 
 All five are single-file PyInstaller binaries — no installer, no setup wizard, no DLL hell. The CLI exes are roughly 30–50 MB each because they bundle their own Python runtime plus dependencies (lxml, Pillow, py7zr, rarfile); `spindoctor-gui.exe` is smaller (~15–20 MB) because it just bundles Tkinter and shells out to the others.
 
+Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar. Earlier releases shipped without `--icon` in the PyInstaller invocation and as a result rendered the default Tk feather everywhere Windows shows an icon; that's fixed.
+
 ## Compatibility
 
 | Windows version | Status |
@@ -171,11 +173,7 @@ Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, 
 
 ### Double-clicking `spindoctor.exe` flashes a window that closes instantly
 
-Expected. SpinDoctor's CLI binaries (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, `spindoctor-stats.exe`) are command-line tools — with no arguments they print `--help` and exit, and Windows tears down the cmd window the moment they exit. Use one of:
-
-- Double-click `spindoctor-gui.exe` instead (see [GUI launcher](#gui-launcher)).
-- Open `cmd.exe` first (`Win+R` → `cmd` → Enter), `cd` into the install folder, then run the binary with arguments.
-- Use the bundled `.bat` wrappers under [`scripts/`](https://github.com/phillram/spindoctor/tree/main/scripts) — they `pause` on error so the window stays open.
+Expected — the CLI binaries print `--help` and exit when run with no arguments. See [Troubleshooting → Double-clicking `spindoctor.exe` flashes a window that closes instantly](troubleshooting.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly) for the three workarounds.
 
 ### "Windows protected your PC" SmartScreen warning
 
