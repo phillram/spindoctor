@@ -72,13 +72,9 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 
 ## Common starting points
 
-First launch lands you on the **Setup** tab (the GUI auto-focuses it when no `config.json` exists yet). Click **Run first-run wizard…** on the Setup tab for a guided 3-step flow (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results). The wizard is opt-in — it does not auto-open — and is also available any time from **Help → First-run setup…**.
-
-Each tab shows a small ⚠ or ✗ badge next to its name when the area it covers has a problem detected by `spindoctor doctor` — `Setup ⚠` means a path or scraper credential needs attention, `LEDBlinky ✗` means LEDBlinky is configured but its files are missing, and so on. Scan the tab strip on launch to see what needs work; saving the Setup tab re-runs the check so badges stay accurate.
+Click **Run first-run wizard…** on the Setup tab for a guided 3-step flow (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results). The wizard is opt-in and re-openable any time from **Help → First-run setup…**.
 
 The **Metadata & Media** tab has a "Pick subset…" button for the common cabinet workflow of "refresh metadata for *these specific* systems" (often after a scraper improves data for a handful of consoles). Ticking subsystems opens a multi-select picker; "Run on subset…" chains `fetch-meta --system X` once per pick, aborting on the first failure so you can fix the cause before continuing.
-
-Press **Ctrl+F** (Cmd+F on macOS) any time to open a find bar above the Output panel. Useful for scanning long audit / migrate output — type a game name, hit Enter to jump between matches, Esc to close.
 
 Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME variants) can configure scraper IDs, ROM extensions, layout, and emulator per-system from the **Systems** tab's *Per-system overrides* form — no need to memorise `config system set` flags.
 
@@ -88,13 +84,13 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ### Tabs
 
-- **Setup** — paths + scraper credentials (ScreenScraper / TheGamesDB), masked with a Show/Hide eyeball and a **Test credentials** button that pings both providers and reports pass/fail.
-- **Wheels** — checkboxes for Favorites / Recently Played / Most Played + a *Refresh selected* button that chains only the ticked ones, with step-counter progress in the status bar; HyperSpin integration helpers below.
-- **Main Menu** — interactive Treeview of the live system order; select a row, click Move Up / Move Down / Toggle Visible, then Save Order (with confirmation) to write `Main Menu.xml`.
+- **Setup** — paths + scraper credentials (ScreenScraper user/dev + TheGamesDB) and a **Test credentials** button that pings both providers and reports pass/fail.
+- **Wheels** — checkboxes for Favorites / Recently Played / Most Played plus a *Refresh selected* button that chains only the ticked ones; HyperSpin integration helpers below.
+- **Main Menu** — interactive Treeview of the live system order; select a row, click Move Up / Move Down / Toggle Visible, then Save Order to write `Main Menu.xml`.
 - **Audit & Doctor** — system-by-system audit and the global `doctor` health check.
 - **Diagnose** — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `verify` against a DAT, global search.
-- **Metadata & Media** — `fetch-meta`, `fetch-media` with media-type checkboxes, `media-scan`, `update-db`, `generate-config`; *Full metadata refresh* chains all three with step-counter status.
-- **Curate** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes (safe caches pre-ticked, unsafe caches unchecked), ignore lifecycle with click-to-un-ignore viewer.
+- **Metadata & Media** — `fetch-meta`, `fetch-media` with media-type checkboxes, `media-scan`, `update-db`, `generate-config`; *Full metadata refresh* chains all three.
+- **Curate** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes, ignore lifecycle with click-to-un-ignore viewer.
 - **Systems** — `add-system`, `add-pc-system`, `pc-rename`, and the per-system overrides form mentioned above.
 - **LEDBlinky** — generate / audit / check / fix the LED-light configuration.
 - **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
@@ -104,18 +100,7 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 - **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
 - **Custom Command** — type-or-pick CLI invocations; the dropdown is a curated tour of the whole CLI surface.
 
-### Chrome and ergonomics
-
-- **Every tab scrolls** when content overflows the window; thumbs are clearly visible against the dark theme and brighten on hover.
-- **Every text input** has a right-click Cut / Copy / Paste / Select-All menu.
-- **`View` menu** — UI-scale knob (0.8×–1.5×, `Ctrl++` / `Ctrl+-` / `Ctrl+0`) and a collapsible Output panel (`Ctrl+`` `), so cabinet owners on 1280×720 can fit a full tab without scrolling.
-- **`File` menu** — shortcuts to `config.json`, `~/.spindoctor`, a Logs & Manifests viewer (with one-click *Undo this run* for any apply-mode command), and a HyperSpin theme browser.
-- **`Help` menu** — About dialog (with the app icon), in-app **Keyboard shortcuts** reference, and *Check for updates* that pings GitHub for newer releases.
-- **Single-instance file lock** on startup so two windows can't race on the same HyperSpin XML — override with `SPINDOCTOR_DISABLE_SINGLETON=1` if you genuinely need both open.
-
-### Diagnostics
-
-If **Test credentials** returns a 403 from ScreenScraper or TheGamesDB, the failure dialog includes a trimmed copy of the upstream error body, and every scraper call is also recorded (with secrets redacted) to `~/.spindoctor/scraper.log`. Full diagnostic flow including the optional `screenscraper_devid` / `screenscraper_devpassword` override at [Troubleshooting → 403 from ScreenScraper or TheGamesDB](docs/troubleshooting.md#403-from-screenscraper-or-thegamesdb).
+For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
 
 ## CLI commands
 

@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-05-20
+
+### Added
+
+- **GUI: ScreenScraper developer-credential fields on the Setup tab.** ScreenScraper's api2 requires *both* per-user (`ssid`/`sspassword`) and per-app (`devid`/`devpassword`) credential pairs; without a registered dev pair every request returns HTTP 403 regardless of how correct the user creds are. The Setup tab now exposes `screenscraper_devid` and `screenscraper_devpassword` as first-class fields with the same `(saved)` / `(not set)` status surface as the user creds. The historical `"SpinDoctor"` placeholder values render as `(not set — bundled placeholder)` so users can immediately see that the dev pair is what's broken. Setup-tab help text + the `verify_screenscraper` 403 error both link to https://www.screenscraper.fr/membreinscription.php with copy-paste instructions for setting the new fields.
+- **CLI: `config verify-credentials --ss-devid` / `--ss-devpassword`.** Unsaved Setup-form dev credentials can now be probed before saving, matching the existing `--ss-user` / `--ss-pass` flow.
+
+### Changed
+
+- **GUI: Setup-tab credential rows redesigned for clarity.** The previous `…abcd` last-4-chars hint was unreadable to users (it read as random text rather than "yep, there's a value saved"). Status text is now `(saved)` / `(not set)` and sits leftmost in the per-row control cell, followed by `[Show]` (or a button-width spacer on unmasked rows) and `[Clear]`. All five credential rows line up identically instead of looking ragged.
+- **`verify_screenscraper` 403 error message.** When the rejected request used the bundled `"SpinDoctor"` placeholder devid, the failure message now explicitly names that as the cause and points at the registration page + Setup-tab fields, instead of letting users debug their user credentials in circles. Real devid values keep the terse failure message.
+
+### Fixed
+
+- **Main Menu "hide" actually hides items in Hyperspin.** SpinDoctor was writing `<enabled>No</enabled>` as a child element on Main Menu entries. Hyperspin's Main Menu loader honours the HyperHQ-style `enabled="True"|"False"` attribute on `<game>` (per-system game databases still use the child element, unchanged). A new `HyperspinDatabase.enabled_as_attribute` flag selects the schema; `spindoctor.mainmenu` opts in. Legacy child-element files migrate forward on the next save. Removed the previous self-heal logic in `database._update_game_element` that actively stripped the `enabled` attribute (it existed to fight a misdiagnosis of the same bug — both PR #144 and PR #148 were addressing the same broken UX from opposite directions).
+- **XML saves are no longer single-line blobs.** The lxml parser was using `remove_blank_text=False`, which silently disables `pretty_print=True` on write. Switching to `remove_blank_text=True` restores indented, human-readable output across every XML round-trip (Main Menu, per-system databases, secondary sort axes). The cost is a cosmetic whitespace-only diff on first save against files that arrived single-line.
+
 ## [2.1.0] - 2026-05-20
 
 ### Added
@@ -559,7 +576,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/phillram/spindoctor/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/phillram/spindoctor/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/phillram/spindoctor/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/phillram/spindoctor/compare/v1.9.1...v2.0.0
