@@ -6,6 +6,33 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-05-20
+
+### Added
+
+- **GUI: "Restore from backup…" button on the Main Menu tab.** SpinDoctor writes a `Main Menu.YYYYMMDD_HHMMSS.bak` next to `Main Menu.xml` before every Save Order (when `backup_before_modify` is on — the default). The button opens a picker listing every sidecar backup with timestamp + size, and one-click restores the chosen snapshot. The pre-restore live file is itself sidecar-backed-up first, so the restore is undoable. No more dropping out of SpinDoctor and into Explorer to copy `.bak` files manually.
+- **`spindoctor backup sidecar list / restore` CLI subcommands.** Canonical surface for the per-modify `.YYYYMMDD_HHMMSS.bak` files SpinDoctor's apply commands write next to mutated files. `list <file> [--json]` enumerates sibling backups newest-first; `restore <file> --from <bak> [--apply]` copies a sidecar back (dry-run by default, with a pre-restore backup of the live file so the restore is itself undoable).
+- **`spindoctor config verify-credentials` CLI subcommand.** Probes ScreenScraper + TheGamesDB to check the configured credentials. Accepts `--ss-user` / `--ss-pass` / `--tgdb-key` overrides so candidate values can be tested without saving, falling back to saved config otherwise. `--json` output for the GUI Setup tab's Test credentials button.
+- **`spindoctor backup list --json`.** Structured output of the SpinDoctor backups in a target folder (used by the GUI Backup tab's Scan button to populate the restore Combobox via the CLI instead of re-implementing the directory walk).
+- **GUI: Setup tab masked-credential field UX.** Each masked credential field (`screenscraper_pass`, `thegamesdb_key`) now shows a small `…abcd` last-4 hint when a saved value is present (or `(empty)` / `(edited — not yet saved)` / `(cleared — not saved)`) plus a per-field **Clear** button. Removes the long-standing ambiguity where a masked-but-saved value looked identical to a blank field and the user couldn't tell whether the API key they thought was unset was actually being sent.
+- **GUI: stuck-running detector.** If a subprocess exits but its stdout pipe never closes (Rich Live-display ANSI codes have been known to leave the GUI's line reader waiting on a missing newline), the drain loop now synthesises a `_DoneMarker` so the tab badge, Stop button, and status bar always escape the "running" state. Backup completes-but-the-UI-says-running is fixed.
+
+### Changed
+
+- **Main Menu tab now delegates to `spindoctor.mainmenu` instead of parsing/writing the XML itself.** The previous in-process implementation was the root cause of the Main Menu corruption (see Fixed). `_mm_refresh` / `_mm_save_order` now call `load_main_menu` / `save_main_menu` — same canonical reader and writer the CLI uses, with backup, XML declaration, and lxml comment preservation all handled in one place.
+- **GUI Backup tab's "Scan" button shells out to `backup list --json`** instead of walking the target directory inline. Removes a duplicate folder-scan implementation.
+- **GUI Setup tab's "Test credentials" button shells out to `config verify-credentials`** instead of importing `spindoctor.scraper` and calling `verify_*` in a worker thread. Output streams to the bottom Output panel + Logs tab through the standard `_run_cli` plumbing — same as every other command run.
+- **GUI: credential-test output routed to the Output panel + Logs tab.** Previously the result was written to a small inline label inside the Setup form, which scrolled out of view and felt random. Now lives where every other action's output lives.
+- **GUI: every scrollbar and pane sash uses the clam dark theme.** Replaced four `scrolledtext.ScrolledText` widgets (which embed classic `tk.Scrollbar`) with a themed `Text + ttk.Scrollbar` helper, and three `tk.PanedWindow` instances with `ttk.PanedWindow`. The Output panel, Logs tab viewer, first-run wizard panel, View-logs dialog, and every pane sash now match the rest of the app on Windows instead of showing native Win7 chrome.
+- **`verify_screenscraper` returns include `devid=…` and the sent ssid-presence summary in every message** (success and failure). Makes a `HTTP 403 (Erreur de login)` debuggable from the Output panel alone — the user can immediately tell whether the default `devid="SpinDoctor"` is in use vs. a custom one, and whether the password was actually sent.
+- **`verify_thegamesdb` rejects suspicious HTTP 200 responses.** TheGamesDB has been observed returning OK + public data for some invalid/empty keys; the verifier now treats a 200 with no `*allowance*` field as failure ("Suspicious 200 — response carries no per-key allowance counter"). Obvious-junk keys (whitespace / <8 chars) are short-circuited without contacting the API.
+- **Rich `Progress` is auto-disabled in non-tty mode** via a `_make_progress` helper that auto-passes `disable=not sys.stdout.isatty()`. Terminal users see the live spinner as before; GUI-piped subprocesses get clean newline-terminated lines instead of ANSI cursor-control sequences. Removes a class of hang where the line iterator in the GUI's pipe reader waited indefinitely for a newline that Rich's Live display never emitted.
+
+### Fixed
+
+- **Main Menu.xml no longer gets corrupted by the GUI's Toggle Visible + Save Order flow.** The GUI was reading `enabled` from a `<game enabled="…">` XML attribute (which HyperSpin never sets) and writing it back the same way, while HyperSpin and SpinDoctor's CLI both use a `<enabled>Yes|No</enabled>` child element. Saving stamped a phantom `enabled="No"` attribute onto every game and left the real child element unchanged, producing a shape HyperSpin rejects with "Error creating main menu" on startup. Now reads and writes the child element exclusively (via `spindoctor.mainmenu`). The canonical writer also strips any stale `enabled` attribute on save (`database._update_game_element`) so files previously corrupted by this bug self-heal on the next save through either the GUI or the CLI.
+- **GUI: `_on_proc_done` and `_drain_queue` are now exception-safe.** A `TclError` on a destroyed widget during `_on_proc_done` used to propagate out of `_drain_queue` and prevent the next `root.after(50, …)` re-registration, permanently stopping the drain loop and leaving the GUI stuck in "running" state. Both functions now wrap their bodies in try/finally; the busy state is always cleared, and the drain loop always re-arms.
+
 ## [2.0.1] - 2026-05-19
 
 ### Added
@@ -532,7 +559,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.0.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/phillram/spindoctor/compare/v2.0.1...v2.1.0
 [2.0.1]: https://github.com/phillram/spindoctor/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/phillram/spindoctor/compare/v1.9.1...v2.0.0
 [1.9.1]: https://github.com/phillram/spindoctor/compare/v1.9.0...v1.9.1
