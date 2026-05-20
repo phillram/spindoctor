@@ -35,6 +35,9 @@ class MainMenuEntry:
     manufacturer: str = ""
     year: str = ""
     genre: str = ""
+    # Carries unknown <game> attributes from the source XML so things like
+    # HyperSpin's ``exe="true"`` on the Search entry survive load → save.
+    extra_attrs: dict = field(default_factory=dict)
 
     @property
     def visible(self) -> bool:
@@ -107,6 +110,7 @@ def _entry_from_game(game: GameEntry) -> MainMenuEntry:
         manufacturer=game.manufacturer or "",
         year=game.year or "",
         genre=game.genre or "",
+        extra_attrs=dict(game.extra_attrs or {}),
     )
 
 
@@ -118,6 +122,7 @@ def _entry_to_game(entry: MainMenuEntry) -> GameEntry:
         year=entry.year,
         genre=entry.genre,
         enabled=entry.enabled or "Yes",
+        extra_attrs=dict(entry.extra_attrs or {}),
     )
 
 

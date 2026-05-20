@@ -9,7 +9,7 @@ from __future__ import annotations
 import shutil
 import warnings
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator, Optional
@@ -46,6 +46,9 @@ def _warn_no_lxml_once() -> None:
         )
 
 
+_KNOWN_GAME_ATTRS = frozenset({"name", "enabled"})
+
+
 @dataclass
 class GameEntry:
     name: str
@@ -58,6 +61,11 @@ class GameEntry:
     rating: str = ""
     players: str = ""
     enabled: str = "Yes"
+    # Round-trip bag for attributes SpinDoctor doesn't model natively
+    # (e.g. HyperSpin's ``exe="true"`` on the Search entry). Anything not in
+    # _KNOWN_GAME_ATTRS is captured here on load and re-applied on save so
+    # third-party / HyperHQ extensions survive a rewrite.
+    extra_attrs: dict = field(default_factory=dict)
 
     def is_metadata_complete(self) -> bool:
         return all([self.description, self.manufacturer, self.year, self.genre])
@@ -128,6 +136,10 @@ class HyperspinDatabase:
                 name = (game_el.get("name") or "").strip()
                 if not name:
                     continue
+                extras = {
+                    k: v for k, v in game_el.attrib.items()
+                    if k not in _KNOWN_GAME_ATTRS
+                }
                 self._games[name] = GameEntry(
                     name=name,
                     description=_text(game_el, "description"),
@@ -139,6 +151,7 @@ class HyperspinDatabase:
                     rating=_text(game_el, "rating"),
                     players=_text(game_el, "players"),
                     enabled=_read_enabled(game_el, self._enabled_as_attribute),
+                    extra_attrs=extras,
                 )
                 self._game_elements[name] = game_el
         except ET.ParseError as e:
@@ -253,52 +266,66 @@ class HyperspinDatabase:
                 last.text = datetime.now().strftime("%Y-%m-%d")
 
     def _write_tree(self, target: Path) -> None:
+        # HyperSpin's native Main Menu.xml has no XML declaration; emitting
+        # one is tolerated by some skins but ships strictly without it.
+        want_decl = not self._enabled_as_attribute
         if _HAS_LXML and isinstance(self._tree, LET._ElementTree):
             xml_bytes = LET.tostring(
                 self._tree,
                 pretty_print=True,
-                xml_declaration=True,
-                encoding="UTF-8",
+                xml_declaration=want_decl,
+                encoding="UTF-8" if want_decl else None,
             )
             target.write_bytes(xml_bytes)
         else:
             et_indent(self._tree)
             with open(target, "wb") as f:
-                f.write(b'<?xml version="1.0"?>\n')
+                if want_decl:
+                    f.write(b'<?xml version="1.0"?>\n')
                 self._tree.write(f, encoding="utf-8", xml_declaration=False)
 
     # Build a brand-new tree from scratch.  Used the first time a DB is created.
     def _write_fresh(self, target: Path) -> None:
+        attr_mode = self._enabled_as_attribute
         if _HAS_LXML:
             root = LET.Element("menu")
-            hdr = LET.SubElement(root, "header")
         else:
             _warn_no_lxml_once()
             root = ET.Element("menu")
-            hdr = ET.SubElement(root, "header")
 
-        _set_text(hdr, "listname", self.system_name)
-        _set_text(hdr, "lastlistupdate", datetime.now().strftime("%Y-%m-%d"))
-        _set_text(hdr, "listversion", "2.0")
-        _set_text(hdr, "exporterversion", "SpinDoctor")
+        # Main Menu native format has no <header> block — only per-system DBs do.
+        if not attr_mode:
+            hdr = LET.SubElement(root, "header") if _HAS_LXML else ET.SubElement(root, "header")
+            _set_text(hdr, "listname", self.system_name)
+            _set_text(hdr, "lastlistupdate", datetime.now().strftime("%Y-%m-%d"))
+            _set_text(hdr, "listversion", "2.0")
+            _set_text(hdr, "exporterversion", "SpinDoctor")
 
-        for game in sorted(self._games.values(), key=lambda g: g.name.lower()):
-            _new_game_element(game, root=root, enabled_as_attribute=self._enabled_as_attribute)
+        # Main Menu preserves the user's order (HyperSpin honours XML order
+        # for the wheel); per-system DBs sort alphabetically for stability.
+        if attr_mode:
+            games_iter = self._games.values()
+        else:
+            games_iter = sorted(self._games.values(), key=lambda g: g.name.lower())
+        for game in games_iter:
+            _new_game_element(game, root=root, enabled_as_attribute=attr_mode)
 
+        want_decl = not attr_mode
         if _HAS_LXML:
             tree = LET.ElementTree(root)
             xml_bytes = LET.tostring(
                 tree,
                 pretty_print=True,
-                xml_declaration=True,
-                encoding="UTF-8",
+                xml_declaration=want_decl,
+                encoding="UTF-8" if want_decl else None,
             )
             target.write_bytes(xml_bytes)
         else:
             tree = ET.ElementTree(root)
             et_indent(tree)
             with open(target, "wb") as f:
-                f.write(b'<?xml version="1.0"?>\n')
+                if want_decl:
+                    f.write(b'<?xml version="1.0"?>\n')
                 tree.write(f, encoding="utf-8", xml_declaration=False)
 
 
@@ -347,13 +374,32 @@ def _set_text(parent, tag: str, text: str):
 def _update_game_element(el, game: "GameEntry", enabled_as_attribute: bool = False) -> None:
     """Update text on existing field children; add any missing fields.
 
-    When ``enabled_as_attribute`` is True (Main Menu.xml), the enabled flag is
-    stored as ``enabled="True"|"False"`` on the ``<game>`` tag itself rather
-    than as a ``<enabled>`` child element. Any legacy ``<enabled>`` child is
-    stripped on save so files migrate forward.
+    When ``enabled_as_attribute`` is True (Main Menu.xml), the entry uses
+    HyperSpin's native minimal format: ``<game name="..." />`` with no child
+    elements. ``enabled="False"`` is written ONLY when the system is hidden;
+    visible systems have no ``enabled`` attribute at all (matching the format
+    HyperSpin itself ships). Any legacy ``<enabled>`` child is stripped so
+    files migrate forward, and unknown attributes (e.g. ``exe="true"`` on the
+    Search entry) are preserved via ``game.extra_attrs``.
     """
+    if enabled_as_attribute:
+        if el.get("name") != game.name:
+            el.set("name", game.name)
+        if _enabled_to_bool_str(game.enabled or "Yes") == "False":
+            el.set("enabled", "False")
+        elif "enabled" in el.attrib:
+            del el.attrib["enabled"]
+        stale = el.find("enabled")
+        if stale is not None:
+            el.remove(stale)
+        for key, value in (game.extra_attrs or {}).items():
+            if key in _KNOWN_GAME_ATTRS:
+                continue
+            el.set(key, value)
+        return
+
     el.set("name", game.name)
-    if not enabled_as_attribute and "enabled" in el.attrib:
+    if "enabled" in el.attrib:
         # Per-system databases: HyperSpin reads the ``<enabled>`` child;
         # a stray attribute is meaningless and confuses validators.
         del el.attrib["enabled"]
@@ -364,12 +410,6 @@ def _update_game_element(el, game: "GameEntry", enabled_as_attribute: bool = Fal
             value = game.name
         if field_name == "enabled" and not value:
             value = "Yes"
-        if field_name == "enabled" and enabled_as_attribute:
-            el.set("enabled", _enabled_to_bool_str(value))
-            stale = el.find("enabled")
-            if stale is not None:
-                el.remove(stale)
-            continue
         child = el.find(field_name)
         if child is None:
             # Skip optional fields that have no value rather than emitting
@@ -380,6 +420,10 @@ def _update_game_element(el, game: "GameEntry", enabled_as_attribute: bool = Fal
             _set_text(el, field_name, value)
         else:
             child.text = value
+    for key, value in (game.extra_attrs or {}).items():
+        if key in _KNOWN_GAME_ATTRS:
+            continue
+        el.set(key, value)
 
 
 # ─── secondary sort databases ─────────────────────────────────────────────────
@@ -487,7 +531,17 @@ def _safe_bucket_filename(name: str) -> str:
 
 
 def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool = False):
-    """Build a fresh <game> element with all canonical fields."""
+    """Build a fresh <game> element.
+
+    For Main Menu (``enabled_as_attribute=True``), produces HyperSpin's
+    native minimal format: ``<game name="..."/>`` with ``enabled="False"``
+    only when hidden, and no child elements. Unknown attributes are carried
+    over from ``game.extra_attrs`` so HyperSpin-specific attrs like
+    ``exe="true"`` on the Search entry survive a rewrite.
+
+    For per-system databases (``enabled_as_attribute=False``), produces the
+    full HyperHQ schema with ``<description>``, ``<manufacturer>``, etc.
+    """
     if _HAS_LXML and (root is None or hasattr(root, "nsmap")):
         if root is not None:
             el = LET.SubElement(root, "game")
@@ -501,8 +555,14 @@ def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool =
 
     el.set("name", game.name)
     if enabled_as_attribute:
-        # Main Menu.xml: HyperHQ-style attribute on <game> instead of <enabled> child.
-        el.set("enabled", _enabled_to_bool_str(game.enabled or "Yes"))
+        if _enabled_to_bool_str(game.enabled or "Yes") == "False":
+            el.set("enabled", "False")
+        for key, value in (game.extra_attrs or {}).items():
+            if key in _KNOWN_GAME_ATTRS:
+                continue
+            el.set(key, value)
+        return el
+
     _set_text(el, "description", game.description or game.name)
     _set_text(el, "cloneof", game.cloneof)
     _set_text(el, "crc", game.crc)
@@ -514,8 +574,11 @@ def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool =
     # element as "1 player" in some skins, which is misleading.
     if game.players:
         _set_text(el, "players", game.players)
-    if not enabled_as_attribute:
-        _set_text(el, "enabled", game.enabled or "Yes")
+    _set_text(el, "enabled", game.enabled or "Yes")
+    for key, value in (game.extra_attrs or {}).items():
+        if key in _KNOWN_GAME_ATTRS:
+            continue
+        el.set(key, value)
     return el
 
 
