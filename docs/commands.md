@@ -181,9 +181,9 @@ spindoctor report --all --format csv --output D:\weekly.csv
 
 Three commands for editing game metadata and identity without ever opening HyperHQ. All three default to dry-run; pass `--apply` to commit, and every apply writes a JSON manifest under `~/.spindoctor/` so the change can be reversed with `--undo`.
 
-### `batch-edit` — set/clear/append metadata across many games
+### `batch-edit`
 
-Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action`, `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
+Set, clear, or append metadata across many games. Filter games out of one system's database, then mutate one or more fields in lockstep. Filters: `name=*Mario*`, `genre=Action`, `year=1980-1989`, `manufacturer=Capcom`, `missing=rating`. Mutations: `--set field=value`, `--clear field`, `--append field=value`, `--prepend field=value`.
 
 ```bat
 :: Tag every Capcom game from the 80s as Action
@@ -202,9 +202,9 @@ spindoctor batch-edit --list-manifests
 
 `--report path.csv` dumps a `(game,field,before,after)` preview before you commit. The DB is saved with a `.bak` next to it on each apply.
 
-### `rename` — atomic ROM + DB + media rename
+### `rename`
 
-Change a game's identity in one shot: ROM file, `<game>` entry, and every media slot (wheel, snap, video, theme, ...) all follow. RocketLauncher PCLauncher INIs (when present) are renamed too.
+Atomic ROM + DB + media rename. Change a game's identity in one shot: ROM file, `<game>` entry, and every media slot (wheel, snap, video, theme, ...) all follow. RocketLauncher PCLauncher INIs (when present) are renamed too.
 
 ```bat
 spindoctor rename --system MAME --game "1942" --to "1942 (USA)"
@@ -214,9 +214,9 @@ spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 The plan refuses to overwrite anything already at the target name. Each apply writes a manifest with each move recorded so undo can reverse it back to the source paths.
 
-### `clone` — duplicate a base ROM as a hack/translation variant
+### `clone`
 
-Same pipeline as `rename`, but the ROM and every media file are copied (not moved) and a new `<game>` entry is appended alongside the original. Useful for hacks or fan-translations that share assets with the base game.
+Duplicate a base ROM as a hack / translation variant. Same pipeline as `rename`, but the ROM and every media file are copied (not moved) and a new `<game>` entry is appended alongside the original. Useful for hacks or fan-translations that share assets with the base game.
 
 ```bat
 spindoctor clone --system NES --game "Zelda" --to "Zelda (Speed Hack)"
@@ -431,7 +431,7 @@ spindoctor find-misplaced --system snes --apply  :: move each to its suggested s
 spindoctor find-misplaced --undo                 :: reverse the most recent --apply
 ```
 
-### `curate` — region & version curation
+### `curate`
 
 > **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)…** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore…** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [GUI walkthrough](gui.md).
 
@@ -521,9 +521,9 @@ PNG mode is gated on `pip install -e .[preview]` (Pillow). When Pillow isn't ins
 
 Two synthetic HyperSpin systems — **Favorites** and **Recently Played** — and a third (**Most Played**) generated from playtime stats. Each pulls entries from any number of source systems into a single wheel, routes through RocketLauncher so the original emulator config is reused, and is idempotent — safe to run on every boot.
 
-### `fav` — cross-system Favorites
+### `fav`
 
-State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**.
+Cross-system Favorites. State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
@@ -540,9 +540,9 @@ spindoctor fav rebuild --media-mode copy --apply   :: force file copies (FAT32 t
 
 When two source systems both contain a game with the same ROM name (e.g. `Tetris` on SNES and Game Boy), the wheel labels them `Tetris (Super Nintendo)` and `Tetris (Game Boy)` automatically.
 
-### `recent` — Recently Played
+### `recent`
 
-Reads RocketLauncher's `Statistics.ini` files (no extra hooks needed), keeps the most-recent N games across every system, and regenerates the wheel.
+Recently Played wheel. Reads RocketLauncher's `Statistics.ini` files (no extra hooks needed), keeps the most-recent N games across every system, and regenerates the wheel.
 
 ```bat
 spindoctor recent rebuild                                :: dry-run preview
