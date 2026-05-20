@@ -105,7 +105,12 @@ See [Installation](installation.md) for à-la-carte extras.
 spindoctor-gui
 ```
 
-On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. Click **Run first-run wizard…** on the Setup tab if you'd like a guided 3-step flow: Welcome → pick `roms_dir` + `hyperspin_dir` (the two required paths) → run `doctor` and read the per-check ✓/⚠/✗ summary. The wizard is opt-in (no auto-open modal); reach the same dialog any time from **Help → First-run setup…**. Whether or not you use the wizard, the Setup tab itself shows every path field with a Browse button and an **Open** button that jumps to the configured path in Explorer / Finder so you can verify you picked the right folder. Drag a folder from Explorer / Finder onto any path field to fill it in (Windows binary install; pip users `pip install spindoctor[gui]` or `[all]` for drag-and-drop). Press **Save configuration** and you're done.
+On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. From there:
+
+- **Run first-run wizard…** (optional, opt-in) — guided 3-step flow: Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the per-check ✓/⚠/✗ summary. Also reachable any time from **Help → First-run setup…**.
+- **Per-field Browse button** — pick the folder graphically; the **Open** button next to each field jumps to that path in Explorer / Finder so you can verify you picked the right one.
+- **Drag-and-drop** — drag a folder from Explorer / Finder straight onto any path field (Windows binary install; pip users need `pip install spindoctor[gui]` or `[all]`).
+- **Save configuration** — writes everything to `config.json` and you're done.
 
 **Power users — the CLI.** Same effect, every key prompted in order at the terminal. Both routes write the same `%USERPROFILE%\.spindoctor\config.json`:
 
@@ -135,6 +140,8 @@ spindoctor config set default_metadata_source thegamesdb
 ```
 
 In the GUI, the same fields live at the bottom of the Setup tab under **Scraper credentials**. Password / API-key entries are masked by default — click **Show** next to a field to verify what you pasted, and **Hide** to re-mask. Once both fields are populated, click **Test credentials**: SpinDoctor makes a single authenticated call to ScreenScraper and TheGamesDB and prints a ✓ / ✗ summary directly under the rows, so you catch a bad key before the first `fetch-meta` run instead of after it.
+
+If verify fails with `HTTP 403`, the failure message includes a trimmed copy of the upstream response body so the real reason is visible without leaving the dialog. Every scraper request is also recorded (with secrets redacted) in `~/.spindoctor/scraper.log` — useful when sharing context with a maintainer. See [Troubleshooting → 403 from ScreenScraper or TheGamesDB](troubleshooting.md#403-from-screenscraper-or-thegamesdb) for the full diagnostic path, including the rare case where overriding the per-app `screenscraper_devid` / `screenscraper_devpassword` keys is needed.
 
 ## 11. Bootstrap your wheel
 

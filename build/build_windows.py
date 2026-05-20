@@ -21,6 +21,7 @@ combination that produces a bootloader Windows 7 SP1 still loads.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -29,6 +30,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist"
 BUILD = ROOT / "build" / "_pyinstaller"
+ICON = ROOT / "spindoctor" / "assets" / "icon.ico"
+ASSETS_DIR = ROOT / "spindoctor" / "assets"
 
 # (entry-point module, console-script name, windowed?)
 # `windowed=True` builds with `--windowed` (no console window on launch) —
@@ -112,6 +115,17 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
         "--workpath", str(BUILD / "work"),
         "--specpath", str(BUILD / "specs"),
     ]
+    if ICON.exists():
+        # Embeds the icon into the PE resource table so Explorer / taskbar /
+        # Alt-Tab pick it up. Without this every Windows surface fell back
+        # to the default Tk feather even though the asset shipped in the
+        # repo.
+        cmd += ["--icon", str(ICON)]
+    if ASSETS_DIR.exists():
+        # `--onefile` extracts to a temp dir at runtime, so `_apply_icon()`
+        # (gui.py) needs the assets bundled or its `iconbitmap()` call
+        # silently fails and the window header keeps the feather.
+        cmd += ["--add-data", f"{ASSETS_DIR}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS:
         cmd += ["--hidden-import", hi]
     cmd.append(str(shim))

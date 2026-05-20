@@ -57,6 +57,37 @@ def test_screenscraper_rejects_401():
     assert "401" in msg or "rejected" in msg.lower()
 
 
+def test_screenscraper_403_surfaces_response_body():
+    """A 403 with a useful upstream message must reach the UI dialog."""
+    body = '{"erreur":"Erreur de developpeur : devid/devpassword incorrects"}'
+    with patch.object(
+        scraper, "request_get",
+        return_value=_FakeResponse(403, payload=None, text=body),
+    ):
+        ok, msg = scraper.verify_screenscraper("u", "p")
+    assert ok is False
+    assert "403" in msg
+    # Body snippet must be appended so the cabinet owner can see the real
+    # ScreenScraper error without trawling the log file.
+    assert "devid" in msg.lower() or "developpeur" in msg.lower()
+
+
+def test_screenscraper_verify_uses_custom_devid():
+    """A user-overridden devid must be sent in the request params."""
+    captured: dict = {}
+
+    def fake_get(url, *, params=None, **_kw):
+        captured["params"] = dict(params or {})
+        return _FakeResponse(403, payload=None, text="")
+
+    with patch.object(scraper, "request_get", side_effect=fake_get):
+        scraper.verify_screenscraper(
+            "u", "p", devid="my-real-devid", devpassword="my-real-devpw",
+        )
+    assert captured["params"]["devid"] == "my-real-devid"
+    assert captured["params"]["devpassword"] == "my-real-devpw"
+
+
 def test_screenscraper_handles_erreur_payload():
     payload = {"erreur": "Erreur de login : mauvais mot de passe"}
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
@@ -128,6 +159,18 @@ def test_thegamesdb_rate_limited():
     assert "429" in msg or "rate" in msg.lower()
 
 
+def test_thegamesdb_403_surfaces_response_body():
+    body = '{"code":403,"status":"Invalid API key — please reissue"}'
+    with patch.object(
+        scraper, "request_get",
+        return_value=_FakeResponse(403, payload=None, text=body),
+    ):
+        ok, msg = scraper.verify_thegamesdb("bad-key")
+    assert ok is False
+    assert "invalid" in msg.lower()
+    assert "reissue" in msg.lower()
+
+
 def test_thegamesdb_handles_network_error():
     def boom(*_a, **_k):
         raise requests.Timeout("slow")
@@ -146,6 +189,50 @@ def test_thegamesdb_handles_missing_remaining_field():
         ok, msg = scraper.verify_thegamesdb("k")
     assert ok is True
     assert msg == "OK"
+
+
+# ─── logger setup ─────────────────────────────────────────────────────────────
+
+def test_scraper_log_handler_is_idempotent():
+    """Repeated verify clicks must not stack RotatingFileHandlers.
+
+    The first call attaches one; every subsequent call should be a no-op,
+    otherwise the same log line ends up duplicated 10x after a few clicks
+    and the file rotates faster than its budget intends.
+    """
+    # Reset state so this test is order-independent.
+    scraper._LOG_HANDLER_INSTALLED = False
+    for h in list(scraper.scraper_logger.handlers):
+        scraper.scraper_logger.removeHandler(h)
+
+    scraper._install_scraper_log_handler()
+    after_first = len(scraper.scraper_logger.handlers)
+    scraper._install_scraper_log_handler()
+    scraper._install_scraper_log_handler()
+    after_third = len(scraper.scraper_logger.handlers)
+
+    # One handler max, regardless of how many times we re-enter.
+    assert after_first <= 1
+    assert after_third == after_first
+
+
+def test_redact_params_masks_secrets():
+    redacted = scraper._redact_params({
+        "devid": "SpinDoctor",
+        "devpassword": "secret-app-pw",
+        "ssid": "phillipr",
+        "sspassword": "secret-user-pw",
+        "apikey": "abc123",
+        "softname": "SpinDoctor",
+    })
+    # Non-secret fields pass through unchanged.
+    assert redacted["devid"] == "SpinDoctor"
+    assert redacted["ssid"] == "phillipr"
+    assert redacted["softname"] == "SpinDoctor"
+    # Every secret-bearing field is masked.
+    assert redacted["devpassword"] == "***"
+    assert redacted["sspassword"] == "***"
+    assert redacted["apikey"] == "***"
 
 
 if __name__ == "__main__":  # pragma: no cover

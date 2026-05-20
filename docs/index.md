@@ -28,7 +28,8 @@ Then pick how to launch:
 | Stand up a cabinet from a blank Windows PC | [First-time setup](setup.md) |
 | Find a control on the GUI launcher | [GUI walkthrough](gui.md) |
 | Upgrade from SpinDoctor 1.x | [Migrating from 1.x](migrating-from-1.x.md) |
-| Look up a specific command | [Command reference](commands.md) |
+| Get the punchy copy-paste cheatsheet for the most-used commands | [CLI cheatsheet](cli-cheatsheet.md) |
+| Look up a specific command (every flag, every option) | [Command reference](commands.md) |
 | See or change configuration | [Configuration](configuration.md) |
 | Do something common (backup, migrate, daily refresh, recovery) | [Workflows](workflows.md) |
 | Wire Favorites / Recently Played / Most Played into HyperSpin Tools menu or boot | [Standalone tools](standalone-tools.md) |
