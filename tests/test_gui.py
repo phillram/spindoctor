@@ -1608,3 +1608,73 @@ def test_persist_meta_pref_swallows_save_errors(monkeypatch):
         app._persist_meta_pref("gui_meta_auto_best", False)
     finally:
         app.root.destroy()
+
+
+# ─── Post-audit fixes ────────────────────────────────────────────────────────
+
+
+def test_flash_status_revert_survives_destroyed_root(monkeypatch):
+    """The scheduled revert callback must not crash with a TclError if
+    the user closes the window during the 6-second flash window."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    # Capture the revert callback before tearing down.
+    captured: list = []
+    original_after = app.root.after
+    monkeypatch.setattr(
+        app.root, "after",
+        lambda ms, fn: (captured.append(fn) or original_after(ms, fn)),
+    )
+    app._flash_status("Saved.")
+    # Destroy the root mid-window.
+    app.root.destroy()
+    # Now fire the captured callback. It must not raise.
+    assert captured, "_flash_status should schedule a revert"
+    captured[-1]()  # would raise TclError without the guard
+
+
+def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path):
+    """When no config.json exists yet, the Setup tab should be selected
+    automatically so a brand-new cabinet owner has somewhere to look."""
+    from spindoctor import config as cfg_mod
+    from spindoctor import gui as gui_mod
+
+    # Point CONFIG_FILE at a path that doesn't exist.
+    fake_config = tmp_path / "config.json"
+    assert not fake_config.exists()
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", fake_config)
+    monkeypatch.setattr(gui_mod, "CONFIG_FILE", fake_config)
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Move focus elsewhere first so the assertion below is meaningful.
+        wheels_idx = app._tab_base_names.index("Wheels")
+        app._nb.select(wheels_idx)
+        # Now run startup health checks — should snap back to Setup.
+        # Stub out the threaded doctor pass to keep the test deterministic.
+        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
+        app._startup_health_checks()
+        assert app._nb.index("current") == app._tab_base_names.index("Setup")
+    finally:
+        app.root.destroy()
+
+
+def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp_path):
+    """An existing user shouldn't have their last-active tab overridden."""
+    from spindoctor import config as cfg_mod
+    from spindoctor import gui as gui_mod
+
+    existing_config = tmp_path / "config.json"
+    existing_config.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(cfg_mod, "CONFIG_FILE", existing_config)
+    monkeypatch.setattr(gui_mod, "CONFIG_FILE", existing_config)
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
+        wheels_idx = app._tab_base_names.index("Wheels")
+        app._nb.select(wheels_idx)
+        app._startup_health_checks()
+        # Tab choice preserved.
+        assert app._nb.index("current") == wheels_idx
+    finally:
+        app.root.destroy()
