@@ -124,6 +124,13 @@ def test_thegamesdb_blank_key():
     assert "required" in msg.lower()
 
 
+# ``verify_thegamesdb`` short-circuits keys shorter than 8 chars as
+# obviously-malformed (saves a round-trip and gives the user a clearer
+# message than TheGamesDB's generic error). Tests that need to drive the
+# HTTP / payload-error branches use 8+ char keys.
+_GOOD_KEY = "realapikey"
+
+
 def test_thegamesdb_happy_path():
     payload = {
         "code": 200,
@@ -132,14 +139,14 @@ def test_thegamesdb_happy_path():
         "remaining_monthly_allowance": 957,
     }
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
-        ok, msg = scraper.verify_thegamesdb("good-key")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is True
     assert "957" in msg
 
 
 def test_thegamesdb_rejects_invalid_key_via_http():
     with patch.object(scraper, "request_get", return_value=_FakeResponse(403, {})):
-        ok, msg = scraper.verify_thegamesdb("bad-key")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is False
     assert "invalid" in msg.lower()
 
@@ -147,14 +154,14 @@ def test_thegamesdb_rejects_invalid_key_via_http():
 def test_thegamesdb_rejects_invalid_key_via_payload_code():
     payload = {"code": 403, "status": "Invalid API Key"}
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
-        ok, msg = scraper.verify_thegamesdb("bad-key")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is False
     assert "invalid" in msg.lower()
 
 
 def test_thegamesdb_rate_limited():
     with patch.object(scraper, "request_get", return_value=_FakeResponse(429, {})):
-        ok, msg = scraper.verify_thegamesdb("k")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is False
     assert "429" in msg or "rate" in msg.lower()
 
@@ -165,7 +172,7 @@ def test_thegamesdb_403_surfaces_response_body():
         scraper, "request_get",
         return_value=_FakeResponse(403, payload=None, text=body),
     ):
-        ok, msg = scraper.verify_thegamesdb("bad-key")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is False
     assert "invalid" in msg.lower()
     assert "reissue" in msg.lower()
@@ -176,19 +183,82 @@ def test_thegamesdb_handles_network_error():
         raise requests.Timeout("slow")
 
     with patch.object(scraper, "request_get", side_effect=boom):
-        ok, msg = scraper.verify_thegamesdb("k")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is False
     assert "network" in msg.lower()
 
 
-def test_thegamesdb_handles_missing_remaining_field():
-    # Some early TheGamesDB responses omit the `remaining_*` counter —
-    # success path should still report OK rather than fail on KeyError.
+def test_thegamesdb_rejects_short_key_without_http():
+    """A key that's obviously too short never reaches the API."""
+    def boom(*_a, **_k):  # pragma: no cover - should not be hit
+        raise AssertionError("request_get should not be called for short keys")
+
+    with patch.object(scraper, "request_get", side_effect=boom):
+        ok, msg = scraper.verify_thegamesdb("bad-key")  # 7 chars
+    assert ok is False
+    assert "malformed" in msg.lower()
+
+
+def test_thegamesdb_rejects_whitespace_key_without_http():
+    def boom(*_a, **_k):  # pragma: no cover - should not be hit
+        raise AssertionError("request_get should not be called for whitespace keys")
+
+    with patch.object(scraper, "request_get", side_effect=boom):
+        ok, msg = scraper.verify_thegamesdb("has spaces here")
+    assert ok is False
+    assert "malformed" in msg.lower()
+
+
+def test_thegamesdb_rejects_suspicious_200_without_allowance():
+    """200 + no ``*allowance*`` field = anonymous / unauthenticated.
+
+    TheGamesDB returns OK + public data for some invalid keys; the
+    verifier conservatively treats those as failures so the Setup
+    tab's Test credentials button can't lie about a missing key.
+    """
     payload = {"code": 200, "data": {"games": []}}
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
-        ok, msg = scraper.verify_thegamesdb("k")
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
+    assert ok is False
+    assert "suspicious" in msg.lower() or "allowance" in msg.lower()
+
+
+def test_thegamesdb_accepts_alternate_allowance_field():
+    """Any field containing ``allowance`` proves the key was authenticated."""
+    payload = {
+        "code": 200,
+        "data": {"games": []},
+        "allowance_refresh_timer": 123,
+    }
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
     assert ok is True
     assert msg == "OK"
+
+
+def test_screenscraper_failure_message_includes_devid():
+    """A 403 must surface the devid so the user can rule out a stale default."""
+    with patch.object(
+        scraper, "request_get",
+        return_value=_FakeResponse(403, payload=None, text="Erreur de login"),
+    ):
+        ok, msg = scraper.verify_screenscraper(
+            "u", "p", devid="custom-devid", devpassword="custom-pw",
+        )
+    assert ok is False
+    assert "devid=custom-devid" in msg
+    # devpassword must never appear in any output surface.
+    assert "custom-pw" not in msg
+
+
+def test_screenscraper_success_message_includes_devid():
+    payload = {"response": {"ssuser": {"id": "phillipr", "niveau": "1"}}}
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
+        ok, msg = scraper.verify_screenscraper(
+            "phillipr", "pw", devid="SpinDoctor", devpassword="SpinDoctor",
+        )
+    assert ok is True
+    assert "devid=SpinDoctor" in msg
 
 
 # ─── logger setup ─────────────────────────────────────────────────────────────

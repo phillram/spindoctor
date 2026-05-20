@@ -42,6 +42,27 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+def _make_progress(*columns, **kwargs):
+    """Build a Rich ``Progress`` that disables Live in non-tty mode.
+
+    Rich's Live display emits ANSI cursor-control sequences and
+    carriage-return-terminated progress updates. When stdout is a pipe
+    (e.g. spawned from the SpinDoctor GUI's ``_run_cli``), those codes
+    can leave the reader's ``for line in proc.stdout`` iterator waiting
+    on a newline that never arrives, which leaves the GUI stuck in the
+    "running" state long after the subprocess has exited. Disabling
+    Progress in pipe mode skips the Live render — Rich still emits
+    one-shot ``console.print`` lines via the callbacks below, which
+    flush cleanly through pipes.
+
+    TTY users see no change. ``--apply`` callers piping output to a
+    file or the GUI Output panel get clean, newline-terminated lines.
+    """
+    kwargs.setdefault("disable", not sys.stdout.isatty())
+    kwargs.setdefault("console", console)
+    return Progress(*columns, **kwargs)
+
+
 # ─── shared helpers ───────────────────────────────────────────────────────────
 
 def _cfg() -> Config:
@@ -427,7 +448,7 @@ def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matche
     systems = _resolve_systems(config, system, all_systems)
 
     all_results: list[SystemAuditResult] = []
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                   BarColumn(), TimeElapsedColumn(), console=console) as prog:
         task = prog.add_task("Auditing...", total=len(systems))
         for sys_name in systems:
@@ -674,7 +695,7 @@ def _print_detailed_section(
         f"[cyan]{len(needs_attention)}[/cyan] game(s) needing attention\n"
     )
 
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                   BarColumn(), console=console) as prog:
         task = prog.add_task("Scanning files...", total=len(needs_attention))
         reports = []
@@ -761,7 +782,7 @@ def inspect(system, game, all_games, fmt, output, no_path):
     )
 
     reports = []
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                   BarColumn(), TextColumn("{task.completed}/{task.total}"),
                   console=console) as prog:
         task = prog.add_task("Reading files...", total=len(game_names))
@@ -3089,7 +3110,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
         candidates_map: dict[str, list] = {}
         fetch_errors: list[str] = []
 
-        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+        with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
             task = prog.add_task("Searching…", total=len(targets))
@@ -3279,7 +3300,7 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
         # downloads sequentially so the picker can prompt interactively.
         pick_jobs: list[tuple[str, str, list]] = []
         total_fail = 0
-        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+        with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
             task = prog.add_task("Resolving metadata…", total=len(games))
@@ -3333,7 +3354,7 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
                 total_ok += 1
         else:
             if all_jobs:
-                with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                               BarColumn(), TextColumn("{task.completed}/{task.total}"),
                               console=console) as prog:
                     task = prog.add_task("Downloading…", total=len(all_jobs))
@@ -4458,7 +4479,7 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
     systems = _resolve_systems(config, system, all_systems)
 
     all_results: list[SystemAuditResult] = []
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
+    with _make_progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
         task = prog.add_task("Scanning…", total=len(systems))
         for sys_name in systems:
             prog.update(task, description=f"Scanning [cyan]{sys_name}[/cyan]…")
@@ -5577,7 +5598,7 @@ def backup_create(target, include, label, apply_changes):
         )
         return
 
-    with Progress(
+    with _make_progress(
         SpinnerColumn(),
         TextColumn("[bold]{task.description}"),
         BarColumn(),
@@ -5782,7 +5803,7 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
         )
         return
 
-    with Progress(
+    with _make_progress(
         SpinnerColumn(),
         TextColumn("[bold]{task.description}"),
         BarColumn(),
@@ -6153,7 +6174,7 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
         return
 
     # ── execute ───────────────────────────────────────────────────────────────
-    with Progress(
+    with _make_progress(
         SpinnerColumn(),
         TextColumn("[bold]{task.description}"),
         BarColumn(),
