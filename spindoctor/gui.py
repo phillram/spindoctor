@@ -381,29 +381,40 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
 # Scraper credential fields shown below the path fields in the Setup tab.
 # Tuples: (config_key, label, is_password)
 _CRED_FIELDS: tuple[tuple[str, str, bool], ...] = (
-    ("screenscraper_user", "ScreenScraper username", False),
-    ("screenscraper_pass", "ScreenScraper password", True),
-    ("thegamesdb_key",     "TheGamesDB API key",     True),
+    ("screenscraper_user",        "ScreenScraper username",     False),
+    ("screenscraper_pass",        "ScreenScraper password",     True),
+    ("screenscraper_devid",       "ScreenScraper devid",        False),
+    ("screenscraper_devpassword", "ScreenScraper devpassword",  True),
+    ("thegamesdb_key",            "TheGamesDB API key",         True),
 )
 
+# Values that should display as "not set" even though they're technically
+# stored. ``SpinDoctor`` is the historical placeholder for the dev
+# credentials — it never authenticated against the live API, so showing
+# it as "saved" misleads the user into thinking everything is wired up.
+_CRED_PLACEHOLDER_VALUES: frozenset = frozenset({"SpinDoctor"})
 
-def _format_secret_hint(value: str) -> str:
-    """Render a peek-only hint for a masked credential field.
 
-    Masked Entries hide their content by design, so a user reopening
-    the Setup tab can't tell whether the field is empty or stale-but-
-    populated. The hint sits next to the entry and shows just enough
-    of the saved value to recognise it without leaking the secret —
-    ``"…abcd"`` for normal-length values, ``"(short)"`` for values
-    too short to safely truncate, and ``"(empty)"`` for the blank
-    case. The user's TheGamesDB "OK with no key" surprise came from
-    this exact ambiguity.
+def _format_secret_hint(value: str, key: str = "") -> str:
+    """Render a status hint next to a saved credential field.
+
+    The previous design showed ``"…abcd"`` — the last 4 characters of
+    the stored secret — to help users tell a populated field from an
+    empty one. That reads as cryptic random text on reopen ("what does
+    `…WBfo` mean?"), so we now surface a plain-language status:
+    ``"(saved)"`` when populated, ``"(not set)"`` when blank. The
+    follow-up labels ``"(edited — not yet saved)"`` and
+    ``"(cleared — not saved)"`` come from the live-edit trace.
+
+    ``key`` is consulted only to treat the bundled developer-credential
+    placeholder ``"SpinDoctor"`` as "not set" for the dev fields, since
+    that literal value never authenticates upstream.
     """
     if not value:
-        return "(empty)"
-    if len(value) < 4:
-        return "(short)"
-    return "…" + value[-4:]
+        return "(not set)"
+    if key.startswith("screenscraper_dev") and value in _CRED_PLACEHOLDER_VALUES:
+        return "(not set — bundled placeholder)"
+    return "(saved)"
 
 
 # Components offered as checkboxes on the Backup tab. Mirrors
@@ -3963,8 +3974,14 @@ class _SpinDoctorGUI:
         ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.ttk.Label(
             frame,
-            text=("Used by the Metadata & Media tab to fetch artwork, "
-                  "videos, and metadata. Leave blank if you don't need them."),
+            text=(
+                "Used by the Metadata & Media tab to fetch artwork, videos, "
+                "and metadata. Leave blank if you don't need them.\n"
+                "ScreenScraper also requires a developer-account devid + "
+                "devpassword issued at "
+                "https://www.screenscraper.fr/membreinscription.php — the "
+                "bundled \"SpinDoctor\" placeholders will not authenticate."
+            ),
             wraplength=780, justify="left",
         ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="w", pady=(0, 6))
 
@@ -4000,6 +4017,23 @@ class _SpinDoctorGUI:
             ctrl_cell = self.ttk.Frame(frame)
             ctrl_cell.grid(row=row, column=2, sticky="w", pady=2)
 
+            # Status hint — tells the user at a glance whether the
+            # field has a saved value behind it. Sits leftmost in the
+            # control cell so the eye matches the field it describes
+            # before the user reaches the Show / Clear buttons.
+            # ``_format_secret_hint`` returns ``"(saved)"`` / ``"(not set)"``.
+            # Flips to ``"(edited — not yet saved)"`` on the first keystroke.
+            hint_var = self.tk.StringVar(value=_format_secret_hint(existing, key))
+            self._cred_hint_vars[key] = hint_var
+            hint_label = self.ttk.Label(
+                ctrl_cell, textvariable=hint_var, foreground=_FG_DIM,
+                width=22, anchor="w",
+            )
+            hint_label.pack(side="left")
+            # First-keystroke trace flips the hint to "edited". Tracked
+            # via a per-key one-shot so subsequent edits don't churn.
+            self._install_cred_hint_trace(key, var, hint_var, existing)
+
             if is_password:
                 # Eyeball toggle — Show button starts on "Show" (entry
                 # is masked); clicking flips both the entry's `show`
@@ -4009,26 +4043,19 @@ class _SpinDoctorGUI:
                     ctrl_cell, text="Show", width=6,
                     command=lambda k=key: self._toggle_password_visibility(k),
                 )
-                btn.pack(side="left")
+                btn.pack(side="left", padx=(6, 0))
                 # Stash the button on the entry so the toggle handler
                 # can flip its label without a second lookup table.
                 entry._spindoctor_eye_btn = btn  # type: ignore[attr-defined]
-
-            # Last-4-chars hint — the only way a user can tell that a
-            # masked field is actually populated with a saved value
-            # rather than blank. ``_format_secret_hint`` returns "…abcd"
-            # for typical-length secrets, "(short)" for sub-4-char
-            # values (avoid leaking the whole thing), or "(empty)".
-            # Flips to "(edited — not yet saved)" on first keystroke.
-            hint_var = self.tk.StringVar(value=_format_secret_hint(existing))
-            self._cred_hint_vars[key] = hint_var
-            hint_label = self.ttk.Label(
-                ctrl_cell, textvariable=hint_var, foreground=_FG_DIM,
-            )
-            hint_label.pack(side="left", padx=(6, 0))
-            # First-keystroke trace flips the hint to "edited". Tracked
-            # via a per-key one-shot so subsequent edits don't churn.
-            self._install_cred_hint_trace(key, var, hint_var, existing)
+            else:
+                # Non-masked rows (username, devid) reserve a button-
+                # width spacer so the [status] [Show] [Clear] columns
+                # line up across every credential row. Without this,
+                # the username row's Clear button sits where password
+                # rows' Show button sits, and the layout looks ragged.
+                spacer = self.ttk.Frame(ctrl_cell, width=48, height=1)
+                spacer.pack(side="left", padx=(6, 0))
+                spacer.pack_propagate(False)
 
             # Clear button — wipes the in-memory StringVar (does NOT
             # touch disk; the user still has to click Save
@@ -4243,7 +4270,7 @@ class _SpinDoctorGUI:
                 continue
             saved = getattr(cfg, key, "") or ""
             try:
-                hint_var.set(_format_secret_hint(saved))
+                hint_var.set(_format_secret_hint(saved, key))
             except Exception:  # noqa: BLE001
                 continue
             state = getattr(self, "_cred_hint_state", {}).get(key)
@@ -4272,6 +4299,10 @@ class _SpinDoctorGUI:
                    or self.tk.StringVar()).get().strip()
         ss_pass = (self._setup_vars.get("screenscraper_pass")
                    or self.tk.StringVar()).get().strip()
+        ss_devid = (self._setup_vars.get("screenscraper_devid")
+                    or self.tk.StringVar()).get().strip()
+        ss_devpassword = (self._setup_vars.get("screenscraper_devpassword")
+                          or self.tk.StringVar()).get().strip()
         tgdb_key = (self._setup_vars.get("thegamesdb_key")
                     or self.tk.StringVar()).get().strip()
 
@@ -4285,10 +4316,14 @@ class _SpinDoctorGUI:
             saved_cfg = None
         saved_user = (getattr(saved_cfg, "screenscraper_user", "") or "").strip()
         saved_pass = (getattr(saved_cfg, "screenscraper_pass", "") or "").strip()
+        saved_devid = (getattr(saved_cfg, "screenscraper_devid", "") or "").strip()
+        saved_devpassword = (getattr(saved_cfg, "screenscraper_devpassword", "") or "").strip()
         saved_key = (getattr(saved_cfg, "thegamesdb_key", "") or "").strip()
         diverges = (
             ss_user != saved_user
             or ss_pass != saved_pass
+            or ss_devid != saved_devid
+            or ss_devpassword != saved_devpassword
             or tgdb_key != saved_key
         )
 
@@ -4314,6 +4349,23 @@ class _SpinDoctorGUI:
             f"ScreenScraper password: {_source(ss_pass, saved_pass)}"
             f" (set: {'yes' if ss_pass else 'no'})\n"
         )
+        # ScreenScraper's API requires a registered developer-account
+        # devid/devpassword PAIR in addition to the user account. The
+        # bundled "SpinDoctor" placeholder doesn't authenticate — without
+        # real dev credentials, every probe returns HTTP 403 regardless
+        # of how correct the user creds are. Surface this state plainly.
+        devid_eff = ss_devid or saved_devid
+        devid_label = devid_eff or "(not set)"
+        if devid_eff in _CRED_PLACEHOLDER_VALUES:
+            devid_label = f"{devid_eff} (bundled placeholder — won't authenticate)"
+        self._append_output(
+            f"ScreenScraper devid: {_source(ss_devid, saved_devid)}"
+            f" — {devid_label}\n"
+        )
+        self._append_output(
+            f"ScreenScraper devpassword: {_source(ss_devpassword, saved_devpassword)}"
+            f" (set: {'yes' if ss_devpassword else 'no'})\n"
+        )
         self._append_output(
             f"TheGamesDB API key: {_source(tgdb_key, saved_key)}"
             f" (set: {'yes' if tgdb_key else 'no'})\n"
@@ -4333,6 +4385,10 @@ class _SpinDoctorGUI:
             args += ["--ss-user", ss_user]
         if ss_pass:
             args += ["--ss-pass", ss_pass]
+        if ss_devid:
+            args += ["--ss-devid", ss_devid]
+        if ss_devpassword:
+            args += ["--ss-devpassword", ss_devpassword]
         if tgdb_key:
             args += ["--tgdb-key", tgdb_key]
 

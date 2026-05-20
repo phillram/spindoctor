@@ -297,13 +297,19 @@ def config_init():
 @click.option("--ss-pass", default=None,
               help="ScreenScraper password override (defaults to "
                    "``screenscraper_pass`` in config.json).")
+@click.option("--ss-devid", default=None,
+              help="ScreenScraper developer-account id override "
+                   "(defaults to ``screenscraper_devid`` in config.json).")
+@click.option("--ss-devpassword", default=None,
+              help="ScreenScraper developer-account password override "
+                   "(defaults to ``screenscraper_devpassword`` in config.json).")
 @click.option("--tgdb-key", default=None,
               help="TheGamesDB API key override (defaults to "
                    "``thegamesdb_key`` in config.json).")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON for the GUI's Test credentials button to "
                    "consume.")
-def config_verify_credentials(ss_user, ss_pass, tgdb_key, as_json):
+def config_verify_credentials(ss_user, ss_pass, ss_devid, ss_devpassword, tgdb_key, as_json):
     """Probe ScreenScraper and TheGamesDB to check the configured credentials.
 
     Each provider is contacted once. Values from ``--ss-user`` /
@@ -328,11 +334,18 @@ def config_verify_credentials(ss_user, ss_pass, tgdb_key, as_json):
     cfg = _cfg()
     ss_user_eff = ss_user if ss_user is not None else (cfg.screenscraper_user or "")
     ss_pass_eff = ss_pass if ss_pass is not None else (cfg.screenscraper_pass or "")
+    ss_devid_eff = ss_devid if ss_devid is not None else (cfg.screenscraper_devid or "")
+    ss_devpw_eff = (ss_devpassword if ss_devpassword is not None
+                    else (cfg.screenscraper_devpassword or ""))
     tgdb_key_eff = tgdb_key if tgdb_key is not None else (cfg.thegamesdb_key or "")
 
     results: dict[str, dict] = {}
     if ss_user_eff or ss_pass_eff:
-        ok, msg = scraper_mod.verify_screenscraper(ss_user_eff, ss_pass_eff)
+        ok, msg = scraper_mod.verify_screenscraper(
+            ss_user_eff, ss_pass_eff,
+            devid=ss_devid_eff or None,
+            devpassword=ss_devpw_eff or None,
+        )
         results["screenscraper"] = {
             "ok": ok, "status": "ok" if ok else "fail", "message": msg,
         }
