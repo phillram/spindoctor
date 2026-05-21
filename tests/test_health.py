@@ -194,14 +194,15 @@ def test_check_match_cache_fix_prunes_stale_entries(tmp_path, isolated_match_cac
     assert any("pruned 1" in m for m in fixes)
 
 
-def test_check_match_cache_skips_unparseable_files(tmp_path, isolated_match_cache):
+def test_check_match_cache_reports_unparseable_files(tmp_path, isolated_match_cache):
     cfg = _mk_cabinet(tmp_path)
     bad = isolated_match_cache / "Broken.json"
     bad.write_text("{not json", encoding="utf-8")
     fixes: list[str] = []
-    # Must not raise — corrupt cache files are just skipped.
+    # Corrupt cache files must now surface as WARN so the user knows about them.
     result = health.check_match_cache(cfg, fix=True, fixes_applied=fixes)
-    assert result.status == health.Status.OK
+    assert result.status == health.Status.WARN
+    assert "Broken.json" in result.detail
 
 
 # ─── check_global_emulators ──────────────────────────────────────────────────

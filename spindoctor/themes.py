@@ -385,28 +385,27 @@ def apply_plan(
     return result
 
 
-def undo_plan(manifest_path: Path) -> int:
+def undo_plan(manifest_path: Path) -> dict:
     """Restore every backup recorded in *manifest_path*.
 
-    Returns the number of files restored. Missing backups (whoever
-    deleted the manifest folder) are logged into a TODO list someday;
-    today they're simply skipped, with the count reflecting what we
-    actually managed to put back.
+    Returns ``{"restored": int, "errors": list[str]}``.
+    Missing backups and files that cannot be restored are reported in ``errors``.
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    restored = 0
+    result: dict = {"restored": 0, "errors": []}
     for entry in data.get("swaps", []):
         backup = Path(entry["backup"])
         target = Path(entry["target"])
         if not backup.exists():
+            result["errors"].append(f"backup file missing, cannot restore: {target}")
             continue
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(backup, target)
-            restored += 1
-        except OSError:
-            continue
-    return restored
+            result["restored"] += 1
+        except OSError as exc:
+            result["errors"].append(f"could not restore {target}: {exc}")
+    return result
 
 
 def list_manifests(manifest_dir: Optional[Path] = None) -> list[Path]:
@@ -437,31 +436,32 @@ def find_latest_manifest(manifest_dir: Optional[Path] = None) -> Optional[Path]:
     return manifests[0] if manifests else None
 
 
-def undo_plan_system(manifest_path: Path, system: str) -> int:
+def undo_plan_system(manifest_path: Path, system: str) -> dict:
     """Restore only the files belonging to *system* from *manifest_path*.
 
     Like :func:`undo_plan` but scoped to a single ``target_scope`` so
     a multi-system swap can be partially reversed — e.g. roll back
     "Sega Naomi" without touching every other wheel the pack touched.
 
-    Returns the number of files restored.
+    Returns ``{"restored": int, "errors": list[str]}``.
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    restored = 0
+    result: dict = {"restored": 0, "errors": []}
     for entry in data.get("swaps", []):
         if entry.get("target_scope") != system:
             continue
         backup = Path(entry["backup"])
         target = Path(entry["target"])
         if not backup.exists():
+            result["errors"].append(f"backup file missing, cannot restore: {target}")
             continue
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(backup, target)
-            restored += 1
-        except OSError:
-            continue
-    return restored
+            result["restored"] += 1
+        except OSError as exc:
+            result["errors"].append(f"could not restore {target}: {exc}")
+    return result
 
 
 def list_systems_in_manifest(manifest_path: Path) -> list[str]:

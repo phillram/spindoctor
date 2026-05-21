@@ -355,8 +355,15 @@ def apply_backup(
         if completed:
             try:
                 _write_manifest(backup_root, plan, completed, config)
-            except OSError:
-                pass
+            except OSError as exc:
+                import sys
+                print(
+                    f"WARNING: backup interrupted and manifest could not be written "
+                    f"({exc}). The {len(completed)} completed component(s) are in "
+                    f"{backup_root} but `spindoctor backup list` will not show them "
+                    "and `backup restore` cannot replay them without a manifest.",
+                    file=sys.stderr,
+                )
         raise
 
     _write_manifest(backup_root, plan, completed, config)

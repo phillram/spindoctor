@@ -313,8 +313,14 @@ def apply_curation(
         # leaves files stranded in _retired with no manifest record.
         try:
             _write_partial_manifest()
-        except OSError:
-            pass
+        except OSError as exc:
+            import sys
+            print(
+                f"WARNING: curation interrupted and undo manifest could not be "
+                f"written ({exc}). Files already moved to _retired cannot be "
+                "reversed with `curate --undo`.",
+                file=sys.stderr,
+            )
         raise
 
     manifest_path = _write_partial_manifest()
