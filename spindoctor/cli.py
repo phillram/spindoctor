@@ -1742,9 +1742,16 @@ def fav_sync():
     store = load_store()
     n, sync_warns = sync_native(store, config)
     save_store(store)
-    console.print(f"[green]+[/green] synced {n} new favorite(s)")
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
+    if n > 0:
+        console.print(f"[green]+[/green] synced {n} new favorite(s) from HyperSpin per-system lists.")
+    else:
+        console.print(
+            "[dim]sync: 0 new favorites found in HyperSpin per-system lists — "
+            "add favorites with the F key in HyperSpin or use[/dim] "
+            "[cyan]spindoctor fav add[/cyan]"
+        )
 
 
 @fav_group.command("rebuild")
@@ -1845,9 +1852,31 @@ def recent_list(limit):
     """Print the top-N games by last-played timestamp."""
     from .recent import collect_play_records, top_recent
     config = _cfg()
-    records = top_recent(collect_play_records(config), limit=limit)
+    read_warnings: list[str] = []
+    records = top_recent(collect_play_records(config, warnings=read_warnings), limit=limit)
+    for w in read_warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
     if not records:
-        console.print("[dim]No play records found.[/dim]")
+        if not config.rocketlauncher_dir:
+            console.print(
+                "[dim]No play records found.[/dim] "
+                "[yellow]rocketlauncher_dir is not configured[/yellow] — "
+                "set it in the Setup tab or run: "
+                "[cyan]spindoctor config set rocketlauncher_dir <path>[/cyan]"
+            )
+        elif not Path(config.rocketlauncher_dir).exists():
+            console.print(
+                f"[dim]No play records found.[/dim] "
+                f"[yellow]rocketlauncher_dir [cyan]{config.rocketlauncher_dir}[/cyan] "
+                "does not exist on disk.[/yellow]"
+            )
+        else:
+            rl_stats = Path(config.rocketlauncher_dir) / "Settings"
+            console.print(
+                f"[dim]No play records found.[/dim] "
+                f"RocketLauncher statistics are read from [cyan]{rl_stats}[/cyan] — "
+                "launch some games in HyperSpin first to populate them."
+            )
         return
     tbl = Table(title=f"Top {len(records)} recently played", box=box.ROUNDED)
     tbl.add_column("Last played", style="cyan")
@@ -1898,6 +1927,9 @@ def _print_synth_summary(label: str, summary) -> None:
         str(ini_path) if ini_path else "[yellow]skipped (rocketlauncher_dir not set or invalid)[/yellow]",
     )
     console.print(grid)
+    read_warnings = getattr(summary, "read_warnings", None) or []
+    for w in read_warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
     if summary.media_errors:
         console.print(f"[red]{len(summary.media_errors)} media error(s):[/red]")
         for e in summary.media_errors[:5]:
@@ -1951,9 +1983,22 @@ def _stats_report_show(system, top_n, by_system, recent_only,
     config = _cfg()
     _check_config(config)
 
-    stats = load_all_playtime(config)
+    read_warnings: list[str] = []
+    stats = load_all_playtime(config, warnings=read_warnings)
+    for w in read_warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
     if not stats:
-        console.print("[yellow]No RocketLauncher statistics found yet.[/yellow]")
+        if not config.rocketlauncher_dir:
+            console.print(
+                "[yellow]No RocketLauncher statistics found.[/yellow] "
+                "rocketlauncher_dir is not configured — set it in the Setup tab or run: "
+                "[cyan]spindoctor config set rocketlauncher_dir <path>[/cyan]"
+            )
+        else:
+            console.print(
+                "[yellow]No RocketLauncher statistics found yet.[/yellow] "
+                "Launch games in HyperSpin to generate statistics."
+            )
         return
 
     if export_csv_path:
@@ -2392,17 +2437,19 @@ def theme_apply(source_dir, target, systems, apply_changes, undo_path,
                 sys.exit(1)
 
         if revert_system:
-            restored = themes.undo_plan_system(manifest, revert_system)
+            undo_result = themes.undo_plan_system(manifest, revert_system)
             console.print(
-                f"[green]✓[/green] Restored {restored} file(s) for "
+                f"[green]✓[/green] Restored {undo_result['restored']} file(s) for "
                 f"[cyan]{revert_system}[/cyan] from [cyan]{manifest}[/cyan]"
             )
         else:
-            restored = themes.undo_plan(manifest)
+            undo_result = themes.undo_plan(manifest)
             console.print(
-                f"[green]✓[/green] Restored {restored} file(s) from "
+                f"[green]✓[/green] Restored {undo_result['restored']} file(s) from "
                 f"[cyan]{manifest}[/cyan]"
             )
+        for err in undo_result.get("errors", []):
+            console.print(f"[red]WARNING:[/red] {err}")
         return
 
     if not source_dir:
@@ -4513,9 +4560,14 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir):
     from .audit import scan_roms
     from .ledblinky import generate_for_roms
 
+    rom_dir = Path(config.roms_dir) / system
     roms = scan_roms(system, Path(config.roms_dir))
     if not roms:
-        console.print(f"[yellow]No ROMs found for system {system}.[/yellow]")
+        console.print(
+            f"[yellow]No ROMs found for system [cyan]{system}[/cyan] "
+            f"in [cyan]{rom_dir}[/cyan].[/yellow] "
+            "Drop ROM files there and re-run."
+        )
         return
 
     out_path = Path(output_dir) if output_dir else None
@@ -4531,6 +4583,8 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir):
         err_console.print(f"[red]{e}[/red]")
         sys.exit(1)
 
+    for w in result.warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
     label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
     console.print(f"\n{label} controls.ini → {result.controls_path}")
     console.print(f"{label} colors.ini   → {result.colors_path}")
@@ -4558,9 +4612,14 @@ def ledblinky_audit(system):
     from .audit import scan_roms
     from .ledblinky import audit_coverage
 
+    rom_dir = Path(config.roms_dir) / system
     roms = scan_roms(system, Path(config.roms_dir))
     if not roms:
-        console.print(f"[yellow]No ROMs found for system {system}.[/yellow]")
+        console.print(
+            f"[yellow]No ROMs found for system [cyan]{system}[/cyan] "
+            f"in [cyan]{rom_dir}[/cyan].[/yellow] "
+            "Drop ROM files there and re-run."
+        )
         return
 
     rows = audit_coverage(config, sorted(roms.keys()))

@@ -236,7 +236,14 @@ def _read_main_menu_systems(path: Path) -> list[str]:
         return []
     try:
         tree = ET.parse(path)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        import sys
+        print(
+            f"WARNING: Main Menu.xml at {path} could not be parsed ({exc}) — "
+            "existing system entries will not be preserved. "
+            "Run: spindoctor doctor  to check your HyperSpin files.",
+            file=sys.stderr,
+        )
         return []
     return [
         (g.get("name") or "").strip()

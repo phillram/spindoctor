@@ -262,8 +262,9 @@ def test_undo_plan_restores_originals(tmp_path):
     for p in plans:
         assert p.target.read_bytes() != pre[p.target]
 
-    restored = themes.undo_plan(result.manifest_path)
-    assert restored == result.swapped
+    undo_result = themes.undo_plan(result.manifest_path)
+    assert undo_result["restored"] == result.swapped
+    assert undo_result["errors"] == []
     # Each target is back to its original bytes.
     for p in plans:
         assert p.target.read_bytes() == pre[p.target]

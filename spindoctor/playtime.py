@@ -67,7 +67,12 @@ def _coerce_int(raw: str) -> int:
         return 0
 
 
-def _read_playstats_file(path: Path, system_name: str) -> list[PlayStat]:
+def _read_playstats_file(
+    path: Path,
+    system_name: str,
+    *,
+    warnings: "list[str] | None" = None,
+) -> list[PlayStat]:
     """Parse one Statistics.ini file into PlayStat records.
 
     The format used by RocketLauncher::
@@ -81,7 +86,11 @@ def _read_playstats_file(path: Path, system_name: str) -> list[PlayStat]:
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
         parser.read(path, encoding="utf-8")
-    except (OSError, configparser.Error):
+    except (OSError, configparser.Error) as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
+            )
         return []
 
     out: list[PlayStat] = []
@@ -112,7 +121,7 @@ def _read_playstats_file(path: Path, system_name: str) -> list[PlayStat]:
     return out
 
 
-def load_all_playtime(config: Config) -> list[PlayStat]:
+def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) -> list[PlayStat]:
     """Read every Statistics.ini under the RocketLauncher tree.
 
     Looks in:
@@ -149,7 +158,7 @@ def load_all_playtime(config: Config) -> list[PlayStat]:
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
         for ini in global_dir.glob("*.ini"):
-            _merge(_read_playstats_file(ini, ini.stem))
+            _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
 
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
@@ -158,7 +167,7 @@ def load_all_playtime(config: Config) -> list[PlayStat]:
                 continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
-                _merge(_read_playstats_file(stats, sys_dir.name))
+                _merge(_read_playstats_file(stats, sys_dir.name, warnings=warnings))
 
     return list(by_key.values())
 
@@ -340,7 +349,8 @@ def build_most_played_wheel(
         return RecentSummary(target_system=target_system)
 
     known = set(get_systems(config))
-    stats = [s for s in load_all_playtime(config) if s.system in known]
+    read_warnings: list[str] = []
+    stats = [s for s in load_all_playtime(config, warnings=read_warnings) if s.system in known]
     top = top_games(stats, n=limit, scope="all")
 
     pseudo_entries = [
@@ -359,6 +369,7 @@ def build_most_played_wheel(
         media_mode=media_mode, skip_media=skip_media,
         skip_launchers=skip_launchers,
     )
+    summary.read_warnings = read_warnings
 
     if register_in_main_menu and summary.entries > 0:
         try:
