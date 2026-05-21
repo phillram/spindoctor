@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.2] - 2026-05-20
+
 ### Fixed
 
 - **Auto-refresh scheduled task no longer flashes a console window on log-on.** The Windows Task Scheduler command now uses `powershell.exe -WindowStyle Hidden` instead of `cmd.exe /c`, so the wheel-rebuild runs completely in the background. Re-register the task ("Schedule auto-refresh" in the Tools tab) to pick up the change.
