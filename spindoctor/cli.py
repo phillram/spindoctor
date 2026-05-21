@@ -1757,15 +1757,26 @@ def fav_rebuild(media_mode, apply_changes):
 
     \b
     Idempotent — safe to run on every boot. Steps:
+      0. Sync HyperSpin per-system F-key favorites into the store
       1. Write Databases/<Favorites>/<Favorites>.xml from favorites.json
       2. Mirror media (hardlinks by default; falls back to copy)
       3. Write per-game PCLauncher INIs that route via RocketLauncher
     """
-    from .favorites import load_store, rebuild
+    from .favorites import load_store, rebuild, save_store, sync_native
     from .medialink import LinkMode
     config = _cfg()
     _check_config(config)
+    _warn_rocketlauncher_dir(config)
     store = load_store()
+    synced = sync_native(store, config)
+    if synced > 0:
+        save_store(store)
+        console.print(f"[green]+[/green] synced {synced} favorite(s) from HyperSpin per-system lists.")
+    else:
+        console.print(
+            "[dim]sync: 0 found in HyperSpin per-system lists — add favorites "
+            "with the F key in HyperSpin or use[/dim] [cyan]spindoctor fav add[/cyan]"
+        )
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     if not apply_changes:
@@ -1805,6 +1816,7 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes):
     from .recent import rebuild
     config = _cfg()
     _check_config(config)
+    _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     if not apply_changes:
@@ -1846,6 +1858,23 @@ def recent_list(limit):
     console.print(tbl)
 
 
+def _warn_rocketlauncher_dir(config) -> None:
+    """Emit a console warning if rocketlauncher_dir is missing or invalid."""
+    if not config.rocketlauncher_dir:
+        console.print(
+            "[yellow]WARNING:[/yellow] rocketlauncher_dir is not configured — "
+            "no system INI or PCLauncher INIs will be written. "
+            "Set it in the Setup tab or run: "
+            "[cyan]spindoctor config set rocketlauncher_dir <path>[/cyan]"
+        )
+    elif not Path(config.rocketlauncher_dir).exists():
+        console.print(
+            f"[yellow]WARNING:[/yellow] rocketlauncher_dir "
+            f"[cyan]{config.rocketlauncher_dir}[/cyan] is configured but does "
+            "not exist on disk — no system INI or PCLauncher INIs will be written."
+        )
+
+
 def _print_synth_summary(label: str, summary) -> None:
     grid = Table.grid(padding=(0, 2))
     grid.add_row(f"[bold]{label} system:[/bold]", str(summary.target_system))
@@ -1859,6 +1888,11 @@ def _print_synth_summary(label: str, summary) -> None:
         f"skipped={summary.media_skipped}",
     )
     grid.add_row("[cyan]Launchers:[/cyan]", str(summary.inis_written))
+    ini_path = getattr(summary, "system_ini_path", None)
+    grid.add_row(
+        "[cyan]System INI:[/cyan]",
+        str(ini_path) if ini_path else "[yellow]skipped (rocketlauncher_dir not set or invalid)[/yellow]",
+    )
     console.print(grid)
     if summary.media_errors:
         console.print(f"[red]{len(summary.media_errors)} media error(s):[/red]")
@@ -2096,6 +2130,7 @@ def stats_report_build_wheel(limit, target_system, media_mode,
             hyperspin_dir=str(out),
         )
 
+    _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     summary = build_most_played_wheel(

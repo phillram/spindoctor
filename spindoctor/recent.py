@@ -165,6 +165,7 @@ class RecentSummary:
     media_skipped: int = 0
     inis_written: int = 0
     media_errors: list[str] = field(default_factory=list)
+    system_ini_path: Optional[Path] = None
 
 
 def _build_synthetic_wheel(
@@ -267,7 +268,7 @@ def _build_synthetic_wheel(
                 rl_dir, target_system, target_name, fe.system, fe.rom_name,
             )
             summary.inis_written += 1
-        generate_synthetic_system_ini(target_system, rl_dir)
+        summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
 
     return summary
 
@@ -366,6 +367,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not config.hyperspin_dir:
             print("ERROR: hyperspin_dir is not configured.", file=sys.stderr)
             return 1
+        if not config.rocketlauncher_dir:
+            print(
+                "WARNING: rocketlauncher_dir is not configured — no system INI or "
+                "PCLauncher INIs will be written.",
+                file=sys.stderr,
+            )
+        elif not Path(config.rocketlauncher_dir).exists():
+            print(
+                f"WARNING: rocketlauncher_dir '{config.rocketlauncher_dir}' is "
+                "configured but does not exist on disk — no system INI or "
+                "PCLauncher INIs will be written.",
+                file=sys.stderr,
+            )
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
         if not args.apply:
@@ -387,6 +401,20 @@ def main(argv: Optional[list[str]] = None) -> int:
         if summary.media_errors:
             print(f"  errors:     {len(summary.media_errors)}")
         print(f"  launchers:  {summary.inis_written}")
+        if summary.system_ini_path:
+            print(f"  system INI: {summary.system_ini_path}")
+        else:
+            print("  system INI: skipped (rocketlauncher_dir not set)")
+        if summary.entries == 0 and config.rocketlauncher_dir:
+            rl_stats = (
+                Path(config.rocketlauncher_dir)
+                / "Settings" / "Global Statistics"
+            )
+            print(
+                f"  note: no play history found — RL stats files should be at "
+                f"{rl_stats}/<system>.ini",
+                file=sys.stderr,
+            )
         return 0
 
     return 0

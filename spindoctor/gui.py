@@ -4486,12 +4486,14 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             frame,
             text=(
-                "• Refresh writes a synthetic HyperSpin system (media + "
-                "per-game INIs delegating to the original system via "
-                "RocketLauncher).\n"
-                "• Most Played auto-registers in the Main Menu wheel; "
-                "Favorites and Recently Played do not — use the Main Menu "
-                "tab (or the buttons below) to add them.\n"
+                "• Step 1 — Refresh: builds game databases + PCLauncher INIs "
+                "for the selected wheels.\n"
+                "• Step 2 — Add to Main Menu: registers the synthetic systems "
+                "in HyperSpin's main carousel (Favorites and Recently Played "
+                "are not auto-registered; Most Played is).\n"
+                "• For Favorites: click 'Sync favorites from HyperSpin' first "
+                "if you use HyperSpin's F-key favorites — this imports them "
+                "into SpinDoctor's store before the rebuild reads them.\n"
                 "• None of these auto-fire on cabinet startup. Use the "
                 "Tools tab to install Tools-menu .bat helpers, or schedule "
                 "the rebuild commands via Windows Task Scheduler "
@@ -4506,10 +4508,19 @@ class _SpinDoctorGUI:
             btn_row, text="Add wheels to Main Menu", width=28,
             command=self._register_wheels_in_main_menu,
         ).pack(side="left")
-        self.ttk.Button(
-            btn_row, text="Install Tools-menu helpers", width=28,
-            command=lambda: self._run_cli("spindoctor", ["install-tools"]),
-        ).pack(side="left", padx=6)
+
+        sync_btn = self.ttk.Button(
+            btn_row, text="Sync favorites from HyperSpin", width=28,
+            command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
+        )
+        sync_btn.pack(side="left", padx=6)
+        _attach_tooltip(
+            sync_btn,
+            "Reads HyperSpin's per-system F-key favorites and imports them "
+            "into SpinDoctor's store. Run this before 'Refresh selected' "
+            "if you use HyperSpin's F-key favorites.",
+            self.tk,
+        )
 
         # ── Manage individual favorites ──────────────────────────────────────
         # The CLI exposes `fav add/remove/list/sync`; surfacing them here
@@ -5375,24 +5386,81 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
+        # ── Current configuration ─────────────────────────────────────────────
+        cur_cfg_frame = self.ttk.LabelFrame(frame, text="Current configuration")
+        cur_cfg_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        self.ttk.Label(
+            cur_cfg_frame,
+            text="Check what paths are currently configured before migrating.",
+            foreground=_FG_DIM,
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 2))
+        cur_cfg_btn_row = self.ttk.Frame(cur_cfg_frame)
+        cur_cfg_btn_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 6))
+        self.ttk.Button(
+            cur_cfg_btn_row, text="Show current paths",
+            command=lambda: self._run_cli("spindoctor", ["config", "show"]),
+        ).pack(side="left")
+        self.ttk.Button(
+            cur_cfg_btn_row, text="Run doctor",
+            command=lambda: self._run_cli("spindoctor", ["doctor"]),
+        ).pack(side="left", padx=6)
+
+        # ── Backup before migrating ───────────────────────────────────────────
+        pre_bkp_frame = self.ttk.LabelFrame(frame, text="Backup before migrating")
+        pre_bkp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        pre_bkp_frame.columnconfigure(1, weight=1)
+        self.ttk.Label(
+            pre_bkp_frame,
+            text=(
+                "Create a snapshot of your current setup before migrating. "
+                "You can restore from it if anything goes wrong."
+            ),
+            wraplength=800, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
+        self.ttk.Label(pre_bkp_frame, text="Backup folder").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._pre_migrate_backup_var = self.tk.StringVar()
+        self.ttk.Entry(
+            pre_bkp_frame, textvariable=self._pre_migrate_backup_var, width=50,
+        ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            pre_bkp_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._pre_migrate_backup_var, "Pick backup target folder",
+            ),
+        ).grid(row=1, column=2, sticky="w", pady=2)
+        self.ttk.Button(
+            pre_bkp_frame, text="Create backup now",
+            command=self._run_pre_migrate_backup,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 4))
+        self.ttk.Label(
+            pre_bkp_frame,
+            text=(
+                "After migrating, run generate-config (Metadata & Media tab) "
+                "to update RocketLauncher's per-system INIs."
+            ),
+            foreground=_FG_DIM,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
+
         # ── Target root ──────────────────────────────────────────────────────
         self.ttk.Label(frame, text="Target root").grid(
-            row=1, column=0, sticky="w", pady=2,
+            row=3, column=0, sticky="w", pady=2,
         )
         self._migrate_target_var = self.tk.StringVar()
         self.ttk.Entry(frame, textvariable=self._migrate_target_var, width=60).grid(
-            row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+            row=3, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
         self.ttk.Button(
             frame, text="Browse…",
             command=lambda: self._browse_backup_dir(
                 self._migrate_target_var, "Pick migration target root",
             ),
-        ).grid(row=1, column=3, sticky="w", pady=2)
+        ).grid(row=3, column=3, sticky="w", pady=2)
 
         # ── Components ───────────────────────────────────────────────────────
         comp_frame = self.ttk.LabelFrame(frame, text="Components")
-        comp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        comp_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         self._migrate_component_vars: dict = {}
         for i, (key, desc) in enumerate(_MIGRATE_COMPONENTS):
             var = self.tk.BooleanVar(value=True)
@@ -5403,7 +5471,7 @@ class _SpinDoctorGUI:
 
         # ── Options ──────────────────────────────────────────────────────────
         opt_frame = self.ttk.LabelFrame(frame, text="Options")
-        opt_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        opt_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         opt_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -5507,7 +5575,7 @@ class _SpinDoctorGUI:
 
         # ── Undo / list manifests ────────────────────────────────────────────
         undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
-        undo_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        undo_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         undo_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(undo_frame, text="Manifest").grid(
@@ -5629,6 +5697,16 @@ class _SpinDoctorGUI:
         if self._migrate_undo_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _run_pre_migrate_backup(self) -> None:
+        target = self._pre_migrate_backup_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Enter or browse to a backup target folder before creating a backup.",
+            )
+            return
+        self._run_cli("spindoctor", ["backup", "create", "--target", target, "--apply"])
 
     def _refresh_migrate_manifests(self) -> None:
         """Populate the undo Combobox with manifests from the migrations dir."""
