@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Auto-refresh scheduled task no longer flashes a console window on log-on.** The Windows Task Scheduler command now uses `powershell.exe -WindowStyle Hidden` instead of `cmd.exe /c`, so the wheel-rebuild runs completely in the background. Re-register the task ("Schedule auto-refresh" in the Tools tab) to pick up the change.
 - **"Cannot find recently Played.ini" in HyperSpin.** Rebuilding the Favorites, Recently Played, or Most Played synthetic wheel now also writes `<RocketLauncher>\Settings\<target_system>.ini` with `Default_Emulator=PCLauncher`. Without this file RocketLauncher had no system-level config and threw the error when HyperSpin tried to launch a game from those wheels. Re-run "Refresh selected" in the Wheels tab (or `spindoctor-recent rebuild --apply` / `spindoctor-fav rebuild --apply`) to generate the missing INI.
 - **"PCLauncher does not know what exe, FadeTitle, and/or SteamID" for Toolbox entries.** The PCLauncher per-game INI written by `install-tools --add-to-system` was using the `[exe info]` format, which requires a `FadeTitle` (window-title to monitor). Refresh helpers are short-lived batch files with no persistent window; they now use `[Settings]` format (`ApplicationPath` / `StartIn`) which PCLauncher runs directly without window monitoring. Re-run "Install into wheel" in the Tools tab (or `spindoctor install-tools --add-to-system <system>`) to regenerate the INIs.
 
