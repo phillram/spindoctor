@@ -196,6 +196,33 @@ def generate_rl_system_ini(
     return ini_path
 
 
+def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) -> Path:
+    """Write a minimal RocketLauncher system INI for a synthetic PCLauncher wheel.
+
+    Synthetic systems (Favorites, Recently Played, Most Played) store per-game
+    INIs under Modules/PCLauncher/<system>/ — so that directory is the
+    Rom_Path, and the extension is "ini".  Without this file RocketLauncher
+    can't route launch requests for the system and throws "Cannot find
+    <system>.ini".
+    """
+    settings_dir = rocketlauncher_dir / "Settings"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    ini_path = settings_dir / f"{system_name}.ini"
+    pclauncher_dir = rocketlauncher_dir / "Modules" / "PCLauncher" / system_name
+    lines = [
+        "[Settings]",
+        "Default_Emulator=PCLauncher",
+        f"Rom_Path={pclauncher_dir}",
+        "Rom_Extension=ini",
+        "",
+        "[PCLauncher]",
+        f"Rom_Path={pclauncher_dir}",
+        "",
+    ]
+    ini_path.write_text("\n".join(lines), encoding="utf-8")
+    return ini_path
+
+
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
 
 def _main_menu_path(config: Config, output_base: Optional[Path]) -> Path:
@@ -229,7 +256,7 @@ def _write_main_menu(systems: list[str], out_path: Path) -> Path:
     """
     out_path.parent.mkdir(parents=True, exist_ok=True)
     root = ET.Element("menu")
-    for sys_name in sorted(systems):
+    for sys_name in systems:
         ET.SubElement(root, "game", name=sys_name)
 
     tree = ET.ElementTree(root)

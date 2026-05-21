@@ -8964,14 +8964,15 @@ class _SpinDoctorGUI:
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
 
     def _autorefresh_command(self) -> str:
-        # Run all three rebuilds in sequence via cmd.exe so a failing
-        # earlier rebuild doesn't kill the rest. `&&` would short-circuit;
-        # `&` runs unconditionally so a flaky favorites build still lets
-        # recent/most-played update.
+        # Run all three rebuilds sequentially, hidden from the user.
+        # PowerShell -WindowStyle Hidden suppresses the console window entirely;
+        # semicolons run each command unconditionally so a flaky favorites
+        # build still lets recent/most-played update (same behaviour as the
+        # old `cmd /c ... & ...` chain, but invisible).
         return (
-            'cmd.exe /c '
-            '"spindoctor-fav rebuild --apply & '
-            'spindoctor-recent rebuild --apply & '
+            "powershell.exe -WindowStyle Hidden -NonInteractive -Command "
+            '"spindoctor-fav rebuild --apply; '
+            "spindoctor-recent rebuild --apply; "
             'spindoctor-stats build-wheel --apply"'
         )
 
