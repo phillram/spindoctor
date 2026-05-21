@@ -412,12 +412,24 @@ def apply_migration(
                         if new_path in applied_dests:
                             setattr(cfg, key, new_path)
                     save_config(cfg)
-            except OSError:
-                pass
+            except OSError as exc:
+                import sys
+                print(
+                    f"WARNING: migration interrupted and config could not be updated "
+                    f"({exc}). Config paths may still point at old locations — "
+                    "run: spindoctor config show  to verify.",
+                    file=sys.stderr,
+                )
             try:
                 _write_manifest(plan, applied, cfg_before, keep_source)
-            except OSError:
-                pass
+            except OSError as exc:
+                import sys
+                print(
+                    f"WARNING: migration interrupted and undo manifest could not be "
+                    f"written ({exc}). The {len(applied)} completed move(s) cannot be "
+                    "reversed with `migrate --undo`.",
+                    file=sys.stderr,
+                )
         raise
 
     if update_config and not keep_source and plan.config_updates:

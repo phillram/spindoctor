@@ -82,7 +82,7 @@ class IniSection:
 _SECTION_RE = re.compile(r"^\s*\[(?P<name>[^\]]+)\]\s*$")
 
 
-def parse_ini_sections(path: Path) -> dict[str, IniSection]:
+def parse_ini_sections(path: Path, *, warnings: "list[str] | None" = None) -> dict[str, IniSection]:
     """Parse an INI-style file into ``{section_name: IniSection}``.
 
     Section names are case-preserved.  Lines (including blank/comment lines)
@@ -95,7 +95,11 @@ def parse_ini_sections(path: Path) -> dict[str, IniSection]:
     current: Optional[IniSection] = None
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
+    except OSError as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not read LEDBlinky INI {path}: {type(exc).__name__}: {exc}"
+            )
         return {}
     for line in text.splitlines():
         m = _SECTION_RE.match(line)
@@ -108,14 +112,22 @@ def parse_ini_sections(path: Path) -> dict[str, IniSection]:
     return sections
 
 
-def parse_existing_controls_ini(path: Path) -> dict[str, IniSection]:
+def parse_existing_controls_ini(
+    path: Path,
+    *,
+    warnings: "list[str] | None" = None,
+) -> dict[str, IniSection]:
     """Return ``{rom_name: IniSection}`` from an existing LEDBlinky controls.ini."""
-    return parse_ini_sections(path)
+    return parse_ini_sections(path, warnings=warnings)
 
 
-def parse_existing_colors_ini(path: Path) -> dict[str, IniSection]:
+def parse_existing_colors_ini(
+    path: Path,
+    *,
+    warnings: "list[str] | None" = None,
+) -> dict[str, IniSection]:
     """Return ``{rom_name: IniSection}`` from an existing LEDBlinky colors.ini."""
-    return parse_ini_sections(path)
+    return parse_ini_sections(path, warnings=warnings)
 
 
 # ─── MAME -listxml ─────────────────────────────────────────────────────────────
@@ -166,13 +178,23 @@ def run_mame_listxml(
     return proc.stdout
 
 
-def parse_listxml(xml_bytes: bytes) -> dict[str, ControlInfo]:
+def parse_listxml(
+    xml_bytes: bytes,
+    *,
+    warnings: "list[str] | None" = None,
+) -> dict[str, ControlInfo]:
     """Parse MAME ``-listxml`` output into ``{rom_name: ControlInfo}``."""
     if not xml_bytes:
         return {}
     try:
         root = ET.fromstring(xml_bytes)
-    except ET.ParseError:
+    except ET.ParseError as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not parse MAME -listxml output: {exc} — "
+                "LEDBlinky and audit MAME control data will be unavailable. "
+                "Try deleting the listxml cache and re-running."
+            )
         return {}
 
     out: dict[str, ControlInfo] = {}
@@ -213,7 +235,12 @@ def parse_listxml(xml_bytes: bytes) -> dict[str, ControlInfo]:
     return out
 
 
-def load_listxml_for_system(config: Config, system_name: str) -> dict[str, ControlInfo]:
+def load_listxml_for_system(
+    config: Config,
+    system_name: str,
+    *,
+    warnings: "list[str] | None" = None,
+) -> dict[str, ControlInfo]:
     """Cached wrapper around ``run_mame_listxml`` + ``parse_listxml``.
 
     Returns an empty dict (silently) if MAME is not configured.
@@ -225,9 +252,14 @@ def load_listxml_for_system(config: Config, system_name: str) -> dict[str, Contr
         xml_bytes = run_mame_listxml(
             config.mame_executable, cache_path=cache_path,
         )
-    except RuntimeError:
+    except RuntimeError as exc:
+        if warnings is not None:
+            warnings.append(
+                f"MAME -listxml failed for {system_name}: {exc} — "
+                "LEDBlinky control data will be unavailable."
+            )
         return {}
-    return parse_listxml(xml_bytes)
+    return parse_listxml(xml_bytes, warnings=warnings)
 
 
 # ─── synthesis from -listxml ───────────────────────────────────────────────────
@@ -349,6 +381,7 @@ class GenerateResult:
     controls_synthesised: int = 0
     colors_synthesised: int = 0
     skipped_no_input: int = 0
+    warnings: list[str] = field(default_factory=list)
 
 
 def generate_for_roms(
@@ -379,13 +412,13 @@ def generate_for_roms(
     src_colors = (src_base / "colors.ini") if src_base else None
 
     existing_controls = (
-        parse_existing_controls_ini(src_controls) if src_controls else {}
+        parse_existing_controls_ini(src_controls, warnings=result.warnings) if src_controls else {}
     )
     existing_colors = (
-        parse_existing_colors_ini(src_colors) if src_colors else {}
+        parse_existing_colors_ini(src_colors, warnings=result.warnings) if src_colors else {}
     )
 
-    listxml = load_listxml_for_system(config, "MAME")
+    listxml = load_listxml_for_system(config, "MAME", warnings=result.warnings)
 
     out_controls: dict[str, IniSection] = dict(existing_controls)
     out_colors: dict[str, IniSection] = dict(existing_colors)

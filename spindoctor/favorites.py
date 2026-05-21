@@ -328,8 +328,8 @@ def rebuild(
                 if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
                     try:
                         ini.unlink()
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
         for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             _generate_pclauncher_ini(

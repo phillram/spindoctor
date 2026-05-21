@@ -71,7 +71,12 @@ def _parse_time(value: str) -> Optional[datetime]:
         return None
 
 
-def _read_stats_file(path: Path, system_name: str) -> list[PlayRecord]:
+def _read_stats_file(
+    path: Path,
+    system_name: str,
+    *,
+    warnings: "list[str] | None" = None,
+) -> list[PlayRecord]:
     """Parse one RocketLauncher Statistics.ini file into PlayRecords.
 
     The format used by RocketLauncher::
@@ -86,7 +91,11 @@ def _read_stats_file(path: Path, system_name: str) -> list[PlayRecord]:
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
         parser.read(path, encoding="utf-8")
-    except (OSError, configparser.Error):
+    except (OSError, configparser.Error) as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
+            )
         return []
 
     records: list[PlayRecord] = []
@@ -111,7 +120,11 @@ def _read_stats_file(path: Path, system_name: str) -> list[PlayRecord]:
     return records
 
 
-def collect_play_records(config: Config) -> list[PlayRecord]:
+def collect_play_records(
+    config: Config,
+    *,
+    warnings: "list[str] | None" = None,
+) -> list[PlayRecord]:
     """Walk RocketLauncher's Statistics tree and return every game launch.
 
     Looks in two locations:
@@ -126,14 +139,14 @@ def collect_play_records(config: Config) -> list[PlayRecord]:
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
         for ini in global_dir.glob("*.ini"):
-            records.extend(_read_stats_file(ini, ini.stem))
+            records.extend(_read_stats_file(ini, ini.stem, warnings=warnings))
 
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
         for sys_dir in settings_dir.iterdir():
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
-                records.extend(_read_stats_file(stats, sys_dir.name))
+                records.extend(_read_stats_file(stats, sys_dir.name, warnings=warnings))
 
     return records
 
@@ -166,6 +179,7 @@ class RecentSummary:
     inis_written: int = 0
     media_errors: list[str] = field(default_factory=list)
     system_ini_path: Optional[Path] = None
+    read_warnings: list[str] = field(default_factory=list)
 
 
 def _build_synthetic_wheel(
@@ -298,7 +312,8 @@ def rebuild(
     # Restrict to systems we actually know about so a stray INI doesn't
     # break the rebuild with an unknown source DB.
     known = set(get_systems(config))
-    raw = collect_play_records(config)
+    read_warnings: list[str] = []
+    raw = collect_play_records(config, warnings=read_warnings)
     raw = [r for r in raw if r.system in known]
     top = top_recent(raw, limit=limit)
 
@@ -317,12 +332,15 @@ def rebuild(
             summary.inis_written = len(pseudo_entries)
         if not skip_media:
             summary.media_linked = len(pseudo_entries)
+        summary.read_warnings = read_warnings
         return summary
-    return _build_synthetic_wheel(
+    summary = _build_synthetic_wheel(
         config, target_system, pseudo_entries,
         media_mode=media_mode, skip_media=skip_media,
         skip_launchers=skip_launchers,
     )
+    summary.read_warnings = read_warnings
+    return summary
 
 
 # ─── standalone CLI (python -m spindoctor.recent …) ──────────────────────────

@@ -272,12 +272,14 @@ def check_match_cache(config: Config, fix: bool, fixes_applied: list[str]) -> Ch
 
     stale_total = 0
     files_touched = 0
+    corrupt: list[str] = []
     for cache_file in cache_dir.glob("*.json"):
         system = cache_file.stem
         rom_dir = Path(config.roms_dir) / system
         try:
             data = json.loads(cache_file.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as exc:
+            corrupt.append(f"{cache_file.name}: {exc}")
             continue
         if not isinstance(data, dict):
             continue
@@ -294,6 +296,15 @@ def check_match_cache(config: Config, fix: bool, fixes_applied: list[str]) -> Ch
                     f"pruned {len(stale)} stale entries from match_cache/{system}.json"
                 )
 
+    if corrupt:
+        detail = f"{len(corrupt)} corrupt cache file(s): " + "; ".join(corrupt[:3])
+        if len(corrupt) > 3:
+            detail += f" (and {len(corrupt) - 3} more)"
+        return Check(
+            name="Match cache", status=Status.WARN,
+            detail=detail,
+            fix="Delete the corrupt files from ~/.spindoctor/match_cache/ and re-run.",
+        )
     if stale_total == 0:
         return Check(name="Match cache", status=Status.OK, detail="no stale entries")
     if fix:
