@@ -2139,13 +2139,15 @@ _INSTALL_TOOLS_BATS: dict[str, str] = {
 def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     """PCLauncher INI body that runs *bat_path* directly.
 
-    Unlike the favorites/recent INIs (which delegate via RLaunch back to
-    the source emulator), the wheel-refresh helpers are plain .bat files —
-    so the INI just points ``applicationpath`` at the bat itself and lets
-    PCLauncher run it.
+    The wheel-refresh helpers are plain .bat files that run and exit — they
+    have no persistent window for PCLauncher to monitor.  The [Settings]
+    format (ApplicationPath / StartIn) handles this cleanly without requiring
+    FadeTitle, which the [exe info] format would need and which causes
+    "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch
+    for" when left empty.
     """
-    from .rocketlauncher import pclauncher_exe_info_text
-    return pclauncher_exe_info_text(bat_path)
+    from .rocketlauncher import _pclauncher_ini_text
+    return _pclauncher_ini_text(bat_path)
 
 
 @cli.command("theme-scan")
@@ -6491,6 +6493,13 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
     console.print(
         f"  Run [cyan]spindoctor migrate --undo {manifest}[/cyan] to revert."
     )
+    if "roms" in components and not keep_source and not no_update_config:
+        console.print(
+            "\n[yellow]Next step:[/yellow] RocketLauncher's per-system INIs still "
+            "contain the old Rom_Path. Regenerate them now:\n"
+            "  [cyan]spindoctor generate-config --apply[/cyan]\n"
+            "GUI: Metadata & Media tab → Run generate-config (with Apply ticked)."
+        )
 
 
 # ─── batch-edit / rename / clone ─────────────────────────────────────────────

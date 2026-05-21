@@ -373,6 +373,16 @@ Other useful flags:
 
 The pre-flight plan reports total bytes to transfer and free space at the target, and aborts the apply if there isn't enough room.
 
+**After migrating the `roms` component**, RocketLauncher's per-system settings files still contain the old `Rom_Path`. Regenerate them immediately after the migrate:
+
+```bat
+spindoctor generate-config --apply
+```
+
+GUI: Metadata & Media tab → tick Apply → click **Run generate-config**. `generate-config` writes `<RocketLauncher>\Settings\<SystemName>.ini` for every configured system directly into the configured `rocketlauncher_dir`, so no manual copying is needed — the files land exactly where RocketLauncher expects them.
+
+See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive) for the full end-to-end example.
+
 ### `backup`
 
 Copy any combination of library components into a dated backup folder on a different drive — and restore it later, in full or in part. See [Workflows → Backup](workflows.md#backup--restore) for example flows.

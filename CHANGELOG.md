@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **"Cannot find recently Played.ini" in HyperSpin.** Rebuilding the Favorites, Recently Played, or Most Played synthetic wheel now also writes `<RocketLauncher>\Settings\<target_system>.ini` with `Default_Emulator=PCLauncher`. Without this file RocketLauncher had no system-level config and threw the error when HyperSpin tried to launch a game from those wheels. Re-run "Refresh selected" in the Wheels tab (or `spindoctor-recent rebuild --apply` / `spindoctor-fav rebuild --apply`) to generate the missing INI.
+- **"PCLauncher does not know what exe, FadeTitle, and/or SteamID" for Toolbox entries.** The PCLauncher per-game INI written by `install-tools --add-to-system` was using the `[exe info]` format, which requires a `FadeTitle` (window-title to monitor). Refresh helpers are short-lived batch files with no persistent window; they now use `[Settings]` format (`ApplicationPath` / `StartIn`) which PCLauncher runs directly without window monitoring. Re-run "Install into wheel" in the Tools tab (or `spindoctor install-tools --add-to-system <system>`) to regenerate the INIs.
+
+### Changed
+
+- **`migrate --apply` (roms component) now prints a next-step reminder.** After a successful ROM migration, the CLI prints a one-line reminder to run `spindoctor generate-config --apply` with the GUI path, since RocketLauncher's per-system `Settings\<SystemName>.ini` files contain hardcoded `Rom_Path` values that are not rewritten by `migrate`.
+
+### Docs
+
+- **New "Moving only your ROMs to a new drive" workflow.** End-to-end example for the common case of moving a ROM folder to a new drive (e.g. `D:\Arcade\Games` → `J:\Games`) in `docs/workflows.md`, including the required `generate-config --apply` follow-up and the GUI path.
+- **New "Already moved your ROMs manually" workflow.** Two-command recovery path for users who moved their games folder without using `spindoctor migrate` — update `roms_dir` in config, then run `generate-config --apply`.
+- **"Things migrate does not move" — RocketLauncher system INIs now first bullet.** The omission of `Settings\<SystemName>.ini` from `migrate`'s scope was the most common post-migration surprise; it is now the first item in the list.
+- **`generate-config` post-migration note added to `commands.md` and `gui.md`.** Both now explain that `generate-config --apply` writes directly into `rocketlauncher_dir` (no manual copying needed) and is required after any ROM migration.
+
 ## [2.2.1] - 2026-05-20
 
 ### Fixed
