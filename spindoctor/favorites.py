@@ -102,18 +102,25 @@ def remove(store: FavoriteStore, system: str, rom_name: str) -> bool:
     return True
 
 
-def sync_native(store: FavoriteStore, config: Config) -> int:
+def sync_native(
+    store: FavoriteStore,
+    config: Config,
+) -> tuple[int, list[str]]:
     """Merge HyperSpin's per-system Favorites lists into the cross-system store.
 
     HyperSpin writes ``<game name="X" favorite="1"/>`` flags into each
     system's database when the user toggles the F-key inside a wheel.
     This helper picks those up and adds them to our store so the
     cross-system Favorites wheel reflects them on next rebuild.
+
+    Returns ``(added_count, warnings)`` where *warnings* lists any systems
+    whose databases could not be loaded.
     """
     added = 0
+    warnings: list[str] = []
     db_root = config.databases_dir
     if not db_root.exists():
-        return 0
+        return 0, warnings
 
     from .config import get_systems
     for sys_name in get_systems(config):
@@ -121,7 +128,8 @@ def sync_native(store: FavoriteStore, config: Config) -> int:
             continue
         try:
             db = load_database(sys_name, db_root)
-        except (ValueError, OSError):
+        except (ValueError, OSError) as exc:
+            warnings.append(f"sync: skipped {sys_name} — {type(exc).__name__}: {exc}")
             continue
         for game in db.games().values():
             # Built-in HyperSpin sets favorite="1" in the <favorite> tag or
@@ -142,7 +150,7 @@ def sync_native(store: FavoriteStore, config: Config) -> int:
                 display = source.description if source else rom
                 if add(store, sys_name, rom, display):
                     added += 1
-    return added
+    return added, warnings
 
 
 # ─── synthetic system rebuild ────────────────────────────────────────────────
@@ -294,8 +302,8 @@ def rebuild(
             if media_path.is_file() and media_path.stem not in seen_targets:
                 try:
                     media_path.unlink()
-                except OSError:
-                    pass
+                except OSError as e:
+                    summary.media_errors.append(f"cleanup {media_path.name}: {e}")
 
         for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
@@ -411,8 +419,10 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     if args.cmd == "sync":
-        n = sync_native(store, config)
+        n, sync_warns = sync_native(store, config)
         save_store(store)
+        for w in sync_warns:
+            print(f"WARNING: {w}", file=sys.stderr)
         print(f"Synced {n} favorite(s) from per-system HyperSpin lists.")
         return 0
 
@@ -433,7 +443,9 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "PCLauncher INIs will be written.",
                 file=sys.stderr,
             )
-        synced = sync_native(store, config)
+        synced, sync_warns = sync_native(store, config)
+        for w in sync_warns:
+            print(f"WARNING: {w}", file=sys.stderr)
         if synced > 0:
             save_store(store)
             print(f"  synced {synced} favorite(s) from HyperSpin per-system lists.")
