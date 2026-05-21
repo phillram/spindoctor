@@ -101,6 +101,8 @@ Four sections wrap `fetch-meta` (with `--auto-best` / `--all-games` / `--no-cach
 
 A **Full metadata refresh** button at the bottom chains all three fetch/update steps in sequence with a determinate "Step N/3" progress bar. A separate **Add one local media file** form (system + game + media-type dropdowns + file picker) drives `media-add` with optional **Move** and **Overwrite if target exists** flags.
 
+**Run generate-config** (bottom of the `update-db` section) calls `spindoctor generate-config --apply` (when Apply is ticked) to regenerate RocketLauncher's per-system settings INIs and the HyperSpin Main Menu. This writes `<RocketLauncher>\Settings\<SystemName>.ini` directly into the configured `rocketlauncher_dir` — no manual copying needed. **Run this after every ROM migration** (Migrate tab → Run migration) so RocketLauncher's `Rom_Path` entries reflect the new drive. CLI equivalent: `spindoctor generate-config --apply`.
+
 ### Curate
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
@@ -166,6 +168,8 @@ Three sections that cover the HyperSpin-integration surface:
 ### Migrate
 
 Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, a scrollable multi-select Listbox pre-populated from detected systems for partial-roms migrations (nothing selected = migrate all), toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate **Undo** panel whose manifest dropdown is pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top) and a Refresh button. Dry-run by default. CLI equivalent: `spindoctor migrate`.
+
+**After migrating the `roms` component**, go to the **Metadata & Media tab**, tick Apply, and click **Run generate-config**. This rewrites RocketLauncher's per-system `Settings\<SystemName>.ini` files with the new `Rom_Path`. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
 
 Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path. Cancel and nothing runs.
 

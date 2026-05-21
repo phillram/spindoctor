@@ -27,6 +27,7 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
+from .rocketlauncher import generate_synthetic_system_ini
 
 
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
@@ -327,6 +328,7 @@ def rebuild(
                 entry.system, entry.rom_name,
             )
             summary.inis_written += 1
+        generate_synthetic_system_ini(store.target_system, rl_dir)
 
     return summary
 

@@ -28,6 +28,7 @@ from .favorites import (
     _resolve_target_names, _safe_load,
 )
 from .medialink import LinkMode, apply_plan, plan_mirror
+from .rocketlauncher import generate_synthetic_system_ini
 
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"
@@ -266,6 +267,7 @@ def _build_synthetic_wheel(
                 rl_dir, target_system, target_name, fe.system, fe.rom_name,
             )
             summary.inis_written += 1
+        generate_synthetic_system_ini(target_system, rl_dir)
 
     return summary
 

@@ -249,10 +249,49 @@ spindoctor migrate --target E:\Cab --apply --preserve-names
 
 If something goes wrong: `spindoctor migrate --undo latest` puts everything back and restores the previous config.
 
+### Moving only your ROMs to a new drive
+
+The most common single-component migration — moving `D:\Arcade\Games` to `J:\Games` while leaving HyperSpin and RocketLauncher in place:
+
+```bat
+:: 1. Dry-run to confirm the plan.
+spindoctor migrate --target J:\ --include roms
+
+:: 2. Move and update SpinDoctor's roms_dir automatically.
+spindoctor migrate --target J:\ --include roms --apply
+
+:: 3. Regenerate RocketLauncher's per-system INIs with the new Rom_Path.
+::    Each Settings\<SystemName>.ini is rewritten to point at J:\Games\<system>.
+spindoctor generate-config --apply
+```
+
+GUI path: **Migrate tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Run migration**. When it finishes, go to **Metadata & Media tab** → tick Apply → click **Run generate-config**.
+
+> **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
+
+### Already moved your ROMs manually (without using migrate)
+
+If you moved your games folder yourself — dragged it in Explorer, used robocopy, etc. — and didn't use `spindoctor migrate`, you just need two commands:
+
+```bat
+:: 1. Tell SpinDoctor where the games now live.
+spindoctor config set roms_dir J:\Games
+
+:: 2. Rewrite RocketLauncher's per-system INIs to match.
+spindoctor generate-config --apply
+```
+
+GUI path: **Setup tab** → update the "ROMs directory" field and click Save. Then **Metadata & Media tab** → tick Apply → click **Run generate-config**.
+
+`generate-config --apply` writes `<RocketLauncher>\Settings\<SystemName>.ini` for every system configured in SpinDoctor with the updated `Rom_Path`. HyperSpin and RocketLauncher can find your games immediately after.
+
+> **No undo for generate-config?** `generate-config` rewrites plain text INI files. It does not create `.bak` sidecar files. If you need to roll back: re-run `generate-config --apply` after correcting `roms_dir`, or restore your RocketLauncher `Settings\` folder from a `spindoctor backup`.
+
 ### Things `migrate` does *not* move
 
 Be aware before assuming the new drive / PC is fully wired up:
 
+- **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Metadata & Media tab → Run generate-config) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
 - **Emulator-internal paths.** RetroArch's `retroarch.cfg`, PCSX2's INI, Dolphin's user folder, etc. often hardcode absolute paths to BIOS, save folders, or shaders. SpinDoctor moves the emulator's files but does not rewrite those internal configs. Re-test each emulator and adjust.
 - **BIOS files outside `emulators_dir`.** Only included if they live under `<emulators_dir>` and you `--include emulators`.
 - **Hardcoded paths inside HyperSpin XML.** SpinDoctor preserves `<game>` content verbatim. If a previous tool wrote absolute Windows paths into the XML, those are not rewritten.
