@@ -222,6 +222,7 @@ class RebuildSummary:
     media_errors: list[str] = field(default_factory=list)
     inis_written: int = 0
     pruned: int = 0
+    system_ini_path: Optional[Path] = None
 
 
 def rebuild(
@@ -328,7 +329,7 @@ def rebuild(
                 entry.system, entry.rom_name,
             )
             summary.inis_written += 1
-        generate_synthetic_system_ini(store.target_system, rl_dir)
+        summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     return summary
 
@@ -419,6 +420,28 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not config.hyperspin_dir:
             print("ERROR: hyperspin_dir is not configured.", file=sys.stderr)
             return 1
+        if not config.rocketlauncher_dir:
+            print(
+                "WARNING: rocketlauncher_dir is not configured — no system INI or "
+                "PCLauncher INIs will be written.",
+                file=sys.stderr,
+            )
+        elif not Path(config.rocketlauncher_dir).exists():
+            print(
+                f"WARNING: rocketlauncher_dir '{config.rocketlauncher_dir}' is "
+                "configured but does not exist on disk — no system INI or "
+                "PCLauncher INIs will be written.",
+                file=sys.stderr,
+            )
+        synced = sync_native(store, config)
+        if synced > 0:
+            save_store(store)
+            print(f"  synced {synced} favorite(s) from HyperSpin per-system lists.")
+        else:
+            print(
+                "  sync: 0 found in HyperSpin per-system lists — add favorites "
+                "with the F key in HyperSpin or use 'fav add'"
+            )
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
         if not args.apply:
@@ -436,6 +459,10 @@ def main(argv: Optional[list[str]] = None) -> int:
             for e in summary.media_errors[:5]:
                 print(f"    - {e}")
         print(f"  launchers:  {summary.inis_written}")
+        if summary.system_ini_path:
+            print(f"  system INI: {summary.system_ini_path}")
+        else:
+            print("  system INI: skipped (rocketlauncher_dir not set)")
         return 0
 
     return 0

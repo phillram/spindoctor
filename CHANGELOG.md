@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Favorites wheel always showed 0 entries.** `fav rebuild` (both the standalone binary and `spindoctor fav rebuild`) now automatically runs `fav sync` before building, importing HyperSpin's per-system F-key favorites (`favorite="1"` attribute and `_Favorites.ini` files) into SpinDoctor's store. Previously this was a separate command users had to know to run manually.
+- **Silent failure when `rocketlauncher_dir` is not set or the path doesn't exist on disk.** The rebuild output now emits a clear WARNING before running if `rocketlauncher_dir` is absent from config or points to a directory that doesn't exist. Previously the build completed with `launchers: 0` and `system INI: (not written)` and no indication of why.
+- **Rebuild output didn't show whether the system-level RocketLauncher INI was written.** All three wheel rebuilds now print a `System INI:` row showing the path written (e.g. `D:\Arcade\RocketLauncher\Settings\Recently Played.ini`) or `skipped` with a reason. The missing INI was the cause of HyperSpin's "Cannot find Recently Played.ini" / "Cannot find Most Played.ini" errors.
+- **No hint when Recently Played / Most Played had 0 entries.** The rebuild now prints a note pointing to the expected RocketLauncher statistics path (`Settings/Global Statistics/<system>.ini`) when entries = 0, so users know where RL needs to be writing its stats.
+
+### Changed
+
+- **Wheels tab: removed duplicate "Install Tools-menu helpers" button.** It already lives in the Tools tab; the copy in the Wheels tab was redundant and confusing.
+- **Wheels tab: added "Sync favorites from HyperSpin" button.** Explicitly imports HyperSpin's per-system F-key favorites before rebuilding. The descriptive text now explains the intended Step 1 / Step 2 order.
+- **Migrate tab: added "Current configuration" section.** "Show current paths" and "Run doctor" buttons let users verify what's configured before touching anything.
+- **Migrate tab: added "Backup before migrating" section.** Pick a backup folder and create a full snapshot in one click before running a migration, so the previous state can be restored if anything goes wrong.
+
 ## [2.2.2] - 2026-05-20
 
 ### Fixed
