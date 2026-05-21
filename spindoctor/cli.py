@@ -1740,9 +1740,11 @@ def fav_sync():
     config = _cfg()
     _check_config(config)
     store = load_store()
-    n = sync_native(store, config)
+    n, sync_warns = sync_native(store, config)
     save_store(store)
     console.print(f"[green]+[/green] synced {n} new favorite(s)")
+    for w in sync_warns:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
 
 
 @fav_group.command("rebuild")
@@ -1768,7 +1770,9 @@ def fav_rebuild(media_mode, apply_changes):
     _check_config(config)
     _warn_rocketlauncher_dir(config)
     store = load_store()
-    synced = sync_native(store, config)
+    synced, sync_warns = sync_native(store, config)
+    for w in sync_warns:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
     if synced > 0:
         save_store(store)
         console.print(f"[green]+[/green] synced {synced} favorite(s) from HyperSpin per-system lists.")

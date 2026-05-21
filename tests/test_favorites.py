@@ -216,6 +216,7 @@ def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, mo
         "Tetris\n", encoding="utf-8",
     )
     store = FavoriteStore()
-    n = sync_native(store, cfg)
+    n, warns = sync_native(store, cfg)
     assert n == 1
+    assert warns == []
     assert store.find("Super Nintendo", "Tetris") is not None

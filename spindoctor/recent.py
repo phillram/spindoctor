@@ -238,8 +238,8 @@ def _build_synthetic_wheel(
             if media_path.is_file() and media_path.stem not in seen:
                 try:
                     media_path.unlink()
-                except OSError:
-                    pass
+                except OSError as e:
+                    summary.media_errors.append(f"cleanup {media_path.name}: {e}")
         for fe in pseudo_entries:
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             plan = plan_mirror(
@@ -260,8 +260,8 @@ def _build_synthetic_wheel(
                 if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
                     try:
                         ini.unlink()
-                    except OSError:
-                        pass
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
         for fe in pseudo_entries:
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             _generate_pclauncher_ini(
