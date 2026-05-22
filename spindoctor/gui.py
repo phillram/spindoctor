@@ -5069,6 +5069,44 @@ class _SpinDoctorGUI:
                 comp_frame, text=f"{key}  —  {desc}", variable=var,
             ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
 
+        # Preset shortcut buttons — quick selections for common use cases.
+        # Placed below the checkboxes so they're clearly "select for me" helpers.
+        preset_row = self.ttk.Frame(comp_frame)
+        preset_row.grid(
+            row=len(_BACKUP_COMPONENTS), column=0, sticky="w", padx=6, pady=(6, 4),
+        )
+        self.ttk.Label(preset_row, text="Presets:").pack(side="left", padx=(0, 6))
+
+        _config_snapshot_btn = self.ttk.Button(
+            preset_row,
+            text="Config snapshot",
+            command=self._preset_config_snapshot,
+        )
+        _config_snapshot_btn.pack(side="left", padx=(0, 4))
+        _attach_tooltip(
+            _config_snapshot_btn,
+            "Selects settings + databases only.\n\n"
+            "A lightweight snapshot of your SpinDoctor configuration "
+            "(~/.spindoctor/config.json — all configured paths) and your "
+            "HyperSpin game-list XMLs. Ideal before moving files to a new "
+            "drive: the snapshot is small (kilobytes, not gigabytes) and "
+            "lets you restore SpinDoctor's path configuration and game "
+            "lists without copying ROMs or media.",
+            self.tk,
+        )
+
+        _full_backup_btn = self.ttk.Button(
+            preset_row,
+            text="Everything",
+            command=self._preset_full_backup,
+        )
+        _full_backup_btn.pack(side="left", padx=(0, 4))
+        _attach_tooltip(
+            _full_backup_btn,
+            "Ticks all components for a complete library backup.",
+            self.tk,
+        )
+
         # ── Create section ───────────────────────────────────────────────────
         create_frame = self.ttk.LabelFrame(frame, text="Create backup")
         create_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
@@ -5258,6 +5296,33 @@ class _SpinDoctorGUI:
         if not self._backup_restore_path_var.get():
             self._backup_restore_path_var.set(folders[0])
         self._set_status(f"Found {len(folders)} backup(s) in {target_path.name}.")
+
+    def _preset_config_snapshot(self) -> None:
+        """Tick settings + databases only; untick everything else.
+
+        A config snapshot is a lightweight alternative to a full backup —
+        it saves SpinDoctor's path configuration (config.json) and the
+        HyperSpin game-list XMLs without touching ROMs, media, or
+        emulator binaries. Ideal before moving files to a new drive.
+        """
+        snapshot_components = {"settings", "databases"}
+        for key, var in self._backup_component_vars.items():
+            var.set(key in snapshot_components)
+        # Pre-fill a descriptive label so the resulting folder is
+        # self-documenting (e.g. spindoctor-backup-20260521_143012-config).
+        if not self._backup_label_var.get():
+            self._backup_label_var.set("config")
+        self._set_status(
+            "Config snapshot preset: settings + databases selected. "
+            "Set a target folder, then click Create backup."
+        )
+
+    def _preset_full_backup(self) -> None:
+        """Tick all components for a complete library backup."""
+        for var in self._backup_component_vars.values():
+            var.set(True)
+        self._backup_label_var.set("")
+        self._set_status("All components selected for a full backup.")
 
     def _selected_backup_components(self) -> Optional[str]:
         """Return a comma-separated `--include` value, or None for "all".
