@@ -4009,28 +4009,56 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
 
+    # ── backup helper ──────────────────────────────────────────────────────────
+    # Mirrors the pattern in HyperspinDatabase.save(): copy the existing file
+    # to <name>.<stamp>.bak before overwriting, so users can recover the
+    # previous state if they need to. Returns the backup path or None when
+    # the source didn't exist (new file) or we're writing to --output-dir
+    # (the live file is untouched so no backup is needed).
+    def _backup_if_exists(target: Path) -> Optional[Path]:
+        """Copy *target* to a timestamped .bak sibling. Returns bak path or None."""
+        if out_base or not target.exists():
+            return None
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        bak = target.with_suffix(f".{stamp}.bak")
+        shutil.copy2(target, bak)
+        return bak
+
     if gen_rl:
         console.print(f"\n[blue bold]RocketLauncher system INIs[/blue bold] ({len(systems)} systems)")
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("System", style="cyan")
         tbl.add_column("Emulator")
         tbl.add_column("Path" if apply_changes else "Would write")
+        if apply_changes:
+            tbl.add_column("Backup")
 
+        rl_base_dry = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
         for sys_name in systems:
             emulator = guess_emulator(sys_name)
             if not apply_changes:
-                rl_base = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
                 path_str = (
-                    str(rl_base / "Settings" / f"{sys_name}.ini")
-                    if rl_base else "[dim]rocketlauncher_dir not configured[/dim]"
+                    str(rl_base_dry / "Settings" / f"{sys_name}.ini")
+                    if rl_base_dry else "[dim]rocketlauncher_dir not configured[/dim]"
                 )
                 tbl.add_row(sys_name, emulator, path_str)
             else:
                 try:
+                    # Identify the target path so we can back it up before the
+                    # generator overwrites it.
+                    rl_base_live = out_base or (
+                        Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+                    )
+                    ini_target = (
+                        rl_base_live / "Settings" / f"{sys_name}.ini"
+                        if rl_base_live else None
+                    )
+                    bak = _backup_if_exists(ini_target) if ini_target else None
                     p = generate_rl_system_ini(sys_name, config, out_base)
-                    tbl.add_row(sys_name, emulator, str(p))
+                    bak_str = f"[dim]{bak.name}[/dim]" if bak else "[dim]new[/dim]"
+                    tbl.add_row(sys_name, emulator, str(p), bak_str)
                 except ValueError as e:
-                    tbl.add_row(sys_name, emulator, f"[red]{e}[/red]")
+                    tbl.add_row(sys_name, emulator, f"[red]{e}[/red]", "")
         console.print(tbl)
 
     if gen_menu:
@@ -4041,8 +4069,21 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             console.print(f"  Listing {len(systems)} systems: {', '.join(systems[:8])}"
                           + (f" …+{len(systems)-8}" if len(systems) > 8 else ""))
         else:
+            db_base = out_base / "Databases" if out_base else config.databases_dir
+            menu_target = db_base / "Main Menu" / "Main Menu.xml"
+            bak = _backup_if_exists(menu_target)
             p = generate_hs_main_menu(systems, config, out_base)
-            console.print(f"  [green]✓[/green] {p}")
+            console.print(f"  [green]✓[/green] Written: {p}")
+            if bak:
+                console.print(f"  [dim]↳ Backed up previous: {bak}[/dim]")
+            else:
+                console.print(f"  [dim]↳ New file (no previous version to back up)[/dim]")
+            console.print(
+                f"  [dim]↳ Lists {len(systems)} system(s): "
+                + ", ".join(systems[:8])
+                + (f" …+{len(systems)-8}" if len(systems) > 8 else "")
+                + "[/dim]"
+            )
 
     if gen_global:
         console.print("\n[blue bold]Global Emulators.ini[/blue bold]")
@@ -4058,6 +4099,12 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                 console.print("  [dim]rocketlauncher_dir not configured — skipping.[/dim]")
         else:
             try:
+                # Back up before overwriting (only relevant when --overwrite-global
+                # is passed; generate_global_emulators_ini skips by default).
+                if overwrite_global and config.rocketlauncher_dir:
+                    rl_base = out_base or Path(config.rocketlauncher_dir)
+                    global_target = rl_base / "Settings" / "Global Emulators.ini"
+                    _backup_if_exists(global_target)
                 p, status = generate_global_emulators_ini(
                     config, out_base, overwrite=overwrite_global
                 )
