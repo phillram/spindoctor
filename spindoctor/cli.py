@@ -165,6 +165,10 @@ def config_set(key: str, value: str):
       ledblinky_dir             LEDBlinky install directory (contains LEDBlinky.exe and LEDBlinkyControls.xml)
       output_dir                Default output directory (blank = write in-place)
       auto_audit_export_dir     Auto-export audit CSV here after write operations
+      backup_dir                Root folder for all automatic backups. Auto-backups
+                                written before in-place saves go to a named subfolder
+                                here (e.g. backup_dir/Main Menu/). Also the default
+                                target for `backup create` and `backup list`.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
