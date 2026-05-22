@@ -2707,7 +2707,8 @@ def install_tools(output_dir, add_to_system):
             _install_tools_pclauncher_ini(bat_path), encoding="utf-8"
         )
 
-    db.save()
+    _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+    db.save(backup_dir=_bak_dir)
     console.print(
         f"[green]+[/green] added {len(added_entries)} entry(ies) to "
         f"[cyan]{db_path}[/cyan]: "
@@ -3381,7 +3382,8 @@ def fetch_meta(system, all_systems, source, fetch_all,
                     backup=False,
                 )
             else:
-                saved = db.save(backup=config.backup_before_modify)
+                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
             console.print(f"  [green]Saved:[/green] {saved}")
 
     _auto_export_audit(config, systems)
@@ -3935,7 +3937,8 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
                     backup=False,
                 )
             else:
-                saved = db.save(backup=config.backup_before_modify)
+                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
@@ -5222,7 +5225,8 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                         backup=False,
                     )
                 else:
-                    saved = db.save(backup=config.backup_before_modify)
+                    _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+                    saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
                 console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
             elif new_count:
                 console.print(f"  [yellow]would add {new_count} stub(s)[/yellow]")
@@ -5481,7 +5485,8 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     backup=False,
                 )
             else:
-                saved = db.save(backup=config.backup_before_modify)
+                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
             console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
         else:
             console.print("  [green]Database already in sync with titles.[/green]")
