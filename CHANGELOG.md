@@ -12,17 +12,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Silent failure when `rocketlauncher_dir` is not set or the path doesn't exist on disk.** The rebuild output now emits a clear WARNING before running if `rocketlauncher_dir` is absent from config or points to a directory that doesn't exist. Previously the build completed with `launchers: 0` and `system INI: (not written)` and no indication of why.
 - **Rebuild output didn't show whether the system-level RocketLauncher INI was written.** All three wheel rebuilds now print a `System INI:` row showing the path written (e.g. `D:\Arcade\RocketLauncher\Settings\Recently Played.ini`) or `skipped` with a reason. The missing INI was the cause of HyperSpin's "Cannot find Recently Played.ini" / "Cannot find Most Played.ini" errors.
 - **No hint when Recently Played / Most Played had 0 entries.** The rebuild now prints a note pointing to the expected RocketLauncher statistics path (`Settings/Global Statistics/<system>.ini`) when entries = 0, so users know where RL needs to be writing its stats.
-- **Silent failures across CLI and shared modules now surfaced.** Several commands previously swallowed errors and returned empty results with no explanation. All affected paths now print actionable warnings or error messages:
-  - `fav-sync` with no systems configured now prints a diagnostic hint instead of "Synced 0".
-  - `recent-list` with `rocketlauncher_dir` unset now prints the missing-config message.
-  - `stats show` with an empty stats file now prints context instead of exiting silently.
-  - `ledblinky` commands with no ROMs found now print a path/config hint.
-  - Orphan media and INI cleanup failures (in `fav` and `recent`) are now reported instead of silently swallowed.
-  - Keyboard interrupt during `backup`, `migrate`, or `curate` now prints a warning naming what completed and what recovery command to run.
-  - `themes undo` with a missing backup file now reports the error instead of exiting silently.
-  - `doctor` with a corrupt match-cache JSON now reports `WARN` with the filename instead of silently skipping it.
-  - RocketLauncher `Main Menu.xml` parse errors now print a warning to stderr instead of returning an empty system list.
-- **`generate-config --apply` no longer overwrites files without a backup.** Before writing any file in-place, the previous version is copied to a timestamped `.bak` sibling (e.g. `MAME.20260521_143012.bak`). No backup is made when `--output-dir` is used (the live files are untouched). Affected files: `Settings/<System>.ini` per system, `Databases/Main Menu/Main Menu.xml`, and `Settings/Global Emulators.ini` (only when `--overwrite-global` is passed).
 
 ### Changed
 
@@ -30,11 +19,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Wheels tab: added "Sync favorites from HyperSpin" button.** Explicitly imports HyperSpin's per-system F-key favorites before rebuilding. The descriptive text now explains the intended Step 1 / Step 2 order.
 - **Migrate tab: added "Current configuration" section.** "Show current paths" and "Run doctor" buttons let users verify what's configured before touching anything.
 - **Migrate tab: added "Backup before migrating" section.** Pick a backup folder and create a full snapshot in one click before running a migration, so the previous state can be restored if anything goes wrong.
-- **`generate-config --apply` output now shows exactly which files were written and backed up.** The per-system INI table gains a `Backup` column (`.bak` filename, or `new` for first-time writes). The `Main Menu.xml` section now prints the written path, the backup filename, and the count and names of systems listed.
-
-### Added
-
-- **Backup & Restore tab: component presets.** Two shortcut buttons now appear below the component checkboxes. "Config snapshot" selects `settings` + `databases` only — a lightweight backup (kilobytes, not gigabytes) of SpinDoctor's path configuration and HyperSpin game-list XMLs, ideal before moving files to a new drive. "Everything" restores all components ticked.
 
 ## [2.2.2] - 2026-05-20
 
