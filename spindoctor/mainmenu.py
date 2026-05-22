@@ -156,10 +156,9 @@ def save_main_menu(
         menu._db = db
 
     use_backup = config.backup_before_modify and output_dir is None
-    bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
     if output_dir is None:
         # Writing in-place — let HyperspinDatabase.save() backup the live file.
-        return db.save(backup=use_backup, backup_dir=bak_dir)
+        return db.save(backup=use_backup)
     # Routed elsewhere — write to the explicit target (no backup).
     return db.save(output_path=target, backup=False)
 

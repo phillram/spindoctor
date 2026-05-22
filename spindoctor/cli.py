@@ -165,10 +165,6 @@ def config_set(key: str, value: str):
       ledblinky_dir             LEDBlinky install directory (contains LEDBlinky.exe and LEDBlinkyControls.xml)
       output_dir                Default output directory (blank = write in-place)
       auto_audit_export_dir     Auto-export audit CSV here after write operations
-      backup_dir                Root folder for all automatic backups. Auto-backups
-                                written before in-place saves go to a named subfolder
-                                here (e.g. backup_dir/Main Menu/). Also the default
-                                target for `backup create` and `backup list`.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
@@ -2711,8 +2707,7 @@ def install_tools(output_dir, add_to_system):
             _install_tools_pclauncher_ini(bat_path), encoding="utf-8"
         )
 
-    _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-    db.save(backup_dir=_bak_dir)
+    db.save()
     console.print(
         f"[green]+[/green] added {len(added_entries)} entry(ies) to "
         f"[cyan]{db_path}[/cyan]: "
@@ -3386,8 +3381,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
                     backup=False,
                 )
             else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify)
             console.print(f"  [green]Saved:[/green] {saved}")
 
     _auto_export_audit(config, systems)
@@ -3941,8 +3935,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
                     backup=False,
                 )
             else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify)
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
@@ -5229,8 +5222,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                         backup=False,
                     )
                 else:
-                    _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                    saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                    saved = db.save(backup=config.backup_before_modify)
                 console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
             elif new_count:
                 console.print(f"  [yellow]would add {new_count} stub(s)[/yellow]")
@@ -5489,8 +5481,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     backup=False,
                 )
             else:
-                _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify)
             console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
         else:
             console.print("  [green]Database already in sync with titles.[/green]")
@@ -5755,10 +5746,10 @@ def backup_group():
 
 
 @backup_group.command("create")
-@click.option("--target", type=click.Path(file_okay=False), default=None,
+@click.option("--target", type=click.Path(file_okay=False), required=True,
               help="Destination folder for the backup. A new dated subfolder "
                    "named 'spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/' is "
-                   "created under it. Defaults to backup_dir from config.")
+                   "created under it.")
 @click.option("--include", default="all",
               help="Comma-separated components to back up. Choices: roms, "
                    "databases, media, emulators, rocketlauncher, ledblinky, "
@@ -5774,10 +5765,7 @@ def backup_create(target, include, label, apply_changes):
 
     \b
     Examples:
-      # Dry-run — see what would be backed up (uses backup_dir from config)
-      spindoctor backup create
-
-      # Dry-run with explicit target
+      # Dry-run — see what would be backed up
       spindoctor backup create --target E:\\Backups
 
       # Full backup of everything
@@ -5798,14 +5786,7 @@ def backup_create(target, include, label, apply_changes):
     )
 
     config = _cfg()
-    resolved_target = target or getattr(config, "backup_dir", "") or ""
-    if not resolved_target:
-        err_console.print(
-            "[red]No backup target: pass --target or set backup_dir in config "
-            "(spindoctor config set backup_dir <path>).[/red]"
-        )
-        sys.exit(1)
-    target_root = Path(resolved_target).expanduser()
+    target_root = Path(target).expanduser()
 
     try:
         components = normalize_components(include.split(","))
@@ -5895,9 +5876,9 @@ def backup_create(target, include, label, apply_changes):
 
 
 @backup_group.command("list")
-@click.option("--target", type=click.Path(file_okay=False), default=None,
+@click.option("--target", type=click.Path(file_okay=False), required=True,
               help="Folder where backups live (the same path passed to "
-                   "`backup create --target`). Defaults to backup_dir from config.")
+                   "`backup create --target`).")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of a human-readable table — used by "
                    "the GUI's Backup tab restore picker.")
@@ -5905,15 +5886,7 @@ def backup_list(target, as_json):
     """List backups under a target folder."""
     from .backup import format_bytes, list_backups, read_manifest
 
-    config = _cfg()
-    resolved_target = target or getattr(config, "backup_dir", "") or ""
-    if not resolved_target:
-        err_console.print(
-            "[red]No target: pass --target or set backup_dir in config "
-            "(spindoctor config set backup_dir <path>).[/red]"
-        )
-        sys.exit(1)
-    target_root = Path(resolved_target).expanduser()
+    target_root = Path(target).expanduser()
     backups = list_backups(target_root)
     if as_json:
         # The GUI's _scan_backup_folders consumes this shape: a list of

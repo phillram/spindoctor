@@ -165,27 +165,6 @@ def _is_plausible_geometry(s: str) -> bool:
     return bool(_GEOMETRY_RE.match(s or ""))
 
 
-def _is_maximized(root) -> bool:
-    """Return True when *root* is currently maximised (cross-platform)."""
-    try:
-        if sys.platform == "win32":
-            return root.state() == "zoomed"
-        return bool(root.wm_attributes("-zoomed"))
-    except Exception:  # noqa: BLE001
-        return False
-
-
-def _set_maximized(root) -> None:
-    """Maximise *root* in a cross-platform way."""
-    try:
-        if sys.platform == "win32":
-            root.state("zoomed")
-        else:
-            root.wm_attributes("-zoomed", True)
-    except Exception:  # noqa: BLE001
-        pass
-
-
 # Named Tk fonts whose sizes we scale alongside `ui_scale`. Keeping the
 # list central means any widget that uses a non-default font (e.g. the
 # bold headings) opts into scaling just by referencing the right name.
@@ -398,7 +377,6 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("mame_executable",       "MAME executable",                      r"D:\Emulators\MAME\mame.exe", True),
     ("output_dir",            "Default output directory",             r"D:\SpinDoctorOutput",        True),
     ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
-    ("backup_dir",            "Backup root directory",                r"D:\Backups",                 True),
 )
 
 # Scraper credential fields shown below the path fields in the Setup tab.
@@ -799,10 +777,6 @@ class _SpinDoctorGUI:
         if not restored:
             self.root.geometry(f"{scaled_w}x{scaled_h}")
         self.root.minsize(min_w, min_h)
-        # Restore maximized state after the normal geometry is set so
-        # un-maximizing later snaps back to the saved window size.
-        if getattr(_bootstrap_cfg, "gui_window_maximized", False):
-            self.root.after_idle(lambda: _set_maximized(self.root))
         # Stash the persisted last-active tab for _build_layout to read
         # after the notebook is built.
         self._restore_tab_idx = int(getattr(_bootstrap_cfg, "gui_last_active_tab", -1))
@@ -5066,9 +5040,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(frame, text="Target folder").grid(
             row=1, column=0, sticky="w", pady=2,
         )
-        _backup_cfg = load_config()
-        _backup_dir_default = getattr(_backup_cfg, "backup_dir", "") or ""
-        self._backup_target_var = self.tk.StringVar(value=_backup_dir_default)
+        self._backup_target_var = self.tk.StringVar()
         self.ttk.Entry(frame, textvariable=self._backup_target_var, width=60).grid(
             row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
@@ -5169,7 +5141,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(restore_frame, text="Backup folder").grid(
             row=0, column=0, sticky="w", padx=6, pady=2,
         )
-        self._backup_restore_path_var = self.tk.StringVar(value=_backup_dir_default)
+        self._backup_restore_path_var = self.tk.StringVar()
         self._backup_restore_combo = self.ttk.Combobox(
             restore_frame, textvariable=self._backup_restore_path_var, width=48,
         )
@@ -9652,24 +9624,16 @@ class _SpinDoctorGUI:
             pass
 
     def _save_gui_state(self) -> None:
-        """Persist window geometry, maximized state, and last-active tab into config.json.
+        """Persist window geometry + last-active tab into config.json.
 
         Called from `_on_close` only — not on every <Configure> event —
         so the save happens once per session and config.json doesn't
         thrash during a window-edge drag.
-
-        Geometry is only updated when the window is *not* maximized so
-        the saved normal-state size is preserved for when the user later
-        un-maximizes the window.
         """
-        maximized = _is_maximized(self.root)
-        if not maximized:
-            try:
-                geom = self.root.geometry()
-            except Exception:  # noqa: BLE001
-                geom = ""
-        else:
-            geom = getattr(load_config(), "gui_window_geometry", "") or ""
+        try:
+            geom = self.root.geometry()
+        except Exception:  # noqa: BLE001
+            geom = ""
         try:
             tab_idx = int(self._nb.index("current"))
         except Exception:  # noqa: BLE001
@@ -9677,12 +9641,10 @@ class _SpinDoctorGUI:
         cfg = load_config()
         if (
             getattr(cfg, "gui_window_geometry", "") == geom
-            and getattr(cfg, "gui_window_maximized", False) == maximized
             and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
         ):
             return
         cfg.gui_window_geometry = geom
-        cfg.gui_window_maximized = maximized
         cfg.gui_last_active_tab = tab_idx
         save_config(cfg)
 

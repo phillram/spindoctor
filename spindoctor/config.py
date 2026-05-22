@@ -101,11 +101,6 @@ class Config:
 
     # Behaviour
     backup_before_modify: bool = True
-    # Root folder for all automatic backups. When set, auto-backups (e.g. the
-    # .bak written before an in-place XML save) go to a named subfolder here
-    # instead of next to the source file. Full library backups default to this
-    # folder when no explicit --target is given.
-    backup_dir: str = ""
     max_concurrent_downloads: int = 4
     match_threshold: float = 0.80
     interactive_matching: bool = True
@@ -129,7 +124,6 @@ class Config:
     # to re-navigate every time. Empty string = "use the calculated
     # default geometry"; a negative tab index disables restore.
     gui_window_geometry: str = ""
-    gui_window_maximized: bool = False
     gui_last_active_tab: int = -1
     # Last-selected system per tab, keyed by tab label. Saved when the
     # user changes a combobox; restored on the next launch so cabinet
