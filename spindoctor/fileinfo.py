@@ -7,6 +7,7 @@ reading the MP4/AVI header directly.
 from __future__ import annotations
 
 import json
+import logging
 import struct
 import subprocess
 import sys
@@ -14,6 +15,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+
+_log = logging.getLogger(__name__)
 
 from .config import MEDIA_TYPES
 from .database import GameEntry
@@ -177,14 +180,16 @@ def scan_file(path: Path, media_type: str = "") -> FileDetail:
             detail.width, detail.height = (
                 _png_dimensions(path) if ext == ".png" else _jpeg_dimensions(path)
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug("Couldn't read image dimensions for %s: %s: %s",
+                       path.name, type(exc).__name__, exc)
 
     if ext in (".mp4", ".avi", ".flv", ".mkv", ".mov", ".wmv", ".m4v"):
         try:
             detail.duration_seconds = _video_duration(path)
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug("Couldn't read video duration for %s: %s: %s",
+                       path.name, type(exc).__name__, exc)
 
     return detail
 

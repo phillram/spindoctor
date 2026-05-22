@@ -41,6 +41,7 @@ from . import __app_name__, __version__
 from .config import (
     CONFIG_DIR, CONFIG_FILE, get_systems, load_config, save_config,
 )
+from ._utils import format_bytes as _format_bytes_util
 
 
 # ─── Subprocess plumbing (importable without Tk) ──────────────────────────────
@@ -3400,14 +3401,7 @@ class _SpinDoctorGUI:
 
     @staticmethod
     def _format_bytes(n: int) -> str:
-        # Identical units to backup.format_bytes — kept inline so the
-        # viewer doesn't pull in the heavier backup module just for
-        # display formatting.
-        for unit in ("B", "KB", "MB", "GB"):
-            if n < 1024:
-                return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-            n /= 1024
-        return f"{n:.1f} TB"
+        return _format_bytes_util(n)
 
     # ── Theme browser ─────────────────────────────────────────────────────────
 

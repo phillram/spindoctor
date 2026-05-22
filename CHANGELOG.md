@@ -8,6 +8,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Corrupt `favorites.json` silently wiped all favorites on the next write.** `load_store` now emits a `RuntimeWarning` naming the file and the parse error when the file exists but is unreadable, instead of silently returning an empty store that would be saved over the corrupt one.
+- **`fav rebuild` silently produced favorites with blank metadata when a system's database XML was missing or malformed.** `_safe_load` now emits a warning naming the system and the error before returning `None`, so users can tell why description/year/genre fields are empty.
+- **`save_config` write failures surfaced as raw `OSError` tracebacks.** Failed config saves (disk full, permissions, file locked) now raise with a human-readable message via `humanize_oserror`, consistent with how other write failures are reported.
+- **`doctor` LEDBlinky INI parse errors only showed the message string, not the exception type.** The detail field now includes `ExceptionType: message`, making it easier to diagnose the root cause from the doctor output.
+- **Image dimension and video duration extraction failures were silently dropped.** `fileinfo` now logs a `DEBUG`-level message when reading image dimensions or video duration fails, naming the file and exception, so the root cause appears in the debug log instead of being invisible.
+- **`media._open_in_default_app` swallowed OS errors without any trace.** The function now logs a `WARNING` when it can't open a file, so failures appear in the log rather than silently doing nothing.
+- **ScreenScraper credential validation silently fell back to bundled dev credentials when `load_config()` raised.** The failure is now logged at `WARNING` level via `scraper_logger` so it appears in the scraper log file.
+- **`mainmenu.py` accessed `HyperspinDatabase._root` directly** to iterate entries in XML element order. The logic is now behind the new public `HyperspinDatabase.iter_xml_order()` method, which falls back to dict order when the tree is unavailable.
+- **Duplicate `import csv` inside `theme_scan`** (already imported at module level). Removed.
+- **`_SpinDoctorGUI._format_bytes` was a copy of `_utils.format_bytes`** that could diverge silently. The GUI method now delegates to the shared utility.
+
+### Added
+
+- **`HyperspinDatabase.iter_xml_order()`** — public method that yields `GameEntry` objects in their original XML element order (using the parsed lxml tree when available, falling back to insertion-order dict iteration). Removes the need for callers to reach into the private `_root` attribute.
+
 - **Favorites wheel always showed 0 entries.** `fav rebuild` (both the standalone binary and `spindoctor fav rebuild`) now automatically runs `fav sync` before building, importing HyperSpin's per-system F-key favorites (`favorite="1"` attribute and `_Favorites.ini` files) into SpinDoctor's store. Previously this was a separate command users had to know to run manually.
 - **Silent failure when `rocketlauncher_dir` is not set or the path doesn't exist on disk.** The rebuild output now emits a clear WARNING before running if `rocketlauncher_dir` is absent from config or points to a directory that doesn't exist. Previously the build completed with `launchers: 0` and `system INI: (not written)` and no indication of why.
 - **Rebuild output didn't show whether the system-level RocketLauncher INI was written.** All three wheel rebuilds now print a `System INI:` row showing the path written (e.g. `D:\Arcade\RocketLauncher\Settings\Recently Played.ini`) or `skipped` with a reason. The missing INI was the cause of HyperSpin's "Cannot find Recently Played.ini" / "Cannot find Most Played.ini" errors.

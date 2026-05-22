@@ -172,6 +172,24 @@ class HyperspinDatabase:
         self._ensure_loaded()
         return self._games
 
+    def iter_xml_order(self) -> Iterator[GameEntry]:
+        """Yield games in their original XML element order.
+
+        When lxml is available, the order is derived from the parsed element
+        tree rather than the insertion-order dict — this matters for the Main
+        Menu XML, where HyperSpin honours wheel position by element order.
+        Falls back to dict iteration (which preserves insertion order in
+        Python 3.7+) when the tree is not available.
+        """
+        self._ensure_loaded()
+        if self._root is not None:
+            for game_el in self._root.findall("game"):
+                name = (game_el.get("name") or "").strip()
+                if name and name in self._games:
+                    yield self._games[name]
+        else:
+            yield from self._games.values()
+
     def get(self, name: str) -> Optional[GameEntry]:
         self._ensure_loaded()
         return self._games.get(name)
@@ -181,6 +199,11 @@ class HyperspinDatabase:
         return name in self._games
 
     def add_game(self, game: GameEntry) -> None:
+        """Add or replace a game entry. Identical to upsert_game.
+
+        Callers that need "add only if absent" semantics should check
+        ``contains()`` first — this method does not guard against overwrites.
+        """
         self._ensure_loaded()
         self._games[game.name] = game
 

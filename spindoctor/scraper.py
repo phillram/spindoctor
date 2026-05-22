@@ -733,7 +733,8 @@ def verify_screenscraper(
     if devid is None or devpassword is None:
         try:
             cfg = load_config()
-        except Exception:
+        except Exception as exc:
+            scraper_logger.warning("Failed to load config for dev credentials: %s", exc)
             cfg = None
         if devid is None:
             devid = (getattr(cfg, "screenscraper_devid", None) or "SpinDoctor")
