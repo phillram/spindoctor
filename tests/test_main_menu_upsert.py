@@ -35,7 +35,6 @@ def test_upsert_preserves_existing_entries(config):
     generate_hs_main_menu(["MAME", "SNES"], config)
     path, added = upsert_main_menu_system("PS3", config)
     assert added is True
-    # Sorted output, but all three should be there
     assert set(_systems_in(path)) == {"MAME", "SNES", "PS3"}
 
 
@@ -44,6 +43,22 @@ def test_upsert_idempotent(config):
     path, added = upsert_main_menu_system("PS3", config)
     assert added is False
     assert _systems_in(path).count("PS3") == 1
+
+
+def test_generate_preserves_existing_order(config):
+    """A second generate-config call must not reorder already-present systems."""
+    generate_hs_main_menu(["SNES", "MAME"], config)
+    # Second call passes systems in a different order (as sorted() would);
+    # PS3 is new. SNES and MAME must stay in their original positions.
+    path = generate_hs_main_menu(["MAME", "PS3", "SNES"], config)
+    assert _systems_in(path) == ["SNES", "MAME", "PS3"]
+
+
+def test_generate_drops_removed_systems(config):
+    """Systems no longer detected on disk must be removed from the menu."""
+    generate_hs_main_menu(["MAME", "SNES", "N64"], config)
+    path = generate_hs_main_menu(["MAME", "SNES"], config)
+    assert _systems_in(path) == ["MAME", "SNES"]
 
 
 def test_generated_main_menu_uses_native_minimal_format(config):
