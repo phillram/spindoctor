@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-05-22
+
 ### Added
 
 - **`backup_dir` config field — centralised backup root.** A new `backup_dir` setting (Setup tab → "Backup root directory", or `spindoctor config set backup_dir <path>`) specifies a root folder for all automatic backups. When set, the `.bak` file written before any in-place XML save goes to a named subfolder under that root (e.g. `D:\Backups\Main Menu\Main Menu.20260522_143012.bak`) instead of sitting next to the source file. All five `db.save()` call sites (fetch-meta, curate, sync-roms, install-tools, main-menu) now thread `backup_dir` through from config. `backup create` and `backup list` also use `backup_dir` as the default `--target` when no explicit path is given.
@@ -669,7 +671,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/phillram/spindoctor/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/phillram/spindoctor/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/phillram/spindoctor/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/phillram/spindoctor/compare/v2.2.0...v2.2.1
