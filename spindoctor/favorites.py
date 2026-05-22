@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import warnings
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -61,7 +62,14 @@ def load_store(path: Path = FAVORITES_FILE) -> FavoriteStore:
         return FavoriteStore()
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, OSError) as exc:
+        warnings.warn(
+            f"favorites.json is unreadable or corrupt ({exc}); returning empty store. "
+            "Your existing favorites have NOT been modified — fix or delete the file "
+            f"at {path} before running any write operation.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return FavoriteStore()
     entries = [FavoriteEntry(**e) for e in data.get("entries", [])]
     return FavoriteStore(
@@ -345,7 +353,13 @@ def rebuild(
 def _safe_load(system_name: str, config: Config) -> Optional[HyperspinDatabase]:
     try:
         return load_database(system_name, config.databases_dir)
-    except (ValueError, OSError):
+    except (ValueError, OSError) as exc:
+        warnings.warn(
+            f"Couldn't load database for '{system_name}': {exc}. "
+            "Rebuilt favorite entries for this system will have empty metadata fields.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
 
 

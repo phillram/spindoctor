@@ -2281,7 +2281,6 @@ def theme_scan(system, keyword, output):
     assets = themes.filter_assets(assets, system=system, keyword=keyword)
 
     if output:
-        import csv
         out_path = Path(output)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         with out_path.open("w", newline="", encoding="utf-8") as fh:
