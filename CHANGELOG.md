@@ -35,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **Backup & Restore tab: component presets.** Two shortcut buttons now appear below the component checkboxes. "Config snapshot" selects `settings` + `databases` only — a lightweight backup (kilobytes, not gigabytes) of SpinDoctor's path configuration and HyperSpin game-list XMLs, ideal before moving files to a new drive. "Everything" restores all components ticked.
+- **Metadata tab: "Restore DB backup…" buttons.** Appears in both the "Fetch metadata" and "Sync database to ROMs" sections. Picks from the timestamped `.bak` sidecars that `fetch-meta`, `update-db`, and `batch-edit` write automatically (when `config.backup_before_modify` is on) and restores the selected system's `<System>.xml` via the CLI — no file I/O in the GUI.
+- **Metadata tab: "Restore RL INI backup…" button.** Appears in the "Sync database to ROMs" section alongside "Run generate-config". Restores the selected system's `RocketLauncher/Settings/<System>.ini` from the timestamped `.bak` sidecar that `generate-config --apply` writes before overwriting.
 
 ## [2.2.2] - 2026-05-20
 
