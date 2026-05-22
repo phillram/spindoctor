@@ -198,15 +198,6 @@ class HyperspinDatabase:
         self._ensure_loaded()
         return name in self._games
 
-    def add_game(self, game: GameEntry) -> None:
-        """Add or replace a game entry. Identical to upsert_game.
-
-        Callers that need "add only if absent" semantics should check
-        ``contains()`` first — this method does not guard against overwrites.
-        """
-        self._ensure_loaded()
-        self._games[game.name] = game
-
     def update_game(self, game: GameEntry) -> None:
         self._ensure_loaded()
         if game.name in self._games:

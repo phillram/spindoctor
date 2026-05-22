@@ -283,7 +283,7 @@ def check_match_cache(config: Config, fix: bool, fixes_applied: list[str]) -> Ch
             continue
         if not isinstance(data, dict):
             continue
-        existing_roms = {p.stem for p in rom_dir.iterdir()} if rom_dir.exists() else set()
+        existing_roms = {p.stem for p in rom_dir.rglob("*") if p.is_file()} if rom_dir.exists() else set()
         stale = [name for name in data if name not in existing_roms]
         if stale:
             stale_total += len(stale)

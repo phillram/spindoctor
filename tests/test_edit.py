@@ -58,7 +58,7 @@ def _build_cfg(tmp_path: Path) -> Config:
 
     db = HyperspinDatabase("nes", db_dir / "nes.xml")
     for g in games:
-        db.add_game(g)
+        db.upsert_game(g)
     db.save()
 
     cfg = Config()

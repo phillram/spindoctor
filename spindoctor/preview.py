@@ -680,24 +680,15 @@ def render_system_overview(
         render_game_card_html(item, card_path, back_href="../index.html")
         cards.append(card_path)
 
-    if "html" in formats or "png" not in formats:
-        render_contact_sheet_html(
-            items, index_html,
-            columns=columns,
-            include_missing=include_missing,
-            card_dir=games_dir,
-            title=f"{system_name} preview",
-        )
-    else:
-        # Always write an HTML index — it's the navigation entry point even
-        # when the user only asked for PNG.
-        render_contact_sheet_html(
-            items, index_html,
-            columns=columns,
-            include_missing=include_missing,
-            card_dir=games_dir,
-            title=f"{system_name} preview",
-        )
+    # Always write an HTML index — it's the navigation entry point even
+    # when the user only asked for PNG.
+    render_contact_sheet_html(
+        items, index_html,
+        columns=columns,
+        include_missing=include_missing,
+        card_dir=games_dir,
+        title=f"{system_name} preview",
+    )
 
     if "png" in formats:
         png_target = output_dir / "index.png"

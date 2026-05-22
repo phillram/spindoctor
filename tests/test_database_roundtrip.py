@@ -100,7 +100,7 @@ def test_add_new_game(tmp_path):
     p = _write(tmp_path, SAMPLE_XML)
     db = HyperspinDatabase("MAME", p)
     db.load()
-    db.add_game(GameEntry(name="galaga", description="Galaga", year="1981"))
+    db.upsert_game(GameEntry(name="galaga", description="Galaga", year="1981"))
     db.save(backup=False)
 
     re_db = HyperspinDatabase("MAME", p)
@@ -169,7 +169,7 @@ def test_save_creates_fresh_file_when_no_existing(tmp_path):
     p = tmp_path / "NEW.xml"
     db = HyperspinDatabase("NEW", p)
     db.load()  # file does not exist
-    db.add_game(GameEntry(name="x", description="X", year="2000"))
+    db.upsert_game(GameEntry(name="x", description="X", year="2000"))
     db.save(backup=False)
     assert p.exists()
     re_db = HyperspinDatabase("NEW", p)
