@@ -5746,10 +5746,10 @@ def backup_group():
 
 
 @backup_group.command("create")
-@click.option("--target", type=click.Path(file_okay=False), required=True,
+@click.option("--target", type=click.Path(file_okay=False), default=None,
               help="Destination folder for the backup. A new dated subfolder "
                    "named 'spindoctor-backup-YYYYMMDD_HHMMSS[-LABEL]/' is "
-                   "created under it.")
+                   "created under it. Defaults to backup_dir from config.")
 @click.option("--include", default="all",
               help="Comma-separated components to back up. Choices: roms, "
                    "databases, media, emulators, rocketlauncher, ledblinky, "
@@ -5765,7 +5765,10 @@ def backup_create(target, include, label, apply_changes):
 
     \b
     Examples:
-      # Dry-run — see what would be backed up
+      # Dry-run — see what would be backed up (uses backup_dir from config)
+      spindoctor backup create
+
+      # Dry-run with explicit target
       spindoctor backup create --target E:\\Backups
 
       # Full backup of everything
@@ -5786,7 +5789,14 @@ def backup_create(target, include, label, apply_changes):
     )
 
     config = _cfg()
-    target_root = Path(target).expanduser()
+    resolved_target = target or getattr(config, "backup_dir", "") or ""
+    if not resolved_target:
+        err_console.print(
+            "[red]No backup target: pass --target or set backup_dir in config "
+            "(spindoctor config set backup_dir <path>).[/red]"
+        )
+        sys.exit(1)
+    target_root = Path(resolved_target).expanduser()
 
     try:
         components = normalize_components(include.split(","))
@@ -5876,9 +5886,9 @@ def backup_create(target, include, label, apply_changes):
 
 
 @backup_group.command("list")
-@click.option("--target", type=click.Path(file_okay=False), required=True,
+@click.option("--target", type=click.Path(file_okay=False), default=None,
               help="Folder where backups live (the same path passed to "
-                   "`backup create --target`).")
+                   "`backup create --target`). Defaults to backup_dir from config.")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit JSON instead of a human-readable table — used by "
                    "the GUI's Backup tab restore picker.")
@@ -5886,7 +5896,15 @@ def backup_list(target, as_json):
     """List backups under a target folder."""
     from .backup import format_bytes, list_backups, read_manifest
 
-    target_root = Path(target).expanduser()
+    config = _cfg()
+    resolved_target = target or getattr(config, "backup_dir", "") or ""
+    if not resolved_target:
+        err_console.print(
+            "[red]No target: pass --target or set backup_dir in config "
+            "(spindoctor config set backup_dir <path>).[/red]"
+        )
+        sys.exit(1)
+    target_root = Path(resolved_target).expanduser()
     backups = list_backups(target_root)
     if as_json:
         # The GUI's _scan_backup_folders consumes this shape: a list of

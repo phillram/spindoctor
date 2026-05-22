@@ -235,14 +235,25 @@ class HyperspinDatabase:
 
     # ── save ───────────────────────────────────────────────────────────────────
 
-    def save(self, output_path: Optional[Path] = None, backup: bool = True) -> Path:
+    def save(
+        self,
+        output_path: Optional[Path] = None,
+        backup: bool = True,
+        backup_dir: Optional[Path] = None,
+    ) -> Path:
         self._ensure_loaded()
         target = output_path or self.xml_path
         target.parent.mkdir(parents=True, exist_ok=True)
 
         if backup and target.exists() and output_path is None:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            shutil.copy2(target, target.with_suffix(f".{stamp}.bak"))
+            if backup_dir is not None:
+                subfolder = backup_dir / target.stem
+                subfolder.mkdir(parents=True, exist_ok=True)
+                bak_path = subfolder / f"{target.stem}.{stamp}.bak"
+            else:
+                bak_path = target.with_suffix(f".{stamp}.bak")
+            shutil.copy2(target, bak_path)
 
         # In-place merge path: an original tree exists, so update it so that
         # comments / unknown elements are preserved.
