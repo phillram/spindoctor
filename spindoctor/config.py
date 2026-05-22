@@ -303,9 +303,13 @@ def load_config() -> Config:
 
 
 def save_config(config: Config) -> None:
+    from ._errors import humanize_oserror
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config.to_dict(), f, indent=2)
+    try:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            json.dump(config.to_dict(), f, indent=2)
+    except OSError as exc:
+        raise OSError(humanize_oserror(exc, action="save config.json")) from exc
     reset_override_cache()
 
 

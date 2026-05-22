@@ -89,15 +89,8 @@ def load_main_menu(config: Config) -> MainMenu:
     db.load()
 
     entries: list[MainMenuEntry] = []
-    if db._root is not None:
-        for game_el in db._root.findall("game"):
-            name = (game_el.get("name") or "").strip()
-            if not name:
-                continue
-            entries.append(_entry_from_game(db.get(name) or GameEntry(name=name)))
-    else:
-        for game in db.games().values():
-            entries.append(_entry_from_game(game))
+    for game in db.iter_xml_order():
+        entries.append(_entry_from_game(game))
 
     return MainMenu(xml_path=path, entries=entries, _db=db)
 

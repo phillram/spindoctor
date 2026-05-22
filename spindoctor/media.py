@@ -1,6 +1,7 @@
 """Media asset downloading and local file management for SpinDoctor."""
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import shutil
@@ -12,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 from urllib.parse import urlparse
+
+_log = logging.getLogger(__name__)
 
 import requests
 
@@ -69,8 +72,8 @@ def _open_in_default_app(path: Path) -> None:
             os.startfile(str(path))  # type: ignore[attr-defined]
         else:
             subprocess.run(["xdg-open", str(path)], check=False)
-    except (OSError, subprocess.SubprocessError):
-        pass
+    except (OSError, subprocess.SubprocessError) as exc:
+        _log.warning("Couldn't open %s in default app: %s", path, exc)
 
 
 @dataclass

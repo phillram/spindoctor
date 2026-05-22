@@ -377,7 +377,8 @@ def check_ledblinky(config: Config) -> Check:
                 ))
             except Exception as e:
                 parent.children.append(Check(
-                    name=fname, status=Status.WARN, detail=str(e),
+                    name=fname, status=Status.WARN,
+                    detail=f"{type(e).__name__}: {e}",
                 ))
     parent.status = (
         Status.OK if all(c.status == Status.OK for c in parent.children)
