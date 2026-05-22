@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.2.3] - 2026-05-22
+
 ### Fixed
 
 - **`generate-config --apply` reordered the Main Menu wheel alphabetically.** Running `generate-config` (which has `--main-menu` on by default) would regenerate `Main Menu.xml` using a `sorted()` filesystem scan, discarding any manual ordering the user had set. The generator now reads the existing file first and preserves its entry order — existing systems keep their current positions, newly-discovered systems are appended at the end, and systems that are no longer detected on disk are dropped. `mainmenu add` and `add-system` were not affected by this bug; they always appended.
@@ -653,7 +655,9 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.2.3...HEAD
+[2.2.3]: https://github.com/phillram/spindoctor/compare/v2.2.2...v2.2.3
+[2.2.2]: https://github.com/phillram/spindoctor/compare/v2.2.1...v2.2.2
 [2.2.1]: https://github.com/phillram/spindoctor/compare/v2.2.0...v2.2.1
 [2.2.0]: https://github.com/phillram/spindoctor/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/phillram/spindoctor/compare/v2.0.1...v2.1.0
