@@ -249,11 +249,22 @@ class HyperspinDatabase:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             if backup_dir is not None:
                 subfolder = backup_dir / target.stem
-                subfolder.mkdir(parents=True, exist_ok=True)
+                try:
+                    subfolder.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:
+                    raise OSError(
+                        f"Cannot create backup folder '{subfolder}': {exc}. "
+                        f"Check that backup_dir '{backup_dir}' exists and is writable."
+                    ) from exc
                 bak_path = subfolder / f"{target.stem}.{stamp}.bak"
             else:
                 bak_path = target.with_suffix(f".{stamp}.bak")
-            shutil.copy2(target, bak_path)
+            try:
+                shutil.copy2(target, bak_path)
+            except OSError as exc:
+                raise OSError(
+                    f"Cannot write backup '{bak_path}': {exc}"
+                ) from exc
 
         # In-place merge path: an original tree exists, so update it so that
         # comments / unknown elements are preserved.
