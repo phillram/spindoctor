@@ -253,16 +253,6 @@ def format_duration(seconds: int) -> str:
         parts.append(f"{minutes}m")
     if secs and not (days or hours):
         parts.append(f"{secs}s")
-    if not parts:
-        # Edge case: e.g. exactly 1 day.
-        if days:
-            parts.append(f"{days}d")
-        elif hours:
-            parts.append(f"{hours}h")
-        elif minutes:
-            parts.append(f"{minutes}m")
-        else:
-            parts.append(f"{secs}s")
     return " ".join(parts)
 
 

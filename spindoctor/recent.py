@@ -144,6 +144,8 @@ def collect_play_records(
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
         for sys_dir in settings_dir.iterdir():
+            if not sys_dir.is_dir():
+                continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
                 records.extend(_read_stats_file(stats, sys_dir.name, warnings=warnings))
