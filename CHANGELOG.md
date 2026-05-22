@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`backup_dir` config field — centralised backup root.** A new `backup_dir` setting (Setup tab → "Backup root directory", or `spindoctor config set backup_dir <path>`) specifies a root folder for all automatic backups. When set, the `.bak` file written before any in-place XML save goes to a named subfolder under that root (e.g. `D:\Backups\Main Menu\Main Menu.20260522_143012.bak`) instead of sitting next to the source file. All five `db.save()` call sites (fetch-meta, curate, sync-roms, install-tools, main-menu) now thread `backup_dir` through from config. `backup create` and `backup list` also use `backup_dir` as the default `--target` when no explicit path is given.
+- **Backup & Restore tab defaults.** The "Target folder" and "Backup folder" fields in the Backup & Restore tab pre-populate from `backup_dir` when it is configured, so users don't have to retype the path each session.
+
+### Fixed
+
+- **Inaccessible `backup_dir` raised a raw `OSError` traceback.** If the configured `backup_dir` doesn't exist or isn't writable (wrong drive letter, missing directory, permission denied), the error is now caught and re-raised with a message that names the failing path and the configured `backup_dir`, so users know exactly what to fix. The live file is never written when the backup fails.
+
+### Changed
+
+- **`backup create --target` and `backup list --target` are now optional.** Both commands fall back to `config.backup_dir` when `--target` is not supplied, and exit with a clear error message if neither is set.
+- **Window maximized state is now persisted.** The GUI saves whether the window was maximized when it closes and restores that state on the next launch (cross-platform: `state('zoomed')` on Windows, `wm_attributes('-zoomed')` on macOS/Linux). The stored normal-size geometry is preserved separately so un-maximizing later snaps back to the correct window size.
+
 ## [2.2.3] - 2026-05-22
 
 ### Fixed
