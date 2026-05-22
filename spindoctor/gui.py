@@ -6128,27 +6128,22 @@ class _SpinDoctorGUI:
         self._set_status("Save failed.")
         self.messagebox.showerror("Save failed", msg)
 
-    def _mm_restore_from_backup(self) -> None:
-        """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it.
+    def _restore_sidecar(
+        self,
+        target: "Path",
+        *,
+        no_backups_hint: str = "",
+        on_complete=None,
+    ) -> None:
+        """List .bak sidecars for *target* via CLI, let user pick, then restore.
 
-        Talks to ``spindoctor backup sidecar list --json`` to enumerate
-        candidates and ``spindoctor backup sidecar restore --apply`` to
-        commit the restore. The GUI does not touch the files itself —
-        same canonical I/O path the CLI uses.
+        Shells out to ``spindoctor backup sidecar list --json`` and
+        ``spindoctor backup sidecar restore --apply`` so all file I/O
+        stays in the CLI — no drift between GUI and CLI paths.
         """
-        xml_path = self._mm_xml_path()
-        if xml_path is None:
-            self.messagebox.showerror(
-                "Cannot restore",
-                "HyperSpin directory is not configured — set it in the "
-                "Setup tab first.",
-            )
-            return
-        # Fetch available backups via the CLI so the GUI doesn't grow a
-        # second sidecar-listing implementation.
         try:
             argv = resolve_cli_command("spindoctor") + [
-                "backup", "sidecar", "list", str(xml_path), "--json",
+                "backup", "sidecar", "list", str(target), "--json",
             ]
             proc = subprocess.run(
                 argv,
@@ -6172,32 +6167,50 @@ class _SpinDoctorGUI:
             )
             return
         if not backups:
-            self.messagebox.showinfo(
-                "No backups found",
+            msg = no_backups_hint or (
                 f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
-                f"{xml_path.name}.\n\nSpinDoctor writes one before every "
-                f"Save Order when config.backup_before_modify is on "
-                f"(the default).",
+                f"{target.name}.\n\nSpinDoctor writes one before every "
+                f"in-place write when config.backup_before_modify is on "
+                f"(the default)."
             )
+            self.messagebox.showinfo("No backups found", msg)
             return
-        chosen = self._ask_pick_sidecar(xml_path.name, backups)
+        chosen = self._ask_pick_sidecar(target.name, backups)
         if chosen is None:
             return
         if not self.messagebox.askyesno(
             "Confirm restore",
-            f"Replace {xml_path.name} with the contents of "
+            f"Replace {target.name} with the contents of "
             f"{Path(chosen).name}?\n\nThe current file will itself be "
             f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
             f"action is undoable via the same Restore button.",
         ):
             return
-        # Shell out to the CLI to commit the restore. Streams progress
-        # into the Output panel + Logs tab via the standard _run_cli
-        # plumbing — restoring is a "command run" like everything else.
         self._run_cli("spindoctor", [
-            "backup", "sidecar", "restore", str(xml_path),
+            "backup", "sidecar", "restore", str(target),
             "--from", str(chosen), "--apply",
-        ], on_complete=self._mm_restore_done)
+        ], on_complete=on_complete)
+
+    def _mm_restore_from_backup(self) -> None:
+        """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it."""
+        xml_path = self._mm_xml_path()
+        if xml_path is None:
+            self.messagebox.showerror(
+                "Cannot restore",
+                "HyperSpin directory is not configured — set it in the "
+                "Setup tab first.",
+            )
+            return
+        self._restore_sidecar(
+            xml_path,
+            no_backups_hint=(
+                f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
+                f"{xml_path.name}.\n\nSpinDoctor writes one before every "
+                f"Save Order when config.backup_before_modify is on "
+                f"(the default)."
+            ),
+            on_complete=self._mm_restore_done,
+        )
 
     def _mm_restore_done(self, rc: int) -> None:
         if rc == 0:
@@ -6671,6 +6684,10 @@ class _SpinDoctorGUI:
             meta_run_row, text="Run on subset…",
             command=self._run_fetch_meta_subset,
         ).pack(side="left", padx=6)
+        self.ttk.Button(
+            meta_run_row, text="Restore DB backup…",
+            command=self._meta_restore_db_from_backup,
+        ).pack(side="left", padx=6)
 
         # ── fetch-media ──────────────────────────────────────────────────────
         media_frame = self.ttk.LabelFrame(frame, text="Fetch media")
@@ -6755,6 +6772,14 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             btn_row, text="Run generate-config",
             command=self._run_generate_config,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Restore DB backup…",
+            command=self._meta_restore_db_from_backup,
+        ).pack(side="left", padx=(18, 0))
+        self.ttk.Button(
+            btn_row, text="Restore RL INI backup…",
+            command=self._meta_restore_rl_ini_from_backup,
         ).pack(side="left", padx=6)
 
         # ── Full refresh shortcut ─────────────────────────────────────────────
@@ -7222,6 +7247,55 @@ class _SpinDoctorGUI:
         if self._meta_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _meta_restore_db_from_backup(self) -> None:
+        """Restore the selected system's HyperSpin XML database from a .bak sidecar.
+
+        Delegates entirely to ``spindoctor backup sidecar list/restore`` —
+        no file I/O in the GUI.  Covers databases written by fetch-meta,
+        update-db, and batch-edit.
+        """
+        sys_name = self._meta_system_var.get().strip()
+        if not sys_name:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Pick a system in the selector above first.",
+            )
+            return
+        try:
+            cfg = load_config()
+        except Exception as exc:  # noqa: BLE001
+            self.messagebox.showerror("Config error", str(exc))
+            return
+        xml_path = Path(cfg.databases_dir) / sys_name / f"{sys_name}.xml"
+        self._restore_sidecar(xml_path)
+
+    def _meta_restore_rl_ini_from_backup(self) -> None:
+        """Restore the selected system's RocketLauncher INI from a .bak sidecar.
+
+        Delegates entirely to ``spindoctor backup sidecar list/restore`` —
+        no file I/O in the GUI.  Covers INIs written by generate-config.
+        """
+        sys_name = self._meta_system_var.get().strip()
+        if not sys_name:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Pick a system in the selector above first.",
+            )
+            return
+        try:
+            cfg = load_config()
+        except Exception as exc:  # noqa: BLE001
+            self.messagebox.showerror("Config error", str(exc))
+            return
+        if not cfg.rocketlauncher_dir:
+            self.messagebox.showwarning(
+                "RocketLauncher not configured",
+                "Set rocketlauncher_dir in the Setup tab first.",
+            )
+            return
+        ini_path = Path(cfg.rocketlauncher_dir) / "Settings" / f"{sys_name}.ini"
+        self._restore_sidecar(ini_path)
 
     def _run_full_metadata_refresh(self) -> None:
         """Chain fetch-meta → fetch-media → update-db, stopping on first error."""
