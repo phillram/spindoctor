@@ -278,11 +278,27 @@ def generate_hs_main_menu(
     config: Config,
     output_base: Optional[Path] = None,
 ) -> Path:
-    """Generate Databases/Main Menu/Main Menu.xml listing all systems.
+    """Sync Databases/Main Menu/Main Menu.xml to match *systems*.
 
-    Replaces any existing file with a fresh listing of *systems*.
+    Preserves the existing wheel order when the file already exists:
+    - entries still present in *systems* keep their current positions
+    - newly-discovered systems are appended at the end (in the order
+      they appear in *systems*, which is typically alphabetical)
+    - entries no longer in *systems* are dropped
+
+    When the file doesn't exist yet the order of *systems* is used as-is.
     """
-    return _write_main_menu(list(systems), _main_menu_path(config, output_base))
+    target = _main_menu_path(config, output_base)
+    systems_set = set(systems)
+
+    existing = _read_main_menu_systems(target)
+    ordered: list[str] = [s for s in existing if s in systems_set]
+    already_listed = set(ordered)
+    for s in systems:
+        if s not in already_listed:
+            ordered.append(s)
+
+    return _write_main_menu(ordered, target)
 
 
 def upsert_main_menu_system(
