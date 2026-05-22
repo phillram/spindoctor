@@ -67,11 +67,8 @@ class CurationGroup:
 
 def _is_prototype(info: dict) -> bool:
     """Return True if any region/tag/patch field marks this ROM as proto-class."""
-    if info.get("is_patched"):
-        # parse_variant flags proto/demo/beta tags via _PATCH_TAGS — but it
-        # also sets is_patched for translations and hacks, which we DO want
-        # to treat as legitimate variants. Look at the explicit tags too.
-        pass
+    # is_patched is set for translations/hacks too, not just protos — rely
+    # solely on the explicit tag list below.
     haystacks: list[str] = []
     haystacks.extend(info.get("regions") or [])
     haystacks.extend(info.get("tags") or [])

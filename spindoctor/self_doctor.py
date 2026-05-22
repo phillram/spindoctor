@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import CONFIG_DIR
+from ._utils import format_bytes
 
 
 class Status(str, Enum):
@@ -97,16 +98,6 @@ def _walk_size(path: Path) -> int:
             pass
     return total
 
-
-def _human_size(n: int) -> str:
-    nb = float(n)
-    if nb == 0:
-        return "0 B"
-    for unit in ("B", "KB", "MB", "GB"):
-        if nb < 1024.0:
-            return f"{nb:.1f} {unit}"
-        nb /= 1024.0
-    return f"{nb:.1f} TB"
 
 
 def _days_since(path: Path) -> Optional[float]:
@@ -214,7 +205,7 @@ def check_rescue_copies(report: SelfDoctorReport) -> SelfCheck:
             detail=(
                 f"{len(stale)} rescue copy/copies older than "
                 f"{_RESCUE_COPY_STALE_DAYS} days, totalling "
-                f"{_human_size(stale_bytes)}. Safe to delete — "
+                f"{format_bytes(stale_bytes)}. Safe to delete — "
                 f"--fix will remove them."
             ),
             reclaimable_bytes=stale_bytes,
@@ -244,14 +235,14 @@ def check_manifest_dir_sizes(report: SelfDoctorReport) -> None:
             report.add(SelfCheck(
                 name=f"manifests_{name}",
                 status=Status.OK,
-                detail=f"{name}/: {n_files} manifest(s), {_human_size(size)}",
+                detail=f"{name}/: {n_files} manifest(s), {format_bytes(size)}",
             ))
             continue
         report.add(SelfCheck(
             name=f"manifests_{name}",
             status=Status.WARN,
             detail=(
-                f"{name}/: {n_files} manifest(s), {_human_size(size)}. "
+                f"{name}/: {n_files} manifest(s), {format_bytes(size)}. "
                 f"Manifests are the --undo path, so they're not "
                 f"auto-deleted; archive or prune by hand if you're "
                 f"confident you no longer need undo history."
@@ -308,7 +299,7 @@ def check_orphan_part_files(report: SelfDoctorReport, config) -> SelfCheck:
             detail=(
                 f"{len(stale)} orphan .part file(s) older than "
                 f"{_PART_FILE_STALE_DAYS} days, totalling "
-                f"{_human_size(stale_bytes)}. Safe to delete — "
+                f"{format_bytes(stale_bytes)}. Safe to delete — "
                 f"--fix will remove them."
             ),
             reclaimable_bytes=stale_bytes,
@@ -335,7 +326,7 @@ def check_metadata_cache(report: SelfDoctorReport, config) -> SelfCheck:
     check = SelfCheck(
         name="metadata_cache", status=Status.INFO,
         detail=(
-            f"{n_files} cached scraper response(s), {_human_size(size)}. "
+            f"{n_files} cached scraper response(s), {format_bytes(size)}. "
             f"TTL = {getattr(config, 'metadata_cache_ttl_days', '?')} days; "
             f"old entries auto-expire on the next fetch-meta run."
         ),
@@ -434,7 +425,7 @@ def render_report(report: SelfDoctorReport, console) -> None:
     if reclaim > 0:
         console.print(
             f"\n[bold]Reclaimable with --fix:[/bold] "
-            f"{_human_size(reclaim)}"
+            f"{format_bytes(reclaim)}"
         )
 
     if report.fixes_applied:

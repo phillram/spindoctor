@@ -9,6 +9,7 @@ from typing import Optional
 from ._compat import et_indent
 from .config import Config, get_rom_extensions, get_system_overrides
 from .database import _set_text as _set
+from .mainmenu import _main_menu_path
 
 
 EMULATOR_MAP: dict[str, str] = {
@@ -224,11 +225,6 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
 
 
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
-
-def _main_menu_path(config: Config, output_base: Optional[Path]) -> Path:
-    db_base = output_base / "Databases" if output_base else config.databases_dir
-    return db_base / "Main Menu" / "Main Menu.xml"
-
 
 def _read_main_menu_systems(path: Path) -> list[str]:
     """Return current <game name="..."/> entries from Main Menu.xml (or [])."""

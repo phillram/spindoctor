@@ -3909,7 +3909,7 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
                             f"→ \"{escape(stub.description)}\""
                         )
                     else:
-                        db.add_game(stub)
+                        db.upsert_game(stub)
                     added += 1
 
         if remove_orphans:
@@ -5213,7 +5213,7 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                 if not apply_changes:
                     console.print(f"  [yellow]+[/yellow] would add stub: {rom_name}")
                 else:
-                    db.add_game(stub)
+                    db.upsert_game(stub)
                 new_count += 1
             if apply_changes and new_count:
                 if out_base:
@@ -5472,7 +5472,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 title,
                 strip_variants=config.strip_variant_tags_in_display_name,
             )
-            db.add_game(stub)
+            db.upsert_game(stub)
             new_count += 1
         if new_count:
             if out_base:

@@ -690,7 +690,7 @@ def apply_rename(
             players=existing.players,
             enabled=existing.enabled or "Yes",
         )
-        db.add_game(new_entry)
+        db.upsert_game(new_entry)
     else:
         # Rebuild the entry under the new key, then drop the old one.
         renamed = GameEntry(
@@ -706,7 +706,7 @@ def apply_rename(
             enabled=existing.enabled or "Yes",
         )
         db.remove_game(op.old_rom_name)
-        db.add_game(renamed)
+        db.upsert_game(renamed)
 
     out_root = config.effective_output_dir(str(output_dir) if output_dir else None)
     if out_root is not None:
@@ -816,7 +816,7 @@ def undo_rename(
                 k: v for k, v in before.items()
                 if k in GameEntry.__dataclass_fields__
             })
-            db.add_game(restored)
+            db.upsert_game(restored)
     db.save()
 
     reversed_changes.append(FileChange(
