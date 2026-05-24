@@ -113,6 +113,18 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
         assert games[expected_name].genre == "Tools"
         assert games[expected_name].manufacturer == "SpinDoctor"
 
+    # The RocketLauncher system INI must be written so RL knows to use
+    # PCLauncher for this system.  Without it, RL has no emulator mapping
+    # and PCLauncher throws "does not know what exe / FadeTitle to watch
+    # for" even when every per-game INI is in place.
+    sys_ini = cabinet["rl"] / "Settings" / "Toolkit.ini"
+    assert sys_ini.exists(), "Settings/Toolkit.ini was not written"
+    body = sys_ini.read_text(encoding="utf-8")
+    assert "Default_Emulator=PCLauncher" in body
+    assert "Rom_Extension=ini" in body
+    # Rom_Path must point at the PCLauncher module dir for this system.
+    assert str(pcl_dir) in body
+
 
 def test_install_tools_add_to_system_errors_when_db_missing(cabinet):
     # No Toolkit.xml on disk → command should error rather than silently
@@ -155,3 +167,8 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
         "Refresh Most Played", "Refresh Both",
     }
     assert set(db.games().keys()) == expected
+
+    # System INI must exist after both runs.
+    sys_ini = cabinet["rl"] / "Settings" / "Toolkit.ini"
+    assert sys_ini.exists(), "Settings/Toolkit.ini missing after idempotent re-run"
+    assert "Default_Emulator=PCLauncher" in sys_ini.read_text(encoding="utf-8")

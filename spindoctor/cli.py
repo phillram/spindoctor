@@ -1744,7 +1744,7 @@ def fav_sync():
     config = _cfg()
     _check_config(config)
     store = load_store()
-    n, sync_warns = sync_native(store, config)
+    n, sync_warns, sync_notes = sync_native(store, config)
     save_store(store)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
@@ -1756,6 +1756,8 @@ def fav_sync():
             "add favorites with the F key in HyperSpin or use[/dim] "
             "[cyan]spindoctor fav add[/cyan]"
         )
+    for note in sync_notes:
+        console.print(f"[dim]  note: {note}[/dim]")
 
 
 @fav_group.command("rebuild")
@@ -1781,7 +1783,7 @@ def fav_rebuild(media_mode, apply_changes):
     _check_config(config)
     _warn_rocketlauncher_dir(config)
     store = load_store()
-    synced, sync_warns = sync_native(store, config)
+    synced, sync_warns, sync_notes = sync_native(store, config)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     if synced > 0:
@@ -1792,6 +1794,8 @@ def fav_rebuild(media_mode, apply_changes):
             "[dim]sync: 0 found in HyperSpin per-system lists — add favorites "
             "with the F key in HyperSpin or use[/dim] [cyan]spindoctor fav add[/cyan]"
         )
+    for note in sync_notes:
+        console.print(f"[dim]  note: {note}[/dim]")
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     if not apply_changes:
@@ -2718,11 +2722,23 @@ def install_tools(output_dir, add_to_system):
         f"[cyan]{db_path}[/cyan]: "
         + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
+
+    # Write the RocketLauncher system INI so RL knows to route launches for
+    # this system through PCLauncher and where to find the per-game INIs.
+    # Without this file, RocketLauncher has no emulator mapping for the
+    # system and PCLauncher can't locate the INIs — producing the
+    # "PCLauncher does not know what exe / FadeTitle to watch for" error
+    # even when the bat files and per-game INIs are correctly written.
+    from .rocketlauncher import generate_synthetic_system_ini
+    rl_dir = Path(config.rocketlauncher_dir)
+    sys_ini = generate_synthetic_system_ini(add_to_system, rl_dir)
     console.print(
-        f"[dim]Make sure[/dim] [cyan]{add_to_system}[/cyan] [dim]uses "
-        "PCLauncher as its emulator (HyperHQ → Settings → Emulator → "
-        "PCLauncher), and that[/dim] [cyan]{add_to_system}[/cyan] "
-        "[dim]is on the Main Menu — run[/dim] "
+        f"[green]+[/green] wrote RocketLauncher system INI → "
+        f"[cyan]{sys_ini}[/cyan]"
+    )
+    console.print(
+        f"[dim]Make sure[/dim] [cyan]{add_to_system}[/cyan] [dim]is on "
+        "the Main Menu — run[/dim] "
         f"[cyan]spindoctor mainmenu add \"{add_to_system}\" --apply[/cyan]"
         "[dim] if it isn't.[/dim]"
     )

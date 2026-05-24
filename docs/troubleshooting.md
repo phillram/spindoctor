@@ -114,6 +114,79 @@ Yes — region/version/revision tags are stripped before searching. Ambiguous ma
 
 ## Wheels
 
+### "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for" when launching a Toolkit helper
+
+This error appears when RocketLauncher's PCLauncher module finds a `[exe info]`-style INI for the helper entry, but the field for the monitored executable (or FadeTitle) is empty. PCLauncher needs that information to know when the launched program has finished — but the SpinDoctor refresh helpers are `.bat` files that run and exit on their own, so there is no process to monitor.
+
+**Fix — run `install-tools` once:**
+
+```bat
+spindoctor install-tools --add-to-system Toolkit
+```
+
+This writes everything RocketLauncher and PCLauncher need in one step:
+
+| File written | Purpose |
+|---|---|
+| `Modules/PCLauncher/Toolkit/*.bat` | The four refresh scripts |
+| `Modules/PCLauncher/Toolkit/*.ini` | Per-game PCLauncher INIs (`[Settings]` format — no FadeTitle needed) |
+| `Databases/Toolkit/Toolkit.xml` | HyperSpin `<game>` entries |
+| `Settings/Toolkit.ini` | RocketLauncher system INI — tells RL to use PCLauncher and where the per-game INIs live |
+
+The `Settings/Toolkit.ini` is the piece that was missing in older SpinDoctor
+versions. Without it, RocketLauncher has no emulator mapping for the wheel and
+PCLauncher can't find the per-game INIs — producing this exact error even when
+all the other files are correctly in place.
+
+**Prerequisites:** the Toolkit system must already exist in HyperSpin. If it
+doesn't yet:
+
+```bat
+spindoctor add-system "Toolkit"
+spindoctor mainmenu add "Toolkit" --apply
+spindoctor install-tools --add-to-system Toolkit
+```
+
+The command is idempotent — safe to re-run after an upgrade.
+
+See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu) for the full
+setup walkthrough, including the optional HyperHQ Tools-menu route and
+Windows Startup scheduling.
+
+---
+
+### "Cannot find recently played.ini" when navigating the Recently Played wheel
+
+RocketLauncher is using PCLauncher to launch a game from the Recently Played
+wheel but can't find a per-game INI in `<RocketLauncher>/Modules/PCLauncher/Recently Played/`.
+This is separate from the data-reading errors (covered below) — the wheel was
+built and the database XML is fine; the problem is the launch chain.
+
+Two approaches, in order of simplicity:
+
+**Option A — point the "Recently Played" system at its source emulators via
+RocketLauncher's Global Emulators.**  In RocketLauncherUI, set the "Recently
+Played" system's emulator to **Global** and enable *Use system default emulators*.
+RocketLauncher then looks up each ROM's origin system and uses that system's
+emulator automatically. No per-game INIs needed.
+
+**Option B — per-game PCLauncher INIs.** If you prefer PCLauncher-managed
+launch (e.g. to run custom pre/post-launch scripts), run:
+
+```bat
+spindoctor install-tools --add-to-system "Recently Played"
+```
+
+This writes INIs that shell out to the correct system emulator for each entry.
+Re-run after every `recent rebuild --apply` when the wheel contents change.
+
+**Diagnostic tip:** run `spindoctor-recent rebuild` (without `--apply`) and
+look for `source:` lines in the output — each shows which statistics file was
+read. Any path that was tried but not found appears as a warning so you can see
+exactly where RocketLauncher wrote its data.
+
+---
+
 ### Can I edit favorites from inside HyperSpin?
 
 HyperSpin's built-in F-key writes per-system favorite lists. Run `spindoctor fav sync` to merge those into the cross-system Favorites store, then `spindoctor fav rebuild --apply`. For explicit add/remove, use `spindoctor-fav add` / `remove`.
