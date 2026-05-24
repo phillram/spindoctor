@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-05-24
+
 ### Added
 
 - **Documentation: Toolkit / PCLauncher error.** Added a dedicated troubleshooting entry in `docs/troubleshooting.md` for the "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for" error, explaining that `spindoctor install-tools --add-to-system Toolkit` writes the correct `[Settings]`-format INIs that don't require a monitored executable. Also added a "Cannot find recently played.ini" entry covering how to wire the Recently Played wheel via RocketLauncher's Global Emulator setting. `docs/standalone-tools.md` now cross-links to these entries.
@@ -21,6 +23,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`favorites.txt` (plain-text per-system list) was not recognised.** Some RocketLauncher / HyperSpin builds write a plain `favorites.txt` (one ROM name per line, no section headers) into each system's database folder (e.g. `Databases/MAME/favorites.txt`) instead of, or alongside, `_Favorites.ini`. `sync_native` now checks for this file as an additional source, with a case-insensitive search so `Favorites.txt` is also found. Both formats can coexist for the same system. An empty file produces a clear warning rather than silent failure.
 - **The "no play history found" diagnostic note listed only the classic stats path.** It now lists all four paths searched (three per-system locations plus the Global Statistics.ini fallback) so users can quickly identify where their files actually are.
 - **Recently Played, Most Played, and Favorites wheels gave no diagnostic output when empty.** All three CLIs now print a `source:` line per stats/favorites location that contributed data, so users can see exactly where records were found. When 0 favorites are found, the output lists the exact file pattern searched and explains how HyperSpin stores them, making it actionable without reading documentation.
+
+---
 
 ## [2.3.0] - 2026-05-22
 
@@ -687,7 +691,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.1...HEAD
+[2.3.1]: https://github.com/phillram/spindoctor/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/phillram/spindoctor/compare/v2.2.3...v2.3.0
 [2.2.3]: https://github.com/phillram/spindoctor/compare/v2.2.2...v2.2.3
 [2.2.2]: https://github.com/phillram/spindoctor/compare/v2.2.1...v2.2.2
