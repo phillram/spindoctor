@@ -37,6 +37,8 @@ _TIME_FORMATS = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
     "%Y/%m/%d %H:%M:%S",
+    # RocketLauncher's Global Statistics.ini format: "Friday May 22, 2026 07:19:22 AM"
+    "%A %B %d, %Y %I:%M:%S %p",
 )
 
 
@@ -120,6 +122,60 @@ def _read_stats_file(
     return records
 
 
+_GLOBAL_STATS_SKIP_SYSTEMS = frozenset({"toolkit"})
+
+
+def _read_global_statistics_ini(
+    path: Path,
+    *,
+    warnings: "list[str] | None" = None,
+) -> list[PlayRecord]:
+    """Parse the ``[Last_Played_Games]`` section of RocketLauncher's aggregate
+    ``Global Statistics.ini`` file (found at ``Data/Statistics/``).
+
+    This file contains only top-10/top-20 summaries, not full history.  It is
+    used as a **fallback** when no per-system ``<system>.ini`` files are found.
+    Entries from the ``Toolkit`` pseudo-system (SpinDoctor/RocketLauncherUI
+    meta-launches) are skipped automatically.
+    """
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        # utf-8-sig handles the BOM that RocketLauncher sometimes writes
+        parser.read(path, encoding="utf-8-sig")
+    except (OSError, configparser.Error) as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not read Global Statistics file {path}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        return []
+
+    section = "Last_Played_Games"
+    if not parser.has_section(section):
+        return []
+
+    records: list[PlayRecord] = []
+    i = 1
+    while True:
+        sys_key = f"{i}_System"
+        if not parser.has_option(section, sys_key):
+            break
+        system = parser.get(section, sys_key, fallback="").strip()
+        name = parser.get(section, f"{i}_Name", fallback="").strip()
+        date_str = parser.get(section, f"{i}_Date", fallback="").strip()
+        i += 1
+        if not system or not name:
+            continue
+        if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
+            continue
+        ts = _parse_time(date_str)
+        if ts:
+            records.append(PlayRecord(
+                system=system, rom_name=name, last_played=ts, play_count=1,
+            ))
+    return records
+
+
 def collect_play_records(
     config: Config,
     *,
@@ -127,20 +183,27 @@ def collect_play_records(
 ) -> list[PlayRecord]:
     """Walk RocketLauncher's Statistics tree and return every game launch.
 
-    Looks in two locations:
-      * ``<RocketLauncher>/Settings/Global Statistics/<system>.ini``
-      * ``<RocketLauncher>/Settings/<system>/Statistics.ini`` (older layout)
+    Checks three locations in priority order:
+      * ``<RocketLauncher>/Settings/Global Statistics/<system>.ini`` (classic layout)
+      * ``<RocketLauncher>/Settings/<system>/Statistics.ini`` (oldest layout)
+      * ``<RocketLauncher>/Data/Statistics/<system>.ini`` (newer RL layout)
+
+    If none of those per-system files yield records, falls back to reading
+    the aggregate ``Data/Statistics/Global Statistics.ini`` summary (which
+    contains only the top-10 lists, but is better than nothing).
     """
     if not config.rocketlauncher_dir:
         return []
     rl = Path(config.rocketlauncher_dir)
     records: list[PlayRecord] = []
 
+    # Classic layout: Settings/Global Statistics/<system>.ini
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
         for ini in global_dir.glob("*.ini"):
             records.extend(_read_stats_file(ini, ini.stem, warnings=warnings))
 
+    # Oldest layout: Settings/<system>/Statistics.ini
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
         for sys_dir in settings_dir.iterdir():
@@ -149,6 +212,26 @@ def collect_play_records(
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
                 records.extend(_read_stats_file(stats, sys_dir.name, warnings=warnings))
+
+    # Newer layout: Data/Statistics/<system>.ini
+    # The aggregate "Global Statistics.ini" lives in the same folder — skip it
+    # here; it's handled as a fallback below.
+    data_stats_dir = rl / "Data" / "Statistics"
+    if data_stats_dir.is_dir():
+        for ini in data_stats_dir.glob("*.ini"):
+            if ini.stem.lower() == "global statistics":
+                continue
+            records.extend(_read_stats_file(ini, ini.stem, warnings=warnings))
+
+    # Fallback: parse the aggregate Global Statistics.ini if no per-game data
+    # was found anywhere.  This gives us at most 10 recently-played entries
+    # but is still far better than showing an empty wheel.
+    if not records:
+        global_stats_path = rl / "Data" / "Statistics" / "Global Statistics.ini"
+        if global_stats_path.is_file():
+            records.extend(
+                _read_global_statistics_ini(global_stats_path, warnings=warnings)
+            )
 
     return records
 
@@ -426,13 +509,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             print("  system INI: skipped (rocketlauncher_dir not set)")
         if summary.entries == 0 and config.rocketlauncher_dir:
-            rl_stats = (
-                Path(config.rocketlauncher_dir)
-                / "Settings" / "Global Statistics"
-            )
+            rl = Path(config.rocketlauncher_dir)
             print(
-                f"  note: no play history found — RL stats files should be at "
-                f"{rl_stats}/<system>.ini",
+                f"  note: no play history found — SpinDoctor searched:\n"
+                f"    {rl / 'Settings' / 'Global Statistics' / '<system>.ini'}\n"
+                f"    {rl / 'Settings' / '<system>' / 'Statistics.ini'}\n"
+                f"    {rl / 'Data' / 'Statistics' / '<system>.ini'}\n"
+                f"    {rl / 'Data' / 'Statistics' / 'Global Statistics.ini'} (fallback)",
                 file=sys.stderr,
             )
         return 0

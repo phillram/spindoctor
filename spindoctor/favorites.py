@@ -150,7 +150,14 @@ def sync_native(
 
         ini = db_root / sys_name / f"{sys_name}_Favorites.ini"
         if ini.exists():
-            for line in ini.read_text(encoding="utf-8").splitlines():
+            try:
+                text = _read_text_robust(ini)
+            except OSError as exc:
+                warnings.append(
+                    f"sync: could not read {ini.name}: {type(exc).__name__}: {exc}"
+                )
+                text = ""
+            for line in text.splitlines():
                 rom = line.strip()
                 if not rom or rom.startswith(";") or rom.startswith("["):
                     continue
@@ -348,6 +355,23 @@ def rebuild(
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     return summary
+
+
+def _read_text_robust(path: Path) -> str:
+    """Read *path* trying common Windows encodings in order.
+
+    HyperSpin is a Windows application and ``_Favorites.ini`` files are
+    sometimes written as UTF-8-with-BOM, UTF-16-LE, or the system ANSI
+    code page (Windows-1252 / Latin-1).  Using plain ``utf-8`` silently
+    produces the wrong output (or raises) for these files.
+    """
+    for enc in ("utf-8-sig", "utf-16", "cp1252", "latin-1"):
+        try:
+            return path.read_text(encoding=enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    # Last resort: read as raw bytes and ignore errors
+    return path.read_bytes().decode("utf-8", errors="replace")
 
 
 def _safe_load(system_name: str, config: Config) -> Optional[HyperspinDatabase]:

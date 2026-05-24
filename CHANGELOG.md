@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Recently Played and Most Played wheels showed 0 entries when stats live in `Data/Statistics/`.** Newer versions of RocketLauncher write per-system statistics to `<RL>/Data/Statistics/<system>.ini` instead of the classic `<RL>/Settings/Global Statistics/<system>.ini`. SpinDoctor now searches all three known locations (classic, oldest, and newer layout) and builds the wheel correctly regardless of which layout is in use.
+- **The aggregate `Global Statistics.ini` was either ignored or misread.** RocketLauncher writes a summary file `Data/Statistics/Global Statistics.ini` (containing top-10 `[Last_Played_Games]`, `[TopTen_Time_Played]`, and `[TopTen_Times_Played]` sections). When no per-game stats files are found, SpinDoctor now falls back to reading this file so Recently Played and Most Played still show something useful. Toolkit pseudo-system entries (e.g. "Refresh Recently Played") are filtered out automatically.
+- **RocketLauncher's `Global Statistics.ini` date format was not parsed.** The format `Friday May 22, 2026 07:19:22 AM` is now recognised by the stats date parser.
+- **Favorites sync failed when `_Favorites.ini` was encoded as UTF-8-with-BOM or UTF-16.** HyperSpin on Windows can write per-system `<System>_Favorites.ini` files in several encodings. `sync_native` now tries `utf-8-sig`, `utf-16`, `cp1252`, and `latin-1` in order, so it correctly reads these files regardless of encoding.
+- **The "no play history found" diagnostic note listed only the classic stats path.** It now lists all four paths searched (three per-system locations plus the Global Statistics.ini fallback) so users can quickly identify where their files actually are.
+
 ## [2.3.0] - 2026-05-22
 
 ### Added

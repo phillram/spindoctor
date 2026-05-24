@@ -8,6 +8,7 @@ from spindoctor.config import Config, save_config
 from spindoctor.favorites import (
     FavoriteStore, _resolve_target_names, FavoriteEntry,
     add, load_store, rebuild, remove, save_store, sync_native,
+    _read_text_robust,
 )
 from spindoctor.medialink import LinkMode
 
@@ -220,3 +221,35 @@ def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, mo
     assert n == 1
     assert warns == []
     assert store.find("Super Nintendo", "Tetris") is not None
+
+
+def test_sync_native_reads_utf8_bom_favorites(isolated_config, tmp_path, monkeypatch):
+    """HyperSpin sometimes writes _Favorites.ini with a UTF-8 BOM — must still parse."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    ini_path = hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini"
+    # Write with BOM (utf-8-sig)
+    ini_path.write_text("Tetris\n", encoding="utf-8-sig")
+
+    store = FavoriteStore()
+    n, warns = sync_native(store, cfg)
+    assert n == 1
+    assert store.find("Super Nintendo", "Tetris") is not None
+
+
+def test_read_text_robust_handles_utf16(tmp_path):
+    """_read_text_robust can decode UTF-16 encoded ini files."""
+    path = tmp_path / "test.ini"
+    path.write_text("Tetris\nMario\n", encoding="utf-16")
+    result = _read_text_robust(path)
+    assert "Tetris" in result
+    assert "Mario" in result
+
+
+def test_read_text_robust_handles_plain_utf8(tmp_path):
+    path = tmp_path / "test.ini"
+    path.write_text("Zelda\n", encoding="utf-8")
+    assert "Zelda" in _read_text_robust(path)

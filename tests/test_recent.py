@@ -9,8 +9,8 @@ import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.medialink import LinkMode
 from spindoctor.recent import (
-    PlayRecord, _parse_time, _read_stats_file, collect_play_records,
-    rebuild, top_recent,
+    PlayRecord, _parse_time, _read_stats_file, _read_global_statistics_ini,
+    collect_play_records, rebuild, top_recent,
 )
 
 
@@ -154,3 +154,98 @@ def test_rebuild_prunes_when_records_drop_off(isolated_config, tmp_path):
     assert summary.pruned == 1
     wheels = list((hs / "Media" / "Recently Played" / "Images" / "Wheel").glob("*"))
     assert {w.stem for w in wheels} == {"Mario"}
+
+
+# ─── New path: Data/Statistics/ ──────────────────────────────────────────────
+
+def test_parse_time_handles_global_statistics_format():
+    """RocketLauncher Global Statistics.ini uses 'Friday May 22, 2026 07:19:22 AM'."""
+    result = _parse_time("Friday May 22, 2026 07:19:22 AM")
+    assert result == datetime(2026, 5, 22, 7, 19, 22)
+
+
+def test_collect_play_records_walks_data_statistics_dir(isolated_config, tmp_path):
+    """Stats in Data/Statistics/<system>.ini (newer RL layout) are found."""
+    rl = tmp_path / "rl"
+    _write_stats_ini(
+        rl / "Data" / "Statistics" / "MAME.ini",
+        [("zingzip", "2026-05-22 07:19:22", 1)],
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg)
+    assert len(records) == 1
+    assert records[0].system == "MAME"
+    assert records[0].rom_name == "zingzip"
+
+
+def test_collect_play_records_skips_global_statistics_ini(isolated_config, tmp_path):
+    """Global Statistics.ini in Data/Statistics/ is NOT parsed as a per-system file."""
+    rl = tmp_path / "rl"
+    # Write a real per-system file alongside the aggregate
+    _write_stats_ini(
+        rl / "Data" / "Statistics" / "MAME.ini",
+        [("005", "2026-05-20 20:31:57", 3)],
+    )
+    # Write the aggregate (it would produce zero records if parsed as per-game)
+    agg = rl / "Data" / "Statistics" / "Global Statistics.ini"
+    agg.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_text(
+        "[Last_Played_Games]\n"
+        "1_System=MAME\n1_Name=zingzip\n1_Date=Friday May 22, 2026 07:19:22 AM\n",
+        encoding="utf-8",
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg)
+    # Only the real per-game file should contribute; aggregate file is skipped
+    assert len(records) == 1
+    assert records[0].rom_name == "005"
+
+
+def test_collect_play_records_falls_back_to_global_statistics(
+    isolated_config, tmp_path,
+):
+    """When no per-system files exist, the Global Statistics.ini fallback is used."""
+    rl = tmp_path / "rl"
+    agg = rl / "Data" / "Statistics" / "Global Statistics.ini"
+    agg.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_text(
+        "[Last_Played_Games]\n"
+        "1_System=MAME\n1_Name=zingzip\n"
+        "1_Date=Friday May 22, 2026 07:19:22 AM\n"
+        "2_System=Toolkit\n2_Name=Refresh Recently Played\n"
+        "2_Date=Friday May 22, 2026 07:19:05 AM\n",
+        encoding="utf-8",
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg)
+    # Toolkit entries are skipped; only the real game should appear
+    assert len(records) == 1
+    assert records[0].system == "MAME"
+    assert records[0].rom_name == "zingzip"
+    assert records[0].last_played == datetime(2026, 5, 22, 7, 19, 22)
+
+
+def test_read_global_statistics_ini_parses_last_played(tmp_path):
+    ini = tmp_path / "Global Statistics.ini"
+    ini.write_text(
+        "[Last_Played_Games]\n"
+        "1_System=MAME\n1_Name=zingzip\n"
+        "1_Description=zingzip\n"
+        "1_Date=Friday May 22, 2026 07:19:22 AM\n"
+        "2_System=MAME\n2_Name=005\n"
+        "2_Description=005\n"
+        "2_Date=Wednesday May 20, 2026 08:31:57 PM\n"
+        "3_System=Toolkit\n3_Name=Refresh Recently Played\n"
+        "3_Date=Friday May 22, 2026 07:19:05 AM\n",
+        encoding="utf-8",
+    )
+    records = _read_global_statistics_ini(ini)
+    # Toolkit entry skipped, two real games returned, newest first when sorted
+    assert len(records) == 2
+    names = {r.rom_name for r in records}
+    assert names == {"zingzip", "005"}
+    zingzip = next(r for r in records if r.rom_name == "zingzip")
+    assert zingzip.last_played == datetime(2026, 5, 22, 7, 19, 22)
