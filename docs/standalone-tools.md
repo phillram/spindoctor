@@ -112,6 +112,8 @@ Three integration patterns, in roughly increasing order of "how much you want it
    ```
    Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>/Modules/PCLauncher/Toolkit/`, and adds `<game>` entries (with `genre=Tools`, `manufacturer=SpinDoctor`) to `<HyperSpin>/Databases/Toolkit/Toolkit.xml`. Idempotent on re-run. The target system must already exist and use PCLauncher as its emulator.
 
+   > **Why this fixes "PCLauncher does not know what exe / FadeTitle to watch for":** the helpers are `.bat` files that run and exit — there's no persistent process for PCLauncher to monitor. `install-tools` writes `[Settings]`-format INIs (`ApplicationPath` / `StartIn`) instead of the `[exe info]` format, which doesn't require a `fadetitle` or monitored executable at all. If you previously created your own INIs using `[exe info]` and left those fields blank, re-running this command overwrites them with the correct format. See [Troubleshooting → PCLauncher error](troubleshooting.md#pclauncher-does-not-know-what-exe-fadetitle-andor-steamid-to-watch-for-when-launching-a-toolkit-helper) for the full diagnosis.
+
 3. **Manual** — copy the `.bat` files from `scripts/` into wherever you want and register them yourself.
 
 ## Wiring into Windows startup

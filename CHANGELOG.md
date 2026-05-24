@@ -6,7 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Documentation: Toolkit / PCLauncher error.** Added a dedicated troubleshooting entry in `docs/troubleshooting.md` for the "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for" error, explaining that `spindoctor install-tools --add-to-system Toolkit` writes the correct `[Settings]`-format INIs that don't require a monitored executable. Also added a "Cannot find recently played.ini" entry covering how to wire the Recently Played wheel via RocketLauncher's Global Emulator setting. `docs/standalone-tools.md` now cross-links to these entries.
+
 ### Fixed
+
+- **`install-tools --add-to-system` did not write the RocketLauncher system INI.** The command wrote per-game PCLauncher INIs and updated the HyperSpin database XML, but never created `<RocketLauncher>/Settings/<system>.ini`. Without that file, RocketLauncher has no emulator mapping for the wheel — it doesn't know to use PCLauncher or where to find the per-game INIs — which produced the "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for" error on every launch from the Toolkit wheel. The command now calls `generate_synthetic_system_ini` (the same function used by `fav rebuild` and `recent rebuild`) and prints the written path.
 
 - **Recently Played and Most Played wheels showed 0 entries when stats live in `Data/Statistics/`.** Newer versions of RocketLauncher write per-system statistics to `<RL>/Data/Statistics/<system>.ini` instead of the classic `<RL>/Settings/Global Statistics/<system>.ini`. SpinDoctor now searches all three known locations (classic, oldest, and newer layout) and builds the wheel correctly regardless of which layout is in use.
 - **The aggregate `Global Statistics.ini` was either ignored or misread.** RocketLauncher writes a summary file `Data/Statistics/Global Statistics.ini` (containing top-10 `[Last_Played_Games]`, `[TopTen_Time_Played]`, and `[TopTen_Times_Played]` sections). When no per-game stats files are found, SpinDoctor now falls back to reading this file so Recently Played and Most Played still show something useful. Toolkit pseudo-system entries (e.g. "Refresh Recently Played") are filtered out automatically.
