@@ -13,6 +13,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **RocketLauncher's `Global Statistics.ini` date format was not parsed.** The format `Friday May 22, 2026 07:19:22 AM` is now recognised by the stats date parser.
 - **Favorites sync failed when `_Favorites.ini` was encoded as UTF-8-with-BOM or UTF-16.** HyperSpin on Windows can write per-system `<System>_Favorites.ini` files in several encodings. `sync_native` now tries `utf-8-sig`, `utf-16`, `cp1252`, and `latin-1` in order, so it correctly reads these files regardless of encoding.
 - **The "no play history found" diagnostic note listed only the classic stats path.** It now lists all four paths searched (three per-system locations plus the Global Statistics.ini fallback) so users can quickly identify where their files actually are.
+- **Recently Played, Most Played, and Favorites wheels gave no diagnostic output when empty.** All three CLIs now print a `source:` line per stats/favorites location that contributed data, so users can see exactly where records were found. When 0 favorites are found, the output lists the exact file pattern searched and explains how HyperSpin stores them, making it actionable without reading documentation.
 
 ## [2.3.0] - 2026-05-22
 

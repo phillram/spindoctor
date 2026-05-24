@@ -211,7 +211,12 @@ def _read_global_statistics_ini(
     return list(by_key.values())
 
 
-def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) -> list[PlayStat]:
+def load_all_playtime(
+    config: Config,
+    *,
+    warnings: "list[str] | None" = None,
+    notes: "list[str] | None" = None,
+) -> list[PlayStat]:
     """Read every Statistics.ini under the RocketLauncher tree.
 
     Checks three locations:
@@ -225,11 +230,18 @@ def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) ->
 
     Records keyed on the same ``(system, game)`` pair are merged
     (newest ``last_played`` wins; counts are summed).
+
+    Pass a list to *notes* to receive informational messages describing which
+    paths were found and used (useful for CLI / GUI diagnostics).
     """
     if not config.rocketlauncher_dir:
         return []
     rl = Path(config.rocketlauncher_dir)
     by_key: dict[tuple[str, str], PlayStat] = {}
+
+    def _note(msg: str) -> None:
+        if notes is not None:
+            notes.append(msg)
 
     def _merge(stats: Iterable[PlayStat]) -> None:
         for s in stats:
@@ -253,34 +265,75 @@ def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) ->
     # Classic layout: Settings/Global Statistics/<system>.ini
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
+        before = len(by_key)
         for ini in global_dir.glob("*.ini"):
             _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
+        added = len(by_key) - before
+        if added:
+            _note(f"Settings/Global Statistics/: {added} game(s) from "
+                  f"{len(list(global_dir.glob('*.ini')))} system file(s)")
 
     # Oldest layout: Settings/<system>/Statistics.ini
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
+        before = len(by_key)
+        sys_dirs_with_stats: list[str] = []
         for sys_dir in settings_dir.iterdir():
             if not sys_dir.is_dir():
                 continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
                 _merge(_read_playstats_file(stats, sys_dir.name, warnings=warnings))
+                sys_dirs_with_stats.append(sys_dir.name)
+        added = len(by_key) - before
+        if added:
+            _note(f"Settings/<system>/Statistics.ini: {added} game(s) from "
+                  f"{len(sys_dirs_with_stats)} system(s)")
 
     # Newer layout: Data/Statistics/<system>.ini
     # Skip the aggregate "Global Statistics.ini" here — it's handled below.
     data_stats_dir = rl / "Data" / "Statistics"
     if data_stats_dir.is_dir():
-        for ini in data_stats_dir.glob("*.ini"):
-            if ini.stem.lower() == "global statistics":
-                continue
+        before = len(by_key)
+        data_files = [
+            ini for ini in data_stats_dir.glob("*.ini")
+            if ini.stem.lower() != "global statistics"
+        ]
+        for ini in data_files:
             _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
+        added = len(by_key) - before
+        if added:
+            _note(f"Data/Statistics/: {added} game(s) from "
+                  f"{len(data_files)} system file(s)")
+        elif data_files:
+            _note(f"Data/Statistics/: found {len(data_files)} system file(s) "
+                  f"but 0 parseable records (files may be empty or unrecognised format)")
 
     # Fallback: use the aggregate Global Statistics.ini when no per-game data
     # was found anywhere (top-10 summaries are better than a blank wheel).
     if not by_key:
         global_stats_path = rl / "Data" / "Statistics" / "Global Statistics.ini"
         if global_stats_path.is_file():
+            before = len(by_key)
             _merge(_read_global_statistics_ini(global_stats_path, warnings=warnings))
+            added = len(by_key) - before
+            if added:
+                _note(
+                    f"Data/Statistics/Global Statistics.ini (fallback): "
+                    f"{added} game(s) — this file contains only top-10 summaries, "
+                    f"not full history.  Per-system stats files were not found."
+                )
+            else:
+                _note(
+                    "Data/Statistics/Global Statistics.ini exists but contains "
+                    "no recognisable playtime data."
+                )
+        else:
+            _note(
+                "No stats files found in any of the searched locations.  "
+                "Check that rocketlauncher_dir is set correctly and that "
+                "RocketLauncher has recorded at least one game launch."
+            )
 
     return list(by_key.values())
 
@@ -453,7 +506,11 @@ def build_most_played_wheel(
 
     known = set(get_systems(config))
     read_warnings: list[str] = []
-    stats = [s for s in load_all_playtime(config, warnings=read_warnings) if s.system in known]
+    read_notes: list[str] = []
+    stats = [
+        s for s in load_all_playtime(config, warnings=read_warnings, notes=read_notes)
+        if s.system in known
+    ]
     top = top_games(stats, n=limit, scope="all")
 
     pseudo_entries = [
@@ -473,6 +530,7 @@ def build_most_played_wheel(
         skip_launchers=skip_launchers,
     )
     summary.read_warnings = read_warnings
+    summary.read_notes = read_notes
 
     if register_in_main_menu and summary.entries > 0:
         try:
@@ -613,6 +671,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             skip_media=skip_media,
         )
         print(f"Most Played system: {summary.target_system}")
+        for note in summary.read_notes:
+            print(f"  source:     {note}")
         print(f"  entries:    {summary.entries}")
         print(f"  pruned:     {summary.pruned}")
         print(f"  db:         {summary.db_path}")
@@ -620,7 +680,11 @@ def main(argv: Optional[list[str]] = None) -> int:
               f"copied={summary.media_copied} skipped={summary.media_skipped}")
         if summary.media_errors:
             print(f"  errors:     {len(summary.media_errors)}")
+            for e in summary.media_errors[:5]:
+                print(f"    - {e}", file=sys.stderr)
         print(f"  launchers:  {summary.inis_written}")
+        for w in summary.read_warnings:
+            print(f"  WARNING:    {w}", file=sys.stderr)
         return 0
 
     return 0

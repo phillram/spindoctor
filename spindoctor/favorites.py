@@ -113,7 +113,7 @@ def remove(store: FavoriteStore, system: str, rom_name: str) -> bool:
 def sync_native(
     store: FavoriteStore,
     config: Config,
-) -> tuple[int, list[str]]:
+) -> tuple[int, list[str], list[str]]:
     """Merge HyperSpin's per-system Favorites lists into the cross-system store.
 
     HyperSpin writes ``<game name="X" favorite="1"/>`` flags into each
@@ -121,19 +121,28 @@ def sync_native(
     This helper picks those up and adds them to our store so the
     cross-system Favorites wheel reflects them on next rebuild.
 
-    Returns ``(added_count, warnings)`` where *warnings* lists any systems
-    whose databases could not be loaded.
+    Returns ``(added_count, warnings, notes)`` where *warnings* lists any
+    systems whose databases could not be loaded, and *notes* provides
+    diagnostic info about where files were found (or not).
     """
     added = 0
     warnings: list[str] = []
+    notes: list[str] = []
     db_root = config.databases_dir
     if not db_root.exists():
-        return 0, warnings
+        notes.append(
+            f"databases_dir does not exist: {db_root} — "
+            "check that hyperspin_dir is configured correctly."
+        )
+        return 0, warnings, notes
 
     from .config import get_systems
-    for sys_name in get_systems(config):
-        if sys_name == store.target_system:
-            continue
+    systems = [s for s in get_systems(config) if s != store.target_system]
+    ini_found: list[str] = []
+    ini_missing: list[str] = []
+    xml_favorites_found = 0
+
+    for sys_name in systems:
         try:
             db = load_database(sys_name, db_root)
         except (ValueError, OSError) as exc:
@@ -147,9 +156,11 @@ def sync_native(
             if getattr(game, "favorite", "") == "1":
                 if add(store, sys_name, game.name, game.description):
                     added += 1
+                    xml_favorites_found += 1
 
         ini = db_root / sys_name / f"{sys_name}_Favorites.ini"
         if ini.exists():
+            ini_found.append(sys_name)
             try:
                 text = _read_text_robust(ini)
             except OSError as exc:
@@ -165,7 +176,29 @@ def sync_native(
                 display = source.description if source else rom
                 if add(store, sys_name, rom, display):
                     added += 1
-    return added, warnings
+        else:
+            ini_missing.append(sys_name)
+
+    if ini_found:
+        notes.append(
+            f"Found _Favorites.ini for: {', '.join(ini_found)}"
+        )
+    if xml_favorites_found:
+        notes.append(
+            f"Found {xml_favorites_found} favorite flag(s) in XML databases."
+        )
+    if not ini_found and not xml_favorites_found:
+        notes.append(
+            f"No favorites found.  Checked {len(systems)} system(s) in {db_root}.  "
+            f"SpinDoctor looks for:\n"
+            f"  • <game favorite=\"1\"/> attributes in each system's database XML\n"
+            f"  • {db_root}/<System>/<System>_Favorites.ini  "
+            f"(written by HyperSpin when you press F on a game in the wheel)\n"
+            f"If favorites appear in HyperSpin but not here, the _Favorites.ini "
+            f"files may be in a different location than your configured "
+            f"databases_dir ({db_root})."
+        )
+    return added, warnings, notes
 
 
 # ─── synthetic system rebuild ────────────────────────────────────────────────
@@ -457,10 +490,12 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     if args.cmd == "sync":
-        n, sync_warns = sync_native(store, config)
+        n, sync_warns, sync_notes = sync_native(store, config)
         save_store(store)
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
+        for note in sync_notes:
+            print(f"  note: {note}")
         print(f"Synced {n} favorite(s) from per-system HyperSpin lists.")
         return 0
 
@@ -481,7 +516,7 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "PCLauncher INIs will be written.",
                 file=sys.stderr,
             )
-        synced, sync_warns = sync_native(store, config)
+        synced, sync_warns, sync_notes = sync_native(store, config)
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
         if synced > 0:
@@ -492,6 +527,8 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "  sync: 0 found in HyperSpin per-system lists — add favorites "
                 "with the F key in HyperSpin or use 'fav add'"
             )
+        for note in sync_notes:
+            print(f"  note: {note}")
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
         if not args.apply:
@@ -507,7 +544,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         if summary.media_errors:
             print(f"  errors:     {len(summary.media_errors)}")
             for e in summary.media_errors[:5]:
-                print(f"    - {e}")
+                print(f"    - {e}", file=sys.stderr)
         print(f"  launchers:  {summary.inis_written}")
         if summary.system_ini_path:
             print(f"  system INI: {summary.system_ini_path}")

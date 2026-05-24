@@ -217,10 +217,27 @@ def test_sync_native_picks_up_per_system_favorites(isolated_config, tmp_path, mo
         "Tetris\n", encoding="utf-8",
     )
     store = FavoriteStore()
-    n, warns = sync_native(store, cfg)
+    n, warns, notes = sync_native(store, cfg)
     assert n == 1
     assert warns == []
     assert store.find("Super Nintendo", "Tetris") is not None
+    # The found ini file should be mentioned in notes
+    assert any("Super Nintendo" in note for note in notes)
+
+
+def test_sync_native_reports_no_favorites_found(isolated_config, tmp_path, monkeypatch):
+    """When no _Favorites.ini files exist, notes explain where we looked."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 0
+    # Notes should describe what was checked and give actionable guidance
+    combined = " ".join(notes)
+    assert "databases_dir" in combined or "_Favorites.ini" in combined
 
 
 def test_sync_native_reads_utf8_bom_favorites(isolated_config, tmp_path, monkeypatch):
@@ -235,7 +252,7 @@ def test_sync_native_reads_utf8_bom_favorites(isolated_config, tmp_path, monkeyp
     ini_path.write_text("Tetris\n", encoding="utf-8-sig")
 
     store = FavoriteStore()
-    n, warns = sync_native(store, cfg)
+    n, warns, notes = sync_native(store, cfg)
     assert n == 1
     assert store.find("Super Nintendo", "Tetris") is not None
 

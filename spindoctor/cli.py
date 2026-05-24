@@ -1744,7 +1744,7 @@ def fav_sync():
     config = _cfg()
     _check_config(config)
     store = load_store()
-    n, sync_warns = sync_native(store, config)
+    n, sync_warns, sync_notes = sync_native(store, config)
     save_store(store)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
@@ -1756,6 +1756,8 @@ def fav_sync():
             "add favorites with the F key in HyperSpin or use[/dim] "
             "[cyan]spindoctor fav add[/cyan]"
         )
+    for note in sync_notes:
+        console.print(f"[dim]  note: {note}[/dim]")
 
 
 @fav_group.command("rebuild")
@@ -1781,7 +1783,7 @@ def fav_rebuild(media_mode, apply_changes):
     _check_config(config)
     _warn_rocketlauncher_dir(config)
     store = load_store()
-    synced, sync_warns = sync_native(store, config)
+    synced, sync_warns, sync_notes = sync_native(store, config)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     if synced > 0:
@@ -1792,6 +1794,8 @@ def fav_rebuild(media_mode, apply_changes):
             "[dim]sync: 0 found in HyperSpin per-system lists — add favorites "
             "with the F key in HyperSpin or use[/dim] [cyan]spindoctor fav add[/cyan]"
         )
+    for note in sync_notes:
+        console.print(f"[dim]  note: {note}[/dim]")
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     if not apply_changes:
