@@ -1,15 +1,19 @@
 """Playtime / stats reporting — aggregate RocketLauncher launch statistics.
 
-RocketLauncher persists per-game launch counts and durations in
-``<rocketlauncher_dir>/Settings/Global Statistics/<System>.ini`` (and a
-fallback ``<rocketlauncher_dir>/Settings/<System>/Statistics.ini`` for
-older layouts).  This module reads those files, exposes the data as
-:class:`PlayStat` records, computes summaries (total time, top-N,
-per-system breakdown), and can regenerate a synthetic "Most Played"
-HyperSpin wheel of the user's most-played games.
+RocketLauncher persists per-game launch counts and durations in one of
+several locations depending on version and configuration:
 
-Parsing is delegated to :mod:`spindoctor.recent` so the two modules
-agree on key names, timestamp formats, and which sections to skip.
+  * ``<rocketlauncher_dir>/Settings/Global Statistics/<System>.ini``  (classic)
+  * ``<rocketlauncher_dir>/Settings/<System>/Statistics.ini``  (oldest)
+  * ``<rocketlauncher_dir>/Data/Statistics/<System>.ini``  (newer RL)
+
+An aggregate summary (top-10 lists only) is also written to
+``<rocketlauncher_dir>/Data/Statistics/Global Statistics.ini`` and is
+used as a fallback when no per-game files are found.
+
+This module reads those files, exposes the data as :class:`PlayStat`
+records, computes summaries (total time, top-N, per-system breakdown),
+and can regenerate a synthetic "Most Played" HyperSpin wheel.
 """
 from __future__ import annotations
 
@@ -121,20 +125,123 @@ def _read_playstats_file(
     return out
 
 
-def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) -> list[PlayStat]:
+_GLOBAL_STATS_SKIP_SYSTEMS = frozenset({"toolkit"})
+
+
+def _read_global_statistics_ini(
+    path: Path,
+    *,
+    warnings: "list[str] | None" = None,
+) -> list[PlayStat]:
+    """Parse RocketLauncher's aggregate ``Global Statistics.ini`` for playtime data.
+
+    This file (``Data/Statistics/Global Statistics.ini``) contains top-10
+    summaries rather than full per-game history.  It is used as a fallback
+    when no per-system ``<system>.ini`` files are found.  Entries from the
+    ``Toolkit`` pseudo-system are skipped.
+
+    Reads two sections:
+      * ``[TopTen_Time_Played]`` — total seconds per game
+      * ``[TopTen_Times_Played]`` — number of sessions per game
+    """
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        parser.read(path, encoding="utf-8-sig")
+    except (OSError, configparser.Error) as exc:
+        if warnings is not None:
+            warnings.append(
+                f"Could not read Global Statistics file {path}: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        return []
+
+    by_key: dict[tuple[str, str], PlayStat] = {}
+
+    # --- [TopTen_Time_Played] ---
+    section = "TopTen_Time_Played"
+    if parser.has_section(section):
+        i = 1
+        while True:
+            sys_key = f"{i}_System"
+            if not parser.has_option(section, sys_key):
+                break
+            system = parser.get(section, sys_key, fallback="").strip()
+            name = parser.get(section, f"{i}_Name", fallback="").strip()
+            total = _coerce_int(
+                parser.get(section, f"{i}_Time_Played", fallback="0")
+            )
+            i += 1
+            if not system or not name:
+                continue
+            if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
+                continue
+            key = (system, name)
+            by_key[key] = PlayStat(
+                system=system, game=name, display_name=name,
+                total_seconds=total,
+            )
+
+    # --- [TopTen_Times_Played] ---
+    section2 = "TopTen_Times_Played"
+    if parser.has_section(section2):
+        i = 1
+        while True:
+            sys_key = f"{i}_System"
+            if not parser.has_option(section2, sys_key):
+                break
+            system = parser.get(section2, sys_key, fallback="").strip()
+            name = parser.get(section2, f"{i}_Name", fallback="").strip()
+            count = _coerce_int(
+                parser.get(section2, f"{i}_Times_Played", fallback="0")
+            )
+            i += 1
+            if not system or not name:
+                continue
+            if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
+                continue
+            key = (system, name)
+            if key in by_key:
+                by_key[key].times_played = count
+            else:
+                by_key[key] = PlayStat(
+                    system=system, game=name, display_name=name,
+                    times_played=count,
+                )
+
+    return list(by_key.values())
+
+
+def load_all_playtime(
+    config: Config,
+    *,
+    warnings: "list[str] | None" = None,
+    notes: "list[str] | None" = None,
+) -> list[PlayStat]:
     """Read every Statistics.ini under the RocketLauncher tree.
 
-    Looks in:
-      * ``<RocketLauncher>/Settings/Global Statistics/<system>.ini``
-      * ``<RocketLauncher>/Settings/<system>/Statistics.ini`` (older layout)
+    Checks three locations:
+      * ``<RocketLauncher>/Settings/Global Statistics/<system>.ini`` (classic layout)
+      * ``<RocketLauncher>/Settings/<system>/Statistics.ini`` (oldest layout)
+      * ``<RocketLauncher>/Data/Statistics/<system>.ini`` (newer RL layout)
+
+    If none of those per-system files yield records, falls back to reading
+    the aggregate ``Data/Statistics/Global Statistics.ini`` summary (top-10
+    lists only, but better than an empty wheel).
 
     Records keyed on the same ``(system, game)`` pair are merged
     (newest ``last_played`` wins; counts are summed).
+
+    Pass a list to *notes* to receive informational messages describing which
+    paths were found and used (useful for CLI / GUI diagnostics).
     """
     if not config.rocketlauncher_dir:
         return []
     rl = Path(config.rocketlauncher_dir)
     by_key: dict[tuple[str, str], PlayStat] = {}
+
+    def _note(msg: str) -> None:
+        if notes is not None:
+            notes.append(msg)
 
     def _merge(stats: Iterable[PlayStat]) -> None:
         for s in stats:
@@ -155,19 +262,78 @@ def load_all_playtime(config: Config, *, warnings: "list[str] | None" = None) ->
             elif s.average_seconds:
                 existing.average_seconds = s.average_seconds
 
+    # Classic layout: Settings/Global Statistics/<system>.ini
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
+        before = len(by_key)
         for ini in global_dir.glob("*.ini"):
             _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
+        added = len(by_key) - before
+        if added:
+            _note(f"Settings/Global Statistics/: {added} game(s) from "
+                  f"{len(list(global_dir.glob('*.ini')))} system file(s)")
 
+    # Oldest layout: Settings/<system>/Statistics.ini
     settings_dir = rl / "Settings"
     if settings_dir.is_dir():
+        before = len(by_key)
+        sys_dirs_with_stats: list[str] = []
         for sys_dir in settings_dir.iterdir():
             if not sys_dir.is_dir():
                 continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
                 _merge(_read_playstats_file(stats, sys_dir.name, warnings=warnings))
+                sys_dirs_with_stats.append(sys_dir.name)
+        added = len(by_key) - before
+        if added:
+            _note(f"Settings/<system>/Statistics.ini: {added} game(s) from "
+                  f"{len(sys_dirs_with_stats)} system(s)")
+
+    # Newer layout: Data/Statistics/<system>.ini
+    # Skip the aggregate "Global Statistics.ini" here — it's handled below.
+    data_stats_dir = rl / "Data" / "Statistics"
+    if data_stats_dir.is_dir():
+        before = len(by_key)
+        data_files = [
+            ini for ini in data_stats_dir.glob("*.ini")
+            if ini.stem.lower() != "global statistics"
+        ]
+        for ini in data_files:
+            _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
+        added = len(by_key) - before
+        if added:
+            _note(f"Data/Statistics/: {added} game(s) from "
+                  f"{len(data_files)} system file(s)")
+        elif data_files:
+            _note(f"Data/Statistics/: found {len(data_files)} system file(s) "
+                  f"but 0 parseable records (files may be empty or unrecognised format)")
+
+    # Fallback: use the aggregate Global Statistics.ini when no per-game data
+    # was found anywhere (top-10 summaries are better than a blank wheel).
+    if not by_key:
+        global_stats_path = rl / "Data" / "Statistics" / "Global Statistics.ini"
+        if global_stats_path.is_file():
+            before = len(by_key)
+            _merge(_read_global_statistics_ini(global_stats_path, warnings=warnings))
+            added = len(by_key) - before
+            if added:
+                _note(
+                    f"Data/Statistics/Global Statistics.ini (fallback): "
+                    f"{added} game(s) — this file contains only top-10 summaries, "
+                    f"not full history.  Per-system stats files were not found."
+                )
+            else:
+                _note(
+                    "Data/Statistics/Global Statistics.ini exists but contains "
+                    "no recognisable playtime data."
+                )
+        else:
+            _note(
+                "No stats files found in any of the searched locations.  "
+                "Check that rocketlauncher_dir is set correctly and that "
+                "RocketLauncher has recorded at least one game launch."
+            )
 
     return list(by_key.values())
 
@@ -340,7 +506,11 @@ def build_most_played_wheel(
 
     known = set(get_systems(config))
     read_warnings: list[str] = []
-    stats = [s for s in load_all_playtime(config, warnings=read_warnings) if s.system in known]
+    read_notes: list[str] = []
+    stats = [
+        s for s in load_all_playtime(config, warnings=read_warnings, notes=read_notes)
+        if s.system in known
+    ]
     top = top_games(stats, n=limit, scope="all")
 
     pseudo_entries = [
@@ -360,6 +530,7 @@ def build_most_played_wheel(
         skip_launchers=skip_launchers,
     )
     summary.read_warnings = read_warnings
+    summary.read_notes = read_notes
 
     if register_in_main_menu and summary.entries > 0:
         try:
@@ -500,6 +671,8 @@ def main(argv: Optional[list[str]] = None) -> int:
             skip_media=skip_media,
         )
         print(f"Most Played system: {summary.target_system}")
+        for note in summary.read_notes:
+            print(f"  source:     {note}")
         print(f"  entries:    {summary.entries}")
         print(f"  pruned:     {summary.pruned}")
         print(f"  db:         {summary.db_path}")
@@ -507,7 +680,11 @@ def main(argv: Optional[list[str]] = None) -> int:
               f"copied={summary.media_copied} skipped={summary.media_skipped}")
         if summary.media_errors:
             print(f"  errors:     {len(summary.media_errors)}")
+            for e in summary.media_errors[:5]:
+                print(f"    - {e}", file=sys.stderr)
         print(f"  launchers:  {summary.inis_written}")
+        for w in summary.read_warnings:
+            print(f"  WARNING:    {w}", file=sys.stderr)
         return 0
 
     return 0

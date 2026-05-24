@@ -12,6 +12,7 @@ from spindoctor.config import Config, save_config
 from spindoctor.medialink import LinkMode
 from spindoctor.playtime import (
     DEFAULT_PLAYED_SYSTEM, PlayStat, _read_playstats_file,
+    _read_global_statistics_ini,
     aggregate_by_system, build_most_played_wheel, export_csv, export_json,
     format_duration, load_all_playtime, most_recent, top_games,
 )
@@ -332,3 +333,116 @@ def test_build_most_played_wheel_respects_limit(isolated_config, tmp_path):
     # B and C have the most playtime; A should be excluded.
     assert "B" in db_text and "C" in db_text
     assert " name=\"A\"" not in db_text
+
+
+# ─── Data/Statistics/ path + Global Statistics.ini fallback ──────────────────
+
+def _write_global_statistics_ini(path, top_time=None, top_count=None):
+    """Write a minimal Global Statistics.ini with the given top-10 data.
+
+    *top_time* and *top_count* are lists of (system, name, value) tuples.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["[General]", "Total_Global_Played_Time=", ""]
+    if top_time:
+        lines.append("[TopTen_Time_Played]")
+        for i, (sys, name, val) in enumerate(top_time, 1):
+            lines += [f"{i}_System={sys}", f"{i}_Name={name}", f"{i}_Time_Played={val}"]
+        lines.append("")
+    if top_count:
+        lines.append("[TopTen_Times_Played]")
+        for i, (sys, name, val) in enumerate(top_count, 1):
+            lines += [f"{i}_System={sys}", f"{i}_Name={name}", f"{i}_Times_Played={val}"]
+        lines.append("")
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def test_load_all_playtime_reads_data_statistics_dir(isolated_config, tmp_path):
+    """Stats in Data/Statistics/<system>.ini (newer RL layout) are found."""
+    rl = tmp_path / "rl"
+    _write_stats_ini(
+        rl / "Data" / "Statistics" / "MAME.ini",
+        [{"name": "sf2", "count": 130, "total": 7516,
+          "last": "2026-04-01 12:00:00"}],
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    rows = load_all_playtime(cfg)
+    assert len(rows) == 1
+    assert rows[0].system == "MAME"
+    assert rows[0].game == "sf2"
+    assert rows[0].total_seconds == 7516
+
+
+def test_load_all_playtime_fallback_uses_global_statistics(isolated_config, tmp_path):
+    """When no per-system files exist the aggregate Global Statistics.ini is used."""
+    rl = tmp_path / "rl"
+    _write_global_statistics_ini(
+        rl / "Data" / "Statistics" / "Global Statistics.ini",
+        top_time=[
+            ("Nintendo DS", "Kirby Super Star Ultra", 30016),
+            ("PC Games", "Plants vs. Zombies GOTY Edition", 23875),
+        ],
+        top_count=[
+            ("MAME", "1942", 340),
+        ],
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    rows = load_all_playtime(cfg)
+    by_key = {(r.system, r.game): r for r in rows}
+    assert ("Nintendo DS", "Kirby Super Star Ultra") in by_key
+    assert by_key[("Nintendo DS", "Kirby Super Star Ultra")].total_seconds == 30016
+    assert ("MAME", "1942") in by_key
+    assert by_key[("MAME", "1942")].times_played == 340
+
+
+def test_load_all_playtime_skips_global_statistics_when_per_system_exists(
+    isolated_config, tmp_path,
+):
+    """Global Statistics.ini is not used when real per-system data exists."""
+    rl = tmp_path / "rl"
+    # Real per-system file
+    _write_stats_ini(
+        rl / "Data" / "Statistics" / "MAME.ini",
+        [{"name": "sf2", "count": 130, "total": 7516,
+          "last": "2026-04-01 12:00:00"}],
+    )
+    # Aggregate file alongside it — should be ignored when per-system data exists
+    _write_global_statistics_ini(
+        rl / "Data" / "Statistics" / "Global Statistics.ini",
+        top_time=[("Nintendo DS", "Kirby Super Star Ultra", 30016)],
+    )
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    rows = load_all_playtime(cfg)
+    # Only the per-game file results should appear
+    assert len(rows) == 1
+    assert rows[0].game == "sf2"
+
+
+def test_read_global_statistics_ini_extracts_time_and_count(tmp_path):
+    ini = tmp_path / "Global Statistics.ini"
+    _write_global_statistics_ini(
+        ini,
+        top_time=[
+            ("Nintendo DS", "Kirby Super Star Ultra", 30016),
+            ("MAME", "sf2", 7516),
+            ("Toolkit", "Refresh Most Played", 1),   # should be skipped
+        ],
+        top_count=[
+            ("MAME", "1942", 340),
+            ("MAME", "sf2", 130),   # merges with TopTen_Time_Played entry
+        ],
+    )
+    rows = _read_global_statistics_ini(ini)
+    by_key = {(r.system, r.game): r for r in rows}
+    # Toolkit entry must be skipped
+    assert ("Toolkit", "Refresh Most Played") not in by_key
+    # Time-played entries
+    assert by_key[("Nintendo DS", "Kirby Super Star Ultra")].total_seconds == 30016
+    # Count merged onto existing time entry
+    assert by_key[("MAME", "sf2")].total_seconds == 7516
+    assert by_key[("MAME", "sf2")].times_played == 130
+    # Count-only entry (not in time list)
+    assert by_key[("MAME", "1942")].times_played == 340
