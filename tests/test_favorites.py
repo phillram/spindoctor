@@ -8,7 +8,7 @@ from spindoctor.config import Config, save_config
 from spindoctor.favorites import (
     FavoriteStore, _resolve_target_names, FavoriteEntry,
     add, load_store, rebuild, remove, save_store, sync_native,
-    _read_text_robust,
+    _read_text_robust, _find_favorites_txt, _parse_favorites_txt,
 )
 from spindoctor.medialink import LinkMode
 
@@ -270,3 +270,145 @@ def test_read_text_robust_handles_plain_utf8(tmp_path):
     path = tmp_path / "test.ini"
     path.write_text("Zelda\n", encoding="utf-8")
     assert "Zelda" in _read_text_robust(path)
+
+
+# ─── favorites.txt support ────────────────────────────────────────────────────
+
+def test_parse_favorites_txt_basic():
+    text = "galaxian\ngalaga\ngt99\n# comment\n\n;another comment\npacman\n"
+    result = _parse_favorites_txt(text)
+    assert result == ["galaxian", "galaga", "gt99", "pacman"]
+
+
+def test_parse_favorites_txt_empty():
+    assert _parse_favorites_txt("") == []
+    assert _parse_favorites_txt("\n\n  \n") == []
+
+
+def test_find_favorites_txt_case_insensitive(tmp_path):
+    """_find_favorites_txt finds the file regardless of capitalisation."""
+    sys_dir = tmp_path / "MAME"
+    sys_dir.mkdir()
+    # Write as "Favorites.txt" (capital F)
+    (sys_dir / "Favorites.txt").write_text("pacman\n", encoding="utf-8")
+    found = _find_favorites_txt(sys_dir)
+    assert found is not None
+    assert found.name == "Favorites.txt"
+
+
+def test_find_favorites_txt_missing(tmp_path):
+    sys_dir = tmp_path / "MAME"
+    sys_dir.mkdir()
+    assert _find_favorites_txt(sys_dir) is None
+
+
+def test_sync_native_reads_favorites_txt(isolated_config, tmp_path, monkeypatch):
+    """Favorites listed in favorites.txt are picked up by sync_native."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Write a favorites.txt matching the format the user reported
+    (hs / "Databases" / "Super Nintendo" / "favorites.txt").write_text(
+        "Tetris\n",
+        encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 1
+    assert store.find("Super Nintendo", "Tetris") is not None
+    assert warns == []
+    # Notes should mention favorites.txt was found
+    assert any("favorites.txt" in note for note in notes)
+
+
+def test_sync_native_reads_favorites_txt_capital_f(isolated_config, tmp_path, monkeypatch):
+    """favorites.txt is found even when capitalised as Favorites.txt."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    (hs / "Databases" / "Super Nintendo" / "Favorites.txt").write_text(
+        "Tetris\n",
+        encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 1
+    assert store.find("Super Nintendo", "Tetris") is not None
+
+
+def test_sync_native_favorites_txt_warns_when_empty(isolated_config, tmp_path, monkeypatch):
+    """An empty favorites.txt produces a warning rather than silent failure."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    (hs / "Databases" / "Super Nintendo" / "favorites.txt").write_text(
+        "", encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 0
+    assert any("favorites.txt" in w and "0 parseable" in w for w in warns)
+
+
+def test_sync_native_merges_both_ini_and_txt(isolated_config, tmp_path, monkeypatch):
+    """A system can have both _Favorites.ini and favorites.txt; both are read."""
+    roms, hs, rl = _build_layout(tmp_path)
+    # Add extra games to the database XML so all ROM names resolve
+    for sys_name in ("Super Nintendo",):
+        (hs / "Databases" / sys_name / f"{sys_name}.xml").write_text(
+            "<menu>"
+            "<game name=\"Tetris\"><description>Tetris</description></game>"
+            "<game name=\"Mario\"><description>Mario</description></game>"
+            "</menu>",
+            encoding="utf-8",
+        )
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").write_text(
+        "Tetris\n", encoding="utf-8",
+    )
+    (hs / "Databases" / "Super Nintendo" / "favorites.txt").write_text(
+        "Mario\n", encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 2
+    assert store.find("Super Nintendo", "Tetris") is not None
+    assert store.find("Super Nintendo", "Mario") is not None
+
+
+def test_sync_native_favorites_txt_real_format(isolated_config, tmp_path, monkeypatch):
+    """Parse the exact multi-entry format from the user's MAME/favorites.txt."""
+    roms, hs, rl = _build_layout(tmp_path)
+    # Build a database with a subset of the real game names
+    (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").write_text(
+        "<menu>"
+        "<game name=\"galaxian\"><description>Galaxian</description></game>"
+        "<game name=\"galaga\"><description>Galaga</description></game>"
+        "<game name=\"pacman\"><description>Pac-Man</description></game>"
+        "</menu>",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Simulate the user's real file content
+    (hs / "Databases" / "Super Nintendo" / "favorites.txt").write_text(
+        "galaxian\ngalaga\ngt99\npacman\n",
+        encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    # gt99 has no DB entry so display_name falls back to rom_name — still added
+    assert n == 4
+    assert store.find("Super Nintendo", "galaxian") is not None
+    assert store.find("Super Nintendo", "gt99") is not None  # no DB entry but still added

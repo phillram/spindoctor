@@ -116,10 +116,15 @@ def sync_native(
 ) -> tuple[int, list[str], list[str]]:
     """Merge HyperSpin's per-system Favorites lists into the cross-system store.
 
-    HyperSpin writes ``<game name="X" favorite="1"/>`` flags into each
-    system's database when the user toggles the F-key inside a wheel.
-    This helper picks those up and adds them to our store so the
-    cross-system Favorites wheel reflects them on next rebuild.
+    Checks three sources per system, in order:
+
+    1. ``<game favorite="1"/>`` attributes in the system's database XML.
+    2. ``<databases_dir>/<System>/<System>_Favorites.ini`` — the INI format
+       written by some HyperSpin / RocketLauncher builds (one ROM per line,
+       optional ``[section]`` header).
+    3. ``<databases_dir>/<System>/favorites.txt`` — the plain-text format
+       written by other RocketLauncher builds (one ROM per line, no headers).
+       The search is case-insensitive so ``Favorites.txt`` also matches.
 
     Returns ``(added_count, warnings, notes)`` where *warnings* lists any
     systems whose databases could not be loaded, and *notes* provides
@@ -138,8 +143,8 @@ def sync_native(
 
     from .config import get_systems
     systems = [s for s in get_systems(config) if s != store.target_system]
-    ini_found: list[str] = []
-    ini_missing: list[str] = []
+    ini_found: list[str] = []       # systems with <System>_Favorites.ini
+    txt_found: list[str] = []       # systems with favorites.txt
     xml_favorites_found = 0
 
     for sys_name in systems:
@@ -148,16 +153,15 @@ def sync_native(
         except (ValueError, OSError) as exc:
             warnings.append(f"sync: skipped {sys_name} — {type(exc).__name__}: {exc}")
             continue
+
+        # ── 1. XML database favorite="1" attributes ───────────────────────────
         for game in db.games().values():
-            # Built-in HyperSpin sets favorite="1" in the <favorite> tag or
-            # via a sibling .ini list. We probe the GameEntry first; users
-            # without lxml may have lost the attribute, so the .ini fallback
-            # below picks up the rest.
             if getattr(game, "favorite", "") == "1":
                 if add(store, sys_name, game.name, game.description):
                     added += 1
                     xml_favorites_found += 1
 
+        # ── 2. <System>_Favorites.ini ─────────────────────────────────────────
         ini = db_root / sys_name / f"{sys_name}_Favorites.ini"
         if ini.exists():
             ini_found.append(sys_name)
@@ -168,6 +172,7 @@ def sync_native(
                     f"sync: could not read {ini.name}: {type(exc).__name__}: {exc}"
                 )
                 text = ""
+            ini_roms: list[str] = []
             for line in text.splitlines():
                 rom = line.strip()
                 if not rom or rom.startswith(";") or rom.startswith("["):
@@ -176,28 +181,69 @@ def sync_native(
                 display = source.description if source else rom
                 if add(store, sys_name, rom, display):
                     added += 1
-        else:
-            ini_missing.append(sys_name)
+                ini_roms.append(rom)
+            if not ini_roms:
+                warnings.append(
+                    f"sync: {sys_name}_Favorites.ini exists but contained "
+                    f"0 parseable ROM names — file may be empty or use an "
+                    f"unexpected format."
+                )
 
-    if ini_found:
-        notes.append(
-            f"Found _Favorites.ini for: {', '.join(ini_found)}"
-        )
+        # ── 3. favorites.txt (case-insensitive) ───────────────────────────────
+        txt_path = _find_favorites_txt(db_root / sys_name)
+        if txt_path is not None:
+            txt_found.append(sys_name)
+            try:
+                text = _read_text_robust(txt_path)
+            except OSError as exc:
+                warnings.append(
+                    f"sync: could not read {txt_path.name} for {sys_name}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                text = ""
+            txt_roms = _parse_favorites_txt(text)
+            if txt_roms:
+                for rom in txt_roms:
+                    source = db.get(rom)
+                    display = source.description if source else rom
+                    if add(store, sys_name, rom, display):
+                        added += 1
+            else:
+                warnings.append(
+                    f"sync: {sys_name}/{txt_path.name} exists but contained "
+                    f"0 parseable ROM names — file may be empty."
+                )
+
+    # ── Diagnostic notes ──────────────────────────────────────────────────────
     if xml_favorites_found:
         notes.append(
-            f"Found {xml_favorites_found} favorite flag(s) in XML databases."
+            f"Found {xml_favorites_found} favorite flag(s) set in XML databases."
         )
-    if not ini_found and not xml_favorites_found:
+    if ini_found:
         notes.append(
-            f"No favorites found.  Checked {len(systems)} system(s) in {db_root}.  "
-            f"SpinDoctor looks for:\n"
-            f"  • <game favorite=\"1\"/> attributes in each system's database XML\n"
-            f"  • {db_root}/<System>/<System>_Favorites.ini  "
-            f"(written by HyperSpin when you press F on a game in the wheel)\n"
-            f"If favorites appear in HyperSpin but not here, the _Favorites.ini "
-            f"files may be in a different location than your configured "
-            f"databases_dir ({db_root})."
+            f"Found <System>_Favorites.ini for {len(ini_found)} system(s): "
+            f"{', '.join(ini_found)}"
         )
+    if txt_found:
+        notes.append(
+            f"Found favorites.txt for {len(txt_found)} system(s): "
+            f"{', '.join(txt_found)}"
+        )
+
+    nothing_found = not ini_found and not txt_found and not xml_favorites_found
+    if nothing_found:
+        notes.append(
+            f"No favorites found after checking {len(systems)} system(s) "
+            f"in {db_root}.\n"
+            f"SpinDoctor searches each system folder for:\n"
+            f"  • <game favorite=\"1\"/> in the database XML\n"
+            f"  • <System>_Favorites.ini  (HyperSpin F-key format)\n"
+            f"  • favorites.txt  (RocketLauncher plain-text format)\n"
+            f"If favorites appear in HyperSpin but not here, those files may\n"
+            f"live in a different directory.  Your configured databases_dir is:\n"
+            f"  {db_root}"
+        )
+
     return added, warnings, notes
 
 
@@ -388,6 +434,38 @@ def rebuild(
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     return summary
+
+
+def _find_favorites_txt(sys_dir: Path) -> "Optional[Path]":
+    """Return the ``favorites.txt`` file in *sys_dir* if one exists.
+
+    The search is **case-insensitive** so both ``favorites.txt`` and
+    ``Favorites.txt`` (or any other capitalisation) are found correctly
+    regardless of the host filesystem's case rules.
+    """
+    try:
+        for p in sys_dir.iterdir():
+            if p.is_file() and p.name.lower() == "favorites.txt":
+                return p
+    except OSError:
+        pass
+    return None
+
+
+def _parse_favorites_txt(text: str) -> list[str]:
+    """Return ROM names from a plain-text ``favorites.txt`` file.
+
+    The format is one ROM name per line.  Empty lines and lines starting
+    with ``#`` or ``;`` are treated as comments and ignored.  Unlike
+    ``_Favorites.ini`` there are no section headers.
+    """
+    roms: list[str] = []
+    for line in text.splitlines():
+        rom = line.strip()
+        if not rom or rom.startswith(";") or rom.startswith("#"):
+            continue
+        roms.append(rom)
+    return roms
 
 
 def _read_text_robust(path: Path) -> str:
