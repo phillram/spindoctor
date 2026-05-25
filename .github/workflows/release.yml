@@ -159,6 +159,18 @@ jobs:
           echo "::endgroup::"
 
       - name: Publish GitHub Release
+        # ── DO NOT CREATE OR EDIT THIS RELEASE MANUALLY ──────────────────────
+        # This step is the canonical source of the release title and body.
+        # Running `gh release create` or editing the release in the GitHub UI
+        # before this step completes will produce an incorrectly formatted
+        # release. Wait ~4 minutes after pushing the tag for this step to run.
+        #
+        # Release format enforced here:
+        #   Title : SpinDoctor vX.Y.Z
+        #   Body  : Windows binaries header
+        #           + CHANGELOG section (build/extract_changelog.py)
+        #           + auto-generated "What's Changed" PR list
+        #   Assets: spindoctor-windows-vX.Y.Z.zip + SHA256SUMS.txt
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
         with:
