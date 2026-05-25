@@ -724,6 +724,7 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
 [Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.3...HEAD
+[2.3.4]: https://github.com/phillram/spindoctor/compare/v2.3.3...v2.3.4
 [2.3.3]: https://github.com/phillram/spindoctor/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/phillram/spindoctor/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/phillram/spindoctor/compare/v2.3.0...v2.3.1

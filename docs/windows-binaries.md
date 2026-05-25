@@ -27,11 +27,12 @@ Each release at [github.com/phillram/spindoctor/releases](https://github.com/phi
 
 ```
 spindoctor-windows-vX.Y.Z.zip
-├── spindoctor.exe          ← full CLI (every command)
-├── spindoctor-gui.exe      ← double-clickable GUI launcher
-├── spindoctor-fav.exe      ← Favorites wheel manager
-├── spindoctor-recent.exe   ← Recently Played rebuild
-└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
+├── spindoctor.exe                   ← full CLI (every command)
+├── spindoctor-gui.exe               ← double-clickable GUI launcher
+├── spindoctor-fav.exe               ← Favorites wheel manager
+├── spindoctor-recent.exe            ← Recently Played rebuild
+├── spindoctor-stats.exe             ← playtime reports + Most Played wheel
+└── spindoctor-refresh-wheels.bat    ← startup task launcher (written on first schedule)
 ```
 
 All five are single-file PyInstaller binaries — no installer, no setup wizard, no DLL hell. The CLI exes are roughly 30–50 MB each because they bundle their own Python runtime plus dependencies (lxml, Pillow, py7zr, rarfile); `spindoctor-gui.exe` is smaller (~15–20 MB) because it just bundles Tkinter and shells out to the others.
@@ -59,9 +60,9 @@ Built with **Python 3.8.10 + PyInstaller 5.13.2** on a `windows-2022` GitHub Act
 If you'd rather download from the command line:
 
 ```bat
-:: Use whichever URL the release page shows — example for v1.0.0:
+:: Use whichever URL the release page shows — example for v2.3.4:
 curl -L -o spindoctor-windows.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v1.0.0/spindoctor-windows-v1.0.0.zip
+    https://github.com/phillram/spindoctor/releases/download/v2.3.4/spindoctor-windows-v2.3.4.zip
 ```
 
 ## Install
