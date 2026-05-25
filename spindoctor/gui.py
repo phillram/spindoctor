@@ -9202,39 +9202,47 @@ class _SpinDoctorGUI:
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
 
-    def _autorefresh_command(self) -> str:
-        # Run all three rebuilds sequentially, hidden from the user.
-        # PowerShell -WindowStyle Hidden suppresses the console window entirely;
-        # semicolons run each command unconditionally so a flaky favorites
-        # build still lets recent/most-played update.
-        #
-        # Windows Task Scheduler runs with a minimal PATH that does NOT
-        # include the SpinDoctor install directory, so bare command names
-        # like "spindoctor-fav" would fail silently.  When running as a
-        # frozen binary we embed full paths to the sibling .exe files so
-        # the task works regardless of what's on PATH.
+    def _write_refresh_bat(self) -> Path:
+        """Write spindoctor-refresh-wheels.bat and return its path.
+
+        The bat is written next to the exe when running as a frozen binary,
+        or to ~/.spindoctor/ for source installs.  Keeping the bat short
+        (three lines, no embedded paths) lets the schtasks /TR command stay
+        well under the 261-character limit — the bat itself can embed the
+        full paths.
+        """
         if getattr(sys, "frozen", False):
-            exe_dir = Path(sys.executable).parent
-            fav    = exe_dir / "spindoctor-fav.exe"
-            recent = exe_dir / "spindoctor-recent.exe"
-            stats  = exe_dir / "spindoctor-stats.exe"
-            # PowerShell call-operator (&) + single-quoted path handles spaces.
-            ps_cmd = (
-                f"& '{fav}' rebuild --apply; "
-                f"& '{recent}' rebuild --apply; "
-                f"& '{stats}' build-wheel --apply"
+            bat_dir = Path(sys.executable).parent
+            fav    = bat_dir / "spindoctor-fav.exe"
+            recent = bat_dir / "spindoctor-recent.exe"
+            stats  = bat_dir / "spindoctor-stats.exe"
+            lines = (
+                "@echo off\r\n"
+                f'"{fav}" rebuild --apply\r\n'
+                f'"{recent}" rebuild --apply\r\n'
+                f'"{stats}" build-wheel --apply\r\n'
             )
         else:
-            # Dev / source install: assume commands are on PATH.
-            ps_cmd = (
-                "spindoctor-fav rebuild --apply; "
-                "spindoctor-recent rebuild --apply; "
-                "spindoctor-stats build-wheel --apply"
+            bat_dir = Path.home() / ".spindoctor"
+            bat_dir.mkdir(parents=True, exist_ok=True)
+            lines = (
+                "@echo off\r\n"
+                "spindoctor-fav rebuild --apply\r\n"
+                "spindoctor-recent rebuild --apply\r\n"
+                "spindoctor-stats build-wheel --apply\r\n"
             )
-        return (
-            "powershell.exe -WindowStyle Hidden -NonInteractive -Command "
-            f'"{ps_cmd}"'
-        )
+        bat_path = bat_dir / "spindoctor-refresh-wheels.bat"
+        bat_path.write_text(lines, encoding="utf-8")
+        return bat_path
+
+    def _autorefresh_command(self, bat_path: Path) -> str:
+        # schtasks /TR has a 261-character hard limit.  Embedding three
+        # full exe paths in a PowerShell one-liner easily blows past that
+        # on cabinet installs where the SpinDoctor folder lives under a
+        # long user path.  Solution: write a companion bat file and point
+        # the task at it.  cmd /c "path" is ~20 chars + the bat path —
+        # stays short regardless of install location.
+        return f'cmd /c "{bat_path}"'
 
     def _parse_delay_minutes(self) -> Optional[int]:
         raw = self._tools_delay_var.get().strip()
@@ -9254,8 +9262,12 @@ class _SpinDoctorGUI:
             delay = self._parse_delay_minutes()
             if delay == -1:
                 return
+            bat_path = self._write_refresh_bat()
+            self._append_output(
+                f"\n[Auto-refresh] wrote launcher bat → {bat_path}\n"
+            )
             result = autostart.create_logon_task(
-                self._autorefresh_command(),
+                self._autorefresh_command(bat_path),
                 delay_minutes=delay,
             )
         except autostart.NotSupportedError as exc:
@@ -9264,13 +9276,20 @@ class _SpinDoctorGUI:
         except (ValueError, RuntimeError) as exc:
             self.messagebox.showerror("Could not schedule task", str(exc))
             return
+        except OSError as exc:
+            self.messagebox.showerror(
+                "Could not write bat file",
+                f"Failed to write the companion bat file:\n{exc}",
+            )
+            return
         self._append_output(
             f"\n[Task Scheduler] created '{result.name}' → "
             f"{result.command}\n{result.output}\n"
         )
         self.messagebox.showinfo(
             "Scheduled",
-            f"Auto-refresh task '{result.name}' is registered. "
+            f"Auto-refresh task '{result.name}' is registered.\n\n"
+            f"Launcher bat: {bat_path}\n\n"
             "Reboot or log out and back in to test it; the GUI's Output "
             "panel shows the schtasks message above.",
         )
@@ -9714,6 +9733,17 @@ class _SpinDoctorGUI:
         # the rest of the cleanup is skipped and the GUI stays busy
         # forever. Wrap the body in try/finally and re-do the essentials
         # in ``finally`` so the user always escapes the running state.
+        #
+        # Chaining guard: if marker.callback calls _run_cli (the normal
+        # pattern for multi-step workflows like _refresh_all_wheels), that
+        # call stores the *next* Popen into self._proc before this
+        # finally block runs.  We must NOT overwrite that with None or
+        # call _set_busy(False) — doing so disconnects the GUI from the
+        # new subprocess and leaves it stuck in the "running" state with
+        # no DoneMarker ever arriving.  Snapshot self._proc here; the
+        # finally block only tears down state when self._proc is still the
+        # same object (i.e. the callback did NOT start a new process).
+        old_proc = self._proc
         try:
             # Stamp the exit code on the run record + emit a closing
             # banner for dry-runs so the user always sees "preview done,
@@ -9787,23 +9817,31 @@ class _SpinDoctorGUI:
             except Exception:  # noqa: BLE001
                 pass
         finally:
-            # Guarantee the GUI leaves the running state regardless of
-            # what raised above. Each of these is individually guarded
-            # because a TclError on one widget shouldn't stop the others.
-            self._proc = None
-            self._current_run = None
-            self._run_started_monotonic = None
-            self._run_label = ""
-            self._running_tab_idx = None
+            # The stuck-checker is per-subprocess; always reset it.
             self._stuck_check_since = None
-            try:
-                self._stop_btn.configure(state="disabled")
-            except Exception:  # noqa: BLE001
-                pass
-            try:
-                self._set_busy(False)
-            except Exception:  # noqa: BLE001
-                pass
+            # Only tear down the running state when the callback did NOT
+            # start a new process.  If self._proc changed, _run_cli has
+            # already set up fresh state (new _RunRecord, busy=True, etc.)
+            # and we must leave it intact so the next subprocess gets its
+            # own DoneMarker.
+            chain_started = self._proc is not old_proc
+            if not chain_started:
+                # Guarantee the GUI leaves the running state regardless of
+                # what raised above. Each of these is individually guarded
+                # because a TclError on one widget shouldn't stop the others.
+                self._proc = None
+                self._current_run = None
+                self._run_started_monotonic = None
+                self._run_label = ""
+                self._running_tab_idx = None
+                try:
+                    self._stop_btn.configure(state="disabled")
+                except Exception:  # noqa: BLE001
+                    pass
+                try:
+                    self._set_busy(False)
+                except Exception:  # noqa: BLE001
+                    pass
 
     def _stop_running(self) -> None:
         if self._proc is None or self._proc.poll() is not None:

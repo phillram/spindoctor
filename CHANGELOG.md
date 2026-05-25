@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.4] - 2026-05-24
+
+### Fixed
+
+- **Multi-step wheel refresh ("Refresh selected" with all three boxes checked) ran only the first step, leaving the rest permanently "stuck running".** The root cause was a bug in `_on_proc_done`: the `finally` block unconditionally cleared `self._proc = None` after the chaining callback had already launched the next subprocess and stored it in `self._proc`. The overwrite disconnected the GUI from the new process so it never received a completion signal. The `finally` block now snapshots `old_proc` before the callback and only tears down GUI state when `self._proc` still points to the same object (i.e. no new subprocess was started by the chain callback).
+
+- **`install-tools --add-to-system` overwrote the existing `Emulators.ini` for the target system (e.g. Toolkit), breaking all non-SpinDoctor entries in that wheel.** The command called `generate_synthetic_system_ini` unconditionally, which replaced the user's `[ROMS]`-section file and custom `Rom_Path` with SpinDoctor's generated `[Settings]`-section version. Existing Toolkit game entries then failed with "No Default_Emulator found" or "Cannot find ROM with wrong extension". The command now checks whether `Settings/<system>/Emulators.ini` or `Settings/<system>.ini` already exists; if so, it skips writing and prints the path the user needs to ensure includes `Modules/PCLauncher/<system>` in `Rom_Path`.
+
+- **"Schedule auto-refresh" Task Scheduler button produced `ERROR: Value for '/TR' option cannot be more than 261 character(s)`.** The previous implementation embedded three full `.exe` paths in a PowerShell one-liner passed directly to `schtasks /TR`. On installs with a moderately long path this exceeded Windows Task Scheduler's 261-character `/TR` limit. The fix writes a companion `spindoctor-refresh-wheels.bat` file next to the exe (or in `~/.spindoctor/` for source installs) that contains the three rebuild commands with full paths, then passes `cmd /c "<bat_path>"` as the `/TR` value — keeping the task command well under the limit at any install path length.
+
+- **`spindoctor-recent rebuild --apply` and `spindoctor-stats build-wheel --apply` produced no output until the rebuild finished**, making the GUI look frozen during long media-copy operations. Progress lines (`[System] mirroring media for N game(s)…`, per-10-game counters, phase completion messages) are now printed with `flush=True` at each phase boundary inside `_build_synthetic_wheel` so the GUI output panel updates in real time.
+
 ## [2.3.3] - 2026-05-24
 
 ### Fixed

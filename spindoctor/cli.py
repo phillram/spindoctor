@@ -2755,19 +2755,34 @@ def install_tools(output_dir, add_to_system):
         + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
 
-    # Write the RocketLauncher system INI so RL knows to route launches for
-    # this system through PCLauncher and where to find the per-game INIs.
-    # Without this file, RocketLauncher has no emulator mapping for the
-    # system and PCLauncher can't locate the INIs — producing the
-    # "PCLauncher does not know what exe / FadeTitle to watch for" error
-    # even when the bat files and per-game INIs are correctly written.
-    from .rocketlauncher import generate_synthetic_system_ini
+    # Write the RocketLauncher system INI only when the system has not been
+    # configured already.  For existing systems (e.g. a user-maintained
+    # Toolkit wheel), the Emulators.ini is already correct — overwriting it
+    # replaces the user's [ROMS] section / Rom_Path / custom emulators with
+    # SpinDoctor's synthetic defaults, which breaks all non-SpinDoctor entries
+    # and causes "No Default_Emulator found" or "wrong extension" errors.
     rl_dir = Path(config.rocketlauncher_dir)
-    sys_ini = generate_synthetic_system_ini(add_to_system, rl_dir)
-    console.print(
-        f"[green]+[/green] wrote RocketLauncher system INI → "
-        f"[cyan]{sys_ini}[/cyan]"
-    )
+    emulators_ini = rl_dir / "Settings" / add_to_system / "Emulators.ini"
+    flat_ini = rl_dir / "Settings" / f"{add_to_system}.ini"
+    if emulators_ini.exists() or flat_ini.exists():
+        console.print(
+            f"[dim]RocketLauncher settings for[/dim] [cyan]{add_to_system}[/cyan] "
+            "[dim]already exist — not overwritten.[/dim]"
+        )
+        if emulators_ini.exists():
+            console.print(
+                f"[dim]  existing:[/dim] [cyan]{emulators_ini}[/cyan]\n"
+                "[dim]  Ensure its[/dim] [cyan]Rom_Path[/cyan] [dim]includes[/dim] "
+                f"[cyan]{rl_dir / 'Modules' / 'PCLauncher' / add_to_system}[/cyan]\n"
+                "[dim]  so RocketLauncher can find the SpinDoctor-added entries.[/dim]"
+            )
+    else:
+        from .rocketlauncher import generate_synthetic_system_ini
+        sys_ini = generate_synthetic_system_ini(add_to_system, rl_dir)
+        console.print(
+            f"[green]+[/green] wrote RocketLauncher system INI → "
+            f"[cyan]{sys_ini}[/cyan]"
+        )
     console.print(
         f"[dim]Make sure[/dim] [cyan]{add_to_system}[/cyan] [dim]is on "
         "the Main Menu — run[/dim] "
