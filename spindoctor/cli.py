@@ -2200,32 +2200,64 @@ def stats_report_build_wheel(limit, target_system, media_mode,
     _print_synth_summary("Most Played", summary)
 
 
-# Static .bat bodies — kept module-level so `install-tools` and any future
-# helper (e.g. a unit test) build the same files without duplicating CRLF
-# quoting nightmares.
-_INSTALL_TOOLS_BATS: dict[str, str] = {
-    "Refresh Favorites.bat":
-        "@echo off\r\n"
-        "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-        "spindoctor-fav rebuild --apply\r\n"
-        "if errorlevel 1 pause\r\n",
-    "Refresh Recently Played.bat":
-        "@echo off\r\n"
-        "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-        "spindoctor-recent rebuild --apply\r\n"
-        "if errorlevel 1 pause\r\n",
-    "Refresh Most Played.bat":
-        "@echo off\r\n"
-        "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
-        "spindoctor-stats build-wheel --apply\r\n"
-        "if errorlevel 1 pause\r\n",
-    "Refresh Both.bat":
-        "@echo off\r\n"
-        "spindoctor-fav rebuild --apply\r\n"
-        "spindoctor-recent rebuild --apply\r\n"
-        "spindoctor-stats build-wheel --apply\r\n"
-        "if errorlevel 1 pause\r\n",
-}
+def _sibling_exe(name: str) -> str:
+    """Return a quoted full path to a sibling SpinDoctor binary when frozen.
+
+    When running as a PyInstaller-frozen binary all five .exe files live in
+    the same folder as ``spindoctor.exe``.  Embedding the full path in
+    generated ``.bat`` files makes them work even when that folder is not on
+    ``PATH`` — which is always the case when RocketLauncher / HyperSpin
+    launch a bat, or when Windows Task Scheduler fires at log-on.
+
+    Falls back to the bare command name in dev / source-install mode so the
+    existing ``pip install -e .`` workflow is unchanged.
+    """
+    import sys as _sys
+    if getattr(_sys, "frozen", False):
+        sibling = Path(_sys.executable).parent / f"{name}.exe"
+        if sibling.exists():
+            # Quote the path so spaces in the install dir don't break cmd.exe.
+            return f'"{sibling}"'
+    return name
+
+
+def _make_install_tools_bats() -> "dict[str, str]":
+    """Build the .bat file bodies with full paths to the sibling binaries.
+
+    Called at write time (not at module import) so that ``sys.executable``
+    resolves to the frozen ``spindoctor.exe`` that the user actually ran,
+    giving us the correct installation directory to embed.
+    """
+    fav    = _sibling_exe("spindoctor-fav")
+    recent = _sibling_exe("spindoctor-recent")
+    stats  = _sibling_exe("spindoctor-stats")
+    return {
+        "Refresh Favorites.bat": (
+            "@echo off\r\n"
+            "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
+            f"{fav} rebuild --apply\r\n"
+            "if errorlevel 1 pause\r\n"
+        ),
+        "Refresh Recently Played.bat": (
+            "@echo off\r\n"
+            "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
+            f"{recent} rebuild --apply\r\n"
+            "if errorlevel 1 pause\r\n"
+        ),
+        "Refresh Most Played.bat": (
+            "@echo off\r\n"
+            "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
+            f"{stats} build-wheel --apply\r\n"
+            "if errorlevel 1 pause\r\n"
+        ),
+        "Refresh Both.bat": (
+            "@echo off\r\n"
+            f"{fav} rebuild --apply\r\n"
+            f"{recent} rebuild --apply\r\n"
+            f"{stats} build-wheel --apply\r\n"
+            "if errorlevel 1 pause\r\n"
+        ),
+    }
 
 
 def _install_tools_pclauncher_ini(bat_path: Path) -> str:
@@ -2653,7 +2685,7 @@ def install_tools(output_dir, add_to_system):
     out.mkdir(parents=True, exist_ok=True)
 
     written_bats: list[Path] = []
-    for name, body in _INSTALL_TOOLS_BATS.items():
+    for name, body in _make_install_tools_bats().items():
         path = out / name
         path.write_text(body, encoding="utf-8")
         written_bats.append(path)
