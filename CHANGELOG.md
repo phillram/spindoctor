@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`generate-config` was misclassified as a read-only command in the GUI**, causing the run log to show `# Dry-run: False` and the status bar to show "OK" even when `--apply` was not passed (i.e. when the command was doing a preview dry run). Removed `generate-config` from `_READ_ONLY_COMMANDS`; the GUI now correctly labels a no-`--apply` run as `[DRY RUN]` in the status bar, output banner, and Logs tab header.
+
+- **Favorites, Recently Played, and Most Played media mirroring defaulted to hardlink mode (`auto`), which silently fell back to a copy on FAT32/exFAT but left no indication when hardlinks succeeded across-volume or failed entirely.** The default is now `copy` for all three wheels (`fav rebuild`, `recent rebuild`, `stats build-wheel`). Hardlinks and symlinks are still available via `--media-mode link` / `--media-mode symlink` for users who prefer them.
+
 ## [2.3.4] - 2026-05-24
 
 ### Fixed

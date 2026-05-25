@@ -338,7 +338,7 @@ def rebuild(
     store: FavoriteStore,
     config: Config,
     *,
-    media_mode: LinkMode = LinkMode.AUTO,
+    media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
     dry_run: bool = False,
@@ -535,7 +535,7 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="Regenerate the Favorites system + media + launchers")
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
-                       default="auto")
+                       default="copy")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
 

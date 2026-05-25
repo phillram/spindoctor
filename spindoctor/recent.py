@@ -323,7 +323,7 @@ def _build_synthetic_wheel(
     target_system: str,
     pseudo_entries: list[FavoriteEntry],
     *,
-    media_mode: LinkMode = LinkMode.AUTO,
+    media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
 ) -> RecentSummary:
@@ -453,7 +453,7 @@ def rebuild(
     *,
     target_system: str = DEFAULT_RECENT_SYSTEM,
     limit: int = DEFAULT_LIMIT,
-    media_mode: LinkMode = LinkMode.AUTO,
+    media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
     dry_run: bool = False,
@@ -524,7 +524,7 @@ def _build_parser() -> argparse.ArgumentParser:
                        help=f"Synthetic system name (default '{DEFAULT_RECENT_SYSTEM}').")
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
-                       default="auto")
+                       default="copy")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
 

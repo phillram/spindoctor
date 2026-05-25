@@ -504,7 +504,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "audit", "inspect", "find-dupes", "find-misplaced",
     "find-orphan-media", "check-discs", "verify", "lint", "stats",
     "find-global", "theme-scan", "theme-pack-create", "diff",
-    "install-tools", "generate-config", "stats-report",
+    "install-tools", "stats-report",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
     "fav list", "recent list",

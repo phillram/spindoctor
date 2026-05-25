@@ -485,7 +485,7 @@ def build_most_played_wheel(
     *,
     target_system: str = DEFAULT_PLAYED_SYSTEM,
     limit: int = DEFAULT_TOP_N,
-    media_mode: LinkMode = LinkMode.AUTO,
+    media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
     register_in_main_menu: bool = True,
@@ -574,7 +574,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_bw.add_argument("--target-system", default=DEFAULT_PLAYED_SYSTEM)
     p_bw.add_argument("--media-mode",
                       choices=["link", "symlink", "copy", "auto", "none"],
-                      default="auto")
+                      default="copy")
     p_bw.add_argument("--apply", action="store_true",
                       help="Actually write files (default is dry-run).")
     return p
