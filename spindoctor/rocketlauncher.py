@@ -209,11 +209,18 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     1. ``Settings/<system>.ini`` (flat layout) — some RL versions read a
        top-level ``[Settings]`` file per system.
     2. ``Settings/<system>/Emulators.ini`` (folder layout) — newer/alternate
-       RL installs keep settings inside a per-system folder.  The format
-       mirrors the real ``Emulators.ini`` found in those installs::
+       RL installs keep settings inside a per-system folder.  The section
+       name must be ``[Settings]`` (not ``[ROMS]``) because RocketLauncher's
+       AHK ``IniRead`` looks for ``Default_Emulator`` in the same section it
+       uses for the flat layout.  ``Rom_Extension=ini`` is also required so
+       RL doesn't fall back to the global extension list (``zip|rar|7z|…``)::
 
-           [ROMS]
+           [Settings]
            Default_Emulator=PCLauncher
+           Rom_Path=<pcl_dir>
+           Rom_Extension=ini
+
+           [PCLauncher]
            Rom_Path=<pcl_dir>
 
        Without this file RocketLauncher throws "No default_emulator found in
@@ -238,12 +245,23 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     ini_path.write_text("\n".join(flat_lines), encoding="utf-8")
 
     # ── 2. Folder layout: Settings/<system>/Emulators.ini ────────────────────
+    # RocketLauncher reads this file with its AHK IniRead(), which looks for
+    # Default_Emulator in the [Settings] section — the same section name used
+    # in the flat Settings/<system>.ini.  Using [ROMS] here caused
+    # "No Default_Emulator found" even though the key was present.
+    # Rom_Extension=ini is also required; without it RL falls back to the
+    # global extension list (zip|rar|7z|…) and reports "Cannot find Rom …
+    # With any provided Rom_Extension: zip|rar|…".
     system_folder = settings_dir / system_name
     system_folder.mkdir(parents=True, exist_ok=True)
     emulators_ini = system_folder / "Emulators.ini"
     emulator_lines = [
-        "[ROMS]",
+        "[Settings]",
         "Default_Emulator=PCLauncher",
+        f"Rom_Path={pclauncher_dir}",
+        "Rom_Extension=ini",
+        "",
+        "[PCLauncher]",
         f"Rom_Path={pclauncher_dir}",
         "",
     ]

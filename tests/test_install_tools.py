@@ -130,8 +130,9 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
     emulators_ini = cabinet["rl"] / "Settings" / "Toolkit" / "Emulators.ini"
     assert emulators_ini.exists(), "Settings/Toolkit/Emulators.ini was not written"
     emu_body = emulators_ini.read_text(encoding="utf-8")
+    assert "[Settings]" in emu_body, "section must be [Settings], not [ROMS]"
     assert "Default_Emulator=PCLauncher" in emu_body
-    assert "[ROMS]" in emu_body
+    assert "Rom_Extension=ini" in emu_body
 
 
 def test_install_tools_add_to_system_errors_when_db_missing(cabinet):

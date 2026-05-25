@@ -439,8 +439,14 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
     emulators_ini = rl / "Settings" / "Favorites" / "Emulators.ini"
     assert emulators_ini.exists(), "Settings/Favorites/Emulators.ini was not written"
     body = emulators_ini.read_text(encoding="utf-8")
+    # Section must be [Settings] — RocketLauncher's IniRead looks for
+    # Default_Emulator in [Settings], not [ROMS].  Using [ROMS] causes
+    # "No Default_Emulator found" even though the key is present.
+    assert "[Settings]" in body
     assert "Default_Emulator=PCLauncher" in body
-    assert "[ROMS]" in body
+    # Rom_Extension=ini is required so RL looks for .ini files in the
+    # PCLauncher dir, not the global default zip|rar|7z|… list.
+    assert "Rom_Extension=ini" in body
     # Rom_Path must point at the PCLauncher module dir so RL knows where
     # to find the per-game INIs.
     pcl_dir = str(rl / "Modules" / "PCLauncher" / "Favorites")

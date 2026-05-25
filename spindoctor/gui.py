@@ -9206,13 +9206,34 @@ class _SpinDoctorGUI:
         # Run all three rebuilds sequentially, hidden from the user.
         # PowerShell -WindowStyle Hidden suppresses the console window entirely;
         # semicolons run each command unconditionally so a flaky favorites
-        # build still lets recent/most-played update (same behaviour as the
-        # old `cmd /c ... & ...` chain, but invisible).
+        # build still lets recent/most-played update.
+        #
+        # Windows Task Scheduler runs with a minimal PATH that does NOT
+        # include the SpinDoctor install directory, so bare command names
+        # like "spindoctor-fav" would fail silently.  When running as a
+        # frozen binary we embed full paths to the sibling .exe files so
+        # the task works regardless of what's on PATH.
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).parent
+            fav    = exe_dir / "spindoctor-fav.exe"
+            recent = exe_dir / "spindoctor-recent.exe"
+            stats  = exe_dir / "spindoctor-stats.exe"
+            # PowerShell call-operator (&) + single-quoted path handles spaces.
+            ps_cmd = (
+                f"& '{fav}' rebuild --apply; "
+                f"& '{recent}' rebuild --apply; "
+                f"& '{stats}' build-wheel --apply"
+            )
+        else:
+            # Dev / source install: assume commands are on PATH.
+            ps_cmd = (
+                "spindoctor-fav rebuild --apply; "
+                "spindoctor-recent rebuild --apply; "
+                "spindoctor-stats build-wheel --apply"
+            )
         return (
             "powershell.exe -WindowStyle Hidden -NonInteractive -Command "
-            '"spindoctor-fav rebuild --apply; '
-            "spindoctor-recent rebuild --apply; "
-            'spindoctor-stats build-wheel --apply"'
+            f'"{ps_cmd}"'
         )
 
     def _parse_delay_minutes(self) -> Optional[int]:
