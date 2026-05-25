@@ -104,6 +104,12 @@ jobs:
       # to prove the artifact came from this workflow on this repo.
       - name: Attest build provenance
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        # continue-on-error: attestation uses GitHub's OIDC / Sigstore API
+        # which has occasional transient failures. A failed attestation is not
+        # a reason to skip Upload or Publish — the zip is already built and
+        # the SHA256 checksum is already generated. Users can still verify the
+        # download; they just won't get the `gh attestation verify` path.
+        continue-on-error: true
         uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32  # v4.1.0
         with:
           subject-path: 'artifacts/*.zip'
