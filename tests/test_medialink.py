@@ -79,26 +79,35 @@ def test_missing_source_returns_empty_plan(tmp_path):
     assert plan.actions == []
 
 
-def test_zip_packed_media_is_copied(tmp_path):
-    """plan_mirror must include .zip files as media assets.
+def test_archive_packed_media_is_copied(tmp_path):
+    """plan_mirror must include archive-packed media files.
 
-    HyperSpin reads zip-packed media natively (videos, themes, etc.).  Source
-    systems commonly store artwork as e.g. ``Media/MAME/Video/1942.zip`` rather
-    than an unwrapped ``.mp4``.  Without ``.zip`` in ``_FILE_EXTS`` those files
-    were silently skipped and the synthetic wheel showed no video / artwork.
+    HyperSpin reads ``.zip``-packed media natively.  Downloaded media packs
+    may also use ``.rar``, ``.7z``, ``.lha``, ``.lzh``, ``.gz``, ``.tar``.
+    All must be copied to the synthetic wheel's media folder so they are
+    not silently skipped during a Favorites / Recently Played / Most Played
+    rebuild.
     """
     media = tmp_path / "Media"
     src = media / "MAME" / "Video"
     src.mkdir(parents=True)
-    (src / "1942.zip").write_bytes(b"PK-fake-zip-content")
+    archive_names = [
+        "1942.zip", "1942.rar", "1942.7z",
+        "1942.lha", "1942.lzh", "1942.gz", "1942.tar",
+    ]
+    for name in archive_names:
+        (src / name).write_bytes(b"fake-archive-bytes")
 
     plan = plan_mirror(media, "MAME", "Favorites", "1942")
-    names = [a.src.name for a in plan.actions if not a.is_dir]
-    assert "1942.zip" in names, (
-        ".zip files must be included in the media mirror plan — "
-        "HyperSpin reads zip-packed media natively."
-    )
+    planned = {a.src.name for a in plan.actions if not a.is_dir}
+
+    for name in archive_names:
+        assert name in planned, (
+            f"{name} must be included in the media mirror plan — "
+            "archive-packed media must not be silently skipped."
+        )
 
     apply_plan(plan, mode=LinkMode.COPY)
-    dest = media / "Favorites" / "Video" / "1942.zip"
-    assert dest.exists(), "1942.zip was not copied to the Favorites media folder."
+    for name in archive_names:
+        dest = media / "Favorites" / "Video" / name
+        assert dest.exists(), f"{name} was not copied to the Favorites media folder."

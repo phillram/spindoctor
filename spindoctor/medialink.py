@@ -41,10 +41,20 @@ MEDIA_FILE_SUBDIRS = (
 )
 MEDIA_DIR_SUBDIRS = ("Themes",)
 _FILE_EXTS = {
+    # Uncompressed media formats
     ".png", ".jpg", ".jpeg",
     ".mp4", ".avi", ".flv", ".mkv",
     ".mp3", ".wav", ".ogg",
-    ".zip",  # HyperSpin reads zip-packed media natively (videos, themes, etc.)
+    # Archive-packed media.
+    # HyperSpin reads .zip natively (video, wheel art, themes, etc.).
+    # The other formats (.rar, .7z, .lha, .lzh, .gz, .tar) are not read
+    # natively by HyperSpin but may appear in media directories from
+    # downloaded media packs — include them so they are not silently skipped
+    # during the Favorites / Recently Played / Most Played mirror.
+    ".zip",
+    ".rar", ".7z",
+    ".lha", ".lzh",
+    ".gz", ".tar",
 }
 
 
