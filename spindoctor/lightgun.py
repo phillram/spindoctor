@@ -344,7 +344,11 @@ def _upsert_ini_key(body: str, section: str, key: str, value: str) -> str:
     chunk = body[start:end]
 
     if key_re.search(chunk):
-        chunk = key_re.sub(f"{key}={value}", chunk, count=1)
+        # Use a callable replacement to avoid re.sub interpreting backslashes
+        # in the value string (e.g. Windows paths like C:\Users\...) as
+        # regex backreferences, which raises re.error on \U, \N, etc.
+        replacement = f"{key}={value}"
+        chunk = key_re.sub(lambda _: replacement, chunk, count=1)
     else:
         eol = "\r\n" if "\r\n" in chunk else "\n"
         chunk = chunk.rstrip() + f"{eol}{key}={value}{eol}"

@@ -173,14 +173,51 @@ def generate_global_emulators_ini(
 
 # ─── RocketLauncher INI ───────────────────────────────────────────────────────
 
+def detect_rl_layout(settings_dir: Path, system_name: str) -> str:
+    """Return which RocketLauncher settings layout a system currently uses.
+
+    RocketLauncher supports two layouts for per-system emulator routing:
+
+    - ``"folder"`` — ``Settings/<system>/Emulators.ini`` exists.  RL reads
+      ``Default_Emulator`` from the ``[ROMS]`` section.  This is the layout
+      produced by HyperHQ and used by cabinets that have per-game override
+      folders alongside the system-level ``Emulators.ini``.
+
+    - ``"flat"``   — ``Settings/<system>.ini`` exists (no sub-folder).  RL
+      reads ``Default_Emulator`` from the ``[Settings]`` section.
+
+    - ``"new"``    — neither file exists yet (first run for this system).
+      ``generate_rl_system_ini`` will write both so the cabinet works
+      regardless of which layout RL happens to prefer.
+
+    The check is done in folder-first order because a cabinet that has both
+    files almost certainly grew from HyperHQ (folder layout), and the
+    folder-layout ``Emulators.ini`` is what RL actually reads in that case.
+    """
+    if (settings_dir / system_name / "Emulators.ini").exists():
+        return "folder"
+    if (settings_dir / f"{system_name}.ini").exists():
+        return "flat"
+    return "new"
+
+
 def generate_rl_system_ini(
     system_name: str,
     config: Config,
     output_base: Optional[Path] = None,
-) -> Path:
-    """Write a RocketLauncher per-system settings INI file.
+) -> list[Path]:
+    """Write RocketLauncher per-system settings INI file(s).
 
-    File goes to: <rl_dir|output_base>/Settings/<SystemName>.ini
+    Detects which layout the system already uses and writes accordingly:
+
+    - **folder layout** (``Settings/<system>/Emulators.ini`` exists) →
+      updates that file using the ``[ROMS]`` section convention.
+    - **flat layout** (``Settings/<system>.ini`` exists) →
+      updates that file using the ``[Settings]`` section convention.
+    - **new system** (neither file exists) → writes *both* files so the
+      cabinet works regardless of which layout RocketLauncher uses.
+
+    Returns the list of paths written (one or two items).
     """
     rl_base = output_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
     if not rl_base:
@@ -192,24 +229,46 @@ def generate_rl_system_ini(
 
     settings_dir = rl_base / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
-    ini_path = settings_dir / f"{system_name}.ini"
 
     rom_path = str(Path(config.roms_dir) / system_name)
     emulator = guess_emulator(system_name)
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
+    layout = detect_rl_layout(settings_dir, system_name)
+    written: list[Path] = []
 
-    lines = [
-        "[Settings]",
-        f"Default_Emulator={emulator}",
-        f"Rom_Path={rom_path}",
-        f"Rom_Extension={extensions}",
-        "",
-        f"[{emulator}]",
-        f"Rom_Path={rom_path}",
-        "",
-    ]
-    ini_path.write_text("\n".join(lines), encoding="utf-8")
-    return ini_path
+    if layout in ("folder", "new"):
+        # Folder layout: Settings/<system>/Emulators.ini  [ROMS] section
+        folder_dir = settings_dir / system_name
+        folder_dir.mkdir(parents=True, exist_ok=True)
+        emu_ini = folder_dir / "Emulators.ini"
+        emu_ini.write_text("\n".join([
+            "[ROMS]",
+            f"Default_Emulator={emulator}",
+            f"Rom_Path={rom_path}",
+            f"Rom_Extension={extensions}",
+            "",
+            f"[{emulator}]",
+            f"Rom_Path={rom_path}",
+            "",
+        ]), encoding="utf-8")
+        written.append(emu_ini)
+
+    if layout in ("flat", "new"):
+        # Flat layout: Settings/<system>.ini  [Settings] section
+        flat_ini = settings_dir / f"{system_name}.ini"
+        flat_ini.write_text("\n".join([
+            "[Settings]",
+            f"Default_Emulator={emulator}",
+            f"Rom_Path={rom_path}",
+            f"Rom_Extension={extensions}",
+            "",
+            f"[{emulator}]",
+            f"Rom_Path={rom_path}",
+            "",
+        ]), encoding="utf-8")
+        written.append(flat_ini)
+
+    return written
 
 
 def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) -> Path:

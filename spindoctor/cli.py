@@ -4149,6 +4149,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         return bak
 
     if gen_rl:
+        from .rocketlauncher import detect_rl_layout as _detect_rl_layout
         console.print(
             f"\n[blue bold]RocketLauncher system INIs[/blue bold] "
             f"({len(systems)} systems)"
@@ -4164,6 +4165,21 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                         return stripped.split("=", 1)[1].strip()
             except OSError:
                 pass
+            return None
+
+        def _find_existing_ini(rl_base: Path, sys_name: str) -> Optional[Path]:
+            """Return the INI path that currently holds the system's Rom_Path.
+
+            Checks the folder-layout Emulators.ini first (the layout used by
+            HyperHQ-configured cabinets), then falls back to the flat .ini.
+            Returns None when neither exists (new system).
+            """
+            folder_ini = rl_base / "Settings" / sys_name / "Emulators.ini"
+            if folder_ini.exists():
+                return folder_ini
+            flat_ini = rl_base / "Settings" / f"{sys_name}.ini"
+            if flat_ini.exists():
+                return flat_ini
             return None
 
         tbl = Table(box=box.SIMPLE, show_header=True)
@@ -4212,16 +4228,15 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     str(Path(config.roms_dir) / sys_name) if config.roms_dir else ""
                 )
                 existing_ini = (
-                    rl_base_dry / "Settings" / f"{sys_name}.ini"
+                    _find_existing_ini(rl_base_dry, sys_name)
                     if rl_base_dry else None
                 )
                 current_rom_path = (
                     _read_existing_rom_path(existing_ini)
-                    if existing_ini and existing_ini.exists()
-                    else None
+                    if existing_ini else None
                 )
                 if current_rom_path is None:
-                    current_str = "[dim](new file)[/dim]"
+                    current_str = "[dim](new)[/dim]"
                     status = "[green]new[/green]"
                 elif current_rom_path == new_rom_path:
                     current_str = f"[dim]{current_rom_path}[/dim]"
@@ -4232,19 +4247,20 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                 tbl.add_row(sys_name, emulator, current_str, new_rom_path, status)
             else:
                 try:
-                    # Identify the target path so we can back it up before the
-                    # generator overwrites it.
+                    # Back up whichever file(s) already exist before
+                    # generate_rl_system_ini overwrites them.
                     rl_base_live = out_base or (
                         Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
                     )
-                    ini_target = (
-                        rl_base_live / "Settings" / f"{sys_name}.ini"
+                    existing_target = (
+                        _find_existing_ini(rl_base_live, sys_name)
                         if rl_base_live else None
                     )
-                    bak = _backup_if_exists(ini_target) if ini_target else None
-                    p = generate_rl_system_ini(sys_name, config, out_base)
+                    bak = _backup_if_exists(existing_target) if existing_target else None
+                    written = generate_rl_system_ini(sys_name, config, out_base)
+                    written_str = ", ".join(str(p) for p in written)
                     bak_str = f"[dim]{bak.name}[/dim]" if bak else "[dim]new[/dim]"
-                    tbl.add_row(sys_name, emulator, str(p), bak_str)
+                    tbl.add_row(sys_name, emulator, written_str, bak_str)
                 except ValueError as e:
                     tbl.add_row(sys_name, emulator, f"[red]{e}[/red]", "")
         console.print(tbl)
