@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Four commands that write files when `--apply` is passed were incorrectly listed in `_READ_ONLY_COMMANDS`**, causing the GUI to show `# Dry-run: False` (no DRY RUN banner) even for their preview invocations. The affected commands: `generate-config`, `find-misplaced`, `find-orphan-media`, `lightgun configure`. These have been removed from `_READ_ONLY_COMMANDS`; the GUI now correctly labels a no-`--apply` run as `[DRY RUN]`. `doctor`, `lightgun detect`, and `mainmenu show` (no-arg) are kept in the read-only set — they are diagnostics / display commands, not write previews, so the DRY RUN banner is misleading for them.
+
+- **Favorites, Recently Played, and Most Played media mirroring defaulted to hardlink mode (`auto`), which silently fell back to a copy on FAT32/exFAT but left no indication when hardlinks succeeded across-volume or failed entirely.** The default is now `copy` for all three wheels (`fav rebuild`, `recent rebuild`, `stats build-wheel`). Hardlinks and symlinks are still available via `--media-mode link` / `--media-mode symlink` for users who prefer them.
+
+- **`fav rebuild`, `recent rebuild`, and `stats build-wheel` now accept `--verbose`**, which prints each media file as it is copied or linked (`copy  <src>\n   →  <dest>`). Without `--verbose` the summary counts are unchanged. The GUI's Logs tab "Save selected output…" button captures the full verbose output to a `.txt` file.
+
+- **Six additional CLI commands now accept `--verbose`**: `find-misplaced`, `find-orphan-media`, `curate`, `theme-apply`, `media-scan`, and `cleanup run`. When `--verbose` is passed each command prints the full source → destination path (or full path for deletions) for every file it processes, in addition to the usual summary totals.
+
+- **Wheels tab: added "Verbose" checkbox.** When ticked, passes `--verbose` to each rebuild command so the Logs tab records exactly which files were copied or linked. Off by default so normal refreshes stay concise.
+
+- **Logs tab: added "Save selected output…" button.** Opens a file-save dialog and writes the selected run's full output (header + streamed CLI text) to a `.txt` file. Useful when verbose output or a long generate-config dry-run needs to be reviewed off-screen rather than copy-pasted.
+
+- **`Settings/<system>/Emulators.ini` was written with a `[Settings]` section (introduced in v2.3.3) when it must use `[ROMS]`.** RocketLauncher's AHK code reads `Default_Emulator` from `[ROMS]` in folder-layout Emulators.ini files — the same section used by HyperHQ when it sets up PCLauncher systems (confirmed by Toolkit's working Emulators.ini). When the section was `[Settings]`, RL found no `Default_Emulator` key in `[ROMS]`, then wrote `[ROMS]\nDefault_Emulator=` (blank) back into the file via its own AHK IniWrite, causing "No Default_Emulator found in Settings\Favorites\Emulators.ini" on every game launch from the Favorites, Recently Played, and Most Played wheels — even after a successful `rebuild --apply`. The section is now `[ROMS]`. Note: the flat `Settings/<system>.ini` file correctly uses `[Settings]` and is unchanged — these two files follow different conventions.
+
 ## [2.3.4] - 2026-05-24
 
 ### Fixed

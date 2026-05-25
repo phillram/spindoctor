@@ -1081,7 +1081,9 @@ def find_dupes(system, all_systems, cross_systems, by_content):
                    "folder. Writes a manifest so the change can be undone.")
 @click.option("--undo", is_flag=True,
               help="Reverse the most recent --apply manifest.")
-def find_misplaced(system, all_systems, apply_moves_flag, undo):
+@click.option("--verbose", is_flag=True,
+              help="Print full source → destination path for each file moved.")
+def find_misplaced(system, all_systems, apply_moves_flag, undo, verbose):
     """Scan for ROMs whose extension doesn't match the folder's system.
 
     \b
@@ -1161,7 +1163,10 @@ def find_misplaced(system, all_systems, apply_moves_flag, undo):
     result, manifest = apply_moves(all_items, config)
     console.print(f"\n[green]✓[/green] moved {len(result.moved)} file(s)")
     for src, dest in result.moved:
-        console.print(f"  [dim]·[/dim] {src.name} → {dest.parent.name}/")
+        if verbose:
+            console.print(f"  [dim]·[/dim] {src}\n     → {dest}")
+        else:
+            console.print(f"  [dim]·[/dim] {src.name} → {dest.parent.name}/")
     if result.skipped:
         console.print(f"[yellow]⚠[/yellow] skipped {len(result.skipped)}:")
         for path, reason in result.skipped:
@@ -1199,8 +1204,10 @@ def find_misplaced(system, all_systems, apply_moves_flag, undo):
               help="Reverse the most recent archive manifest.")
 @click.option("--list-manifests", "list_manifests_flag", is_flag=True,
               help="List curation manifests on disk and exit.")
+@click.option("--verbose", is_flag=True,
+              help="Print the full path for each archived or deleted file.")
 def curate(system, all_systems, regions, include_proto, prefer_revision,
-           apply_changes, action, yes, undo, list_manifests_flag):
+           apply_changes, action, yes, undo, list_manifests_flag, verbose):
     """Curate region/version variants — keep the best, retire the rest.
 
     \b
@@ -1340,14 +1347,22 @@ def curate(system, all_systems, regions, include_proto, prefer_revision,
         if action == "archive":
             grand_archived += len(result.archived)
             for src, dest in result.archived:
-                console.print(
-                    f"  [green]+[/green] archived {src.name} -> "
-                    f"{dest.parent.name}/{dest.name}"
-                )
+                if verbose:
+                    console.print(
+                        f"  [green]+[/green] archived {src}\n     → {dest}"
+                    )
+                else:
+                    console.print(
+                        f"  [green]+[/green] archived {src.name} -> "
+                        f"{dest.parent.name}/{dest.name}"
+                    )
         else:
             grand_deleted += len(result.deleted)
             for path in result.deleted:
-                console.print(f"  [red]-[/red] deleted {path.name}")
+                if verbose:
+                    console.print(f"  [red]-[/red] deleted {path}")
+                else:
+                    console.print(f"  [red]-[/red] deleted {path.name}")
         if result.skipped:
             grand_skipped.extend(result.skipped)
             for path, reason in result.skipped:
@@ -1432,7 +1447,9 @@ def lint_cmd(source, category):
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Delete the reported orphans (irreversible, no undo). "
                    "Default: dry-run preview.")
-def find_orphan_media(system, all_systems, apply_changes):
+@click.option("--verbose", is_flag=True,
+              help="Print the full path of each file as it is deleted.")
+def find_orphan_media(system, all_systems, apply_changes, verbose):
     """Find media files whose game no longer exists in DB or ROMs.
 
     \b
@@ -1486,6 +1503,9 @@ def find_orphan_media(system, all_systems, apply_changes):
                          default=False):
         console.print("[yellow]Cancelled.[/yellow]")
         return
+    if verbose:
+        for o in pending_delete:
+            console.print(f"  [red]-[/red] {o.path}")
     deleted, errors = delete_orphans(pending_delete)
     console.print(f"[green]✓[/green] deleted {deleted}")
     for e in errors:
@@ -2405,8 +2425,10 @@ def theme_scan(system, keyword, output):
                    "--undo latest")
 @click.option("--list-manifests", "list_manifests_flag", is_flag=True,
               help="List existing theme-apply manifests on disk and exit.")
+@click.option("--verbose", is_flag=True,
+              help="Print source → destination path for each file swapped.")
 def theme_apply(source_dir, target, systems, apply_changes, undo_path,
-                revert_system, list_manifests_flag):
+                revert_system, list_manifests_flag, verbose):
     """Replace HyperSpin frontend overlay art from a community pack.
 
     \b
@@ -2540,6 +2562,11 @@ def theme_apply(source_dir, target, systems, apply_changes, undo_path,
         return
 
     result = themes.apply_plan(plans)
+    if verbose:
+        skipped_targets = {tgt for tgt, _ in result.skipped}
+        for p in plans:
+            if p.target not in skipped_targets:
+                console.print(f"  [green]·[/green] {p.source}\n     → {p.target}")
     msg_parts = [f"{result.swapped} swapped"]
     if result.skipped:
         msg_parts.append(f"{len(result.skipped)} skipped")
@@ -3083,6 +3110,8 @@ def cleanup_audit(detail: bool, categories: tuple[str, ...]):
               help="After deleting files, remove now-empty cache directories.")
 @click.option("--yes", "-y", "skip_confirm", is_flag=True,
               help="Skip the interactive confirmation prompt.")
+@click.option("--verbose", is_flag=True,
+              help="Print the full path of each file as it is removed.")
 def cleanup_run(
     include: tuple[str, ...],
     exclude: tuple[str, ...],
@@ -3092,6 +3121,7 @@ def cleanup_run(
     apply_changes: bool,
     prune_empty_dirs: bool,
     skip_confirm: bool,
+    verbose: bool,
 ):
     """Remove cached files. Defaults to dry-run; pass --apply to actually delete.
 
@@ -3211,6 +3241,9 @@ def cleanup_run(
         location = reports[key].location
         if Path(location).exists():
             pruned_roots.append(Path(location))
+        if verbose:
+            for p in result.removed:
+                console.print(f"  [red]-[/red] {p}")
         console.print(
             f"  [green]✓[/green] {key}: removed {result.count_removed} "
             f"({format_size(result.bytes_freed)})"
@@ -3733,10 +3766,12 @@ def media_add(system, game, media_type, source_file, move, overwrite, output_dir
               help="Reverse the most recent --apply manifest.")
 @click.option("--list-manifests", "list_manifests_flag", is_flag=True,
               help="List existing import manifests and exit.")
+@click.option("--verbose", is_flag=True,
+              help="Print source → destination path for each file imported.")
 def media_scan_cmd(
     source_dir, system, all_systems, detail, types, no_recursive,
     report_csv, apply_import, action, overwrite, output_dir,
-    undo, list_manifests_flag,
+    undo, list_manifests_flag, verbose,
 ):
     """Audit a folder of local media files against HyperSpin databases.
 
@@ -3893,6 +3928,9 @@ def media_scan_cmd(
             output_dir=out_path,
         )
         verb = {"copy": "copied", "move": "moved", "link": "linked"}[action]
+        if verbose:
+            for src, dest in result.imported:
+                console.print(f"  [green]·[/green] {src}\n     → {dest}")
         console.print(
             f"\n[green]✓[/green] {verb} {len(result.imported)} file(s)"
         )

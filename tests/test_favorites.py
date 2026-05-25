@@ -439,10 +439,12 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
     emulators_ini = rl / "Settings" / "Favorites" / "Emulators.ini"
     assert emulators_ini.exists(), "Settings/Favorites/Emulators.ini was not written"
     body = emulators_ini.read_text(encoding="utf-8")
-    # Section must be [Settings] — RocketLauncher's IniRead looks for
-    # Default_Emulator in [Settings], not [ROMS].  Using [ROMS] causes
-    # "No Default_Emulator found" even though the key is present.
-    assert "[Settings]" in body
+    # Section must be [ROMS] — folder-layout Emulators.ini files use [ROMS],
+    # NOT [Settings].  RocketLauncher's AHK reads Default_Emulator from [ROMS]
+    # in this file format.  Using [Settings] caused RL to write a blank
+    # [ROMS]\nDefault_Emulator= entry, which then triggered "No Default_Emulator
+    # found in Settings/Favorites/Emulators.ini" on every launch.
+    assert "[ROMS]" in body
     assert "Default_Emulator=PCLauncher" in body
     # Rom_Extension=ini is required so RL looks for .ini files in the
     # PCLauncher dir, not the global default zip|rar|7z|… list.

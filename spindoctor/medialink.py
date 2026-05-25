@@ -137,8 +137,19 @@ def _same_target(src: Path, dest: Path) -> bool:
         return False
 
 
-def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO) -> dict:
-    """Execute the plan with the given link mode. Returns a summary dict."""
+def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO,
+               log_fn=None) -> dict:
+    """Execute the plan with the given link mode. Returns a summary dict.
+
+    *log_fn* is an optional callable that receives one string per file
+    action — useful for verbose CLI output or GUI progress.  Each line
+    is of the form::
+
+        copy  D:\\Media\\MAME\\Images\\Wheel\\pacman.png
+           →  D:\\Media\\Favorites\\Images\\Wheel\\pacman.png
+
+    Pass ``print`` (or a GUI append function) to enable per-file logging.
+    """
     summary = {"linked": 0, "copied": 0, "skipped": 0, "errors": []}
 
     for action in plan.actions:
@@ -149,8 +160,13 @@ def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO) -> dict:
         try:
             outcome = _apply_one(action.src, action.dest, action.is_dir, mode)
             summary[outcome] += 1
+            if log_fn is not None:
+                verb = "copy " if outcome == "copied" else "link "
+                log_fn(f"  {verb} {action.src}\n     →  {action.dest}")
         except OSError as e:
             summary["errors"].append(f"{action.src} → {action.dest}: {e}")
+            if log_fn is not None:
+                log_fn(f"  ERROR {action.src} → {action.dest}: {e}")
     return summary
 
 
