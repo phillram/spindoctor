@@ -519,3 +519,57 @@ def test_rebuild_dry_run_shows_system_ini_path(isolated_config, tmp_path, monkey
     assert "Favorites" in str(summary.system_ini_path)
     # Nothing must have been written to disk in dry-run mode.
     assert not (rl / "Settings" / "Favorites.ini").exists()
+
+
+def test_rebuild_writes_hyperspin_settings_ini_when_missing(isolated_config, tmp_path, monkeypatch):
+    """rebuild must write <hyperspin_dir>/Settings/Favorites.ini when absent.
+
+    HyperSpin requires this file to open a sub-wheel.  Without it the wheel
+    reports "Cannot find Favorites.ini" when the user selects it in the main
+    menu.  The critical key is ``hyperlaunch=true`` in ``[exe info]``.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    hs_ini = hs / "Settings" / "Favorites.ini"
+    assert hs_ini.exists(), (
+        "Settings/Favorites.ini was not written — HyperSpin will show "
+        "'Cannot find Favorites.ini' when the wheel is selected."
+    )
+    body = hs_ini.read_text(encoding="utf-8")
+    assert "[exe info]" in body
+    assert "hyperlaunch=true" in body
+
+
+def test_rebuild_preserves_existing_hyperspin_settings_ini(isolated_config, tmp_path, monkeypatch):
+    """rebuild must NOT overwrite Settings/<system>.ini when it already exists.
+
+    User customisations (wheel layout, filter settings, etc.) must survive
+    repeated rebuilds.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Pre-create a customised settings file.
+    settings_dir = hs / "Settings"
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    custom_content = "[exe info]\nhyperlaunch=true\ncustom_option=preserved\n"
+    (settings_dir / "Favorites.ini").write_text(custom_content, encoding="utf-8")
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    body = (settings_dir / "Favorites.ini").read_text(encoding="utf-8")
+    assert "custom_option=preserved" in body, (
+        "rebuild clobbered the user's Settings/Favorites.ini — "
+        "it must only write the file when it is absent."
+    )

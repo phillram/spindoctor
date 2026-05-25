@@ -28,7 +28,7 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
-from .rocketlauncher import generate_synthetic_system_ini
+from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
 
 
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
@@ -446,6 +446,13 @@ def rebuild(
             )
             summary.inis_written += 1
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
+
+    # ── 4. HyperSpin system settings INI ────────────────────────────────────
+    # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
+    # it the wheel reports "Cannot find <system>.ini" on selection.  We only
+    # write when the file is absent so user customisations are never clobbered.
+    hs_dir = Path(config.hyperspin_dir)
+    write_hyperspin_system_ini(store.target_system, hs_dir)
 
     return summary
 
