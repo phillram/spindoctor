@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`generate-config` was blind to folder-layout cabinets** (where RocketLauncher uses `Settings\<system>\Emulators.ini` instead of `Settings\<system>.ini`). On these cabinets — which are produced by HyperHQ and are common in the wild — `generate-config` would always report "(new file)" in its dry-run and write a flat `Settings\<system>.ini` that RL may not read, leaving the `Emulators.ini` with a stale `Rom_Path`. The command now detects which layout each system uses and writes to the matching file: folder-layout systems get their `Emulators.ini` updated (using the `[ROMS]` section that RL requires for this layout); flat-layout systems get their `.ini` updated as before; systems with neither file get both written so the cabinet works regardless of layout. The dry-run table also now shows the correct current `Rom_Path` read from whichever file actually exists.
+
+
 ## [2.4.0] - 2026-05-25
 
 ### Changed
