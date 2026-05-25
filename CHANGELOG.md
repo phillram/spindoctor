@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI tab consolidation**: reduced from 15 tabs to 12 by merging related tabs.
+  - "Audit & Doctor" + "Diagnose" → **Diagnostics** (one tab with "System audit", "Library-wide scans", and "Search & verify" sections).
+  - "Curate" renamed to **Maintenance** (same content).
+  - "Wheels" merged into **Tools** (wheel management sections appear first, then install helpers and scheduler).
+  - "Main Menu" merged into **Systems** (carousel order section appears at top).
+
 ## [2.3.4] - 2026-05-24
 
 ### Fixed

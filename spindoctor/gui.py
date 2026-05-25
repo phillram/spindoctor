@@ -1707,15 +1707,15 @@ class _SpinDoctorGUI:
     _HEALTH_TO_TABS: dict[str, tuple[str, ...]] = {
         "Paths":                  ("Setup",),
         "External binaries":      ("Tools", "Setup"),
-        "HyperSpin databases":    ("Audit & Doctor",),
-        "Match cache":            ("Curate",),
+        "HyperSpin databases":    ("Diagnostics",),
+        "Match cache":            ("Maintenance",),
         "Global Emulators.ini":   ("Metadata & Media",),
         "LEDBlinky":              ("LEDBlinky",),
         "Metadata APIs":          ("Setup",),
         "Media folders":          ("Metadata & Media",),
         # "lxml", "Archive support", "Preview support" are install-level
         # — no single tab owns them, so they don't badge anything. They
-        # still surface via the Audit & Doctor tab's "Run doctor" output.
+        # still surface via the Diagnostics tab's "Run doctor" output.
     }
 
     _HEALTH_BADGE = {
@@ -1961,31 +1961,31 @@ class _SpinDoctorGUI:
         # builder creates its frame as before; the helper just bolts
         # a vertical scrollbar onto whichever container holds it.
         # Tab order is workflow-oriented for a new cabinet owner:
-        # Setup once, then daily-driver tabs (read-only checks first so
-        # the user can confirm "is the cab healthy?" before touching
-        # anything), then curation surfaces, then wheel / front-end
-        # composition, then per-system overrides and peripheral tabs
-        # (LEDBlinky / Lightgun), then infrastructure (Backup → Tools →
+        # Setup once, then daily-driver tabs (read-only Diagnostics
+        # first so the user can confirm "is the cab healthy?" before
+        # touching anything), then curation surfaces, then wheel /
+        # front-end composition via Tools and Systems, then peripheral
+        # tabs (LEDBlinky / Lightgun), then infrastructure (Backup →
         # Migrate) trailing into Logs / Custom Command at the end.
-        self._add_scrollable_tab(nb, self._build_setup_tab,    "Setup")
-        self._add_scrollable_tab(nb, self._build_audit_tab,    "Audit & Doctor")
-        self._add_scrollable_tab(nb, self._build_diagnose_tab, "Diagnose")
-        self._add_scrollable_tab(nb, self._build_metadata_tab, "Metadata & Media")
-        self._add_scrollable_tab(nb, self._build_curate_tab,   "Curate")
-        self._add_scrollable_tab(nb, self._build_wheels_tab,   "Wheels")
-        self._add_scrollable_tab(nb, self._build_mainmenu_tab, "Main Menu")
-        self._add_scrollable_tab(nb, self._build_systems_tab,  "Systems")
-        self._add_scrollable_tab(nb, self._build_ledblinky_tab, "LEDBlinky")
-        self._add_scrollable_tab(nb, self._build_lightgun_tab, "Lightgun")
-        self._add_scrollable_tab(nb, self._build_backup_tab,   "Backup & Restore")
-        self._add_scrollable_tab(nb, self._build_tools_tab,    "Tools")
-        self._add_scrollable_tab(nb, self._build_migrate_tab,  "Migrate")
+        # 12 tabs total (down from 15) — Audit & Doctor + Diagnose →
+        # Diagnostics; Curate → Maintenance; Wheels merged into Tools;
+        # Main Menu merged into Systems.
+        self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
+        self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
+        self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
+        self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
+        self._add_scrollable_tab(nb, self._build_tools_tab,        "Tools")
+        self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
+        self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
+        self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
+        self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
+        self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migrate")
         # Logs tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._tab_base_names.append("Logs")
-        self._add_scrollable_tab(nb, self._build_custom_tab,   "Custom Command")
+        self._add_scrollable_tab(nb, self._build_custom_tab,       "Custom Command")
         main_paned.add(nb, weight=4)
         main_paned.add(out_frame, weight=1)
 
@@ -4461,9 +4461,9 @@ class _SpinDoctorGUI:
             target=self._compute_tab_health_badges, daemon=True,
         ).start()
 
-    # ── Wheels tab ────────────────────────────────────────────────────────────
+    # ── Wheels tab (LEGACY — content merged into _build_tools_tab) ──────────────
 
-    def _build_wheels_tab(self, parent):
+    def _build_wheels_tab(self, parent):  # LEGACY — content merged into _build_tools_tab
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
@@ -4793,9 +4793,9 @@ class _SpinDoctorGUI:
             "the relevant tab (Audit & Doctor, Tools) to fix.",
         )
 
-    # ── Audit & Doctor tab ────────────────────────────────────────────────────
+    # ── Audit & Doctor tab (LEGACY — superseded by _build_diagnostics_tab) ──────
 
-    def _build_audit_tab(self, parent):
+    def _build_audit_tab(self, parent):  # LEGACY — superseded by _build_diagnostics_tab
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
@@ -4894,6 +4894,231 @@ class _SpinDoctorGUI:
             flags_row, text="Detailed output (--detailed)",
             variable=self._audit_detailed_var,
         ).pack(side="left", padx=10)
+
+        return frame
+
+    # ── Diagnostics tab (combines Audit & Doctor + Diagnose) ─────────────────
+
+    def _build_diagnostics_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text="Run read-only diagnostics. No changes are made to disk.",
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        # ── System audit ──────────────────────────────────────────────────────
+        audit_lf = self.ttk.LabelFrame(frame, text="System audit")
+        audit_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(audit_lf, text="System").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
+        self._system_var = self.tk.StringVar()
+        self._system_combo = self.ttk.Combobox(
+            audit_lf, textvariable=self._system_var, state="readonly", width=40
+        )
+        self._system_combo.grid(row=0, column=1, sticky="w", padx=6, pady=(6, 2))
+        self.ttk.Button(
+            audit_lf, text="Reload list",
+            command=lambda: self._refresh_systems(notify=True),
+        ).grid(row=0, column=2, sticky="w", pady=(6, 2))
+
+        btn_row = self.ttk.Frame(audit_lf)
+        btn_row.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
+        self.ttk.Button(btn_row, text="Audit selected system",
+                        command=self._run_audit).pack(side="left")
+        self.ttk.Button(btn_row, text="Audit all systems",
+                        command=self._run_audit_all,
+                        ).pack(side="left", padx=6)
+        self.ttk.Button(btn_row, text="Run doctor",
+                        command=lambda: self._run_cli("spindoctor", ["doctor"])
+                        ).pack(side="left", padx=6)
+        self.ttk.Button(btn_row, text="Tools audit",
+                        command=lambda: self._run_cli("spindoctor", ["tools-audit"])
+                        ).pack(side="left", padx=6)
+
+        preflight_row = self.ttk.Frame(audit_lf)
+        preflight_row.grid(row=1, column=3, sticky="e", padx=6, pady=(4, 2))
+        self.ttk.Separator(preflight_row, orient="vertical").pack(
+            side="left", fill="y", padx=(8, 8),
+        )
+        self.ttk.Button(
+            preflight_row, text="✈  Preflight check…",
+            command=self._run_preflight,
+        ).pack(side="left")
+
+        browse_row = self.ttk.Frame(audit_lf)
+        browse_row.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 2))
+        self.ttk.Label(
+            browse_row, text="Browse on disk:",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+        self.ttk.Button(
+            browse_row, text="Open Media folder for selected system",
+            command=self._open_audit_media_folder,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            browse_row, text="Open ROMs folder for selected system",
+            command=self._open_audit_roms_folder,
+        ).pack(side="left", padx=6)
+
+        opts_row = self.ttk.Frame(audit_lf)
+        opts_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
+        self.ttk.Label(opts_row, text="Report CSV (optional)").pack(side="left")
+        self._audit_report_var = self.tk.StringVar()
+        _rep_entry = self.ttk.Entry(
+            opts_row, textvariable=self._audit_report_var, width=42,
+        )
+        _rep_entry.pack(side="left", padx=6, fill="x", expand=True)
+        self.ttk.Button(
+            opts_row, text="Browse…",
+            command=self._browse_audit_report,
+        ).pack(side="left")
+
+        flags_row = self.ttk.Frame(audit_lf)
+        flags_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 6))
+        self._audit_no_media_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Skip media checks (--no-media)",
+            variable=self._audit_no_media_var,
+        ).pack(side="left")
+        self._audit_detailed_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Detailed output (--detailed)",
+            variable=self._audit_detailed_var,
+        ).pack(side="left", padx=10)
+
+        # ── Library-wide scans ────────────────────────────────────────────────
+        scans_lf = self.ttk.LabelFrame(frame, text="Library-wide scans")
+        scans_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            scans_lf,
+            text=("Read-only inspectors that don't change anything on "
+                  "disk. Each click runs the corresponding command and "
+                  "streams output below — handy when something looks "
+                  "off but you don't know which command will surface it."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        rows_scan: list[tuple[str, list[str]]] = [
+            ("Find duplicate ROMs",        ["find-dupes", "--all"]),
+            ("Find cross-system dupes",    ["find-dupes", "--cross-systems"]),
+            ("Find misplaced ROMs",        ["find-misplaced", "--all"]),
+            ("Find orphan media",          ["find-orphan-media", "--all"]),
+            ("Check disc-set consistency", ["check-discs", "--all"]),
+            ("Lint config + databases",    ["lint"]),
+            ("Generate report",            ["report"]),
+            ("Preview HyperSpin XML",      ["preview"]),
+            ("Stats — playtime overview",  ["stats"]),
+        ]
+        scan_grid = self.ttk.Frame(scans_lf)
+        scan_grid.pack(anchor="w", padx=6, pady=(0, 6))
+
+        def _scan_done(code: int) -> None:
+            if code == 0:
+                self._set_status("Scan complete — see output for results.")
+            else:
+                self._set_status(f"Scan finished with errors (exit {code}) — see output for details.")
+
+        for i, (label, args) in enumerate(rows_scan):
+            r, c = divmod(i, 2)
+            self.ttk.Button(
+                scan_grid, text=label, width=32,
+                command=lambda a=args: self._run_cli("spindoctor", a, on_complete=_scan_done),
+            ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
+
+        # ── Search & verify ───────────────────────────────────────────────────
+        sv_lf = self.ttk.LabelFrame(frame, text="Search & verify")
+        sv_lf.pack(fill="x", pady=(0, 8))
+
+        # Global search
+        self.ttk.Label(
+            sv_lf, text="Global search",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", padx=6, pady=(6, 2))
+        self.ttk.Label(
+            sv_lf,
+            text="Search every system's database for a ROM or display name.",
+            foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+        search_row = self.ttk.Frame(sv_lf)
+        search_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(search_row, text="Query").pack(side="left")
+        self._diagnose_query_var = self.tk.StringVar()
+        _search_entry = self.ttk.Entry(
+            search_row, textvariable=self._diagnose_query_var,
+        )
+        _search_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _search_entry.bind("<Return>", lambda _e: self._run_find_global())
+        self.ttk.Button(
+            search_row, text="Search", command=self._run_find_global,
+        ).pack(side="left")
+
+        # Verify against a DAT
+        self.ttk.Separator(sv_lf, orient="horizontal").pack(fill="x", padx=6, pady=8)
+        self.ttk.Label(
+            sv_lf, text="Verify ROMs against a DAT file",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        verify_row = self.ttk.Frame(sv_lf)
+        verify_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(verify_row, text="System").pack(side="left")
+        self._verify_system_var = self.tk.StringVar()
+        self._verify_system_combo = self.ttk.Combobox(
+            verify_row, textvariable=self._verify_system_var,
+            state="readonly", width=24,
+        )
+        self._verify_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(verify_row, text="DAT path").pack(side="left", padx=(8, 0))
+        self._verify_dat_var = self.tk.StringVar()
+        _verify_entry = self.ttk.Entry(
+            verify_row, textvariable=self._verify_dat_var,
+        )
+        _verify_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _verify_entry.bind("<Return>", lambda _e: self._run_verify())
+        self.ttk.Button(
+            verify_row, text="Browse…",
+            command=self._browse_verify_dat,
+        ).pack(side="left")
+        self.ttk.Button(
+            verify_row, text="Verify",
+            command=self._run_verify,
+        ).pack(side="left", padx=6)
+
+        # Inspect a single game
+        self.ttk.Separator(sv_lf, orient="horizontal").pack(fill="x", padx=6, pady=8)
+        self.ttk.Label(
+            sv_lf, text="Inspect a single game (or whole system)",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+        self.ttk.Label(
+            sv_lf,
+            text=("Pick a system; leave ROM blank for `inspect --all`. "
+                  "Read-only — never modifies disk."),
+            foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+        inspect_row = self.ttk.Frame(sv_lf)
+        inspect_row.pack(fill="x", padx=6, pady=(2, 8))
+        self.ttk.Label(inspect_row, text="System").pack(side="left")
+        self._inspect_system_var = self.tk.StringVar()
+        self._inspect_system_combo = self.ttk.Combobox(
+            inspect_row, textvariable=self._inspect_system_var,
+            state="readonly", width=24,
+        )
+        self._inspect_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(inspect_row, text="ROM (optional)").pack(
+            side="left", padx=(8, 0),
+        )
+        self._inspect_rom_var = self.tk.StringVar()
+        _inspect_entry = self.ttk.Entry(
+            inspect_row, textvariable=self._inspect_rom_var,
+        )
+        _inspect_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _inspect_entry.bind("<Return>", lambda _e: self._run_inspect())
+        self.ttk.Button(
+            inspect_row, text="Inspect", command=self._run_inspect,
+        ).pack(side="left", padx=6)
 
         return frame
 
@@ -5805,9 +6030,9 @@ class _SpinDoctorGUI:
         if not self._migrate_undo_var.get():
             self._migrate_undo_var.set("latest")
 
-    # ── Main Menu tab ─────────────────────────────────────────────────────────
+    # ── Main Menu tab (LEGACY — content merged into _build_systems_tab) ─────────
 
-    def _build_mainmenu_tab(self, parent):
+    def _build_mainmenu_tab(self, parent):  # LEGACY — content merged into _build_systems_tab
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
         # the same module the CLI uses. The GUI never parses or writes
         # the XML itself; that would be a parallel implementation and
@@ -6347,9 +6572,9 @@ class _SpinDoctorGUI:
         args = ["mainmenu", sub, system, "--apply"]
         self._run_cli("spindoctor", args)
 
-    # ── Diagnose tab ──────────────────────────────────────────────────────────
+    # ── Diagnose tab (LEGACY — superseded by _build_diagnostics_tab) ────────────
 
-    def _build_diagnose_tab(self, parent):
+    def _build_diagnose_tab(self, parent):  # LEGACY — superseded by _build_diagnostics_tab
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
@@ -7384,18 +7609,17 @@ class _SpinDoctorGUI:
 
         run_next(step_defs, 0)
 
-    # ── Curate tab ────────────────────────────────────────────────────────────
+    # ── Maintenance tab (formerly Curate) ─────────────────────────────────────
 
-    def _build_curate_tab(self, parent):
+    def _build_maintenance_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
-            text=("Thin out region / revision duplicates, prune the "
-                  "library cache directories, and manage the per-system "
-                  "ignore list. Curate keeps one canonical variant per "
-                  "title and archives the rest (reversible). Cleanup "
-                  "trims SpinDoctor's caches when they grow stale. Ignore "
-                  "lists silence games you don't want to see in audits."),
+            text=("Curate region/revision duplicates, prune library caches, "
+                  "and manage the ignore and match-cache lists. Curate keeps "
+                  "one canonical variant per title and archives the rest "
+                  "(reversible). Cleanup trims SpinDoctor's caches. Ignore "
+                  "lists silence games from audits."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -8293,26 +8517,144 @@ class _SpinDoctorGUI:
         refresh_systems()
         refresh_list()
 
-    # ── Systems tab ───────────────────────────────────────────────────────────
+    # ── Systems tab (Main menu carousel + system management) ─────────────────
 
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
-            frame,
-            text=("Add a new console / arcade system or a PC-game system, "
-                  "or rename an existing PC system. add-system scans the "
-                  "ROMs folder and scaffolds the database, media, and "
-                  "config; add-pc-system uses the same flow with a "
-                  "title-picker for PC titles. Both are dry-run by "
-                  "default."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
 
         self._systems_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             frame, text="Apply (uncheck for dry-run)",
             variable=self._systems_apply_var,
-        ).pack(anchor="w", pady=(0, 6))
+        ).pack(anchor="w", pady=(0, 8))
+
+        # ── Main menu carousel (formerly Main Menu tab) ───────────────────────
+        # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
+        # the same module the CLI uses. The GUI never parses or writes
+        # the XML itself; that would be a parallel implementation and
+        # is exactly what caused the previous Main Menu corruption bug.
+        self._mm_data: list[dict] = []  # [{system, enabled}]
+
+        mm_lf = self.ttk.LabelFrame(frame, text="Main menu carousel")
+        mm_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            mm_lf,
+            text=("Edit the order and visibility of systems on HyperSpin's "
+                  "top-level wheel (Main Menu.xml). Click Refresh to load "
+                  "the current order, drag-select a row then use Move Up / "
+                  "Move Down to reposition it, Toggle Visible to "
+                  "hide/unhide, then Save Order to write all changes at once."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 8))
+
+        # Treeview
+        tree_frame = self.ttk.Frame(mm_lf)
+        tree_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=6, pady=(0, 4))
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self._mm_tree = self.ttk.Treeview(
+            tree_frame,
+            columns=("pos", "system", "visible"),
+            show="headings",
+            selectmode="browse",
+            height=16,
+        )
+        self._mm_tree.heading("pos",     text="#",       anchor="center")
+        self._mm_tree.heading("system",  text="System",  anchor="w")
+        self._mm_tree.heading("visible", text="Visible", anchor="center")
+        self._mm_tree.column("pos",     width=50,  stretch=False, anchor="center")
+        self._mm_tree.column("system",  width=340, stretch=True,  anchor="w")
+        self._mm_tree.column("visible", width=80,  stretch=False, anchor="center")
+        self._mm_tree.tag_configure("hidden", foreground=_FG_DIMMER)
+
+        vsb = self.ttk.Scrollbar(tree_frame, orient="vertical",
+                                 command=self._mm_tree.yview)
+        self._mm_tree.configure(yscrollcommand=vsb.set)
+        self._mm_tree.grid(row=0, column=0, sticky="nsew")
+        vsb.grid(row=0, column=1, sticky="ns")
+
+        # Table action buttons
+        tbl_btn_row = self.ttk.Frame(mm_lf)
+        tbl_btn_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 8))
+        self.ttk.Button(
+            tbl_btn_row, text="Refresh",
+            command=self._mm_refresh,
+        ).pack(side="left")
+        self.ttk.Button(
+            tbl_btn_row, text="Move Up",
+            command=self._mm_move_up,
+        ).pack(side="left", padx=(6, 2))
+        self.ttk.Button(
+            tbl_btn_row, text="Move Down",
+            command=self._mm_move_down,
+        ).pack(side="left", padx=2)
+        self.ttk.Button(
+            tbl_btn_row, text="Toggle Visible",
+            command=self._mm_toggle_visible,
+        ).pack(side="left", padx=(6, 2))
+        self.ttk.Button(
+            tbl_btn_row, text="Save Order",
+            command=self._mm_save_order,
+        ).pack(side="left", padx=(20, 0))
+        self.ttk.Button(
+            tbl_btn_row, text="Restore from backup…",
+            command=self._mm_restore_from_backup,
+        ).pack(side="left", padx=(6, 0))
+
+        # Sort
+        sort_frame = self.ttk.LabelFrame(mm_lf, text="Sort all systems")
+        sort_frame.grid(row=3, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 6))
+
+        self.ttk.Label(sort_frame, text="Strategy").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._mainmenu_sort_var = self.tk.StringVar(value="alpha")
+        self.ttk.Combobox(
+            sort_frame, textvariable=self._mainmenu_sort_var,
+            values=["alpha", "manufacturer", "year"],
+            state="readonly", width=14,
+        ).grid(row=0, column=1, sticky="w", padx=4)
+        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sort_frame, text="Apply (uncheck for dry-run)",
+            variable=self._mainmenu_apply_var,
+        ).grid(row=0, column=2, sticky="w", padx=8)
+        self.ttk.Button(
+            sort_frame, text="Sort", command=self._run_mainmenu_sort,
+        ).grid(row=0, column=3, sticky="w", padx=4, pady=4)
+
+        # Add / Remove
+        mgmt_frame = self.ttk.LabelFrame(mm_lf, text="Add / Remove system")
+        mgmt_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 8))
+        mgmt_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(mgmt_frame, text="System").grid(
+            row=0, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._mainmenu_system_var = self.tk.StringVar()
+        self._mainmenu_system_combo = self.ttk.Combobox(
+            mgmt_frame, textvariable=self._mainmenu_system_var,
+            state="readonly", width=40,
+        )
+        self._mainmenu_system_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=4)
+
+        mgmt_btn_row = self.ttk.Frame(mgmt_frame)
+        mgmt_btn_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
+        for label, sub in (("Add", "add"), ("Remove", "remove")):
+            self.ttk.Button(
+                mgmt_btn_row, text=label,
+                command=lambda s=sub: self._run_mainmenu_action(s),
+            ).pack(side="left", padx=2)
+
+        mm_lf.columnconfigure(0, weight=1)
+        mm_lf.rowconfigure(1, weight=1)
+
+        # Defer the XML parse + tree population until the rest of the
+        # GUI has painted. Doing it inline used to delay first-paint by
+        # 1–3 seconds on slow drives.
+        self.root.after_idle(self._mm_refresh)
 
         # ── add-system ────────────────────────────────────────────────────────
         add_frame = self.ttk.LabelFrame(frame, text="Add a new system")
@@ -9003,22 +9345,150 @@ class _SpinDoctorGUI:
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
-    # ── Tools tab (HyperSpin Tools-menu helpers + install-tools) ─────────────
+    # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
 
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
+
+        # ── Custom wheels (formerly Wheels tab) ───────────────────────────────
+        wheels_lf = self.ttk.LabelFrame(frame, text="Custom wheels")
+        wheels_lf.pack(fill="x", pady=(0, 8))
+
         self.ttk.Label(
-            frame,
+            wheels_lf,
+            text=("Rebuild the cross-system wheels HyperSpin shows on the "
+                  "main menu. Each click runs the corresponding standalone "
+                  "binary with --apply, the same way the .bat shortcuts do."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        wheels_checks = self.ttk.Frame(wheels_lf)
+        wheels_checks.pack(anchor="w", padx=6, pady=(0, 4))
+        self._wheel_fav_var    = self.tk.BooleanVar(value=True)
+        self._wheel_recent_var = self.tk.BooleanVar(value=True)
+        self._wheel_stats_var  = self.tk.BooleanVar(value=True)
+        for var, label in (
+            (self._wheel_fav_var,    "Favorites"),
+            (self._wheel_recent_var, "Recently Played"),
+            (self._wheel_stats_var,  "Most Played"),
+        ):
+            self.ttk.Checkbutton(
+                wheels_checks, text=label, variable=var,
+            ).pack(anchor="w", pady=2)
+
+        self._wheel_verbose_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            wheels_lf, text="Verbose output (--verbose)",
+            variable=self._wheel_verbose_var,
+        ).pack(anchor="w", padx=6, pady=(0, 2))
+
+        self.ttk.Button(
+            wheels_lf, text="Refresh selected", width=28,
+            command=self._refresh_all_wheels,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        # HyperSpin integration helpers
+        self.ttk.Separator(wheels_lf, orient="horizontal").pack(fill="x", padx=6, pady=6)
+        self.ttk.Label(
+            wheels_lf, text="HyperSpin integration",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+        self.ttk.Label(
+            wheels_lf,
+            text=(
+                "• Step 1 — Refresh: builds game databases + PCLauncher INIs "
+                "for the selected wheels.\n"
+                "• Step 2 — Add to Main Menu: registers the synthetic systems "
+                "in HyperSpin's main carousel (Favorites and Recently Played "
+                "are not auto-registered; Most Played is).\n"
+                "• For Favorites: click 'Sync favorites from HyperSpin' first "
+                "if you use HyperSpin's F-key favorites — this imports them "
+                "into SpinDoctor's store before the rebuild reads them.\n"
+                "• None of these auto-fire on cabinet startup. Use the "
+                "'Install wheel helpers' section below to install .bat helpers, "
+                "or schedule the rebuild commands via Windows Task Scheduler "
+                "(trigger: 'At log on') for hands-off updates."
+            ),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(0, 6))
+
+        btn_row = self.ttk.Frame(wheels_lf)
+        btn_row.pack(anchor="w", padx=6, pady=(2, 4))
+        self.ttk.Button(
+            btn_row, text="Add wheels to Main Menu", width=28,
+            command=self._register_wheels_in_main_menu,
+        ).pack(side="left")
+
+        sync_btn = self.ttk.Button(
+            btn_row, text="Sync favorites from HyperSpin", width=28,
+            command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
+        )
+        sync_btn.pack(side="left", padx=6)
+        _attach_tooltip(
+            sync_btn,
+            "Reads HyperSpin's per-system F-key favorites and imports them "
+            "into SpinDoctor's store. Run this before 'Refresh selected' "
+            "if you use HyperSpin's F-key favorites.",
+            self.tk,
+        )
+
+        # Manage individual favorites
+        self.ttk.Separator(wheels_lf, orient="horizontal").pack(fill="x", padx=6, pady=6)
+        self.ttk.Label(
+            wheels_lf, text="Manage individual favorites",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+        self.ttk.Label(
+            wheels_lf,
+            text=("Add or remove single games in the cross-system "
+                  "Favorites wheel. Run 'Refresh selected' (with "
+                  "Favorites checked) afterwards to push the change "
+                  "into HyperSpin."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        fav_row = self.ttk.Frame(wheels_lf)
+        fav_row.pack(fill="x", padx=6, pady=(2, 6))
+        self.ttk.Label(fav_row, text="System").pack(side="left")
+        self._fav_system_var = self.tk.StringVar()
+        self._fav_system_combo = self.ttk.Combobox(
+            fav_row, textvariable=self._fav_system_var,
+            state="readonly", width=22,
+        )
+        self._fav_system_combo.pack(side="left", padx=6)
+        self.ttk.Label(fav_row, text="ROM").pack(side="left", padx=(8, 0))
+        self._fav_rom_var = self.tk.StringVar()
+        _fav_entry = self.ttk.Entry(
+            fav_row, textvariable=self._fav_rom_var,
+        )
+        _fav_entry.pack(side="left", fill="x", expand=True, padx=6)
+        _fav_entry.bind("<Return>", lambda _e: self._fav_add())
+        self.ttk.Button(
+            fav_row, text="Add", command=self._fav_add,
+        ).pack(side="left")
+        self.ttk.Button(
+            fav_row, text="Remove", command=self._fav_remove,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            fav_row, text="List", command=self._fav_list,
+        ).pack(side="left")
+
+        # ── Install wheel helpers (formerly Tools tab) ─────────────────────────
+        helpers_lf = self.ttk.LabelFrame(frame, text="Install wheel helpers")
+        helpers_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            helpers_lf,
             text=("Install .bat helpers so Favorites / Recently Played / "
                   "Most Played can be refreshed from inside HyperSpin "
                   "without dropping to a console — either via HyperHQ → "
                   "Tools (the default), or as 'games' inside an existing "
                   "wheel system like 'Toolkit' (the second section)."),
             wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 12))
+        ).pack(anchor="w", padx=6, pady=(4, 6))
 
         self.ttk.Label(
-            frame,
+            helpers_lf,
             text=(
                 "Helpers written:\n"
                 "  • Refresh Favorites.bat        → spindoctor-fav rebuild --apply\n"
@@ -9028,13 +9498,13 @@ class _SpinDoctorGUI:
             ),
             justify="left", foreground=_FG_DIM,
             font="TkFixedFont",
-        ).pack(anchor="w", pady=(0, 8))
+        ).pack(anchor="w", padx=6, pady=(0, 8))
 
-        # ── HyperHQ → Tools install (default) ─────────────────────────────────
+        # HyperHQ → Tools install (default)
         hhq_frame = self.ttk.LabelFrame(
-            frame, text="Install for HyperHQ → Tools menu",
+            helpers_lf, text="Install for HyperHQ → Tools menu",
         )
-        hhq_frame.pack(fill="x", pady=(2, 8))
+        hhq_frame.pack(fill="x", padx=6, pady=(2, 8))
         self.ttk.Label(
             hhq_frame,
             text=("Output directory (optional). Defaults to "
@@ -9062,11 +9532,11 @@ class _SpinDoctorGUI:
             command=self._run_install_tools,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
-        # ── Wheel-integration mode (e.g. user's 'Toolkit' wheel) ──────────────
+        # Wheel-integration mode (e.g. user's 'Toolkit' wheel)
         wheel_frame = self.ttk.LabelFrame(
-            frame, text="Install into an existing wheel system",
+            helpers_lf, text="Install into an existing wheel system",
         )
-        wheel_frame.pack(fill="x", pady=(2, 8))
+        wheel_frame.pack(fill="x", padx=6, pady=(2, 8))
         self.ttk.Label(
             wheel_frame,
             text=("Adds matching <game> entries to the named system's "
@@ -9093,11 +9563,11 @@ class _SpinDoctorGUI:
             command=self._run_install_tools_into_wheel,
         ).pack(side="left", padx=6)
 
-        # ── Auto-refresh on cabinet startup ───────────────────────────────────
+        # Auto-refresh on cabinet startup
         sched_frame = self.ttk.LabelFrame(
-            frame, text="Auto-refresh on cabinet startup",
+            helpers_lf, text="Auto-refresh on cabinet startup",
         )
-        sched_frame.pack(fill="x", pady=(2, 8))
+        sched_frame.pack(fill="x", padx=6, pady=(2, 8))
         if sys.platform == "win32":
             self.ttk.Label(
                 sched_frame,
@@ -9149,11 +9619,11 @@ class _SpinDoctorGUI:
                 wraplength=860, justify="left", foreground=_FG_DIM,
             ).pack(anchor="w", padx=6, pady=(2, 6))
 
-        # ── Manual fallback instructions ──────────────────────────────────────
+        # Manual fallback instructions
         manual_frame = self.ttk.LabelFrame(
-            frame, text="Manual setup (if you'd rather do it yourself)",
+            helpers_lf, text="Manual setup (if you'd rather do it yourself)",
         )
-        manual_frame.pack(fill="x", pady=(2, 8))
+        manual_frame.pack(fill="x", padx=6, pady=(2, 8))
         self.ttk.Label(
             manual_frame,
             text=(
