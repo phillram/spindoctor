@@ -115,6 +115,17 @@ def test_rebuild_writes_recently_played_database(isolated_config, tmp_path):
     inis = list((rl / "Modules" / "PCLauncher" / "Recently Played").iterdir())
     assert len(inis) == 1
 
+    # HyperSpin must find Settings/Recently Played.ini or it shows
+    # "Cannot find Recently Played.ini" when the wheel is selected.
+    hs_ini = hs / "Settings" / "Recently Played.ini"
+    assert hs_ini.exists(), (
+        "Settings/Recently Played.ini was not written — HyperSpin will show "
+        "'Cannot find Recently Played.ini' when the wheel is selected."
+    )
+    body = hs_ini.read_text(encoding="utf-8")
+    assert "[exe info]" in body
+    assert "hyperlaunch=true" in body
+
 
 def test_rebuild_prunes_when_records_drop_off(isolated_config, tmp_path):
     hs = tmp_path / "hs"

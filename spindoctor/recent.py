@@ -28,7 +28,7 @@ from .favorites import (
     _resolve_target_names, _safe_load,
 )
 from .medialink import LinkMode, apply_plan, plan_mirror
-from .rocketlauncher import generate_synthetic_system_ini
+from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
 
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"
@@ -445,6 +445,12 @@ def _build_synthetic_wheel(
             summary.inis_written += 1
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
         print(f"[{target_system}] PCLauncher INIs done.", flush=True)
+
+    # ── Phase 4: HyperSpin system settings INI ────────────────────────────────
+    # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
+    # it the wheel reports "Cannot find <system>.ini" on selection.  We only
+    # write when the file is absent so user customisations are never clobbered.
+    write_hyperspin_system_ini(target_system, Path(config.hyperspin_dir))
 
     print(f"[{target_system}] wheel build complete.", flush=True)
     return summary
