@@ -349,9 +349,15 @@ def _build_synthetic_wheel(
     if not config.hyperspin_dir:
         return summary
 
+    n = len(pseudo_entries)
+    print(f"[{target_system}] building wheel — {n} entr{'y' if n == 1 else 'ies'}…",
+          flush=True)
+
     target_names = _resolve_target_names(pseudo_entries)
     summary.entries = len(target_names)
 
+    # ── Phase 1: write / prune the HyperSpin database XML ────────────────────
+    print(f"[{target_system}] writing database…", flush=True)
     db_path = config.databases_dir / target_system / f"{target_system}.xml"
     db = HyperspinDatabase(target_system, db_path)
     db.load()
@@ -381,8 +387,12 @@ def _build_synthetic_wheel(
         )
         db.upsert_game(merged)
     summary.db_path = db.save(backup=False)
+    print(f"[{target_system}] database done — {len(keep)} games "
+          f"({summary.pruned} pruned).", flush=True)
 
+    # ── Phase 2: mirror media ─────────────────────────────────────────────────
     if not skip_media:
+        print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
         seen = set(target_names.values())
         for media_path in (config.media_dir / target_system).rglob("*"):
             if media_path.is_file() and media_path.stem not in seen:
@@ -390,7 +400,7 @@ def _build_synthetic_wheel(
                     media_path.unlink()
                 except OSError as e:
                     summary.media_errors.append(f"cleanup {media_path.name}: {e}")
-        for fe in pseudo_entries:
+        for idx, fe in enumerate(pseudo_entries, 1):
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             plan = plan_mirror(
                 config.media_dir, fe.system, target_system,
@@ -401,8 +411,21 @@ def _build_synthetic_wheel(
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
             summary.media_errors.extend(result["errors"])
+            # Emit progress every 10 games (or on the last one) so the
+            # GUI output panel shows activity during long media copies.
+            if idx % 10 == 0 or idx == n:
+                print(
+                    f"[{target_system}] media {idx}/{n} — "
+                    f"linked {summary.media_linked} "
+                    f"copied {summary.media_copied} "
+                    f"skipped {summary.media_skipped}",
+                    flush=True,
+                )
+        print(f"[{target_system}] media done.", flush=True)
 
+    # ── Phase 3: write PCLauncher INIs ────────────────────────────────────────
     if not skip_launchers and config.rocketlauncher_dir:
+        print(f"[{target_system}] writing {n} PCLauncher INI(s)…", flush=True)
         rl_dir = Path(config.rocketlauncher_dir)
         ini_dir = rl_dir / "Modules" / "PCLauncher" / target_system
         if ini_dir.exists():
@@ -419,7 +442,9 @@ def _build_synthetic_wheel(
             )
             summary.inis_written += 1
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
+        print(f"[{target_system}] PCLauncher INIs done.", flush=True)
 
+    print(f"[{target_system}] wheel build complete.", flush=True)
     return summary
 
 

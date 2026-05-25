@@ -12,6 +12,21 @@ from .database import _set_text as _set
 from .mainmenu import _main_menu_path
 
 
+# System names that generate-config must never overwrite.
+# These are either SpinDoctor-managed synthetic PCLauncher wheels whose
+# settings are written by fav/recent/stats rebuild, or HyperSpin's own
+# internal pseudo-system that is not a real emulated platform.
+# Allowing generate-config to process them writes incorrect RetroArch
+# settings (guess_emulator falls back to RetroArch for unknown names)
+# which breaks the wheels on the next RL launch.
+SKIP_GENERATE_CONFIG: frozenset[str] = frozenset({
+    "Favorites",
+    "Recently Played",
+    "Most Played",
+    "Main Menu",
+})
+
+
 EMULATOR_MAP: dict[str, str] = {
     "mame": "MAME",
     "arcade": "MAME",
