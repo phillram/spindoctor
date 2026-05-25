@@ -498,19 +498,29 @@ _CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
 # "mainmenu show") match `"args[0] args[1]"`. Verbs that *do* have an
 # --apply mode (e.g. `cleanup run`, `mainmenu sort`) are deliberately
 # absent so the banner still appears for their preview invocations.
+# Commands (or "verb subverb" pairs) that are always non-dry-run:
+# either genuinely read-only (audit, inspect, …) or write-always with
+# no --apply flag (install-tools, config set, …).  Commands that have
+# an --apply flag must NOT appear here — when run without --apply they
+# ARE dry-runs and the GUI must label them as such.
+#
+# Confirmed --apply commands removed from this set:
+#   generate-config  find-misplaced  find-orphan-media
+#   doctor           lightgun detect lightgun configure
+#   mainmenu show    (mainmenu show <system> --apply unhides it)
 _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "--help", "--version",
-    "doctor", "tools-audit", "systems", "report", "preview",
-    "audit", "inspect", "find-dupes", "find-misplaced",
-    "find-orphan-media", "check-discs", "verify", "lint", "stats",
+    "tools-audit", "systems", "report", "preview",
+    "audit", "inspect", "find-dupes",
+    "check-discs", "verify", "lint", "stats",
     "find-global", "theme-scan", "theme-pack-create", "diff",
     "install-tools", "stats-report",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
     "fav list", "recent list",
-    "mainmenu show", "mainmenu edit",
+    "mainmenu edit",
     "ledblinky audit", "ledblinky check",
-    "lightgun detect", "lightgun audit", "lightgun configure",
+    "lightgun audit",
     "config show", "config init", "config set", "config system",
     "backup list", "backup info",
     "migrate --list-manifests", "theme-apply --list-manifests",
