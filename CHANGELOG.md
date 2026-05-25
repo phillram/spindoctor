@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.3.3] - 2026-05-24
+
 ### Fixed
 
 - **`Settings/<system>/Emulators.ini` used the wrong section name.** The folder-based settings file was written with a `[ROMS]` section header, but RocketLauncher's AHK `IniRead` looks for `Default_Emulator` in `[Settings]` — the same section used in the flat `Settings/<system>.ini`. The key was present but invisible to RL, causing "No Default_Emulator found in Settings\Favorites\Emulators.ini" on every game launch even after `fav rebuild --apply` ran successfully. The section is now `[Settings]`, with a `[PCLauncher]` block below it matching the flat-file layout.
@@ -705,7 +707,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.3.3...HEAD
+[2.3.3]: https://github.com/phillram/spindoctor/compare/v2.3.2...v2.3.3
 [2.3.2]: https://github.com/phillram/spindoctor/compare/v2.3.1...v2.3.2
 [2.3.1]: https://github.com/phillram/spindoctor/compare/v2.3.0...v2.3.1
 [2.3.0]: https://github.com/phillram/spindoctor/compare/v2.2.3...v2.3.0
