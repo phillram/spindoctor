@@ -304,8 +304,10 @@ def test_custom_command_presets_match_actual_cli_syntax():
 
 
 @pytest.mark.parametrize("args", [
-    # doctor has --apply (safe repairs) so it is NOT in this list —
-    # running it without --apply IS a dry-run and must show the banner.
+    # doctor has --apply for safe repairs, but the GUI only ever calls
+    # `doctor` with no --apply.  Showing "DRY RUN" for a health check
+    # misleads the user, so doctor stays in the read-only set.
+    ("doctor",),
     ("audit", "--all"),
     ("find-dupes", "--all"),
     ("lint",),
@@ -319,6 +321,8 @@ def test_custom_command_presets_match_actual_cli_syntax():
     ("fav", "list"),
     ("curate", "--list-manifests"),
     ("config", "show"),
+    # lightgun detect scans for hardware — diagnostic, not a write preview.
+    ("lightgun", "detect"),
 ])
 def test_read_only_invocations_are_recognised(args):
     """Read-only commands must NOT get the DRY RUN banner.
@@ -356,9 +360,6 @@ def test_extra_read_only_invocations(args):
 @pytest.mark.parametrize("args", [
     # Commands that *do* accept --apply must be flagged as dry-run-able
     # so the banner appears for their preview invocations.
-    # doctor --apply performs safe repairs; without --apply it's a dry-run
-    # and must show the DRY RUN banner (not treated as read-only).
-    ("doctor",),
     ("cleanup", "run"),
     ("mainmenu", "sort", "alpha"),
     ("mainmenu", "reorder", "SNES", "3"),
