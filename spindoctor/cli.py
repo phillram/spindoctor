@@ -2755,19 +2755,34 @@ def install_tools(output_dir, add_to_system):
         + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
 
-    # Write the RocketLauncher system INI so RL knows to route launches for
-    # this system through PCLauncher and where to find the per-game INIs.
-    # Without this file, RocketLauncher has no emulator mapping for the
-    # system and PCLauncher can't locate the INIs — producing the
-    # "PCLauncher does not know what exe / FadeTitle to watch for" error
-    # even when the bat files and per-game INIs are correctly written.
-    from .rocketlauncher import generate_synthetic_system_ini
+    # Write the RocketLauncher system INI only when the system has not been
+    # configured already.  For existing systems (e.g. a user-maintained
+    # Toolkit wheel), the Emulators.ini is already correct — overwriting it
+    # replaces the user's [ROMS] section / Rom_Path / custom emulators with
+    # SpinDoctor's synthetic defaults, which breaks all non-SpinDoctor entries
+    # and causes "No Default_Emulator found" or "wrong extension" errors.
     rl_dir = Path(config.rocketlauncher_dir)
-    sys_ini = generate_synthetic_system_ini(add_to_system, rl_dir)
-    console.print(
-        f"[green]+[/green] wrote RocketLauncher system INI → "
-        f"[cyan]{sys_ini}[/cyan]"
-    )
+    emulators_ini = rl_dir / "Settings" / add_to_system / "Emulators.ini"
+    flat_ini = rl_dir / "Settings" / f"{add_to_system}.ini"
+    if emulators_ini.exists() or flat_ini.exists():
+        console.print(
+            f"[dim]RocketLauncher settings for[/dim] [cyan]{add_to_system}[/cyan] "
+            "[dim]already exist — not overwritten.[/dim]"
+        )
+        if emulators_ini.exists():
+            console.print(
+                f"[dim]  existing:[/dim] [cyan]{emulators_ini}[/cyan]\n"
+                "[dim]  Ensure its[/dim] [cyan]Rom_Path[/cyan] [dim]includes[/dim] "
+                f"[cyan]{rl_dir / 'Modules' / 'PCLauncher' / add_to_system}[/cyan]\n"
+                "[dim]  so RocketLauncher can find the SpinDoctor-added entries.[/dim]"
+            )
+    else:
+        from .rocketlauncher import generate_synthetic_system_ini
+        sys_ini = generate_synthetic_system_ini(add_to_system, rl_dir)
+        console.print(
+            f"[green]+[/green] wrote RocketLauncher system INI → "
+            f"[cyan]{sys_ini}[/cyan]"
+        )
     console.print(
         f"[dim]Make sure[/dim] [cyan]{add_to_system}[/cyan] [dim]is on "
         "the Main Menu — run[/dim] "
@@ -4044,6 +4059,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     _check_config(config)
 
     from .rocketlauncher import (
+        SKIP_GENERATE_CONFIG,
         generate_global_emulators_ini,
         generate_hs_main_menu,
         generate_rl_system_ini,
@@ -4056,6 +4072,22 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         all_systems = True
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
+
+    # Filter out SpinDoctor-managed synthetic PCLauncher wheels and the
+    # HyperSpin pseudo-system "Main Menu". These appear as database folders
+    # (so get_systems() includes them) but must NOT be processed by
+    # generate-config: their RL settings are written by fav/recent/stats
+    # rebuild commands, and guess_emulator() returns "RetroArch" for them
+    # (since they're not in EMULATOR_MAP), which would overwrite the correct
+    # PCLauncher settings and break every launch from those wheels.
+    skipped_managed = [s for s in systems if s in SKIP_GENERATE_CONFIG]
+    systems = [s for s in systems if s not in SKIP_GENERATE_CONFIG]
+    if skipped_managed:
+        console.print(
+            "[dim]Skipping SpinDoctor-managed / pseudo-systems "
+            "(not overwritten by generate-config):[/dim] "
+            + ", ".join(f"[cyan]{s}[/cyan]" for s in skipped_managed)
+        )
 
     if not apply_changes:
         console.print(
@@ -4079,23 +4111,87 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         return bak
 
     if gen_rl:
-        console.print(f"\n[blue bold]RocketLauncher system INIs[/blue bold] ({len(systems)} systems)")
+        console.print(
+            f"\n[blue bold]RocketLauncher system INIs[/blue bold] "
+            f"({len(systems)} systems)"
+            + (f" [dim]— {len(skipped_managed)} managed/pseudo skipped[/dim]"
+               if skipped_managed else "")
+        )
+        def _read_existing_rom_path(ini_path: Path) -> Optional[str]:
+            """Return the first Rom_Path= value from an existing INI, or None."""
+            try:
+                for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    stripped = line.strip()
+                    if stripped.lower().startswith("rom_path="):
+                        return stripped.split("=", 1)[1].strip()
+            except OSError:
+                pass
+            return None
+
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("System", style="cyan")
         tbl.add_column("Emulator")
-        tbl.add_column("Path" if apply_changes else "Would write")
         if apply_changes:
+            tbl.add_column("Written to")
             tbl.add_column("Backup")
+        else:
+            # Dry-run: show current Rom_Path vs what would be written so the
+            # user can verify the ROM drive change before committing.
+            tbl.add_column("Current Rom_Path")
+            tbl.add_column("New Rom_Path")
+            tbl.add_column("Status")
 
         rl_base_dry = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
         for sys_name in systems:
             emulator = guess_emulator(sys_name)
+
+            # Guard: if an existing Emulators.ini already declares PCLauncher
+            # as the default emulator but guess_emulator doesn't know this
+            # system (e.g. user-named Toolkit / Tools wheels), skip it.
+            # Overwriting with generate-config's default (RetroArch) would
+            # break all PCLauncher-launched entries in that wheel.
+            if rl_base_dry and emulator != "PCLauncher":
+                existing_emu_ini = rl_base_dry / "Settings" / sys_name / "Emulators.ini"
+                if existing_emu_ini.exists():
+                    try:
+                        txt = existing_emu_ini.read_text(encoding="utf-8", errors="replace")
+                        if "Default_Emulator=PCLauncher" in txt:
+                            skip_row = [
+                                sys_name,
+                                "[dim]PCLauncher (existing — skipped)[/dim]",
+                            ]
+                            if apply_changes:
+                                skip_row += ["[dim]preserved[/dim]", ""]
+                            else:
+                                skip_row += ["", "", "[dim]skipped[/dim]"]
+                            tbl.add_row(*skip_row)
+                            continue
+                    except OSError:
+                        pass
+
             if not apply_changes:
-                path_str = (
-                    str(rl_base_dry / "Settings" / f"{sys_name}.ini")
-                    if rl_base_dry else "[dim]rocketlauncher_dir not configured[/dim]"
+                new_rom_path = (
+                    str(Path(config.roms_dir) / sys_name) if config.roms_dir else ""
                 )
-                tbl.add_row(sys_name, emulator, path_str)
+                existing_ini = (
+                    rl_base_dry / "Settings" / f"{sys_name}.ini"
+                    if rl_base_dry else None
+                )
+                current_rom_path = (
+                    _read_existing_rom_path(existing_ini)
+                    if existing_ini and existing_ini.exists()
+                    else None
+                )
+                if current_rom_path is None:
+                    current_str = "[dim](new file)[/dim]"
+                    status = "[green]new[/green]"
+                elif current_rom_path == new_rom_path:
+                    current_str = f"[dim]{current_rom_path}[/dim]"
+                    status = "[dim]no change[/dim]"
+                else:
+                    current_str = f"[yellow]{current_rom_path}[/yellow]"
+                    status = "[green]update[/green]"
+                tbl.add_row(sys_name, emulator, current_str, new_rom_path, status)
             else:
                 try:
                     # Identify the target path so we can back it up before the
