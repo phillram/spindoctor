@@ -173,9 +173,9 @@ def test_health_to_tabs_only_references_real_tab_labels():
     # Tab labels SpinDoctor's `_build_layout` adds to `_tab_base_names`.
     # Kept in sync manually — mirroring the order in `_build_layout`.
     expected_tabs = {
-        "Setup", "Wheels", "Main Menu", "Audit & Doctor", "Diagnose",
-        "Metadata & Media", "Curate", "Systems", "LEDBlinky", "Lightgun",
-        "Tools", "Backup & Restore", "Migrate", "Logs", "Custom Command",
+        "Setup", "Diagnostics", "Metadata & Media", "Maintenance",
+        "Tools", "Systems", "LEDBlinky", "Lightgun",
+        "Backup & Restore", "Migrate", "Logs", "Custom Command",
     }
     for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
         for label in tab_labels:
@@ -641,24 +641,21 @@ def test_gui_constructs_against_real_tk():
         app.root.update_idletasks()
         # Sanity: every tab builder ran without exception, including the
         # Curate tab (foreground TclError) and the Main Menu tab
-        # (_output AttributeError). 15 = the documented tab count.
-        assert len(app._tab_base_names) == 15
+        # (_output AttributeError). 12 = the documented tab count.
+        assert len(app._tab_base_names) == 12
         # Pin the workflow-oriented order so a drive-by reorder doesn't
         # regress UX without anyone noticing. See `_build_layout` for
         # the rationale behind the sequencing.
         assert app._tab_base_names == [
             "Setup",
-            "Audit & Doctor",
-            "Diagnose",
+            "Diagnostics",
             "Metadata & Media",
-            "Curate",
-            "Wheels",
-            "Main Menu",
+            "Maintenance",
+            "Tools",
             "Systems",
             "LEDBlinky",
             "Lightgun",
             "Backup & Restore",
-            "Tools",
             "Migrate",
             "Logs",
             "Custom Command",
@@ -941,23 +938,20 @@ def test_gui_survives_missing_keysym_in_bind_all():
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
         try:
             app.root.update_idletasks()
-            assert len(app._tab_base_names) == 15
+            assert len(app._tab_base_names) == 12
             # Pin the workflow-oriented order so a future drive-by
             # reorder doesn't regress UX without anyone noticing.
             # See `_build_layout` for the rationale.
             assert app._tab_base_names == [
                 "Setup",
-                "Audit & Doctor",
-                "Diagnose",
+                "Diagnostics",
                 "Metadata & Media",
-                "Curate",
-                "Wheels",
-                "Main Menu",
+                "Maintenance",
+                "Tools",
                 "Systems",
                 "LEDBlinky",
                 "Lightgun",
                 "Backup & Restore",
-                "Tools",
                 "Migrate",
                 "Logs",
                 "Custom Command",
@@ -1841,8 +1835,8 @@ def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         # Move focus elsewhere first so the assertion below is meaningful.
-        wheels_idx = app._tab_base_names.index("Wheels")
-        app._nb.select(wheels_idx)
+        tools_idx = app._tab_base_names.index("Tools")
+        app._nb.select(tools_idx)
         # Now run startup health checks — should snap back to Setup.
         # Stub out the threaded doctor pass to keep the test deterministic.
         monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
@@ -1865,10 +1859,10 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
-        wheels_idx = app._tab_base_names.index("Wheels")
-        app._nb.select(wheels_idx)
+        tools_idx = app._tab_base_names.index("Tools")
+        app._nb.select(tools_idx)
         app._startup_health_checks()
         # Tab choice preserved.
-        assert app._nb.index("current") == wheels_idx
+        assert app._nb.index("current") == tools_idx
     finally:
         app.root.destroy()

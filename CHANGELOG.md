@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI tab consolidation**: reduced from 15 tabs to 12 by merging related tabs.
+  - "Audit & Doctor" + "Diagnose" → **Diagnostics** (one tab with "System audit", "Library-wide scans", and "Search & verify" sections).
+  - "Curate" renamed to **Maintenance** (same content).
+  - "Wheels" merged into **Tools** (wheel management sections appear first, then install helpers and scheduler).
+  - "Main Menu" merged into **Systems** (carousel order section appears at top).
+
 ### Fixed
 
 - **Four commands that write files when `--apply` is passed were incorrectly listed in `_READ_ONLY_COMMANDS`**, causing the GUI to show `# Dry-run: False` (no DRY RUN banner) even for their preview invocations. The affected commands: `generate-config`, `find-misplaced`, `find-orphan-media`, `lightgun configure`. These have been removed from `_READ_ONLY_COMMANDS`; the GUI now correctly labels a no-`--apply` run as `[DRY RUN]`. `doctor`, `lightgun detect`, and `mainmenu show` (no-arg) are kept in the read-only set — they are diagnostics / display commands, not write previews, so the DRY RUN banner is misleading for them.
