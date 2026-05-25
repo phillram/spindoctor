@@ -304,17 +304,25 @@ def test_custom_command_presets_match_actual_cli_syntax():
 
 
 @pytest.mark.parametrize("args", [
+    # doctor has --apply for safe repairs, but the GUI only ever calls
+    # `doctor` with no --apply.  Showing "DRY RUN" for a health check
+    # misleads the user, so doctor stays in the read-only set.
     ("doctor",),
     ("audit", "--all"),
     ("find-dupes", "--all"),
     ("lint",),
     ("preview",),
+    # "mainmenu show" with no system arg just renders a table — read-only.
+    # The variant "mainmenu show SYSTEM --apply" writes, but the GUI never
+    # generates that form; only Custom Command users would type it.
     ("mainmenu", "show"),
     ("mainmenu", "edit"),
     ("backup", "list", "--target", "/x"),
     ("fav", "list"),
     ("curate", "--list-manifests"),
     ("config", "show"),
+    # lightgun detect scans for hardware — diagnostic, not a write preview.
+    ("lightgun", "detect"),
 ])
 def test_read_only_invocations_are_recognised(args):
     """Read-only commands must NOT get the DRY RUN banner.

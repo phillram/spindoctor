@@ -485,10 +485,11 @@ def build_most_played_wheel(
     *,
     target_system: str = DEFAULT_PLAYED_SYSTEM,
     limit: int = DEFAULT_TOP_N,
-    media_mode: LinkMode = LinkMode.AUTO,
+    media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
     register_in_main_menu: bool = True,
+    verbose: bool = False,
 ):
     """Regenerate a synthetic "Most Played" HyperSpin system.
 
@@ -527,7 +528,7 @@ def build_most_played_wheel(
     summary = _build_synthetic_wheel(
         config, target_system, pseudo_entries,
         media_mode=media_mode, skip_media=skip_media,
-        skip_launchers=skip_launchers,
+        skip_launchers=skip_launchers, verbose=verbose,
     )
     summary.read_warnings = read_warnings
     summary.read_notes = read_notes
@@ -574,9 +575,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_bw.add_argument("--target-system", default=DEFAULT_PLAYED_SYSTEM)
     p_bw.add_argument("--media-mode",
                       choices=["link", "symlink", "copy", "auto", "none"],
-                      default="auto")
+                      default="copy")
     p_bw.add_argument("--apply", action="store_true",
                       help="Actually write files (default is dry-run).")
+    p_bw.add_argument("--verbose", action="store_true",
+                      help="Print each media file copied/linked (src → dest).")
     return p
 
 
@@ -669,6 +672,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             limit=args.limit,
             media_mode=mode,
             skip_media=skip_media,
+            verbose=getattr(args, "verbose", False),
         )
         print(f"Most Played system: {summary.target_system}")
         for note in summary.read_notes:

@@ -492,25 +492,51 @@ _CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
 # Verbs that never modify disk state and therefore never accept --apply.
 # Used to suppress the "DRY RUN" banner the GUI prepends to commands that
 # lack --apply — the banner would mislead users into thinking a read-only
-# check (e.g. `doctor`) was a preview of something that could be committed.
+# check (e.g. `audit`) was a preview of something that could be committed.
 #
 # Single-token entries match `args[0]`. Two-token entries (e.g.
 # "mainmenu show") match `"args[0] args[1]"`. Verbs that *do* have an
 # --apply mode (e.g. `cleanup run`, `mainmenu sort`) are deliberately
 # absent so the banner still appears for their preview invocations.
+# Commands (or "verb subverb" pairs) that are always non-dry-run:
+# either genuinely read-only (audit, inspect, …) or write-always with
+# no --apply flag (install-tools, config set, …).  Commands that have
+# an --apply flag must NOT appear here — when run without --apply they
+# ARE dry-runs and the GUI must label them as such.
+#
+# Confirmed --apply commands removed from this set (DRY RUN banner is correct
+# for these when called without --apply — they are previewing real writes):
+#   generate-config  find-misplaced  find-orphan-media
+#   lightgun configure
+#
+# Commands intentionally kept even though they technically have --apply:
+#   doctor          — The GUI only ever calls `doctor` (no --apply).  Running
+#                     it is a health diagnostic, not a preview of writes.
+#                     Showing "DRY RUN" for a health check actively misleads
+#                     the user.  doctor --apply is available via Custom Command
+#                     for those who need it; there it will correctly omit the
+#                     banner because the _is_read_only_invocation call sees
+#                     "doctor" and returns True (Custom Command users writing
+#                     --apply know they're doing a write, banner or not).
+#   lightgun detect — Same reasoning: detect scans for hardware, it isn't
+#                     a preview of config writes.
+#   mainmenu show   — No-arg form (the only form the GUI generates) is
+#                     genuinely display-only.  The write variant
+#                     "mainmenu show SYSTEM --apply" is Custom-Command-only.
 _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "--help", "--version",
-    "doctor", "tools-audit", "systems", "report", "preview",
-    "audit", "inspect", "find-dupes", "find-misplaced",
-    "find-orphan-media", "check-discs", "verify", "lint", "stats",
+    "tools-audit", "systems", "report", "preview",
+    "audit", "inspect", "find-dupes",
+    "check-discs", "verify", "lint", "stats",
     "find-global", "theme-scan", "theme-pack-create", "diff",
-    "install-tools", "generate-config", "stats-report",
+    "install-tools", "stats-report",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
     "fav list", "recent list",
     "mainmenu show", "mainmenu edit",
     "ledblinky audit", "ledblinky check",
-    "lightgun detect", "lightgun audit", "lightgun configure",
+    "lightgun audit", "lightgun detect",
+    "doctor",
     "config show", "config init", "config set", "config system",
     "backup list", "backup info",
     "migrate --list-manifests", "theme-apply --list-manifests",
@@ -2352,6 +2378,10 @@ class _SpinDoctorGUI:
             command=self._copy_selected_log,
         ).pack(side="left", padx=6)
         self.ttk.Button(
+            btn_row, text="Save selected output…",
+            command=self._save_selected_log,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Clear in-memory log",
             command=self._clear_logs,
         ).pack(side="left", padx=6)
@@ -2420,6 +2450,50 @@ class _SpinDoctorGUI:
         self._set_status(
             f"Copied {len(text)} characters to clipboard."
         )
+
+    def _save_selected_log(self) -> None:
+        """Write the selected log entry to a .txt file chosen by the user."""
+        tree = getattr(self, "_logs_tree", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Pick a row first",
+                "Select a row in the tree, then click Save.",
+            )
+            return
+        idx = self._logs_iid_to_idx.get(sel[0])
+        if idx is None or idx >= len(self._run_history):
+            return
+        record = self._run_history[idx]
+        text = (
+            f"# Started: {record.started_at}\n"
+            f"# Status:  {record.tag()}\n"
+            f"# Dry-run: {record.dry_run}\n"
+            f"# Command: {record.argv_str}\n\n"
+            f"{record.joined_output()}"
+        )
+        from tkinter import filedialog
+        default_name = (
+            record.started_at.replace(":", "-").replace(" ", "_")
+            + "_" + record.argv_str.split()[-1].replace("/", "-").replace("\\", "-")
+            + ".txt"
+        )
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile=default_name,
+            title="Save log output",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            self._set_status(f"Saved log to {path}")
+        except OSError as exc:
+            self.messagebox.showerror("Save failed", str(exc))
 
     def _clear_logs(self) -> None:
         if self._proc is not None:
@@ -4487,10 +4561,27 @@ class _SpinDoctorGUI:
                 wheels_checks, text=label, variable=var,
             ).pack(anchor="w", pady=2)
 
+        # ── Verbose flag ─────────────────────────────────────────────────────
+        # When checked, passes --verbose to the rebuild commands so each
+        # copied/linked media file is logged as "copy  <src>\n   →  <dest>".
+        # Useful when diagnosing media problems or auditing a large rebuild.
+        # The full output is captured in the Logs tab and can be saved to a
+        # .txt file with the "Save selected output…" button.
+        self._wheel_verbose_var = self.tk.BooleanVar(value=False)
+        verbose_row = self.ttk.Frame(frame)
+        verbose_row.pack(anchor="w", pady=(0, 4))
+        self.ttk.Checkbutton(
+            verbose_row,
+            text="Verbose — log each file copied/linked (--verbose)",
+            variable=self._wheel_verbose_var,
+        ).pack(side="left")
+
+        btn_row = self.ttk.Frame(frame)
+        btn_row.pack(anchor="w", pady=3)
         self.ttk.Button(
-            frame, text="Refresh selected", width=28,
+            btn_row, text="Refresh selected", width=28,
             command=self._refresh_all_wheels,
-        ).pack(anchor="w", pady=3)
+        ).pack(side="left")
 
         # ── HyperSpin integration helpers ────────────────────────────────────
         # The custom wheels (Favorites / Recently Played / Most Played) write
@@ -4661,10 +4752,12 @@ class _SpinDoctorGUI:
         run_next(steps, 0)
 
     def _refresh_all_wheels(self) -> None:
+        verbose = getattr(self, "_wheel_verbose_var", None)
+        extra = ["--verbose"] if (verbose is not None and verbose.get()) else []
         all_steps: list[tuple[str, str, list[str]]] = [
-            ("Favorites",        "spindoctor-fav",    ["rebuild", "--apply"]),
-            ("Recently Played",  "spindoctor-recent", ["rebuild", "--apply"]),
-            ("Most Played",      "spindoctor-stats",  ["build-wheel", "--apply"]),
+            ("Favorites",        "spindoctor-fav",    ["rebuild", "--apply"] + extra),
+            ("Recently Played",  "spindoctor-recent", ["rebuild", "--apply"] + extra),
+            ("Most Played",      "spindoctor-stats",  ["build-wheel", "--apply"] + extra),
         ]
         check_vars = [self._wheel_fav_var, self._wheel_recent_var, self._wheel_stats_var]
         steps = [
