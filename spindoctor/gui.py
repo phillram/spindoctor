@@ -4861,12 +4861,6 @@ class _SpinDoctorGUI:
                 "Cabinet is ready. ===\n"
             )
             self._set_status("Preflight: all checks passed.")
-            self.messagebox.showinfo(
-                "Preflight passed",
-                "All preflight checks passed.\n\n"
-                "doctor, tools-audit, and audit --all reported no errors. "
-                "The cabinet is ready to ship.",
-            )
             return
         body = "\n".join(f"  ✗ {name}  (exit {rc})" for name, rc in failed)
         self._append_output(
@@ -9848,14 +9842,10 @@ class _SpinDoctorGUI:
         self._append_output(
             f"\n[Task Scheduler] created '{result.name}' → "
             f"{result.command}\n{result.output}\n"
+            f"Launcher bat: {bat_path}\n"
+            "Reboot or log out and back in to activate it.\n"
         )
-        self.messagebox.showinfo(
-            "Scheduled",
-            f"Auto-refresh task '{result.name}' is registered.\n\n"
-            f"Launcher bat: {bat_path}\n\n"
-            "Reboot or log out and back in to test it; the GUI's Output "
-            "panel shows the schtasks message above.",
-        )
+        self._flash_status(f"Auto-refresh task '{result.name}' registered.")
 
     def _remove_autorefresh(self) -> None:
         from . import autostart
