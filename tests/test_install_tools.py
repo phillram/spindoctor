@@ -122,8 +122,16 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
     body = sys_ini.read_text(encoding="utf-8")
     assert "Default_Emulator=PCLauncher" in body
     assert "Rom_Extension=ini" in body
-    # Rom_Path must point at the PCLauncher module dir for this system.
     assert str(pcl_dir) in body
+
+    # The folder-based Emulators.ini must also be written for RL
+    # installations that use Settings/<system>/Emulators.ini instead of
+    # the flat Settings/<system>.ini file for emulator routing.
+    emulators_ini = cabinet["rl"] / "Settings" / "Toolkit" / "Emulators.ini"
+    assert emulators_ini.exists(), "Settings/Toolkit/Emulators.ini was not written"
+    emu_body = emulators_ini.read_text(encoding="utf-8")
+    assert "Default_Emulator=PCLauncher" in emu_body
+    assert "[ROMS]" in emu_body
 
 
 def test_install_tools_add_to_system_errors_when_db_missing(cabinet):

@@ -295,17 +295,24 @@ def _generate_pclauncher_ini(
 ) -> Path:
     """Write a PCLauncher INI that defers launch back to the source system.
 
-    Uses ``RLaunch.exe`` so the original emulator config (keymaps,
-    overlays, save paths) is reused — we don't have to know which
-    emulator the source system uses.
+    Invokes ``RocketLauncher.exe -p HyperSpin`` with the source system and
+    ROM so the original emulator config (keymaps, overlays, save paths) is
+    reused — SpinDoctor doesn't need to know which emulator any system uses.
+
+    Uses ``[Settings]`` format (not ``[exe info]``) so PCLauncher does not
+    require a ``fadetitle`` or monitored process.  RocketLauncher handles the
+    HyperSpin fade/unfade itself when launched with ``-p HyperSpin``, making
+    PCLauncher's window-monitoring unnecessary and avoiding the "PCLauncher
+    does not know what exe / FadeTitle to watch for" error that ``[exe info]``
+    produces when those fields are left blank.
     """
-    from .rocketlauncher import pclauncher_exe_info_text
+    from .rocketlauncher import pclauncher_settings_text
 
     module_dir = rocketlauncher_dir / "Modules" / "PCLauncher" / target_system
     module_dir.mkdir(parents=True, exist_ok=True)
     ini = module_dir / f"{target_name}.ini"
     rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
-    contents = pclauncher_exe_info_text(
+    contents = pclauncher_settings_text(
         rl_exe,
         parameters=f'-s "{source_system}" -r "{source_rom}" -p HyperSpin',
     )
@@ -355,6 +362,11 @@ def rebuild(
         summary.inis_written = 0 if skip_launchers else len(target_names)
         if not skip_media:
             summary.media_linked = len(target_names)
+        if not skip_launchers and config.rocketlauncher_dir:
+            # Show the path that *would* be written so the user can see
+            # it's not being skipped because rocketlauncher_dir is unset.
+            rl_dir = Path(config.rocketlauncher_dir)
+            summary.system_ini_path = rl_dir / "Settings" / f"{store.target_system}.ini"
         return summary
 
     # ── 1. Database XML ──────────────────────────────────────────────────────

@@ -198,19 +198,34 @@ def generate_rl_system_ini(
 
 
 def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) -> Path:
-    """Write a minimal RocketLauncher system INI for a synthetic PCLauncher wheel.
+    """Write RocketLauncher system settings for a synthetic PCLauncher wheel.
 
     Synthetic systems (Favorites, Recently Played, Most Played) store per-game
     INIs under Modules/PCLauncher/<system>/ — so that directory is the
-    Rom_Path, and the extension is "ini".  Without this file RocketLauncher
-    can't route launch requests for the system and throws "Cannot find
-    <system>.ini".
+    Rom_Path, and the extension is "ini".
+
+    Two files are written to cover both layout variants found in the wild:
+
+    1. ``Settings/<system>.ini`` (flat layout) — some RL versions read a
+       top-level ``[Settings]`` file per system.
+    2. ``Settings/<system>/Emulators.ini`` (folder layout) — newer/alternate
+       RL installs keep settings inside a per-system folder.  The format
+       mirrors the real ``Emulators.ini`` found in those installs::
+
+           [ROMS]
+           Default_Emulator=PCLauncher
+           Rom_Path=<pcl_dir>
+
+       Without this file RocketLauncher throws "No default_emulator found in
+       Settings/<system>/Emulators.ini" before PCLauncher is even invoked.
     """
     settings_dir = rocketlauncher_dir / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
-    ini_path = settings_dir / f"{system_name}.ini"
     pclauncher_dir = rocketlauncher_dir / "Modules" / "PCLauncher" / system_name
-    lines = [
+
+    # ── 1. Flat layout: Settings/<system>.ini ────────────────────────────────
+    ini_path = settings_dir / f"{system_name}.ini"
+    flat_lines = [
         "[Settings]",
         "Default_Emulator=PCLauncher",
         f"Rom_Path={pclauncher_dir}",
@@ -220,7 +235,20 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
         f"Rom_Path={pclauncher_dir}",
         "",
     ]
-    ini_path.write_text("\n".join(lines), encoding="utf-8")
+    ini_path.write_text("\n".join(flat_lines), encoding="utf-8")
+
+    # ── 2. Folder layout: Settings/<system>/Emulators.ini ────────────────────
+    system_folder = settings_dir / system_name
+    system_folder.mkdir(parents=True, exist_ok=True)
+    emulators_ini = system_folder / "Emulators.ini"
+    emulator_lines = [
+        "[ROMS]",
+        "Default_Emulator=PCLauncher",
+        f"Rom_Path={pclauncher_dir}",
+        "",
+    ]
+    emulators_ini.write_text("\n".join(emulator_lines), encoding="utf-8")
+
     return ini_path
 
 
@@ -359,16 +387,35 @@ def _pclauncher_ini_text(executable) -> str:
     )
 
 
+def pclauncher_settings_text(executable, parameters: str = "") -> str:
+    """Render a ``[Settings]``-format PCLauncher INI that launches *executable*.
+
+    Unlike ``[exe info]``, this format does not require ``fadetitle`` or a
+    monitored process — PCLauncher launches the exe and returns immediately.
+
+    Used for synthetic-wheel per-game INIs that invoke ``RocketLauncher.exe
+    -p HyperSpin``: RL handles the HyperSpin fade/unfade itself via the
+    ``-p HyperSpin`` flag, so PCLauncher does not need to monitor any window.
+    """
+    exe = Path(executable)
+    return (
+        "[Settings]\n"
+        f"ApplicationPath={exe}\n"
+        f"ApplicationParameters={parameters}\n"
+        f"StartIn={exe.parent}\n"
+    )
+
+
 def pclauncher_exe_info_text(
     applicationpath, parameters: str = "", rompath: str = "",
 ) -> str:
-    """Render an `[exe info]`-style PCLauncher INI body.
+    """Render an ``[exe info]``-style PCLauncher INI body.
 
-    PCLauncher accepts two INI dialects: the standard `[Settings]` form
-    (see `_pclauncher_ini_text`) and `[exe info]`, which is what the
-    favorites/recent/most-played helpers use when they need PCLauncher
-    to invoke RLaunch (delegating through to the real emulator) or a
-    plain .bat. Single source of truth for both call sites.
+    PCLauncher accepts two INI dialects: the standard ``[Settings]`` form
+    (see ``pclauncher_settings_text``) and ``[exe info]``, which requires
+    ``fadetitle`` or a monitored exe. Kept for callers that explicitly
+    need ``[exe info]`` semantics (e.g. direct emulator launch without
+    RocketLauncher in the chain).
     """
     return (
         "[exe info]\n"
