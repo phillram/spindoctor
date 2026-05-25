@@ -7615,6 +7615,11 @@ class _SpinDoctorGUI:
 
         Delegates entirely to ``spindoctor backup sidecar list/restore`` —
         no file I/O in the GUI.  Covers INIs written by generate-config.
+
+        Detects which layout the system uses before resolving the path:
+
+        - **Folder layout** (HyperHQ): ``Settings/<system>/Emulators.ini``
+        - **Flat layout**: ``Settings/<system>.ini``
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
@@ -7634,7 +7639,10 @@ class _SpinDoctorGUI:
                 "Set rocketlauncher_dir in the Setup tab first.",
             )
             return
-        ini_path = Path(cfg.rocketlauncher_dir) / "Settings" / f"{sys_name}.ini"
+        settings_dir = Path(cfg.rocketlauncher_dir) / "Settings"
+        folder_ini = settings_dir / sys_name / "Emulators.ini"
+        flat_ini = settings_dir / f"{sys_name}.ini"
+        ini_path = folder_ini if folder_ini.exists() else flat_ini
         self._restore_sidecar(ini_path)
 
     def _run_full_metadata_refresh(self) -> None:
