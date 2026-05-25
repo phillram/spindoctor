@@ -224,22 +224,27 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     1. ``Settings/<system>.ini`` (flat layout) — RL reads ``Default_Emulator``
        from the ``[Settings]`` section here.
     2. ``Settings/<system>/Emulators.ini`` (folder layout) — RL reads
-       ``Default_Emulator`` from the ``[ROMS]`` section here.  These two files
-       use DIFFERENT section conventions; the flat file uses ``[Settings]``
-       while the folder file uses ``[ROMS]``.  ``Rom_Extension=ini`` is also
-       required so RL doesn't fall back to the global extension list::
+       ``Default_Emulator`` and ``Rom_Extension`` from the ``[ROMS]`` section.
 
-           [ROMS]
-           Default_Emulator=PCLauncher
-           Rom_Path=<pcl_dir>
-           Rom_Extension=ini
+    **Why the folder-layout file must NOT have a ``[PCLauncher]`` section:**
 
-           [PCLauncher]
-           Rom_Path=<pcl_dir>
+    When SpinDoctor wrote ``[PCLauncher]\nRom_Path=<dir>`` in ``Emulators.ini``,
+    RocketLauncher initialised the rest of that section on the next launch via
+    its own ``IniWrite``, adding ``Module=``, ``Emu_Path=``, and crucially
+    ``Rom_Extension=`` (blank).  On subsequent launches RL reads ``Rom_Extension``
+    from ``[PCLauncher]``, finds the blank value, and falls back to the global
+    extension list (``zip|rar|7z|lha|…``), producing::
 
-       If ``[ROMS]`` is absent, RL's AHK IniWrite creates it with an empty
-       ``Default_Emulator=`` value, producing "No Default_Emulator found" on
-       every launch.
+        Cannot find Rom 1942 in any Rom_Paths provided:
+            "…\\Modules\\PCLauncher\\Favorites"
+        with any provided Rom_Extension: "zip|rar|7z|lha|lzh|gzip|tar|"
+
+    The working HyperHQ-generated ``Emulators.ini`` (e.g. the Toolkit system)
+    contains **only** the ``[ROMS]`` section.  Without a ``[PCLauncher]`` section
+    to write into, RL reads ``Rom_Extension`` from ``[ROMS]`` and correctly finds
+    ``ini``.  The flat-layout ``Settings/<system>.ini`` retains its ``[PCLauncher]``
+    block because the flat layout is read differently and does not exhibit this
+    RL write-back behaviour.
     """
     settings_dir = rocketlauncher_dir / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
@@ -260,23 +265,7 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     ini_path.write_text("\n".join(flat_lines), encoding="utf-8")
 
     # ── 2. Folder layout: Settings/<system>/Emulators.ini ────────────────────
-    # RocketLauncher's AHK IniRead() looks for Default_Emulator in the [ROMS]
-    # section of Emulators.ini — NOT [Settings].  The flat Settings/<system>.ini
-    # (written above) uses [Settings] because that is what RL expects for the
-    # flat layout.  The two files use DIFFERENT section conventions:
-    #
-    #   Settings/<system>.ini       → [Settings]  Default_Emulator=…
-    #   Settings/<system>/Emulators.ini → [ROMS]  Default_Emulator=…
-    #
-    # Evidence: the user's Toolkit system Emulators.ini (set up by HyperHQ and
-    # confirmed working) uses [ROMS].  When we incorrectly used [Settings] here
-    # (v2.3.3), RL read the file, found no Default_Emulator in [ROMS], then
-    # wrote [ROMS]\nDefault_Emulator= (blank) back into the file via its own
-    # AHK IniWrite, causing "No Default_Emulator found" on every launch.
-    #
-    # Rom_Extension=ini is required; without it RL falls back to the global
-    # extension list (zip|rar|7z|…) and reports "Cannot find Rom … with any
-    # provided Rom_Extension: zip|rar|…".
+    # [ROMS] section ONLY — no [PCLauncher] block.  See docstring for why.
     system_folder = settings_dir / system_name
     system_folder.mkdir(parents=True, exist_ok=True)
     emulators_ini = system_folder / "Emulators.ini"
@@ -285,9 +274,6 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
         "Default_Emulator=PCLauncher",
         f"Rom_Path={pclauncher_dir}",
         "Rom_Extension=ini",
-        "",
-        "[PCLauncher]",
-        f"Rom_Path={pclauncher_dir}",
         "",
     ]
     emulators_ini.write_text("\n".join(emulator_lines), encoding="utf-8")
