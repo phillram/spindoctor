@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fav rebuild` / `recent rebuild` wrote `Settings/<system>/Emulators.ini` to the wrong location.** RocketLauncher supports two layouts for emulator routing: a flat `Settings/<system>.ini` and a folder-based `Settings/<system>/Emulators.ini`. Only the flat file was written; installations using the folder layout produced "No default_emulator found in Settings\\Favorites\\Emulators.ini" on every launch. Both files are now written by `generate_synthetic_system_ini`, so SpinDoctor works correctly regardless of which layout is in use.
+- **Per-game PCLauncher INIs used `[exe info]` format, which requires a monitored executable.** The INIs written into `Modules/PCLauncher/<system>/` used the `[exe info]` section (which requires `fadetitle` / a process to monitor), causing "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for". Synthetic wheels invoke `RocketLauncher.exe -p HyperSpin`, and RL talks directly to HyperSpin for the fade/unfade cycle — no monitoring is needed. All per-game INIs are now written with the simpler `[Settings]` format (`ApplicationPath` / `ApplicationParameters` / `StartIn`).
+- **Dry-run output showed "skipped (rocketlauncher_dir not set or invalid)" for the system INI even when RL dir was configured.** The dry-run path returned early before the system INI planning code, leaving `summary.system_ini_path = None`. The dry-run now computes and stores the planned path so the CLI correctly reports where the file *would* be written.
+
 ## [2.3.1] - 2026-05-24
 
 ### Added

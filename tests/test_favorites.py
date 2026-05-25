@@ -114,7 +114,9 @@ def test_rebuild_writes_database_and_media(isolated_config, tmp_path, monkeypatc
     inis = list((rl / "Modules" / "PCLauncher" / "Favorites").iterdir())
     assert len(inis) == 2
     ini_text = (rl / "Modules" / "PCLauncher" / "Favorites" / "Tetris (Super Nintendo).ini").read_text()
-    assert 'parameters=-s "Super Nintendo"' in ini_text
+    assert 'ApplicationParameters=-s "Super Nintendo"' in ini_text
+    assert "-p HyperSpin" in ini_text
+    assert "[Settings]" in ini_text
 
 
 def test_rebuild_prunes_removed_favorite(isolated_config, tmp_path, monkeypatch):
@@ -412,3 +414,92 @@ def test_sync_native_favorites_txt_real_format(isolated_config, tmp_path, monkey
     assert n == 4
     assert store.find("Super Nintendo", "galaxian") is not None
     assert store.find("Super Nintendo", "gt99") is not None  # no DB entry but still added
+
+
+# ── Emulators.ini + PCLauncher INI format ─────────────────────────────────────
+
+def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path, monkeypatch):
+    """generate_synthetic_system_ini must write Settings/<system>/Emulators.ini.
+
+    RocketLauncher installations that use the folder-based settings layout
+    look for emulator routing in Settings/<system>/Emulators.ini, NOT in the
+    top-level Settings/<system>.ini file.  Without this file RL throws
+    "No default_emulator found in Settings/Favorites/Emulators.ini".
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+    (rl / "Settings").mkdir(parents=True, exist_ok=True)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    emulators_ini = rl / "Settings" / "Favorites" / "Emulators.ini"
+    assert emulators_ini.exists(), "Settings/Favorites/Emulators.ini was not written"
+    body = emulators_ini.read_text(encoding="utf-8")
+    assert "Default_Emulator=PCLauncher" in body
+    assert "[ROMS]" in body
+    # Rom_Path must point at the PCLauncher module dir so RL knows where
+    # to find the per-game INIs.
+    pcl_dir = str(rl / "Modules" / "PCLauncher" / "Favorites")
+    assert pcl_dir in body
+
+
+def test_rebuild_pclauncher_ini_uses_settings_format(isolated_config, tmp_path, monkeypatch):
+    """Per-game PCLauncher INIs must use [Settings] format, not [exe info].
+
+    [exe info] requires a fadetitle / monitored process; [Settings] just
+    launches the exe and returns.  When RocketLauncher.exe is invoked with
+    -p HyperSpin it handles the HyperSpin fade itself, so PCLauncher doesn't
+    need to monitor anything — making [exe info] wrong for this use case.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    ini_path = rl / "Modules" / "PCLauncher" / "Favorites" / "Tetris.ini"
+    assert ini_path.exists()
+    body = ini_path.read_text(encoding="utf-8")
+
+    # Must use [Settings] section
+    assert "[Settings]" in body
+    # Must NOT use [exe info] (which requires FadeTitle)
+    assert "[exe info]" not in body
+    # Must point at RocketLauncher.exe with -p HyperSpin
+    assert "RocketLauncher.exe" in body
+    assert "-p HyperSpin" in body
+    assert '-s "Super Nintendo"' in body
+    assert '-r "Tetris"' in body
+
+
+def test_rebuild_dry_run_shows_system_ini_path(isolated_config, tmp_path, monkeypatch):
+    """Dry-run must show the system INI path that *would* be written.
+
+    Previously showed 'skipped (rocketlauncher_dir not set or invalid)'
+    even when rocketlauncher_dir was correctly configured, because the
+    dry-run path returned early before the INI-write code.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+
+    from spindoctor.favorites import rebuild as fav_rebuild
+    summary = fav_rebuild(store, cfg, media_mode=LinkMode.COPY, dry_run=True)
+
+    # system_ini_path must be set (not None) so the CLI doesn't show
+    # the misleading "skipped" message.
+    assert summary.system_ini_path is not None
+    assert "Favorites" in str(summary.system_ini_path)
+    # Nothing must have been written to disk in dry-run mode.
+    assert not (rl / "Settings" / "Favorites.ini").exists()
