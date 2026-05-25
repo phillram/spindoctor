@@ -4059,6 +4059,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     _check_config(config)
 
     from .rocketlauncher import (
+        SKIP_GENERATE_CONFIG,
         generate_global_emulators_ini,
         generate_hs_main_menu,
         generate_rl_system_ini,
@@ -4071,6 +4072,22 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         all_systems = True
     systems = _resolve_systems(config, system, all_systems)
     out_base = Path(output_dir) if output_dir else None
+
+    # Filter out SpinDoctor-managed synthetic PCLauncher wheels and the
+    # HyperSpin pseudo-system "Main Menu". These appear as database folders
+    # (so get_systems() includes them) but must NOT be processed by
+    # generate-config: their RL settings are written by fav/recent/stats
+    # rebuild commands, and guess_emulator() returns "RetroArch" for them
+    # (since they're not in EMULATOR_MAP), which would overwrite the correct
+    # PCLauncher settings and break every launch from those wheels.
+    skipped_managed = [s for s in systems if s in SKIP_GENERATE_CONFIG]
+    systems = [s for s in systems if s not in SKIP_GENERATE_CONFIG]
+    if skipped_managed:
+        console.print(
+            "[dim]Skipping SpinDoctor-managed / pseudo-systems "
+            "(not overwritten by generate-config):[/dim] "
+            + ", ".join(f"[cyan]{s}[/cyan]" for s in skipped_managed)
+        )
 
     if not apply_changes:
         console.print(
@@ -4094,7 +4111,12 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         return bak
 
     if gen_rl:
-        console.print(f"\n[blue bold]RocketLauncher system INIs[/blue bold] ({len(systems)} systems)")
+        console.print(
+            f"\n[blue bold]RocketLauncher system INIs[/blue bold] "
+            f"({len(systems)} systems)"
+            + (f" [dim]— {len(skipped_managed)} managed/pseudo skipped[/dim]"
+               if skipped_managed else "")
+        )
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("System", style="cyan")
         tbl.add_column("Emulator")
@@ -4105,6 +4127,28 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         rl_base_dry = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
         for sys_name in systems:
             emulator = guess_emulator(sys_name)
+
+            # Guard: if an existing Emulators.ini already declares PCLauncher
+            # as the default emulator but guess_emulator doesn't know this
+            # system (e.g. user-named Toolkit / Tools wheels), skip it.
+            # Overwriting with generate-config's default (RetroArch) would
+            # break all PCLauncher-launched entries in that wheel.
+            if rl_base_dry and emulator != "PCLauncher":
+                existing_emu_ini = rl_base_dry / "Settings" / sys_name / "Emulators.ini"
+                if existing_emu_ini.exists():
+                    try:
+                        txt = existing_emu_ini.read_text(encoding="utf-8", errors="replace")
+                        if "Default_Emulator=PCLauncher" in txt:
+                            tbl.add_row(
+                                sys_name,
+                                "[dim]PCLauncher (existing — skipped)[/dim]",
+                                "[dim]existing Emulators.ini preserved[/dim]",
+                                *(([""] if apply_changes else [])),
+                            )
+                            continue
+                    except OSError:
+                        pass
+
             if not apply_changes:
                 path_str = (
                     str(rl_base_dry / "Settings" / f"{sys_name}.ini")
