@@ -4117,12 +4117,29 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             + (f" [dim]— {len(skipped_managed)} managed/pseudo skipped[/dim]"
                if skipped_managed else "")
         )
+        def _read_existing_rom_path(ini_path: Path) -> Optional[str]:
+            """Return the first Rom_Path= value from an existing INI, or None."""
+            try:
+                for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                    stripped = line.strip()
+                    if stripped.lower().startswith("rom_path="):
+                        return stripped.split("=", 1)[1].strip()
+            except OSError:
+                pass
+            return None
+
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("System", style="cyan")
         tbl.add_column("Emulator")
-        tbl.add_column("Path" if apply_changes else "Would write")
         if apply_changes:
+            tbl.add_column("Written to")
             tbl.add_column("Backup")
+        else:
+            # Dry-run: show current Rom_Path vs what would be written so the
+            # user can verify the ROM drive change before committing.
+            tbl.add_column("Current Rom_Path")
+            tbl.add_column("New Rom_Path")
+            tbl.add_column("Status")
 
         rl_base_dry = out_base or (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
         for sys_name in systems:
@@ -4139,22 +4156,42 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     try:
                         txt = existing_emu_ini.read_text(encoding="utf-8", errors="replace")
                         if "Default_Emulator=PCLauncher" in txt:
-                            tbl.add_row(
+                            skip_row = [
                                 sys_name,
                                 "[dim]PCLauncher (existing — skipped)[/dim]",
-                                "[dim]existing Emulators.ini preserved[/dim]",
-                                *(([""] if apply_changes else [])),
-                            )
+                            ]
+                            if apply_changes:
+                                skip_row += ["[dim]preserved[/dim]", ""]
+                            else:
+                                skip_row += ["", "", "[dim]skipped[/dim]"]
+                            tbl.add_row(*skip_row)
                             continue
                     except OSError:
                         pass
 
             if not apply_changes:
-                path_str = (
-                    str(rl_base_dry / "Settings" / f"{sys_name}.ini")
-                    if rl_base_dry else "[dim]rocketlauncher_dir not configured[/dim]"
+                new_rom_path = (
+                    str(Path(config.roms_dir) / sys_name) if config.roms_dir else ""
                 )
-                tbl.add_row(sys_name, emulator, path_str)
+                existing_ini = (
+                    rl_base_dry / "Settings" / f"{sys_name}.ini"
+                    if rl_base_dry else None
+                )
+                current_rom_path = (
+                    _read_existing_rom_path(existing_ini)
+                    if existing_ini and existing_ini.exists()
+                    else None
+                )
+                if current_rom_path is None:
+                    current_str = "[dim](new file)[/dim]"
+                    status = "[green]new[/green]"
+                elif current_rom_path == new_rom_path:
+                    current_str = f"[dim]{current_rom_path}[/dim]"
+                    status = "[dim]no change[/dim]"
+                else:
+                    current_str = f"[yellow]{current_rom_path}[/yellow]"
+                    status = "[green]update[/green]"
+                tbl.add_row(sys_name, emulator, current_str, new_rom_path, status)
             else:
                 try:
                     # Identify the target path so we can back it up before the
