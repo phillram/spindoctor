@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Favorites, Recently Played, and Most Played media mirroring defaulted to hardlink mode (`auto`), which silently fell back to a copy on FAT32/exFAT but left no indication when hardlinks succeeded across-volume or failed entirely.** The default is now `copy` for all three wheels (`fav rebuild`, `recent rebuild`, `stats build-wheel`). Hardlinks and symlinks are still available via `--media-mode link` / `--media-mode symlink` for users who prefer them.
 
+- **`Settings/<system>/Emulators.ini` was written with a `[Settings]` section (introduced in v2.3.3) when it must use `[ROMS]`.** RocketLauncher's AHK code reads `Default_Emulator` from `[ROMS]` in folder-layout Emulators.ini files — the same section used by HyperHQ when it sets up PCLauncher systems (confirmed by Toolkit's working Emulators.ini). When the section was `[Settings]`, RL found no `Default_Emulator` key in `[ROMS]`, then wrote `[ROMS]\nDefault_Emulator=` (blank) back into the file via its own AHK IniWrite, causing "No Default_Emulator found in Settings\Favorites\Emulators.ini" on every game launch from the Favorites, Recently Played, and Most Played wheels — even after a successful `rebuild --apply`. The section is now `[ROMS]`. Note: the flat `Settings/<system>.ini` file correctly uses `[Settings]` and is unchanged — these two files follow different conventions.
+
 ## [2.3.4] - 2026-05-24
 
 ### Fixed
