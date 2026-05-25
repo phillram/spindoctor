@@ -4861,12 +4861,6 @@ class _SpinDoctorGUI:
                 "Cabinet is ready. ===\n"
             )
             self._set_status("Preflight: all checks passed.")
-            self.messagebox.showinfo(
-                "Preflight passed",
-                "All preflight checks passed.\n\n"
-                "doctor, tools-audit, and audit --all reported no errors. "
-                "The cabinet is ready to ship.",
-            )
             return
         body = "\n".join(f"  ✗ {name}  (exit {rc})" for name, rc in failed)
         self._append_output(
@@ -7615,6 +7609,11 @@ class _SpinDoctorGUI:
 
         Delegates entirely to ``spindoctor backup sidecar list/restore`` —
         no file I/O in the GUI.  Covers INIs written by generate-config.
+
+        Detects which layout the system uses before resolving the path:
+
+        - **Folder layout** (HyperHQ): ``Settings/<system>/Emulators.ini``
+        - **Flat layout**: ``Settings/<system>.ini``
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
@@ -7634,7 +7633,10 @@ class _SpinDoctorGUI:
                 "Set rocketlauncher_dir in the Setup tab first.",
             )
             return
-        ini_path = Path(cfg.rocketlauncher_dir) / "Settings" / f"{sys_name}.ini"
+        settings_dir = Path(cfg.rocketlauncher_dir) / "Settings"
+        folder_ini = settings_dir / sys_name / "Emulators.ini"
+        flat_ini = settings_dir / f"{sys_name}.ini"
+        ini_path = folder_ini if folder_ini.exists() else flat_ini
         self._restore_sidecar(ini_path)
 
     def _run_full_metadata_refresh(self) -> None:
@@ -9848,14 +9850,10 @@ class _SpinDoctorGUI:
         self._append_output(
             f"\n[Task Scheduler] created '{result.name}' → "
             f"{result.command}\n{result.output}\n"
+            f"Launcher bat: {bat_path}\n"
+            "Reboot or log out and back in to activate it.\n"
         )
-        self.messagebox.showinfo(
-            "Scheduled",
-            f"Auto-refresh task '{result.name}' is registered.\n\n"
-            f"Launcher bat: {bat_path}\n\n"
-            "Reboot or log out and back in to test it; the GUI's Output "
-            "panel shows the schtasks message above.",
-        )
+        self._flash_status(f"Auto-refresh task '{result.name}' registered.")
 
     def _remove_autorefresh(self) -> None:
         from . import autostart
