@@ -27,12 +27,11 @@ Each release at [github.com/phillram/spindoctor/releases](https://github.com/phi
 
 ```
 spindoctor-windows-vX.Y.Z.zip
-├── spindoctor.exe                   ← full CLI (every command)
-├── spindoctor-gui.exe               ← double-clickable GUI launcher
-├── spindoctor-fav.exe               ← Favorites wheel manager
-├── spindoctor-recent.exe            ← Recently Played rebuild
-├── spindoctor-stats.exe             ← playtime reports + Most Played wheel
-└── spindoctor-refresh-wheels.bat    ← startup task launcher (written on first schedule)
+├── spindoctor.exe          ← full CLI (every command)
+├── spindoctor-gui.exe      ← double-clickable GUI launcher
+├── spindoctor-fav.exe      ← Favorites wheel manager
+├── spindoctor-recent.exe   ← Recently Played rebuild
+└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
 All five are single-file PyInstaller binaries — no installer, no setup wizard, no DLL hell. The CLI exes are roughly 30–50 MB each because they bundle their own Python runtime plus dependencies (lxml, Pillow, py7zr, rarfile); `spindoctor-gui.exe` is smaller (~15–20 MB) because it just bundles Tkinter and shells out to the others.
