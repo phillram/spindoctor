@@ -304,11 +304,15 @@ def test_custom_command_presets_match_actual_cli_syntax():
 
 
 @pytest.mark.parametrize("args", [
-    ("doctor",),
+    # doctor has --apply (safe repairs) so it is NOT in this list —
+    # running it without --apply IS a dry-run and must show the banner.
     ("audit", "--all"),
     ("find-dupes", "--all"),
     ("lint",),
     ("preview",),
+    # "mainmenu show" with no system arg just renders a table — read-only.
+    # The variant "mainmenu show SYSTEM --apply" writes, but the GUI never
+    # generates that form; only Custom Command users would type it.
     ("mainmenu", "show"),
     ("mainmenu", "edit"),
     ("backup", "list", "--target", "/x"),
@@ -352,6 +356,9 @@ def test_extra_read_only_invocations(args):
 @pytest.mark.parametrize("args", [
     # Commands that *do* accept --apply must be flagged as dry-run-able
     # so the banner appears for their preview invocations.
+    # doctor --apply performs safe repairs; without --apply it's a dry-run
+    # and must show the DRY RUN banner (not treated as read-only).
+    ("doctor",),
     ("cleanup", "run"),
     ("mainmenu", "sort", "alpha"),
     ("mainmenu", "reorder", "SNES", "3"),
