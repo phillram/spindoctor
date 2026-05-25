@@ -77,3 +77,28 @@ def test_remove_target_drops_mirrored_files(tmp_path):
 def test_missing_source_returns_empty_plan(tmp_path):
     plan = plan_mirror(tmp_path / "Media", "Nope", "Favorites", "Mario")
     assert plan.actions == []
+
+
+def test_zip_packed_media_is_copied(tmp_path):
+    """plan_mirror must include .zip files as media assets.
+
+    HyperSpin reads zip-packed media natively (videos, themes, etc.).  Source
+    systems commonly store artwork as e.g. ``Media/MAME/Video/1942.zip`` rather
+    than an unwrapped ``.mp4``.  Without ``.zip`` in ``_FILE_EXTS`` those files
+    were silently skipped and the synthetic wheel showed no video / artwork.
+    """
+    media = tmp_path / "Media"
+    src = media / "MAME" / "Video"
+    src.mkdir(parents=True)
+    (src / "1942.zip").write_bytes(b"PK-fake-zip-content")
+
+    plan = plan_mirror(media, "MAME", "Favorites", "1942")
+    names = [a.src.name for a in plan.actions if not a.is_dir]
+    assert "1942.zip" in names, (
+        ".zip files must be included in the media mirror plan — "
+        "HyperSpin reads zip-packed media natively."
+    )
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    dest = media / "Favorites" / "Video" / "1942.zip"
+    assert dest.exists(), "1942.zip was not copied to the Favorites media folder."

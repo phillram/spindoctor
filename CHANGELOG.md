@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Zip-packed media files (e.g. `Media/MAME/Video/1942.zip`) were silently skipped during Favorites / Recently Played / Most Played wheel rebuilds.** HyperSpin reads zip-packed media natively, so source systems commonly store artwork as `.zip` archives rather than raw `.mp4` / `.png` files. The `_FILE_EXTS` allowlist in `medialink.py` did not include `.zip`, so these files were never copied to `Media/Favorites/` etc., leaving the synthetic wheel with no video or background art even though the games displayed correctly in their source system's wheel. `.zip` has been added to `_FILE_EXTS`.
+
+- **Running `fav rebuild --apply`, `recent rebuild --apply`, or `stats build-wheel --apply` for the first time did not create `<hyperspin_dir>/Settings/<system>.ini`.** HyperSpin requires this file to open a sub-wheel; without it the frontend shows "Cannot find Recently Played.ini" (or "Favorites.ini" / "Most Played.ini") when the wheel is selected from the main menu, so the wheel never loads. SpinDoctor was already writing the RocketLauncher settings (`Settings/<system>/Emulators.ini`) but not the HyperSpin-side settings. Each rebuild command now writes a minimal `Settings/<system>.ini` containing `[exe info]\nhyperlaunch=true` when the file does not exist — existing files (created by HyperHQ or the user) are never overwritten.
+
 ## [2.4.0] - 2026-05-25
 
 ### Changed

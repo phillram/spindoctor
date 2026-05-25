@@ -295,6 +295,49 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     return ini_path
 
 
+# ─── HyperSpin system settings INI ───────────────────────────────────────────
+
+# Minimal HyperSpin system settings template.  ``hyperlaunch=true`` in
+# ``[exe info]`` is the critical key: without it HyperSpin shows
+# "Cannot find <system>.ini" when the user tries to open the sub-wheel
+# because it cannot find the correct launch configuration.
+#
+# ``parents_only=false`` prevents the wheel from hiding games that are
+# not flagged as "parent" ROMs in the database (most synthetic-wheel
+# entries are not tagged that way).
+_HYPERSPIN_SYSTEM_INI_TEMPLATE = (
+    "[exe info]\n"
+    "hyperlaunch=true\n"
+    "\n"
+    "[filters]\n"
+    "parents_only=false\n"
+)
+
+
+def write_hyperspin_system_ini(
+    system_name: str,
+    hyperspin_dir: Path,
+) -> Optional[Path]:
+    """Write a minimal HyperSpin system settings INI if one does not exist.
+
+    HyperSpin requires ``<hyperspin_dir>/Settings/<system>.ini`` to be
+    present when a wheel is opened as a sub-menu.  If the file is absent,
+    HyperSpin reports "Cannot find <system>.ini" and the wheel never loads.
+
+    The function only writes the file if it is **missing** — existing files
+    (user-customised or created by HyperHQ) are left untouched.
+
+    Returns the path that was written, or ``None`` if the file already existed.
+    """
+    settings_dir = hyperspin_dir / "Settings"
+    ini_path = settings_dir / f"{system_name}.ini"
+    if ini_path.exists():
+        return None
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    ini_path.write_text(_HYPERSPIN_SYSTEM_INI_TEMPLATE, encoding="utf-8")
+    return ini_path
+
+
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
 
 def _read_main_menu_systems(path: Path) -> list[str]:

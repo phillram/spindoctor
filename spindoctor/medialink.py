@@ -44,6 +44,7 @@ _FILE_EXTS = {
     ".png", ".jpg", ".jpeg",
     ".mp4", ".avi", ".flv", ".mkv",
     ".mp3", ".wav", ".ogg",
+    ".zip",  # HyperSpin reads zip-packed media natively (videos, themes, etc.)
 }
 
 
