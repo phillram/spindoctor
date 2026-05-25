@@ -2362,6 +2362,10 @@ class _SpinDoctorGUI:
             command=self._copy_selected_log,
         ).pack(side="left", padx=6)
         self.ttk.Button(
+            btn_row, text="Save selected output…",
+            command=self._save_selected_log,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Clear in-memory log",
             command=self._clear_logs,
         ).pack(side="left", padx=6)
@@ -2430,6 +2434,50 @@ class _SpinDoctorGUI:
         self._set_status(
             f"Copied {len(text)} characters to clipboard."
         )
+
+    def _save_selected_log(self) -> None:
+        """Write the selected log entry to a .txt file chosen by the user."""
+        tree = getattr(self, "_logs_tree", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showinfo(
+                "Pick a row first",
+                "Select a row in the tree, then click Save.",
+            )
+            return
+        idx = self._logs_iid_to_idx.get(sel[0])
+        if idx is None or idx >= len(self._run_history):
+            return
+        record = self._run_history[idx]
+        text = (
+            f"# Started: {record.started_at}\n"
+            f"# Status:  {record.tag()}\n"
+            f"# Dry-run: {record.dry_run}\n"
+            f"# Command: {record.argv_str}\n\n"
+            f"{record.joined_output()}"
+        )
+        from tkinter import filedialog
+        default_name = (
+            record.started_at.replace(":", "-").replace(" ", "_")
+            + "_" + record.argv_str.split()[-1].replace("/", "-").replace("\\", "-")
+            + ".txt"
+        )
+        path = filedialog.asksaveasfilename(
+            defaultextension=".txt",
+            filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
+            initialfile=default_name,
+            title="Save log output",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(text)
+            self._set_status(f"Saved log to {path}")
+        except OSError as exc:
+            self.messagebox.showerror("Save failed", str(exc))
 
     def _clear_logs(self) -> None:
         if self._proc is not None:

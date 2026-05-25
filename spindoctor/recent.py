@@ -326,6 +326,7 @@ def _build_synthetic_wheel(
     media_mode: LinkMode = LinkMode.COPY,
     skip_media: bool = False,
     skip_launchers: bool = False,
+    verbose: bool = False,
 ) -> RecentSummary:
     """Shared synthetic-wheel builder used by ``recent`` and ``playtime``.
 
@@ -406,7 +407,8 @@ def _build_synthetic_wheel(
                 config.media_dir, fe.system, target_system,
                 fe.rom_name, target_name,
             )
-            result = apply_plan(plan, mode=media_mode)
+            result = apply_plan(plan, mode=media_mode,
+                               log_fn=print if verbose else None)
             summary.media_linked += result["linked"]
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
@@ -457,6 +459,7 @@ def rebuild(
     skip_media: bool = False,
     skip_launchers: bool = False,
     dry_run: bool = False,
+    verbose: bool = False,
 ) -> RecentSummary:
     """Regenerate the Recently Played system from RocketLauncher stats.
 
@@ -500,7 +503,7 @@ def rebuild(
     summary = _build_synthetic_wheel(
         config, target_system, pseudo_entries,
         media_mode=media_mode, skip_media=skip_media,
-        skip_launchers=skip_launchers,
+        skip_launchers=skip_launchers, verbose=verbose,
     )
     summary.read_warnings = read_warnings
     summary.read_notes = read_notes
@@ -527,6 +530,8 @@ def _build_parser() -> argparse.ArgumentParser:
                        default="copy")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
+    p_reb.add_argument("--verbose", action="store_true",
+                       help="Print each media file copied/linked (src → dest).")
 
     sub.add_parser("list", help="Print the current top-N play records")
     return p
@@ -573,6 +578,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             media_mode=mode,
             skip_media=skip_media,
             dry_run=not args.apply,
+            verbose=getattr(args, "verbose", False),
         )
         print(f"Recently Played system: {summary.target_system}")
         for note in summary.read_notes:

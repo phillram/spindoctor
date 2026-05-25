@@ -342,6 +342,7 @@ def rebuild(
     skip_media: bool = False,
     skip_launchers: bool = False,
     dry_run: bool = False,
+    verbose: bool = False,
 ) -> RebuildSummary:
     """Regenerate the synthetic system's database, media mirrors, and launchers.
 
@@ -417,7 +418,8 @@ def rebuild(
                 config.media_dir, entry.system, store.target_system,
                 entry.rom_name, target_name,
             )
-            result = apply_plan(plan, mode=media_mode)
+            result = apply_plan(plan, mode=media_mode,
+                               log_fn=print if verbose else None)
             summary.media_linked += result["linked"]
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
@@ -538,6 +540,8 @@ def _build_parser() -> argparse.ArgumentParser:
                        default="copy")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
+    p_reb.add_argument("--verbose", action="store_true",
+                       help="Print each media file copied/linked (src → dest).")
 
     return p
 
@@ -624,7 +628,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         if not args.apply:
             print("[DRY RUN] No files will be written. Re-run with --apply to commit.")
         summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
-                          dry_run=not args.apply)
+                          dry_run=not args.apply,
+                          verbose=getattr(args, "verbose", False))
         print(f"Favorites system: {summary.target_system}")
         print(f"  entries:    {summary.entries}")
         print(f"  pruned:     {summary.pruned}")
