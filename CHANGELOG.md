@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`fav rebuild`, `recent rebuild`, and `stats build-wheel` now accept `--verbose`**, which prints each media file as it is copied or linked (`copy  <src>\n   →  <dest>`). Without `--verbose` the summary counts are unchanged. The GUI's Logs tab "Save selected output…" button captures the full verbose output to a `.txt` file.
 
+- **Six additional CLI commands now accept `--verbose`**: `find-misplaced`, `find-orphan-media`, `curate`, `theme-apply`, `media-scan`, and `cleanup run`. When `--verbose` is passed each command prints the full source → destination path (or full path for deletions) for every file it processes, in addition to the usual summary totals.
+
 - **Wheels tab: added "Verbose" checkbox.** When ticked, passes `--verbose` to each rebuild command so the Logs tab records exactly which files were copied or linked. Off by default so normal refreshes stay concise.
 
 - **Logs tab: added "Save selected output…" button.** Opens a file-save dialog and writes the selected run's full output (header + streamed CLI text) to a `.txt` file. Useful when verbose output or a long generate-config dry-run needs to be reviewed off-screen rather than copy-pasted.
