@@ -10,7 +10,7 @@ scripts/
 ├── Refresh Favorites.bat         ← Drop into HyperSpin Tools or Windows Startup
 ├── Refresh Recently Played.bat
 ├── Refresh Most Played.bat
-└── Refresh Both.bat              ← Run all three in sequence
+└── Refresh All.bat              ← Run all three in sequence
 ```
 
 After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats`) are on PATH from any directory — equivalent to running the wrappers in `scripts/`.
@@ -31,7 +31,7 @@ The `.py` wrappers in `scripts/` themselves require a Python install — they're
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
-> **Want a windowed alternative to the `.bat` files?** The Wheels tab in `spindoctor-gui` has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh Both.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
+> **Want a windowed alternative to the `.bat` files?** The Wheels tab in `spindoctor-gui` has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
 
 ## `spindoctor-fav`
 
@@ -104,7 +104,7 @@ Three integration patterns, in roughly increasing order of "how much you want it
    ```bat
    spindoctor install-tools
    ```
-   Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh Both`.
+   Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All`.
 
 2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Tools** tab → "Install into an existing wheel system" runs:
    ```bat
