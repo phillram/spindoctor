@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.6] - 2026-05-26
+
 ### Fixed
 
 - **Games in Favorites / Recently Played / Most Played still failed with "error waiting for window ahk_pid XXXX"** after the `-p HyperSpin` fix in v2.4.5. Root cause: RL#2 running in standalone mode (no `-p HyperSpin`) never creates a visible window. PCLauncher.ahk's default behaviour is to wait for a window owned by the Application's PID — when no window appears it times out after ~30 s. Fix: SpinDoctor now resolves the source system's emulator executable and writes `AppWaitExe=<emulator.exe>` in each entry of the system-level PCLauncher INI. This tells PCLauncher to poll for the named process instead of waiting for a window. For standard emulator source systems (MAME, RetroArch, etc.) the exe is resolved from `Settings/<system>/Emulators.ini` or `Settings/<system>.ini`, with a fallback to the built-in `EMULATOR_EXECUTABLES` table. For PCLauncher-based source systems (PC Games, Windows, etc.) the exe is read from the per-game `Modules/PCLauncher/<source_system>/<game>.ini`; entries with `.lnk`, `.bat`, or `.url` paths omit `AppWaitExe` since those are not monitorable process names.
@@ -819,7 +823,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.5...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.6...HEAD
+[2.4.6]: https://github.com/phillram/spindoctor/compare/v2.4.5...v2.4.6
 [2.4.5]: https://github.com/phillram/spindoctor/compare/v2.4.3...v2.4.5
 [2.4.3]: https://github.com/phillram/spindoctor/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/phillram/spindoctor/compare/v2.4.1...v2.4.2
