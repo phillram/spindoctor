@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`uninstall-tools` CLI command** — the reverse of `install-tools --add-to-system`. Removes the SpinDoctor-written `.bat` and `.ini` files from both the detected `Rom_Path` directory and the legacy `Modules/PCLauncher/<system>/` fallback, then deletes the matching `<game>` entries (`Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, `Refresh All`, and the legacy `Refresh Both`) from the system's database XML. Without `--add-to-system`, removes the helpers from the default HyperLaunch Tools folder instead. Only files and entries that exist are touched; missing ones are silently skipped. The GUI's Tools tab gains an **Uninstall from wheel** button next to the existing **Install into wheel** button — it uses the same system name field.
+
+### Fixed
+
+- **`install-tools --add-to-system` wrote helper files to `Modules/PCLauncher/<system>/` even when the system's existing `Settings/<system>/Emulators.ini` pointed `Rom_Path` elsewhere.** PCLauncher resolves per-game INI files from `Rom_Path` — if that path is, for example, `D:\Arcade\Utilities\Toolkit`, PCLauncher never looks in `Modules/PCLauncher/Toolkit/` and shows "You have not set up Refresh Favorites in RocketLauncherUI yet." `install-tools` now reads the first `Rom_Path` entry from the existing folder-layout `Emulators.ini` (resolving relative paths relative to `rocketlauncher_dir`) and writes bat + ini files there. Systems with no pre-existing INI continue to use the `Modules/PCLauncher/<system>` default.
+
+- **`uninstall-tools --add-to-system` only looked in `Modules/PCLauncher/<system>/` for files to remove.** After the `install-tools` fix above, files may live in the detected `Rom_Path` directory instead. `uninstall-tools` now searches both the detected path and the legacy default, so cabinets that had files written by an older version of SpinDoctor are fully cleaned up.
+
 ## [2.4.1] - 2026-05-25
 
 ### Fixed

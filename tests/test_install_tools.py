@@ -148,6 +148,59 @@ def test_install_tools_add_to_system_errors_when_db_missing(cabinet):
     assert "not found" in result.output.lower() or "Database" in result.output
 
 
+def test_install_tools_add_to_system_respects_existing_emulators_ini_rom_path(cabinet):
+    """When Settings/<system>/Emulators.ini already exists with a custom
+    Rom_Path, install-tools writes bat + ini files to that path — not to
+    the default Modules/PCLauncher/<system> — so PCLauncher can find them
+    and the "not set up in RocketLauncherUI" error does not occur."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    # Simulate the real cabinet: Toolkit's Emulators.ini points to a
+    # Utilities directory outside the PCLauncher modules folder.
+    rl = cabinet["rl"]
+    utilities_dir = rl.parent / "Utilities" / "Toolkit"
+    utilities_dir.mkdir(parents=True)
+    emulators_ini_dir = rl / "Settings" / "Toolkit"
+    emulators_ini_dir.mkdir(parents=True)
+    # Use a relative path (as the real cabinet does): "../Utilities/Toolkit"
+    # resolves to utilities_dir when joined to the RL dir.
+    rel_path = "../Utilities/Toolkit"
+    (emulators_ini_dir / "Emulators.ini").write_text(
+        f"[ROMS]\r\nDefault_Emulator=PCLauncher\r\nRom_Path={rel_path}\r\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    # Bat + ini files must land in utilities_dir, NOT in Modules/PCLauncher/Toolkit.
+    pcl_dir = rl / "Modules" / "PCLauncher" / "Toolkit"
+    for stem in ("Refresh Favorites", "Refresh Recently Played", "Refresh Most Played"):
+        assert (utilities_dir / f"{stem}.bat").exists(), (
+            f"{stem}.bat missing from utilities_dir"
+        )
+        assert (utilities_dir / f"{stem}.ini").exists(), (
+            f"{stem}.ini missing from utilities_dir"
+        )
+        assert not (pcl_dir / f"{stem}.bat").exists(), (
+            f"{stem}.bat should NOT be in pcl_dir"
+        )
+
+    # The INI's ApplicationPath must point at the bat in utilities_dir.
+    ini_body = (utilities_dir / "Refresh Favorites.ini").read_text(encoding="utf-8")
+    assert str(utilities_dir / "Refresh Favorites.bat") in ini_body
+
+
 def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     # Re-running --add-to-system should be idempotent: the second run
     # overwrites the entries from the first without raising.
@@ -181,3 +234,270 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     sys_ini = cabinet["rl"] / "Settings" / "Toolkit.ini"
     assert sys_ini.exists(), "Settings/Toolkit.ini missing after idempotent re-run"
     assert "Default_Emulator=PCLauncher" in sys_ini.read_text(encoding="utf-8")
+
+
+# ─── uninstall-tools tests ────────────────────────────────────────────────────
+
+
+def test_uninstall_tools_default_removes_bats_from_hyperlaunch_tools(cabinet):
+    """Default mode (no --add-to-system) removes bats from HyperLaunch/Tools."""
+    runner = CliRunner()
+
+    # Install first so there are files to remove.
+    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools"
+               / "spindoctor")
+    # Confirm the bats exist before uninstalling.
+    assert (out_dir / "Refresh Favorites.bat").exists()
+
+    result = runner.invoke(cli, ["uninstall-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    for stem in ("Refresh Favorites", "Refresh Recently Played",
+                 "Refresh Most Played", "Refresh Both"):
+        assert not (out_dir / f"{stem}.bat").exists(), (
+            f"{stem}.bat should have been removed"
+        )
+
+
+def test_uninstall_tools_default_is_idempotent_when_nothing_installed(cabinet):
+    """Running uninstall-tools when no bats exist should succeed (exit 0)."""
+    runner = CliRunner()
+    result = runner.invoke(cli, ["uninstall-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "nothing to delete" in result.output.lower()
+
+
+def test_uninstall_tools_add_to_system_removes_bats_inis_and_db_entries(cabinet):
+    """--add-to-system removes bats, INIs, and database XML entries."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+
+    # Install first.
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    pcl_dir = cabinet["rl"] / "Modules" / "PCLauncher" / "Toolkit"
+
+    # Confirm install wrote files.
+    assert (pcl_dir / "Refresh Favorites.bat").exists()
+    db = HyperspinDatabase("Toolkit", db_path)
+    db.load()
+    assert "Refresh Favorites" in db.games()
+
+    # Now uninstall.
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    # All SpinDoctor-written bats and INIs must be gone.
+    for stem in ("Refresh Favorites", "Refresh Recently Played",
+                 "Refresh Most Played", "Refresh Both"):
+        assert not (pcl_dir / f"{stem}.bat").exists(), (
+            f"{stem}.bat should have been removed"
+        )
+        assert not (pcl_dir / f"{stem}.ini").exists(), (
+            f"{stem}.ini should have been removed"
+        )
+
+    # Database entries must be gone.
+    db2 = HyperspinDatabase("Toolkit", db_path)
+    db2.load()
+    for name in ("Refresh Favorites", "Refresh Recently Played",
+                 "Refresh Most Played", "Refresh Both", "Refresh All"):
+        assert name not in db2.games(), (
+            f"<game name=\"{name}\"/> should have been removed from the DB"
+        )
+
+
+def test_uninstall_tools_add_to_system_handles_legacy_refresh_both_files(cabinet):
+    """uninstall-tools removes 'Refresh Both' files even when 'Refresh All' was
+    also installed (or vice-versa). Verifies both current and renamed stems."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+
+    # Seed the database with both the current name ("Refresh Both") and the
+    # renamed variant ("Refresh All") to simulate a cabinet that was partially
+    # migrated.
+    db_init = HyperspinDatabase("Toolkit", db_path)
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+    db_init.load()
+    from spindoctor.database import GameEntry
+    for name in ("Refresh Both", "Refresh All"):
+        db_init.upsert_game(GameEntry(
+            name=name, description=name,
+            manufacturer="SpinDoctor", year="", genre="Tools",
+            players="1", enabled="Yes",
+        ))
+    db_init.save(backup=False)
+
+    pcl_dir = cabinet["rl"] / "Modules" / "PCLauncher" / "Toolkit"
+    pcl_dir.mkdir(parents=True)
+    # Write both bat + ini on disk to simulate a mixed install.
+    for stem in ("Refresh Both", "Refresh All"):
+        (pcl_dir / f"{stem}.bat").write_text("@echo off\r\n", encoding="utf-8")
+        (pcl_dir / f"{stem}.ini").write_text("[Settings]\r\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    # Both files must have been removed.
+    for stem in ("Refresh Both", "Refresh All"):
+        assert not (pcl_dir / f"{stem}.bat").exists()
+        assert not (pcl_dir / f"{stem}.ini").exists()
+
+    # Both DB entries must be gone.
+    db2 = HyperspinDatabase("Toolkit", db_path)
+    db2.load()
+    assert "Refresh Both" not in db2.games()
+    assert "Refresh All" not in db2.games()
+
+
+def test_uninstall_tools_removes_files_from_existing_rom_path(cabinet):
+    """When Settings/<system>/Emulators.ini has a custom Rom_Path,
+    uninstall-tools removes files from that detected directory."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    rl = cabinet["rl"]
+    utilities_dir = rl.parent / "Utilities" / "Toolkit"
+    utilities_dir.mkdir(parents=True)
+    emulators_ini_dir = rl / "Settings" / "Toolkit"
+    emulators_ini_dir.mkdir(parents=True)
+    (emulators_ini_dir / "Emulators.ini").write_text(
+        "[ROMS]\r\nDefault_Emulator=PCLauncher\r\nRom_Path=../Utilities/Toolkit\r\n",
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    # Install — files land in utilities_dir.
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert (utilities_dir / "Refresh Favorites.bat").exists()
+
+    # Uninstall — files must be removed from utilities_dir.
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    for stem in ("Refresh Favorites", "Refresh Recently Played", "Refresh Most Played"):
+        assert not (utilities_dir / f"{stem}.bat").exists(), (
+            f"{stem}.bat should have been removed from utilities_dir"
+        )
+        assert not (utilities_dir / f"{stem}.ini").exists(), (
+            f"{stem}.ini should have been removed from utilities_dir"
+        )
+
+
+def test_uninstall_tools_add_to_system_also_removes_legacy_pcl_files(cabinet):
+    """uninstall-tools removes files from Modules/PCLauncher/<system> even
+    when the detected Rom_Path is different — for cabinets that had files
+    written there by an older version of install-tools."""
+    rl = cabinet["rl"]
+    utilities_dir = rl.parent / "Utilities" / "Toolkit"
+    utilities_dir.mkdir(parents=True)
+    emulators_ini_dir = rl / "Settings" / "Toolkit"
+    emulators_ini_dir.mkdir(parents=True)
+    (emulators_ini_dir / "Emulators.ini").write_text(
+        "[ROMS]\r\nDefault_Emulator=PCLauncher\r\nRom_Path=../Utilities/Toolkit\r\n",
+        encoding="utf-8",
+    )
+
+    # Manually place legacy files in the old default location (as a previous
+    # version of install-tools would have done before this fix).
+    pcl_dir = rl / "Modules" / "PCLauncher" / "Toolkit"
+    pcl_dir.mkdir(parents=True)
+    (pcl_dir / "Refresh Favorites.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (pcl_dir / "Refresh Favorites.ini").write_text("[Settings]\r\n", encoding="utf-8")
+
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    # Legacy files in the old default location must be gone.
+    assert not (pcl_dir / "Refresh Favorites.bat").exists()
+    assert not (pcl_dir / "Refresh Favorites.ini").exists()
+
+
+def test_uninstall_tools_add_to_system_skips_missing_db(cabinet):
+    """uninstall-tools with --add-to-system succeeds even when the database
+    XML doesn't exist (prints a warning but exits 0)."""
+    # Create the PCLauncher directory with one bat so there's something to
+    # delete — only the DB step is skipped.
+    pcl_dir = cabinet["rl"] / "Modules" / "PCLauncher" / "Toolkit"
+    pcl_dir.mkdir(parents=True)
+    (pcl_dir / "Refresh Favorites.bat").write_text("@echo off\r\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert not (pcl_dir / "Refresh Favorites.bat").exists()
+
+
+def test_uninstall_tools_add_to_system_is_idempotent(cabinet):
+    """Running uninstall-tools twice in a row should succeed both times."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    for _ in range(2):
+        result = runner.invoke(
+            cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
