@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.5] - 2026-05-26
+
 ### Fixed
 
 - **Games in Favorites / Recently Played / Most Played failed with "error waiting for window ahk_pid XXXX"** after launching correctly from PCLauncher. Root cause: the recursive `RocketLauncher.exe` call in the system-level PCLauncher INI was launched with `-p HyperSpin`. RocketLauncher #1 (launched by HyperSpin for the Favorites wheel) already owns the HyperSpin IPC pipe and has faded the UI. When RL#2 also starts with `-p HyperSpin` it tries to send a second FadeOut to an already-owned pipe — the startup sequence stalls and RL#2 can't detect the emulator's window. Removed `-p HyperSpin` from the recursive call so RL#2 runs in standalone mode: it launches the emulator, waits for it to exit, and exits cleanly. PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1, which handles the HyperSpin fade-back normally.
@@ -811,7 +815,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.5...HEAD
+[2.4.5]: https://github.com/phillram/spindoctor/compare/v2.4.3...v2.4.5
 [2.4.3]: https://github.com/phillram/spindoctor/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/phillram/spindoctor/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/phillram/spindoctor/compare/v2.4.0...v2.4.1
