@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.2] - 2026-05-25
+
 ### Fixed
 
 - **Games in Favorites / Recently Played / Most Played wheels failed to launch** with "Cannot find Rom X with any provided Rom_Extension: zip|rar|7z|…" even after a successful rebuild. The flat-layout `Settings/<system>.ini` written by SpinDoctor had `Rom_Extension=ini` in `[Settings]` but was missing it from `[PCLauncher]`. RocketLauncher reads `Rom_Extension` from the `[PCLauncher]` section when that section exists and ignores the `[Settings]` value entirely when the key is absent — falling back to the global extension list. `[PCLauncher]` now includes `Rom_Extension=ini` so RL looks for the per-game `.ini` files instead of searching for non-existent `.zip` or `.rar` ROMs.
@@ -769,7 +773,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.2...HEAD
+[2.4.2]: https://github.com/phillram/spindoctor/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/phillram/spindoctor/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/phillram/spindoctor/compare/v2.3.4...v2.4.0
 [2.3.4]: https://github.com/phillram/spindoctor/compare/v2.3.3...v2.3.4
