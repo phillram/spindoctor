@@ -569,7 +569,7 @@ def test_write_pclauncher_system_ini_adds_fade_title_for_known_emulator(tmp_path
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
-    assert "FadeTitle=ZiNc" in body
+    assert "FadeTitle=Zinc" in body
     assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
 
 

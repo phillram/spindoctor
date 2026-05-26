@@ -134,7 +134,7 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
 EMULATOR_WINDOW_TITLES: dict[str, str] = {
     "MAME": "MAME",
     "RetroArch": "RetroArch",
-    "ZiNc": "ZiNc",
+    "ZiNc": "Zinc",      # window title: "Zinc 1.1 (C)1997-2005 Drunken Muppets ..."
     "Demul": "demul",
     "PCSX2": "PCSX2",
     "Dolphin": "Dolphin",
