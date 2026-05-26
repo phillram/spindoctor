@@ -109,8 +109,7 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
     "PCLauncher": "exe|lnk|url|bat",
 }
 
-# Maps emulator names (as configured in RocketLauncherUI) to a window-title
-# substring used as PCLauncher's ``FadeTitle=`` key.
+# Correction table for emulator window titles used as PCLauncher's ``FadeTitle=`` key.
 #
 # **Why FadeTitle is needed alongside AppWaitExe:**
 # PCLauncher.ahk v2.2.7 source (lines 214-224) shows that when ``AppWaitExe``
@@ -128,17 +127,23 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
 # then handles exit detection cleanly (the process disappearing when the user
 # quits the game).
 #
-# Add entries here for any emulator that fails with the 30-second
-# "waiting for window ahk_pid" error from a synthetic wheel launch.
-# Partial title matching is used, so "MAME" matches "MAME [1942]", etc.
+# **Default behaviour (no entry needed for most emulators):**
+# ``_get_fade_title`` falls back to the emulator's registered name when it is
+# not found in this table.  AHK ``WinWait`` uses case-insensitive partial
+# matching, so "Supermodel" matches "Supermodel 3.1 UI", "Model 2" matches
+# "Sega Model 2 Emulator", and so on.  This means FadeTitle works
+# automatically for any emulator whose window title contains its registered
+# name — which is the overwhelming majority.
+#
+# **Add an entry here only when the emulator name does NOT appear in the
+# window title at all** — e.g. if an emulator registered as "Zinc" actually
+# shows "Drunken Muppets Arcade" as its window title.  The ``emulator_window_titles``
+# field in :class:`~spindoctor.config.Config` provides user-level overrides
+# with the same semantics (user entries take precedence over this table).
 EMULATOR_WINDOW_TITLES: dict[str, str] = {
-    "MAME": "MAME",
-    "RetroArch": "RetroArch",
-    "ZiNc": "ZiNc",      # window title: "ZiNc 1.1 (C)1997-2005 Drunken Muppets ..."
-    "Demul": "demul",
-    "PCSX2": "PCSX2",
-    "Dolphin": "Dolphin",
-    "Project64": "Project64",
+    "ZiNc": "ZiNc",   # window title: "ZiNc 1.1 (C)1997-2005 Drunken Muppets ..."
+                       # name and title match so this is a no-op, but kept as a
+                       # documented example of the correction format.
 }
 
 # Safety timeout (seconds) for FadeTitle window detection.
@@ -771,7 +776,11 @@ def _get_fade_title(
     if not emulator or emulator == "PCLauncher":
         return ""
     merged: dict[str, str] = {**EMULATOR_WINDOW_TITLES, **(extra or {})}
-    return merged.get(emulator, "")
+    # Fall back to the emulator name itself: AHK WinWait uses case-insensitive
+    # partial matching, so "Supermodel" matches "Supermodel 3.1 UI", etc.
+    # This makes FadeTitle work for any emulator automatically — EMULATOR_WINDOW_TITLES
+    # only needs entries where the name genuinely doesn't appear in the window title.
+    return merged.get(emulator, emulator)
 
 
 def ensure_rl_game_exe(rocketlauncher_dir: Path) -> Path:

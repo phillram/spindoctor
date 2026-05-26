@@ -512,27 +512,29 @@ def _write_emulators_ini(path: Path, emulator_name: str) -> None:
     )
 
 
-def test_emulator_window_titles_has_known_emulators():
-    """Spot-check that key emulators have window titles defined."""
-    assert "MAME" in EMULATOR_WINDOW_TITLES
+def test_emulator_window_titles_correction_table_has_zinc():
+    """ZiNc entry is kept as a documented correction-table example."""
     assert "ZiNc" in EMULATOR_WINDOW_TITLES
-    assert "RetroArch" in EMULATOR_WINDOW_TITLES
 
 
-def test_get_fade_title_returns_title_for_known_emulator(tmp_path):
-    """Returns the correct window-title fragment for a known emulator."""
+def test_get_fade_title_returns_title_for_correction_table_emulator(tmp_path):
+    """Returns the correction-table value when the emulator has an explicit entry."""
     rl = tmp_path / "rl"
     _write_emulators_ini(rl / "Settings" / "Zinc" / "Emulators.ini", "ZiNc")
     title = _get_fade_title("Zinc", rl)
     assert title == EMULATOR_WINDOW_TITLES["ZiNc"]
 
 
-def test_get_fade_title_returns_empty_for_unknown_emulator(tmp_path):
-    """Returns empty string when the emulator is not in EMULATOR_WINDOW_TITLES."""
+def test_get_fade_title_returns_emulator_name_for_unknown_emulator(tmp_path):
+    """Falls back to the emulator name itself when not in EMULATOR_WINDOW_TITLES.
+
+    AHK WinWait uses case-insensitive partial matching, so the emulator name
+    (e.g. 'Model 2') will match any window title that contains it.
+    """
     rl = tmp_path / "rl"
     _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
     title = _get_fade_title("Sega Model 2", rl)
-    assert title == ""
+    assert title == "Model 2"
 
 
 def test_get_fade_title_returns_empty_for_pclauncher_system(tmp_path):
@@ -573,8 +575,12 @@ def test_write_pclauncher_system_ini_adds_fade_title_for_known_emulator(tmp_path
     assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
 
 
-def test_write_pclauncher_system_ini_omits_fade_title_for_unknown_emulator(tmp_path):
-    """FadeTitle= is omitted when the emulator is not in EMULATOR_WINDOW_TITLES."""
+def test_write_pclauncher_system_ini_uses_emulator_name_as_fade_title_for_unknown(tmp_path):
+    """FadeTitle= uses the emulator name when not in EMULATOR_WINDOW_TITLES.
+
+    AHK partial matching means 'Model 2' in FadeTitle= will match any window
+    whose title contains 'Model 2', so no explicit entry is needed for most emulators.
+    """
     rl = tmp_path / "rl"
     _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
 
@@ -584,8 +590,8 @@ def test_write_pclauncher_system_ini_omits_fade_title_for_unknown_emulator(tmp_p
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
-    assert "FadeTitle" not in body
-    assert "FadeTitleTimeout" not in body
+    assert "FadeTitle=Model 2" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
 
 
 def test_write_pclauncher_system_ini_fade_title_with_app_wait_exe(tmp_path):

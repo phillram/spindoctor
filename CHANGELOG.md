@@ -14,17 +14,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
   Fix: SpinDoctor now writes `FadeTitle=<title>` and `FadeTitleTimeout=30` alongside `AppWaitExe=` for known emulators. Setting `FadeTitle` causes PCLauncher to skip the PID-based window search entirely (`If !FadeTitle` block at PCLauncher.ahk line 215) and instead find the game window by title, which works regardless of child-process hierarchy. `AppWaitExe.Process("WaitClose")` then handles exit detection cleanly. `FadeTitleTimeout=30` prevents an infinite hang if the emulator crashes before showing a window.
 
-  New `EMULATOR_WINDOW_TITLES` dict in `rocketlauncher.py` maps emulator names to title fragments (partial matching). Initial entries: MAME, RetroArch, ZiNc, Demul, PCSX2, Dolphin, Project64. Unknown emulators fall back to the current behaviour (AppWaitExe only, no FadeTitle).
+  `FadeTitle` now works for **every emulator automatically** — no per-emulator registration required. `_get_fade_title` falls back to the emulator's registered name when it isn't found in the correction table. AHK `WinWait` uses case-insensitive partial matching, so "Supermodel" matches "Supermodel 3.1 UI", "Model 2" matches "Sega Model 2 Emulator", etc. The `EMULATOR_WINDOW_TITLES` table is now a correction-only override for the rare case where an emulator's window title contains no part of its registered name.
 
 ### Added
 
 - **`scrub` command** — destructively reset cabinet data behind `--apply`. Without flags, both favorites and statistics are cleared. `--favorites` clears `favorites.json` and removes the Favorites wheel from disk. `--stats` deletes every RocketLauncher Statistics.ini file and clears the Recently Played and Most Played wheel content. Dry-run preview shown without `--apply`.
 
-- **User-configurable emulator window-title mappings** — cabinets with emulators not in the built-in list can now register custom `emulator → window-title` pairs via the new `emulator-title` CLI group. User-supplied entries are merged with the built-in table at runtime (user entries take precedence, so built-in titles can also be corrected without editing source code). The mapping is stored in `config.json` under `emulator_window_titles`.
+- **User-configurable emulator window-title corrections** — for the rare emulator whose window title doesn't contain its registered name, custom `emulator → title-fragment` pairs can be registered via the new `emulator-title` CLI group, stored in `config.json` under `emulator_window_titles`. User-supplied entries take precedence over the built-in correction table so built-in entries can also be overridden without editing source code.
 
   Commands:
-  - `spindoctor emulator-title set <EmulatorName> <window title fragment>` — add or update a mapping
-  - `spindoctor emulator-title remove <EmulatorName>` — remove a custom mapping (built-in entries cannot be removed, only overridden)
+  - `spindoctor emulator-title set <EmulatorName> <window title fragment>` — add or update a correction
+  - `spindoctor emulator-title remove <EmulatorName>` — remove a correction (built-in entries cannot be removed, only overridden)
   - `spindoctor emulator-title list` — display all effective mappings, marking which are built-in, user-defined, or user overrides of a built-in
 
 ---
