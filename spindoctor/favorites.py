@@ -28,7 +28,12 @@ from typing import Any, Iterable, Optional
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
-from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini, write_pclauncher_system_ini
+from .rocketlauncher import (
+    ensure_rl_game_exe,
+    generate_synthetic_system_ini,
+    write_hyperspin_system_ini,
+    write_pclauncher_system_ini,
+)
 
 
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
@@ -504,7 +509,8 @@ def rebuild(
             (target_names[f"{e.system}::{e.rom_name}"], e.system, e.rom_name)
             for e in sorted_entries
         ]
-        write_pclauncher_system_ini(store.target_system, pclauncher_entries, rl_dir)
+        game_exe = ensure_rl_game_exe(rl_dir)
+        write_pclauncher_system_ini(store.target_system, pclauncher_entries, rl_dir, rl_exe=game_exe)
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────

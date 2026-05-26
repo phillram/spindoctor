@@ -709,10 +709,58 @@ def _get_app_wait_exe(
     return _read_emulator_exe(emulator, rocketlauncher_dir)
 
 
+def ensure_rl_game_exe(rocketlauncher_dir: Path) -> Path:
+    """Ensure ``RocketLauncherGame.exe`` exists as a copy of ``RocketLauncher.exe``.
+
+    **Why a renamed copy?**  ``RocketLauncher.exe`` is a compiled AutoHotkey
+    script that uses ``#SingleInstance`` to prevent two instances of the *same*
+    executable from running simultaneously.  AHK's single-instance mutex is
+    keyed to the executable's full path, so a copy under a different filename
+    has a unique identity and is not affected by the restriction.
+
+    When a game is launched from a synthetic wheel (Favorites, Recently Played,
+    Most Played), the launch chain is:
+
+        HyperSpin → RL#1 (``RocketLauncher.exe``, loads PCLauncher module)
+                  → ``PCLauncher.exe``
+                  → RL#2 (``RocketLauncher.exe``, should launch the emulator)
+
+    RL#2 detects RL#1 already running under the same executable path and
+    exits immediately due to ``#SingleInstance`` — before opening the log
+    file, before loading the emulator module, before launching anything.
+    PCLauncher's ``AppWaitExe`` timer runs out waiting for an emulator process
+    that will never appear.
+
+    Using ``RocketLauncherGame.exe`` as RL#2 bypasses the conflict entirely:
+    both instances run freely, RL#2 loads the emulator module normally, and
+    the emulator appears within seconds.
+
+    Returns the path to ``RocketLauncherGame.exe``.  If ``RocketLauncher.exe``
+    is missing or the copy cannot be written (permissions, network share issue),
+    falls back to returning ``RocketLauncher.exe`` so callers are not broken.
+    """
+    import shutil
+
+    src = rocketlauncher_dir / "RocketLauncher.exe"
+    dst = rocketlauncher_dir / "RocketLauncherGame.exe"
+    if not src.exists():
+        return src  # nothing to copy; caller falls back gracefully
+    try:
+        src_stat = src.stat()
+        # Recreate the copy if it is absent or has a different size (which
+        # indicates a RL update replaced the original since the last refresh).
+        if not dst.exists() or dst.stat().st_size != src_stat.st_size:
+            shutil.copy2(src, dst)
+    except OSError:
+        return src  # copy failed; fall back to the original
+    return dst
+
+
 def write_pclauncher_system_ini(
     system_name: str,
     entries: list,
     rocketlauncher_dir: Path,
+    rl_exe: Optional[Path] = None,
 ) -> Path:
     """Write the system-level PCLauncher INI that PCLauncher.ahk reads.
 
@@ -726,32 +774,35 @@ def write_pclauncher_system_ini(
     Each entry produces::
 
         [<target_name>]
-        Application=<RocketLauncher.exe>
+        Application=<RocketLauncherGame.exe>
         Parameters=-s "<source_system>" -r "<source_rom>"
         WorkingFolder=<rocketlauncher_dir>
         AppWaitExe=<emulator.exe>   ← present when source emulator can be resolved
 
-    **Why no ``-p HyperSpin``:** RocketLauncher#1 (launched by HyperSpin for
-    the Favorites/Recently Played wheel) already owns the HyperSpin IPC pipe
-    and has faded the UI.  If the recursive RocketLauncher#2 also starts with
-    ``-p HyperSpin``, it tries to send a second FadeOut to a pipe that is
-    already in use — causing the startup sequence to stall and RL#2 to fail
-    with "error waiting for window ahk_pid XXXX" when it tries to detect the
-    emulator's window.  Without ``-p HyperSpin``, RL#2 runs in standalone
-    mode: it launches the emulator, waits for it to exit, then returns.
-    PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1,
-    which handles the fade-back to HyperSpin normally.
+    *rl_exe* — path to the RocketLauncher executable to use as ``Application=``.
+    Callers should pass the result of :func:`ensure_rl_game_exe` so that RL#2
+    runs under a different filename and bypasses AHK's ``#SingleInstance``
+    mutex.  Defaults to ``rocketlauncher_dir/RocketLauncher.exe`` when omitted.
+
+    **Why no ``-p HyperSpin``:** RL#1 (launched by HyperSpin for the
+    Favorites/Recently Played/Most Played wheel) already owns the HyperSpin IPC
+    pipe.  Without ``-p HyperSpin``, RL#2 runs in standalone mode: it launches
+    the emulator, waits for it to exit, then returns.  PCLauncher (inside RL#1)
+    detects RL#2's exit and returns control to RL#1, which handles the
+    fade-back to HyperSpin normally.
 
     **Why ``AppWaitExe``:** RL#2 in standalone mode never creates a visible
     window.  PCLauncher.ahk's default behaviour is to wait for a window owned
     by the Application's PID (``Window.Wait ahk_pid XXXX``).  When no window
     appears it times out after ~30 s and throws "error waiting for window
     ahk_pid XXXX".  ``AppWaitExe=<emulator.exe>`` tells PCLauncher to poll for
-    the named process instead, which works whether or not RL#2 has a window.
+    the named process instead.  With the ``#SingleInstance`` fix in place RL#2
+    actually runs and the emulator appears in ~4 s — well within the 15-second
+    ``AppWaitExe`` limit.
 
     Returns the path of the written file.
     """
-    rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
+    rl_exe = rl_exe or (rocketlauncher_dir / "RocketLauncher.exe")
     system_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
