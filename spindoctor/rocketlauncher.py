@@ -566,35 +566,29 @@ def pclauncher_exe_info_text(
 
 def write_pclauncher_system_ini(
     system_name: str,
-    entries: "list[tuple[str, str, str]]",
-    rocketlauncher_dir: "Path",
-) -> "Path":
+    entries: list,
+    rocketlauncher_dir: Path,
+) -> Path:
     """Write the system-level PCLauncher INI that PCLauncher.ahk reads.
 
     PCLauncher.ahk locates game configuration by reading
-    ``Modules/PCLauncher/<SystemName>.ini`` and looking up the section
-    ``[<game_name>]`` within it (PCLauncher docs: "PCLauncher supports
-    per-System inis…rename it to match the System's Name").
+    ``Modules/PCLauncher/<SystemName>.ini`` and looking up ``[<game_name>]``
+    sections within it.  Per-game placeholder files in the same-named
+    subdirectory are used only by RocketLauncher for ROM discovery and are
+    not read by PCLauncher.ahk.
 
-    The per-game placeholder files in ``Modules/PCLauncher/<SystemName>/``
-    are only used by RocketLauncher itself for game discovery (Rom_Path
-    enumeration); PCLauncher.ahk never reads their content.
+    *entries* is a list of ``(target_name, source_system, source_rom)`` tuples.
+    Each entry produces::
 
-    Each entry in *entries* is a ``(target_name, source_system, source_rom)``
-    tuple.  The generated section launches RocketLauncher recursively so
-    the original system's emulator, keymaps, and overlays are reused::
+        [<target_name>]
+        Application=<RocketLauncher.exe>
+        Parameters=-s "<source_system>" -r "<source_rom>" -p HyperSpin
+        WorkingFolder=<rocketlauncher_dir>
 
-        [btoads2play]
-        Application=D:\\Arcade\\RocketLauncher\\RocketLauncher.exe
-        Parameters=-s "MAME" -r "btoads2play" -p HyperSpin
-        WorkingFolder=D:\\Arcade\\RocketLauncher
-
-    Returns the path to the written file.
+    Returns the path of the written file.
     """
     rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
-    system_ini = (
-        rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
-    )
+    system_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
         lines.append(f"[{target_name}]")

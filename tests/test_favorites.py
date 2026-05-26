@@ -614,3 +614,82 @@ def test_rebuild_preserves_existing_hyperspin_settings_ini(isolated_config, tmp_
         "rebuild clobbered the user's Settings/Favorites.ini — "
         "it must only write the file when it is absent."
     )
+
+
+# ── PCLauncher system-level INI ───────────────────────────────────────────────
+
+def test_rebuild_writes_pclauncher_system_ini(isolated_config, tmp_path, monkeypatch):
+    """rebuild must write Modules/PCLauncher/Favorites.ini with [game] sections.
+
+    PCLauncher.ahk reads game configuration from the *system-level* INI file
+    at Modules/PCLauncher/<SystemName>.ini, looking for [<game_name>] sections
+    with Application=, Parameters=, WorkingFolder= keys.  Without this file
+    PCLauncher throws "You have not set up <game> in RocketLauncherUI yet"
+    even though per-game placeholder files exist in the subdirectory.
+
+    The per-game files in Modules/PCLauncher/Favorites/<game>.ini are only
+    used by RocketLauncher for ROM discovery; PCLauncher.ahk never reads their
+    content.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    add(store, "Sony Playstation", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    sys_ini = rl / "Modules" / "PCLauncher" / "Favorites.ini"
+    assert sys_ini.exists(), (
+        "Modules/PCLauncher/Favorites.ini was not written — "
+        "PCLauncher.ahk will throw 'not set up in RocketLauncherUI' for every game."
+    )
+    body = sys_ini.read_text(encoding="utf-8")
+
+    # Both games must have their own [game_name] section
+    assert "[Tetris (Super Nintendo)]" in body
+    assert "[Tetris (Sony Playstation)]" in body
+
+    # Each section must have the correct PCLauncher keys (not ApplicationPath=)
+    assert "Application=" in body
+    assert "ApplicationPath=" not in body  # wrong key — PCLauncher ignores it
+
+    # Must launch RocketLauncher recursively with the source system
+    assert "RocketLauncher.exe" in body
+    assert '-s "Super Nintendo"' in body
+    assert '-s "Sony Playstation"' in body
+    assert "-p HyperSpin" in body
+
+    # WorkingFolder must be set so RL runs from its own directory
+    assert "WorkingFolder=" in body
+
+
+def test_rebuild_pclauncher_system_ini_cross_system(isolated_config, tmp_path, monkeypatch):
+    """Each game section must reference its own source system, not a shared one.
+
+    btoads2play is a MAME game; its Parameters must say -s "MAME".
+    A Super Nintendo game must say -s "Super Nintendo".  The system-level INI
+    must not conflate games from different source systems.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    add(store, "Sony Playstation", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    body = (rl / "Modules" / "PCLauncher" / "Favorites.ini").read_text(encoding="utf-8")
+
+    # Verify each section has the correct source system in its Parameters line
+    snes_block = body.split("[Tetris (Super Nintendo)]")[1].split("[")[0]
+    psx_block  = body.split("[Tetris (Sony Playstation)]")[1].split("[")[0]
+
+    assert '-s "Super Nintendo"' in snes_block
+    assert '-s "Super Nintendo"' not in psx_block
+    assert '-s "Sony Playstation"' in psx_block
+    assert '-s "Sony Playstation"' not in snes_block
