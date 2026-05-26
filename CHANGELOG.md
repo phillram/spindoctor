@@ -10,6 +10,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Synthetic wheel plays polluted Recently Played / Most Played** — when a game is launched from Favorites (or Recently Played / Most Played), RL#1 records the session under the synthetic system name (e.g. "Favorites"). SpinDoctor's stats reader previously included those entries, so playing "Strider" from Favorites would also add it to Recently Played attributed to "Favorites" instead of its real system. `collect_play_records` and `load_all_playtime` now skip statistics files for all three synthetic wheel names by default. Stats from real system wheels are unaffected.
 
+- **"Error waiting for window ahk_pid XXXX" 30 seconds after game launches from synthetic wheel** — root cause identified from PCLauncher.ahk v2.2.7 source (lines 214-224). When `AppWaitExe` is set without `FadeTitle`, PCLauncher finds the emulator process (correct) then tries to locate that process's window by PID. DirectX emulators running in exclusive fullscreen or creating their game window in a child process don't produce a Win32 window detectable by that PID. The 30-second wait times out, RL#1 aborts, the game keeps running as an orphan (user must ALT+TAB).
+
+  Fix: SpinDoctor now writes `FadeTitle=<title>` and `FadeTitleTimeout=30` alongside `AppWaitExe=` for known emulators. Setting `FadeTitle` causes PCLauncher to skip the PID-based window search entirely (`If !FadeTitle` block at PCLauncher.ahk line 215) and instead find the game window by title, which works regardless of child-process hierarchy. `AppWaitExe.Process("WaitClose")` then handles exit detection cleanly. `FadeTitleTimeout=30` prevents an infinite hang if the emulator crashes before showing a window.
+
+  New `EMULATOR_WINDOW_TITLES` dict in `rocketlauncher.py` maps emulator names to title fragments (partial matching). Initial entries: MAME, RetroArch, ZiNc, Demul, PCSX2, Dolphin, Project64. Unknown emulators fall back to the current behaviour (AppWaitExe only, no FadeTitle).
+
 ### Added
 
 - **`scrub` command** — destructively reset cabinet data behind `--apply`. Without flags, both favorites and statistics are cleared. `--favorites` clears `favorites.json` and removes the Favorites wheel from disk. `--stats` deletes every RocketLauncher Statistics.ini file and clears the Recently Played and Most Played wheel content. Dry-run preview shown without `--apply`.
