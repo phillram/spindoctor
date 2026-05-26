@@ -28,7 +28,11 @@ from .favorites import (
     _resolve_target_names, _safe_load,
 )
 from .medialink import LinkMode, apply_plan, plan_mirror
-from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
+from .rocketlauncher import (
+    generate_synthetic_system_ini,
+    write_hyperspin_system_ini,
+    write_pclauncher_system_ini,
+)
 
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"
@@ -443,6 +447,15 @@ def _build_synthetic_wheel(
                 rl_dir, target_system, target_name, fe.system, fe.rom_name,
             )
             summary.inis_written += 1
+        # Write the system-level PCLauncher INI that PCLauncher.ahk reads.
+        # PCLauncher.ahk reads Modules/PCLauncher/<SystemName>.ini and looks up
+        # [<game_name>] sections — it does NOT read the per-game placeholder
+        # files in the subdirectory (those are only for RL game discovery).
+        pclauncher_entries = [
+            (target_names[f"{fe.system}::{fe.rom_name}"], fe.system, fe.rom_name)
+            for fe in pseudo_entries
+        ]
+        write_pclauncher_system_ini(target_system, pclauncher_entries, rl_dir)
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
         print(f"[{target_system}] PCLauncher INIs done.", flush=True)
 

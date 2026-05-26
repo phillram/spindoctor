@@ -23,12 +23,12 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Any, Iterable, Optional
 
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
-from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
+from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini, write_pclauncher_system_ini
 
 
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
@@ -108,6 +108,57 @@ def remove(store: FavoriteStore, system: str, rom_name: str) -> bool:
         return False
     store.entries.remove(existing)
     return True
+
+
+@dataclass
+class ClearFavoritesSummary:
+    """Result of :func:`clear_favorites`."""
+    entries_cleared: int = 0
+    store_path: Optional[Path] = None
+    wheel: "Optional[Any]" = None   # ClearWheelSummary, imported lazily
+
+
+def clear_favorites(
+    store: "FavoriteStore",
+    config: Config,
+    *,
+    path: "Optional[Path]" = None,
+    dry_run: bool = True,
+) -> ClearFavoritesSummary:
+    """Empty the favorites store and tear down the synthetic Favorites wheel.
+
+    When *dry_run* is ``True`` (the default) nothing is changed; the
+    returned summary shows what *would* be removed.
+
+    When *dry_run* is ``False``:
+      1. The favorites store is saved empty to *path* (defaults to
+         :data:`FAVORITES_FILE` resolved at call time).
+      2. All on-disk wheel artifacts (database XML, media files, PCLauncher
+         INIs) are deleted via :func:`spindoctor.recent.clear_wheel_artifacts`.
+    """
+    from .recent import clear_wheel_artifacts
+
+    # Resolve default at call time so monkeypatching FAVORITES_FILE in tests works.
+    resolved_path = path if path is not None else FAVORITES_FILE
+
+    n = len(store.entries)
+    target_system = store.target_system
+
+    wheel_summary = clear_wheel_artifacts(
+        config, target_system, dry_run=dry_run,
+    )
+
+    if not dry_run:
+        # Overwrite store with an empty one (preserve target_system name).
+        empty = FavoriteStore(entries=[], target_system=target_system)
+        save_store(empty, resolved_path)
+
+    summary = ClearFavoritesSummary(
+        entries_cleared=n,
+        store_path=resolved_path,
+        wheel=wheel_summary,
+    )
+    return summary
 
 
 def sync_native(
@@ -445,6 +496,15 @@ def rebuild(
                 entry.system, entry.rom_name,
             )
             summary.inis_written += 1
+        # Write the system-level PCLauncher INI that PCLauncher.ahk reads.
+        # PCLauncher.ahk reads Modules/PCLauncher/<SystemName>.ini and looks up
+        # [<game_name>] sections — it does NOT read the per-game placeholder
+        # files in the subdirectory (those are only for RL game discovery).
+        pclauncher_entries = [
+            (target_names[f"{e.system}::{e.rom_name}"], e.system, e.rom_name)
+            for e in sorted_entries
+        ]
+        write_pclauncher_system_ini(store.target_system, pclauncher_entries, rl_dir)
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────
@@ -550,6 +610,15 @@ def _build_parser() -> argparse.ArgumentParser:
     p_reb.add_argument("--verbose", action="store_true",
                        help="Print each media file copied/linked (src → dest).")
 
+    p_clr = sub.add_parser(
+        "clear",
+        help="Empty the favorites store and remove the synthetic wheel from disk",
+    )
+    p_clr.add_argument(
+        "--apply", action="store_true",
+        help="Actually clear (default: dry-run preview).",
+    )
+
     return p
 
 
@@ -653,6 +722,36 @@ def main(argv: Optional[list[str]] = None) -> int:
         else:
             print("  system INI: skipped (rocketlauncher_dir not set)")
         return 0
+
+    if args.cmd == "clear":
+        if not args.apply:
+            print("[DRY RUN] No changes will be made. "
+                  "Re-run with --apply to commit.")
+        result = clear_favorites(store, config, dry_run=not args.apply)
+        verb = "Would remove" if not args.apply else "Removed"
+        target_system = store.target_system
+        n = result.entries_cleared
+        print(f"Clear favorites: {target_system}")
+        if not args.apply:
+            print(f"  {verb}: {n} entr{'y' if n == 1 else 'ies'} "
+                  f"from {result.store_path}")
+        else:
+            print(f"  {verb}: {n} entr{'y' if n == 1 else 'ies'} from store "
+                  f"({result.store_path})")
+        w = result.wheel
+        if w is not None:
+            if w.db_removed:
+                print(f"  {verb}: Databases/{target_system}/{target_system}.xml")
+            else:
+                print(f"  database: not found (nothing to remove)")
+            print(f"  {verb}: {w.media_files_removed} media file(s) "
+                  f"under Media/{target_system}/")
+            print(f"  {verb}: {w.ini_files_removed} PCLauncher INI(s)")
+            if w.errors:
+                print(f"  {len(w.errors)} error(s):", file=sys.stderr)
+                for e in w.errors[:5]:
+                    print(f"    - {e}", file=sys.stderr)
+        return 0 if not (result.wheel and result.wheel.errors) else 1
 
     return 0
 

@@ -9,7 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **`uninstall-tools` deleted files immediately when run from the GUI, even though the GUI showed a DRY RUN banner.** The command had no `--apply` gate, so the GUI's dry-run heuristic (`"--apply" not in args`) correctly showed the banner but the command ignored it and deleted anyway. `uninstall-tools` now requires `--apply` to make any changes — without it, it prints a preview table of what would be removed and exits. The GUI's **Uninstall from wheel** button now shows a confirmation dialog and passes `--apply` only after the user confirms.
+
 - **`fav rebuild --apply --verbose` crashed on Windows** with `UnicodeEncodeError: 'charmap' codec can't encode character '→'`. The `→` arrow in the per-file log line (`copy src\n     →  dest`) cannot be encoded by the Windows cp1252 console. Replaced with `->`.
+
+- **Games in Favorites / Recently Played / Most Played still failed to launch** with "You have not set up `<game>` in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for." Root cause: PCLauncher.ahk reads game configuration from a **system-level** `Modules/PCLauncher/<SystemName>.ini` file, looking for `[<game_name>]` sections with `Application=` / `Parameters=` / `WorkingFolder=` keys. SpinDoctor was only writing per-game placeholder files in the same-named subdirectory — those are used only by RocketLauncher for ROM discovery; PCLauncher.ahk never reads their content. SpinDoctor now also writes `Modules/PCLauncher/<SystemName>.ini` (e.g., `Favorites.ini`, `Recently Played.ini`, `Most Played.ini`) with the correct per-game sections during every rebuild.
 
 ---
 
