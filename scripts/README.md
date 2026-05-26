@@ -10,7 +10,7 @@ Standalone helpers for the **Favorites**, **Recently Played**, and **Most Played
 | `Refresh Favorites.bat` | `spindoctor-fav rebuild --apply` |
 | `Refresh Recently Played.bat` | `spindoctor-recent rebuild --apply` |
 | `Refresh Most Played.bat` | `spindoctor-stats build-wheel --apply` |
-| `Refresh Both.bat` | All three in sequence |
+| `Refresh All.bat` | All three in sequence |
 
 The `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` by bare name. `cmd.exe` resolves that via `PATHEXT` — so any of these satisfy the call:
 
@@ -21,7 +21,7 @@ For checkouts where neither is present, run the `.py` wrappers directly via `pyt
 
 Full documentation — including how to wire these into the HyperSpin Tools menu and Windows startup, and what to do when you can't run `pip install` on the cabinet — lives at [`docs/standalone-tools.md`](../docs/standalone-tools.md).
 
-> **Prefer a window over a `.bat` file?** `spindoctor-gui` (or `spindoctor-gui.exe` from the binary release) has a Wheels tab with a button per refresh and a Refresh All Three. Same outcome as `Refresh Both.bat`, no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes. See [`docs/windows-binaries.md#gui-launcher`](../docs/windows-binaries.md#gui-launcher).
+> **Prefer a window over a `.bat` file?** `spindoctor-gui` (or `spindoctor-gui.exe` from the binary release) has a Wheels tab with a button per refresh and a Refresh All Three. Same outcome as `Refresh All.bat`, no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes. See [`docs/windows-binaries.md#gui-launcher`](../docs/windows-binaries.md#gui-launcher).
 
 ## Other commands without standalone wrappers
 

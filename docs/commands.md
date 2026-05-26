@@ -574,7 +574,7 @@ spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
 spindoctor install-tools --add-to-system Toolkit        :: install as games inside an existing wheel
 ```
 
-Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh Both). See [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
+Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
 
 `--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
 

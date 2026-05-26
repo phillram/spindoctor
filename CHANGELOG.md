@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`install-tools` wrote a bat named `Refresh Both.bat` even though it runs all three wheels (Favorites, Recently Played, Most Played).** The name was wrong and misleading — users reading the label assumed only two wheels would be refreshed. The file is now named `Refresh All.bat`. All GUI labels, documentation, and the scheduled-task description have been updated to match. Users who already have `Refresh Both.bat` on their cabinet can re-run `install-tools` (or the GUI's "Install helpers" button) to get the correctly named file.
+
 ## [2.4.1] - 2026-05-25
 
 ### Fixed

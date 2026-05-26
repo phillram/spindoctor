@@ -9589,7 +9589,7 @@ class _SpinDoctorGUI:
                 "  • Refresh Favorites.bat        → spindoctor-fav rebuild --apply\n"
                 "  • Refresh Recently Played.bat  → spindoctor-recent rebuild --apply\n"
                 "  • Refresh Most Played.bat      → spindoctor-stats build-wheel --apply\n"
-                "  • Refresh Both.bat             → all three in sequence"
+                "  • Refresh All.bat              → all three in sequence"
             ),
             justify="left", foreground=_FG_DIM,
             font="TkFixedFont",
@@ -9667,7 +9667,7 @@ class _SpinDoctorGUI:
             self.ttk.Label(
                 sched_frame,
                 text=("Schedule a Windows Task Scheduler 'At log on' task "
-                      "that runs Refresh Both at every cabinet startup. "
+                      "that runs Refresh All at every cabinet startup. "
                       "The task runs as the current user with limited "
                       "privileges (no UAC prompt). Optional delay lets "
                       "HyperSpin / RocketLauncher settle before the "
