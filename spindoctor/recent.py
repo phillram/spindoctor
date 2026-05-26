@@ -30,6 +30,7 @@ from .favorites import (
 )
 from .medialink import LinkMode, apply_plan, plan_mirror
 from .rocketlauncher import (
+    ensure_rl_game_exe,
     generate_synthetic_system_ini,
     write_hyperspin_system_ini,
     write_pclauncher_system_ini,
@@ -553,7 +554,8 @@ def _build_synthetic_wheel(
             (target_names[f"{fe.system}::{fe.rom_name}"], fe.system, fe.rom_name)
             for fe in pseudo_entries
         ]
-        write_pclauncher_system_ini(target_system, pclauncher_entries, rl_dir)
+        game_exe = ensure_rl_game_exe(rl_dir)
+        write_pclauncher_system_ini(target_system, pclauncher_entries, rl_dir, rl_exe=game_exe)
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
         print(f"[{target_system}] PCLauncher INIs done.", flush=True)
 
