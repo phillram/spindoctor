@@ -59,9 +59,9 @@ Built with **Python 3.8.10 + PyInstaller 5.13.2** on a `windows-2022` GitHub Act
 If you'd rather download from the command line:
 
 ```bat
-:: Use whichever URL the release page shows — example for v2.4.0:
+:: Use whichever URL the release page shows — example for v2.4.1:
 curl -L -o spindoctor-windows.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v2.4.0/spindoctor-windows-v2.4.0.zip
+    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-windows-v2.4.1.zip
 ```
 
 ## Install
@@ -113,7 +113,7 @@ You have two equivalent ways to point SpinDoctor at your library — pick whiche
 ```bat
 cd C:\spindoctor
 spindoctor.exe --version
-:: SpinDoctor, version 2.4.0
+:: SpinDoctor, version 2.4.1
 
 spindoctor.exe config init
 ```
