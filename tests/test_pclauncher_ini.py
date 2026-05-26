@@ -9,6 +9,7 @@ from spindoctor.config import Config
 from spindoctor.rocketlauncher import (
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
+    ensure_rl_game_exe,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
@@ -404,3 +405,94 @@ def test_write_pclauncher_system_ini_pc_game_with_lnk_omits_app_wait_exe(tmp_pat
     )
     body = ini_path.read_text(encoding="utf-8")
     assert "AppWaitExe" not in body
+
+
+# ─── ensure_rl_game_exe ───────────────────────────────────────────────────────
+
+def test_ensure_rl_game_exe_creates_copy(tmp_path):
+    """Creates RocketLauncherGame.exe as a copy of RocketLauncher.exe."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    src = rl / "RocketLauncher.exe"
+    src.write_bytes(b"\x00" * 2048)  # fake exe content
+
+    dst = ensure_rl_game_exe(rl)
+
+    assert dst == rl / "RocketLauncherGame.exe"
+    assert dst.exists()
+    assert dst.read_bytes() == src.read_bytes()
+
+
+def test_ensure_rl_game_exe_updates_stale_copy(tmp_path):
+    """Overwrites RocketLauncherGame.exe when its size differs from the source."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    src = rl / "RocketLauncher.exe"
+    src.write_bytes(b"\x00" * 2048)
+    dst_path = rl / "RocketLauncherGame.exe"
+    dst_path.write_bytes(b"\xFF" * 512)  # stale/wrong size
+
+    result = ensure_rl_game_exe(rl)
+
+    assert result == dst_path
+    assert dst_path.stat().st_size == src.stat().st_size
+
+
+def test_ensure_rl_game_exe_skips_copy_when_up_to_date(tmp_path):
+    """Does not re-copy when RocketLauncherGame.exe already has the correct size."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    src = rl / "RocketLauncher.exe"
+    src.write_bytes(b"\x00" * 2048)
+    dst_path = rl / "RocketLauncherGame.exe"
+    dst_path.write_bytes(b"\xFF" * 2048)  # same size, different content
+    mtime_before = dst_path.stat().st_mtime
+
+    ensure_rl_game_exe(rl)
+
+    # File should not have been touched (mtime unchanged)
+    assert dst_path.stat().st_mtime == mtime_before
+
+
+def test_ensure_rl_game_exe_falls_back_when_source_missing(tmp_path):
+    """Returns RocketLauncher.exe path when source does not exist."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+
+    result = ensure_rl_game_exe(rl)
+
+    assert result == rl / "RocketLauncher.exe"
+    assert not (rl / "RocketLauncherGame.exe").exists()
+
+
+# ─── write_pclauncher_system_ini with rl_exe override ────────────────────────
+
+def test_write_pclauncher_system_ini_uses_rl_exe_override(tmp_path):
+    """Application= line uses the rl_exe path when provided."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    game_exe = rl / "RocketLauncherGame.exe"
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("balloon", "MAME", "balloon")],
+        rl,
+        rl_exe=game_exe,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "RocketLauncherGame.exe" in body
+    assert "RocketLauncher.exe" not in body.replace("RocketLauncherGame.exe", "")
+
+
+def test_write_pclauncher_system_ini_defaults_to_rl_exe_when_no_override(tmp_path):
+    """Application= falls back to RocketLauncher.exe when rl_exe is not given."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("balloon", "MAME", "balloon")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "RocketLauncher.exe" in body

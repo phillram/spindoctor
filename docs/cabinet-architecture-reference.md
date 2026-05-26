@@ -12,6 +12,7 @@
 D:\Arcade\
 ├── RocketLauncher\                   ← RocketLauncher root
 │   ├── RocketLauncher.exe
+│   ├── RocketLauncherGame.exe        ← SpinDoctor-created copy; used as RL#2 for synthetic wheels (see below)
 │   ├── Modules\
 │   │   └── PCLauncher\
 │   │       ├── PCLauncher.ahk        ← AHK module invoked by RL for all PCLauncher systems
@@ -160,15 +161,20 @@ Each game is a `[<game_name>]` section:
 
 ```ini
 [btoads2play]
-Application=D:\Arcade\RocketLauncher\RocketLauncher.exe
+Application=D:\Arcade\RocketLauncher\RocketLauncherGame.exe
 Parameters=-s "MAME" -r "btoads2play"
 WorkingFolder=D:\Arcade\RocketLauncher
+AppWaitExe=MAME.exe
 
 [25pacman]
-Application=D:\Arcade\RocketLauncher\RocketLauncher.exe
+Application=D:\Arcade\RocketLauncher\RocketLauncherGame.exe
 Parameters=-s "MAME" -r "25pacman"
 WorkingFolder=D:\Arcade\RocketLauncher
+AppWaitExe=MAME.exe
 ```
+
+> **Important:** `Application=` uses `RocketLauncherGame.exe`, **not** `RocketLauncher.exe`.
+> See *AHK #SingleInstance* below for why.
 
 Key names PCLauncher.ahk recognises: `Application=`, `Parameters=`, `WorkingFolder=`,
 `AppWaitExe=`, `FadeTitle=`, `SteamID=`, `ExitMethod=`, `PreLaunch=`, `PostLaunch=`.
@@ -180,18 +186,66 @@ Key names PCLauncher.ahk recognises: `Application=`, `Parameters=`, `WorkingFold
 
 ## Recursive RocketLauncher Launch — Why and How
 
-For Favorites / Recently Played / Most Played, a game might come from any source system
-(MAME, Nintendo 64, PC Games, etc.). SpinDoctor doesn't duplicate emulator configuration —
-instead it launches `RocketLauncher.exe` again with the source system:
+### Why synthetic wheels need a second RL
+
+A normal wheel (MAME, Nintendo 64, etc.) maps every entry to a single system. HyperSpin
+exits, one `RocketLauncher.exe` runs, the emulator loads. One RL instance, start to finish.
+
+A **synthetic wheel** (Favorites, Recently Played, Most Played) is a cross-system list.
+A single Favorites wheel might contain a MAME game, a Zinc game, and a PC game side by
+side. HyperSpin has no native concept of cross-system wheels — it can only launch entries
+from one system using one emulator. The only mechanism available is **PCLauncher**, which
+acts as a relay: RL#1 loads PCLauncher for the synthetic wheel, PCLauncher reads the
+system-level INI, and calls a second RL (RL#2) with the real system and ROM details.
+
+This is the **only** scenario where two `RocketLauncher` instances must be alive simultaneously.
 
 ```
-HyperSpin
-  └─→ RocketLauncher #1  (system=Favorites, game=btoads2play)
-        └─→ PCLauncher.ahk  (reads Favorites.ini → [btoads2play])
-              └─→ RocketLauncher #2  (system=MAME, game=btoads2play)
-                    └─→ MAME.exe  (game plays)
-                    └─→ MAME exits → RL#2 exits → PCLauncher exits → RL#1 exits → HyperSpin
+Normal wheel:
+  HyperSpin exits
+    → RocketLauncher.exe #1  (-s MAME -r btoads2play)
+          → MAME.exe
+
+Synthetic wheel (Favorites):
+  HyperSpin stays open
+    → RocketLauncher.exe #1  (-s Favorites -r btoads2play, loads PCLauncher module, stays alive)
+          → PCLauncher.exe
+                → RocketLauncherGame.exe #2  (-s MAME -r btoads2play, standalone)
+                      → MAME.exe  ← game plays
+                      → MAME exits → RL#2 exits → PCLauncher exits → RL#1 exits → HyperSpin restored
 ```
+
+### Critical: AHK `#SingleInstance` causes silent RL#2 failure
+
+`RocketLauncher.exe` is a compiled **AutoHotkey v1** script. All AHK scripts include a
+`#SingleInstance` directive that prevents two instances of the **same executable path**
+from running simultaneously. When RL#2 (`RocketLauncher.exe`) starts while RL#1
+(`RocketLauncher.exe`) is already alive, AHK detects the path collision, exits RL#2
+**immediately and silently** — before it opens a log file, before it loads the emulator
+module, before it launches anything.
+
+**Symptom:** Only one `RocketLauncher.exe *32` process ever appears in Task Manager
+during a Favorites launch. The AppWaitExe timer runs 15 seconds, then:
+
+> "PCLauncher — There was an error getting the Process ID of your AppWaitExe `ZiNc.exe`"
+
+**Fix (v2.4.7):** SpinDoctor creates `RocketLauncherGame.exe` as a byte-for-byte copy of
+`RocketLauncher.exe` in the same directory. AHK's single-instance mutex is keyed to the
+**full executable path**, so `RocketLauncherGame.exe` is a completely different identity —
+no conflict. PCLauncher entries in the system-level INI use `Application=RocketLauncherGame.exe`.
+Both RL instances coexist freely, the emulator loads in ~4 seconds.
+
+The copy is created or refreshed automatically by `ensure_rl_game_exe()` in
+`rocketlauncher.py` during every wheel rebuild. Size-based staleness check handles RL
+updates. Falls back to `RocketLauncher.exe` if the source is missing or the copy can't
+be written.
+
+**How to confirm the bug:** With a game actively running (RL#1 alive), run from CMD:
+```
+RocketLauncher.exe -s "Zinc" -r "tondemo"
+```
+Nothing happens. The running game continues. No new process appears. This is `#SingleInstance`
+in action — silent exit, no log, no error.
 
 ### Critical: No `-p HyperSpin` in recursive call
 
@@ -203,8 +257,26 @@ pipe. This causes RL#2 to stall or fail with:
 > correct version emulator installed…"
 
 The fix: launch RL#2 **without** `-p HyperSpin`. RL#2 runs in standalone mode, launches
-MAME, waits for it, then exits. PCLauncher (in RL#1) detects RL#2 exiting and returns
-control to RL#1, which handles the HyperSpin fade-back normally.
+the emulator, waits for it to exit, then returns. PCLauncher (in RL#1) detects RL#2
+exiting and returns control to RL#1, which handles the HyperSpin fade-back normally.
+
+### Critical: `AppWaitExe=` required for all PCLauncher entries
+
+RL#2 in standalone mode has no visible window. PCLauncher.ahk's default behaviour is to
+wait for a window owned by the application's PID (`Window.Wait ahk_pid XXXX`). When RL#2
+has no window, PCLauncher times out after ~30 seconds:
+
+> "There was an error waiting for the window ahk_pid XXXX"
+
+`AppWaitExe=<emulator.exe>` tells PCLauncher to poll for the named process instead of a
+window. SpinDoctor resolves the correct emulator exe name by reading the source system's
+`Settings/<System>/Emulators.ini` → `Default_Emulator=` → `Settings/Global Emulators.ini`
+→ `[<Emulator>]` → `Emu_Path=`. Falls back to the PCLauncher game INI's `AppWaitExe=`
+if that chain fails.
+
+The hardcoded `AppWaitExe` timeout in PCLauncher.ahk v2.2.7 is **15 seconds** (not
+configurable from INI). With the SingleInstance fix in place, the emulator typically
+appears in ~4 seconds.
 
 ---
 
