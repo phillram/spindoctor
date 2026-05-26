@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.7] - 2026-05-26
+
 ### Fixed
 
 - **Games in Favorites / Recently Played / Most Played never launched the emulator** — root cause identified as AHK `#SingleInstance`. `RocketLauncher.exe` is a compiled AutoHotkey script. When PCLauncher launches a second instance (RL#2) to run the actual game while RL#1 is already running for the synthetic wheel, AHK's single-instance mutex detects the collision and exits RL#2 immediately — before it opens the log file, before it loads the emulator module, before it starts anything. PCLauncher's `AppWaitExe` timer then ran out waiting for an emulator process that would never appear. Diagnosed by observing only one `RocketLauncher.exe*32` process in Task Manager throughout the 15-second failure window; RL#2 never appeared as a separate process.
