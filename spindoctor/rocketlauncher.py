@@ -564,6 +564,151 @@ def pclauncher_exe_info_text(
     )
 
 
+def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) -> str:
+    """Return the Default_Emulator name configured for *source_system* in RL's settings.
+
+    Checks folder layout (``Settings/<system>/Emulators.ini`` → ``[ROMS]``) first,
+    then flat layout (``Settings/<system>.ini`` → ``[Settings]``).
+    Returns an empty string if neither file exists or the key is not set.
+    """
+    import configparser
+
+    settings_dir = rocketlauncher_dir / "Settings"
+
+    # Folder layout: Settings/<system>/Emulators.ini → [ROMS] Default_Emulator
+    folder_ini = settings_dir / source_system / "Emulators.ini"
+    if folder_ini.exists():
+        try:
+            cp = configparser.RawConfigParser()
+            cp.read_string(folder_ini.read_text(encoding="utf-8", errors="replace"))
+            val = cp.get("ROMS", "Default_Emulator", fallback="").strip()
+            if val:
+                return val
+        except Exception:
+            pass
+
+    # Flat layout: Settings/<system>.ini → [Settings] Default_Emulator
+    flat_ini = settings_dir / f"{source_system}.ini"
+    if flat_ini.exists():
+        try:
+            cp = configparser.RawConfigParser()
+            cp.read_string(flat_ini.read_text(encoding="utf-8", errors="replace"))
+            val = cp.get("Settings", "Default_Emulator", fallback="").strip()
+            if val:
+                return val
+        except Exception:
+            pass
+
+    return ""
+
+
+def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
+    """Return the bare exe filename for *emulator_name* from ``Global Emulators.ini``.
+
+    Tries ``Emu_Path`` and ``Emulator_Application_Path`` keys (cabinet installations
+    vary).  Falls back to the ``EMULATOR_EXECUTABLES`` dict when the global INI
+    is absent or the emulator has no entry.
+
+    Returns an empty string if the emulator is completely unknown.
+    """
+    import configparser
+
+    global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
+    if global_ini.exists():
+        try:
+            from pathlib import PureWindowsPath
+            cp = configparser.RawConfigParser()
+            cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
+            if cp.has_section(emulator_name):
+                for key in ("Emu_Path", "Emulator_Application_Path", "emulator_path", "emu_path"):
+                    if cp.has_option(emulator_name, key):
+                        path_str = cp.get(emulator_name, key).strip()
+                        if path_str:
+                            return PureWindowsPath(path_str).name
+        except Exception:
+            pass
+
+    return EMULATOR_EXECUTABLES.get(emulator_name, "")
+
+
+def _read_pclauncher_game_exe(
+    source_system: str, source_rom: str, rocketlauncher_dir: Path
+) -> str:
+    """Return the bare exe name from a per-game PCLauncher INI.
+
+    For source systems that are themselves PCLauncher-based (e.g. "PC Games"),
+    the game's actual executable is recorded in
+    ``Modules/PCLauncher/<source_system>/<source_rom>.ini`` under
+    ``ApplicationPath=``.
+
+    Only returns a value when ``ApplicationPath`` ends in ``.exe`` — shortcuts
+    (``.lnk``), batch files (``.bat``), and URL launchers (``.url``) are not
+    process names and cannot be used as ``AppWaitExe``.
+
+    Returns an empty string if the INI is absent, unreadable, or the path is
+    not a plain executable.
+    """
+    import configparser
+    from pathlib import PureWindowsPath
+
+    game_ini = (
+        rocketlauncher_dir / "Modules" / "PCLauncher" / source_system / f"{source_rom}.ini"
+    )
+    if not game_ini.exists():
+        return ""
+    try:
+        cp = configparser.RawConfigParser()
+        cp.read_string(game_ini.read_text(encoding="utf-8", errors="replace"))
+        for section in cp.sections():
+            for key in ("ApplicationPath", "applicationpath", "Application", "application"):
+                if cp.has_option(section, key):
+                    path_str = cp.get(section, key).strip()
+                    if path_str:
+                        name = PureWindowsPath(path_str).name
+                        if name.lower().endswith(".exe"):
+                            return name
+    except Exception:
+        pass
+    return ""
+
+
+def _get_app_wait_exe(
+    source_system: str, rocketlauncher_dir: Path, source_rom: str = ""
+) -> str:
+    """Return the ``AppWaitExe=`` value for a PCLauncher entry targeting *source_system*.
+
+    PCLauncher.ahk monitors the launched process via one of two mechanisms:
+
+    1. **Window wait** (default): waits for a window owned by the Application's PID.
+       RL#2 in standalone mode (no ``-p HyperSpin``) never creates a visible window,
+       so this times out after ~30 s with "error waiting for window ahk_pid XXXX".
+
+    2. **AppWaitExe** (explicit): tells PCLauncher to monitor a named exe instead of
+       waiting for a window.  When set, PCLauncher polls for that process to exit,
+       which works regardless of whether a window is present.
+
+    For non-PCLauncher source systems (e.g. MAME, RetroArch) the emulator exe
+    is resolved via RL's settings files and the ``EMULATOR_EXECUTABLES`` table.
+
+    For PCLauncher-based source systems (e.g. "PC Games"), the actual game exe
+    is read from ``Modules/PCLauncher/<source_system>/<source_rom>.ini``.  Only
+    ``.exe`` paths are usable — shortcuts (``.lnk``), batch files (``.bat``),
+    and URL launchers (``.url``) are not process names, so those entries omit
+    ``AppWaitExe`` and fall back to PCLauncher's standard process-exit detection.
+
+    *source_rom* is only needed (and used) when *source_system* resolves to
+    PCLauncher; pass it whenever the ROM name is known.
+    """
+    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
+    if not emulator:
+        emulator = guess_emulator(source_system)
+
+    if emulator == "PCLauncher":
+        return _read_pclauncher_game_exe(source_system, source_rom, rocketlauncher_dir)
+
+    return _read_emulator_exe(emulator, rocketlauncher_dir)
+
+
 def write_pclauncher_system_ini(
     system_name: str,
     entries: list,
@@ -584,6 +729,7 @@ def write_pclauncher_system_ini(
         Application=<RocketLauncher.exe>
         Parameters=-s "<source_system>" -r "<source_rom>"
         WorkingFolder=<rocketlauncher_dir>
+        AppWaitExe=<emulator.exe>   ← present when source emulator can be resolved
 
     **Why no ``-p HyperSpin``:** RocketLauncher#1 (launched by HyperSpin for
     the Favorites/Recently Played wheel) already owns the HyperSpin IPC pipe
@@ -596,16 +742,26 @@ def write_pclauncher_system_ini(
     PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1,
     which handles the fade-back to HyperSpin normally.
 
+    **Why ``AppWaitExe``:** RL#2 in standalone mode never creates a visible
+    window.  PCLauncher.ahk's default behaviour is to wait for a window owned
+    by the Application's PID (``Window.Wait ahk_pid XXXX``).  When no window
+    appears it times out after ~30 s and throws "error waiting for window
+    ahk_pid XXXX".  ``AppWaitExe=<emulator.exe>`` tells PCLauncher to poll for
+    the named process instead, which works whether or not RL#2 has a window.
+
     Returns the path of the written file.
     """
     rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
     system_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
+        app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom)
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
         lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')
         lines.append(f"WorkingFolder={rocketlauncher_dir}")
+        if app_wait_exe:
+            lines.append(f"AppWaitExe={app_wait_exe}")
         lines.append("")
     system_ini.parent.mkdir(parents=True, exist_ok=True)
     system_ini.write_text("\n".join(lines), encoding="utf-8")
