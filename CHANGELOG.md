@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Games in Favorites / Recently Played / Most Played failed with "error getting Process ID of AppWaitExe \<emulator\>.exe"** (15-second timeout). Root cause: even without `-p HyperSpin`, RL#2 auto-detects HyperSpin.exe as the running front-end and performs an IPC handshake before starting its emulator module. This handshake overhead can push the emulator launch past the hardcoded 15-second `AppWaitExe` timeout in PCLauncher.ahk v2.2.7 — PCLauncher kills RL#2 before ZiNc (or MAME, RetroArch, etc.) ever appears. Fix: SpinDoctor now writes `FadeTitle=<emulator window title>` instead of `AppWaitExe=<exe>` in each synthetic-wheel PCLauncher entry. `FadeTitle` uses AHK `WinWait` (substring match, **no timeout**), so PCLauncher waits indefinitely for the emulator window regardless of how long RL#2's IPC phase takes. A new `EMULATOR_WINDOW_TITLES` table maps emulator names to their known window title substrings (MAME, RetroArch, ZiNc, Dolphin, PCSX2, Demul, Supermodel, Project64, and more). For PCLauncher-based source systems where the per-game window title is unknown, `AppWaitExe=<game.exe>` is retained as a fallback; entries with `.lnk`/`.bat`/`.url` paths omit both.
+
 ---
 
 ## [2.4.6] - 2026-05-26

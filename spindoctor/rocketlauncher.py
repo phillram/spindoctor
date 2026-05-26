@@ -99,6 +99,49 @@ EMULATOR_EXECUTABLES: dict[str, str] = {
     "PCLauncher": "PCLauncher.exe",
 }
 
+# Maps emulator name (as it appears in Global Emulators.ini [section headers]) to a
+# window title substring used as ``FadeTitle=`` in PCLauncher entries.
+# PCLauncher.ahk uses AHK ``WinWait`` with ``SetTitleMatchMode 2`` (substring, case-
+# insensitive), so a short distinctive word is sufficient.
+#
+# **Why FadeTitle instead of AppWaitExe:** AppWaitExe has a hardcoded 15-second
+# timeout in PCLauncher.ahk v2.2.7.  When RL#2 is launched by PCLauncher while
+# HyperSpin is already running, RL#2 auto-detects HyperSpin and performs IPC
+# handshake before it can start the emulator module.  This overhead can push the
+# emulator launch past the 15-second AppWaitExe deadline, causing PCLauncher to
+# report "error getting Process ID of AppWaitExe" and terminate RL#2 before the
+# emulator ever appears.  FadeTitle has NO timeout — PCLauncher waits indefinitely
+# for the window, giving RL#2 as long as it needs regardless of IPC delay.
+EMULATOR_WINDOW_TITLES: dict[str, str] = {
+    "MAME": "MAME",
+    "RetroArch": "RetroArch",
+    "ZiNc": "ZiNc",
+    "Model 2 Emulator": "Model 2 Emulator",
+    "Dolphin": "Dolphin",
+    "PCSX2": "PCSX2",
+    "Demul": "demul",
+    "Supermodel": "Supermodel",
+    "Project64": "Project64",
+    "ePSXe": "ePSXe",
+    "Redream": "Redream",
+    "Flycast": "Flycast",
+    "xemu": "xemu",
+    "RPCS3": "RPCS3",
+    "Cemu": "Cemu",
+    "Xenia": "Xenia",
+    "PPSSPP": "PPSSPP",
+    "mGBA": "mGBA",
+    "Nestopia": "Nestopia",
+    "FCEUX": "FCEUX",
+    "Gens": "Gens",
+    "Kega Fusion": "Kega Fusion",
+    "NullDC": "nullDC",
+    "TeknoParrot": "TeknoParrot",
+    "Kawaks": "Kawaks",
+    "FB Alpha": "FB Alpha",
+    "FinalBurn Neo": "FinalBurn",
+}
+
 EMULATOR_EXTENSIONS: dict[str, str] = {
     "MAME": "zip|7z",
     "RetroArch": "zip|7z|nes|sfc|smc|md|bin|gba|gb|gbc|n64|z64",
@@ -709,6 +752,34 @@ def _get_app_wait_exe(
     return _read_emulator_exe(emulator, rocketlauncher_dir)
 
 
+def _get_fade_title(
+    source_system: str, rocketlauncher_dir: Path, source_rom: str = ""
+) -> str:
+    """Return the ``FadeTitle=`` value for a PCLauncher entry targeting *source_system*.
+
+    ``FadeTitle`` tells PCLauncher.ahk to do ``WinWait, <title>`` (AHK substring
+    match, no timeout) before monitoring the game session.  This is preferred over
+    ``AppWaitExe`` because PCLauncher.ahk v2.2.7 hard-codes a 15-second timeout
+    on ``AppWaitExe`` — too short when RL#2 spends extra time on HyperSpin IPC
+    detection before it can launch the emulator module.
+
+    For PCLauncher-based source systems (e.g. "PC Games") the per-game window
+    title cannot be determined statically, so this returns an empty string.
+    Callers may then fall back to ``AppWaitExe`` using the per-game ``.exe``
+    name from the PCLauncher INI.
+
+    *source_rom* is accepted for API symmetry but not currently used.
+    """
+    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
+    if not emulator:
+        emulator = guess_emulator(source_system)
+
+    if emulator == "PCLauncher":
+        return ""
+
+    return EMULATOR_WINDOW_TITLES.get(emulator, "")
+
+
 def write_pclauncher_system_ini(
     system_name: str,
     entries: list,
@@ -729,25 +800,32 @@ def write_pclauncher_system_ini(
         Application=<RocketLauncher.exe>
         Parameters=-s "<source_system>" -r "<source_rom>"
         WorkingFolder=<rocketlauncher_dir>
-        AppWaitExe=<emulator.exe>   ← present when source emulator can be resolved
+        FadeTitle=<emulator window title>   ← preferred; no timeout
+        AppWaitExe=<game.exe>               ← fallback for PCLauncher sources
 
     **Why no ``-p HyperSpin``:** RocketLauncher#1 (launched by HyperSpin for
-    the Favorites/Recently Played wheel) already owns the HyperSpin IPC pipe
-    and has faded the UI.  If the recursive RocketLauncher#2 also starts with
-    ``-p HyperSpin``, it tries to send a second FadeOut to a pipe that is
-    already in use — causing the startup sequence to stall and RL#2 to fail
-    with "error waiting for window ahk_pid XXXX" when it tries to detect the
-    emulator's window.  Without ``-p HyperSpin``, RL#2 runs in standalone
-    mode: it launches the emulator, waits for it to exit, then returns.
-    PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1,
-    which handles the fade-back to HyperSpin normally.
+    the Favorites/Recently Played/Most Played wheel) already owns the HyperSpin
+    IPC pipe and has faded the UI.  If the recursive RocketLauncher#2 also
+    starts with ``-p HyperSpin``, it tries to send a second FadeOut to a pipe
+    that is already in use — causing the startup sequence to stall and RL#2 to
+    fail with "error waiting for window ahk_pid XXXX".  Without ``-p
+    HyperSpin``, RL#2 runs in standalone mode: it launches the emulator, waits
+    for it to exit, then returns.  PCLauncher (inside RL#1) detects RL#2's
+    exit and returns control to RL#1, which handles the fade-back to HyperSpin.
 
-    **Why ``AppWaitExe``:** RL#2 in standalone mode never creates a visible
-    window.  PCLauncher.ahk's default behaviour is to wait for a window owned
-    by the Application's PID (``Window.Wait ahk_pid XXXX``).  When no window
-    appears it times out after ~30 s and throws "error waiting for window
-    ahk_pid XXXX".  ``AppWaitExe=<emulator.exe>`` tells PCLauncher to poll for
-    the named process instead, which works whether or not RL#2 has a window.
+    **Why ``FadeTitle`` (not ``AppWaitExe``):** Even without ``-p HyperSpin``,
+    RL#2 auto-detects HyperSpin.exe as the running front-end and performs an
+    IPC handshake before starting the emulator module.  This overhead can delay
+    the emulator launch past the hardcoded 15-second ``AppWaitExe`` timeout in
+    PCLauncher.ahk v2.2.7, causing PCLauncher to report "error getting Process
+    ID of AppWaitExe" and kill RL#2 before the emulator ever appears.
+    ``FadeTitle`` uses AHK ``WinWait`` (substring match, no timeout), so
+    PCLauncher waits indefinitely for the emulator's window regardless of how
+    long RL#2's IPC phase takes.
+
+    For PCLauncher-based source systems (e.g. "PC Games") the emulator window
+    title is not statically knowable, so ``AppWaitExe=<game.exe>`` is used as
+    a fallback when the per-game INI records a plain ``.exe`` path.
 
     Returns the path of the written file.
     """
@@ -755,13 +833,21 @@ def write_pclauncher_system_ini(
     system_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
-        app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom)
+        fade_title = _get_fade_title(source_system, rocketlauncher_dir, source_rom)
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
         lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')
         lines.append(f"WorkingFolder={rocketlauncher_dir}")
-        if app_wait_exe:
-            lines.append(f"AppWaitExe={app_wait_exe}")
+        if fade_title:
+            lines.append(f"FadeTitle={fade_title}")
+        else:
+            # FadeTitle unknown (PCLauncher-based source): fall back to AppWaitExe
+            # when the per-game INI records a plain .exe path.
+            app_wait_exe = _get_app_wait_exe(
+                source_system, rocketlauncher_dir, source_rom
+            )
+            if app_wait_exe:
+                lines.append(f"AppWaitExe={app_wait_exe}")
         lines.append("")
     system_ini.parent.mkdir(parents=True, exist_ok=True)
     system_ini.write_text("\n".join(lines), encoding="utf-8")

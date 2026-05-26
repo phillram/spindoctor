@@ -9,6 +9,7 @@ from spindoctor.config import Config
 from spindoctor.rocketlauncher import (
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
+    EMULATOR_WINDOW_TITLES,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
@@ -17,6 +18,7 @@ from spindoctor.rocketlauncher import (
     _read_emulator_exe,
     _read_pclauncher_game_exe,
     _get_app_wait_exe,
+    _get_fade_title,
 )
 
 
@@ -230,13 +232,65 @@ def test_get_app_wait_exe_returns_empty_for_pclauncher_source(tmp_path):
     assert _get_app_wait_exe("Windows", rl) == ""
 
 
-# ─── write_pclauncher_system_ini with AppWaitExe ─────────────────────────────
+# ─── EMULATOR_WINDOW_TITLES sanity checks ────────────────────────────────────
 
-def test_write_pclauncher_system_ini_adds_app_wait_exe_for_mame(tmp_path):
-    """AppWaitExe=mame.exe must appear when source system resolves to MAME."""
+def test_emulator_window_titles_covers_core_emulators():
+    """Core emulators used in test fixtures must have FadeTitle entries."""
+    for emu in ("MAME", "RetroArch", "ZiNc", "Dolphin", "PCSX2"):
+        assert emu in EMULATOR_WINDOW_TITLES, f"{emu} missing from EMULATOR_WINDOW_TITLES"
+
+
+# ─── _get_fade_title ─────────────────────────────────────────────────────────
+
+def test_get_fade_title_resolves_zinc_via_rl_settings(tmp_path):
+    """ZiNc system with RL settings resolves to FadeTitle 'ZiNc'."""
+    rl = tmp_path / "rl"
+    folder = rl / "Settings" / "Zinc"
+    folder.mkdir(parents=True)
+    (folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=ZiNc\n", encoding="utf-8",
+    )
+    assert _get_fade_title("Zinc", rl) == "ZiNc"
+
+
+def test_get_fade_title_resolves_retroarch_via_guess(tmp_path):
+    """Super Nintendo → RetroArch → 'RetroArch' when no RL settings exist."""
     rl = tmp_path / "rl"
     rl.mkdir()
-    # MAME settings file so _read_system_default_emulator finds it
+    assert _get_fade_title("Super Nintendo", rl) == "RetroArch"
+
+
+def test_get_fade_title_resolves_mame_via_guess(tmp_path):
+    """MAME system → 'MAME' when no RL settings exist."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _get_fade_title("MAME", rl) == "MAME"
+
+
+def test_get_fade_title_returns_empty_for_pclauncher_source(tmp_path):
+    """PCLauncher-based source systems return empty — per-game window title unknown."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _get_fade_title("PC Games", rl) == ""
+    assert _get_fade_title("Windows", rl) == ""
+
+
+def test_get_fade_title_returns_empty_for_unknown_emulator(tmp_path):
+    """Emulators absent from EMULATOR_WINDOW_TITLES return empty string."""
+    rl = tmp_path / "rl"
+    folder = rl / "Settings" / "SomeSystem"
+    folder.mkdir(parents=True)
+    (folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=ObscureEmu2000\n", encoding="utf-8",
+    )
+    assert _get_fade_title("SomeSystem", rl) == ""
+
+
+# ─── write_pclauncher_system_ini with FadeTitle / AppWaitExe ─────────────────
+
+def test_write_pclauncher_system_ini_uses_fade_title_for_mame(tmp_path):
+    """FadeTitle=MAME must appear (not AppWaitExe) when source system resolves to MAME."""
+    rl = tmp_path / "rl"
     mame_folder = rl / "Settings" / "MAME"
     mame_folder.mkdir(parents=True)
     (mame_folder / "Emulators.ini").write_text(
@@ -249,11 +303,45 @@ def test_write_pclauncher_system_ini_adds_app_wait_exe_for_mame(tmp_path):
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
-    assert "AppWaitExe=mame.exe" in body
+    assert "FadeTitle=MAME" in body
+    assert "AppWaitExe" not in body
 
 
-def test_write_pclauncher_system_ini_no_app_wait_exe_for_pclauncher_source_without_ini(tmp_path):
-    """AppWaitExe omitted when source is PCLauncher-based and no per-game INI exists."""
+def test_write_pclauncher_system_ini_uses_fade_title_for_zinc(tmp_path):
+    """FadeTitle=ZiNc must appear when source system resolves to ZiNc emulator."""
+    rl = tmp_path / "rl"
+    zinc_folder = rl / "Settings" / "Zinc"
+    zinc_folder.mkdir(parents=True)
+    (zinc_folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=ZiNc\n", encoding="utf-8",
+    )
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("tondemo", "Zinc", "tondemo")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=ZiNc" in body
+    assert "AppWaitExe" not in body
+
+
+def test_write_pclauncher_system_ini_fade_title_for_retroarch_via_guess(tmp_path):
+    """FadeTitle=RetroArch appears when guess_emulator resolves the system."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("tetris_snes", "Super Nintendo", "Tetris")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=RetroArch" in body
+    assert "AppWaitExe" not in body
+
+
+def test_write_pclauncher_system_ini_no_fade_title_for_pclauncher_source_without_ini(tmp_path):
+    """Neither FadeTitle nor AppWaitExe when source is PCLauncher-based and no per-game INI."""
     rl = tmp_path / "rl"
     rl.mkdir()
     ini_path = write_pclauncher_system_ini(
@@ -262,26 +350,12 @@ def test_write_pclauncher_system_ini_no_app_wait_exe_for_pclauncher_source_witho
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle" not in body
     assert "AppWaitExe" not in body
 
 
-def test_write_pclauncher_system_ini_app_wait_exe_falls_back_to_dict(tmp_path):
-    """AppWaitExe falls back to EMULATOR_EXECUTABLES when Global Emulators.ini absent."""
-    rl = tmp_path / "rl"
-    rl.mkdir()
-    # No settings files at all — relies purely on guess_emulator + EMULATOR_EXECUTABLES
-    ini_path = write_pclauncher_system_ini(
-        "Favorites",
-        [("tetris_snes", "Super Nintendo", "Tetris")],
-        rl,
-    )
-    body = ini_path.read_text(encoding="utf-8")
-    # Super Nintendo → RetroArch → retroarch.exe
-    assert "AppWaitExe=retroarch.exe" in body
-
-
 def test_write_pclauncher_system_ini_mixed_sources(tmp_path):
-    """MAME entries get AppWaitExe from emulator dict; PCLauncher entry without game INI omits it."""
+    """MAME entries get FadeTitle; PCLauncher source without game INI gets neither."""
     rl = tmp_path / "rl"
     rl.mkdir()
     ini_path = write_pclauncher_system_ini(
@@ -297,7 +371,9 @@ def test_write_pclauncher_system_ini_mixed_sources(tmp_path):
     mame_block = body.split("[mame_game]")[1].split("[")[0]
     pc_block = body.split("[pc_game]")[1]
 
-    assert "AppWaitExe=mame.exe" in mame_block
+    assert "FadeTitle=MAME" in mame_block
+    assert "AppWaitExe" not in mame_block
+    assert "FadeTitle" not in pc_block
     assert "AppWaitExe" not in pc_block
 
 
@@ -371,7 +447,7 @@ def test_get_app_wait_exe_pclauncher_source_with_lnk_returns_empty(tmp_path):
 
 
 def test_write_pclauncher_system_ini_pc_game_with_exe_gets_app_wait_exe(tmp_path):
-    """PC game entries with a direct .exe path receive AppWaitExe= in the system INI."""
+    """PC game entries with a direct .exe path fall back to AppWaitExe (FadeTitle unknown)."""
     rl = tmp_path / "rl"
     game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
     game_dir.mkdir(parents=True)
@@ -385,11 +461,12 @@ def test_write_pclauncher_system_ini_pc_game_with_exe_gets_app_wait_exe(tmp_path
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle" not in body
     assert "AppWaitExe=Hades.exe" in body
 
 
-def test_write_pclauncher_system_ini_pc_game_with_lnk_omits_app_wait_exe(tmp_path):
-    """PC game entries with a .lnk path omit AppWaitExe (shortcuts are not processes)."""
+def test_write_pclauncher_system_ini_pc_game_with_lnk_omits_both(tmp_path):
+    """PC game entries with a .lnk path omit FadeTitle and AppWaitExe."""
     rl = tmp_path / "rl"
     game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
     game_dir.mkdir(parents=True)
@@ -403,4 +480,5 @@ def test_write_pclauncher_system_ini_pc_game_with_lnk_omits_app_wait_exe(tmp_pat
         rl,
     )
     body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle" not in body
     assert "AppWaitExe" not in body
