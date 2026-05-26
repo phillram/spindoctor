@@ -28,7 +28,11 @@ from .favorites import (
     _resolve_target_names, _safe_load,
 )
 from .medialink import LinkMode, apply_plan, plan_mirror
-from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
+from .rocketlauncher import (
+    generate_synthetic_system_ini,
+    write_hyperspin_system_ini,
+    write_pclauncher_system_ini,
+)
 
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"

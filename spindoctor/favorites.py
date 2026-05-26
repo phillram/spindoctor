@@ -28,7 +28,11 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
-from .rocketlauncher import generate_synthetic_system_ini, write_hyperspin_system_ini
+from .rocketlauncher import (
+    generate_synthetic_system_ini,
+    write_hyperspin_system_ini,
+    write_pclauncher_system_ini,
+)
 
 
 FAVORITES_FILE = CONFIG_DIR / "favorites.json"
@@ -445,6 +449,15 @@ def rebuild(
                 entry.system, entry.rom_name,
             )
             summary.inis_written += 1
+        # Write the system-level PCLauncher INI that PCLauncher.ahk reads.
+        # PCLauncher.ahk reads Modules/PCLauncher/<SystemName>.ini and looks
+        # for [<game_name>] sections — it does NOT read the per-game placeholder
+        # files in the subdirectory (those are only for RL game discovery).
+        pclauncher_entries = [
+            (target_names[f"{e.system}::{e.rom_name}"], e.system, e.rom_name)
+            for e in sorted_entries
+        ]
+        write_pclauncher_system_ini(store.target_system, pclauncher_entries, rl_dir)
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────

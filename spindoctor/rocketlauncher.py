@@ -564,6 +564,49 @@ def pclauncher_exe_info_text(
     )
 
 
+def write_pclauncher_system_ini(
+    system_name: str,
+    entries: "list[tuple[str, str, str]]",
+    rocketlauncher_dir: "Path",
+) -> "Path":
+    """Write the system-level PCLauncher INI that PCLauncher.ahk reads.
+
+    PCLauncher.ahk locates game configuration by reading
+    ``Modules/PCLauncher/<SystemName>.ini`` and looking up the section
+    ``[<game_name>]`` within it (PCLauncher docs: "PCLauncher supports
+    per-System inis…rename it to match the System's Name").
+
+    The per-game placeholder files in ``Modules/PCLauncher/<SystemName>/``
+    are only used by RocketLauncher itself for game discovery (Rom_Path
+    enumeration); PCLauncher.ahk never reads their content.
+
+    Each entry in *entries* is a ``(target_name, source_system, source_rom)``
+    tuple.  The generated section launches RocketLauncher recursively so
+    the original system's emulator, keymaps, and overlays are reused::
+
+        [btoads2play]
+        Application=D:\\Arcade\\RocketLauncher\\RocketLauncher.exe
+        Parameters=-s "MAME" -r "btoads2play" -p HyperSpin
+        WorkingFolder=D:\\Arcade\\RocketLauncher
+
+    Returns the path to the written file.
+    """
+    rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
+    system_ini = (
+        rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
+    )
+    lines: list[str] = []
+    for target_name, source_system, source_rom in entries:
+        lines.append(f"[{target_name}]")
+        lines.append(f"Application={rl_exe}")
+        lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}" -p HyperSpin')
+        lines.append(f"WorkingFolder={rocketlauncher_dir}")
+        lines.append("")
+    system_ini.parent.mkdir(parents=True, exist_ok=True)
+    system_ini.write_text("\n".join(lines), encoding="utf-8")
+    return system_ini
+
+
 def generate_pclauncher_inis(
     system_name: str,
     title_to_path: dict,
