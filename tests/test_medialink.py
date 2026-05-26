@@ -79,6 +79,33 @@ def test_missing_source_returns_empty_plan(tmp_path):
     assert plan.actions == []
 
 
+def test_zip_theme_is_copied(tmp_path):
+    """plan_mirror must copy zip-form themes from the source system.
+
+    HyperSpin themes are almost always distributed as per-game ``.zip``
+    files (e.g. ``Media/MAME/Themes/1942.zip``), not as extracted
+    subdirectories.  Without them HyperSpin shows no video preview or
+    background artwork for games in a synthetic wheel.
+    """
+    media = tmp_path / "Media"
+    themes_dir = media / "MAME" / "Themes"
+    themes_dir.mkdir(parents=True)
+    (themes_dir / "1942.zip").write_bytes(b"fake-theme-zip")
+
+    plan = plan_mirror(media, "MAME", "Favorites", "1942")
+    planned_names = {a.src.name for a in plan.actions if not a.is_dir}
+
+    assert "1942.zip" in planned_names, (
+        "Themes/1942.zip must be included in the media mirror plan — "
+        "zip-form themes were not being copied, causing no video/background "
+        "in synthetic wheels (Favorites, Recently Played, Most Played)."
+    )
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    dest = media / "Favorites" / "Themes" / "1942.zip"
+    assert dest.exists(), "1942.zip was not copied to Media/Favorites/Themes/"
+
+
 def test_archive_packed_media_is_copied(tmp_path):
     """plan_mirror must include archive-packed media files.
 
