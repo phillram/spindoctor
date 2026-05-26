@@ -1828,6 +1828,46 @@ def fav_rebuild(media_mode, apply_changes):
     _print_synth_summary("Favorites", summary)
 
 
+@fav_group.command("clear")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually clear (default: dry-run preview).")
+def fav_clear(apply_changes):
+    """Empty the favorites store and remove the synthetic Favorites wheel.
+
+    \b
+    Dry-run by default — prints what would be removed without touching disk.
+    Pass --apply to commit the deletion.
+
+    \b
+    Removes:
+      * All entries from ~/.spindoctor/favorites.json
+      * Databases/<Favorites>/<Favorites>.xml
+      * All media files under Media/<Favorites>/
+      * PCLauncher INIs under <RocketLauncher>/Modules/PCLauncher/<Favorites>/
+
+    RocketLauncher Statistics.ini files are never modified.
+    """
+    from .favorites import clear_favorites, load_store
+    config = _cfg()
+    store = load_store()
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No changes will be made. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    result = clear_favorites(store, config, dry_run=not apply_changes)
+    verb = "Would remove" if not apply_changes else "Removed"
+    target_system = store.target_system
+    n = result.entries_cleared
+    # Print the store row first, then delegate wheel details to the shared helper.
+    console.print(
+        f"{verb} {n} entr{'y' if n == 1 else 'ies'} from store "
+        f"([dim]{result.store_path}[/dim])"
+    )
+    if result.wheel is not None:
+        _print_clear_wheel_summary(target_system, result.wheel, apply_changes)
+
+
 @cli.group("recent")
 def recent_group():
     """Manage the Recently Played wheel (auto-derived from RocketLauncher stats)."""
@@ -1917,6 +1957,67 @@ def recent_list(limit):
             r.system, r.rom_name, str(r.play_count),
         )
     console.print(tbl)
+
+
+@recent_group.command("clear")
+@click.option("--target-system", default="Recently Played",
+              help="Synthetic system name to clear (default 'Recently Played').")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually delete files (default: dry-run preview).")
+def recent_clear(target_system, apply_changes):
+    """Remove the synthetic Recently Played wheel from disk.
+
+    \b
+    Dry-run by default — prints what would be removed without touching disk.
+    Pass --apply to commit the deletion.
+
+    \b
+    Removes:
+      * Databases/<Recently Played>/<Recently Played>.xml
+      * All media files under Media/<Recently Played>/
+      * PCLauncher INIs under <RocketLauncher>/Modules/PCLauncher/<Recently Played>/
+
+    RocketLauncher Statistics.ini files are never modified — the wheel
+    can be rebuilt at any time with [cyan]recent rebuild --apply[/cyan].
+    """
+    from .recent import clear_wheel_artifacts
+    config = _cfg()
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be deleted. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    summary = clear_wheel_artifacts(config, target_system, dry_run=not apply_changes)
+    _print_clear_wheel_summary(target_system, summary, apply_changes)
+
+
+def _print_clear_wheel_summary(target_system: str, summary, apply_changes: bool) -> None:
+    """Print a Rich grid summarising a clear-wheel operation."""
+    verb = "Would remove" if not apply_changes else "Removed"
+    grid = Table.grid(padding=(0, 2))
+    grid.add_row("[bold]Clear wheel:[/bold]", f"[cyan]{target_system}[/cyan]")
+    if summary.db_removed:
+        grid.add_row(
+            f"[cyan]{verb}:[/cyan]",
+            f"Databases/{target_system}/{target_system}.xml",
+        )
+    else:
+        grid.add_row("[cyan]Database:[/cyan]", "[dim]not found (nothing to remove)[/dim]")
+    grid.add_row(
+        f"[cyan]{verb}:[/cyan]",
+        f"{summary.media_files_removed} media file(s) under Media/{target_system}/",
+    )
+    grid.add_row(
+        f"[cyan]{verb}:[/cyan]",
+        f"{summary.ini_files_removed} PCLauncher INI(s)",
+    )
+    grid.add_row(
+        "[cyan]Note:[/cyan]",
+        "RocketLauncher Statistics.ini files are not modified.",
+    )
+    console.print(grid)
+    for e in summary.errors:
+        console.print(f"[red]ERROR:[/red] {e}")
 
 
 def _warn_rocketlauncher_dir(config) -> None:
@@ -2218,6 +2319,38 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         skip_media=skip_media,
     )
     _print_synth_summary("Most Played", summary)
+
+
+@stats_report_group.command("clear-wheel")
+@click.option("--target-system", default="Most Played",
+              help="Synthetic system name to clear (default 'Most Played').")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually delete files (default: dry-run preview).")
+def stats_report_clear_wheel(target_system, apply_changes):
+    """Remove the synthetic Most Played wheel from disk.
+
+    \b
+    Dry-run by default — prints what would be removed without touching disk.
+    Pass --apply to commit the deletion.
+
+    \b
+    Removes:
+      * Databases/<Most Played>/<Most Played>.xml
+      * All media files under Media/<Most Played>/
+      * PCLauncher INIs under <RocketLauncher>/Modules/PCLauncher/<Most Played>/
+
+    RocketLauncher Statistics.ini files are never modified — the wheel
+    can be rebuilt at any time with [cyan]stats-report build-wheel --apply[/cyan].
+    """
+    from .recent import clear_wheel_artifacts
+    config = _cfg()
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be deleted. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    summary = clear_wheel_artifacts(config, target_system, dry_run=not apply_changes)
+    _print_clear_wheel_summary(target_system, summary, apply_changes)
 
 
 def _sibling_exe(name: str) -> str:

@@ -261,3 +261,214 @@ def test_find_misplaced_dry_run_does_not_move_files(tmp_path, isolated_config):
 
     assert result.exit_code == 0, result.output
     assert _snapshot(roms_dir) == before
+
+
+# ─── fav clear dry-run gate ──────────────────────────────────────────────────
+
+
+def _build_fav_wheel(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
+    """Write a small Favorites wheel to disk (DB XML + one media file).
+
+    Returns (hs_dir, fav_json_path) so callers can snapshot both.
+    """
+    import json
+    import spindoctor.config as _cfg_mod
+    import spindoctor.favorites as fav_mod
+
+    hs_dir = tmp_path / "hs"
+    roms_dir = tmp_path / "roms"
+    (roms_dir / "nes").mkdir(parents=True)
+
+    # Source system
+    db_dir = hs_dir / "Databases" / "nes"
+    db_dir.mkdir(parents=True)
+    (db_dir / "nes.xml").write_text(
+        '<menu><game name="mario"><description>Mario</description></game></menu>',
+        encoding="utf-8",
+    )
+    # Media for the source game
+    wheel_dir = hs_dir / "Media" / "nes" / "Images" / "Wheel"
+    wheel_dir.mkdir(parents=True)
+    (wheel_dir / "mario.png").write_bytes(b"wheel")
+
+    # Pre-existing Favorites wheel artifacts
+    fav_db = hs_dir / "Databases" / "Favorites"
+    fav_db.mkdir(parents=True)
+    (fav_db / "Favorites.xml").write_text(
+        '<menu><game name="mario"><description>Mario</description></game></menu>',
+        encoding="utf-8",
+    )
+    fav_media = hs_dir / "Media" / "Favorites" / "Images" / "Wheel"
+    fav_media.mkdir(parents=True)
+    (fav_media / "mario.png").write_bytes(b"wheel")
+
+    # Config
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    save_config(cfg)
+
+    # Favorites store
+    fav_json = tmp_path / "favorites.json"
+    payload = {
+        "target_system": "Favorites",
+        "entries": [
+            {
+                "system": "nes",
+                "rom_name": "mario",
+                "display_name": "Mario",
+                "added": "2026-01-01T00:00:00",
+            }
+        ],
+    }
+    fav_json.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(fav_mod, "FAVORITES_FILE", fav_json)
+
+    return hs_dir, fav_json
+
+
+def test_fav_clear_dry_run_does_not_touch_disk(tmp_path, isolated_config, monkeypatch):
+    """`fav clear` (without --apply) must not modify any file on disk."""
+    hs_dir, fav_json = _build_fav_wheel(tmp_path, monkeypatch)
+
+    before = _snapshot(hs_dir, tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["fav", "clear"])
+
+    assert result.exit_code == 0, result.output
+    assert "[DRY RUN]" in result.output or "DRY RUN" in result.output
+    assert _snapshot(hs_dir, tmp_path) == before
+
+
+def test_fav_clear_apply_removes_artifacts(tmp_path, isolated_config, monkeypatch):
+    """`fav clear --apply` removes wheel artifacts and empties the store."""
+    import json
+    import spindoctor.favorites as fav_mod
+
+    hs_dir, fav_json = _build_fav_wheel(tmp_path, monkeypatch)
+    fav_db_xml = hs_dir / "Databases" / "Favorites" / "Favorites.xml"
+    fav_media_file = hs_dir / "Media" / "Favorites" / "Images" / "Wheel" / "mario.png"
+
+    assert fav_db_xml.exists()
+    assert fav_media_file.exists()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["fav", "clear", "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert not fav_db_xml.exists(), "Favorites DB XML should have been removed"
+    assert not fav_media_file.exists(), "Favorites media file should have been removed"
+    # Store should be empty
+    store_data = json.loads(fav_json.read_text())
+    assert store_data["entries"] == [], "Favorites store should be emptied"
+
+
+# ─── recent clear dry-run gate ───────────────────────────────────────────────
+
+
+def _build_recent_wheel(tmp_path: Path) -> Path:
+    """Write a small Recently Played wheel to disk.  Returns hs_dir."""
+    hs_dir = tmp_path / "hs"
+    rp_db = hs_dir / "Databases" / "Recently Played"
+    rp_db.mkdir(parents=True)
+    (rp_db / "Recently Played.xml").write_text(
+        '<menu><game name="mario"><description>Mario</description></game></menu>',
+        encoding="utf-8",
+    )
+    rp_media = hs_dir / "Media" / "Recently Played" / "Images" / "Wheel"
+    rp_media.mkdir(parents=True)
+    (rp_media / "mario.png").write_bytes(b"wheel")
+
+    roms_dir = tmp_path / "roms"
+    roms_dir.mkdir(parents=True)
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    save_config(cfg)
+    return hs_dir
+
+
+def test_recent_clear_dry_run_does_not_touch_disk(tmp_path, isolated_config):
+    """`recent clear` (without --apply) must not modify any file on disk."""
+    hs_dir = _build_recent_wheel(tmp_path)
+    before = _snapshot(hs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["recent", "clear"])
+
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+    assert _snapshot(hs_dir) == before
+
+
+def test_recent_clear_apply_removes_artifacts(tmp_path, isolated_config):
+    """`recent clear --apply` removes wheel artifacts from disk."""
+    hs_dir = _build_recent_wheel(tmp_path)
+    rp_db_xml = hs_dir / "Databases" / "Recently Played" / "Recently Played.xml"
+    rp_media_file = hs_dir / "Media" / "Recently Played" / "Images" / "Wheel" / "mario.png"
+
+    assert rp_db_xml.exists()
+    assert rp_media_file.exists()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["recent", "clear", "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert not rp_db_xml.exists(), "Recently Played DB XML should have been removed"
+    assert not rp_media_file.exists(), "Recently Played media file should have been removed"
+
+
+# ─── stats-report clear-wheel dry-run gate ───────────────────────────────────
+
+
+def _build_most_played_wheel(tmp_path: Path) -> Path:
+    """Write a small Most Played wheel to disk.  Returns hs_dir."""
+    hs_dir = tmp_path / "hs"
+    mp_db = hs_dir / "Databases" / "Most Played"
+    mp_db.mkdir(parents=True)
+    (mp_db / "Most Played.xml").write_text(
+        '<menu><game name="mario"><description>Mario</description></game></menu>',
+        encoding="utf-8",
+    )
+    mp_media = hs_dir / "Media" / "Most Played" / "Images" / "Wheel"
+    mp_media.mkdir(parents=True)
+    (mp_media / "mario.png").write_bytes(b"wheel")
+
+    roms_dir = tmp_path / "roms"
+    roms_dir.mkdir(parents=True)
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    save_config(cfg)
+    return hs_dir
+
+
+def test_stats_report_clear_wheel_dry_run_does_not_touch_disk(tmp_path, isolated_config):
+    """`stats-report clear-wheel` (without --apply) must not modify disk."""
+    hs_dir = _build_most_played_wheel(tmp_path)
+    before = _snapshot(hs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["stats-report", "clear-wheel"])
+
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+    assert _snapshot(hs_dir) == before
+
+
+def test_stats_report_clear_wheel_apply_removes_artifacts(tmp_path, isolated_config):
+    """`stats-report clear-wheel --apply` removes wheel artifacts from disk."""
+    hs_dir = _build_most_played_wheel(tmp_path)
+    mp_db_xml = hs_dir / "Databases" / "Most Played" / "Most Played.xml"
+    mp_media_file = hs_dir / "Media" / "Most Played" / "Images" / "Wheel" / "mario.png"
+
+    assert mp_db_xml.exists()
+    assert mp_media_file.exists()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["stats-report", "clear-wheel", "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert not mp_db_xml.exists(), "Most Played DB XML should have been removed"
+    assert not mp_media_file.exists(), "Most Played media file should have been removed"

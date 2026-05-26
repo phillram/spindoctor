@@ -580,6 +580,19 @@ def _build_parser() -> argparse.ArgumentParser:
                       help="Actually write files (default is dry-run).")
     p_bw.add_argument("--verbose", action="store_true",
                       help="Print each media file copied/linked (src → dest).")
+
+    p_cw = sub.add_parser(
+        "clear-wheel",
+        help="Remove the synthetic Most Played wheel from disk",
+    )
+    p_cw.add_argument(
+        "--target-system", default=DEFAULT_PLAYED_SYSTEM,
+        help=f"Synthetic system name to clear (default '{DEFAULT_PLAYED_SYSTEM}').",
+    )
+    p_cw.add_argument(
+        "--apply", action="store_true",
+        help="Actually delete files (default: dry-run preview).",
+    )
     return p
 
 
@@ -690,6 +703,35 @@ def main(argv: Optional[list[str]] = None) -> int:
         for w in summary.read_warnings:
             print(f"  WARNING:    {w}", file=sys.stderr)
         return 0
+
+    if cmd == "clear-wheel":
+        from .recent import clear_wheel_artifacts
+        if not config.hyperspin_dir and not config.rocketlauncher_dir:
+            print("ERROR: neither hyperspin_dir nor rocketlauncher_dir is configured.",
+                  file=sys.stderr)
+            return 1
+        target_system = args.target_system
+        if not args.apply:
+            print("[DRY RUN] No files will be deleted. "
+                  "Re-run with --apply to commit.")
+        summary = clear_wheel_artifacts(
+            config, target_system, dry_run=not args.apply,
+        )
+        verb = "Would remove" if not args.apply else "Removed"
+        print(f"Clear wheel: {target_system}")
+        if summary.db_removed:
+            print(f"  {verb}: Databases/{target_system}/{target_system}.xml")
+        else:
+            print(f"  database: not found (nothing to remove)")
+        print(f"  {verb}: {summary.media_files_removed} media file(s) "
+              f"under Media/{target_system}/")
+        print(f"  {verb}: {summary.ini_files_removed} PCLauncher INI(s)")
+        print("  Note: RocketLauncher Statistics.ini files are not modified.")
+        if summary.errors:
+            print(f"  {len(summary.errors)} error(s):", file=sys.stderr)
+            for e in summary.errors[:5]:
+                print(f"    - {e}", file=sys.stderr)
+        return 0 if not summary.errors else 1
 
     return 0
 
