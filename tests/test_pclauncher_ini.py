@@ -608,3 +608,36 @@ def test_write_pclauncher_system_ini_fade_title_with_app_wait_exe(tmp_path):
     assert "AppWaitExe=mame.exe" in body
     assert "FadeTitle=MAME" in body
     assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+def test_get_fade_title_user_config_overrides_builtin(tmp_path):
+    """User-supplied extra dict takes precedence over the built-in table."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "MAME" / "Emulators.ini", "MAME")
+    # Override built-in "MAME" entry with custom title
+    title = _get_fade_title("MAME", rl, extra={"MAME": "MyMAME"})
+    assert title == "MyMAME"
+
+
+def test_get_fade_title_user_config_adds_unknown_emulator(tmp_path):
+    """User-supplied extra dict covers emulators not in the built-in table."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+    title = _get_fade_title("Sega Model 2", rl, extra={"Model 2": "Sega Model 2"})
+    assert title == "Sega Model 2"
+
+
+def test_write_pclauncher_system_ini_respects_extra_window_titles(tmp_path):
+    """extra_window_titles parameter is used for FadeTitle= resolution."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("vf2", "Sega Model 2", "vf2")],
+        rl,
+        extra_window_titles={"Model 2": "Sega Model 2"},
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=Sega Model 2" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body

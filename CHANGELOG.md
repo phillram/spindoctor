@@ -20,6 +20,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`scrub` command** — destructively reset cabinet data behind `--apply`. Without flags, both favorites and statistics are cleared. `--favorites` clears `favorites.json` and removes the Favorites wheel from disk. `--stats` deletes every RocketLauncher Statistics.ini file and clears the Recently Played and Most Played wheel content. Dry-run preview shown without `--apply`.
 
+- **User-configurable emulator window-title mappings** — cabinets with emulators not in the built-in list can now register custom `emulator → window-title` pairs via the new `emulator-title` CLI group. User-supplied entries are merged with the built-in table at runtime (user entries take precedence, so built-in titles can also be corrected without editing source code). The mapping is stored in `config.json` under `emulator_window_titles`.
+
+  Commands:
+  - `spindoctor emulator-title set <EmulatorName> <window title fragment>` — add or update a mapping
+  - `spindoctor emulator-title remove <EmulatorName>` — remove a custom mapping (built-in entries cannot be removed, only overridden)
+  - `spindoctor emulator-title list` — display all effective mappings, marking which are built-in, user-defined, or user overrides of a built-in
+
 ---
 
 ## [2.4.7] - 2026-05-26

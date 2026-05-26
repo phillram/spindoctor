@@ -747,13 +747,21 @@ def _get_app_wait_exe(
     return _read_emulator_exe(emulator, rocketlauncher_dir)
 
 
-def _get_fade_title(source_system: str, rocketlauncher_dir: Path) -> str:
+def _get_fade_title(
+    source_system: str,
+    rocketlauncher_dir: Path,
+    extra: "dict[str, str] | None" = None,
+) -> str:
     """Return the ``FadeTitle=`` window-title fragment for *source_system*'s emulator.
 
-    Looks up the system's configured emulator name (from RL settings) in
-    :data:`EMULATOR_WINDOW_TITLES`.  Returns an empty string when the emulator
-    is unknown or when it is PCLauncher-based (PC Games, etc.), because those
-    systems don't launch a traditional emulator with a predictable window title.
+    Looks up the system's configured emulator name (from RL settings) first in
+    *extra* (user-supplied overrides from :attr:`~spindoctor.config.Config.emulator_window_titles`),
+    then falls back to the built-in :data:`EMULATOR_WINDOW_TITLES` table.
+    Returns an empty string when the emulator is unknown or PCLauncher-based.
+
+    *extra* values take precedence so users can override a built-in entry or
+    add support for any emulator not yet in the built-in table — without
+    editing source code.
 
     See the :data:`EMULATOR_WINDOW_TITLES` docstring for why ``FadeTitle``
     is necessary alongside ``AppWaitExe`` to avoid the 30-second
@@ -762,7 +770,8 @@ def _get_fade_title(source_system: str, rocketlauncher_dir: Path) -> str:
     emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
     if not emulator or emulator == "PCLauncher":
         return ""
-    return EMULATOR_WINDOW_TITLES.get(emulator, "")
+    merged: dict[str, str] = {**EMULATOR_WINDOW_TITLES, **(extra or {})}
+    return merged.get(emulator, "")
 
 
 def ensure_rl_game_exe(rocketlauncher_dir: Path) -> Path:
@@ -817,6 +826,7 @@ def write_pclauncher_system_ini(
     entries: list,
     rocketlauncher_dir: Path,
     rl_exe: Optional[Path] = None,
+    extra_window_titles: "dict[str, str] | None" = None,
 ) -> Path:
     """Write the system-level PCLauncher INI that PCLauncher.ahk reads.
 
@@ -868,7 +878,7 @@ def write_pclauncher_system_ini(
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
         app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom)
-        fade_title = _get_fade_title(source_system, rocketlauncher_dir)
+        fade_title = _get_fade_title(source_system, rocketlauncher_dir, extra_window_titles)
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
         lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')
