@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **HyperSpin themes were not copied during Favorites / Recently Played / Most Played wheel rebuilds**, leaving those wheels with no video preview or background artwork. Themes are almost always distributed as per-game `.zip` files (`Media/<system>/Themes/<game>.zip`). The media mirror code (`medialink.py`) treated the `Themes` subfolder as directory-only — looking for an extracted `Themes/<game>/` folder — so `.zip`-form themes were never found or copied. `"Themes"` has been added to `MEDIA_FILE_SUBDIRS` so zip-form themes are mirrored alongside video and wheel art. The extracted-directory path (`MEDIA_DIR_SUBDIRS`) is retained for the less common case.
+- **`install-tools` wrote a bat named `Refresh Both.bat` even though it runs all three wheels (Favorites, Recently Played, Most Played).** The name was wrong and misleading — users reading the label assumed only two wheels would be refreshed. The file is now named `Refresh All.bat`. All GUI labels, documentation, and the scheduled-task description have been updated to match. Users who already have `Refresh Both.bat` on their cabinet can re-run `install-tools` (or the GUI's "Install helpers" button) to get the correctly named file.
 
 ## [2.4.1] - 2026-05-25
 
