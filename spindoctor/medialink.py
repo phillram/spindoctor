@@ -179,9 +179,9 @@ def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO,
             summary[outcome] += 1
             if log_fn is not None:
                 verb = "copy " if outcome == "copied" else "link "
-                log_fn(f"  {verb} {action.src}\n     →  {action.dest}")
+                log_fn(f"  {verb} {action.src}\n     ->  {action.dest}")
         except OSError as e:
-            summary["errors"].append(f"{action.src} → {action.dest}: {e}")
+            summary["errors"].append(f"{action.src} -> {action.dest}: {e}")
             if log_fn is not None:
                 log_fn(f"  ERROR {action.src} → {action.dest}: {e}")
     return summary
