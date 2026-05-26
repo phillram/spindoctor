@@ -260,3 +260,64 @@ def test_read_global_statistics_ini_parses_last_played(tmp_path):
     assert names == {"zingzip", "005"}
     zingzip = next(r for r in records if r.rom_name == "zingzip")
     assert zingzip.last_played == datetime(2026, 5, 22, 7, 19, 22)
+
+
+# ─── synthetic system exclusion ──────────────────────────────────────────────
+
+def test_collect_play_records_excludes_synthetic_systems_by_default(isolated_config, tmp_path):
+    """Favorites / Recently Played / Most Played stats are excluded by default."""
+    rl = tmp_path / "rl"
+    gs = rl / "Settings" / "Global Statistics"
+    gs.mkdir(parents=True)
+    _write_stats_ini(gs / "MAME.ini", [("zingzip", "2026-04-27 18:33:12", 3)])
+    _write_stats_ini(gs / "Favorites.ini", [("strider", "2026-04-28 10:00:00", 1)])
+    _write_stats_ini(gs / "Recently Played.ini", [("strider", "2026-04-29 11:00:00", 1)])
+    _write_stats_ini(gs / "Most Played.ini", [("strider", "2026-04-30 12:00:00", 2)])
+
+    from spindoctor.config import save_config
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg)
+
+    systems = {r.system for r in records}
+    assert "MAME" in systems
+    assert "Favorites" not in systems
+    assert "Recently Played" not in systems
+    assert "Most Played" not in systems
+
+
+def test_collect_play_records_includes_synthetic_when_exclusion_cleared(isolated_config, tmp_path):
+    """Passing exclude_systems=None returns all systems including synthetic."""
+    rl = tmp_path / "rl"
+    gs = rl / "Settings" / "Global Statistics"
+    gs.mkdir(parents=True)
+    _write_stats_ini(gs / "MAME.ini", [("zingzip", "2026-04-27 18:33:12", 1)])
+    _write_stats_ini(gs / "Favorites.ini", [("strider", "2026-04-28 10:00:00", 1)])
+
+    from spindoctor.config import save_config
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg, exclude_systems=None)
+
+    systems = {r.system for r in records}
+    assert "MAME" in systems
+    assert "Favorites" in systems
+
+
+def test_collect_play_records_excludes_custom_target_system(isolated_config, tmp_path):
+    """A custom target_system name is also excluded when passed explicitly."""
+    rl = tmp_path / "rl"
+    gs = rl / "Settings" / "Global Statistics"
+    gs.mkdir(parents=True)
+    _write_stats_ini(gs / "MAME.ini", [("zingzip", "2026-04-27 18:33:12", 1)])
+    _write_stats_ini(gs / "My Custom Wheel.ini", [("strider", "2026-04-28 10:00:00", 1)])
+
+    from spindoctor.recent import SYNTHETIC_SYSTEM_NAMES
+    from spindoctor.config import save_config
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg, exclude_systems=SYNTHETIC_SYSTEM_NAMES | {"My Custom Wheel"})
+
+    systems = {r.system for r in records}
+    assert "MAME" in systems
+    assert "My Custom Wheel" not in systems
