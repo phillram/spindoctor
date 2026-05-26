@@ -12,6 +12,11 @@ from spindoctor.rocketlauncher import (
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
+    write_pclauncher_system_ini,
+    _read_system_default_emulator,
+    _read_emulator_exe,
+    _read_pclauncher_game_exe,
+    _get_app_wait_exe,
 )
 
 
@@ -108,3 +113,294 @@ def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
         generate_pclauncher_inis(
             "PC Games", {"Hades": Path(r"C:\Games\Hades.lnk")}, cfg,
         )
+
+
+# ─── _read_system_default_emulator ────────────────────────────────────────────
+
+def test_read_system_default_emulator_folder_layout(tmp_path):
+    """Reads Default_Emulator from Settings/<system>/Emulators.ini [ROMS]."""
+    rl = tmp_path / "rl"
+    folder = rl / "Settings" / "MAME"
+    folder.mkdir(parents=True)
+    (folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=MAME\nRom_Path=D:\\roms\\MAME\n",
+        encoding="utf-8",
+    )
+    assert _read_system_default_emulator("MAME", rl) == "MAME"
+
+
+def test_read_system_default_emulator_flat_layout(tmp_path):
+    """Falls through to flat Settings/<system>.ini [Settings] when folder INI absent."""
+    rl = tmp_path / "rl"
+    settings = rl / "Settings"
+    settings.mkdir(parents=True)
+    (settings / "Super Nintendo.ini").write_text(
+        "[Settings]\nDefault_Emulator=RetroArch\n",
+        encoding="utf-8",
+    )
+    assert _read_system_default_emulator("Super Nintendo", rl) == "RetroArch"
+
+
+def test_read_system_default_emulator_prefers_folder_over_flat(tmp_path):
+    """Folder layout takes precedence when both files exist."""
+    rl = tmp_path / "rl"
+    folder = rl / "Settings" / "MAME"
+    folder.mkdir(parents=True)
+    (folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=MAME\n", encoding="utf-8",
+    )
+    (rl / "Settings" / "MAME.ini").write_text(
+        "[Settings]\nDefault_Emulator=RetroArch\n", encoding="utf-8",
+    )
+    assert _read_system_default_emulator("MAME", rl) == "MAME"
+
+
+def test_read_system_default_emulator_missing_returns_empty(tmp_path):
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _read_system_default_emulator("DoesNotExist", rl) == ""
+
+
+# ─── _read_emulator_exe ───────────────────────────────────────────────────────
+
+def test_read_emulator_exe_from_emu_path(tmp_path):
+    """Reads exe name from Emu_Path key (cabinet variant)."""
+    rl = tmp_path / "rl"
+    settings = rl / "Settings"
+    settings.mkdir(parents=True)
+    (settings / "Global Emulators.ini").write_text(
+        "[MAME]\nEmu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe\n",
+        encoding="utf-8",
+    )
+    assert _read_emulator_exe("MAME", rl) == "mame.exe"
+
+
+def test_read_emulator_exe_from_emulator_application_path(tmp_path):
+    """Reads exe name from Emulator_Application_Path key (standard variant)."""
+    rl = tmp_path / "rl"
+    settings = rl / "Settings"
+    settings.mkdir(parents=True)
+    (settings / "Global Emulators.ini").write_text(
+        "[RetroArch]\nEmulator_Application_Path=C:\\RetroArch\\retroarch.exe\n",
+        encoding="utf-8",
+    )
+    assert _read_emulator_exe("RetroArch", rl) == "retroarch.exe"
+
+
+def test_read_emulator_exe_falls_back_to_dict_when_global_ini_absent(tmp_path):
+    """Falls back to EMULATOR_EXECUTABLES when Global Emulators.ini doesn't exist."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _read_emulator_exe("MAME", rl) == "mame.exe"
+    assert _read_emulator_exe("RetroArch", rl) == "retroarch.exe"
+
+
+def test_read_emulator_exe_unknown_emulator_returns_empty(tmp_path):
+    """Returns empty string for a completely unknown emulator."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _read_emulator_exe("SomeUnknownEmu", rl) == ""
+
+
+# ─── _get_app_wait_exe ────────────────────────────────────────────────────────
+
+def test_get_app_wait_exe_resolves_via_guess_emulator(tmp_path):
+    """For a MAME system with no settings files, guesses MAME → mame.exe."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _get_app_wait_exe("MAME", rl) == "mame.exe"
+
+
+def test_get_app_wait_exe_uses_rl_settings_over_guess(tmp_path):
+    """When RL settings file names a specific emulator, that takes precedence."""
+    rl = tmp_path / "rl"
+    folder = rl / "Settings" / "Arcade"
+    folder.mkdir(parents=True)
+    (folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=MAME\n", encoding="utf-8",
+    )
+    assert _get_app_wait_exe("Arcade", rl) == "mame.exe"
+
+
+def test_get_app_wait_exe_returns_empty_for_pclauncher_source(tmp_path):
+    """PCLauncher-based source systems return empty — can't determine game exe."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _get_app_wait_exe("PC Games", rl) == ""
+    assert _get_app_wait_exe("Windows", rl) == ""
+
+
+# ─── write_pclauncher_system_ini with AppWaitExe ─────────────────────────────
+
+def test_write_pclauncher_system_ini_adds_app_wait_exe_for_mame(tmp_path):
+    """AppWaitExe=mame.exe must appear when source system resolves to MAME."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    # MAME settings file so _read_system_default_emulator finds it
+    mame_folder = rl / "Settings" / "MAME"
+    mame_folder.mkdir(parents=True)
+    (mame_folder / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=MAME\n", encoding="utf-8",
+    )
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("balloon", "MAME", "balloon")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "AppWaitExe=mame.exe" in body
+
+
+def test_write_pclauncher_system_ini_no_app_wait_exe_for_pclauncher_source_without_ini(tmp_path):
+    """AppWaitExe omitted when source is PCLauncher-based and no per-game INI exists."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("my_pc_game", "PC Games", "my_pc_game")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "AppWaitExe" not in body
+
+
+def test_write_pclauncher_system_ini_app_wait_exe_falls_back_to_dict(tmp_path):
+    """AppWaitExe falls back to EMULATOR_EXECUTABLES when Global Emulators.ini absent."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    # No settings files at all — relies purely on guess_emulator + EMULATOR_EXECUTABLES
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("tetris_snes", "Super Nintendo", "Tetris")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    # Super Nintendo → RetroArch → retroarch.exe
+    assert "AppWaitExe=retroarch.exe" in body
+
+
+def test_write_pclauncher_system_ini_mixed_sources(tmp_path):
+    """MAME entries get AppWaitExe from emulator dict; PCLauncher entry without game INI omits it."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [
+            ("mame_game", "MAME", "strider"),
+            ("pc_game", "PC Games", "mygame"),
+        ],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+
+    mame_block = body.split("[mame_game]")[1].split("[")[0]
+    pc_block = body.split("[pc_game]")[1]
+
+    assert "AppWaitExe=mame.exe" in mame_block
+    assert "AppWaitExe" not in pc_block
+
+
+# ─── _read_pclauncher_game_exe ────────────────────────────────────────────────
+
+def test_read_pclauncher_game_exe_finds_exe_path(tmp_path):
+    """Reads ApplicationPath from Settings-format per-game PCLauncher INI."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Games\\Hades\\Hades.exe\n",
+        encoding="utf-8",
+    )
+    assert _read_pclauncher_game_exe("PC Games", "Hades", rl) == "Hades.exe"
+
+
+def test_read_pclauncher_game_exe_ignores_lnk(tmp_path):
+    """Returns empty string when ApplicationPath is a .lnk shortcut (not a process name)."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Users\\Public\\Desktop\\Hades.lnk\n",
+        encoding="utf-8",
+    )
+    assert _read_pclauncher_game_exe("PC Games", "Hades", rl) == ""
+
+
+def test_read_pclauncher_game_exe_ignores_bat(tmp_path):
+    """Returns empty string when ApplicationPath is a .bat file."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Games\\launch.bat\n",
+        encoding="utf-8",
+    )
+    assert _read_pclauncher_game_exe("PC Games", "Hades", rl) == ""
+
+
+def test_read_pclauncher_game_exe_missing_ini(tmp_path):
+    """Returns empty string when the per-game INI doesn't exist."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    assert _read_pclauncher_game_exe("PC Games", "Hades", rl) == ""
+
+
+def test_get_app_wait_exe_pclauncher_source_with_exe_game_ini(tmp_path):
+    """For PCLauncher source, reads AppWaitExe from per-game INI when path is .exe."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Games\\Hades\\Hades.exe\n",
+        encoding="utf-8",
+    )
+    assert _get_app_wait_exe("PC Games", rl, "Hades") == "Hades.exe"
+
+
+def test_get_app_wait_exe_pclauncher_source_with_lnk_returns_empty(tmp_path):
+    """For PCLauncher source with .lnk path, returns empty (lnk is not a process)."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Users\\Public\\Desktop\\Hades.lnk\n",
+        encoding="utf-8",
+    )
+    assert _get_app_wait_exe("PC Games", rl, "Hades") == ""
+
+
+def test_write_pclauncher_system_ini_pc_game_with_exe_gets_app_wait_exe(tmp_path):
+    """PC game entries with a direct .exe path receive AppWaitExe= in the system INI."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Games\\Hades\\Hades.exe\n",
+        encoding="utf-8",
+    )
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("Hades", "PC Games", "Hades")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "AppWaitExe=Hades.exe" in body
+
+
+def test_write_pclauncher_system_ini_pc_game_with_lnk_omits_app_wait_exe(tmp_path):
+    """PC game entries with a .lnk path omit AppWaitExe (shortcuts are not processes)."""
+    rl = tmp_path / "rl"
+    game_dir = rl / "Modules" / "PCLauncher" / "PC Games"
+    game_dir.mkdir(parents=True)
+    (game_dir / "Hades.ini").write_text(
+        "[Settings]\nApplicationPath=C:\\Users\\Public\\Desktop\\Hades.lnk\n",
+        encoding="utf-8",
+    )
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("Hades", "PC Games", "Hades")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "AppWaitExe" not in body
