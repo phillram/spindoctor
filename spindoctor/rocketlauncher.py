@@ -582,8 +582,19 @@ def write_pclauncher_system_ini(
 
         [<target_name>]
         Application=<RocketLauncher.exe>
-        Parameters=-s "<source_system>" -r "<source_rom>" -p HyperSpin
+        Parameters=-s "<source_system>" -r "<source_rom>"
         WorkingFolder=<rocketlauncher_dir>
+
+    **Why no ``-p HyperSpin``:** RocketLauncher#1 (launched by HyperSpin for
+    the Favorites/Recently Played wheel) already owns the HyperSpin IPC pipe
+    and has faded the UI.  If the recursive RocketLauncher#2 also starts with
+    ``-p HyperSpin``, it tries to send a second FadeOut to a pipe that is
+    already in use — causing the startup sequence to stall and RL#2 to fail
+    with "error waiting for window ahk_pid XXXX" when it tries to detect the
+    emulator's window.  Without ``-p HyperSpin``, RL#2 runs in standalone
+    mode: it launches the emulator, waits for it to exit, then returns.
+    PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1,
+    which handles the fade-back to HyperSpin normally.
 
     Returns the path of the written file.
     """
@@ -593,7 +604,7 @@ def write_pclauncher_system_ini(
     for target_name, source_system, source_rom in entries:
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
-        lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}" -p HyperSpin')
+        lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')
         lines.append(f"WorkingFolder={rocketlauncher_dir}")
         lines.append("")
     system_ini.parent.mkdir(parents=True, exist_ok=True)

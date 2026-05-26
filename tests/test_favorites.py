@@ -656,11 +656,16 @@ def test_rebuild_writes_pclauncher_system_ini(isolated_config, tmp_path, monkeyp
     assert "Application=" in body
     assert "ApplicationPath=" not in body  # wrong key — PCLauncher ignores it
 
-    # Must launch RocketLauncher recursively with the source system
+    # Must launch RocketLauncher recursively with the source system.
+    # -p HyperSpin must NOT be present: RL#1 already owns the HyperSpin IPC
+    # pipe; a second -p HyperSpin causes RL#2's startup to stall (double-fade)
+    # and produces "error waiting for window ahk_pid XXXX" when RL#2 tries to
+    # detect the emulator window.  Without it RL#2 runs standalone and exits
+    # cleanly when the game ends, letting PCLauncher return to RL#1 normally.
     assert "RocketLauncher.exe" in body
     assert '-s "Super Nintendo"' in body
     assert '-s "Sony Playstation"' in body
-    assert "-p HyperSpin" in body
+    assert "-p HyperSpin" not in body
 
     # WorkingFolder must be set so RL runs from its own directory
     assert "WorkingFolder=" in body
