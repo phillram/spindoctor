@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fav rebuild --apply --verbose` crashed on Windows** with `UnicodeEncodeError: 'charmap' codec can't encode character '→'`. The `→` arrow in the per-file log line (`copy src\n     →  dest`) cannot be encoded by the Windows cp1252 console. Replaced with `->`.
+
 ---
 
 ## [2.4.2] - 2026-05-25
