@@ -38,6 +38,12 @@ MEDIA_FILE_SUBDIRS = (
     "Video",
     "Video/Trailers",
     "Sound",
+    # Themes are usually distributed as per-game .zip files
+    # (e.g. Media/MAME/Themes/1942.zip).  Include the Themes subfolder here
+    # so those zip files are picked up by the file-based mirror path.
+    # The MEDIA_DIR_SUBDIRS entry below handles the less-common case where
+    # themes have been extracted into per-game subdirectories.
+    "Themes",
 )
 MEDIA_DIR_SUBDIRS = ("Themes",)
 _FILE_EXTS = {
