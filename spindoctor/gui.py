@@ -9778,8 +9778,19 @@ class _SpinDoctorGUI:
                 "(e.g. 'Toolkit') before clicking Uninstall from wheel.",
             )
             return
+        if not self.messagebox.askyesno(
+            "Confirm uninstall",
+            f"Remove all SpinDoctor helper files and database entries "
+            f"from the '{wheel}' wheel?\n\n"
+            "This deletes the .bat and .ini files from the PCLauncher "
+            "folder and removes the matching <game> entries from "
+            f"{wheel}.xml. This cannot be undone (except by re-running "
+            "'Install into wheel').",
+        ):
+            return
         self._run_cli(
-            "spindoctor", ["uninstall-tools", "--add-to-system", wheel],
+            "spindoctor",
+            ["uninstall-tools", "--add-to-system", wheel, "--apply"],
         )
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
