@@ -2270,7 +2270,7 @@ def _make_install_tools_bats() -> "dict[str, str]":
             f"{stats} build-wheel --apply\r\n"
             "if errorlevel 1 pause\r\n"
         ),
-        "Refresh Both.bat": (
+        "Refresh All.bat": (
             "@echo off\r\n"
             f"{fav} rebuild --apply\r\n"
             f"{recent} rebuild --apply\r\n"
@@ -2700,7 +2700,7 @@ def install_tools(output_dir, add_to_system):
       • Refresh Favorites.bat       → spindoctor-fav rebuild --apply
       • Refresh Recently Played.bat → spindoctor-recent rebuild --apply
       • Refresh Most Played.bat     → spindoctor-stats build-wheel --apply
-      • Refresh Both.bat            → fav + recent + most-played
+      • Refresh All.bat             → fav + recent + most-played
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet

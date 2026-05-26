@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`install-tools --add-to-system` wrote helper files to `Modules/PCLauncher/<system>/` even when the system's existing `Settings/<system>/Emulators.ini` pointed `Rom_Path` elsewhere.** PCLauncher resolves per-game INI files from `Rom_Path` — if that path is, for example, `D:\Arcade\Utilities\Toolkit`, PCLauncher never looks in `Modules/PCLauncher/Toolkit/` and shows "You have not set up Refresh Favorites in RocketLauncherUI yet." `install-tools` now reads the first `Rom_Path` entry from the existing folder-layout `Emulators.ini` (resolving relative paths relative to `rocketlauncher_dir`) and writes bat + ini files there. Systems with no pre-existing INI continue to use the `Modules/PCLauncher/<system>` default.
 
 - **`uninstall-tools --add-to-system` only looked in `Modules/PCLauncher/<system>/` for files to remove.** After the `install-tools` fix above, files may live in the detected `Rom_Path` directory instead. `uninstall-tools` now searches both the detected path and the legacy default, so cabinets that had files written by an older version of SpinDoctor are fully cleaned up.
+### Fixed
+
+- **`install-tools` wrote a bat named `Refresh Both.bat` even though it runs all three wheels (Favorites, Recently Played, Most Played).** The name was wrong and misleading — users reading the label assumed only two wheels would be refreshed. The file is now named `Refresh All.bat`. All GUI labels, documentation, and the scheduled-task description have been updated to match. Users who already have `Refresh Both.bat` on their cabinet can re-run `install-tools` (or the GUI's "Install helpers" button) to get the correctly named file.
 
 ## [2.4.1] - 2026-05-25
 

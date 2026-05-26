@@ -56,7 +56,7 @@ def test_install_tools_default_writes_bats_under_hyperlaunch_tools(cabinet):
         "Refresh Favorites.bat",
         "Refresh Recently Played.bat",
         "Refresh Most Played.bat",
-        "Refresh Both.bat",
+        "Refresh All.bat",
     ):
         assert (out_dir / expected).exists(), f"missing {expected}"
 
@@ -88,7 +88,7 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
         "Refresh Favorites.bat",
         "Refresh Recently Played.bat",
         "Refresh Most Played.bat",
-        "Refresh Both.bat",
+        "Refresh All.bat",
     ):
         assert (pcl_dir / expected_bat).exists(), f"missing {expected_bat}"
         ini = pcl_dir / expected_bat.replace(".bat", ".ini")
@@ -107,7 +107,7 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
         "Refresh Favorites",
         "Refresh Recently Played",
         "Refresh Most Played",
-        "Refresh Both",
+        "Refresh All",
     ):
         assert expected_name in games, f"missing <game name=\"{expected_name}\"/>"
         assert games[expected_name].genre == "Tools"
@@ -226,7 +226,7 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     # second invocation.
     expected = {
         "Refresh Favorites", "Refresh Recently Played",
-        "Refresh Most Played", "Refresh Both",
+        "Refresh Most Played", "Refresh All",
     }
     assert set(db.games().keys()) == expected
 
