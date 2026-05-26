@@ -603,10 +603,16 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     # Wheels (favorites / recent / most-played)
     "fav list",
     "fav rebuild --apply",
+    "fav clear",
+    "fav clear --apply",
     "recent list",
     "recent rebuild --apply",
+    "recent clear",
+    "recent clear --apply",
     "stats-report",
     "stats-report build-wheel --apply",
+    "stats-report clear-wheel",
+    "stats-report clear-wheel --apply",
     # Main Menu (HyperSpin top-level wheel)
     "mainmenu show",
     "mainmenu sort alpha --apply",
@@ -4583,6 +4589,52 @@ class _SpinDoctorGUI:
             command=self._refresh_all_wheels,
         ).pack(side="left")
 
+        # ── Clear wheels ──────────────────────────────────────────────────────
+        # Removes the on-disk artifacts for the selected wheels without
+        # touching RocketLauncher's Statistics.ini files or the
+        # favorites.json store (for Favorites, the store is also cleared).
+        # Always shows a confirmation dialog before running with --apply.
+        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
+        self.ttk.Label(
+            frame, text="Clear wheels",
+            font=("TkDefaultFont", 10, "bold"),
+        ).pack(anchor="w", pady=(2, 4))
+        self.ttk.Label(
+            frame,
+            text=(
+                "Remove the on-disk artifacts (database XML, media files, "
+                "PCLauncher INIs) for the selected wheel(s).\n"
+                "For Favorites, the cross-system store (~/.spindoctor/favorites.json) "
+                "is also cleared.\n"
+                "RocketLauncher Statistics.ini files are never modified — "
+                "Recently Played and Most Played wheels can be rebuilt at any time."
+            ),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", pady=(0, 6))
+        clear_btn_row = self.ttk.Frame(frame)
+        clear_btn_row.pack(anchor="w", pady=(0, 4))
+        preview_btn = self.ttk.Button(
+            clear_btn_row, text="Preview clear (dry run)", width=28,
+            command=self._preview_clear_wheels,
+        )
+        preview_btn.pack(side="left")
+        _attach_tooltip(
+            preview_btn,
+            "Shows what would be removed without deleting anything.",
+            self.tk,
+        )
+        clear_apply_btn = self.ttk.Button(
+            clear_btn_row, text="Clear selected (--apply)", width=28,
+            command=self._clear_wheels_apply,
+        )
+        clear_apply_btn.pack(side="left", padx=6)
+        _attach_tooltip(
+            clear_apply_btn,
+            "Permanently removes wheel artifacts for the selected wheels. "
+            "A confirmation dialog will appear before anything is deleted.",
+            self.tk,
+        )
+
         # ── HyperSpin integration helpers ────────────────────────────────────
         # The custom wheels (Favorites / Recently Played / Most Played) write
         # synthetic HyperSpin systems with media + per-game PCLauncher INIs,
@@ -4790,6 +4842,102 @@ class _SpinDoctorGUI:
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
 
         run_next(steps, 0)
+
+    def _selected_clear_steps(self) -> "list[tuple[str, str, list[str]]]":
+        """Return the clear-wheel CLI steps for the currently checked wheels."""
+        all_steps: list[tuple[str, str, list[str]]] = [
+            ("Favorites",       "spindoctor",       ["fav", "clear"]),
+            ("Recently Played", "spindoctor-recent", ["clear"]),
+            ("Most Played",     "spindoctor-stats",  ["clear-wheel"]),
+        ]
+        check_vars = [self._wheel_fav_var, self._wheel_recent_var, self._wheel_stats_var]
+        return [
+            (name, binary, args)
+            for (name, binary, args), var in zip(all_steps, check_vars)
+            if var.get()
+        ]
+
+    def _preview_clear_wheels(self) -> None:
+        """Run the clear commands in dry-run mode (no --apply)."""
+        steps = self._selected_clear_steps()
+        if not steps:
+            self.messagebox.showwarning(
+                "Nothing selected",
+                "Tick at least one wheel to preview the clear.",
+            )
+            return
+        total = len(steps)
+        self._chain_start(total)
+
+        def run_next(remaining: list, rc: int) -> None:
+            if rc != 0:
+                self._chain_end()
+                self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
+                return
+            if not remaining:
+                self._chain_end()
+                self._append_output(
+                    "\nDry-run complete. "
+                    "Click 'Clear selected (--apply)' to permanently delete.\n"
+                )
+                return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
+            name, binary, args = remaining[0]
+            self._set_status(f"Step {step_num}/{total}: preview clear {name}…")
+            self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
+
+        run_next(steps, 0)
+
+    def _clear_wheels_apply(self) -> None:
+        """Run the clear commands with --apply after a confirmation prompt."""
+        steps = self._selected_clear_steps()
+        if not steps:
+            self.messagebox.showwarning(
+                "Nothing selected",
+                "Tick at least one wheel to clear.",
+            )
+            return
+        names = ", ".join(name for name, _b, _a in steps)
+        fav_selected = any(name == "Favorites" for name, _b, _a in steps)
+        extra_warning = (
+            "\n\nNote: For Favorites, the cross-system store "
+            "(~/.spindoctor/favorites.json) will also be emptied."
+            if fav_selected else ""
+        )
+        if not self.messagebox.askyesno(
+            "Clear wheels?",
+            f"This will permanently delete all on-disk artifacts for:\n\n"
+            f"  {names}\n\n"
+            f"Deleted items include: database XML, media files, "
+            f"PCLauncher INIs.{extra_warning}\n\n"
+            f"RocketLauncher Statistics.ini files will NOT be modified.\n\n"
+            f"Continue?",
+        ):
+            return
+        apply_steps = [
+            (name, binary, args + ["--apply"])
+            for name, binary, args in steps
+        ]
+        total = len(apply_steps)
+        self._chain_start(total)
+
+        def run_next(remaining: list, rc: int) -> None:
+            if rc != 0:
+                self._chain_end()
+                self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
+                return
+            if not remaining:
+                self._chain_end()
+                self._append_output("\nWheel clear complete.\n")
+                return
+            step_num = total - len(remaining) + 1
+            self._chain_advance(step_num)
+            name, binary, args = remaining[0]
+            self._set_status(f"Step {step_num}/{total}: clear {name}…")
+            self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
+
+        run_next(apply_steps, 0)
 
     def _run_preflight(self) -> None:
         """One-button "is the cabinet ready for guests?" health check.

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import configparser
+import shutil
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -322,6 +323,103 @@ class RecentSummary:
     read_notes: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ClearWheelSummary:
+    """Result of :func:`clear_wheel_artifacts`."""
+    target_system: str
+    db_removed: bool = False
+    media_files_removed: int = 0
+    ini_files_removed: int = 0
+    errors: list[str] = field(default_factory=list)
+
+
+def clear_wheel_artifacts(
+    config: Config,
+    target_system: str,
+    *,
+    dry_run: bool = True,
+) -> ClearWheelSummary:
+    """Remove all on-disk artifacts for a synthetic wheel.
+
+    Deletes:
+      * ``Databases/<target_system>/<target_system>.xml``
+      * All files under ``Media/<target_system>/``
+      * All ``*.ini`` files under
+        ``<RocketLauncher>/Modules/PCLauncher/<target_system>/``
+
+    RocketLauncher's own ``Statistics.ini`` files are *never* touched —
+    the synthetic wheels are derived from those; clearing the wheel just
+    removes what SpinDoctor wrote.  HyperSpin's ``Settings/<system>.ini``
+    is likewise left intact as it may contain user customisations.
+
+    When *dry_run* is ``True`` (the default) no files are changed; the
+    returned summary describes what *would* be removed.
+    """
+    summary = ClearWheelSummary(target_system=target_system)
+
+    if config.hyperspin_dir:
+        db_path = config.databases_dir / target_system / f"{target_system}.xml"
+        media_dir = config.media_dir / target_system
+
+        if dry_run:
+            if db_path.exists():
+                summary.db_removed = True
+            if media_dir.exists():
+                summary.media_files_removed = sum(
+                    1 for p in media_dir.rglob("*") if p.is_file()
+                )
+        else:
+            # ── database XML ────────────────────────────────────────────
+            if db_path.exists():
+                try:
+                    db_path.unlink()
+                    summary.db_removed = True
+                    # Drop the parent dir if it is now empty.
+                    try:
+                        db_path.parent.rmdir()
+                    except OSError:
+                        pass
+                except OSError as exc:
+                    summary.errors.append(f"remove {db_path}: {exc}")
+
+            # ── media files ─────────────────────────────────────────────
+            if media_dir.exists():
+                for media_file in list(media_dir.rglob("*")):
+                    if media_file.is_file():
+                        try:
+                            media_file.unlink()
+                            summary.media_files_removed += 1
+                        except OSError as exc:
+                            summary.errors.append(f"remove {media_file.name}: {exc}")
+                # Attempt to prune empty subdirs (best-effort).
+                try:
+                    shutil.rmtree(media_dir)
+                except OSError:
+                    pass
+
+    if config.rocketlauncher_dir:
+        rl = Path(config.rocketlauncher_dir)
+        ini_dir = rl / "Modules" / "PCLauncher" / target_system
+        if ini_dir.exists():
+            if dry_run:
+                summary.ini_files_removed = sum(
+                    1 for f in ini_dir.glob("*.ini") if f.is_file()
+                )
+            else:
+                for ini_file in list(ini_dir.glob("*.ini")):
+                    try:
+                        ini_file.unlink()
+                        summary.ini_files_removed += 1
+                    except OSError as exc:
+                        summary.errors.append(f"remove {ini_file.name}: {exc}")
+                try:
+                    ini_dir.rmdir()
+                except OSError:
+                    pass
+
+    return summary
+
+
 def _build_synthetic_wheel(
     config: Config,
     target_system: str,
@@ -553,6 +651,19 @@ def _build_parser() -> argparse.ArgumentParser:
                        help="Print each media file copied/linked (src → dest).")
 
     sub.add_parser("list", help="Print the current top-N play records")
+
+    p_clr = sub.add_parser(
+        "clear",
+        help="Remove the synthetic Recently Played wheel from disk",
+    )
+    p_clr.add_argument(
+        "--target-system", default=DEFAULT_RECENT_SYSTEM,
+        help=f"Synthetic system name to clear (default '{DEFAULT_RECENT_SYSTEM}').",
+    )
+    p_clr.add_argument(
+        "--apply", action="store_true",
+        help="Actually delete files (default: dry-run preview).",
+    )
     return p
 
 
@@ -619,6 +730,34 @@ def main(argv: Optional[list[str]] = None) -> int:
         for w in summary.read_warnings:
             print(f"  WARNING:    {w}", file=sys.stderr)
         return 0
+
+    if args.cmd == "clear":
+        if not config.hyperspin_dir and not config.rocketlauncher_dir:
+            print("ERROR: neither hyperspin_dir nor rocketlauncher_dir is configured.",
+                  file=sys.stderr)
+            return 1
+        target_system = args.target_system
+        if not args.apply:
+            print("[DRY RUN] No files will be deleted. "
+                  "Re-run with --apply to commit.")
+        summary = clear_wheel_artifacts(
+            config, target_system, dry_run=not args.apply,
+        )
+        verb = "Would remove" if not args.apply else "Removed"
+        print(f"Clear wheel: {target_system}")
+        if summary.db_removed:
+            print(f"  {verb}: Databases/{target_system}/{target_system}.xml")
+        else:
+            print(f"  database: not found (nothing to remove)")
+        print(f"  {verb}: {summary.media_files_removed} media file(s) "
+              f"under Media/{target_system}/")
+        print(f"  {verb}: {summary.ini_files_removed} PCLauncher INI(s)")
+        print("  Note: RocketLauncher Statistics.ini files are not modified.")
+        if summary.errors:
+            print(f"  {len(summary.errors)} error(s):", file=sys.stderr)
+            for e in summary.errors[:5]:
+                print(f"    - {e}", file=sys.stderr)
+        return 0 if not summary.errors else 1
 
     return 0
 

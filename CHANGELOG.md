@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`fav clear` / `recent clear` / `stats-report clear-wheel` CLI commands** — tear down the on-disk artifacts for the Favorites, Recently Played, and Most Played synthetic wheels respectively. All three are dry-run by default (preview only); pass `--apply` to commit. `fav clear --apply` also empties `~/.spindoctor/favorites.json`. RocketLauncher's `Statistics.ini` files are never touched — the derived wheels can always be rebuilt.
+
+- **GUI "Clear wheels" section** in the Wheels tab — two new buttons: "Preview clear (dry run)" runs the clear commands without `--apply` so you can inspect what would be removed; "Clear selected (--apply)" shows a confirmation dialog then permanently removes artifacts for the checked wheels. Both buttons respect the Favorites / Recently Played / Most Played checkboxes.
+
 ### Fixed
 
 - **`uninstall-tools` deleted files immediately when run from the GUI, even though the GUI showed a DRY RUN banner.** The command had no `--apply` gate, so the GUI's dry-run heuristic (`"--apply" not in args`) correctly showed the banner but the command ignored it and deleted anyway. `uninstall-tools` now requires `--apply` to make any changes — without it, it prints a preview table of what would be removed and exits. The GUI's **Uninstall from wheel** button now shows a confirmation dialog and passes `--apply` only after the user confirms.
