@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **HyperSpin themes were not copied during Favorites / Recently Played / Most Played wheel rebuilds**, leaving those wheels with no video preview or background artwork. Themes are almost always distributed as per-game `.zip` files (`Media/<system>/Themes/<game>.zip`). The media mirror code (`medialink.py`) treated the `Themes` subfolder as directory-only — looking for an extracted `Themes/<game>/` folder — so `.zip`-form themes were never found or copied. `"Themes"` has been added to `MEDIA_FILE_SUBDIRS` so zip-form themes are mirrored alongside video and wheel art. The extracted-directory path (`MEDIA_DIR_SUBDIRS`) is retained for the less common case.
+
 ## [2.4.1] - 2026-05-25
 
 ### Fixed
