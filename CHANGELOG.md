@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.3] - 2026-05-26
+
 ### Added
 
 - **`fav clear` / `recent clear` / `stats-report clear-wheel` CLI commands** — tear down the on-disk artifacts for the Favorites, Recently Played, and Most Played synthetic wheels respectively. All three are dry-run by default (preview only); pass `--apply` to commit. `fav clear --apply` also empties `~/.spindoctor/favorites.json`. RocketLauncher's `Statistics.ini` files are never touched — the derived wheels can always be rebuilt.
@@ -799,7 +803,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.3...HEAD
+[2.4.3]: https://github.com/phillram/spindoctor/compare/v2.4.2...v2.4.3
 [2.4.2]: https://github.com/phillram/spindoctor/compare/v2.4.1...v2.4.2
 [2.4.1]: https://github.com/phillram/spindoctor/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/phillram/spindoctor/compare/v2.3.4...v2.4.0
