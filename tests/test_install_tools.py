@@ -252,7 +252,7 @@ def test_uninstall_tools_default_removes_bats_from_hyperlaunch_tools(cabinet):
     # Confirm the bats exist before uninstalling.
     assert (out_dir / "Refresh Favorites.bat").exists()
 
-    result = runner.invoke(cli, ["uninstall-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["uninstall-tools", "--apply"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
 
     for stem in ("Refresh Favorites", "Refresh Recently Played",
@@ -265,7 +265,7 @@ def test_uninstall_tools_default_removes_bats_from_hyperlaunch_tools(cabinet):
 def test_uninstall_tools_default_is_idempotent_when_nothing_installed(cabinet):
     """Running uninstall-tools when no bats exist should succeed (exit 0)."""
     runner = CliRunner()
-    result = runner.invoke(cli, ["uninstall-tools"], catch_exceptions=False)
+    result = runner.invoke(cli, ["uninstall-tools", "--apply"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
     assert "nothing to delete" in result.output.lower()
 
@@ -299,7 +299,7 @@ def test_uninstall_tools_add_to_system_removes_bats_inis_and_db_entries(cabinet)
 
     # Now uninstall.
     result = runner.invoke(
-        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -358,7 +358,7 @@ def test_uninstall_tools_add_to_system_handles_legacy_refresh_both_files(cabinet
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -407,7 +407,7 @@ def test_uninstall_tools_removes_files_from_existing_rom_path(cabinet):
 
     # Uninstall — files must be removed from utilities_dir.
     result = runner.invoke(
-        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -451,7 +451,7 @@ def test_uninstall_tools_add_to_system_also_removes_legacy_pcl_files(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -471,7 +471,7 @@ def test_uninstall_tools_add_to_system_skips_missing_db(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -497,7 +497,86 @@ def test_uninstall_tools_add_to_system_is_idempotent(cabinet):
 
     for _ in range(2):
         result = runner.invoke(
-            cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+            cli, ["uninstall-tools", "--add-to-system", "Toolkit", "--apply"],
             catch_exceptions=False,
         )
         assert result.exit_code == 0, result.output
+
+
+# ─── uninstall-tools dry-run tests ───────────────────────────────────────────
+
+
+def test_uninstall_tools_dry_run_does_not_delete_files(cabinet):
+    """Without --apply, uninstall-tools must not delete any files.
+
+    This is the bug that was reported: the GUI showed "DRY RUN" but the
+    command deleted files anyway because there was no --apply gate.
+    """
+    runner = CliRunner()
+
+    # Install first.
+    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools"
+               / "spindoctor")
+    assert (out_dir / "Refresh Favorites.bat").exists(), (
+        "pre-condition: install-tools must have written the bat"
+    )
+
+    # Dry-run — no --apply.
+    result = runner.invoke(cli, ["uninstall-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    # Files must still be there.
+    assert (out_dir / "Refresh Favorites.bat").exists(), (
+        "Refresh Favorites.bat must NOT be deleted by a dry-run"
+    )
+    # Output must mention dry-run.
+    assert "dry-run" in result.output.lower() or "would remove" in result.output.lower()
+
+
+def test_uninstall_tools_add_to_system_dry_run_does_not_delete(cabinet):
+    """Without --apply, --add-to-system mode must not delete files or DB entries."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    pcl_dir = cabinet["rl"] / "Modules" / "PCLauncher" / "Toolkit"
+    assert (pcl_dir / "Refresh Favorites.bat").exists()
+
+    # Dry-run — no --apply.
+    result = runner.invoke(
+        cli, ["uninstall-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    # Files must still be there.
+    assert (pcl_dir / "Refresh Favorites.bat").exists(), (
+        "bat must NOT be deleted by a dry-run"
+    )
+    assert (pcl_dir / "Refresh Favorites.ini").exists(), (
+        "ini must NOT be deleted by a dry-run"
+    )
+
+    # Database entries must still be there.
+    db = HyperspinDatabase("Toolkit", db_path)
+    db.load()
+    assert "Refresh Favorites" in db.games(), (
+        "DB entry must NOT be removed by a dry-run"
+    )
+
+    # Output must describe what would happen.
+    assert "dry-run" in result.output.lower() or "would remove" in result.output.lower()

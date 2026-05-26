@@ -2880,16 +2880,22 @@ _INSTALL_TOOLS_STEMS: tuple[str, ...] = (
                    "when installing (e.g. 'Toolkit'). Without this flag, "
                    "the command removes bats from the default HyperLaunch "
                    "Tools folder instead.")
-def uninstall_tools(add_to_system):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually remove the files and database entries. "
+                   "Without this flag the command shows a dry-run preview "
+                   "of what would be removed.")
+def uninstall_tools(add_to_system, apply_changes):
     """Remove SpinDoctor tool helpers installed by install-tools.
 
     \b
     Reverses `spindoctor install-tools [--add-to-system <NAME>]`.
+    Dry-run by default — pass --apply to actually delete.
 
     \b
     Without --add-to-system:
-      Deletes every SpinDoctor-written .bat from the default output
-      directory (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor).
+      Shows (or removes with --apply) every SpinDoctor-written .bat from
+      the default output directory
+      (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor).
 
     \b
     With --add-to-system <SYSTEM>:
@@ -2905,10 +2911,12 @@ def uninstall_tools(add_to_system):
 
     \b
     Examples:
-      spindoctor uninstall-tools
       spindoctor uninstall-tools --add-to-system Toolkit
+      spindoctor uninstall-tools --add-to-system Toolkit --apply
+      spindoctor uninstall-tools --apply
     """
     config = _cfg()
+    verb = "removed" if apply_changes else "would remove"
 
     if add_to_system:
         # ── Wheel-integration mode: mirror of install-tools --add-to-system ───
@@ -2936,22 +2944,26 @@ def uninstall_tools(add_to_system):
         # both resolve to the same path.
         search_dirs: list[Path] = list(dict.fromkeys([detected_out, default_out]))
 
-        # ── Remove .bat and .ini files ────────────────────────────────────────
-        removed_files: list[Path] = []
+        # ── Collect candidate files; delete only when --apply ─────────────────
+        pending_files: list[Path] = []
         for search_dir in search_dirs:
             for stem in _INSTALL_TOOLS_STEMS:
                 for suffix in (".bat", ".ini"):
                     p = search_dir / (stem + suffix)
                     if p.exists():
-                        p.unlink()
-                        removed_files.append(p)
+                        pending_files.append(p)
 
-        if removed_files:
+        if pending_files:
             console.print(
-                f"[green]-[/green] removed {len(removed_files)} file(s):"
+                f"[{'green' if apply_changes else 'yellow'}]"
+                f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                f"{verb} {len(pending_files)} file(s):"
             )
-            for p in removed_files:
+            for p in pending_files:
                 console.print(f"  [dim]{p}[/dim]")
+            if apply_changes:
+                for p in pending_files:
+                    p.unlink()
         else:
             dirs_str = " and ".join(f"[cyan]{d}[/cyan]" for d in search_dirs)
             console.print(
@@ -2959,7 +2971,7 @@ def uninstall_tools(add_to_system):
                 f"{dirs_str} — nothing to delete."
             )
 
-        # ── Remove <game> entries from the database XML ───────────────────────
+        # ── Collect DB entries; remove only when --apply ──────────────────────
         db_path = (config.databases_dir / add_to_system / f"{add_to_system}.xml")
         if not db_path.exists():
             console.print(
@@ -2969,19 +2981,21 @@ def uninstall_tools(add_to_system):
         else:
             db = HyperspinDatabase(add_to_system, db_path)
             db.load()
-            removed_entries: list[str] = []
-            for stem in _INSTALL_TOOLS_STEMS:
-                if db.remove_game(stem):
-                    removed_entries.append(stem)
-            if removed_entries:
-                _bak_dir = (Path(config.backup_dir)
-                            if getattr(config, "backup_dir", "") else None)
-                db.save(backup_dir=_bak_dir)
+            present_entries = [s for s in _INSTALL_TOOLS_STEMS if db.get(s)]
+            if present_entries:
                 console.print(
-                    f"[green]-[/green] removed {len(removed_entries)} entry(ies) "
+                    f"[{'green' if apply_changes else 'yellow'}]"
+                    f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                    f"{verb} {len(present_entries)} database entry(ies) "
                     f"from [cyan]{db_path}[/cyan]: "
-                    + ", ".join(f"[bold]{n}[/bold]" for n in removed_entries)
+                    + ", ".join(f"[bold]{n}[/bold]" for n in present_entries)
                 )
+                if apply_changes:
+                    for stem in present_entries:
+                        db.remove_game(stem)
+                    _bak_dir = (Path(config.backup_dir)
+                                if getattr(config, "backup_dir", "") else None)
+                    db.save(backup_dir=_bak_dir)
             else:
                 console.print(
                     f"[dim]No SpinDoctor entries found in[/dim] "
@@ -3001,23 +3015,34 @@ def uninstall_tools(add_to_system):
         out = (Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch"
                / "Tools" / "spindoctor")
 
-        removed_files = []
-        for stem in _INSTALL_TOOLS_STEMS:
-            p = out / (stem + ".bat")
-            if p.exists():
-                p.unlink()
-                removed_files.append(p)
+        pending_files = [
+            out / (stem + ".bat")
+            for stem in _INSTALL_TOOLS_STEMS
+            if (out / (stem + ".bat")).exists()
+        ]
 
-        if removed_files:
+        if pending_files:
             console.print(
-                f"[green]-[/green] removed {len(removed_files)} helper(s) from "
-                f"[cyan]{out}[/cyan]"
+                f"[{'green' if apply_changes else 'yellow'}]"
+                f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                f"{verb} {len(pending_files)} helper(s) from [cyan]{out}[/cyan]:"
             )
+            for p in pending_files:
+                console.print(f"  [dim]{p.name}[/dim]")
+            if apply_changes:
+                for p in pending_files:
+                    p.unlink()
         else:
             console.print(
                 f"[yellow]No SpinDoctor helper files found under[/yellow] "
                 f"[cyan]{out}[/cyan] — nothing to delete."
             )
+
+    if not apply_changes:
+        console.print(
+            "\n[dim]Dry-run — nothing was removed. "
+            "Re-run with [cyan]--apply[/cyan] to delete.[/dim]"
+        )
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
