@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Games in Favorites / Recently Played / Most Played failed with "error waiting for window ahk_pid XXXX"** after launching correctly from PCLauncher. Root cause: the recursive `RocketLauncher.exe` call in the system-level PCLauncher INI was launched with `-p HyperSpin`. RocketLauncher #1 (launched by HyperSpin for the Favorites wheel) already owns the HyperSpin IPC pipe and has faded the UI. When RL#2 also starts with `-p HyperSpin` it tries to send a second FadeOut to an already-owned pipe — the startup sequence stalls and RL#2 can't detect the emulator's window. Removed `-p HyperSpin` from the recursive call so RL#2 runs in standalone mode: it launches the emulator, waits for it to exit, and exits cleanly. PCLauncher (inside RL#1) detects RL#2's exit and returns control to RL#1, which handles the HyperSpin fade-back normally.
+
+### Added
+
+- **`docs/cabinet-architecture-reference.md`** — documents the HyperSpin + RocketLauncher + PCLauncher file layout, the two-file PCLauncher system (ROM placeholders vs system-level INI), the recursive RL launch chain, and other cabinet-specific configuration details discovered during debugging. Framed as "this is how one cabinet is set up — yours may differ."
+
 ---
 
 ## [2.4.3] - 2026-05-26
