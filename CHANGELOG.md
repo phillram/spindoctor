@@ -6,13 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.4.1] - 2026-05-25
+
 ### Fixed
 
 - **Archive-packed media files were silently skipped during Favorites / Recently Played / Most Played wheel rebuilds.** HyperSpin reads `.zip`-packed media natively, so source systems commonly store artwork as `.zip` archives rather than raw `.mp4` / `.png` files. Downloaded media packs may also use `.rar`, `.7z`, `.lha`, `.lzh`, `.gz`, or `.tar`. The `_FILE_EXTS` allowlist in `medialink.py` contained none of these, so they were never copied to `Media/Favorites/` etc., leaving the synthetic wheel with no video or background art even though the games displayed correctly in their source system's wheel. All seven archive extensions (`.zip`, `.rar`, `.7z`, `.lha`, `.lzh`, `.gz`, `.tar`) are now included.
 
 - **Running `fav rebuild --apply`, `recent rebuild --apply`, or `stats build-wheel --apply` for the first time did not create `<hyperspin_dir>/Settings/<system>.ini`.** HyperSpin requires this file to open a sub-wheel; without it the frontend shows "Cannot find Recently Played.ini" (or "Favorites.ini" / "Most Played.ini") when the wheel is selected from the main menu, so the wheel never loads. SpinDoctor was already writing the RocketLauncher settings (`Settings/<system>/Emulators.ini`) but not the HyperSpin-side settings. Each rebuild command now writes a minimal `Settings/<system>.ini` containing `[exe info]\nhyperlaunch=true` when the file does not exist — existing files (created by HyperHQ or the user) are never overwritten.
+
 - **`generate-config` was blind to folder-layout cabinets** (where RocketLauncher uses `Settings\<system>\Emulators.ini` instead of `Settings\<system>.ini`). On these cabinets — which are produced by HyperHQ and are common in the wild — `generate-config` would always report "(new file)" in its dry-run and write a flat `Settings\<system>.ini` that RL may not read, leaving the `Emulators.ini` with a stale `Rom_Path`. The command now detects which layout each system uses and writes to the matching file: folder-layout systems get their `Emulators.ini` updated (using the `[ROMS]` section that RL requires for this layout); flat-layout systems get their `.ini` updated as before; systems with neither file get both written so the cabinet works regardless of layout. The dry-run table also now shows the correct current `Rom_Path` read from whichever file actually exists.
 
+- **`Settings/<system>/Emulators.ini` (folder-layout) included a `[PCLauncher]` section that caused RocketLauncher to blank out `Rom_Extension`.** On first launch after a wheel rebuild, RL's own AHK `IniWrite` filled in the `[PCLauncher]` section with empty values including `Rom_Extension=`. On the next launch RL read `Rom_Extension` from `[PCLauncher]`, found the blank value, and fell back to the global extension list (`zip|rar|7z|…`), producing "Cannot find Rom 1942 with any provided Rom_Extension: zip|rar|7z|lha|lzh|gzip|tar|" even after a successful rebuild. The working HyperHQ-generated `Emulators.ini` (confirmed on the same cabinet) contains only `[ROMS]`. The folder-layout `Emulators.ini` now writes only `[ROMS]`; the flat `Settings/<system>.ini` retains its `[PCLauncher]` block because the flat layout does not trigger RL's write-back.
+
+- **"Schedule auto-refresh" and "Preflight" showed routine-outcome popup dialogs** instead of routing their result to the Output panel like every other action in the GUI. `_schedule_autorefresh` called `messagebox.showinfo` after already writing the full task detail to the Output panel — the popup was redundant and interrupted keyboard flow. `_summarise_preflight` similarly raised a "Preflight passed" dialog when the Output panel banner and status bar already conveyed the result. Both popups have been removed; `_schedule_autorefresh` now includes the bat path and reboot hint in `_append_output` and calls `_flash_status` for inline acknowledgement.
+
+- **"Restore RocketLauncher INI from backup" (Meta tab) was hardcoded to the flat-layout path `Settings/<system>.ini`** and silently failed on HyperHQ cabinets that use the folder layout (`Settings/<system>/Emulators.ini`). The button now checks for the folder-layout file first and falls back to the flat-layout path, matching the detection order used by the rest of SpinDoctor.
 
 ## [2.4.0] - 2026-05-25
 
@@ -757,7 +765,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.1...HEAD
+[2.4.1]: https://github.com/phillram/spindoctor/compare/v2.4.0...v2.4.1
 [2.4.0]: https://github.com/phillram/spindoctor/compare/v2.3.4...v2.4.0
 [2.3.4]: https://github.com/phillram/spindoctor/compare/v2.3.3...v2.3.4
 [2.3.3]: https://github.com/phillram/spindoctor/compare/v2.3.2...v2.3.3

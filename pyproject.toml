@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spindoctor"
-version = "2.4.0"
+version = "2.4.1"
 description = "Tkinter GUI + CLI librarian for HyperSpin + RocketLauncher arcade cabinets."
 readme = "README.md"
 # 3.8 is the floor because that was the last Python release to officially
