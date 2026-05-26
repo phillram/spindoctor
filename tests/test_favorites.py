@@ -463,6 +463,47 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
     assert "[PCLauncher]" not in body
 
 
+def test_rebuild_flat_settings_ini_pclauncher_section_has_rom_extension(
+    isolated_config, tmp_path, monkeypatch
+):
+    """The flat Settings/<system>.ini [PCLauncher] section must include Rom_Extension=ini.
+
+    RocketLauncher reads Rom_Extension from [PCLauncher] when that section
+    exists, ignoring the value in [Settings].  If [PCLauncher] has no
+    Rom_Extension key, RL falls back to the global extension list
+    (zip|rar|7z|...) and produces:
+
+        Cannot find Rom <name> in any Rom_Paths provided:
+            "...\\Modules\\PCLauncher\\Favorites"
+        with any provided Rom_Extension: "zip|rar|7z|lha|lzh|gzip|tar|"
+
+    even though [Settings] correctly sets Rom_Extension=ini.
+    """
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+    (rl / "Settings").mkdir(parents=True, exist_ok=True)
+
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    flat_ini = rl / "Settings" / "Favorites.ini"
+    assert flat_ini.exists(), "Settings/Favorites.ini was not written"
+    body = flat_ini.read_text(encoding="utf-8")
+
+    assert "[PCLauncher]" in body, "[PCLauncher] section is missing"
+    # Find the [PCLauncher] section and verify Rom_Extension=ini appears in it.
+    # A simple substring check is sufficient because no other section would
+    # contain that exact key-value pair.
+    pclauncher_block = body.split("[PCLauncher]", 1)[1]
+    assert "Rom_Extension=ini" in pclauncher_block, (
+        "[PCLauncher] section is missing Rom_Extension=ini — RL will fall "
+        "back to the global zip|rar|7z|... list and games will not launch."
+    )
+
+
 def test_rebuild_pclauncher_ini_uses_settings_format(isolated_config, tmp_path, monkeypatch):
     """Per-game PCLauncher INIs must use [Settings] format, not [exe info].
 

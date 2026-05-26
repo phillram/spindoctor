@@ -285,25 +285,27 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     2. ``Settings/<system>/Emulators.ini`` (folder layout) — RL reads
        ``Default_Emulator`` and ``Rom_Extension`` from the ``[ROMS]`` section.
 
-    **Why the folder-layout file must NOT have a ``[PCLauncher]`` section:**
+    **Rom_Extension must appear in every section RL may consult:**
 
-    When SpinDoctor wrote ``[PCLauncher]\nRom_Path=<dir>`` in ``Emulators.ini``,
-    RocketLauncher initialised the rest of that section on the next launch via
-    its own ``IniWrite``, adding ``Module=``, ``Emu_Path=``, and crucially
-    ``Rom_Extension=`` (blank).  On subsequent launches RL reads ``Rom_Extension``
-    from ``[PCLauncher]``, finds the blank value, and falls back to the global
-    extension list (``zip|rar|7z|lha|…``), producing::
+    When RL finds a ``[PCLauncher]`` section (in either file layout) it reads
+    ``Rom_Extension`` from *that* section first.  If the key is absent RL falls
+    back to the global extension list (``zip|rar|7z|lha|…``) and ignores the
+    value set in ``[Settings]`` or ``[ROMS]``, producing::
 
         Cannot find Rom 1942 in any Rom_Paths provided:
             "…\\Modules\\PCLauncher\\Favorites"
         with any provided Rom_Extension: "zip|rar|7z|lha|lzh|gzip|tar|"
 
-    The working HyperHQ-generated ``Emulators.ini`` (e.g. the Toolkit system)
-    contains **only** the ``[ROMS]`` section.  Without a ``[PCLauncher]`` section
-    to write into, RL reads ``Rom_Extension`` from ``[ROMS]`` and correctly finds
-    ``ini``.  The flat-layout ``Settings/<system>.ini`` retains its ``[PCLauncher]``
-    block because the flat layout is read differently and does not exhibit this
-    RL write-back behaviour.
+    Therefore:
+
+    * The **flat-layout** ``Settings/<system>.ini`` carries ``Rom_Extension=ini``
+      in *both* ``[Settings]`` and ``[PCLauncher]``.
+    * The **folder-layout** ``Settings/<system>/Emulators.ini`` has **no**
+      ``[PCLauncher]`` section at all.  Without that section RL reads
+      ``Rom_Extension`` from ``[ROMS]`` and correctly finds ``ini``.  A
+      ``[PCLauncher]`` block in the folder-layout file would be filled in
+      by RL's own ``IniWrite`` on first launch, adding blank ``Rom_Extension=``
+      which then overrides the ``[ROMS]`` value.
     """
     settings_dir = rocketlauncher_dir / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
@@ -317,8 +319,14 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
         f"Rom_Path={pclauncher_dir}",
         "Rom_Extension=ini",
         "",
+        # [PCLauncher] must also carry Rom_Extension=ini.  When RL finds a
+        # [PCLauncher] section it reads Rom_Extension from there first; if
+        # the key is absent RL falls back to the global extensions list
+        # (zip|rar|7z|...) and ignores the [Settings] value — producing
+        # "Cannot find Rom X with any provided Rom_Extension: zip|rar|7z|..."
         "[PCLauncher]",
         f"Rom_Path={pclauncher_dir}",
+        "Rom_Extension=ini",
         "",
     ]
     ini_path.write_text("\n".join(flat_lines), encoding="utf-8")
