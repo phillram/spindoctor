@@ -9657,6 +9657,10 @@ class _SpinDoctorGUI:
             sys_row, text="Install into wheel",
             command=self._run_install_tools_into_wheel,
         ).pack(side="left", padx=6)
+        self.ttk.Button(
+            sys_row, text="Uninstall from wheel",
+            command=self._run_uninstall_tools_from_wheel,
+        ).pack(side="left", padx=6)
 
         # Auto-refresh on cabinet startup
         sched_frame = self.ttk.LabelFrame(
@@ -9763,6 +9767,19 @@ class _SpinDoctorGUI:
             return
         self._run_cli(
             "spindoctor", ["install-tools", "--add-to-system", wheel],
+        )
+
+    def _run_uninstall_tools_from_wheel(self) -> None:
+        wheel = self._tools_wheel_var.get().strip()
+        if not wheel:
+            self.messagebox.showwarning(
+                "Wheel name required",
+                "Type the HyperSpin system name to uninstall from "
+                "(e.g. 'Toolkit') before clicking Uninstall from wheel.",
+            )
+            return
+        self._run_cli(
+            "spindoctor", ["uninstall-tools", "--add-to-system", wheel],
         )
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────

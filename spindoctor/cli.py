@@ -2637,13 +2637,52 @@ def theme_pack_create(output_dir, target):
         console.print(f"  [yellow]{len(result.skipped)} file(s) skipped.[/yellow]")
 
 
+def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
+    """Return the directory where install-tools should write bat + ini files.
+
+    When the system already has a folder-layout
+    ``Settings/<system>/Emulators.ini``, PCLauncher uses the ``Rom_Path``
+    declared there to locate per-game INIs.  To avoid the
+    "You have not set up … in RocketLauncherUI yet" error, bat + ini files
+    must land in a directory that PCLauncher already searches — which means
+    the first ``Rom_Path`` entry in the existing INI.
+
+    Resolution order
+    ----------------
+    1. First pipe-separated entry in ``Rom_Path`` from
+       ``Settings/<system>/Emulators.ini`` (folder-layout); relative paths
+       are resolved relative to *rl_dir*.
+    2. ``<rl_dir>/Modules/PCLauncher/<system>`` — the fallback used when
+       SpinDoctor created the system from scratch (no pre-existing INI).
+    """
+    emulators_ini = rl_dir / "Settings" / add_to_system / "Emulators.ini"
+    if emulators_ini.exists():
+        try:
+            with emulators_ini.open(encoding="utf-8", errors="replace") as fh:
+                for raw in fh:
+                    stripped = raw.strip()
+                    if stripped.lower().startswith("rom_path="):
+                        val = stripped[len("rom_path="):]
+                        # Rom_Path may be pipe-separated; use the first entry.
+                        first = val.split("|")[0].strip()
+                        if first:
+                            p = Path(first)
+                            if not p.is_absolute():
+                                p = (rl_dir / p).resolve()
+                            return p
+        except OSError:
+            pass
+    return rl_dir / "Modules" / "PCLauncher" / add_to_system
+
+
 @cli.command("install-tools")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Directory to write .bat helpers. Defaults to "
                    "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
-                   "when --add-to-system is unset, or to "
-                   "<rocketlauncher_dir>/Modules/PCLauncher/<system> when it "
-                   "is set (so the INIs sit next to the bats they launch).")
+                   "when --add-to-system is unset, or to the first Rom_Path "
+                   "entry in Settings/<system>/Emulators.ini when it is set "
+                   "(falls back to Modules/PCLauncher/<system> for new "
+                   "systems with no pre-existing INI).")
 @click.option("--add-to-system", "add_to_system", default=None,
               help="HyperSpin system whose database should gain wheel "
                    "entries for these helpers. Use this to expose the "
@@ -2697,8 +2736,9 @@ def install_tools(output_dir, add_to_system):
         if output_dir:
             out = Path(output_dir)
         else:
-            out = (Path(config.rocketlauncher_dir) / "Modules"
-                   / "PCLauncher" / add_to_system)
+            out = _resolve_tools_output_dir(
+                add_to_system, Path(config.rocketlauncher_dir)
+            )
     elif output_dir:
         out = Path(output_dir)
     elif config.rocketlauncher_dir:
@@ -2799,9 +2839,8 @@ def install_tools(output_dir, add_to_system):
         if emulators_ini.exists():
             console.print(
                 f"[dim]  existing:[/dim] [cyan]{emulators_ini}[/cyan]\n"
-                "[dim]  Ensure its[/dim] [cyan]Rom_Path[/cyan] [dim]includes[/dim] "
-                f"[cyan]{rl_dir / 'Modules' / 'PCLauncher' / add_to_system}[/cyan]\n"
-                "[dim]  so RocketLauncher can find the SpinDoctor-added entries.[/dim]"
+                f"[dim]  helper files written to its Rom_Path →[/dim] "
+                f"[cyan]{out}[/cyan]"
             )
     else:
         from .rocketlauncher import generate_synthetic_system_ini
@@ -2816,6 +2855,169 @@ def install_tools(output_dir, add_to_system):
         f"[cyan]spindoctor mainmenu add \"{add_to_system}\" --apply[/cyan]"
         "[dim] if it isn't.[/dim]"
     )
+
+
+# ─── uninstall-tools ──────────────────────────────────────────────────────────
+
+#: Stems of every file that install-tools can write, covering both the current
+#: name ("Refresh Both") and the renamed variant ("Refresh All") so that
+#: uninstall-tools cleans up correctly regardless of which install-tools
+#: version wrote the files.
+_INSTALL_TOOLS_STEMS: tuple[str, ...] = (
+    "Refresh Favorites",
+    "Refresh Recently Played",
+    "Refresh Most Played",
+    "Refresh Both",   # current name written by install-tools
+    "Refresh All",    # renamed variant (pending rename branch)
+)
+
+
+@cli.command("uninstall-tools")
+@click.option("--add-to-system", "add_to_system", default=None,
+              help="HyperSpin system whose PCLauncher folder and database "
+                   "XML should be cleaned. Mirrors the --add-to-system flag "
+                   "of install-tools: pass the same system name you used "
+                   "when installing (e.g. 'Toolkit'). Without this flag, "
+                   "the command removes bats from the default HyperLaunch "
+                   "Tools folder instead.")
+def uninstall_tools(add_to_system):
+    """Remove SpinDoctor tool helpers installed by install-tools.
+
+    \b
+    Reverses `spindoctor install-tools [--add-to-system <NAME>]`.
+
+    \b
+    Without --add-to-system:
+      Deletes every SpinDoctor-written .bat from the default output
+      directory (<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor).
+
+    \b
+    With --add-to-system <SYSTEM>:
+      • Removes the .bat and .ini files from the directory PCLauncher is
+        configured to search (first Rom_Path entry in Settings/<SYSTEM>/
+        Emulators.ini if it exists, otherwise Modules/PCLauncher/<SYSTEM>).
+        Also checks the legacy Modules/PCLauncher/<SYSTEM> path so files
+        written by older versions of install-tools are cleaned up too.
+      • Deletes the matching <game> entries from the system's database
+        XML (<hyperspin_dir>/Databases/<SYSTEM>/<SYSTEM>.xml).
+      Only files / entries that exist are touched; missing ones are silently
+      skipped.
+
+    \b
+    Examples:
+      spindoctor uninstall-tools
+      spindoctor uninstall-tools --add-to-system Toolkit
+    """
+    config = _cfg()
+
+    if add_to_system:
+        # ── Wheel-integration mode: mirror of install-tools --add-to-system ───
+        if not config.rocketlauncher_dir:
+            err_console.print(
+                "[red]rocketlauncher_dir is not set.[/red] Configure it "
+                "in the Setup tab (or `spindoctor config set "
+                "rocketlauncher_dir …`) before using --add-to-system."
+            )
+            sys.exit(1)
+        if not config.hyperspin_dir:
+            err_console.print(
+                "[red]hyperspin_dir is not set.[/red] --add-to-system "
+                "needs it to find the target system's database XML."
+            )
+            sys.exit(1)
+
+        rl_dir = Path(config.rocketlauncher_dir)
+        detected_out = _resolve_tools_output_dir(add_to_system, rl_dir)
+        default_out = rl_dir / "Modules" / "PCLauncher" / add_to_system
+        # Search both the detected Rom_Path directory (where the current
+        # install-tools writes) and the legacy default (Modules/PCLauncher/
+        # <system>), so files written by older versions of install-tools are
+        # also removed.  dict.fromkeys preserves order and deduplicates when
+        # both resolve to the same path.
+        search_dirs: list[Path] = list(dict.fromkeys([detected_out, default_out]))
+
+        # ── Remove .bat and .ini files ────────────────────────────────────────
+        removed_files: list[Path] = []
+        for search_dir in search_dirs:
+            for stem in _INSTALL_TOOLS_STEMS:
+                for suffix in (".bat", ".ini"):
+                    p = search_dir / (stem + suffix)
+                    if p.exists():
+                        p.unlink()
+                        removed_files.append(p)
+
+        if removed_files:
+            console.print(
+                f"[green]-[/green] removed {len(removed_files)} file(s):"
+            )
+            for p in removed_files:
+                console.print(f"  [dim]{p}[/dim]")
+        else:
+            dirs_str = " and ".join(f"[cyan]{d}[/cyan]" for d in search_dirs)
+            console.print(
+                f"[yellow]No SpinDoctor helper files found under[/yellow] "
+                f"{dirs_str} — nothing to delete."
+            )
+
+        # ── Remove <game> entries from the database XML ───────────────────────
+        db_path = (config.databases_dir / add_to_system / f"{add_to_system}.xml")
+        if not db_path.exists():
+            console.print(
+                f"[dim]Database not found:[/dim] [cyan]{db_path}[/cyan] — "
+                "skipping XML cleanup."
+            )
+        else:
+            db = HyperspinDatabase(add_to_system, db_path)
+            db.load()
+            removed_entries: list[str] = []
+            for stem in _INSTALL_TOOLS_STEMS:
+                if db.remove_game(stem):
+                    removed_entries.append(stem)
+            if removed_entries:
+                _bak_dir = (Path(config.backup_dir)
+                            if getattr(config, "backup_dir", "") else None)
+                db.save(backup_dir=_bak_dir)
+                console.print(
+                    f"[green]-[/green] removed {len(removed_entries)} entry(ies) "
+                    f"from [cyan]{db_path}[/cyan]: "
+                    + ", ".join(f"[bold]{n}[/bold]" for n in removed_entries)
+                )
+            else:
+                console.print(
+                    f"[dim]No SpinDoctor entries found in[/dim] "
+                    f"[cyan]{db_path}[/cyan] — nothing to remove."
+                )
+
+    else:
+        # ── Default mode: mirror of install-tools without --add-to-system ─────
+        if not config.rocketlauncher_dir:
+            err_console.print(
+                "[red]No --add-to-system and rocketlauncher_dir is unset.[/red] "
+                "Either pass --add-to-system <SYSTEM> or configure "
+                "rocketlauncher_dir."
+            )
+            sys.exit(1)
+
+        out = (Path(config.rocketlauncher_dir) / "Modules" / "HyperLaunch"
+               / "Tools" / "spindoctor")
+
+        removed_files = []
+        for stem in _INSTALL_TOOLS_STEMS:
+            p = out / (stem + ".bat")
+            if p.exists():
+                p.unlink()
+                removed_files.append(p)
+
+        if removed_files:
+            console.print(
+                f"[green]-[/green] removed {len(removed_files)} helper(s) from "
+                f"[cyan]{out}[/cyan]"
+            )
+        else:
+            console.print(
+                f"[yellow]No SpinDoctor helper files found under[/yellow] "
+                f"[cyan]{out}[/cyan] — nothing to delete."
+            )
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────
