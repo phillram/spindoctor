@@ -633,7 +633,7 @@ def test_gui_constructs_against_real_tk():
         # without a windowstation, both raise TclError on Tk() init —
         # treat that the same as "no display".
         msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg or "init.tcl" in msg:
             pytest.skip(f"Tk display unavailable: {exc}")
         raise
 
@@ -757,7 +757,7 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     except tk.TclError as exc:
         msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg or "init.tcl" in msg:
             pytest.skip(f"Tk display unavailable: {exc}")
         raise
 
@@ -915,7 +915,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
         root_probe = tk.Tk()
     except tk.TclError as exc:
         msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg or "init.tcl" in msg:
             pytest.skip(f"Tk display unavailable: {exc}")
         raise
     root_probe.destroy()
@@ -1056,7 +1056,7 @@ def _build_gui_for_test(monkeypatch):
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     except tk.TclError as exc:
         msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
+        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg or "init.tcl" in msg:
             pytest.skip(f"Tk display unavailable: {exc}")
         raise
     return app, tk
