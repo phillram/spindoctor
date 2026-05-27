@@ -529,7 +529,11 @@ def install_system_background(
 
     Destination::
 
-        <hyperspin_dir>/Media/<system_name>/Images/Backgrounds/<system_name>.png
+        <hyperspin_dir>/Media/Main Menu/Images/Backgrounds/<system_name>.png
+
+    HyperSpin reads system-level attract-mode media from ``Media/Main Menu/``
+    regardless of which system is being displayed.  This is the same directory
+    as the wheel art (``Images/Wheel/``) — all system-tile assets live here.
 
     Only writes when the destination is absent — user images are never overwritten.
 
@@ -540,7 +544,7 @@ def install_system_background(
     if src is None:
         return None, "no_asset"
     dest = (
-        hyperspin_dir / "Media" / system_name
+        hyperspin_dir / "Media" / "Main Menu"
         / "Images" / "Backgrounds" / f"{system_name}.png"
     )
     return _install_asset(src, dest, dry_run)
@@ -556,7 +560,11 @@ def install_system_music(
 
     Destination::
 
-        <hyperspin_dir>/Media/<system_name>/Sound/<system_name>.mp3
+        <hyperspin_dir>/Media/Main Menu/Sound/<system_name>.mp3
+
+    HyperSpin reads system-level attract-mode audio from ``Media/Main Menu/Sound/``.
+    This plays on the main menu while the wheel is highlighting this system,
+    not inside the system's game list.
 
     Only writes when the destination is absent — user files are never overwritten.
 
@@ -566,7 +574,7 @@ def install_system_music(
     src = _resolve_asset(_MUSIC_ASSETS, system_name)
     if src is None:
         return None, "no_asset"
-    dest = hyperspin_dir / "Media" / system_name / "Sound" / f"{system_name}.mp3"
+    dest = hyperspin_dir / "Media" / "Main Menu" / "Sound" / f"{system_name}.mp3"
     return _install_asset(src, dest, dry_run)
 
 

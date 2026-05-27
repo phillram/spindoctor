@@ -5,131 +5,119 @@ synthetic wheels: **Favorites**, **Most Played**, and **Recently Played**.
 
 ---
 
+## HyperSpin media — two separate locations
+
+It helps to understand that HyperSpin reads system-level media from **two different
+directories** depending on what it is showing:
+
+| Location | When it appears | Examples |
+|----------|----------------|---------|
+| `Media\Main Menu\` | **Main Menu** — the top-level wheel where you pick a system; attract mode | Wheel logo, background behind the logo, music during attract mode |
+| `Media\<SystemName>\` | **Inside the system wheel** — the game list for that system | Per-game wheel art, per-game background, per-game theme |
+
+The assets SpinDoctor bundles target the **Main Menu** — they appear during attract mode
+on the top-level wheel, the same context where videos play for each console before
+the wheel spins to the next one.  Per-game media inside the wheel is already handled
+by the existing media-mirror step (mirrored from the source systems).
+
+---
+
 ## What SpinDoctor installs automatically
 
-Every `rebuild` / `--apply` run installs these files without extra flags:
+Every `rebuild --apply` run installs these files without extra flags:
 
-| File | Location | What it does |
-|------|----------|-------------|
-| `Favorites.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
-| `Most Played.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
-| `Recently Played.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
-| `Favorites.png` | `Media\Favorites\Images\Backgrounds\` | Background image while browsing |
-| `Most Played.png` | `Media\Most Played\Images\Backgrounds\` | Background image while browsing |
-| `Recently Played.png` | `Media\Recently Played\Images\Backgrounds\` | Background image while browsing |
-| `Favorites.mp3` | `Media\Favorites\Sound\` | Background music while browsing |
-| `Most Played.mp3` | `Media\Most Played\Sound\` | Background music while browsing |
-| `Recently Played.mp3` | `Media\Recently Played\Sound\` | Background music while browsing |
+| File | Main Menu location | What it does |
+|------|--------------------|-------------|
+| `Favorites.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
+| `Most Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
+| `Recently Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
+| `Favorites.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
+| `Most Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
+| `Recently Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
+| `Favorites.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
+| `Most Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
+| `Recently Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
-SpinDoctor never overwrites a file you placed there yourself.  To replace any bundled
-file with your own version, drop your file at the path shown above and rebuild will leave
-it alone on every subsequent run.
+SpinDoctor never overwrites a file you placed there yourself.
 
-The rebuild summary shows the status of each asset:
+The rebuild summary reports each asset:
 ```
 Wheel art:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
-Background:  installed → D:\Arcade\HyperSpin\Media\Favorites\Images\Backgrounds\Favorites.png
-Music:       installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\Favorites.mp3
+Background:  installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
+Music:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Sound\Favorites.mp3
 ```
-
-Per-game media (wheel logos, backgrounds, videos, themes for each individual game in the
-list) is mirrored from the source system automatically by the media-mirror step.
 
 ---
 
-## Media that requires manual setup
+## Attract-mode behaviour
 
-The assets below are **not** bundled with SpinDoctor and require manual placement.
-They live under `Media\<SystemName>\` — for example `Media\Favorites\`.
+HyperSpin's attract mode (when the cabinet is idle) cycles through every system in
+`Main Menu.xml`.  For each system it shows:
 
-### System background image
+1. The **wheel logo** (`Images\Wheel\<System>.png`) — always shown
+2. The **background image** (`Images\Backgrounds\<System>.png`) — shown behind the logo
+3. The **video** (`Video\<System>.mp4`) — plays if present; attract mode timer controls
+   when it advances regardless of video length (see `Attract_Mode_Time` in
+   `HyperSpin\Settings\HyperSpin.ini`)
+4. The **music** (`Sound\<System>.mp3`) — plays while this system is highlighted
 
-> **Already bundled.** SpinDoctor installs a default background automatically.
-> Follow these instructions only if you want to replace it with your own.
-
-Shown as the backdrop when you're browsing inside the wheel.
-
-**File:** `Media\<SystemName>\Images\Backgrounds\<SystemName>.png`
-
-**Examples:**
-```
-Media\Favorites\Images\Backgrounds\Favorites.png
-Media\Most Played\Images\Backgrounds\Most Played.png
-Media\Recently Played\Images\Backgrounds\Recently Played.png
-```
-
-**Via SpinDoctor CLI:**
-```bat
-spindoctor media-add "path\to\background.png" --system "Favorites" --type background --game "Favorites" --apply
-```
-
-**Manually:** Copy your PNG to the path above.  HyperSpin accepts `.png` and `.jpg`.
+The three synthetic wheels are part of this rotation.  Items 1, 2, and 4 are bundled
+and installed automatically.  Item 3 (attract mode video) is **not** bundled — see below
+if you want to add one.
 
 ---
 
-### System theme
+## Media that requires manual placement
 
-A HyperSpin theme controls the animated background, the font, wheel item sizing, and
-optionally embeds sounds.  Themes ship as `.zip` files.
+### Attract-mode video
 
-**File:** `Media\<SystemName>\Themes\<SystemName>.zip`
+Not bundled — add your own if you have one.
+
+**File:** `Media\Main Menu\Video\<SystemName>.mp4`
 
 **Examples:**
 ```
-Media\Favorites\Themes\Favorites.zip
-Media\Most Played\Themes\Most Played.zip
-Media\Recently Played\Themes\Recently Played.zip
+Media\Main Menu\Video\Favorites.mp4
+Media\Main Menu\Video\Most Played.mp4
+Media\Main Menu\Video\Recently Played.mp4
+```
+
+**Manually:** Copy your `.mp4` (or `.avi`, `.flv`) to the Video path above.
+
+---
+
+### Attract-mode theme
+
+A theme `.zip` controls the animated Main Menu background and layout for a system's
+slot in the attract cycle.
+
+**File:** `Media\Main Menu\Themes\<SystemName>.zip`
+
+**Examples:**
+```
+Media\Main Menu\Themes\Favorites.zip
+Media\Main Menu\Themes\Most Played.zip
+Media\Main Menu\Themes\Recently Played.zip
 ```
 
 **Finding themes:** HyperSpin theme packs are available on EmuMovies, HyperSpin forums,
-and Hyperspin-FE.com.  Look for a "Main Menu" or "System" theme pack that matches the
-system name, or repurpose any existing `.zip` theme.
-
-**Via SpinDoctor CLI:**
-```bat
-spindoctor media-add "path\to\Favorites.zip" --system "Favorites" --type theme --game "Favorites" --apply
-```
+and Hyperspin-FE.com.  Look for a "Main Menu" theme pack.
 
 **Manually:** Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive
 directly) to the Themes path above.
 
 ---
 
-### Background music
+### Navigation sounds (inside the game list)
 
-> **Already bundled.** SpinDoctor installs default background music automatically.
-> Follow these instructions only if you want to replace it with your own.
+These are separate from attract-mode music.  They play when you move the cursor or
+select a game while browsing the game list **inside** a synthetic wheel.
 
-Plays on loop while browsing the wheel.
+**Directory:** `Media\<SystemName>\Sound\`  ← note: inside the system, not Main Menu
 
-**File:** `Media\<SystemName>\Sound\<SystemName>.mp3`
-
-**Examples:**
-```
-Media\Favorites\Sound\Favorites.mp3
-Media\Most Played\Sound\Most Played.mp3
-Media\Recently Played\Sound\Recently Played.mp3
-```
-
-**Via SpinDoctor CLI:**
-```bat
-spindoctor media-add "path\to\Favorites.mp3" --system "Favorites" --type sound --game "Favorites" --apply
-```
-
-**Manually:** Copy your `.mp3` to the Sound path above.
-
----
-
-### Navigation sounds
-
-HyperSpin plays sounds when the wheel cursor moves and when a game is selected.
-Per-system sounds override the global HyperSpin defaults.
-
-**Directory:** `Media\<SystemName>\Sound\`
-
-**Files HyperSpin looks for inside that folder:**
+**Files HyperSpin looks for:**
 
 | Filename | When it plays |
 |----------|--------------|
@@ -137,9 +125,9 @@ Per-system sounds override the global HyperSpin defaults.
 | `select.mp3` | Game selected (before launch) |
 | `back.mp3` | Wheel closed / back pressed |
 | `letter.mp3` | Jump-to-letter navigation |
-| `game_over.mp3` | Optional; played after a session |
 
-Not all files are required — HyperSpin falls back to its global sounds for any that are missing.
+Not all files are required — HyperSpin falls back to its global sounds for any that
+are missing.
 
 **Via SpinDoctor CLI:**
 ```bat
@@ -147,93 +135,54 @@ spindoctor media-add "path\to\navigate.mp3" --system "Favorites" --type sound --
 spindoctor media-add "path\to\select.mp3"   --system "Favorites" --type sound --game "select"   --apply
 ```
 
-**Manually:** Copy `.mp3` files to `Media\<SystemName>\Sound\`.
+**Manually:** Copy `.mp3` files to `Media\Favorites\Sound\` (or `Most Played`, etc.).
 
 ---
 
-### System video preview
+## Replacing a bundled file with your own
 
-Shown when the wheel is idle (intro video / attract mode for the system itself, not for a
-specific game).
-
-**File:** `Media\<SystemName>\Video\<SystemName>.mp4`
-
-**Examples:**
-```
-Media\Favorites\Video\Favorites.mp4
-Media\Most Played\Video\Most Played.mp4
-Media\Recently Played\Video\Recently Played.mp4
-```
-
-**Via SpinDoctor CLI:**
-```bat
-spindoctor media-add "path\to\Favorites.mp4" --system "Favorites" --type video --game "Favorites" --apply
-```
-
-**Manually:** Copy your `.mp4` (or `.avi`, `.flv`) to the Video path above.
+Drop your own file at the exact path shown in the table above, then run rebuild —
+SpinDoctor detects the file already exists and skips it on every subsequent run.
 
 ---
 
-## Complete media layout for one synthetic wheel
+## Complete media layout
 
 ```
 HyperSpin\
 └── Media\
-    ├── Main Menu\
-    │   └── Images\
-    │       └── Wheel\
-    │           ├── Favorites.png          ← AUTO: wheel selector logo
-    │           ├── Most Played.png        ← AUTO: wheel selector logo
-    │           └── Recently Played.png    ← AUTO: wheel selector logo
-    │
-    └── Favorites\
+    └── Main Menu\                         ← ALL system-level / attract-mode media lives here
         ├── Images\
-        │   ├── Wheel\                     ← per-game wheel art (mirrored from source)
-        │   ├── Backgrounds\
-        │   │   └── Favorites.png          ← AUTO: system background image
-        │   └── Artwork1\                  ← per-game art (mirrored from source)
-        ├── Themes\
-        │   ├── Favorites.zip              ← system theme (manual — see above)
-        │   └── <game>.zip                 ← per-game themes (mirrored from source)
+        │   ├── Wheel\
+        │   │   ├── Favorites.png          ← AUTO: wheel logo
+        │   │   ├── Most Played.png        ← AUTO: wheel logo
+        │   │   └── Recently Played.png    ← AUTO: wheel logo
+        │   └── Backgrounds\
+        │       ├── Favorites.png          ← AUTO: attract-mode background
+        │       ├── Most Played.png        ← AUTO: attract-mode background
+        │       └── Recently Played.png    ← AUTO: attract-mode background
         ├── Sound\
-        │   ├── Favorites.mp3              ← AUTO: background music
-        │   ├── navigate.mp3               ← navigation sounds (manual — see above)
-        │   ├── select.mp3
+        │   ├── Favorites.mp3              ← AUTO: attract-mode music
+        │   ├── Most Played.mp3            ← AUTO: attract-mode music
+        │   └── Recently Played.mp3        ← AUTO: attract-mode music
+        ├── Video\
+        │   ├── Favorites.mp4              ← attract-mode video (manual)
         │   └── ...
-        └── Video\
-            ├── Favorites.mp4              ← system intro video (manual — see above)
-            └── <game>.mp4                 ← per-game videos (mirrored from source)
+        └── Themes\
+            ├── Favorites.zip              ← attract-mode theme (manual)
+            └── ...
+
+    └── Favorites\                         ← per-game media (auto-mirrored from source systems)
+        ├── Images\
+        │   ├── Wheel\      ← per-game logos
+        │   ├── Backgrounds\ ← per-game backgrounds
+        │   └── Artwork1\   ← per-game art
+        ├── Themes\         ← per-game themes
+        ├── Sound\          ← navigation sounds (manual, optional)
+        └── Video\          ← per-game videos
 ```
 
-**AUTO** = installed by `rebuild --apply` from the bundled package assets.  Only written
-when absent — user files at these paths are never overwritten.
+**AUTO** = installed by `rebuild --apply` from bundled package assets.
+Only written when absent — existing user files are never overwritten.
 
-> The same layout applies to `Most Played\` and `Recently Played\` — substitute the
-> system name everywhere `Favorites` appears.
-
----
-
-## Fetching system-level media from ScreenScraper
-
-SpinDoctor can download Main Menu media (backgrounds, system videos, system wheel art) for
-standard consoles via ScreenScraper.  The synthetic wheels are not in the ScreenScraper
-database, so this approach works only for real arcade / console systems.  For synthetic
-wheels, manual placement (as above) is the only option.
-
-```bat
-spindoctor fetch-media --system "MAME" --media-type background --apply
-```
-
----
-
-## Replacing the bundled wheel art images
-
-SpinDoctor ships wheel art for all three synthetic wheels.  To use your own images instead:
-
-1. Create your PNG at the correct path (see table above).
-2. Run `spindoctor favorites rebuild --apply` (or the equivalent for the wheel).
-3. SpinDoctor detects the file already exists and leaves it untouched.
-
-The bundled images are `1536 × 1024 px` RGBA PNGs on a transparent background.
-HyperSpin renders wheel art at a size controlled by your theme; a wide landscape
-aspect ratio (roughly `4:1`) tends to look best in the standard wheel layout.
+> The same layout applies to `Most Played\` and `Recently Played\`.

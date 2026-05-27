@@ -8,10 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships nine media assets (wheel selector logo + system background + background music, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them at the correct HyperSpin paths:
+- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships nine media assets (wheel selector logo + attract-mode background + attract-mode music, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them to `Media\Main Menu\` — the directory HyperSpin reads for attract-mode / system-selector display:
   - `Media\Main Menu\Images\Wheel\<SystemName>.png` — wheel selector logo (1536 × 1024 px)
-  - `Media\<SystemName>\Images\Backgrounds\<SystemName>.png` — background image while browsing (2752 × 1536 px)
-  - `Media\<SystemName>\Sound\<SystemName>.mp3` — background music while browsing (192 kbps MP3)
+  - `Media\Main Menu\Images\Backgrounds\<SystemName>.png` — background shown during attract mode (2752 × 1536 px)
+  - `Media\Main Menu\Sound\<SystemName>.mp3` — music played during attract mode (192 kbps MP3)
 
   All installs are idempotent: if a file already exists (user-placed or previously installed), SpinDoctor skips it. The rebuild summary shows a `Wheel art / Background / Music` row for each asset (`installed` / `skipped` / `no_asset`). MP3 files are now included in the `pyproject.toml` package-data glob.
 
