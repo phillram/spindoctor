@@ -153,6 +153,16 @@ For macOS, schedule via `crontab -e` with an `@reboot` line, or write a launchd 
 
 Every XML write in SpinDoctor uses a **temp-file + atomic rename** pattern. The live `.xml` path is only replaced once the new content is fully written to a sibling `.tmp` file — so a forced shutdown or power cut mid-save leaves the previous complete version in place, never a truncated file. A timestamped `.bak` of the previous version is also kept alongside each XML so recovery is always one copy-paste away.
 
+By default each `*.tmp` file lives next to the real file (in the system's Databases folder). If you'd rather keep all temp files in one dedicated place:
+
+```bat
+spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp
+```
+
+Or set it in the **Setup tab** of the GUI — it appears after the Backup root directory field. The folder must be on the **same drive** as `hyperspin_dir`; SpinDoctor silently falls back to writing next to the target for any file on a different drive.
+
+If a shutdown happens mid-write, any orphaned `*.tmp` files are detected by `spindoctor self-doctor` (they're flagged at WARN if older than 5 minutes) and cleaned up by `spindoctor self-doctor --fix` or `spindoctor cleanup run --include stale-atomic-writes --apply`. Both commands scan the configured `atomic_tmp_dir` as well as the Databases tree and `~/.spindoctor/`.
+
 ## Tools audit — what other arcade utilities does this cabinet already have?
 
 A typical HyperSpin cabinet accumulates a graveyard of third-party utilities — Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, Don's HyperTools, HyperT00ls, the CUE Renamer, Hypersearch, plus drivers and mappers like Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput. `spindoctor tools-audit` scans `HyperSpin\Tools`, `RocketLauncher\Modules`, the emulators tree, and Program Files for known tools and tells you which ones spindoctor already replaces.

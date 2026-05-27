@@ -328,14 +328,22 @@ def check_stale_atomic_writes(report: SelfDoctorReport, config) -> SelfCheck:
     stale_bytes = 0
     fresh = 0
 
-    # Search locations: Databases tree (XML writes) + config dir (JSON store)
-    search_roots: list[Path] = [CONFIG_DIR]
+    # Search locations (match what cleanup._stale_atomic_writes scans):
+    # 1. User-configured scratch dir (may hold ALL temps when set)
+    # 2. Databases tree (XML writes, default fallback)
+    # 3. Config dir (JSON store writes)
+    configured_tmp = Path(getattr(config, "atomic_tmp_dir", "") or "")
     db_dir = getattr(config, "databases_dir", None)
-    if db_dir and Path(db_dir).exists():
-        search_roots.append(Path(db_dir))
 
-    for root in search_roots:
-        pattern_iter = root.rglob("*.tmp") if root == Path(db_dir or "") else root.glob("*.tmp")
+    search_items: list[tuple[Path, bool]] = []  # (path, recursive)
+    if configured_tmp and configured_tmp.exists():
+        search_items.append((configured_tmp, False))
+    if db_dir and Path(db_dir).exists():
+        search_items.append((Path(db_dir), True))
+    search_items.append((CONFIG_DIR, False))
+
+    for root, recursive in search_items:
+        pattern_iter = root.rglob("*.tmp") if recursive else root.glob("*.tmp")
         for p in pattern_iter:
             if not p.is_file():
                 continue
@@ -478,16 +486,17 @@ def _apply_safe_fixes(
 
     if atomic_check.fixable and atomic_check.reclaimable_bytes > 0:
         stale_threshold = _ATOMIC_TMP_STALE_MINUTES / (60 * 24)
-        search_roots: list[Path] = [CONFIG_DIR]
+        # Mirror the search order used in check_stale_atomic_writes
+        configured_tmp = Path(getattr(config, "atomic_tmp_dir", "") or "")
         db_dir = getattr(config, "databases_dir", None)
+        search_items: list[tuple[Path, bool]] = []
+        if configured_tmp and configured_tmp.exists():
+            search_items.append((configured_tmp, False))
         if db_dir and Path(db_dir).exists():
-            search_roots.append(Path(db_dir))
-        for root in search_roots:
-            pattern_iter = (
-                root.rglob("*.tmp")
-                if root != CONFIG_DIR
-                else root.glob("*.tmp")
-            )
+            search_items.append((Path(db_dir), True))
+        search_items.append((CONFIG_DIR, False))
+        for root, recursive in search_items:
+            pattern_iter = root.rglob("*.tmp") if recursive else root.glob("*.tmp")
             for p in pattern_iter:
                 if not p.is_file():
                     continue

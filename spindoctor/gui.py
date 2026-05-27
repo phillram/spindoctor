@@ -399,6 +399,7 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("output_dir",            "Default output directory",             r"D:\SpinDoctorOutput",        True),
     ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
     ("backup_dir",            "Backup root directory",                r"D:\Backups",                 True),
+    ("atomic_tmp_dir",        "Atomic write temp directory",          r"D:\SpinDoctorTemp",          True),
 )
 
 # Scraper credential fields shown below the path fields in the Setup tab.

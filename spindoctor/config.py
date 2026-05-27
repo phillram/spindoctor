@@ -106,6 +106,15 @@ class Config:
     # instead of next to the source file. Full library backups default to this
     # folder when no explicit --target is given.
     backup_dir: str = ""
+    # Scratch folder for the *.tmp files written during atomic XML/JSON saves.
+    # When blank (the default), each temp file lands next to the real file
+    # (target.parent) — which is safe but scatters *.tmp files through the
+    # HyperSpin tree.  Set this to a dedicated folder (e.g. D:\SpinDoctorTemp)
+    # to keep temp files in one place that is easy to inspect and clean.
+    # MUST be on the same filesystem/drive as your HyperSpin directory;
+    # SpinDoctor silently falls back to target.parent for any write whose
+    # target is on a different drive.
+    atomic_tmp_dir: str = ""
     max_concurrent_downloads: int = 4
     match_threshold: float = 0.80
     interactive_matching: bool = True
@@ -211,6 +220,18 @@ class Config:
     def effective_output_dir(self, override: Optional[str] = None) -> Optional[Path]:
         d = override or self.output_dir
         return Path(d) if d else None
+
+    @property
+    def effective_atomic_tmp_dir(self) -> Optional[Path]:
+        """Return the configured atomic temp dir, or None if unset.
+
+        Callers pass this to db.save() / save_store() as the ``tmp_dir``
+        argument.  The write helpers perform the same-filesystem check and
+        silently fall back to target.parent if the configured path is on a
+        different drive — so the property just hands back the raw Path (or
+        None) without doing its own validation.
+        """
+        return Path(self.atomic_tmp_dir) if self.atomic_tmp_dir else None
 
     # ── validation ─────────────────────────────────────────────────────────────
 

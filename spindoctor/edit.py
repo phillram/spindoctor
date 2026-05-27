@@ -325,12 +325,13 @@ def apply_batch_edit(
         return results, None
 
     out_root = config.effective_output_dir(str(output_dir) if output_dir else None)
+    _tmp = config.effective_atomic_tmp_dir
     if out_root is not None:
         target = out_root / "Databases" / system / f"{system}.xml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        db.save(output_path=target)
+        db.save(output_path=target, tmp_dir=_tmp)
     else:
-        db.save()
+        db.save(tmp_dir=_tmp)
 
     out_dir = manifest_dir or EDIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -392,7 +393,7 @@ def undo_batch_edit(
                 game_name=name, skipped=True, reason="no changes to revert",
             ))
 
-    db.save()
+    db.save(tmp_dir=config.effective_atomic_tmp_dir)
     try:
         manifest_path.unlink()
     except OSError:
@@ -709,12 +710,13 @@ def apply_rename(
         db.upsert_game(renamed)
 
     out_root = config.effective_output_dir(str(output_dir) if output_dir else None)
+    _tmp = config.effective_atomic_tmp_dir
     if out_root is not None:
         target = out_root / "Databases" / op.system / f"{op.system}.xml"
         target.parent.mkdir(parents=True, exist_ok=True)
-        db.save(output_path=target)
+        db.save(output_path=target, tmp_dir=_tmp)
     else:
-        db.save()
+        db.save(tmp_dir=_tmp)
 
     if db_change is not None:
         applied.append(db_change)
@@ -817,7 +819,7 @@ def undo_rename(
                 if k in GameEntry.__dataclass_fields__
             })
             db.upsert_game(restored)
-    db.save()
+    db.save(tmp_dir=config.effective_atomic_tmp_dir)
 
     reversed_changes.append(FileChange(
         kind="db", src=None, dest=None,

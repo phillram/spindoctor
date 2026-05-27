@@ -22,6 +22,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **New `stale-atomic-writes` cleanup category** — If a write was interrupted before the atomic rename completed (power cut, `SIGKILL`), a `.tmp` sidecar file is left next to the live XML. `cleanup audit` and `cleanup run --include stale-atomic-writes` now surface and remove these. `self-doctor --fix` also removes them automatically (5-minute age threshold — a write normally completes in milliseconds).
 
+- **`atomic_tmp_dir` config option** — All atomic-write `*.tmp` files now land in a single user-configured scratch directory instead of scattered next to their respective XML/JSON targets throughout the HyperSpin Databases tree. Set via `spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp` or the new **Atomic write temp directory** field in the GUI Setup tab. Must be on the same drive as `hyperspin_dir`; cross-drive values are silently ignored (falls back to writing next to the target). `cleanup` and `self-doctor` both scan the configured dir in addition to the default fallback locations.
+
 ---
 
 ## [2.4.10] - 2026-05-26

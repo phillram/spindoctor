@@ -283,24 +283,48 @@ def _stale_atomic_writes(config: Config) -> CategoryReport:
     SpinDoctor writes all HyperSpin XML and JSON store files via a
     temp-file + ``os.replace()`` rename.  Under normal operation the
     ``.tmp`` file lives for milliseconds; after a forced shutdown it is
-    left beside the real file.  It contains the new (possibly partial)
-    content that was never swapped in — the live ``.xml`` is intact.
-    These files are always safe to delete.
+    left behind.  It contains the new (possibly partial) content that was
+    never swapped in — the live ``.xml`` is intact.  Always safe to delete.
 
-    Scans: ``<HyperSpin>/Databases/`` (recursive) for the XML write
-    paths, and ``~/.spindoctor/`` (non-recursive) for the JSON store
-    write path.
+    Scans (in order of priority):
+    1. ``config.atomic_tmp_dir`` — the user-configured scratch folder, if set.
+       This is where ALL temp files land when the option is configured.
+    2. ``<HyperSpin>/Databases/`` (recursive) — the default fallback location
+       when ``atomic_tmp_dir`` is blank, or for any write whose target is on
+       a different drive from ``atomic_tmp_dir``.
+    3. ``~/.spindoctor/`` (non-recursive) — JSON store write path.
     """
     files: list[FileEntry] = []
+    location_parts: list[str] = []
+
+    # 1. User-configured scratch directory (may hold ALL the temps when set)
+    configured_tmp = getattr(config, "atomic_tmp_dir", "") or ""
+    if configured_tmp:
+        p = Path(configured_tmp)
+        if p.exists():
+            files += _scan_glob(p, "*.tmp", recursive=False)
+        location_parts.append(str(p))
+
+    # 2. Default fallback: Databases tree (recursive)
     db_base = config.databases_dir if config.hyperspin_dir else None
     if db_base and Path(db_base).exists():
         files += _scan_glob(Path(db_base), "*.tmp", recursive=True)
-    if CONFIG_DIR.exists():
-        files += _scan_glob(CONFIG_DIR, "*.tmp", recursive=False)
-    location_parts = []
     if db_base:
         location_parts.append(str(db_base))
+
+    # 3. Config dir (JSON store write path, non-recursive)
+    if CONFIG_DIR.exists():
+        files += _scan_glob(CONFIG_DIR, "*.tmp", recursive=False)
     location_parts.append(str(CONFIG_DIR))
+
+    note = "These can only appear after an abnormal shutdown mid-save."
+    if configured_tmp:
+        note = (
+            f"atomic_tmp_dir is set to {configured_tmp!r} — temp files normally "
+            "land there. The Databases/ scan still catches any fallback writes "
+            "on a different drive."
+        )
+
     return CategoryReport(
         key="stale-atomic-writes",
         label="Interrupted XML/JSON write temps",
@@ -313,7 +337,7 @@ def _stale_atomic_writes(config: Config) -> CategoryReport:
         location=", ".join(location_parts),
         safe=True,
         files=files,
-        note="These can only appear after an abnormal shutdown mid-save.",
+        note=note,
     )
 
 
