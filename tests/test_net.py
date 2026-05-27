@@ -38,9 +38,8 @@ def test_make_session_user_agent_can_be_overridden():
 
 
 def test_tls12_adapter_poolmanager_uses_tls12_floor():
-    if not hasattr(ssl, "TLSVersion"):
-        pytest.skip("ssl.TLSVersion not available on this Python build")
-
+    # ssl.TLSVersion was added in Python 3.7; project floor is 3.8,
+    # so this is always available — no skip guard needed.
     adapter = _TLS12Adapter()
     adapter.init_poolmanager(connections=1, maxsize=1, block=False)
     ctx = adapter.poolmanager.connection_pool_kw["ssl_context"]

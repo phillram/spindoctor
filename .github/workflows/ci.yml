@@ -68,9 +68,27 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a pytest -q -n auto
 
-      - name: Run tests (Windows)
+      # actions/setup-python on Windows does not set TCL_LIBRARY, so Tcl
+      # cannot locate init.tcl and tk.Tk() raises TclError at test time.
+      # Derive the path from sys.prefix (the Python install root) and
+      # export it before pytest runs.
+      - name: Set TCL_LIBRARY (Windows)
         if: runner.os == 'Windows'
-        run: pytest -q -n auto
+        shell: bash
+        run: |
+          echo "TCL_LIBRARY=$(python -c 'import sys; print(sys.prefix)')/tcl/tcl8.6" >> $GITHUB_ENV
+
+      # pytest-xdist worker processes on Windows are spawned without a
+      # desktop handle, so tk.Tk() raises "no windowstation" inside workers.
+      # Run GUI tests in the main process (no -n) and everything else in
+      # parallel so the windowstation is always available for Tk.
+      - name: Run non-GUI tests (Windows, parallel)
+        if: runner.os == 'Windows'
+        run: pytest -q -n auto --ignore=tests/test_gui.py
+
+      - name: Run GUI tests (Windows, serial)
+        if: runner.os == 'Windows'
+        run: pytest -q tests/test_gui.py
 
   build-smoke:
     name: PyInstaller build smoke test

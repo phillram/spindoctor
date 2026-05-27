@@ -613,9 +613,8 @@ def test_gui_constructs_against_real_tk():
     they don't accept (the Checkbutton ``-foreground`` TclError,
     shipped in v1.7.2, fixed in v1.8.0).
     Both bugs slipped through earlier because every other test stops
-    short of constructing a window. Skips if the host has no display
-    (typical bare CI runner without xvfb; Linux CI here installs xvfb
-    explicitly so this branch is exercised).
+    short of constructing a window. Skips only if tkinter itself is not
+    installed; CI provides xvfb on Linux and sets TCL_LIBRARY on Windows.
     """
     try:
         import tkinter as tk
@@ -623,19 +622,7 @@ def test_gui_constructs_against_real_tk():
     except ImportError:
         pytest.skip("Tkinter not available")
 
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
-
-    try:
-        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
-    except tk.TclError as exc:
-        # macOS without an active GUI session, or Windows headless CI
-        # without a windowstation, both raise TclError on Tk() init —
-        # treat that the same as "no display".
-        msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
-            pytest.skip(f"Tk display unavailable: {exc}")
-        raise
+    app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
 
     try:
         app.root.update_idletasks()
@@ -723,9 +710,6 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
     except ImportError:
         pytest.skip("Tkinter not available")
 
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
-
     # Patch external surfaces before the GUI is constructed so the
     # post-construction startup checks don't fire real OS commands.
     monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: None)
@@ -753,13 +737,7 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
     monkeypatch.setattr(gui._SpinDoctorGUI,
                         "_manual_update_check", lambda self: None)
 
-    try:
-        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
-    except tk.TclError as exc:
-        msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
-            pytest.skip(f"Tk display unavailable: {exc}")
-        raise
+    app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
 
     try:
         # Silence the messagebox dialogs that some handlers open — they
@@ -908,16 +886,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
     except ImportError:
         pytest.skip("Tkinter not available")
 
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
-
-    try:
-        root_probe = tk.Tk()
-    except tk.TclError as exc:
-        msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
-            pytest.skip(f"Tk display unavailable: {exc}")
-        raise
+    root_probe = tk.Tk()
     root_probe.destroy()
 
     original_bind_all = tk.Misc.bind_all
@@ -1029,19 +998,17 @@ def test_ui_scale_presets_includes_1x():
 def _build_gui_for_test(monkeypatch):
     """Construct a real `_SpinDoctorGUI` for the 2.0-surface tests.
 
-    Returns ``(app, tk_module)`` or calls ``pytest.skip`` when no display
-    is available (CI without xvfb, macOS without a GUI session, headless
-    Windows). Mirrors the harness used by ``test_gui_constructs_against_real_tk``
-    and ``test_gui_menu_commands_are_safe_to_invoke``.
+    Constructs a real ``_SpinDoctorGUI`` for the 2.0-surface tests. Skips
+    only if tkinter itself is not installed; CI provides xvfb on Linux and
+    sets TCL_LIBRARY on Windows. Mirrors the harness used by
+    ``test_gui_constructs_against_real_tk`` and
+    ``test_gui_menu_commands_are_safe_to_invoke``.
     """
     try:
         import tkinter as tk
         from tkinter import filedialog, messagebox, scrolledtext, ttk
     except ImportError:
         pytest.skip("Tkinter not available")
-
-    if sys.platform.startswith("linux") and not os.environ.get("DISPLAY"):
-        pytest.skip("no DISPLAY — run under xvfb to exercise this test")
 
     # Stub the subprocess + startfile surfaces so any post-construction
     # callbacks (notably the manual update check on first paint) can't
@@ -1052,13 +1019,7 @@ def _build_gui_for_test(monkeypatch):
     from spindoctor import update_check
     monkeypatch.setattr(update_check, "check_for_update", lambda _v: None)
 
-    try:
-        app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
-    except tk.TclError as exc:
-        msg = str(exc).lower()
-        if "no display" in msg or "couldn't connect" in msg or "no windowstation" in msg:
-            pytest.skip(f"Tk display unavailable: {exc}")
-        raise
+    app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     return app, tk
 
 
