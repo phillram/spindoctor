@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import warnings
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
@@ -90,7 +92,23 @@ def save_store(store: FavoriteStore, path: Path = FAVORITES_FILE) -> None:
         "target_system": store.target_system,
         "entries": [asdict(e) for e in store.entries],
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    data = json.dumps(payload, indent=2).encode("utf-8")
+    # Write atomically so a shutdown mid-save never corrupts the store.
+    fd, tmp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 # ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -667,7 +685,22 @@ def clear_native_favorites(
                 matches = len(_re.findall(r'favorite\s*=\s*["\']1["\']', content))
                 new_content = _FAV_ATTR_RE.sub("", content)
                 if new_content != content:
-                    xml_path.write_text(new_content, encoding="utf-8")
+                    data = new_content.encode("utf-8")
+                    fd, tmp = tempfile.mkstemp(dir=xml_path.parent, suffix=".tmp")
+                    try:
+                        os.write(fd, data)
+                        os.close(fd)
+                        os.replace(tmp, xml_path)
+                    except Exception:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                        try:
+                            os.unlink(tmp)
+                        except OSError:
+                            pass
+                        raise
                     summary.xml_cleared += 1
                     summary.xml_games_cleared += matches
             except OSError as exc:

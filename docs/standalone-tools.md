@@ -120,18 +120,38 @@ Three integration patterns, in roughly increasing order of "how much you want it
 
 The GUI's **Tools** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Schedule auto-refresh* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Remove scheduled task* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required.
 
-Equivalent CLI invocation:
+**This is the recommended method.** The GUI generates two companion files:
+
+| File | Purpose |
+|---|---|
+| `spindoctor-refresh-wheels.bat` | Runs the three rebuild commands; each wrapped with `START /LOW /B /WAIT` so the spindoctor processes run at Windows **IDLE priority** — only consuming CPU that HyperSpin and RocketLauncher aren't using. |
+| `spindoctor-refresh-wheels.vbs` | Calls the bat with `WshShell.Run(bat, 0, True)` — window style `0` = hidden — so **no `cmd.exe` window** ever appears on the cabinet screen. |
+
+The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refresh-wheels.vbs`.
+
+> **If you have an existing task registered before v2.4.11**, click *Remove scheduled task* then *Schedule auto-refresh* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
+
+### Manual registration
+
+If you need to register by hand (e.g. a group-policy environment that restricts the GUI), generate the script pair first by clicking *Schedule auto-refresh* once, then adapt the task to point at the generated VBS:
 
 ```bat
+:: Step 1 — let the GUI write the .bat/.vbs pair (close the GUI after).
+:: Step 2 — register the task manually, pointing at the VBS:
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
-  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
+  /delay 0002:00 ^
+  /tr "wscript.exe //B \"%USERPROFILE%\.spindoctor\spindoctor-refresh-wheels.vbs\""
 ```
 
-(`&` rather than `&&` so a failing favorites rebuild doesn't kill the rest of the chain.)
+> **Do not** register `cmd.exe /c bat.bat` directly — that runs at normal process priority and opens a console window, both of which can stall the cabinet frontend.
 
-Or drop one of the `.bat` files (from `scripts/`, or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`).
+Or drop the `.bat` files (from `scripts/`, or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`) for a lower-ceremony alternative — they run at normal priority but are fine for Tools-menu or manual invocations.
 
 For macOS, schedule via `crontab -e` with an `@reboot` line, or write a launchd plist under `~/Library/LaunchAgents/`. For Linux, `crontab -e` or a `systemd --user` unit.
+
+### Shutdown safety
+
+Every XML write in SpinDoctor uses a **temp-file + atomic rename** pattern. The live `.xml` path is only replaced once the new content is fully written to a sibling `.tmp` file — so a forced shutdown or power cut mid-save leaves the previous complete version in place, never a truncated file. A timestamped `.bak` of the previous version is also kept alongside each XML so recovery is always one copy-paste away.
 
 ## Tools audit — what other arcade utilities does this cabinet already have?
 

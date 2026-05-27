@@ -6,7 +6,9 @@ to ``xml.etree.ElementTree`` (which loses comments) with a one-time warning.
 """
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 import warnings
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -32,6 +34,48 @@ _FIELD_ORDER = (
 )
 
 _LXML_WARNED = False
+
+
+def _atomic_write_bytes(target: Path, data: bytes) -> None:
+    """Write *data* to *target* via a temp file + atomic rename.
+
+    Direct writes leave a window where an interrupted save (power cut,
+    forced shutdown) produces a truncated, unparseable XML — HyperSpin
+    can't open the wheel until the file is manually restored from the
+    ``.bak``.  Writing to a sibling temp file and then calling
+    ``os.replace`` guarantees the live path is always either the previous
+    complete version or the new complete version — never a partial write.
+    """
+    fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_via_tree(target: Path, tree_write_fn) -> None:
+    """Call *tree_write_fn(file_obj)* into a temp file, then rename atomically."""
+    fd, tmp = tempfile.mkstemp(dir=target.parent, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            tree_write_fn(f)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _warn_no_lxml_once() -> None:
@@ -312,13 +356,14 @@ class HyperspinDatabase:
                 xml_declaration=want_decl,
                 encoding="UTF-8" if want_decl else None,
             )
-            target.write_bytes(xml_bytes)
+            _atomic_write_bytes(target, xml_bytes)
         else:
             et_indent(self._tree)
-            with open(target, "wb") as f:
+            def _et_write(f):
                 if want_decl:
                     f.write(b'<?xml version="1.0"?>\n')
                 self._tree.write(f, encoding="utf-8", xml_declaration=False)
+            _atomic_write_via_tree(target, _et_write)
 
     # Build a brand-new tree from scratch.  Used the first time a DB is created.
     def _write_fresh(self, target: Path) -> None:
@@ -355,14 +400,15 @@ class HyperspinDatabase:
                 xml_declaration=want_decl,
                 encoding="UTF-8" if want_decl else None,
             )
-            target.write_bytes(xml_bytes)
+            _atomic_write_bytes(target, xml_bytes)
         else:
             tree = ET.ElementTree(root)
             et_indent(tree)
-            with open(target, "wb") as f:
+            def _et_write_fresh(f):
                 if want_decl:
                     f.write(b'<?xml version="1.0"?>\n')
                 tree.write(f, encoding="utf-8", xml_declaration=False)
+            _atomic_write_via_tree(target, _et_write_fresh)
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────────
