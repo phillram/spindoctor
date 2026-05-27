@@ -2732,7 +2732,10 @@ def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, appl
                     f"[bold]Statistics:[/bold] {verb} {len(stat_files)} Statistics.ini file(s):"
                 )
                 for f in sorted(stat_files):
-                    rel = f.relative_to(rl) if f.is_relative_to(rl) else f
+                    try:
+                        rel = f.relative_to(rl)
+                    except ValueError:
+                        rel = f
                     console.print(f"  [dim]{rel}[/dim]")
                     if apply_changes:
                         try:
