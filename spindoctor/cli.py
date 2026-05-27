@@ -2160,6 +2160,7 @@ _ASSET_LABELS: dict[str, str] = {
     "background": "Background",
     "music":      "Music",
     "video":      "Video",
+    "theme":      "Theme zip",
 }
 
 
@@ -2176,7 +2177,7 @@ def _add_bundled_asset_rows(
     *skip_no_asset* (default ``True``) suppresses rows where status is
     ``"no_asset"`` — keeps output clean for non-synthetic wheels.
     """
-    for asset_key in ("wheel_art", "background", "music", "video"):
+    for asset_key in ("wheel_art", "background", "music", "video", "theme"):
         pair = bundled.get(asset_key)
         if pair is None:
             continue

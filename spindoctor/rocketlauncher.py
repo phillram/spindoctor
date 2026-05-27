@@ -479,6 +479,18 @@ _VIDEO_ASSETS: dict[str, str] = {
     "Recently Played": "video_Recently_Played.mp4",
 }
 
+# HyperSpin theme zip — controls where HyperSpin renders the video slot and
+# other artwork overlays when the system is selected on the Main Menu.
+# Without a theme zip HyperSpin may not show the attract-mode video at all.
+# Contains: Theme.xml (layout/video element), Background.swf, Artwork1.swf,
+# Artwork4.swf (all minimal blank SWFs), Video.png (thumbnail), Info.txt.
+# HyperSpin path: Media\Main Menu\Themes\<SystemName>.zip
+_THEME_ASSETS: dict[str, str] = {
+    "Favorites":       "theme_Favorites.zip",
+    "Most Played":     "theme_Most_Played.zip",
+    "Recently Played": "theme_Recently_Played.zip",
+}
+
 
 def _install_asset(
     src: Path,
@@ -645,6 +657,38 @@ def install_system_video(
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
 
 
+def install_system_theme(
+    hyperspin_dir: Path,
+    system_name: str,
+    *,
+    dry_run: bool = False,
+    overwrite: bool = False,
+) -> tuple[Optional[Path], str]:
+    """Copy the bundled HyperSpin theme zip for *system_name* to HyperSpin.
+
+    Destination::
+
+        <hyperspin_dir>/Media/Main Menu/Themes/<system_name>.zip
+
+    The theme zip contains ``Theme.xml`` (with a ``<video>`` element that tells
+    HyperSpin where to render the attract-mode video), minimal blank SWF files
+    for ``Background.swf`` / ``Artwork1.swf`` / ``Artwork4.swf``, a scaled
+    ``Video.png`` thumbnail, and ``Info.txt``.  Without a theme zip HyperSpin
+    may not display the attract-mode video for the system at all.
+
+    When *overwrite* is ``False`` (default) the file is skipped if present.
+    When *overwrite* is ``True`` (``mainmenu add``) it is always written.
+
+    Returns ``(dest_path, status)`` where *status* ∈
+    ``{"installed", "overwritten", "skipped", "no_asset", "dry_run"}``.
+    """
+    src = _resolve_asset(_THEME_ASSETS, system_name)
+    if src is None:
+        return None, "no_asset"
+    dest = hyperspin_dir / "Media" / "Main Menu" / "Themes" / f"{system_name}.zip"
+    return _install_asset(src, dest, dry_run, overwrite=overwrite)
+
+
 def install_bundled_system_assets(
     hyperspin_dir: Path,
     system_name: str,
@@ -655,9 +699,9 @@ def install_bundled_system_assets(
     """Install all bundled media assets for *system_name* in one call.
 
     Runs :func:`install_system_wheel_art`, :func:`install_system_background`,
-    :func:`install_system_music`, and :func:`install_system_video` and returns
-    their results keyed by asset type so callers can report each outcome
-    individually.
+    :func:`install_system_music`, :func:`install_system_video`, and
+    :func:`install_system_theme` and returns their results keyed by asset type
+    so callers can report each outcome individually.
 
     *overwrite* is forwarded to each individual installer:
 
@@ -674,6 +718,7 @@ def install_bundled_system_assets(
             "background": (Path | None, status),
             "music":      (Path | None, status),
             "video":      (Path | None, status),
+            "theme":      (Path | None, status),
         }
 
     Each *status* ∈ ``{"installed", "overwritten", "skipped", "no_asset", "dry_run"}``.
@@ -683,6 +728,7 @@ def install_bundled_system_assets(
         "background": install_system_background(hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
         "music":      install_system_music(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
         "video":      install_system_video(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "theme":      install_system_theme(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
     }
 
 

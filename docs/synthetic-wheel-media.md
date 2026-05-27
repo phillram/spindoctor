@@ -152,22 +152,31 @@ before attract mode starts; videos advance automatically when they end.
 ### Attract-mode theme
 
 A theme `.zip` controls the animated Main Menu background and layout for a system's
-slot in the attract cycle.
+slot in the attract cycle.  **Without a theme zip the attract-mode video is silently
+not shown, even if the `.mp4` file exists and is correctly encoded.**  The zip's
+`Theme.xml` contains a `<video>` element that tells HyperSpin where to render the
+video on screen.
 
 **File:** `Media\Main Menu\Themes\<SystemName>.zip`
 
-**Examples:**
+**SpinDoctor installs this automatically** — `rebuild --apply` and `mainmenu add --apply`
+both write the bundled theme zip for each synthetic wheel (skip-if-exists on rebuild,
+always overwrite on `mainmenu add`).  The bundled theme uses a centred 16:9 layout
+(600×338 on the 1024×768 HyperSpin canvas).
+
+If you want a more elaborate animated theme, replace the installed zip with your own:
+
 ```
 Media\Main Menu\Themes\Favorites.zip
 Media\Main Menu\Themes\Most Played.zip
 Media\Main Menu\Themes\Recently Played.zip
 ```
 
-**Finding themes:** HyperSpin theme packs are available on EmuMovies, HyperSpin forums,
-and Hyperspin-FE.com.  Look for a "Main Menu" theme pack.
+Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive directly)
+to the Themes path above.  SpinDoctor's `rebuild --apply` will not overwrite it.
 
-**Manually:** Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive
-directly) to the Themes path above.
+**Custom themes from the community:** HyperSpin theme packs are available on
+EmuMovies, HyperSpin forums, and Hyperspin-FE.com.  Look for a "Main Menu" theme pack.
 
 ---
 
@@ -232,7 +241,9 @@ HyperSpin\
         │   ├── Recently Played.mp4        ← AUTO: attract-mode video (61.5 s)
         │   └── ...
         └── Themes\
-            ├── Favorites.zip              ← attract-mode theme (manual)
+            ├── Favorites.zip              ← AUTO: attract-mode theme (Theme.xml + SWFs + thumbnail)
+            ├── Most Played.zip            ← AUTO: attract-mode theme
+            ├── Recently Played.zip        ← AUTO: attract-mode theme
             └── ...
 
     └── Favorites\                         ← per-game media (auto-mirrored from source systems)
