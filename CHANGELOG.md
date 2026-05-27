@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.12] - 2026-05-27
+
 ### Added
 
 - **HyperSpin theme zips for synthetic wheels** — SpinDoctor now bundles and installs `Media\Main Menu\Themes\<SystemName>.zip` for `Favorites`, `Most Played`, and `Recently Played`. Without a theme zip HyperSpin silently skips the attract-mode audio/video entirely. Each zip contains only `Theme.xml` (no `Info.txt`, no SWF files), matching the reference layout provided by the cabinet owner: `<video w="1024" h="768" x="512" y="384" forceaspect="both" .../>` — full-screen, centred on HyperSpin's 1024×768 canvas. Installed by `rebuild --apply` (skip-if-exists) and `mainmenu add --apply` (always overwrite). Theme zips ship via the `assets/*.zip` package-data glob.
@@ -940,7 +944,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.11...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.12...HEAD
+[2.4.12]: https://github.com/phillram/spindoctor/compare/v2.4.11...v2.4.12
 [2.4.11]: https://github.com/phillram/spindoctor/compare/v2.4.10...v2.4.11
 [2.4.10]: https://github.com/phillram/spindoctor/compare/v2.4.9...v2.4.10
 [2.4.9]: https://github.com/phillram/spindoctor/compare/v2.4.8...v2.4.9
