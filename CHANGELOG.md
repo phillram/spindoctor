@@ -6,6 +6,24 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`scrub --backup-dir DIR`** — copy all affected files to `DIR/scrub-<timestamp>/` before deleting. Creates `favorites.json` and every `Statistics.ini` file (across all three RL layouts) in a plain folder with a `manifest.json` index. The backup is skipped in dry-run mode. Strongly recommended before `--stats` (Statistics.ini files are not regenerable by SpinDoctor).
+
+- **`scrub-restore <backup-path> [--apply]`** — restore files from a `scrub --backup-dir` backup. Reads `manifest.json` and copies each file back to its original location. Dry-run by default; `--apply` to commit.
+
+- **Scrub panel in GUI (Tools tab)** — "Reset wheel data (scrub)" section added to the Tools tab alongside the other wheel controls. Provides checkboxes for Favorites / Play statistics, optional backup directory (with Browse), Apply checkbox, and a nested Restore sub-panel. Confirmation dialogs warn before destructive applies and require extra confirmation when `--stats` is selected without a backup directory.
+
+- **System name in synthetic wheel descriptions** — every entry in the Favorites, Recently Played, and Most Played wheels now shows its source console in the description, e.g. "Kirby's Dream Land (Super Nintendo Entertainment System)". This resolves the common case where the same title exists on multiple platforms and the wheel gave no indication of which version was which.
+
+- **Synthetic wheels skipped in `--all` system commands** — `fetch-meta`, `fetch-media`, `media-scan`, `update-db`, `audit`, `find-dupes`, `find-misplaced`, `find-orphan-media`, `curate`, `check-discs`, `report`, and all other commands that accept `--system` / `--all` now automatically exclude Favorites, Recently Played, and Most Played when `--all` is used. These wheels mirror their media from the source systems — scraping or scanning them wastes API calls and produces meaningless results. A dim banner is printed for each skipped wheel. Explicitly naming a synthetic wheel with `--system` exits with a helpful error directing the user to the original source system instead.
+
+- **`scrub --hs-favorites`** — new flag that clears per-system HyperSpin favorites so `fav sync` starts from a blank slate. Three sources are cleared: `<System>_Favorites.ini` files (deleted), `favorites.txt` files (deleted), and `favorite="1"` attributes in system XML databases (stripped in-place via targeted regex — no XML reformatting). Covered by `--backup-dir` (backed up to `hs_favorites/` subfolder) and dry-run. Not included in the no-flag default (must be requested explicitly). GUI: new "HyperSpin per-system favorites (start fresh for fav sync)" checkbox in the Tools tab scrub panel, unchecked by default.
+
+### Changed
+
+- **`scrub` now exposes file lists per flag** — the `--favorites` and `--stats` options are independent; selecting neither defaults to both (existing behaviour preserved). The `--backup-dir` option is additive on top of either flag.
+
 ---
 
 ## [2.4.8] - 2026-05-26

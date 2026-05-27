@@ -342,28 +342,49 @@ Reference: [install-tools](commands.md#install-tools), [uninstall-tools](command
 
 ## Resetting cabinet data
 
-> **⚠ `scrub --stats` is irreversible.** Back up before running:
-> ```bat
-> spindoctor backup create --include settings,rocketlauncher --target E:\Backups --apply
-> ```
-
 ```bat
-:: Preview what would be deleted (safe — no files touched)
+:: Preview what would be deleted (safe — nothing touched)
 spindoctor scrub
 
-:: Full scrub — wipe favorites store + all RocketLauncher Statistics.ini files
-spindoctor scrub --apply
+:: Full scrub with built-in backup — backs up then deletes in one step
+spindoctor scrub --backup-dir E:\Backups --apply
 
-:: Only clear the favorites store and Favorites wheel
+:: Clear only the favorites store and Favorites wheel
 spindoctor scrub --favorites --apply
 
-:: Only delete Statistics.ini files + clear Recently Played / Most Played wheels
-spindoctor scrub --stats --apply
+:: Delete Statistics.ini files + clear Recently Played / Most Played wheels
+spindoctor scrub --stats --backup-dir E:\Backups --apply
+
+:: Clear per-system HyperSpin favorites so fav sync starts fresh
+spindoctor scrub --hs-favorites --backup-dir E:\Backups --apply
+
+:: Restore from a scrub backup (dry-run first, then commit)
+spindoctor scrub-restore E:\Backups\scrub-20260526-143012
+spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
 ```
 
-`scrub` never creates a backup itself — use `backup create` first. See [Command reference → scrub](commands.md#scrub) for the exact list of files removed by each flag.
+`--backup-dir` copies affected files to `DIR/scrub-<timestamp>/` before deleting and creates a `manifest.json` index. `scrub-restore` reads that manifest and copies each file back to its original location. `--hs-favorites` clears the F-key favorites HyperSpin writes per console (`<System>_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) — useful when you want `fav sync` to start from a blank slate. See [Command reference → scrub](commands.md#scrub) for the exact list of files backed up and removed.
 
 Reference: [Command reference → scrub](commands.md#resetting-cabinet-data).
+
+---
+
+## Emulator window-title corrections
+
+```bat
+:: List all effective FadeTitle mappings (built-in + user corrections)
+spindoctor emulator-title list
+
+:: Add a correction for an emulator whose window title doesn't contain its name
+spindoctor emulator-title set "Supermodel" "Supermodel 3"
+
+:: Remove a correction
+spindoctor emulator-title remove "Supermodel"
+```
+
+Most emulators work automatically — SpinDoctor uses the emulator's registered name as `FadeTitle` by default. Only add a correction when the window title has no overlap with the name. See [Command reference → emulator-title](commands.md#emulator-title).
+
+Reference: [Command reference → emulator-title](commands.md#emulator-title).
 
 ---
 

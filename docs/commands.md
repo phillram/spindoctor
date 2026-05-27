@@ -27,6 +27,8 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 
 ## Core library
 
+> **Synthetic wheels (Favorites, Recently Played, Most Played) are automatically excluded when `--all` is used.** These wheels mirror their media from source systems — scanning or scraping them wastes API calls. A dim banner is printed for each skipped wheel. Passing `--system Favorites` (or any synthetic name) explicitly exits with an error directing you to the source system.
+
 ### `systems`
 
 List every system detected across `roms_dir` and `Databases/`.
@@ -699,23 +701,36 @@ Files removed:
 
 Destructively reset favorites and/or play statistics back to zero. **Requires `--apply`** — without it the command prints a dry-run preview and exits without touching anything.
 
-> **⚠ No backup is performed by `scrub`.** `--stats` deletes `Statistics.ini` files permanently — RocketLauncher has no built-in restore. Run `spindoctor backup create --include settings,rocketlauncher --target E:\Backups --apply` *before* scrubbing if you want a recovery path. The favorites store (`favorites.json`) is only emptied, so it can be repopulated by hand or with `fav add` / `fav sync`.
+> **⚠ `--stats` deletes `Statistics.ini` files permanently.** RocketLauncher has no built-in restore. Use `--backup-dir` to create a recoverable copy first, or run `scrub-restore` to undo. The favorites store (`favorites.json`) is only emptied and can be repopulated with `fav add` / `fav sync`.
 
 ```bat
 :: Dry-run preview (nothing is written)
 spindoctor scrub
 
-:: Full scrub — clear both favorites and all play statistics
-spindoctor scrub --apply
+:: Full scrub with backup — backs up then deletes everything
+spindoctor scrub --backup-dir E:\Backups --apply
 
 :: Clear only the favorites store and Favorites wheel
 spindoctor scrub --favorites --apply
 
-:: Delete all Statistics.ini files and clear the Recently Played / Most Played wheels
-spindoctor scrub --stats --apply
+:: Delete all Statistics.ini files and clear Recently Played / Most Played wheels
+spindoctor scrub --stats --backup-dir E:\Backups --apply
+
+:: Start fresh for fav sync — clear per-system HyperSpin favorites
+spindoctor scrub --hs-favorites --backup-dir E:\Backups --apply
 ```
 
-Without `--favorites` or `--stats`, both are cleared (equivalent to passing both flags).
+Without `--favorites` or `--stats`, both are cleared (equivalent to passing both flags). `--hs-favorites` is never included in the default — it must always be requested explicitly.
+
+#### Options
+
+| Flag | Description |
+|---|---|
+| `--favorites` | Clear the SpinDoctor favorites store and Favorites wheel |
+| `--stats` | Delete Statistics.ini files and clear Recently Played / Most Played wheels |
+| `--hs-favorites` | Clear per-system HyperSpin favorites (`_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) so `fav sync` starts blank. Never included in the default — always opt-in. |
+| `--backup-dir DIR` | Copy affected files to `DIR/scrub-<timestamp>/` before deleting. Strongly recommended for `--stats`. Skipped in dry-run mode. |
+| `--apply` | Commit — without this flag nothing is changed |
 
 #### What `--favorites` removes
 
@@ -726,7 +741,21 @@ Without `--favorites` or `--stats`, both are cleared (equivalent to passing both
 | `<hyperspin_dir>/Media/Favorites/` | Entire directory deleted |
 | `<rocketlauncher_dir>/Modules/PCLauncher/Favorites/` | All per-game `.ini` launchers deleted |
 
+Per-system HyperSpin favorites (`<System>_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) are **not** touched. Use `--hs-favorites` to clear those too.
+
 After a `--favorites` scrub the Favorites wheel is gone from HyperSpin. Running `fav add … && fav rebuild --apply` starts it fresh.
+
+#### What `--hs-favorites` removes
+
+Clears the per-system favorites that HyperSpin's F-key writes. Three sources across every configured system (synthetic wheels excluded):
+
+| Source | What happens |
+|---|---|
+| `<hs>/Databases/<System>/<System>_Favorites.ini` | **Deleted** |
+| `<hs>/Databases/<System>/favorites.txt` | **Deleted** (case-insensitive search) |
+| `<hs>/Databases/<System>/<System>.xml` | `favorite="1"` attribute stripped from matching `<game>` elements; rest of file preserved |
+
+After an `--hs-favorites` scrub, running `fav sync` imports zero HyperSpin favorites — the cross-system wheel starts blank. Use this when you want to curate your favorites from scratch (e.g. after trimming your ROM library).
 
 #### What `--stats` removes
 
@@ -751,18 +780,72 @@ Every matching file is **permanently deleted** — RocketLauncher will create ne
 
 After a `--stats` scrub all play history is gone. Running `recent rebuild --apply` and `stats-report build-wheel --apply` will produce empty wheels until RocketLauncher has logged new sessions.
 
+#### What `--backup-dir` saves
+
+When `--backup-dir DIR` is given alongside `--apply`, SpinDoctor creates `DIR/scrub-<timestamp>/` containing:
+
+| File | Source |
+|---|---|
+| `favorites.json` | `~/.spindoctor/favorites.json` (if `--favorites`) |
+| `stats/Settings/Global Statistics/<System>.ini` | Classic layout stats (if `--stats`) |
+| `stats/Settings/<System>/Statistics.ini` | Legacy layout stats (if `--stats`) |
+| `stats/Data/Statistics/<System>.ini` | Newer layout stats (if `--stats`) |
+| `hs_favorites/<System>/<System>_Favorites.ini` | Per-system INI favorites (if `--hs-favorites`) |
+| `hs_favorites/<System>/favorites.txt` | Per-system txt favorites (if `--hs-favorites`) |
+| `hs_favorites/<System>/<System>.xml` | System XML before attribute stripping (if `--hs-favorites`) |
+| `manifest.json` | Index of all backed-up files with original paths |
+
+Only files that exist at scrub time are copied. The backup is not a compressed archive — files can be inspected directly.
+
+### `scrub-restore`
+
+Restore files from a backup created by `scrub --backup-dir`.
+
+```bat
+:: Dry-run — show what would be restored without touching files
+spindoctor scrub-restore E:\Backups\scrub-20260526-143012
+
+:: Commit the restore
+spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
+```
+
+`scrub-restore` reads the `manifest.json` inside the backup folder and copies each file back to its original location. Existing files are overwritten. Dry-run by default; pass `--apply` to commit.
+
 #### Recommended workflow
 
 ```bat
-:: 1. Back up first (irreversible for --stats)
-spindoctor backup create --include settings,rocketlauncher --target E:\Backups --label pre-scrub --apply
-
-:: 2. Preview what would be deleted
+:: 1. Preview what would be deleted
 spindoctor scrub
 
-:: 3. Commit the scrub
-spindoctor scrub --apply
+:: 2. Scrub with backup (backs up then deletes in one step)
+spindoctor scrub --backup-dir E:\Backups --apply
+
+:: 3. If you need to undo — restore from the backup
+spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
 ```
+
+---
+
+## `emulator-title`
+
+Manage the per-emulator window-title correction table used by synthetic wheel launchers.
+
+When a game is launched from Favorites, Recently Played, or Most Played, PCLauncher uses `FadeTitle=` in the system-level INI to locate the game window by title instead of PID (which fails for DirectX emulators in exclusive fullscreen). SpinDoctor uses the emulator's registered name as the default `FadeTitle` value — this works automatically for any emulator whose window title contains its name (the vast majority).
+
+Use `emulator-title set` only when the emulator's window title has **no overlap** with its registered name:
+
+```bat
+:: Add or update a correction
+spindoctor emulator-title set "Supermodel" "Supermodel 3"
+
+:: Remove a correction (built-in entries cannot be removed, only overridden)
+spindoctor emulator-title remove "Supermodel"
+
+:: List all effective mappings — shows built-in defaults, user corrections, and overrides
+spindoctor emulator-title list
+```
+
+Corrections are stored in `~/.spindoctor/config.json` under `emulator_window_titles`. The emulator name must match exactly what RocketLauncherUI shows as the `Default_Emulator` in `Settings/<System>/Emulators.ini`.
 
 ---
 

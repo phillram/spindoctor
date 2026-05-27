@@ -177,10 +177,12 @@ AppWaitExe=MAME.exe
 > See *AHK #SingleInstance* below for why.
 
 Key names PCLauncher.ahk recognises: `Application=`, `Parameters=`, `WorkingFolder=`,
-`AppWaitExe=`, `FadeTitle=`, `SteamID=`, `ExitMethod=`, `PreLaunch=`, `PostLaunch=`.
+`AppWaitExe=`, `FadeTitle=`, `FadeTitleTimeout=`, `SteamID=`, `ExitMethod=`, `PreLaunch=`, `PostLaunch=`.
 
 > **Important:** Use `Application=` not `ApplicationPath=`. PCLauncher does not recognise
 > `ApplicationPath=` and will throw "not set up in RocketLauncherUI" if only that key exists.
+
+The system-level INI that SpinDoctor generates includes `FadeTitle=` and `FadeTitleTimeout=` — see the *FadeTitle* section below for why.
 
 ---
 
@@ -277,6 +279,77 @@ if that chain fails.
 The hardcoded `AppWaitExe` timeout in PCLauncher.ahk v2.2.7 is **15 seconds** (not
 configurable from INI). With the SingleInstance fix in place, the emulator typically
 appears in ~4 seconds.
+
+### Critical: `FadeTitle=` required to fix "error waiting for window ahk_pid XXXX"
+
+Even with `AppWaitExe=` set, PCLauncher.ahk v2.2.7 (lines 214–224) still tries to find
+the emulator's **Win32 window by PID** after the process starts:
+
+```ahk
+If !FadeTitle {
+    appPrimaryWindow.Wait(AppWaitExeTimeout)   ; waits for a window owned by PID
+    ...
+}
+```
+
+DirectX emulators in exclusive fullscreen — or emulators whose game window is created by a
+child process — don't produce a Win32 window detectable by the launcher PID. The wait times
+out after ~30 seconds:
+
+> "There was an error waiting for the window ahk_pid XXXX. Please check if you have the
+> correct version emulator installed…"
+
+The game keeps running (orphaned); the user must ALT+TAB.
+
+**Fix:** Setting `FadeTitle=` to any non-empty string causes PCLauncher to skip the
+`If !FadeTitle` block entirely. Instead it calls `WinWait` with the title string, which
+uses case-insensitive partial matching and works regardless of child-process hierarchy.
+`AppWaitExe.Process("WaitClose")` then handles exit detection cleanly.
+
+SpinDoctor writes `FadeTitle=` and `FadeTitleTimeout=30` into the system-level PCLauncher
+INI for every synthetic wheel entry. The default value is the emulator's registered name
+(e.g. `FadeTitle=MAME` for a MAME game, `FadeTitle=Supermodel` for a Model 3 game). AHK's
+`WinWait` uses case-insensitive partial matching, so "MAME" matches "MAME [1942 (World)]",
+"Supermodel" matches "Supermodel 3.1 UI", and so on — no configuration needed for the
+vast majority of emulators.
+
+`FadeTitleTimeout=30` prevents an infinite hang if the emulator crashes before showing a
+window: PCLauncher errors after 30 seconds instead of waiting forever.
+
+**Exception — PCLauncher-based source systems** (e.g. "PC Games", "Windows"): the source
+system's emulator is PCLauncher itself, which has no identifiable window of its own. These
+entries omit `FadeTitle=` and rely on `AppWaitExe=<game.exe>` from the per-game INI.
+
+**When to use `emulator-title set`:** If an emulator's window title has no overlap with
+its registered name (e.g. emulator registered as "Model2" but window shows
+"Sega Model 2 Emulator"), use:
+```bat
+spindoctor emulator-title set "Model2" "Sega Model 2"
+```
+This stores the correction in `config.json` under `emulator_window_titles`. User
+corrections take precedence over the built-in default.
+
+---
+
+## Synthetic Wheel Statistics — What Is and Isn't Counted
+
+RocketLauncher records play sessions in `Statistics.ini` files keyed to the **system
+name** used at launch. When a game is launched from a synthetic wheel (Favorites, Recently
+Played, Most Played), RL#2 runs standalone and attributes the session to the **original
+source system** (e.g. "MAME"), not to "Favorites". This is because PCLauncher passes
+`-s "MAME" -r "1942"` to RL#2.
+
+However, if a session is somehow attributed to a synthetic system name (e.g. if RL#1 logs
+the session before RL#2 runs), SpinDoctor's stats reader (`collect_play_records` in
+`recent.py` and `load_all_playtime` in `playtime.py`) **skips** Statistics.ini files for
+the three synthetic system names:
+
+```python
+SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played"})
+```
+
+This ensures that playing "Strider" from Favorites never adds it to Recently Played or
+Most Played via the synthetic wheel path — only real arcade wheel plays count.
 
 ---
 

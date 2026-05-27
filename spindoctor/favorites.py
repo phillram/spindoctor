@@ -443,9 +443,10 @@ def rebuild(
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
         source_db = _safe_load(entry.system, config)
         source_game = source_db.get(entry.rom_name) if source_db else None
+        base_desc = entry.display_name or (source_game.description if source_game else entry.rom_name)
         merged = GameEntry(
             name=target_name,
-            description=entry.display_name or (source_game.description if source_game else entry.rom_name),
+            description=f"{base_desc} ({entry.system})",
             cloneof=source_game.cloneof if source_game else "",
             crc=source_game.crc if source_game else "",
             manufacturer=source_game.manufacturer if source_game else "",
@@ -523,6 +524,145 @@ def rebuild(
     # write when the file is absent so user customisations are never clobbered.
     hs_dir = Path(config.hyperspin_dir)
     write_hyperspin_system_ini(store.target_system, hs_dir)
+
+    return summary
+
+
+# ─── native HyperSpin favorites — collect + clear ────────────────────────────
+
+def collect_native_fav_files(
+    config: Config,
+) -> tuple[list[Path], list[Path], list[Path]]:
+    """Scan every non-synthetic system for per-system HyperSpin favorite files.
+
+    Returns ``(ini_files, txt_files, xml_files)`` where:
+
+    * *ini_files* — ``<System>_Favorites.ini`` files found under
+      ``<databases_dir>/<System>/``.
+    * *txt_files* — ``favorites.txt`` files (case-insensitive).
+    * *xml_files* — system XML database files that contain at least one
+      ``<game favorite="1"/>`` element.
+
+    Synthetic wheel names (Favorites / Recently Played / Most Played) are
+    excluded from the scan.
+    """
+    import re as _re
+    from .config import get_systems
+    from .recent import SYNTHETIC_SYSTEM_NAMES
+
+    ini_files: list[Path] = []
+    txt_files: list[Path] = []
+    xml_files: list[Path] = []
+
+    db_root = config.databases_dir
+    if not db_root.is_dir():
+        return ini_files, txt_files, xml_files
+
+    for sys_name in get_systems(config):
+        if sys_name in SYNTHETIC_SYSTEM_NAMES:
+            continue
+        sys_dir = db_root / sys_name
+        if not sys_dir.is_dir():
+            continue
+
+        # 1. <System>_Favorites.ini
+        ini = sys_dir / f"{sys_name}_Favorites.ini"
+        if ini.is_file():
+            ini_files.append(ini)
+
+        # 2. favorites.txt (case-insensitive)
+        found_txt = _find_favorites_txt(sys_dir)
+        if found_txt is not None:
+            txt_files.append(found_txt)
+
+        # 3. XML with favorite="1" attribute — scan raw text (fast, no full parse)
+        xml = sys_dir / f"{sys_name}.xml"
+        if xml.is_file():
+            try:
+                raw = xml.read_text(encoding="utf-8", errors="replace")
+                if _re.search(r'favorite\s*=\s*["\']1["\']', raw):
+                    xml_files.append(xml)
+            except OSError:
+                pass
+
+    return ini_files, txt_files, xml_files
+
+
+@dataclass
+class ClearNativeFavoritesSummary:
+    """Result of :func:`clear_native_favorites`."""
+    ini_cleared: int = 0        # _Favorites.ini files deleted
+    txt_cleared: int = 0        # favorites.txt files deleted
+    xml_cleared: int = 0        # XML files with favorite flags stripped
+    xml_games_cleared: int = 0  # total game entries stripped across all XMLs
+    errors: list[str] = field(default_factory=list)
+
+
+def clear_native_favorites(
+    config: Config,
+    *,
+    dry_run: bool = True,
+) -> ClearNativeFavoritesSummary:
+    """Remove per-system HyperSpin favorite markers from disk.
+
+    Three sources are cleared:
+
+    1. ``<System>_Favorites.ini`` files — deleted.
+    2. ``favorites.txt`` files — deleted.
+    3. ``favorite="1"`` attributes in system XML database files — the
+       attribute is stripped from every matching ``<game>`` element using
+       a targeted regex substitution that preserves the rest of the file's
+       formatting.
+
+    When *dry_run* is ``True`` (the default) nothing is modified; the
+    returned summary reports what *would* be removed.
+    """
+    import re as _re
+
+    summary = ClearNativeFavoritesSummary()
+    ini_files, txt_files, xml_files = collect_native_fav_files(config)
+
+    if not dry_run:
+        # 1 + 2. Delete flat files
+        for f in ini_files:
+            try:
+                f.unlink()
+                summary.ini_cleared += 1
+            except OSError as exc:
+                summary.errors.append(f"Could not delete {f.name}: {exc}")
+
+        for f in txt_files:
+            try:
+                f.unlink()
+                summary.txt_cleared += 1
+            except OSError as exc:
+                summary.errors.append(f"Could not delete {f.name}: {exc}")
+
+        # 3. Strip favorite="..." from XML files in place
+        _FAV_ATTR_RE = _re.compile(r'\s*favorite\s*=\s*"[^"]*"|\s*favorite\s*=\s*\'[^\']*\'')
+        for xml_path in xml_files:
+            try:
+                content = xml_path.read_text(encoding="utf-8", errors="replace")
+                matches = len(_re.findall(r'favorite\s*=\s*["\']1["\']', content))
+                new_content = _FAV_ATTR_RE.sub("", content)
+                if new_content != content:
+                    xml_path.write_text(new_content, encoding="utf-8")
+                    summary.xml_cleared += 1
+                    summary.xml_games_cleared += matches
+            except OSError as exc:
+                summary.errors.append(f"Could not update {xml_path.name}: {exc}")
+    else:
+        summary.ini_cleared = len(ini_files)
+        summary.txt_cleared = len(txt_files)
+        summary.xml_cleared = len(xml_files)
+        # Count total games marked in XML files (for the dry-run preview)
+        _FAV_ATTR_RE = _re.compile(r'favorite\s*=\s*["\']1["\']')
+        for xml_path in xml_files:
+            try:
+                content = xml_path.read_text(encoding="utf-8", errors="replace")
+                summary.xml_games_cleared += len(_FAV_ATTR_RE.findall(content))
+            except OSError:
+                pass
 
     return summary
 
