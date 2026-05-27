@@ -485,12 +485,10 @@ _VIDEO_ASSETS: dict[str, str] = {
 # the system is selected on the Main Menu.
 # Without a theme zip HyperSpin may not show the attract-mode video at all.
 #
-# Design: the zip contains only Theme.xml + Info.txt (matching the MAME
-# "Cinematic" pattern).  The <video> element uses w="1" h="1" — a single
-# invisible pixel — so only the MP4's audio track is heard.  The background
-# image (Media\Main Menu\Images\Backgrounds\<System>.png) provides all the
-# visual content; having the video overlay visible too caused a double-render
-# artefact (two copies of the same image on screen simultaneously).
+# Design: zip contains only Theme.xml (no Info.txt, no SWF files) — exact
+# structure of the reference Favorites.zip provided by the cabinet owner.
+# The <video> element is full-screen: w="1024" h="768" x="512" y="384"
+# with forceaspect="both".
 #
 # HyperSpin path: Media\Main Menu\Themes\<SystemName>.zip
 _THEME_ASSETS: dict[str, str] = {
@@ -683,11 +681,12 @@ def install_system_theme(
 
         <hyperspin_dir>/Media/Main Menu/Themes/<system_name>.zip
 
-    The theme zip contains ``Theme.xml`` and ``Info.txt``.  The ``<video>``
-    element in ``Theme.xml`` uses ``w="1" h="1"`` — a single invisible pixel —
-    so HyperSpin plays only the audio track of the MP4 while the separate
-    background image provides all the visual content.  Without a theme zip
-    HyperSpin may not play the attract-mode audio/video for the system at all.
+    The theme zip contains only ``Theme.xml`` (no ``Info.txt``, no SWF files),
+    matching the reference layout provided by the cabinet owner.  The
+    ``<video>`` element uses ``w="1024" h="768" x="512" y="384"``
+    (full-screen, centred on HyperSpin's 1024×768 canvas) with
+    ``forceaspect="both"``.  Without a theme zip HyperSpin may not play the
+    attract-mode audio/video for the system at all.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
     When *overwrite* is ``True`` (``mainmenu add``) it is always written.

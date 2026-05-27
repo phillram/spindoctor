@@ -168,25 +168,15 @@ correctly encoded.
 both write the bundled theme zip for each synthetic wheel (skip-if-exists on rebuild,
 always overwrite on `mainmenu add`).
 
-#### Two-layer rendering — why the video is 1×1
+The bundled `Theme.xml` matches the reference layout provided by the cabinet owner:
 
-HyperSpin's main menu renders two separate layers:
+```xml
+<video w="1024" h="768" x="512" y="384" forceaspect="both"
+       time="0" delay="0" type="none" start="none" rest="none" .../>
+```
 
-| Layer | Source file | Notes |
-|-------|------------|-------|
-| Background image | `Images\Backgrounds\<System>.png` | Static image, always visible |
-| Video overlay | `Video\<System>.mp4` (positioned by `Theme.xml`) | Plays during attract mode |
-
-Both files are the same image — having both rendered at full size produces a
-visible double-layer artefact (flicker / washed-out look).  SpinDoctor's bundled
-`Theme.xml` sets the video to **`w="1" h="1"`** (a single invisible pixel), so:
-
-- The **background PNG** provides the image
-- The **MP4's audio track** plays for music
-- The video's image track is invisible — no double-render
-
-The approach matches the MAME "Cinematic" theme by BakerMan (2016), which also
-uses `Theme.xml` + `Info.txt` only, with no SWF overlay files.
+Full-screen (1024×768), centred on HyperSpin's 1024×768 canvas, aspect ratio
+preserved.  The zip contains **only `Theme.xml`** — no `Info.txt`, no SWF files.
 
 #### Custom themes
 

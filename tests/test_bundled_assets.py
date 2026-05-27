@@ -46,18 +46,16 @@ class TestInstallSystemTheme:
             assert dest.exists(), f"Theme zip not found at {dest}"
             assert path == dest
 
-    def test_zip_contains_required_files(self, tmp_path):
+    def test_zip_contains_only_theme_xml(self, tmp_path):
+        """Zip must contain exactly Theme.xml and nothing else (matches reference)."""
         hs = _hs_dir(tmp_path)
         for system_name in SYNTHETIC:
             install_system_theme(hs, system_name, dry_run=False)
             dest = hs / "Media" / "Main Menu" / "Themes" / f"{system_name}.zip"
             with zipfile.ZipFile(dest) as zf:
-                names = set(zf.namelist())
-            assert "Theme.xml" in names, f"{system_name}: missing Theme.xml"
-            assert "Info.txt"  in names, f"{system_name}: missing Info.txt"
-            # No SWF files — following the MAME "Cinematic" minimal-theme pattern
-            assert not any(n.endswith(".swf") for n in names), \
-                f"{system_name}: unexpected SWF file(s) in theme zip: {names}"
+                names = zf.namelist()
+            assert names == ["Theme.xml"], \
+                f"{system_name}: expected ['Theme.xml'], got {names}"
 
     def test_theme_xml_has_video_element(self, tmp_path):
         hs = _hs_dir(tmp_path)
@@ -68,15 +66,18 @@ class TestInstallSystemTheme:
                 xml = zf.read("Theme.xml").decode("utf-8")
             assert "<video" in xml.lower(), f"{system_name}: Theme.xml missing <video> element"
 
-    def test_theme_xml_video_is_invisible(self, tmp_path):
-        """Video element must be 1×1 px — audio plays, image hidden by background PNG."""
+    def test_theme_xml_video_is_fullscreen(self, tmp_path):
+        """Video element must be full-screen (1024×768) centred at (512, 384)."""
         hs = _hs_dir(tmp_path)
         install_system_theme(hs, "Favorites", dry_run=False)
         dest = hs / "Media" / "Main Menu" / "Themes" / "Favorites.zip"
         with zipfile.ZipFile(dest) as zf:
             xml = zf.read("Theme.xml").decode("utf-8")
-        assert 'w="1"' in xml, "Video element width must be 1 (invisible)"
-        assert 'h="1"' in xml, "Video element height must be 1 (invisible)"
+        assert 'w="1024"' in xml, "Video element width must be 1024 (full screen)"
+        assert 'h="768"'  in xml, "Video element height must be 768 (full screen)"
+        assert 'x="512"'  in xml, "Video element x must be 512 (centred)"
+        assert 'y="384"'  in xml, "Video element y must be 384 (centred)"
+        assert 'forceaspect="both"' in xml, "forceaspect must be 'both'"
 
     def test_skips_when_exists_and_overwrite_false(self, tmp_path):
         hs = _hs_dir(tmp_path)

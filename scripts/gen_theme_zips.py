@@ -5,23 +5,17 @@ Run from the repo root:
     python3 scripts/gen_theme_zips.py
 
 Produces spindoctor/assets/theme_{Favorites,Most_Played,Recently_Played}.zip
-each containing only:
-  Theme.xml   — 1×1 invisible video element (audio-only; background PNG provides visuals)
-  Info.txt    — authorship metadata
+each containing only Theme.xml — matching the reference Favorites.zip provided
+by the cabinet owner.
 
-Design rationale
+Theme.xml layout
 ----------------
-HyperSpin shows two layers during attract mode:
-  1. The background image  (Media\\Main Menu\\Images\\Backgrounds\\<System>.png)
-  2. The video overlay     (Media\\Main Menu\\Video\\<System>.mp4, positioned by Theme.xml)
+  w="1024" h="768" x="512" y="384"  — full-screen, centred on 1024×768 canvas
+  forceaspect="both"                — maintain video aspect ratio
+  type/start/rest="none"            — no animations
 
-Both layers used to show the same image, producing a visible double-render artefact.
-Setting w="1" h="1" makes the video element a single invisible pixel — HyperSpin
-still plays the audio track of the MP4, which is exactly what we want for music.
-The background PNG provides all the visual content.
-
-The MAME theme (BakerMan, 2016) demonstrates this is the standard "video-only"
-approach: Theme.xml + Info.txt, no SWF files, no Video.png required.
+The zip contains ONLY Theme.xml (no Info.txt, no SWF files, no Video.png),
+exactly matching the reference theme structure.
 """
 
 from __future__ import annotations
@@ -39,18 +33,14 @@ SYSTEMS = [
 
 # ── Theme.xml ─────────────────────────────────────────────────────────────────
 
-# w="1" h="1": video element is a single invisible pixel → audio plays, image hidden.
-# x="1" y="1": top-left corner of HyperSpin's 1024×768 canvas — out of the way.
-#   (x/y is the centre-point of the element; at (1,1) the 1px element sits at the
-#    top-left corner and is fully on-screen)
-# forceaspect="none": do not scale up to preserve aspect ratio.
-# All other attributes copied verbatim from the MAME reference theme (BakerMan 2016).
+# Copied verbatim from the reference Favorites.zip provided by the cabinet owner.
+# Full-screen (1024×768), centred at (512, 384), aspect-ratio preserved.
 THEME_XML = """\
 <Theme>
-    <video w="1"
-           h="1"
-           x="1"
-           y="1"
+    <video w="1024"
+           h="768"
+           x="512"
+           y="384"
            r="0"
            rx="0"
            ry="0"
@@ -58,7 +48,7 @@ THEME_XML = """\
            overlaybelow="false"
            overlayoffsetx="0"
            overlayoffsety="0"
-           forceaspect="none"
+           forceaspect="both"
            time="0"
            delay="0"
            bsize="0"
@@ -74,12 +64,6 @@ THEME_XML = """\
 </Theme>
 """
 
-INFO_TXT = (
-    "Cinematic Theme Created By: SpinDoctor\n"
-    "Date: 2024\n"
-    "Created With: SpinDoctor\n"
-)
-
 # ── Main ───────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -89,7 +73,6 @@ def main() -> None:
 
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("Theme.xml", THEME_XML)
-            zf.writestr("Info.txt",  INFO_TXT)
 
         size = zip_path.stat().st_size
         print(f"  {zip_path.name}  ({size:,} bytes)")
