@@ -4,7 +4,7 @@ A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](htt
 
 SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
 
-> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `verify`, `check-discs`, `stats`, `doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`, `theme-scan`) need no flag. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back.
+> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-misplaced`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`, `theme-scan`) need no flag. Most destructive commands write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. `scrub --stats` is the exception — it deletes `Statistics.ini` files permanently with no undo path; back up first.
 
 ## Pick your install route
 
@@ -115,7 +115,8 @@ spindoctor audit --system MAME                 :: ROMs vs HyperSpin DB
 spindoctor verify --system NES --dat path\to.dat
 spindoctor backup create --target E:\Backups --apply
 spindoctor migrate --target E:\Cab --apply
-spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply
+spindoctor fav rebuild --apply && spindoctor recent rebuild --apply && spindoctor stats-report build-wheel --apply
+spindoctor scrub --apply                       :: wipe favorites + all play stats (irreversible — backup first)
 ```
 
 Everything above also works from the GUI's Custom Command tab — the dropdown is pre-populated with ~70 of these.

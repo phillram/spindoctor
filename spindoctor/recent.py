@@ -39,6 +39,16 @@ from .rocketlauncher import (
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"
 DEFAULT_LIMIT = 20
+
+# System names SpinDoctor generates as synthetic wheels.  These are excluded by
+# default when reading play statistics so that sessions launched *from* a
+# synthetic wheel (Favorites → RL#1 records the play under "Favorites") do not
+# pollute the Recently Played / Most Played lists.
+SYNTHETIC_SYSTEM_NAMES: frozenset[str] = frozenset({
+    "Favorites",
+    "Recently Played",
+    "Most Played",
+})
 _TIME_FORMATS = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
@@ -185,6 +195,7 @@ def _read_global_statistics_ini(
 def collect_play_records(
     config: Config,
     *,
+    exclude_systems: "frozenset[str] | set[str] | None" = SYNTHETIC_SYSTEM_NAMES,
     warnings: "list[str] | None" = None,
     notes: "list[str] | None" = None,
 ) -> list[PlayRecord]:
@@ -199,6 +210,12 @@ def collect_play_records(
     the aggregate ``Data/Statistics/Global Statistics.ini`` summary (which
     contains only the top-10 lists, but is better than nothing).
 
+    *exclude_systems* — system names to skip entirely when reading stats.
+    Defaults to :data:`SYNTHETIC_SYSTEM_NAMES` so that sessions launched
+    *from* a synthetic wheel (Favorites → RL#1 records the play under the
+    synthetic system name) do not pollute the Recently Played / Most Played
+    lists.  Pass ``None`` or an empty set to read all systems.
+
     Pass a list to *notes* to receive informational messages describing which
     paths were found and used (useful for CLI / GUI diagnostics).
     """
@@ -206,16 +223,22 @@ def collect_play_records(
         return []
     rl = Path(config.rocketlauncher_dir)
     records: list[PlayRecord] = []
+    _excluded: frozenset[str] = frozenset(exclude_systems) if exclude_systems else frozenset()
 
     def _note(msg: str) -> None:
         if notes is not None:
             notes.append(msg)
+
+    def _is_excluded(name: str) -> bool:
+        return name in _excluded
 
     # Classic layout: Settings/Global Statistics/<system>.ini
     global_dir = rl / "Settings" / "Global Statistics"
     if global_dir.is_dir():
         before = len(records)
         for ini in global_dir.glob("*.ini"):
+            if _is_excluded(ini.stem):
+                continue
             records.extend(_read_stats_file(ini, ini.stem, warnings=warnings))
         added = len(records) - before
         if added:
@@ -229,6 +252,8 @@ def collect_play_records(
         sys_dirs_with_stats = []
         for sys_dir in settings_dir.iterdir():
             if not sys_dir.is_dir():
+                continue
+            if _is_excluded(sys_dir.name):
                 continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
@@ -248,6 +273,7 @@ def collect_play_records(
         data_files = [
             ini for ini in data_stats_dir.glob("*.ini")
             if ini.stem.lower() != "global statistics"
+            and not _is_excluded(ini.stem)
         ]
         for ini in data_files:
             records.extend(_read_stats_file(ini, ini.stem, warnings=warnings))
@@ -597,7 +623,12 @@ def rebuild(
     known = set(get_systems(config))
     read_warnings: list[str] = []
     read_notes: list[str] = []
-    raw = collect_play_records(config, warnings=read_warnings, notes=read_notes)
+    raw = collect_play_records(
+        config,
+        exclude_systems=SYNTHETIC_SYSTEM_NAMES | {target_system},
+        warnings=read_warnings,
+        notes=read_notes,
+    )
     raw = [r for r in raw if r.system in known]
     top = top_recent(raw, limit=limit)
 
