@@ -443,9 +443,10 @@ def rebuild(
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
         source_db = _safe_load(entry.system, config)
         source_game = source_db.get(entry.rom_name) if source_db else None
+        base_desc = entry.display_name or (source_game.description if source_game else entry.rom_name)
         merged = GameEntry(
             name=target_name,
-            description=entry.display_name or (source_game.description if source_game else entry.rom_name),
+            description=f"{base_desc} ({entry.system})",
             cloneof=source_game.cloneof if source_game else "",
             crc=source_game.crc if source_game else "",
             manufacturer=source_game.manufacturer if source_game else "",

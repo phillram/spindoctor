@@ -12,7 +12,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`scrub-restore <backup-path> [--apply]`** — restore files from a `scrub --backup-dir` backup. Reads `manifest.json` and copies each file back to its original location. Dry-run by default; `--apply` to commit.
 
-- **Scrub panel in GUI** — "Scrub cabinet data" section added to the Backup & Restore tab. Provides checkboxes for Favorites / Play statistics, optional backup directory (with Browse), Apply checkbox, and a separate Restore sub-panel. Confirmation dialogs warn before destructive applies and require extra confirmation when `--stats` is selected without a backup directory.
+- **Scrub panel in GUI (Tools tab)** — "Reset wheel data (scrub)" section added to the Tools tab alongside the other wheel controls. Provides checkboxes for Favorites / Play statistics, optional backup directory (with Browse), Apply checkbox, and a nested Restore sub-panel. Confirmation dialogs warn before destructive applies and require extra confirmation when `--stats` is selected without a backup directory.
+
+- **System name in synthetic wheel descriptions** — every entry in the Favorites, Recently Played, and Most Played wheels now shows its source console in the description, e.g. "Kirby's Dream Land (Super Nintendo Entertainment System)". This resolves the common case where the same title exists on multiple platforms and the wheel gave no indication of which version was which.
 
 ### Changed
 
