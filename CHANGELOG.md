@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.9] - 2026-05-26
+
 ### Added
 
 - **`scrub --backup-dir DIR`** — copy all affected files to `DIR/scrub-<timestamp>/` before deleting. Creates `favorites.json` and every `Statistics.ini` file (across all three RL layouts) in a plain folder with a `manifest.json` index. The backup is skipped in dry-run mode. Strongly recommended before `--stats` (Statistics.ini files are not regenerable by SpinDoctor).
@@ -876,7 +880,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.8...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.9...HEAD
+[2.4.9]: https://github.com/phillram/spindoctor/compare/v2.4.8...v2.4.9
 [2.4.8]: https://github.com/phillram/spindoctor/compare/v2.4.7...v2.4.8
 [2.4.7]: https://github.com/phillram/spindoctor/compare/v2.4.6...v2.4.7
 [2.4.6]: https://github.com/phillram/spindoctor/compare/v2.4.5...v2.4.6
