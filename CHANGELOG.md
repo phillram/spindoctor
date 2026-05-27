@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.8] - 2026-05-26
+
 ### Fixed
 
 - **Synthetic wheel plays polluted Recently Played / Most Played** — when a game is launched from Favorites (or Recently Played / Most Played), RL#1 records the session under the synthetic system name (e.g. "Favorites"). SpinDoctor's stats reader previously included those entries, so playing "Strider" from Favorites would also add it to Recently Played attributed to "Favorites" instead of its real system. `collect_play_records` and `load_all_playtime` now skip statistics files for all three synthetic wheel names by default. Stats from real system wheels are unaffected.
