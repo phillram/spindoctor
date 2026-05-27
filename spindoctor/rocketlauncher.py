@@ -109,6 +109,49 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
     "PCLauncher": "exe|lnk|url|bat",
 }
 
+# Correction table for emulator window titles used as PCLauncher's ``FadeTitle=`` key.
+#
+# **Why FadeTitle is needed alongside AppWaitExe:**
+# PCLauncher.ahk v2.2.7 source (lines 214-224) shows that when ``AppWaitExe``
+# is set *without* ``FadeTitle``, PCLauncher waits for the AppWaitExe process
+# to start (correct) but then tries to find that process's window by PID
+# (``WinWait ahk_pid <PID>``). DirectX emulators running in exclusive
+# fullscreen — or those that create their game window in a child process —
+# don't produce a Win32 window detectable by PID. The wait times out after
+# ~30 s: "There was an error waiting for the window ahk_pid XXXX".
+#
+# Setting ``FadeTitle`` causes PCLauncher to skip the PID-based window search
+# entirely (the ``If !FadeTitle`` block at line 215 is bypassed). It instead
+# waits for a window whose title *contains* the FadeTitle value — which works
+# even when the window is owned by a child process. ``AppWaitExe.WaitClose()``
+# then handles exit detection cleanly (the process disappearing when the user
+# quits the game).
+#
+# **Default behaviour (no entry needed for most emulators):**
+# ``_get_fade_title`` falls back to the emulator's registered name when it is
+# not found in this table.  AHK ``WinWait`` uses case-insensitive partial
+# matching, so "Supermodel" matches "Supermodel 3.1 UI", "Model 2" matches
+# "Sega Model 2 Emulator", and so on.  This means FadeTitle works
+# automatically for any emulator whose window title contains its registered
+# name — which is the overwhelming majority.
+#
+# **Add an entry here only when the emulator name does NOT appear in the
+# window title at all** — e.g. if an emulator registered as "Zinc" actually
+# shows "Drunken Muppets Arcade" as its window title.  The ``emulator_window_titles``
+# field in :class:`~spindoctor.config.Config` provides user-level overrides
+# with the same semantics (user entries take precedence over this table).
+EMULATOR_WINDOW_TITLES: dict[str, str] = {
+    "ZiNc": "ZiNc",   # window title: "ZiNc 1.1 (C)1997-2005 Drunken Muppets ..."
+                       # name and title match so this is a no-op, but kept as a
+                       # documented example of the correction format.
+}
+
+# Safety timeout (seconds) for FadeTitle window detection.
+# If the emulator's window hasn't appeared within this many seconds of
+# PCLauncher launching the Application, PCLauncher errors out.  This prevents
+# an infinite hang if the emulator crashes before showing a window.
+_FADE_TITLE_TIMEOUT = 30
+
 
 # ─── Global Emulators.ini ─────────────────────────────────────────────────────
 
@@ -709,6 +752,37 @@ def _get_app_wait_exe(
     return _read_emulator_exe(emulator, rocketlauncher_dir)
 
 
+def _get_fade_title(
+    source_system: str,
+    rocketlauncher_dir: Path,
+    extra: "dict[str, str] | None" = None,
+) -> str:
+    """Return the ``FadeTitle=`` window-title fragment for *source_system*'s emulator.
+
+    Looks up the system's configured emulator name (from RL settings) first in
+    *extra* (user-supplied overrides from :attr:`~spindoctor.config.Config.emulator_window_titles`),
+    then falls back to the built-in :data:`EMULATOR_WINDOW_TITLES` table.
+    Returns an empty string when the emulator is unknown or PCLauncher-based.
+
+    *extra* values take precedence so users can override a built-in entry or
+    add support for any emulator not yet in the built-in table — without
+    editing source code.
+
+    See the :data:`EMULATOR_WINDOW_TITLES` docstring for why ``FadeTitle``
+    is necessary alongside ``AppWaitExe`` to avoid the 30-second
+    "waiting for window ahk_pid" error from PCLauncher.ahk.
+    """
+    emulator = _read_system_default_emulator(source_system, rocketlauncher_dir)
+    if not emulator or emulator == "PCLauncher":
+        return ""
+    merged: dict[str, str] = {**EMULATOR_WINDOW_TITLES, **(extra or {})}
+    # Fall back to the emulator name itself: AHK WinWait uses case-insensitive
+    # partial matching, so "Supermodel" matches "Supermodel 3.1 UI", etc.
+    # This makes FadeTitle work for any emulator automatically — EMULATOR_WINDOW_TITLES
+    # only needs entries where the name genuinely doesn't appear in the window title.
+    return merged.get(emulator, emulator)
+
+
 def ensure_rl_game_exe(rocketlauncher_dir: Path) -> Path:
     """Ensure ``RocketLauncherGame.exe`` exists as a copy of ``RocketLauncher.exe``.
 
@@ -761,6 +835,7 @@ def write_pclauncher_system_ini(
     entries: list,
     rocketlauncher_dir: Path,
     rl_exe: Optional[Path] = None,
+    extra_window_titles: "dict[str, str] | None" = None,
 ) -> Path:
     """Write the system-level PCLauncher INI that PCLauncher.ahk reads.
 
@@ -791,14 +866,19 @@ def write_pclauncher_system_ini(
     detects RL#2's exit and returns control to RL#1, which handles the
     fade-back to HyperSpin normally.
 
-    **Why ``AppWaitExe``:** RL#2 in standalone mode never creates a visible
-    window.  PCLauncher.ahk's default behaviour is to wait for a window owned
-    by the Application's PID (``Window.Wait ahk_pid XXXX``).  When no window
-    appears it times out after ~30 s and throws "error waiting for window
-    ahk_pid XXXX".  ``AppWaitExe=<emulator.exe>`` tells PCLauncher to poll for
-    the named process instead.  With the ``#SingleInstance`` fix in place RL#2
-    actually runs and the emulator appears in ~4 s — well within the 15-second
-    ``AppWaitExe`` limit.
+    **Why ``AppWaitExe`` + ``FadeTitle``:**
+    RL#2 in standalone mode never creates a visible window under its own PID.
+    Without ``FadeTitle``, PCLauncher.ahk (source lines 214-224) waits for a
+    window owned by the AppWaitExe PID — but many DirectX emulators run in
+    exclusive fullscreen or create their game window in a child process, so the
+    PID-based wait always fails after ~30 s ("error waiting for window
+    ahk_pid XXXX") even though the game is running.
+
+    Setting ``FadeTitle`` bypasses that PID-based search: PCLauncher finds the
+    window by *title* instead (which works regardless of child-process
+    hierarchy).  ``AppWaitExe.WaitClose()`` then handles exit detection cleanly.
+    ``FadeTitleTimeout`` caps the start-up wait so PCLauncher doesn't hang
+    forever if the emulator crashes before showing a window.
 
     Returns the path of the written file.
     """
@@ -807,12 +887,16 @@ def write_pclauncher_system_ini(
     lines: list[str] = []
     for target_name, source_system, source_rom in entries:
         app_wait_exe = _get_app_wait_exe(source_system, rocketlauncher_dir, source_rom)
+        fade_title = _get_fade_title(source_system, rocketlauncher_dir, extra_window_titles)
         lines.append(f"[{target_name}]")
         lines.append(f"Application={rl_exe}")
         lines.append(f'Parameters=-s "{source_system}" -r "{source_rom}"')
         lines.append(f"WorkingFolder={rocketlauncher_dir}")
         if app_wait_exe:
             lines.append(f"AppWaitExe={app_wait_exe}")
+        if fade_title:
+            lines.append(f"FadeTitle={fade_title}")
+            lines.append(f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}")
         lines.append("")
     system_ini.parent.mkdir(parents=True, exist_ok=True)
     system_ini.write_text("\n".join(lines), encoding="utf-8")

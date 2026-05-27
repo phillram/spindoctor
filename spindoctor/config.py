@@ -182,6 +182,22 @@ class Config:
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)
 
+    # Per-emulator window-title fragments used as PCLauncher's FadeTitle= key.
+    # Merged with (and takes precedence over) the built-in EMULATOR_WINDOW_TITLES
+    # table in rocketlauncher.py.  Add entries here for any emulator whose games
+    # in Favorites / Recently Played / Most Played produce the error:
+    #   "There was an error waiting for the window ahk_pid XXXX"
+    # The value is matched as a case-insensitive substring of the emulator's
+    # window title.  The key must match the emulator name exactly as it appears
+    # in RocketLauncherUI (i.e. the Default_Emulator= value in Settings/<System>/Emulators.ini).
+    # Example:
+    #   {
+    #     "Supermodel": "Supermodel",
+    #     "Model 2": "Sega Model 2",
+    #     "Teknoparrot": "Teknoparrot"
+    #   }
+    emulator_window_titles: dict[str, str] = field(default_factory=dict)
+
     # ── derived paths ──────────────────────────────────────────────────────────
 
     @property

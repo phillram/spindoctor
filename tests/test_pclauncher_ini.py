@@ -9,6 +9,9 @@ from spindoctor.config import Config
 from spindoctor.rocketlauncher import (
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
+    EMULATOR_WINDOW_TITLES,
+    _FADE_TITLE_TIMEOUT,
+    _get_fade_title,
     ensure_rl_game_exe,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
@@ -496,3 +499,151 @@ def test_write_pclauncher_system_ini_defaults_to_rl_exe_when_no_override(tmp_pat
     )
     body = ini_path.read_text(encoding="utf-8")
     assert "RocketLauncher.exe" in body
+
+
+# ─── FadeTitle / EMULATOR_WINDOW_TITLES ──────────────────────────────────────
+
+def _write_emulators_ini(path: Path, emulator_name: str) -> None:
+    """Write a folder-layout Emulators.ini for a given emulator name."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"[ROMS]\nDefault_Emulator={emulator_name}\nRom_Path=C:\\Games\n",
+        encoding="utf-8",
+    )
+
+
+def test_emulator_window_titles_correction_table_has_zinc():
+    """ZiNc entry is kept as a documented correction-table example."""
+    assert "ZiNc" in EMULATOR_WINDOW_TITLES
+
+
+def test_get_fade_title_returns_title_for_correction_table_emulator(tmp_path):
+    """Returns the correction-table value when the emulator has an explicit entry."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Zinc" / "Emulators.ini", "ZiNc")
+    title = _get_fade_title("Zinc", rl)
+    assert title == EMULATOR_WINDOW_TITLES["ZiNc"]
+
+
+def test_get_fade_title_returns_emulator_name_for_unknown_emulator(tmp_path):
+    """Falls back to the emulator name itself when not in EMULATOR_WINDOW_TITLES.
+
+    AHK WinWait uses case-insensitive partial matching, so the emulator name
+    (e.g. 'Model 2') will match any window title that contains it.
+    """
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+    title = _get_fade_title("Sega Model 2", rl)
+    assert title == "Model 2"
+
+
+def test_get_fade_title_returns_empty_for_pclauncher_system(tmp_path):
+    """PCLauncher-based source systems return empty (no emulator window)."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "PC Games" / "Emulators.ini", "PCLauncher")
+    title = _get_fade_title("PC Games", rl)
+    assert title == ""
+
+
+def test_get_fade_title_returns_empty_when_no_settings(tmp_path):
+    """Returns empty string gracefully when no settings files exist."""
+    rl = tmp_path / "rl"
+    rl.mkdir()
+    title = _get_fade_title("Zinc", rl)
+    assert title == ""
+
+
+def test_write_pclauncher_system_ini_adds_fade_title_for_known_emulator(tmp_path):
+    """FadeTitle= and FadeTitleTimeout= are written for emulators in EMULATOR_WINDOW_TITLES."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Zinc" / "Emulators.ini", "ZiNc")
+    # Also write global emulators so _read_emulator_exe can find ZiNc.exe
+    global_ini = rl / "Settings" / "Global Emulators.ini"
+    global_ini.parent.mkdir(parents=True, exist_ok=True)
+    global_ini.write_text(
+        "[ZiNc]\nEmu_Path=..\\Emulators\\ZiNc\\ZiNc.exe\nModule=ZiNc.ahk\n",
+        encoding="utf-8",
+    )
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("tondemo", "Zinc", "tondemo")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=ZiNc" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+def test_write_pclauncher_system_ini_uses_emulator_name_as_fade_title_for_unknown(tmp_path):
+    """FadeTitle= uses the emulator name when not in EMULATOR_WINDOW_TITLES.
+
+    AHK partial matching means 'Model 2' in FadeTitle= will match any window
+    whose title contains 'Model 2', so no explicit entry is needed for most emulators.
+    """
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("vf2", "Sega Model 2", "vf2")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=Model 2" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+def test_write_pclauncher_system_ini_fade_title_with_app_wait_exe(tmp_path):
+    """Both AppWaitExe= and FadeTitle= appear when emulator is fully resolved."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "MAME" / "Emulators.ini", "MAME")
+    global_ini = rl / "Settings" / "Global Emulators.ini"
+    global_ini.parent.mkdir(parents=True, exist_ok=True)
+    global_ini.write_text(
+        "[MAME]\nEmu_Path=..\\Emulators\\MAME\\mame.exe\nModule=MAME.ahk\n",
+        encoding="utf-8",
+    )
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("1942", "MAME", "1942")],
+        rl,
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "AppWaitExe=mame.exe" in body
+    assert "FadeTitle=MAME" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+def test_get_fade_title_user_config_overrides_builtin(tmp_path):
+    """User-supplied extra dict takes precedence over the built-in table."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "MAME" / "Emulators.ini", "MAME")
+    # Override built-in "MAME" entry with custom title
+    title = _get_fade_title("MAME", rl, extra={"MAME": "MyMAME"})
+    assert title == "MyMAME"
+
+
+def test_get_fade_title_user_config_adds_unknown_emulator(tmp_path):
+    """User-supplied extra dict covers emulators not in the built-in table."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+    title = _get_fade_title("Sega Model 2", rl, extra={"Model 2": "Sega Model 2"})
+    assert title == "Sega Model 2"
+
+
+def test_write_pclauncher_system_ini_respects_extra_window_titles(tmp_path):
+    """extra_window_titles parameter is used for FadeTitle= resolution."""
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
+
+    ini_path = write_pclauncher_system_ini(
+        "Favorites",
+        [("vf2", "Sega Model 2", "vf2")],
+        rl,
+        extra_window_titles={"Model 2": "Sega Model 2"},
+    )
+    body = ini_path.read_text(encoding="utf-8")
+    assert "FadeTitle=Sega Model 2" in body
+    assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body

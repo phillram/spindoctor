@@ -10,9 +10,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Synthetic wheel plays polluted Recently Played / Most Played** — when a game is launched from Favorites (or Recently Played / Most Played), RL#1 records the session under the synthetic system name (e.g. "Favorites"). SpinDoctor's stats reader previously included those entries, so playing "Strider" from Favorites would also add it to Recently Played attributed to "Favorites" instead of its real system. `collect_play_records` and `load_all_playtime` now skip statistics files for all three synthetic wheel names by default. Stats from real system wheels are unaffected.
 
+- **"Error waiting for window ahk_pid XXXX" 30 seconds after game launches from synthetic wheel** — root cause identified from PCLauncher.ahk v2.2.7 source (lines 214-224). When `AppWaitExe` is set without `FadeTitle`, PCLauncher finds the emulator process (correct) then tries to locate that process's window by PID. DirectX emulators running in exclusive fullscreen or creating their game window in a child process don't produce a Win32 window detectable by that PID. The 30-second wait times out, RL#1 aborts, the game keeps running as an orphan (user must ALT+TAB).
+
+  Fix: SpinDoctor now writes `FadeTitle=<title>` and `FadeTitleTimeout=30` alongside `AppWaitExe=` for known emulators. Setting `FadeTitle` causes PCLauncher to skip the PID-based window search entirely (`If !FadeTitle` block at PCLauncher.ahk line 215) and instead find the game window by title, which works regardless of child-process hierarchy. `AppWaitExe.Process("WaitClose")` then handles exit detection cleanly. `FadeTitleTimeout=30` prevents an infinite hang if the emulator crashes before showing a window.
+
+  `FadeTitle` now works for **every emulator automatically** — no per-emulator registration required. `_get_fade_title` falls back to the emulator's registered name when it isn't found in the correction table. AHK `WinWait` uses case-insensitive partial matching, so "Supermodel" matches "Supermodel 3.1 UI", "Model 2" matches "Sega Model 2 Emulator", etc. The `EMULATOR_WINDOW_TITLES` table is now a correction-only override for the rare case where an emulator's window title contains no part of its registered name.
+
 ### Added
 
 - **`scrub` command** — destructively reset cabinet data behind `--apply`. Without flags, both favorites and statistics are cleared. `--favorites` clears `favorites.json` and removes the Favorites wheel from disk. `--stats` deletes every RocketLauncher Statistics.ini file and clears the Recently Played and Most Played wheel content. Dry-run preview shown without `--apply`.
+
+- **User-configurable emulator window-title corrections** — for the rare emulator whose window title doesn't contain its registered name, custom `emulator → title-fragment` pairs can be registered via the new `emulator-title` CLI group, stored in `config.json` under `emulator_window_titles`. User-supplied entries take precedence over the built-in correction table so built-in entries can also be overridden without editing source code.
+
+  Commands:
+  - `spindoctor emulator-title set <EmulatorName> <window title fragment>` — add or update a correction
+  - `spindoctor emulator-title remove <EmulatorName>` — remove a correction (built-in entries cannot be removed, only overridden)
+  - `spindoctor emulator-title list` — display all effective mappings, marking which are built-in, user-defined, or user overrides of a built-in
 
 ---
 
