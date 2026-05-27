@@ -64,15 +64,17 @@ def test_collect_stat_files_newer(tmp_path):
     assert f in result
 
 
-def test_collect_stat_files_excludes_global_aggregate(tmp_path):
+def test_collect_stat_files_includes_global_aggregate(tmp_path):
     from spindoctor.cli import _collect_stat_files
     rl = tmp_path / "rl"
-    # Create the aggregate file that must be excluded
+    # Global Statistics.ini must be included so scrub clears it — otherwise
+    # the refresh fallback reads stale data from it after per-system files
+    # are deleted, repopulating Most Played / Recently Played with old games.
     agg = rl / "Data" / "Statistics" / "Global Statistics.ini"
     agg.parent.mkdir(parents=True, exist_ok=True)
     agg.write_text("[Global]\nTotal=99\n", encoding="utf-8")
     result = _collect_stat_files(rl)
-    assert agg not in result
+    assert agg in result
 
 
 def test_collect_stat_files_all_three_layouts(tmp_path):
