@@ -2353,6 +2353,121 @@ def stats_report_clear_wheel(target_system, apply_changes):
     _print_clear_wheel_summary(target_system, summary, apply_changes)
 
 
+@cli.command("scrub")
+@click.option("--favorites", "scrub_favorites", is_flag=True,
+              help="Clear the favorites store (favorites.json).")
+@click.option("--stats", "scrub_stats", is_flag=True,
+              help="Delete all RocketLauncher Statistics.ini files.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit changes — DESTRUCTIVE.  Default is dry-run preview.")
+def scrub_cmd(scrub_favorites, scrub_stats, apply_changes):
+    """Destructively reset cabinet data.  Requires --apply.
+
+    \b
+    Without --favorites or --stats, both are cleared (full scrub).
+
+    \b
+    --favorites clears ~/.spindoctor/favorites.json entirely.
+    The generated Favorites wheel is also removed from disk.
+
+    \b
+    --stats deletes every per-system Statistics.ini file that RocketLauncher
+    has written.  This resets Most Played and Recently Played to zero.
+    The wheel content is also cleared.
+
+    \b
+    WARNING: --stats is irreversible.  Back up your RocketLauncher
+    Statistics files before running.
+    """
+    from .favorites import clear_favorites, load_store
+    from .recent import (
+        SYNTHETIC_SYSTEM_NAMES, clear_wheel_artifacts, collect_play_records,
+        DEFAULT_RECENT_SYSTEM,
+    )
+    from .playtime import DEFAULT_PLAYED_SYSTEM
+
+    config = _cfg()
+
+    # If neither flag given, do both.
+    if not scrub_favorites and not scrub_stats:
+        scrub_favorites = scrub_stats = True
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No changes will be made. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    # ── Favorites ────────────────────────────────────────────────────────────
+    if scrub_favorites:
+        store = load_store()
+        result = clear_favorites(store, config, dry_run=not apply_changes)
+        verb = "Would clear" if not apply_changes else "Cleared"
+        n = result.entries_cleared
+        console.print(
+            f"[bold]Favorites:[/bold] {verb} {n} entr{'y' if n == 1 else 'ies'} "
+            f"from [dim]{result.store_path}[/dim]"
+        )
+        if result.wheel is not None:
+            _print_clear_wheel_summary(store.target_system, result.wheel, apply_changes)
+
+    # ── Statistics ───────────────────────────────────────────────────────────
+    if scrub_stats:
+        if not config.rocketlauncher_dir:
+            console.print(
+                "[yellow]Stats scrub skipped:[/yellow] rocketlauncher_dir not configured."
+            )
+        else:
+            rl = Path(config.rocketlauncher_dir)
+            stat_files: list[Path] = []
+
+            # Classic layout: Settings/Global Statistics/<system>.ini
+            global_dir = rl / "Settings" / "Global Statistics"
+            if global_dir.is_dir():
+                stat_files.extend(global_dir.glob("*.ini"))
+
+            # Oldest layout: Settings/<system>/Statistics.ini
+            settings_dir = rl / "Settings"
+            if settings_dir.is_dir():
+                for sys_dir in settings_dir.iterdir():
+                    if sys_dir.is_dir():
+                        s = sys_dir / "Statistics.ini"
+                        if s.is_file():
+                            stat_files.append(s)
+
+            # Newer layout: Data/Statistics/<system>.ini (not the aggregate file)
+            data_stats_dir = rl / "Data" / "Statistics"
+            if data_stats_dir.is_dir():
+                stat_files.extend(
+                    ini for ini in data_stats_dir.glob("*.ini")
+                    if ini.stem.lower() != "global statistics"
+                )
+
+            verb = "Would delete" if not apply_changes else "Deleted"
+            if stat_files:
+                console.print(
+                    f"[bold]Statistics:[/bold] {verb} {len(stat_files)} Statistics.ini file(s):"
+                )
+                for f in sorted(stat_files):
+                    rel = f.relative_to(rl) if f.is_relative_to(rl) else f
+                    console.print(f"  [dim]{rel}[/dim]")
+                    if apply_changes:
+                        try:
+                            f.unlink()
+                        except OSError as exc:
+                            console.print(f"  [red]Error deleting {rel}: {exc}[/red]")
+            else:
+                console.print("[bold]Statistics:[/bold] No Statistics.ini files found.")
+
+            # Also clear the synthetic wheel content so it doesn't show
+            # stale entries after the stats are gone.
+            for sys_name in (DEFAULT_RECENT_SYSTEM, DEFAULT_PLAYED_SYSTEM):
+                summary = clear_wheel_artifacts(
+                    config, sys_name, dry_run=not apply_changes
+                )
+                _print_clear_wheel_summary(sys_name, summary, apply_changes)
+
+
 def _sibling_exe(name: str) -> str:
     """Return a quoted full path to a sibling SpinDoctor binary when frozen.
 

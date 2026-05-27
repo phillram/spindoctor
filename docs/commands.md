@@ -14,8 +14,9 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
-- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`
+- [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
+- [Resetting cabinet data](#resetting-cabinet-data) — `scrub`
 - [Themes](#themes) — `theme-scan`, `theme-apply`, `theme-pack-create`
 - [Diff](#diff) — `diff`
 - [LEDBlinky](#ledblinky)
@@ -544,11 +545,24 @@ spindoctor fav sync               :: pull HyperSpin's per-system F-key favorites
 spindoctor fav rebuild            :: dry-run preview
 spindoctor fav rebuild --apply    :: regenerate Databases/Favorites/Favorites.xml + media + launchers
 spindoctor fav rebuild --media-mode copy --apply   :: force file copies (FAT32 thumb drives)
+spindoctor fav clear              :: dry-run preview of what would be removed
+spindoctor fav clear --apply      :: remove the Favorites wheel and empty the store
 ```
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
 
 When two source systems both contain a game with the same ROM name (e.g. `Tetris` on SNES and Game Boy), the wheel labels them `Tetris (Super Nintendo)` and `Tetris (Game Boy)` automatically.
+
+**`fav clear`** empties the favorites store and tears down the Favorites wheel — useful when starting fresh or before running `scrub`. Dry-run by default; pass `--apply` to commit. Files removed:
+
+| File / directory | What it is |
+|---|---|
+| `~/.spindoctor/favorites.json` | Emptied (all `(system, rom)` entries removed) |
+| `<hyperspin_dir>/Databases/Favorites/Favorites.xml` | Deleted |
+| `<hyperspin_dir>/Media/Favorites/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Favorites/` | All per-game `.ini` launchers deleted |
+
+RocketLauncher `Statistics.ini` files are not modified — only the generated wheel artifacts are removed. The wheel can be rebuilt at any time with `fav rebuild --apply`.
 
 ### `recent`
 
@@ -560,9 +574,20 @@ spindoctor recent rebuild --apply                        :: top 20 (default)
 spindoctor recent rebuild --limit 10 --apply
 spindoctor recent rebuild --target-system "Last Played" --apply
 spindoctor recent list                                   :: print the current top-N
+spindoctor recent clear                                  :: dry-run preview of what would be removed
+spindoctor recent clear --apply                          :: remove the Recently Played wheel from disk
+spindoctor recent clear --target-system "Last Played" --apply  :: clear a custom-named wheel
 ```
 
 Sorted by `last_played` desc — newest game first, deduped on `(system, rom)`. See [Standalone tools](standalone-tools.md) for ordering and limit details.
+
+**`recent clear`** removes the generated Recently Played wheel without touching RocketLauncher's `Statistics.ini` files. The wheel can be rebuilt at any time with `recent rebuild --apply`. Dry-run by default. Files removed:
+
+| File / directory | What it is |
+|---|---|
+| `<hyperspin_dir>/Databases/Recently Played/Recently Played.xml` | Deleted |
+| `<hyperspin_dir>/Media/Recently Played/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Recently Played/` | All per-game `.ini` launchers deleted |
 
 ### `install-tools`
 
@@ -584,6 +609,27 @@ Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Mos
 Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
 
 The GUI's **Tools** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
+
+### `uninstall-tools`
+
+Reverses `install-tools`. Removes the `.bat` wrappers (and, when `--add-to-system` was used, the PCLauncher `.ini` files and database entries) that `install-tools` wrote. Dry-run by default — pass `--apply` to commit.
+
+```bat
+:: Standard Tools-menu install (bats in HyperLaunch\Tools\spindoctor\)
+spindoctor uninstall-tools              :: dry-run — show what would be removed
+spindoctor uninstall-tools --apply      :: remove the .bat files
+
+:: Toolkit-wheel install (pass the same system name used with install-tools)
+spindoctor uninstall-tools --add-to-system Toolkit
+spindoctor uninstall-tools --add-to-system Toolkit --apply
+```
+
+When `--add-to-system <SYSTEM>` is given:
+
+1. Removes the `.bat` and `.ini` files from the PCLauncher directory used for that system (reads the first `Rom_Path` from `Settings/<SYSTEM>/Emulators.ini`, falls back to `Modules/PCLauncher/<SYSTEM>`; also checks the legacy path so files written by older versions are cleaned up).
+2. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+
+Only files and entries that exist are touched — missing ones are silently skipped.
 
 ---
 
@@ -626,6 +672,97 @@ spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode 
 ```
 
 `--media-mode` accepts the same values as `fav rebuild`.
+
+### `stats-report clear-wheel` — remove the Most Played wheel
+
+Removes the generated Most Played wheel without touching RocketLauncher's `Statistics.ini` files. The wheel can be rebuilt at any time with `stats-report build-wheel --apply`. Dry-run by default.
+
+```bat
+spindoctor stats-report clear-wheel              :: dry-run preview
+spindoctor stats-report clear-wheel --apply      :: remove the Most Played wheel from disk
+spindoctor stats-report clear-wheel --target-system "Hall of Fame" --apply  :: clear a custom-named wheel
+```
+
+Files removed:
+
+| File / directory | What it is |
+|---|---|
+| `<hyperspin_dir>/Databases/Most Played/Most Played.xml` | Deleted |
+| `<hyperspin_dir>/Media/Most Played/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Most Played/` | All per-game `.ini` launchers deleted |
+
+---
+
+## Resetting cabinet data
+
+### `scrub`
+
+Destructively reset favorites and/or play statistics back to zero. **Requires `--apply`** — without it the command prints a dry-run preview and exits without touching anything.
+
+> **⚠ No backup is performed by `scrub`.** `--stats` deletes `Statistics.ini` files permanently — RocketLauncher has no built-in restore. Run `spindoctor backup create --include settings,rocketlauncher --target E:\Backups --apply` *before* scrubbing if you want a recovery path. The favorites store (`favorites.json`) is only emptied, so it can be repopulated by hand or with `fav add` / `fav sync`.
+
+```bat
+:: Dry-run preview (nothing is written)
+spindoctor scrub
+
+:: Full scrub — clear both favorites and all play statistics
+spindoctor scrub --apply
+
+:: Clear only the favorites store and Favorites wheel
+spindoctor scrub --favorites --apply
+
+:: Delete all Statistics.ini files and clear the Recently Played / Most Played wheels
+spindoctor scrub --stats --apply
+```
+
+Without `--favorites` or `--stats`, both are cleared (equivalent to passing both flags).
+
+#### What `--favorites` removes
+
+| File / directory | What happens |
+|---|---|
+| `~/.spindoctor/favorites.json` | **Emptied** — all `(system, rom)` pairs removed; file is kept |
+| `<hyperspin_dir>/Databases/Favorites/Favorites.xml` | Deleted |
+| `<hyperspin_dir>/Media/Favorites/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Favorites/` | All per-game `.ini` launchers deleted |
+
+After a `--favorites` scrub the Favorites wheel is gone from HyperSpin. Running `fav add … && fav rebuild --apply` starts it fresh.
+
+#### What `--stats` removes
+
+All `Statistics.ini` files that RocketLauncher has written, across all three layouts it may have used:
+
+| Layout | Path pattern | Notes |
+|---|---|---|
+| Classic | `<rl>/Settings/Global Statistics/<System>.ini` | One file per system |
+| Legacy | `<rl>/Settings/<System>/Statistics.ini` | Older RL builds |
+| Newer | `<rl>/Data/Statistics/<System>.ini` | Excludes the aggregate `Global Statistics.ini` |
+
+Every matching file is **permanently deleted** — RocketLauncher will create new (empty) files the next time games are launched. In addition, the generated Recently Played and Most Played wheels are cleared:
+
+| File / directory | What happens |
+|---|---|
+| `<hyperspin_dir>/Databases/Recently Played/Recently Played.xml` | Deleted |
+| `<hyperspin_dir>/Media/Recently Played/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Recently Played/` | All per-game `.ini` launchers deleted |
+| `<hyperspin_dir>/Databases/Most Played/Most Played.xml` | Deleted |
+| `<hyperspin_dir>/Media/Most Played/` | Entire directory deleted |
+| `<rocketlauncher_dir>/Modules/PCLauncher/Most Played/` | All per-game `.ini` launchers deleted |
+
+After a `--stats` scrub all play history is gone. Running `recent rebuild --apply` and `stats-report build-wheel --apply` will produce empty wheels until RocketLauncher has logged new sessions.
+
+#### Recommended workflow
+
+```bat
+:: 1. Back up first (irreversible for --stats)
+spindoctor backup create --include settings,rocketlauncher --target E:\Backups --label pre-scrub --apply
+
+:: 2. Preview what would be deleted
+spindoctor scrub
+
+:: 3. Commit the scrub
+spindoctor scrub --apply
+```
 
 ---
 

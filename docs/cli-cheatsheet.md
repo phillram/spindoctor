@@ -15,6 +15,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 - [Metadata & media](#metadata--media)
 - [Backup, diff, migrate](#backup-diff-migrate)
 - [Custom wheels](#custom-wheels)
+- [Resetting cabinet data](#resetting-cabinet-data)
 - [Themes & art](#themes--art)
 - [Light guns](#light-guns)
 - [Config](#config)
@@ -284,35 +285,85 @@ Reference: [Command reference → migrate](commands.md#migrate).
 
 ## Custom wheels
 
-Cross-system Favorites / Recently Played / Most Played wheels — each backed by its own console-script binary.
+Cross-system Favorites / Recently Played / Most Played wheels.
 
 ```bat
 :: Favorites
-spindoctor-fav list
-spindoctor-fav add --system MAME --rom "1942.zip"
-spindoctor-fav rebuild --apply
+spindoctor fav list
+spindoctor fav add "Super Nintendo" "Chrono Trigger"
+spindoctor fav remove "Super Nintendo" "Chrono Trigger"
+spindoctor fav sync                                    :: pull HyperSpin per-system F-key favorites
+spindoctor fav rebuild                                 :: dry-run preview
+spindoctor fav rebuild --apply
+spindoctor fav rebuild --media-mode copy --apply       :: FAT32 thumb drives (no hardlinks)
+spindoctor fav clear                                   :: dry-run preview
+spindoctor fav clear --apply                           :: empty store + remove Favorites wheel from disk
 
 :: Recently Played
-spindoctor-recent list
-spindoctor-recent rebuild --apply
+spindoctor recent list
+spindoctor recent rebuild                              :: dry-run preview
+spindoctor recent rebuild --apply
+spindoctor recent rebuild --limit 10 --apply
+spindoctor recent clear                                :: dry-run preview
+spindoctor recent clear --apply                        :: remove Recently Played wheel from disk
 
 :: Most Played
-spindoctor-stats build-wheel --apply
-spindoctor-stats report
+spindoctor stats-report build-wheel --limit 25         :: dry-run preview
+spindoctor stats-report build-wheel --limit 25 --apply
+spindoctor stats-report clear-wheel                    :: dry-run preview
+spindoctor stats-report clear-wheel --apply            :: remove Most Played wheel from disk
 
-:: Do all three back-to-back
-spindoctor-fav rebuild --apply && spindoctor-recent rebuild --apply && spindoctor-stats build-wheel --apply
+:: Refresh all three back-to-back
+spindoctor fav rebuild --apply && spindoctor recent rebuild --apply && spindoctor stats-report build-wheel --apply
 ```
+
+> **Note:** `spindoctor-fav`, `spindoctor-recent`, and `spindoctor-stats` console-script aliases are still supported for backwards compatibility — the subcommands above under `spindoctor fav …` / `spindoctor recent …` / `spindoctor stats-report …` are the canonical form.
 
 Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [recent](commands.md#recent), [stats-report](commands.md#playtime-stats).
 
-### `install-tools` — wire wheels into Windows log-on
+### `install-tools` / `uninstall-tools` — wire wheels into HyperSpin
 
 ```bat
-spindoctor install-tools --apply           :: auto-refresh Favorites/Recent/Most-Played on log-on
+:: Install .bat helpers into HyperSpin's Tools menu
+spindoctor install-tools                               :: write to default HyperLaunch Tools dir
+spindoctor install-tools --output-dir D:\Tools
+spindoctor install-tools --add-to-system Toolkit       :: add as games in a Toolkit wheel
+
+:: Remove them again
+spindoctor uninstall-tools                             :: dry-run preview
+spindoctor uninstall-tools --apply
+spindoctor uninstall-tools --add-to-system Toolkit     :: dry-run for Toolkit variant
+spindoctor uninstall-tools --add-to-system Toolkit --apply
 ```
 
-Reference: [Standalone tools → Wiring into Windows startup](standalone-tools.md#wiring-into-windows-startup).
+Reference: [install-tools](commands.md#install-tools), [uninstall-tools](commands.md#uninstall-tools), [Standalone tools](standalone-tools.md#hyperspin-tools-menu).
+
+---
+
+## Resetting cabinet data
+
+> **⚠ `scrub --stats` is irreversible.** Back up before running:
+> ```bat
+> spindoctor backup create --include settings,rocketlauncher --target E:\Backups --apply
+> ```
+
+```bat
+:: Preview what would be deleted (safe — no files touched)
+spindoctor scrub
+
+:: Full scrub — wipe favorites store + all RocketLauncher Statistics.ini files
+spindoctor scrub --apply
+
+:: Only clear the favorites store and Favorites wheel
+spindoctor scrub --favorites --apply
+
+:: Only delete Statistics.ini files + clear Recently Played / Most Played wheels
+spindoctor scrub --stats --apply
+```
+
+`scrub` never creates a backup itself — use `backup create` first. See [Command reference → scrub](commands.md#scrub) for the exact list of files removed by each flag.
+
+Reference: [Command reference → scrub](commands.md#resetting-cabinet-data).
 
 ---
 

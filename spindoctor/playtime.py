@@ -30,7 +30,7 @@ from typing import Iterable, Optional
 from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
-from .recent import _build_synthetic_wheel, _parse_time
+from .recent import SYNTHETIC_SYSTEM_NAMES, _build_synthetic_wheel, _parse_time
 
 
 DEFAULT_PLAYED_SYSTEM = "Most Played"
@@ -214,6 +214,7 @@ def _read_global_statistics_ini(
 def load_all_playtime(
     config: Config,
     *,
+    exclude_systems: "frozenset[str] | set[str] | None" = SYNTHETIC_SYSTEM_NAMES,
     warnings: "list[str] | None" = None,
     notes: "list[str] | None" = None,
 ) -> list[PlayStat]:
@@ -231,6 +232,12 @@ def load_all_playtime(
     Records keyed on the same ``(system, game)`` pair are merged
     (newest ``last_played`` wins; counts are summed).
 
+    *exclude_systems* — system names to skip entirely when reading stats.
+    Defaults to :data:`~spindoctor.recent.SYNTHETIC_SYSTEM_NAMES` so that
+    sessions launched *from* a synthetic wheel (where RL#1 records the play
+    under the synthetic system name) do not pollute the Most Played list.
+    Pass ``None`` or an empty set to read all systems.
+
     Pass a list to *notes* to receive informational messages describing which
     paths were found and used (useful for CLI / GUI diagnostics).
     """
@@ -238,10 +245,14 @@ def load_all_playtime(
         return []
     rl = Path(config.rocketlauncher_dir)
     by_key: dict[tuple[str, str], PlayStat] = {}
+    _excluded: frozenset[str] = frozenset(exclude_systems) if exclude_systems else frozenset()
 
     def _note(msg: str) -> None:
         if notes is not None:
             notes.append(msg)
+
+    def _is_excluded(name: str) -> bool:
+        return name in _excluded
 
     def _merge(stats: Iterable[PlayStat]) -> None:
         for s in stats:
@@ -267,6 +278,8 @@ def load_all_playtime(
     if global_dir.is_dir():
         before = len(by_key)
         for ini in global_dir.glob("*.ini"):
+            if _is_excluded(ini.stem):
+                continue
             _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
         added = len(by_key) - before
         if added:
@@ -280,6 +293,8 @@ def load_all_playtime(
         sys_dirs_with_stats: list[str] = []
         for sys_dir in settings_dir.iterdir():
             if not sys_dir.is_dir():
+                continue
+            if _is_excluded(sys_dir.name):
                 continue
             stats = sys_dir / "Statistics.ini"
             if stats.is_file():
@@ -298,6 +313,7 @@ def load_all_playtime(
         data_files = [
             ini for ini in data_stats_dir.glob("*.ini")
             if ini.stem.lower() != "global statistics"
+            and not _is_excluded(ini.stem)
         ]
         for ini in data_files:
             _merge(_read_playstats_file(ini, ini.stem, warnings=warnings))
@@ -509,7 +525,12 @@ def build_most_played_wheel(
     read_warnings: list[str] = []
     read_notes: list[str] = []
     stats = [
-        s for s in load_all_playtime(config, warnings=read_warnings, notes=read_notes)
+        s for s in load_all_playtime(
+            config,
+            exclude_systems=SYNTHETIC_SYSTEM_NAMES | {target_system},
+            warnings=read_warnings,
+            notes=read_notes,
+        )
         if s.system in known
     ]
     top = top_games(stats, n=limit, scope="all")
