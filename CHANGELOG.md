@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`mainmenu add` now installs bundled media for synthetic wheels** — When `spindoctor mainmenu add Favorites --apply` (or `Recently Played` / `Most Played`) is run, SpinDoctor now installs all four bundled assets (wheel logo, attract-mode background, music, video) to `Media\Main Menu\` in addition to updating `Main Menu.xml`. Unlike `rebuild --apply` which skips files that already exist, `mainmenu add` always writes the bundled assets so the wheel gets a fresh copy — useful for first-installs and for resetting media after an upgrade. The GUI "Add wheels to Main Menu" button calls `mainmenu add --apply` for each wheel and automatically gets this behaviour. Dry-run (`mainmenu add` without `--apply`) shows what would be installed/overwritten.
+
+- **`install_bundled_system_assets()` and all four individual install functions gain an `overwrite` keyword argument** — `overwrite=False` (default, used by rebuild) preserves user-placed files; `overwrite=True` (used by `mainmenu add`) always writes the bundled asset. New status value `"overwritten"` returned when a file was replaced. `_add_bundled_asset_rows()` helper extracted from `_print_synth_summary()` for reuse in `mainmenu add` output.
+
 ### Fixed
 
 - **Attract-mode videos not playing on Windows 7 / HyperSpin** — Bundled videos were encoded at 2752×1536 (native background resolution) with H.264 High Profile, Level 5.0. The HyperSpin Adobe AIR runtime and Windows 7's DirectShow decoders only support H.264 up to Main Profile, Level 4.0; Level 5.0 causes the video track to be silently dropped while audio continues playing. All three attract-mode videos are now encoded at **1920×1080, H.264 Main Profile, Level 4.0** (`-vf scale=1920:1080 -profile:v main -level 4.0`). HyperSpin scales the video to fit the screen — the resolution of the source frame does not need to match the cabinet display.

@@ -2155,6 +2155,47 @@ def _warn_rocketlauncher_dir(config) -> None:
         )
 
 
+_ASSET_LABELS: dict[str, str] = {
+    "wheel_art":  "Wheel art",
+    "background": "Background",
+    "music":      "Music",
+    "video":      "Video",
+}
+
+
+def _add_bundled_asset_rows(
+    grid,
+    bundled: dict,
+    skip_no_asset: bool = True,
+) -> None:
+    """Append bundled-asset status rows to *grid*.
+
+    *bundled* maps asset key → ``(path, status)`` as returned by
+    :func:`~spindoctor.rocketlauncher.install_bundled_system_assets`.
+
+    *skip_no_asset* (default ``True``) suppresses rows where status is
+    ``"no_asset"`` — keeps output clean for non-synthetic wheels.
+    """
+    for asset_key in ("wheel_art", "background", "music", "video"):
+        pair = bundled.get(asset_key)
+        if pair is None:
+            continue
+        path, status = pair
+        if status == "no_asset" and skip_no_asset:
+            continue
+        asset_label = _ASSET_LABELS[asset_key]
+        if status in ("installed", "overwritten"):
+            verb = "installed" if status == "installed" else "overwritten"
+            val = f"[green]{verb}[/green] → {path}"
+        elif status == "dry_run":
+            val = f"[yellow]would install[/yellow] → {path}"
+        elif status == "skipped":
+            val = "[dim]skipped (already exists)[/dim]"
+        else:
+            val = "[dim]no bundled asset[/dim]"
+        grid.add_row(f"[cyan]{asset_label}:[/cyan]", val)
+
+
 def _print_synth_summary(label: str, summary) -> None:
     grid = Table.grid(padding=(0, 2))
     grid.add_row(f"[bold]{label} system:[/bold]", str(summary.target_system))
@@ -2174,27 +2215,7 @@ def _print_synth_summary(label: str, summary) -> None:
         str(ini_path) if ini_path else "[yellow]skipped (rocketlauncher_dir not set or invalid)[/yellow]",
     )
     bundled = getattr(summary, "bundled_assets", {}) or {}
-    _ASSET_LABELS = {
-        "wheel_art":  "Wheel art",
-        "background": "Background",
-        "music":      "Music",
-        "video":      "Video",
-    }
-    for asset_key in ("wheel_art", "background", "music", "video"):
-        label = _ASSET_LABELS[asset_key]
-        pair = bundled.get(asset_key)
-        if pair is None:
-            continue
-        path, status = pair
-        if status == "installed":
-            val = f"[green]installed[/green] → {path}"
-        elif status == "dry_run":
-            val = f"[yellow]would install[/yellow] → {path}"
-        elif status == "skipped":
-            val = "[dim]skipped (already exists)[/dim]"
-        else:
-            val = "[dim]no bundled asset[/dim]"
-        grid.add_row(f"[cyan]{label}:[/cyan]", val)
+    _add_bundled_asset_rows(grid, bundled)
     console.print(grid)
     read_warnings = getattr(summary, "read_warnings", None) or []
     for w in read_warnings:
@@ -5422,16 +5443,45 @@ def mainmenu_hide(system, apply, output_dir):
 @click.option("--apply", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
 def mainmenu_add(system, apply, output_dir):
-    """Append SYSTEM to the Main Menu (idempotent)."""
+    """Append SYSTEM to the Main Menu (idempotent).
+
+    For the three synthetic wheels (Favorites, Most Played, Recently Played)
+    this also installs all bundled media assets (wheel logo, background image,
+    attract-mode music and video) to ``Media\\Main Menu\\``.  Unlike
+    ``rebuild --apply`` which skips files that already exist, ``mainmenu add``
+    always writes the bundled assets so the wheel gets a fresh copy of every
+    media file — use this when you want to reset or first-install the media.
+    """
     from .mainmenu import add_system
+    from .rocketlauncher import install_bundled_system_assets
     config = _cfg()
     _check_config(config)
     menu = _load_menu_or_exit(config)
     added = add_system(menu, system)
     if not added:
         console.print(f"[yellow]already on the menu:[/yellow] {system}")
-        return
+        # Still install/refresh media even if already on the menu, since the
+        # user may be calling this specifically to reset the media files.
+
     _apply_or_preview(f"add: {system}", menu, config, output_dir, apply)
+
+    # ── Bundled media for synthetic wheels ────────────────────────────────────
+    # Only the three registered synthetic systems have bundled assets; for all
+    # other systems _install_asset returns "no_asset" which is suppressed.
+    hs_dir = getattr(config, "hyperspin_dir", None)
+    if not hs_dir:
+        return
+    bundled = install_bundled_system_assets(
+        Path(hs_dir),
+        system,
+        dry_run=not apply,
+        overwrite=True,   # explicit add → always write; rebuild uses overwrite=False
+    )
+    # Only print rows when at least one asset is registered (i.e. synthetic wheel)
+    if any(status != "no_asset" for _, status in bundled.values()):
+        grid = Table.grid(padding=(0, 2))
+        _add_bundled_asset_rows(grid, bundled)
+        console.print(grid)
 
 
 @mainmenu_group.command("remove")
