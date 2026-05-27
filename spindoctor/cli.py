@@ -2517,7 +2517,7 @@ def _scrub_backup(
     from datetime import datetime as _dt
     from .favorites import FAVORITES_FILE
 
-    stamp = _dt.now().strftime("%Y%m%d-%H%M%S")
+    stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
     backup_folder = backup_dir / f"scrub-{stamp}"
     backup_folder.mkdir(parents=True, exist_ok=True)
 
@@ -2766,7 +2766,7 @@ def scrub_restore_cmd(backup_path: Path, apply_changes: bool):
 
     BACKUP_PATH is the timestamped folder produced by
     ``spindoctor scrub --backup-dir <dir>``,  e.g.
-    ``E:\\Backups\\scrub-20260526-143012``.
+    ``E:\\Backups\\scrub-20260526_143012``.
 
     Reads the manifest.json inside BACKUP_PATH and copies each file
     back to its original location.  Dry-run by default — pass --apply
