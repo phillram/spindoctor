@@ -494,6 +494,95 @@ def config_system_list():
     console.print(tbl)
 
 
+# ─── emulator-title ───────────────────────────────────────────────────────────
+
+@cli.group("emulator-title")
+def emulator_title_group():
+    """Manage emulator window-title mappings for synthetic wheel launches.
+
+    \b
+    SpinDoctor writes FadeTitle= into PCLauncher INI entries so that
+    PCLauncher can detect the game window by title rather than by PID.
+    This avoids the "error waiting for window ahk_pid XXXX" error that
+    occurs with DirectX emulators running in exclusive fullscreen.
+
+    \b
+    Built-in mappings (MAME, RetroArch, ZiNc, Demul, PCSX2, Dolphin,
+    Project64) work automatically.  Use this group to add any emulator
+    not in the built-in list, or to override a built-in entry.
+
+    \b
+    The emulator name must match exactly what RocketLauncherUI shows as
+    the emulator name (the Default_Emulator= value in
+    Settings/<System>/Emulators.ini).  The title value is matched as a
+    case-insensitive substring of the emulator's window title.
+    """
+
+
+@emulator_title_group.command("set")
+@click.argument("emulator_name")
+@click.argument("window_title")
+def emulator_title_set(emulator_name, window_title):
+    """Map EMULATOR_NAME to WINDOW_TITLE for FadeTitle detection.
+
+    \b
+    Example:
+      spindoctor emulator-title set "Supermodel" "Supermodel"
+      spindoctor emulator-title set "Model 2" "Sega Model 2"
+      spindoctor emulator-title set "Teknoparrot" "TeknoParrot"
+
+    \b
+    After setting, run a wheel rebuild (--apply) to update the INI files.
+    """
+    from .config import save_config
+    config = _cfg()
+    config.emulator_window_titles[emulator_name] = window_title
+    save_config(config)
+    console.print(
+        f"[green]✓[/green] [cyan]{emulator_name}[/cyan] → [bold]{window_title}[/bold]"
+    )
+
+
+@emulator_title_group.command("remove")
+@click.argument("emulator_name")
+def emulator_title_remove(emulator_name):
+    """Remove a custom window-title mapping (falls back to built-in default)."""
+    from .config import save_config
+    config = _cfg()
+    if emulator_name not in config.emulator_window_titles:
+        console.print(f"[yellow]No custom mapping for '{emulator_name}' — nothing to remove.[/yellow]")
+        return
+    del config.emulator_window_titles[emulator_name]
+    save_config(config)
+    console.print(f"[green]✓[/green] Removed custom mapping for [cyan]{emulator_name}[/cyan].")
+
+
+@emulator_title_group.command("list")
+def emulator_title_list():
+    """List all emulator window-title mappings (built-in + custom overrides)."""
+    from .rocketlauncher import EMULATOR_WINDOW_TITLES
+    config = _cfg()
+    merged = {**EMULATOR_WINDOW_TITLES, **config.emulator_window_titles}
+
+    tbl = Table(title="Emulator Window Titles", box=box.ROUNDED)
+    tbl.add_column("Emulator", style="cyan")
+    tbl.add_column("FadeTitle value")
+    tbl.add_column("Source")
+
+    for name in sorted(merged):
+        if name in config.emulator_window_titles:
+            src = "[bold yellow]custom[/bold yellow]"
+            if name in EMULATOR_WINDOW_TITLES and config.emulator_window_titles[name] != EMULATOR_WINDOW_TITLES[name]:
+                src = "[bold yellow]custom (overrides built-in)[/bold yellow]"
+        else:
+            src = "[dim]built-in[/dim]"
+        tbl.add_row(name, merged[name], src)
+
+    console.print(tbl)
+    if not config.emulator_window_titles:
+        console.print("[dim]No custom mappings. Add with: spindoctor emulator-title set <name> <title>[/dim]")
+
+
 # ─── systems ──────────────────────────────────────────────────────────────────
 
 @cli.command("systems")

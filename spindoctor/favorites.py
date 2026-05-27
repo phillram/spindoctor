@@ -510,7 +510,11 @@ def rebuild(
             for e in sorted_entries
         ]
         game_exe = ensure_rl_game_exe(rl_dir)
-        write_pclauncher_system_ini(store.target_system, pclauncher_entries, rl_dir, rl_exe=game_exe)
+        write_pclauncher_system_ini(
+            store.target_system, pclauncher_entries, rl_dir,
+            rl_exe=game_exe,
+            extra_window_titles=config.emulator_window_titles or None,
+        )
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────
