@@ -479,11 +479,17 @@ _VIDEO_ASSETS: dict[str, str] = {
     "Recently Played": "video_Recently_Played.mp4",
 }
 
-# HyperSpin theme zip — controls where HyperSpin renders the video slot and
-# other artwork overlays when the system is selected on the Main Menu.
+# HyperSpin theme zip — controls where HyperSpin renders the video slot when
+# the system is selected on the Main Menu.
 # Without a theme zip HyperSpin may not show the attract-mode video at all.
-# Contains: Theme.xml (layout/video element), Background.swf, Artwork1.swf,
-# Artwork4.swf (all minimal blank SWFs), Video.png (thumbnail), Info.txt.
+#
+# Design: the zip contains only Theme.xml + Info.txt (matching the MAME
+# "Cinematic" pattern).  The <video> element uses w="1" h="1" — a single
+# invisible pixel — so only the MP4's audio track is heard.  The background
+# image (Media\Main Menu\Images\Backgrounds\<System>.png) provides all the
+# visual content; having the video overlay visible too caused a double-render
+# artefact (two copies of the same image on screen simultaneously).
+#
 # HyperSpin path: Media\Main Menu\Themes\<SystemName>.zip
 _THEME_ASSETS: dict[str, str] = {
     "Favorites":       "theme_Favorites.zip",
@@ -670,11 +676,11 @@ def install_system_theme(
 
         <hyperspin_dir>/Media/Main Menu/Themes/<system_name>.zip
 
-    The theme zip contains ``Theme.xml`` (with a ``<video>`` element that tells
-    HyperSpin where to render the attract-mode video), minimal blank SWF files
-    for ``Background.swf`` / ``Artwork1.swf`` / ``Artwork4.swf``, a scaled
-    ``Video.png`` thumbnail, and ``Info.txt``.  Without a theme zip HyperSpin
-    may not display the attract-mode video for the system at all.
+    The theme zip contains ``Theme.xml`` and ``Info.txt``.  The ``<video>``
+    element in ``Theme.xml`` uses ``w="1" h="1"`` — a single invisible pixel —
+    so HyperSpin plays only the audio track of the MP4 while the separate
+    background image provides all the visual content.  Without a theme zip
+    HyperSpin may not play the attract-mode audio/video for the system at all.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
     When *overwrite* is ``True`` (``mainmenu add``) it is always written.

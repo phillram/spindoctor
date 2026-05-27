@@ -151,20 +151,40 @@ before attract mode starts; videos advance automatically when they end.
 
 ### Attract-mode theme
 
-A theme `.zip` controls the animated Main Menu background and layout for a system's
-slot in the attract cycle.  **Without a theme zip the attract-mode video is silently
-not shown, even if the `.mp4` file exists and is correctly encoded.**  The zip's
-`Theme.xml` contains a `<video>` element that tells HyperSpin where to render the
-video on screen.
+A theme `.zip` contains `Theme.xml`, which tells HyperSpin where to render the video
+slot for a system during attract mode.  **Without a theme zip HyperSpin silently skips
+the attract-mode audio/video entirely**, even if the `.mp4` file exists and is
+correctly encoded.
 
 **File:** `Media\Main Menu\Themes\<SystemName>.zip`
 
 **SpinDoctor installs this automatically** — `rebuild --apply` and `mainmenu add --apply`
 both write the bundled theme zip for each synthetic wheel (skip-if-exists on rebuild,
-always overwrite on `mainmenu add`).  The bundled theme uses a centred 16:9 layout
-(600×338 on the 1024×768 HyperSpin canvas).
+always overwrite on `mainmenu add`).
 
-If you want a more elaborate animated theme, replace the installed zip with your own:
+#### Two-layer rendering — why the video is 1×1
+
+HyperSpin's main menu renders two separate layers:
+
+| Layer | Source file | Notes |
+|-------|------------|-------|
+| Background image | `Images\Backgrounds\<System>.png` | Static image, always visible |
+| Video overlay | `Video\<System>.mp4` (positioned by `Theme.xml`) | Plays during attract mode |
+
+Both files are the same image — having both rendered at full size produces a
+visible double-layer artefact (flicker / washed-out look).  SpinDoctor's bundled
+`Theme.xml` sets the video to **`w="1" h="1"`** (a single invisible pixel), so:
+
+- The **background PNG** provides the image
+- The **MP4's audio track** plays for music
+- The video's image track is invisible — no double-render
+
+The approach matches the MAME "Cinematic" theme by BakerMan (2016), which also
+uses `Theme.xml` + `Info.txt` only, with no SWF overlay files.
+
+#### Custom themes
+
+If you want a more animated or elaborate theme, replace the installed zip with your own:
 
 ```
 Media\Main Menu\Themes\Favorites.zip
@@ -172,11 +192,12 @@ Media\Main Menu\Themes\Most Played.zip
 Media\Main Menu\Themes\Recently Played.zip
 ```
 
-Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive directly)
-to the Themes path above.  SpinDoctor's `rebuild --apply` will not overwrite it.
+Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive directly).
+SpinDoctor's `rebuild --apply` will not overwrite a file that already exists.
 
-**Custom themes from the community:** HyperSpin theme packs are available on
-EmuMovies, HyperSpin forums, and Hyperspin-FE.com.  Look for a "Main Menu" theme pack.
+**Community themes:** available on EmuMovies, HyperSpin forums, and Hyperspin-FE.com.
+Look for a "Main Menu" theme pack.  If the community theme shows a full-size video
+overlay, the background PNG is still shown underneath — both layers are visible.
 
 ---
 

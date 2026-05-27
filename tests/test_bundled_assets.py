@@ -53,10 +53,11 @@ class TestInstallSystemTheme:
             dest = hs / "Media" / "Main Menu" / "Themes" / f"{system_name}.zip"
             with zipfile.ZipFile(dest) as zf:
                 names = set(zf.namelist())
-            assert "Theme.xml" in names,     f"{system_name}: missing Theme.xml"
-            assert "Background.swf" in names, f"{system_name}: missing Background.swf"
-            assert "Video.png" in names,      f"{system_name}: missing Video.png"
-            assert "Info.txt" in names,       f"{system_name}: missing Info.txt"
+            assert "Theme.xml" in names, f"{system_name}: missing Theme.xml"
+            assert "Info.txt"  in names, f"{system_name}: missing Info.txt"
+            # No SWF files — following the MAME "Cinematic" minimal-theme pattern
+            assert not any(n.endswith(".swf") for n in names), \
+                f"{system_name}: unexpected SWF file(s) in theme zip: {names}"
 
     def test_theme_xml_has_video_element(self, tmp_path):
         hs = _hs_dir(tmp_path)
@@ -67,18 +68,15 @@ class TestInstallSystemTheme:
                 xml = zf.read("Theme.xml").decode("utf-8")
             assert "<video" in xml.lower(), f"{system_name}: Theme.xml missing <video> element"
 
-    def test_background_swf_is_valid_fws(self, tmp_path):
+    def test_theme_xml_video_is_invisible(self, tmp_path):
+        """Video element must be 1×1 px — audio plays, image hidden by background PNG."""
         hs = _hs_dir(tmp_path)
         install_system_theme(hs, "Favorites", dry_run=False)
         dest = hs / "Media" / "Main Menu" / "Themes" / "Favorites.zip"
         with zipfile.ZipFile(dest) as zf:
-            swf = zf.read("Background.swf")
-        # FWS signature (uncompressed Flash)
-        assert swf[:3] == b"FWS", f"Background.swf has wrong signature: {swf[:3]!r}"
-        # Declared file length matches actual size
-        import struct
-        declared_len = struct.unpack_from("<I", swf, 4)[0]
-        assert declared_len == len(swf), "Background.swf file-length header mismatch"
+            xml = zf.read("Theme.xml").decode("utf-8")
+        assert 'w="1"' in xml, "Video element width must be 1 (invisible)"
+        assert 'h="1"' in xml, "Video element height must be 1 (invisible)"
 
     def test_skips_when_exists_and_overwrite_false(self, tmp_path):
         hs = _hs_dir(tmp_path)
