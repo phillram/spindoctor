@@ -1,6 +1,7 @@
 """RocketLauncher system INI and HyperSpin Main Menu XML generation."""
 from __future__ import annotations
 
+import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from pathlib import Path
@@ -432,6 +433,63 @@ def write_hyperspin_system_ini(
     settings_dir.mkdir(parents=True, exist_ok=True)
     ini_path.write_text(_HYPERSPIN_SYSTEM_INI_TEMPLATE, encoding="utf-8")
     return ini_path
+
+
+# ─── Bundled Main Menu wheel art ─────────────────────────────────────────────
+
+# Maps each synthetic system name to the bundled asset filename shipped with
+# the package under ``spindoctor/assets/``.  Keys are the exact HyperSpin
+# system names; asset filenames use underscores so they survive any filesystem
+# that balks at spaces.
+_WHEEL_ART_ASSETS: dict[str, str] = {
+    "Favorites":       "wheel_art_Favorites.png",
+    "Most Played":     "wheel_art_Most_Played.png",
+    "Recently Played": "wheel_art_Recently_Played.png",
+}
+
+
+def install_system_wheel_art(
+    hyperspin_dir: Path,
+    system_name: str,
+    *,
+    dry_run: bool = False,
+) -> tuple[Optional[Path], str]:
+    """Copy the bundled Main Menu wheel art for *system_name* to HyperSpin.
+
+    Destination::
+
+        <hyperspin_dir>/Media/Main Menu/Images/Wheel/<system_name>.png
+
+    The function only writes the file if it is **absent** — user-placed or
+    previously installed images are never overwritten.
+
+    Returns ``(dest_path, status)`` where *status* is one of:
+
+    * ``"installed"``  — image was copied.
+    * ``"skipped"``    — destination already exists; nothing written.
+    * ``"no_asset"``   — no bundled image for this system name.
+    * ``"dry_run"``    — would have written (dry-run mode).
+    """
+    asset_filename = _WHEEL_ART_ASSETS.get(system_name)
+    if not asset_filename:
+        return None, "no_asset"
+
+    src = Path(__file__).parent / "assets" / asset_filename
+    if not src.exists():
+        return None, "no_asset"
+
+    dest_dir = hyperspin_dir / "Media" / "Main Menu" / "Images" / "Wheel"
+    dest = dest_dir / f"{system_name}.png"
+
+    if dest.exists():
+        return dest, "skipped"
+
+    if dry_run:
+        return dest, "dry_run"
+
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    return dest, "installed"
 
 
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
