@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from spindoctor.config import Config
 from spindoctor.tools_audit import (
     CATEGORY_INPUT,
@@ -133,8 +135,5 @@ def test_by_category_groups_results(tmp_path):
 
 def test_tool_entry_is_immutable():
     e = ToolEntry(name="X", category=CATEGORY_INPUT)
-    try:
+    with pytest.raises((TypeError, AttributeError)):
         e.name = "Y"  # type: ignore[misc]
-    except Exception:
-        return
-    raise AssertionError("ToolEntry should be frozen")

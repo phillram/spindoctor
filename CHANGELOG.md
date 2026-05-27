@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
+## [2.4.10] - 2026-05-26
+
+### Fixed
+
+- **`scrub --stats` crashed on Python 3.8 (cabinet build) with `AttributeError: 'WindowsPath' object has no attribute 'is_relative_to'`** — `Path.is_relative_to()` was added in Python 3.9; the cabinet binary is built on Python 3.8.10. The bug was in the file-listing display loop in `scrub_cmd` (the `_scrub_backup` helper already used the correct `try/except` pattern). Fixed by replacing the `is_relative_to` one-liner with `try/except ValueError` around `f.relative_to(rl)`. Two regression tests added to `tests/test_scrub_backup.py` that require a real Statistics.ini to be present so the listing loop is actually entered.
+
+- **Scrub backup directory timestamp used an inconsistent separator** — `scrub --backup-dir` produced `scrub-YYYYMMDD-HHMMSS/` (hyphen between date and time) while every other backup-creating operation in SpinDoctor uses `YYYYMMDD_HHMMSS` (underscore). Changed strftime format from `%Y%m%d-%H%M%S` to `%Y%m%d_%H%M%S`. Example paths in `scrub-restore` docstring, `docs/commands.md`, and `docs/cli-cheatsheet.md` updated to match.
+
+---
+
 ## [2.4.9] - 2026-05-26
 
 ### Added
@@ -880,7 +890,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.9...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.10...HEAD
+[2.4.10]: https://github.com/phillram/spindoctor/compare/v2.4.9...v2.4.10
 [2.4.9]: https://github.com/phillram/spindoctor/compare/v2.4.8...v2.4.9
 [2.4.8]: https://github.com/phillram/spindoctor/compare/v2.4.7...v2.4.8
 [2.4.7]: https://github.com/phillram/spindoctor/compare/v2.4.6...v2.4.7
