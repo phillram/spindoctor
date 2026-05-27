@@ -5710,10 +5710,11 @@ class _SpinDoctorGUI:
     def _run_scrub(self) -> None:
         do_fav = self._scrub_favorites_var.get()
         do_stats = self._scrub_stats_var.get()
-        if not do_fav and not do_stats:
+        do_hs_fav = self._scrub_hs_favorites_var.get()
+        if not do_fav and not do_stats and not do_hs_fav:
             self.messagebox.showwarning(
                 "Nothing selected",
-                "Tick at least one of 'Favorites' or 'Play statistics' to scrub.",
+                "Tick at least one option to scrub.",
             )
             return
         backup_dir = self._scrub_backup_var.get().strip()
@@ -5731,9 +5732,11 @@ class _SpinDoctorGUI:
         if apply_:
             what = []
             if do_fav:
-                what.append("favorites")
+                what.append("favorites store")
             if do_stats:
                 what.append("play statistics")
+            if do_hs_fav:
+                what.append("HyperSpin per-system favorites")
             if not self.messagebox.askyesno(
                 "Confirm scrub",
                 f"This will permanently delete: {' + '.join(what)}.\n\n"
@@ -5742,11 +5745,16 @@ class _SpinDoctorGUI:
             ):
                 return
         args = ["scrub"]
-        if do_fav and not do_stats:
-            args.append("--favorites")
-        elif do_stats and not do_fav:
-            args.append("--stats")
-        # Both selected → no flag needed (scrub defaults to both)
+        # Build flag list — when both fav+stats but not hs_fav, omit flags
+        # (scrub defaults to both). Always pass explicit flags when hs_fav
+        # is involved, since it never defaults on.
+        if do_hs_fav or not (do_fav and do_stats):
+            if do_fav:
+                args.append("--favorites")
+            if do_stats:
+                args.append("--stats")
+            if do_hs_fav:
+                args.append("--hs-favorites")
         if backup_dir:
             args += ["--backup-dir", backup_dir]
         if apply_:
@@ -9983,6 +9991,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(scrub_what_row, text="What to clear:").pack(side="left")
         self._scrub_favorites_var = self.tk.BooleanVar(value=True)
         self._scrub_stats_var = self.tk.BooleanVar(value=True)
+        self._scrub_hs_favorites_var = self.tk.BooleanVar(value=False)
         _scrub_fav_chk = self.ttk.Checkbutton(
             scrub_what_row, text="Favorites", variable=self._scrub_favorites_var,
         )
@@ -9994,8 +10003,8 @@ class _SpinDoctorGUI:
             "  • Media/Favorites/ (all files)\n"
             "  • Modules/PCLauncher/Favorites/ (all .ini launchers)\n\n"
             "Does NOT touch per-system HyperSpin favorites\n"
-            "(<System>_Favorites.ini / favorites.txt). Run 'fav sync'\n"
-            "afterwards to re-import them.",
+            "(<System>_Favorites.ini / favorites.txt). Tick\n"
+            "'HyperSpin per-system favorites' below to clear those too.",
             self.tk,
         )
         _scrub_stats_chk = self.ttk.Checkbutton(
@@ -10011,6 +10020,30 @@ class _SpinDoctorGUI:
             "Also removes the Recently Played and Most Played wheel content.\n\n"
             "WARNING: Statistics.ini files cannot be regenerated — use\n"
             "'Backup first' below before scrubbing.",
+            self.tk,
+        )
+
+        # Second row: HyperSpin per-system favorites (separate row — longer label)
+        scrub_hs_row = self.ttk.Frame(scrub_lf)
+        scrub_hs_row.pack(anchor="w", padx=6, pady=(0, 2))
+        _scrub_hs_chk = self.ttk.Checkbutton(
+            scrub_hs_row,
+            text="HyperSpin per-system favorites (start fresh for fav sync)",
+            variable=self._scrub_hs_favorites_var,
+        )
+        _scrub_hs_chk.pack(side="left", padx=(10, 4))
+        _attach_tooltip(
+            _scrub_hs_chk,
+            "Clears the favorites that HyperSpin's F-key writes on a\n"
+            "per-console basis. Three sources are removed:\n"
+            "  • Databases/<System>/<System>_Favorites.ini\n"
+            "  • Databases/<System>/favorites.txt\n"
+            "  • favorite=\"1\" attributes in <System>.xml databases\n\n"
+            "Use this when you want 'fav sync' to start from a blank\n"
+            "slate — e.g. after curating your library and wanting only\n"
+            "the games you still have to appear as favorites.\n\n"
+            "Not ticked by default — must be requested explicitly.\n"
+            "Backupable via 'Backup first'.",
             self.tk,
         )
 

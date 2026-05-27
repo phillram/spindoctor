@@ -2479,6 +2479,7 @@ def _scrub_backup(
     do_favorites: bool,
     do_stats: bool,
     config,
+    do_hs_favorites: bool = False,
 ) -> tuple[Path, list[dict]]:
     """Copy scrub-target files into a timestamped subfolder.
 
@@ -2521,6 +2522,35 @@ def _scrub_backup(
                 "backup": str(Path("stats") / rel),
             })
 
+    if do_hs_favorites:
+        from .favorites import collect_native_fav_files
+        ini_files, txt_files, xml_files = collect_native_fav_files(config)
+        db_root = config.databases_dir
+        for f in ini_files + txt_files:
+            try:
+                rel = f.relative_to(db_root)
+            except ValueError:
+                rel = Path(f.name)
+            dest = backup_folder / "hs_favorites" / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(f, dest)
+            manifest.append({
+                "original": str(f),
+                "backup": str(Path("hs_favorites") / rel),
+            })
+        for f in xml_files:
+            try:
+                rel = f.relative_to(db_root)
+            except ValueError:
+                rel = Path(f.name)
+            dest = backup_folder / "hs_favorites" / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(f, dest)
+            manifest.append({
+                "original": str(f),
+                "backup": str(Path("hs_favorites") / rel),
+            })
+
     (backup_folder / "manifest.json").write_text(
         _json.dumps({"created": stamp, "files": manifest}, indent=2),
         encoding="utf-8",
@@ -2530,9 +2560,15 @@ def _scrub_backup(
 
 @cli.command("scrub")
 @click.option("--favorites", "scrub_favorites", is_flag=True,
-              help="Clear the favorites store (favorites.json).")
+              help="Clear the cross-system favorites store (favorites.json).")
 @click.option("--stats", "scrub_stats", is_flag=True,
               help="Delete all RocketLauncher Statistics.ini files.")
+@click.option("--hs-favorites", "scrub_hs_favorites", is_flag=True,
+              help=(
+                  "Clear per-system HyperSpin favorites: deletes "
+                  "<System>_Favorites.ini and favorites.txt files, and strips "
+                  "favorite=\"1\" attributes from system XML databases."
+              ))
 @click.option(
     "--backup-dir",
     type=click.Path(file_okay=False, writable=True, path_type=Path),
@@ -2546,30 +2582,36 @@ def _scrub_backup(
 )
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit changes — DESTRUCTIVE.  Default is dry-run preview.")
-def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
+def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, apply_changes):
     """Destructively reset cabinet data.  Requires --apply.
 
     \b
-    Without --favorites or --stats, both are cleared (full scrub).
+    Without any flag, --favorites and --stats are both cleared (full scrub).
+    --hs-favorites must always be requested explicitly.
 
     \b
-    --favorites   Clear ~/.spindoctor/favorites.json and remove the
-                  Favorites wheel from disk.
+    --favorites      Clear ~/.spindoctor/favorites.json and remove the
+                     Favorites wheel from disk.
 
     \b
-    --stats       Delete every RocketLauncher Statistics.ini file.
-                  Also clears the Recently Played and Most Played wheels.
-                  Scans three layouts: Settings/Global Statistics/,
-                  Settings/<System>/Statistics.ini, Data/Statistics/.
+    --stats          Delete every RocketLauncher Statistics.ini file.
+                     Also clears the Recently Played and Most Played wheels.
+                     Scans three layouts: Settings/Global Statistics/,
+                     Settings/<System>/Statistics.ini, Data/Statistics/.
 
     \b
-    --backup-dir  Copy files to DIR/scrub-<timestamp>/ before deleting.
-                  Use scrub-restore <folder> --apply to undo.
+    --hs-favorites   Clear per-system HyperSpin favorites so 'fav sync'
+                     starts fresh. Deletes <System>_Favorites.ini and
+                     favorites.txt files; strips favorite="1" from XML DBs.
+
+    \b
+    --backup-dir     Copy files to DIR/scrub-<timestamp>/ before deleting.
+                     Use scrub-restore <folder> --apply to undo.
 
     \b
     WARNING: --stats is irreversible without a --backup-dir copy.
     """
-    from .favorites import clear_favorites, load_store
+    from .favorites import clear_favorites, clear_native_favorites, collect_native_fav_files, load_store
     from .recent import (
         clear_wheel_artifacts,
         DEFAULT_RECENT_SYSTEM,
@@ -2578,8 +2620,9 @@ def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
 
     config = _cfg()
 
-    # If neither flag given, do both.
-    if not scrub_favorites and not scrub_stats:
+    # If neither --favorites nor --stats given, default both (--hs-favorites
+    # is always opt-in and never included in the default-both case).
+    if not scrub_favorites and not scrub_stats and not scrub_hs_favorites:
         scrub_favorites = scrub_stats = True
 
     if not apply_changes:
@@ -2592,6 +2635,7 @@ def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
     if backup_dir and apply_changes:
         backup_folder, manifest = _scrub_backup(
             backup_dir, scrub_favorites, scrub_stats, config,
+            do_hs_favorites=scrub_hs_favorites,
         )
         n_backed = len(manifest)
         console.print(
@@ -2606,7 +2650,7 @@ def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
             "[dim](--backup-dir is skipped in dry-run mode)[/dim]"
         )
 
-    # ── Favorites ────────────────────────────────────────────────────────────
+    # ── Cross-system favorites store ──────────────────────────────────────────
     if scrub_favorites:
         store = load_store()
         result = clear_favorites(store, config, dry_run=not apply_changes)
@@ -2618,6 +2662,38 @@ def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
         )
         if result.wheel is not None:
             _print_clear_wheel_summary(store.target_system, result.wheel, apply_changes)
+
+    # ── Per-system HyperSpin favorites ────────────────────────────────────────
+    if scrub_hs_favorites:
+        ini_files, txt_files, xml_files = collect_native_fav_files(config)
+        verb = "Would delete" if not apply_changes else "Deleted"
+        verb_strip = "Would strip" if not apply_changes else "Stripped"
+        total = len(ini_files) + len(txt_files) + len(xml_files)
+        if total == 0:
+            console.print(
+                "[bold]HyperSpin favorites:[/bold] No per-system favorite files found."
+            )
+        else:
+            result_hs = clear_native_favorites(config, dry_run=not apply_changes)
+            if ini_files or txt_files:
+                n_flat = len(ini_files) + len(txt_files)
+                console.print(
+                    f"[bold]HyperSpin favorites:[/bold] {verb} "
+                    f"{n_flat} favorite file(s):"
+                )
+                for f in sorted(ini_files + txt_files):
+                    console.print(f"  [dim]{f}[/dim]")
+            if xml_files:
+                console.print(
+                    f"[bold]HyperSpin favorites (XML):[/bold] {verb_strip} "
+                    f"favorite=\"1\" from {result_hs.xml_games_cleared} game(s) "
+                    f"across {len(xml_files)} database(s):"
+                )
+                for f in sorted(xml_files):
+                    console.print(f"  [dim]{f}[/dim]")
+            if result_hs.errors:
+                for err in result_hs.errors:
+                    console.print(f"  [red]{err}[/red]")
 
     # ── Statistics ───────────────────────────────────────────────────────────
     if scrub_stats:

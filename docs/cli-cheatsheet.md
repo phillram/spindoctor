@@ -355,12 +355,15 @@ spindoctor scrub --favorites --apply
 :: Delete Statistics.ini files + clear Recently Played / Most Played wheels
 spindoctor scrub --stats --backup-dir E:\Backups --apply
 
+:: Clear per-system HyperSpin favorites so fav sync starts fresh
+spindoctor scrub --hs-favorites --backup-dir E:\Backups --apply
+
 :: Restore from a scrub backup (dry-run first, then commit)
 spindoctor scrub-restore E:\Backups\scrub-20260526-143012
 spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
 ```
 
-`--backup-dir` copies affected files to `DIR/scrub-<timestamp>/` before deleting and creates a `manifest.json` index. `scrub-restore` reads that manifest and copies each file back to its original location. See [Command reference → scrub](commands.md#scrub) for the exact list of files backed up and removed.
+`--backup-dir` copies affected files to `DIR/scrub-<timestamp>/` before deleting and creates a `manifest.json` index. `scrub-restore` reads that manifest and copies each file back to its original location. `--hs-favorites` clears the F-key favorites HyperSpin writes per console (`<System>_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) — useful when you want `fav sync` to start from a blank slate. See [Command reference → scrub](commands.md#scrub) for the exact list of files backed up and removed.
 
 Reference: [Command reference → scrub](commands.md#resetting-cabinet-data).
 

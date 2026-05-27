@@ -713,16 +713,20 @@ spindoctor scrub --favorites --apply
 
 :: Delete all Statistics.ini files and clear Recently Played / Most Played wheels
 spindoctor scrub --stats --backup-dir E:\Backups --apply
+
+:: Start fresh for fav sync — clear per-system HyperSpin favorites
+spindoctor scrub --hs-favorites --backup-dir E:\Backups --apply
 ```
 
-Without `--favorites` or `--stats`, both are cleared (equivalent to passing both flags).
+Without `--favorites` or `--stats`, both are cleared (equivalent to passing both flags). `--hs-favorites` is never included in the default — it must always be requested explicitly.
 
 #### Options
 
 | Flag | Description |
 |---|---|
-| `--favorites` | Clear the favorites store and Favorites wheel only |
-| `--stats` | Delete Statistics.ini files and clear Recently Played / Most Played wheels only |
+| `--favorites` | Clear the SpinDoctor favorites store and Favorites wheel |
+| `--stats` | Delete Statistics.ini files and clear Recently Played / Most Played wheels |
+| `--hs-favorites` | Clear per-system HyperSpin favorites (`_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) so `fav sync` starts blank. Never included in the default — always opt-in. |
 | `--backup-dir DIR` | Copy affected files to `DIR/scrub-<timestamp>/` before deleting. Strongly recommended for `--stats`. Skipped in dry-run mode. |
 | `--apply` | Commit — without this flag nothing is changed |
 
@@ -735,7 +739,21 @@ Without `--favorites` or `--stats`, both are cleared (equivalent to passing both
 | `<hyperspin_dir>/Media/Favorites/` | Entire directory deleted |
 | `<rocketlauncher_dir>/Modules/PCLauncher/Favorites/` | All per-game `.ini` launchers deleted |
 
+Per-system HyperSpin favorites (`<System>_Favorites.ini`, `favorites.txt`, `favorite="1"` in XML) are **not** touched. Use `--hs-favorites` to clear those too.
+
 After a `--favorites` scrub the Favorites wheel is gone from HyperSpin. Running `fav add … && fav rebuild --apply` starts it fresh.
+
+#### What `--hs-favorites` removes
+
+Clears the per-system favorites that HyperSpin's F-key writes. Three sources across every configured system (synthetic wheels excluded):
+
+| Source | What happens |
+|---|---|
+| `<hs>/Databases/<System>/<System>_Favorites.ini` | **Deleted** |
+| `<hs>/Databases/<System>/favorites.txt` | **Deleted** (case-insensitive search) |
+| `<hs>/Databases/<System>/<System>.xml` | `favorite="1"` attribute stripped from matching `<game>` elements; rest of file preserved |
+
+After an `--hs-favorites` scrub, running `fav sync` imports zero HyperSpin favorites — the cross-system wheel starts blank. Use this when you want to curate your favorites from scratch (e.g. after trimming your ROM library).
 
 #### What `--stats` removes
 
@@ -766,10 +784,13 @@ When `--backup-dir DIR` is given alongside `--apply`, SpinDoctor creates `DIR/sc
 
 | File | Source |
 |---|---|
-| `favorites.json` | `~/.spindoctor/favorites.json` |
-| `stats/Settings/Global Statistics/<System>.ini` | Classic layout stats |
-| `stats/Settings/<System>/Statistics.ini` | Legacy layout stats |
-| `stats/Data/Statistics/<System>.ini` | Newer layout stats |
+| `favorites.json` | `~/.spindoctor/favorites.json` (if `--favorites`) |
+| `stats/Settings/Global Statistics/<System>.ini` | Classic layout stats (if `--stats`) |
+| `stats/Settings/<System>/Statistics.ini` | Legacy layout stats (if `--stats`) |
+| `stats/Data/Statistics/<System>.ini` | Newer layout stats (if `--stats`) |
+| `hs_favorites/<System>/<System>_Favorites.ini` | Per-system INI favorites (if `--hs-favorites`) |
+| `hs_favorites/<System>/favorites.txt` | Per-system txt favorites (if `--hs-favorites`) |
+| `hs_favorites/<System>/<System>.xml` | System XML before attribute stripping (if `--hs-favorites`) |
 | `manifest.json` | Index of all backed-up files with original paths |
 
 Only files that exist at scrub time are copied. The backup is not a compressed archive — files can be inspected directly.

@@ -1,4 +1,4 @@
-"""Tests for scrub --backup-dir and scrub-restore CLI commands."""
+"""Tests for scrub --backup-dir, scrub-restore, and --hs-favorites CLI commands."""
 from __future__ import annotations
 
 import json
@@ -239,3 +239,210 @@ def test_scrub_restore_empty_manifest(tmp_path):
     result = runner.invoke(cli, ["scrub-restore", str(backup), "--apply"])
     assert result.exit_code == 0
     assert "nothing" in result.output.lower() or "0" in result.output
+
+
+# ─── collect_native_fav_files ─────────────────────────────────────────────────
+
+def _build_hs_layout(tmp_path: Path):
+    """Create a minimal HyperSpin + RocketLauncher layout with per-system fav files."""
+    hs = tmp_path / "hs"
+    rl = tmp_path / "rl"
+    roms = tmp_path / "roms"
+    for d in (hs, rl, roms):
+        d.mkdir()
+    # Config
+    cfg_file = tmp_path / ".spindoctor" / "config.json"
+    cfg_file.parent.mkdir()
+    cfg_file.write_text(
+        json.dumps({
+            "hyperspin_dir": str(hs),
+            "rocketlauncher_dir": str(rl),
+            "roms_dir": str(roms),
+        }),
+        encoding="utf-8",
+    )
+    # Main Menu.xml so get_systems can enumerate systems
+    mm = hs / "Databases" / "Main Menu"
+    mm.mkdir(parents=True)
+    (mm / "Main Menu.xml").write_text(
+        '<menu><game name="Super Nintendo"/><game name="MAME"/></menu>',
+        encoding="utf-8",
+    )
+    return hs, rl, cfg_file
+
+
+def _write_fav_files(hs: Path, sys_name: str, ini=False, txt=False, xml_fav=False):
+    sys_dir = hs / "Databases" / sys_name
+    sys_dir.mkdir(parents=True, exist_ok=True)
+    # Base XML is always needed
+    fav_attr = ' favorite="1"' if xml_fav else ''
+    (sys_dir / f"{sys_name}.xml").write_text(
+        f'<menu><game name="Kirby"{fav_attr}><description>Kirby</description></game></menu>',
+        encoding="utf-8",
+    )
+    if ini:
+        (sys_dir / f"{sys_name}_Favorites.ini").write_text("Kirby\n", encoding="utf-8")
+    if txt:
+        (sys_dir / "favorites.txt").write_text("Kirby\n", encoding="utf-8")
+
+
+def test_collect_native_fav_files_finds_ini(tmp_path, monkeypatch):
+    from spindoctor.favorites import collect_native_fav_files
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    ini_files, txt_files, xml_files = collect_native_fav_files(cfg)
+    assert any("Super Nintendo_Favorites.ini" in str(f) for f in ini_files)
+    assert txt_files == []
+    assert xml_files == []
+
+
+def test_collect_native_fav_files_finds_txt(tmp_path, monkeypatch):
+    from spindoctor.favorites import collect_native_fav_files
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", txt=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    ini_files, txt_files, xml_files = collect_native_fav_files(cfg)
+    assert ini_files == []
+    assert any("favorites.txt" in str(f) for f in txt_files)
+    assert xml_files == []
+
+
+def test_collect_native_fav_files_finds_xml_with_favorite_attr(tmp_path, monkeypatch):
+    from spindoctor.favorites import collect_native_fav_files
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", xml_fav=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    ini_files, txt_files, xml_files = collect_native_fav_files(cfg)
+    assert ini_files == []
+    assert txt_files == []
+    assert any("Super Nintendo.xml" in str(f) for f in xml_files)
+
+
+def test_collect_native_fav_files_skips_xml_without_favorite(tmp_path, monkeypatch):
+    from spindoctor.favorites import collect_native_fav_files
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", xml_fav=False)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    ini_files, txt_files, xml_files = collect_native_fav_files(cfg)
+    assert xml_files == []
+
+
+# ─── clear_native_favorites ───────────────────────────────────────────────────
+
+def test_clear_native_favorites_dry_run_does_not_delete(tmp_path, monkeypatch):
+    from spindoctor.favorites import clear_native_favorites
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True, txt=True, xml_fav=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    summary = clear_native_favorites(cfg, dry_run=True)
+    # Counts what would be removed
+    assert summary.ini_cleared == 1
+    assert summary.txt_cleared == 1
+    assert summary.xml_cleared == 1
+    assert summary.xml_games_cleared == 1
+    # Files untouched
+    assert (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").exists()
+    assert (hs / "Databases" / "Super Nintendo" / "favorites.txt").exists()
+    xml_content = (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").read_text()
+    assert 'favorite="1"' in xml_content
+
+
+def test_clear_native_favorites_apply_deletes_flat_files(tmp_path, monkeypatch):
+    from spindoctor.favorites import clear_native_favorites
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True, txt=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    summary = clear_native_favorites(cfg, dry_run=False)
+    assert summary.ini_cleared == 1
+    assert summary.txt_cleared == 1
+    assert not (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").exists()
+    assert not (hs / "Databases" / "Super Nintendo" / "favorites.txt").exists()
+
+
+def test_clear_native_favorites_apply_strips_xml_attribute(tmp_path, monkeypatch):
+    from spindoctor.favorites import clear_native_favorites
+    from spindoctor.config import Config
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", xml_fav=True)
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    cfg = Config(hyperspin_dir=str(hs), rocketlauncher_dir=str(rl))
+    summary = clear_native_favorites(cfg, dry_run=False)
+    assert summary.xml_cleared == 1
+    assert summary.xml_games_cleared == 1
+    xml_content = (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").read_text()
+    assert 'favorite="1"' not in xml_content
+    # Other content preserved
+    assert "Kirby" in xml_content
+
+
+# ─── CLI: scrub --hs-favorites ────────────────────────────────────────────────
+
+def test_scrub_hs_favorites_dry_run(tmp_path, monkeypatch):
+    """--hs-favorites dry-run prints files without touching them."""
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True, xml_fav=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["scrub", "--hs-favorites"])
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+    # Files not deleted
+    assert (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").exists()
+    xml_content = (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").read_text()
+    assert 'favorite="1"' in xml_content
+
+
+def test_scrub_hs_favorites_apply(tmp_path, monkeypatch):
+    """--hs-favorites --apply removes ini and strips XML."""
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True, xml_fav=True)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE", tmp_path / "fav.json")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["scrub", "--hs-favorites", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert not (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").exists()
+    xml_content = (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").read_text()
+    assert 'favorite="1"' not in xml_content
+
+
+def test_scrub_hs_favorites_backup_includes_files(tmp_path, monkeypatch):
+    """--hs-favorites --backup-dir copies ini + XML before deleting."""
+    hs, rl, cfg_file = _build_hs_layout(tmp_path)
+    _write_fav_files(hs, "Super Nintendo", ini=True, xml_fav=True)
+    backup_dir = tmp_path / "backups"
+    backup_dir.mkdir()
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE", tmp_path / "fav.json")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["scrub", "--hs-favorites", "--backup-dir", str(backup_dir), "--apply"]
+    )
+    assert result.exit_code == 0, result.output
+    # A scrub-<timestamp> folder was created
+    scrub_dirs = list(backup_dir.iterdir())
+    assert len(scrub_dirs) == 1
+    scrub_folder = scrub_dirs[0]
+    manifest = json.loads((scrub_folder / "manifest.json").read_text())
+    backed_names = [Path(e["backup"]).name for e in manifest["files"]]
+    assert "Super Nintendo_Favorites.ini" in backed_names
+    assert "Super Nintendo.xml" in backed_names
