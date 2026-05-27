@@ -6,7 +6,9 @@ to ``xml.etree.ElementTree`` (which loses comments) with a one-time warning.
 """
 from __future__ import annotations
 
+import os
 import shutil
+import tempfile
 import warnings
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -32,6 +34,83 @@ _FIELD_ORDER = (
 )
 
 _LXML_WARNED = False
+
+
+def resolve_atomic_tmp_dir(target: Path, configured: Optional[Path]) -> Path:
+    """Return the directory to use for the atomic temp file.
+
+    *configured* is the user's ``atomic_tmp_dir`` setting (or ``None`` when
+    unset).  When set we try to use it — but ``os.replace()`` only works
+    within the same filesystem/volume, so we verify that *configured* and
+    *target.parent* are on the same device before committing to it.  If
+    they're on different drives, or the directory can't be created, we fall
+    back silently to *target.parent* (the original behaviour).
+
+    This function is public so ``favorites.py`` (and any future write path)
+    can use the same resolution logic without duplicating it.
+    """
+    if configured is None:
+        return target.parent
+    try:
+        configured.mkdir(parents=True, exist_ok=True)
+        if os.stat(configured).st_dev == os.stat(target.parent).st_dev:
+            return configured
+    except OSError:
+        pass
+    return target.parent
+
+
+def _atomic_write_bytes(target: Path, data: bytes,
+                        tmp_dir: Optional[Path] = None) -> None:
+    """Write *data* to *target* via a temp file + atomic rename.
+
+    Direct writes leave a window where an interrupted save (power cut,
+    forced shutdown) produces a truncated, unparseable XML — HyperSpin
+    can't open the wheel until the file is manually restored from the
+    ``.bak``.  Writing to a sibling temp file and then calling
+    ``os.replace`` guarantees the live path is always either the previous
+    complete version or the new complete version — never a partial write.
+
+    *tmp_dir* is the directory for the temp file (from ``config.atomic_tmp_dir``).
+    Pass ``None`` to fall back to ``target.parent`` (the previous default).
+    :func:`resolve_atomic_tmp_dir` handles the same-filesystem check.
+    """
+    write_dir = resolve_atomic_tmp_dir(target, tmp_dir)
+    fd, tmp = tempfile.mkstemp(dir=write_dir, suffix=".tmp")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_via_tree(target: Path, tree_write_fn,
+                           tmp_dir: Optional[Path] = None) -> None:
+    """Call *tree_write_fn(file_obj)* into a temp file, then rename atomically.
+
+    *tmp_dir* has the same semantics as in :func:`_atomic_write_bytes`.
+    """
+    write_dir = resolve_atomic_tmp_dir(target, tmp_dir)
+    fd, tmp = tempfile.mkstemp(dir=write_dir, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:
+            tree_write_fn(f)
+        os.replace(tmp, target)
+    except Exception:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def _warn_no_lxml_once() -> None:
@@ -240,7 +319,16 @@ class HyperspinDatabase:
         output_path: Optional[Path] = None,
         backup: bool = True,
         backup_dir: Optional[Path] = None,
+        tmp_dir: Optional[Path] = None,
     ) -> Path:
+        """Persist the database to disk.
+
+        *tmp_dir* is the scratch directory for the atomic temp file —
+        pass ``config.effective_atomic_tmp_dir`` here.  When ``None``
+        the temp file lands next to the target (original behaviour).
+        :func:`resolve_atomic_tmp_dir` handles the same-filesystem check
+        so a cross-drive *tmp_dir* is silently ignored.
+        """
         self._ensure_loaded()
         target = output_path or self.xml_path
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -270,9 +358,9 @@ class HyperspinDatabase:
         # comments / unknown elements are preserved.
         if self._tree is not None and self._root is not None:
             self._merge_into_tree()
-            self._write_tree(target)
+            self._write_tree(target, tmp_dir=tmp_dir)
         else:
-            self._write_fresh(target)
+            self._write_fresh(target, tmp_dir=tmp_dir)
 
         return target
 
@@ -301,7 +389,8 @@ class HyperspinDatabase:
             if last is not None:
                 last.text = datetime.now().strftime("%Y-%m-%d")
 
-    def _write_tree(self, target: Path) -> None:
+    def _write_tree(self, target: Path,
+                    tmp_dir: Optional[Path] = None) -> None:
         # HyperSpin's native Main Menu.xml has no XML declaration; emitting
         # one is tolerated by some skins but ships strictly without it.
         want_decl = not self._enabled_as_attribute
@@ -312,16 +401,18 @@ class HyperspinDatabase:
                 xml_declaration=want_decl,
                 encoding="UTF-8" if want_decl else None,
             )
-            target.write_bytes(xml_bytes)
+            _atomic_write_bytes(target, xml_bytes, tmp_dir=tmp_dir)
         else:
             et_indent(self._tree)
-            with open(target, "wb") as f:
+            def _et_write(f):
                 if want_decl:
                     f.write(b'<?xml version="1.0"?>\n')
                 self._tree.write(f, encoding="utf-8", xml_declaration=False)
+            _atomic_write_via_tree(target, _et_write, tmp_dir=tmp_dir)
 
     # Build a brand-new tree from scratch.  Used the first time a DB is created.
-    def _write_fresh(self, target: Path) -> None:
+    def _write_fresh(self, target: Path,
+                     tmp_dir: Optional[Path] = None) -> None:
         attr_mode = self._enabled_as_attribute
         if _HAS_LXML:
             root = LET.Element("menu")
@@ -355,14 +446,15 @@ class HyperspinDatabase:
                 xml_declaration=want_decl,
                 encoding="UTF-8" if want_decl else None,
             )
-            target.write_bytes(xml_bytes)
+            _atomic_write_bytes(target, xml_bytes, tmp_dir=tmp_dir)
         else:
             tree = ET.ElementTree(root)
             et_indent(tree)
-            with open(target, "wb") as f:
+            def _et_write_fresh(f):
                 if want_decl:
                     f.write(b'<?xml version="1.0"?>\n')
                 tree.write(f, encoding="utf-8", xml_declaration=False)
+            _atomic_write_via_tree(target, _et_write_fresh, tmp_dir=tmp_dir)
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────────
