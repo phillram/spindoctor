@@ -803,10 +803,10 @@ Restore files from a backup created by `scrub --backup-dir`.
 
 ```bat
 :: Dry-run — show what would be restored without touching files
-spindoctor scrub-restore E:\Backups\scrub-20260526-143012
+spindoctor scrub-restore E:\Backups\scrub-20260526_143012
 
 :: Commit the restore
-spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
+spindoctor scrub-restore E:\Backups\scrub-20260526_143012 --apply
 ```
 
 `scrub-restore` reads the `manifest.json` inside the backup folder and copies each file back to its original location. Existing files are overwritten. Dry-run by default; pass `--apply` to commit.
@@ -821,7 +821,7 @@ spindoctor scrub
 spindoctor scrub --backup-dir E:\Backups --apply
 
 :: 3. If you need to undo — restore from the backup
-spindoctor scrub-restore E:\Backups\scrub-20260526-143012 --apply
+spindoctor scrub-restore E:\Backups\scrub-20260526_143012 --apply
 ```
 
 ---

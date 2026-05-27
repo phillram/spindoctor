@@ -168,6 +168,61 @@ def test_scrub_backup_dir_skipped_in_dry_run(tmp_path, monkeypatch):
     assert subdirs == []
 
 
+# ─── CLI: scrub --stats with actual files (regression: is_relative_to Python 3.8) ──
+
+def test_scrub_stats_dry_run_lists_files(tmp_path, monkeypatch):
+    """Dry-run scrub --stats must list found files without crashing.
+
+    Regression test for Python 3.8 incompatibility: Path.is_relative_to() was
+    added in 3.9.  The file-listing loop in scrub_cmd previously called
+    f.is_relative_to(rl) and crashed with AttributeError on the cabinet's
+    Python 3.8 build.  This test exercises that exact code path by ensuring at
+    least one Statistics.ini exists, so the loop is entered.  It must pass on
+    Python 3.8 (ubuntu-latest × 3.8 in CI).
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "spindoctor.config.CONFIG_FILE", tmp_path / ".spindoctor" / "config.json"
+    )
+    rl = tmp_path / "rl"
+    stat_file = _make_stat_file(rl, "classic", "MAME")
+    _write_cfg(tmp_path, str(rl), str(tmp_path / "hs"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["scrub", "--stats"])
+    assert result.exit_code == 0, result.output
+    # The filename must appear somewhere in the output (Rich may wrap it)
+    flat = result.output.replace("\n", "")
+    assert stat_file.name in flat
+    # File was NOT deleted (dry-run)
+    assert stat_file.exists()
+
+
+def test_scrub_stats_apply_deletes_files(tmp_path, monkeypatch):
+    """scrub --stats --apply deletes Statistics.ini files and reports them.
+
+    Also a regression guard for the is_relative_to Python 3.8 crash: apply
+    mode goes through the same listing loop before unlinking, so this ensures
+    both the display path and the delete path work under Python 3.8.
+    """
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "spindoctor.config.CONFIG_FILE", tmp_path / ".spindoctor" / "config.json"
+    )
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE", tmp_path / "nope.json")
+    rl = tmp_path / "rl"
+    stat_file = _make_stat_file(rl, "classic", "MAME")
+    _write_cfg(tmp_path, str(rl), str(tmp_path / "hs"))
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["scrub", "--stats", "--apply"])
+    assert result.exit_code == 0, result.output
+    flat = result.output.replace("\n", "")
+    assert stat_file.name in flat
+    # File must be gone after --apply
+    assert not stat_file.exists()
+
+
 # ─── CLI: scrub-restore ───────────────────────────────────────────────────────
 
 def test_scrub_restore_dry_run_lists_files(tmp_path):
