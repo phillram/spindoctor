@@ -32,6 +32,7 @@ from .medialink import LinkMode, apply_plan, plan_mirror
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
+    install_system_wheel_art,
     write_hyperspin_system_ini,
     write_pclauncher_system_ini,
 )
@@ -348,6 +349,10 @@ class RecentSummary:
     read_warnings: list[str] = field(default_factory=list)
     # Informational messages about where stats data was found/sourced from.
     read_notes: list[str] = field(default_factory=list)
+    # Path where the bundled Main Menu wheel art was (or would be) installed.
+    # None if no bundled asset exists for this system, or if skipped (exists).
+    wheel_art_path: Optional[Path] = None
+    wheel_art_status: str = ""  # "installed" | "skipped" | "no_asset" | "dry_run"
 
 
 @dataclass
@@ -591,7 +596,16 @@ def _build_synthetic_wheel(
     # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
     # it the wheel reports "Cannot find <system>.ini" on selection.  We only
     # write when the file is absent so user customisations are never clobbered.
-    write_hyperspin_system_ini(target_system, Path(config.hyperspin_dir))
+    hs_dir = Path(config.hyperspin_dir)
+    write_hyperspin_system_ini(target_system, hs_dir)
+
+    # ── Phase 5: Bundled Main Menu wheel art ──────────────────────────────────
+    # Install the package-bundled PNG to Media/Main Menu/Images/Wheel/ so the
+    # wheel shows a logo instead of plain text in HyperSpin's system selector.
+    # Only written when absent — user replacements are never clobbered.
+    art_path, art_status = install_system_wheel_art(hs_dir, target_system)
+    summary.wheel_art_path = art_path
+    summary.wheel_art_status = art_status
 
     print(f"[{target_system}] wheel build complete.", flush=True)
     return summary
@@ -651,6 +665,12 @@ def rebuild(
             summary.media_linked = len(pseudo_entries)
         summary.read_warnings = read_warnings
         summary.read_notes = read_notes
+        if config.hyperspin_dir:
+            art_path, art_status = install_system_wheel_art(
+                Path(config.hyperspin_dir), target_system, dry_run=True
+            )
+            summary.wheel_art_path = art_path
+            summary.wheel_art_status = art_status
         return summary
     summary = _build_synthetic_wheel(
         config, target_system, pseudo_entries,

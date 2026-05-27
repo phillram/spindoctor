@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Bundled Main Menu wheel art for synthetic wheels** — SpinDoctor now ships high-quality logo images for all three synthetic wheels (`Favorites`, `Most Played`, `Recently Played`). These are automatically installed to `Media\Main Menu\Images\Wheel\` during every `rebuild --apply` run, so the wheels show a polished logo in HyperSpin's system selector instead of plain text. The install is idempotent: if you replace the bundled image with your own file, SpinDoctor will detect it and leave it untouched on every subsequent rebuild. Wheel art status (`installed` / `skipped` / `no_asset`) is reported in the rebuild summary.
+
+- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: what SpinDoctor installs automatically, and step-by-step instructions (CLI + manual) for system backgrounds, themes, navigation sounds, and video previews.
+
 ---
 
 ## [2.4.10] - 2026-05-26
