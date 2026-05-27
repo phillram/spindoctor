@@ -186,8 +186,10 @@ def test_scrub_restore_dry_run_lists_files(tmp_path):
     runner = CliRunner()
     result = runner.invoke(cli, ["scrub-restore", str(backup)])
     assert result.exit_code == 0
-    # Rich may wrap long paths across lines — normalise for comparison
-    flat = " ".join(result.output.split())
+    # Rich may hard-wrap long paths at character boundaries (not word boundaries),
+    # e.g. "restored_favorites.json" → "restore\nd_favorites.json".
+    # Strip newlines (not join-with-space) so the filename reassembles correctly.
+    flat = result.output.replace("\n", "")
     assert "DRY RUN" in flat
     assert target.name in flat          # at minimum the filename appears
     # File was NOT written (dry-run)
