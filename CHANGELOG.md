@@ -8,16 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships nine media assets (wheel selector logo + attract-mode background + attract-mode music, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them to `Media\Main Menu\` — the directory HyperSpin reads for attract-mode / system-selector display:
+- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships twelve media assets (wheel logo + attract-mode background + attract-mode music + attract-mode video, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them to `Media\Main Menu\` — the directory HyperSpin reads for attract-mode / system-selector display:
   - `Media\Main Menu\Images\Wheel\<SystemName>.png` — wheel selector logo (1536 × 1024 px)
   - `Media\Main Menu\Images\Backgrounds\<SystemName>.png` — background shown during attract mode (2752 × 1536 px)
   - `Media\Main Menu\Sound\<SystemName>.mp3` — music played during attract mode (192 kbps MP3)
+  - `Media\Main Menu\Video\<SystemName>.mp4` — attract-mode video: static background frame + looped music, duration = 2× the music track (Favorites 57.7 s, Most Played 57.9 s, Recently Played 61.5 s). HyperSpin advances to the next system when the video ends — no global timer configuration required.
 
-  All installs are idempotent: if a file already exists (user-placed or previously installed), SpinDoctor skips it. The rebuild summary shows a `Wheel art / Background / Music` row for each asset (`installed` / `skipped` / `no_asset`). MP3 files are now included in the `pyproject.toml` package-data glob.
+  All installs are idempotent: if a file already exists (user-placed or previously installed), SpinDoctor skips it. The rebuild summary shows a `Wheel art / Background / Music / Video` row for each asset. MP3 and MP4 files are now included in the `pyproject.toml` package-data glob.
 
-- **`install_bundled_system_assets()`** — new umbrella function in `rocketlauncher.py` that runs `install_system_wheel_art()`, `install_system_background()`, and `install_system_music()` in one call. Returns `{type: (path, status)}`.
+- **`install_bundled_system_assets()`** — new umbrella function in `rocketlauncher.py` that runs `install_system_wheel_art()`, `install_system_background()`, `install_system_music()`, and `install_system_video()` in one call. Returns `{type: (path, status)}`.
 
-- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: full table of what gets auto-installed, and step-by-step instructions (CLI + manual) for themes, navigation sounds, and video previews.
+- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: full table of what gets auto-installed, and step-by-step instructions for themes, navigation sounds, and custom video replacement.
 
 ---
 

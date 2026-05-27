@@ -37,6 +37,9 @@ Every `rebuild --apply` run installs these files without extra flags:
 | `Favorites.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
 | `Most Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
 | `Recently Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
+| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 57.7 s) |
+| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 57.9 s) |
+| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 61.5 s) |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
@@ -47,6 +50,7 @@ The rebuild summary reports each asset:
 Wheel art:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
 Background:  installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
 Music:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Sound\Favorites.mp3
+Video:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
 ```
 
 ---
@@ -73,18 +77,23 @@ if you want to add one.
 
 ### Attract-mode video
 
-Not bundled — add your own if you have one.
+> **Already bundled.** SpinDoctor installs attract-mode videos automatically.
+> Follow these instructions only if you want to replace them with your own.
+
+Each video is a static-frame MP4 (background image + music looped to exactly 2× the
+music track duration).  HyperSpin plays the video and advances to the next system in
+the attract rotation when it ends — no global timer setting is required.
+
+| Wheel | Duration |
+|-------|---------|
+| Favorites | 57.7 s (2 × 28.8 s) |
+| Most Played | 57.9 s (2 × 29.0 s) |
+| Recently Played | 61.5 s (2 × 30.8 s) |
 
 **File:** `Media\Main Menu\Video\<SystemName>.mp4`
 
-**Examples:**
-```
-Media\Main Menu\Video\Favorites.mp4
-Media\Main Menu\Video\Most Played.mp4
-Media\Main Menu\Video\Recently Played.mp4
-```
-
-**Manually:** Copy your `.mp4` (or `.avi`, `.flv`) to the Video path above.
+**To replace with your own:** Drop your `.mp4` at the path above, then rebuild.
+SpinDoctor detects the file exists and skips the install on every subsequent run.
 
 ---
 
@@ -166,7 +175,9 @@ HyperSpin\
         │   ├── Most Played.mp3            ← AUTO: attract-mode music
         │   └── Recently Played.mp3        ← AUTO: attract-mode music
         ├── Video\
-        │   ├── Favorites.mp4              ← attract-mode video (manual)
+        │   ├── Favorites.mp4              ← AUTO: attract-mode video (57.7 s)
+        │   ├── Most Played.mp4            ← AUTO: attract-mode video (57.9 s)
+        │   ├── Recently Played.mp4        ← AUTO: attract-mode video (61.5 s)
         │   └── ...
         └── Themes\
             ├── Favorites.zip              ← attract-mode theme (manual)

@@ -2170,8 +2170,9 @@ def _print_synth_summary(label: str, summary) -> None:
         "wheel_art":  "Wheel art",
         "background": "Background",
         "music":      "Music",
+        "video":      "Video",
     }
-    for asset_key in ("wheel_art", "background", "music"):
+    for asset_key in ("wheel_art", "background", "music", "video"):
         label = _ASSET_LABELS[asset_key]
         pair = bundled.get(asset_key)
         if pair is None:
