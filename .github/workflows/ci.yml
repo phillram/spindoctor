@@ -68,6 +68,16 @@ jobs:
         if: runner.os == 'Linux'
         run: xvfb-run -a pytest -q -n auto
 
+      # actions/setup-python on Windows does not set TCL_LIBRARY, so Tcl
+      # cannot locate init.tcl and tk.Tk() raises TclError at test time.
+      # Derive the path from sys.prefix (the Python install root) and
+      # export it before pytest runs.
+      - name: Set TCL_LIBRARY (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          echo "TCL_LIBRARY=$(python -c 'import sys; print(sys.prefix)')/tcl/tcl8.6" >> $GITHUB_ENV
+
       - name: Run tests (Windows)
         if: runner.os == 'Windows'
         run: pytest -q -n auto
