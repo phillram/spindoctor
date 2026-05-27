@@ -12,6 +12,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: what SpinDoctor installs automatically, and step-by-step instructions (CLI + manual) for system backgrounds, themes, navigation sounds, and video previews.
 
+### Fixed
+
+- **Scheduled wheel refresh froze the arcade** — The Windows Task Scheduler task previously ran `cmd.exe /c bat.bat` at normal process priority, competing directly with HyperSpin and RocketLauncher for CPU and disk I/O. On cabinet hardware this stalled the frontend visibly. Two changes fix it:
+  1. The generated `.bat` file now wraps each rebuild command with `START /LOW /B /WAIT` — the three spindoctor executables run at Windows **IDLE** process priority and only consume cycles that the cabinet software isn't using.
+  2. The scheduled task now points at a companion `spindoctor-refresh-wheels.vbs` shim instead of `cmd.exe` directly. The shim calls the bat with `WshShell.Run(bat, 0, True)` (window style 0 = hidden), so no `cmd.exe` console window ever appears on the cabinet screen. To pick up the fix, click *Remove scheduled task* then *Schedule auto-refresh* again in the GUI Tools tab.
+
+- **XML writes were not shutdown-safe** — Direct `file.write_bytes(data)` calls left a window where a forced shutdown mid-save produced a truncated, unparseable HyperSpin XML. All XML and JSON store writes in `database.py` and `favorites.py` now use a **temp-file + `os.replace` atomic rename**: the live path is only swapped in once the new content is fully flushed. The previous `.bak` mechanism is unchanged — shutdown safety now operates at the write level as well as the backup level.
+
+- **New `stale-atomic-writes` cleanup category** — If a write was interrupted before the atomic rename completed (power cut, `SIGKILL`), a `.tmp` sidecar file is left next to the live XML. `cleanup audit` and `cleanup run --include stale-atomic-writes` now surface and remove these. `self-doctor --fix` also removes them automatically (5-minute age threshold — a write normally completes in milliseconds).
+
+- **`atomic_tmp_dir` config option** — All atomic-write `*.tmp` files now land in a single user-configured scratch directory instead of scattered next to their respective XML/JSON targets throughout the HyperSpin Databases tree. Set via `spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp` or the new **Atomic write temp directory** field in the GUI Setup tab. Must be on the same drive as `hyperspin_dir`; cross-drive values are silently ignored (falls back to writing next to the target). `cleanup` and `self-doctor` both scan the configured dir in addition to the default fallback locations.
+
 ---
 
 ## [2.4.10] - 2026-05-26

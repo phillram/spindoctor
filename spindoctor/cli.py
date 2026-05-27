@@ -190,6 +190,12 @@ def config_set(key: str, value: str):
                                 written before in-place saves go to a named subfolder
                                 here (e.g. backup_dir/Main Menu/). Also the default
                                 target for `backup create` and `backup list`.
+      atomic_tmp_dir            Scratch folder for *.tmp files written during atomic
+                                XML/JSON saves. Blank = temp lands next to the real
+                                file (default). Set to a dedicated folder to keep
+                                temp files out of the HyperSpin tree. Must be on the
+                                same drive as hyperspin_dir; cross-drive paths fall
+                                back silently to the default behaviour.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
@@ -1822,9 +1828,10 @@ def fav_group():
 def fav_add(system_name, rom_name, display_name):
     """Add a favorite. Run [cyan]fav rebuild[/cyan] afterwards to update HyperSpin."""
     from .favorites import add, load_store, save_store
+    config = _cfg()
     store = load_store()
     if add(store, system_name, rom_name, display_name):
-        save_store(store)
+        save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
         console.print(f"[green]+[/green] {system_name} :: {rom_name}")
     else:
         console.print(f"[yellow]already a favorite:[/yellow] {system_name} :: {rom_name}")
@@ -1836,9 +1843,10 @@ def fav_add(system_name, rom_name, display_name):
 def fav_remove(system_name, rom_name):
     """Remove a favorite from the cross-system wheel."""
     from .favorites import load_store, remove, save_store
+    config = _cfg()
     store = load_store()
     if remove(store, system_name, rom_name):
-        save_store(store)
+        save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
         console.print(f"[green]-[/green] {system_name} :: {rom_name}")
     else:
         console.print(f"[yellow]not a favorite:[/yellow] {system_name} :: {rom_name}")
@@ -1875,7 +1883,7 @@ def fav_sync():
     _check_config(config)
     store = load_store()
     n, sync_warns, sync_notes = sync_native(store, config)
-    save_store(store)
+    save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     if n > 0:
@@ -1917,7 +1925,7 @@ def fav_rebuild(media_mode, apply_changes):
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     if synced > 0:
-        save_store(store)
+        save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
         console.print(f"[green]+[/green] synced {synced} favorite(s) from HyperSpin per-system lists.")
     else:
         console.print(
@@ -3439,7 +3447,7 @@ def install_tools(output_dir, add_to_system):
         )
 
     _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-    db.save(backup_dir=_bak_dir)
+    db.save(backup_dir=_bak_dir, tmp_dir=config.effective_atomic_tmp_dir)
     console.print(
         f"[green]+[/green] added {len(added_entries)} entry(ies) to "
         f"[cyan]{db_path}[/cyan]: "
@@ -3619,7 +3627,8 @@ def uninstall_tools(add_to_system, apply_changes):
                         db.remove_game(stem)
                     _bak_dir = (Path(config.backup_dir)
                                 if getattr(config, "backup_dir", "") else None)
-                    db.save(backup_dir=_bak_dir)
+                    db.save(backup_dir=_bak_dir,
+                            tmp_dir=config.effective_atomic_tmp_dir)
             else:
                 console.print(
                     f"[dim]No SpinDoctor entries found in[/dim] "
@@ -4327,14 +4336,16 @@ def fetch_meta(system, all_systems, source, fetch_all,
         )
 
         if apply_changes and updated > 0:
+            _tmp = config.effective_atomic_tmp_dir
             if out_base:
                 saved = db.save(
                     output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
-                    backup=False,
+                    backup=False, tmp_dir=_tmp,
                 )
             else:
                 _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify,
+                                backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]Saved:[/green] {saved}")
 
     _auto_export_audit(config, systems)
@@ -4887,14 +4898,16 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
         console.print(f"  Added: [green]{added}[/green]  Removed: [red]{removed}[/red]")
 
         if apply_changes and (added or removed):
+            _tmp = config.effective_atomic_tmp_dir
             if out_base:
                 saved = db.save(
                     output_path=out_base / "Databases" / sys_name / f"{sys_name}.xml",
-                    backup=False,
+                    backup=False, tmp_dir=_tmp,
                 )
             else:
                 _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify,
+                                backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
@@ -6272,14 +6285,16 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                     db.upsert_game(stub)
                 new_count += 1
             if apply_changes and new_count:
+                _tmp = config.effective_atomic_tmp_dir
                 if out_base:
                     saved = db.save(
                         output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
-                        backup=False,
+                        backup=False, tmp_dir=_tmp,
                     )
                 else:
                     _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                    saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                    saved = db.save(backup=config.backup_before_modify,
+                                    backup_dir=_bak_dir, tmp_dir=_tmp)
                 console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
             elif new_count:
                 console.print(f"  [yellow]would add {new_count} stub(s)[/yellow]")
@@ -6532,14 +6547,16 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
             db.upsert_game(stub)
             new_count += 1
         if new_count:
+            _tmp = config.effective_atomic_tmp_dir
             if out_base:
                 saved = db.save(
                     output_path=out_base / "Databases" / system_name / f"{system_name}.xml",
-                    backup=False,
+                    backup=False, tmp_dir=_tmp,
                 )
             else:
                 _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-                saved = db.save(backup=config.backup_before_modify, backup_dir=_bak_dir)
+                saved = db.save(backup=config.backup_before_modify,
+                                backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
         else:
             console.print("  [green]Database already in sync with titles.[/green]")

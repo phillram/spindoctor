@@ -17,7 +17,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import warnings
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
@@ -26,7 +28,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from .config import CONFIG_DIR, Config, load_config
-from .database import GameEntry, HyperspinDatabase, load_database
+from .database import GameEntry, HyperspinDatabase, load_database, resolve_atomic_tmp_dir
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
 from .rocketlauncher import (
     ensure_rl_game_exe,
@@ -84,13 +86,38 @@ def load_store(path: Path = FAVORITES_FILE) -> FavoriteStore:
     )
 
 
-def save_store(store: FavoriteStore, path: Path = FAVORITES_FILE) -> None:
+def save_store(store: FavoriteStore, path: Path = FAVORITES_FILE,
+               tmp_dir: Optional[Path] = None) -> None:
+    """Persist *store* to *path* using an atomic temp-file + rename.
+
+    *tmp_dir* is the scratch directory for the temp file
+    (``config.effective_atomic_tmp_dir``).  Pass ``None`` to use
+    ``path.parent`` (the original default).
+    :func:`~spindoctor.database.resolve_atomic_tmp_dir` handles the
+    same-filesystem check so a cross-drive directory is silently ignored.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "target_system": store.target_system,
         "entries": [asdict(e) for e in store.entries],
     }
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    data = json.dumps(payload, indent=2).encode("utf-8")
+    write_dir = resolve_atomic_tmp_dir(path, tmp_dir)
+    fd, tmp = tempfile.mkstemp(dir=write_dir, suffix=".tmp")
+    try:
+        os.write(fd, data)
+        os.close(fd)
+        os.replace(tmp, path)
+    except Exception:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 # ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -157,7 +184,7 @@ def clear_favorites(
     if not dry_run:
         # Overwrite store with an empty one (preserve target_system name).
         empty = FavoriteStore(entries=[], target_system=target_system)
-        save_store(empty, resolved_path)
+        save_store(empty, resolved_path, tmp_dir=config.effective_atomic_tmp_dir)
 
     summary = ClearFavoritesSummary(
         entries_cleared=n,
@@ -667,7 +694,23 @@ def clear_native_favorites(
                 matches = len(_re.findall(r'favorite\s*=\s*["\']1["\']', content))
                 new_content = _FAV_ATTR_RE.sub("", content)
                 if new_content != content:
-                    xml_path.write_text(new_content, encoding="utf-8")
+                    data = new_content.encode("utf-8")
+                    _atmp = resolve_atomic_tmp_dir(xml_path, config.effective_atomic_tmp_dir)
+                    fd, tmp = tempfile.mkstemp(dir=_atmp, suffix=".tmp")
+                    try:
+                        os.write(fd, data)
+                        os.close(fd)
+                        os.replace(tmp, xml_path)
+                    except Exception:
+                        try:
+                            os.close(fd)
+                        except OSError:
+                            pass
+                        try:
+                            os.unlink(tmp)
+                        except OSError:
+                            pass
+                        raise
                     summary.xml_cleared += 1
                     summary.xml_games_cleared += matches
             except OSError as exc:
@@ -798,9 +841,11 @@ def main(argv: Optional[list[str]] = None) -> int:
     config = load_config()
     store = load_store()
 
+    _tmp_dir = config.effective_atomic_tmp_dir
+
     if args.cmd == "add":
         if add(store, args.system, args.rom_name, args.display_name):
-            save_store(store)
+            save_store(store, tmp_dir=_tmp_dir)
             print(f"Added: {args.system} :: {args.rom_name}")
         else:
             print(f"Already a favorite: {args.system} :: {args.rom_name}")
@@ -808,7 +853,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.cmd == "remove":
         if remove(store, args.system, args.rom_name):
-            save_store(store)
+            save_store(store, tmp_dir=_tmp_dir)
             # Drop mirrored media on removal so we don't leave orphans
             if config.hyperspin_dir:
                 target_names = _resolve_target_names(store.entries + [
@@ -832,7 +877,7 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     if args.cmd == "sync":
         n, sync_warns, sync_notes = sync_native(store, config)
-        save_store(store)
+        save_store(store, tmp_dir=_tmp_dir)
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
         for note in sync_notes:
@@ -861,7 +906,7 @@ def main(argv: Optional[list[str]] = None) -> int:
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
         if synced > 0:
-            save_store(store)
+            save_store(store, tmp_dir=_tmp_dir)
             print(f"  synced {synced} favorite(s) from HyperSpin per-system lists.")
         else:
             print(

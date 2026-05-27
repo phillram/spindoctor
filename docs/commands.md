@@ -1044,14 +1044,14 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs
 
 ### `self-doctor`
 
-Diagnose SpinDoctor's *own* state (not the cabinet library). Inspects `~/.spindoctor/` for orphan corrupt-config rescue copies (older than 30 days), oversized manifest dirs (curate / migrations / edits / renames / themes / media_imports / restructures over 50 MB), expired metadata cache size, broken `config.json` / `favorites.json`, and stray `.part` files older than 7 days under `<HyperSpin>/Media/`. Each finding renders with the reclaimable bytes so you can decide whether a cleanup is worth it.
+Diagnose SpinDoctor's *own* state (not the cabinet library). Inspects `~/.spindoctor/` for orphan corrupt-config rescue copies (older than 30 days), oversized manifest dirs (curate / migrations / edits / renames / themes / media_imports / restructures over 50 MB), expired metadata cache size, broken `config.json` / `favorites.json`, stray `.part` files older than 7 days under `<HyperSpin>/Media/`, and orphan atomic-write `.tmp` files older than 5 minutes in the Databases tree or config dir (left behind after a forced shutdown mid-save). Each finding renders with the reclaimable bytes so you can decide whether a cleanup is worth it.
 
 ```bat
 spindoctor self-doctor              :: read-only diagnosis
-spindoctor self-doctor --fix        :: also delete orphan rescue copies + stale .part files
+spindoctor self-doctor --fix        :: also delete orphan rescue copies, stale .part files, and orphan .tmp write temps
 ```
 
-Read-only by default. `--fix` performs **only** safe deletions — orphan corrupt-config rescue copies (`config.json.broken-*`) and stale `.part` download sidecars. Manifests are never auto-deleted because they're the undo path for every destructive command; if a manifest dir is oversized, use `cleanup run` with the category checkboxes you want pruned.
+Read-only by default. `--fix` performs **only** safe deletions — orphan corrupt-config rescue copies (`config.json.broken-*`), stale `.part` download sidecars, and orphan atomic-write `.tmp` files. Manifests are never auto-deleted because they're the undo path for every destructive command; if a manifest dir is oversized, use `cleanup run` with the category checkboxes you want pruned.
 
 Complements `doctor` (which checks the cabinet library): `self-doctor` answers "is my SpinDoctor install healthy?" while `doctor` answers "is my cabinet healthy?". Run both periodically.
 
@@ -1094,7 +1094,7 @@ spindoctor match clear --system MAME
 
 ### `cleanup`
 
-One-stop inventory and removal of every cache, manifest, temp dir, and `.bak` backup SpinDoctor produces. Categories cover match / media-pick / pc-titles / metadata / MAME-listxml caches, the preview temp dir, **interrupted-download `.part` sidecars** under `Media/`, audit-CSV exports, restructure / misplaced / migration manifests, and HyperSpin / LEDBlinky `.bak` files.
+One-stop inventory and removal of every cache, manifest, temp dir, and `.bak` backup SpinDoctor produces. Categories cover match / media-pick / pc-titles / metadata / MAME-listxml caches, the preview temp dir, **interrupted-download `.part` sidecars** under `Media/`, **orphan atomic-write `.tmp` files** (`stale-atomic-writes`) left next to XML/JSON files after a forced shutdown mid-save, audit-CSV exports, restructure / misplaced / migration manifests, and HyperSpin / LEDBlinky `.bak` files.
 
 ```bat
 spindoctor cleanup categories                                                :: list categories

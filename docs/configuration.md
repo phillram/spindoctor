@@ -38,6 +38,8 @@ spindoctor config set <key> <value>
 | `interactive_matching` | Prompt on ambiguous matches (default `true`) |
 | `mame_executable` | Path to a MAME binary (used by `ledblinky generate` — see below) |
 | `metadata_cache_ttl_days` | Days to keep cached scraper responses (default `30`) |
+| `backup_dir` | Root folder for all automatic `.bak` backups written before in-place XML saves. Also the default target for `backup create`. Blank = `.bak` lands next to the source file. |
+| `atomic_tmp_dir` | **Scratch folder for atomic write temp files.** When blank (the default), each `*.tmp` file lands beside the real XML or JSON file it is replacing — which is safe but scatters temp files through the HyperSpin Databases tree. Set this to a dedicated folder (e.g. `D:\SpinDoctorTemp`) to keep all temp files in one predictable place. **Must be on the same drive as `hyperspin_dir`** — SpinDoctor silently falls back to writing next to the target for any file on a different drive. Set via the GUI Setup tab or `spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp`. |
 | `backup_before_modify` | Whether XML writes leave a `.bak` next to the file (default `true`) |
 | `region_preferences` | Default region order for `curate` (default `["USA", "World", "Europe", "Japan"]`) |
 | `demulshooter_path` | Explicit path to `DemulShooter.exe` if auto-detection misses it |
