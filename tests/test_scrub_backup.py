@@ -146,8 +146,12 @@ def test_scrub_backup_creates_manifest_json(tmp_path, monkeypatch):
 
 # ─── CLI: scrub --backup-dir (dry-run) ───────────────────────────────────────
 
-def test_scrub_backup_dir_skipped_in_dry_run(tmp_path, monkeypatch):
-    """--backup-dir is mentioned as skipped when not combined with --apply."""
+def test_scrub_backup_dir_works_in_dry_run(tmp_path, monkeypatch):
+    """--backup-dir creates a snapshot even without --apply (dry-run mode).
+
+    The backup is created so users can capture state before deciding to apply.
+    No data is deleted in dry-run mode.
+    """
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setattr(
         "spindoctor.config.CONFIG_FILE", tmp_path / ".spindoctor" / "config.json"
@@ -162,10 +166,12 @@ def test_scrub_backup_dir_skipped_in_dry_run(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["scrub", "--stats", "--backup-dir", str(backup_dir)])
     assert result.exit_code == 0
     assert "DRY RUN" in result.output
-    assert "skipped" in result.output.lower() or "dry-run" in result.output.lower()
-    # No actual backup folder should be created inside backup_dir
+    # A snapshot folder should now be created even in dry-run
     subdirs = list(backup_dir.iterdir())
-    assert subdirs == []
+    assert len(subdirs) == 1, f"Expected snapshot folder, got: {subdirs}"
+    assert subdirs[0].name.startswith("scrub-")
+    # Output should mention snapshot / dry-run
+    assert "snapshot" in result.output.lower() or "dry-run" in result.output.lower()
 
 
 # ─── CLI: scrub --stats with actual files (regression: is_relative_to Python 3.8) ──

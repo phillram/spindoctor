@@ -86,8 +86,9 @@ exclude = ["tests*", "build*", "scripts*"]
 [tool.setuptools.package-data]
 # Ship the window-icon assets with the wheel so iconbitmap/iconphoto
 # can find them at runtime (Path(__file__).parent / "assets").
-# Also ships bundled synthetic-wheel media (wheel art, backgrounds, music, videos).
-spindoctor = ["assets/*.png", "assets/*.ico", "assets/*.mp3", "assets/*.mp4"]
+# Also ships bundled synthetic-wheel media (wheel art, backgrounds, videos, theme zips).
+# Note: no MP3 files — attract-mode audio is carried by the MP4 video track.
+spindoctor = ["assets/*.png", "assets/*.ico", "assets/*.mp4", "assets/*.zip"]
 
 [tool.ruff]
 # Ruff is the project's linter. Black-style formatting is deliberately

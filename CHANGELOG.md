@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **HyperSpin theme zips for synthetic wheels** — SpinDoctor now bundles and installs `Media\Main Menu\Themes\<SystemName>.zip` for `Favorites`, `Most Played`, and `Recently Played`. Without a theme zip HyperSpin silently skips the attract-mode audio/video entirely. Each zip contains only `Theme.xml` (no `Info.txt`, no SWF files), matching the reference layout provided by the cabinet owner: `<video w="1024" h="768" x="512" y="384" forceaspect="both" .../>` — full-screen, centred on HyperSpin's 1024×768 canvas. Installed by `rebuild --apply` (skip-if-exists) and `mainmenu add --apply` (always overwrite). Theme zips ship via the `assets/*.zip` package-data glob.
+
+- **Bundled MP3 files removed** — The three `music_*.mp3` assets are no longer bundled or installed. The attract-mode MP4 carries its own audio track, which covers the idle/attract use-case. HyperSpin's active-browsing music slot (`Media\Main Menu\Sound\<System>.mp3`, which plays while the user is scrolling the main-menu wheel) now plays silence. `_MUSIC_ASSETS` is intentionally empty; `install_system_music()` returns `"no_asset"` for all systems. The `assets/*.mp3` glob is removed from `pyproject.toml`.
+
+- **`mainmenu add` now installs bundled media for synthetic wheels** — When `spindoctor mainmenu add Favorites --apply` (or `Recently Played` / `Most Played`) is run, SpinDoctor now installs all five bundled assets (wheel logo, attract-mode background, music, video, **theme zip**) to `Media\Main Menu\` in addition to updating `Main Menu.xml`. Unlike `rebuild --apply` which skips files that already exist, `mainmenu add` always writes the bundled assets so the wheel gets a fresh copy — useful for first-installs and for resetting media after an upgrade. The GUI "Add wheels to Main Menu" button calls `mainmenu add --apply` for each wheel and automatically gets this behaviour. Dry-run (`mainmenu add` without `--apply`) shows what would be installed/overwritten.
+
+- **`install_bundled_system_assets()` and all individual install functions gain an `overwrite` keyword argument** — `overwrite=False` (default, used by rebuild) preserves user-placed files; `overwrite=True` (used by `mainmenu add`) always writes the bundled asset. New status value `"overwritten"` returned when a file was replaced. `_add_bundled_asset_rows()` helper extracted from `_print_synth_summary()` for reuse in `mainmenu add` output. Function now returns five keys: `wheel_art`, `background`, `music`, `video`, `theme`.
+
+### Fixed
+
+- **Attract-mode videos not playing on Windows 7 / HyperSpin** — Bundled videos were encoded at 2752×1536 (native background resolution) with H.264 High Profile, Level 5.0. The HyperSpin Adobe AIR runtime and Windows 7's DirectShow decoders only support H.264 up to Main Profile, Level 4.0; Level 5.0 causes the video track to be silently dropped while audio continues playing. All three attract-mode videos are now encoded at **1920×1080, H.264 Main Profile, Level 4.0** (`-vf scale=1920:1080 -profile:v main -level 4.0`). HyperSpin scales the video to fit the screen — the resolution of the source frame does not need to match the cabinet display.
+
+- **`scrub --backup-dir` was silently skipped in dry-run mode** — Passing `--backup-dir` alongside a dry-run (`spindoctor scrub --backup-dir /path`) previously printed `"(--backup-dir is skipped in dry-run mode)"` and created no backup. The option now works in **both** dry-run and apply modes: in dry-run it creates the `scrub-<timestamp>/` snapshot (useful for capturing current state before deciding to apply), in apply mode it backs up then deletes as before. Output in dry-run: `"Snapshot created (N files) → <path>  (dry-run: no data was deleted)"`.
+
+### Changed
+
+- **GUI scrub panel**: "Backup first to" label updated to "Backup to" and helper text updated to clarify the backup runs on both dry-run and apply.
+
 ---
 
 ## [2.4.11] - 2026-05-27
