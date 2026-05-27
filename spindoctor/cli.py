@@ -2165,6 +2165,19 @@ def _print_synth_summary(label: str, summary) -> None:
         "[cyan]System INI:[/cyan]",
         str(ini_path) if ini_path else "[yellow]skipped (rocketlauncher_dir not set or invalid)[/yellow]",
     )
+    art_status = getattr(summary, "wheel_art_status", "")
+    art_path = getattr(summary, "wheel_art_path", None)
+    if art_status == "installed":
+        art_str = f"[green]installed[/green] → {art_path}"
+    elif art_status == "dry_run":
+        art_str = f"[yellow]would install[/yellow] → {art_path}"
+    elif art_status == "skipped":
+        art_str = "[dim]skipped (already exists)[/dim]"
+    elif art_status == "no_asset":
+        art_str = "[dim]no bundled art for this system name[/dim]"
+    else:
+        art_str = "[dim]—[/dim]"
+    grid.add_row("[cyan]Wheel art:[/cyan]", art_str)
     console.print(grid)
     read_warnings = getattr(summary, "read_warnings", None) or []
     for w in read_warnings:
