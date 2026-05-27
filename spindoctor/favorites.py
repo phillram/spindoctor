@@ -33,7 +33,7 @@ from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
-    install_system_wheel_art,
+    install_bundled_system_assets,
     write_hyperspin_system_ini,
     write_pclauncher_system_ini,
 )
@@ -416,10 +416,11 @@ class RebuildSummary:
     inis_written: int = 0
     pruned: int = 0
     system_ini_path: Optional[Path] = None
-    # Path where the bundled Main Menu wheel art was (or would be) installed.
-    # None if no bundled asset exists for this system, or if skipped (exists).
-    wheel_art_path: Optional[Path] = None
-    wheel_art_status: str = ""  # "installed" | "skipped" | "no_asset" | "dry_run"
+    # Results from install_bundled_system_assets().
+    # Keys: "wheel_art", "background", "music"
+    # Values: (Optional[Path], status_str) where status ∈
+    #   "installed" | "skipped" | "no_asset" | "dry_run"
+    bundled_assets: dict = field(default_factory=dict)
 
 
 def rebuild(
@@ -457,11 +458,9 @@ def rebuild(
             rl_dir = Path(config.rocketlauncher_dir)
             summary.system_ini_path = rl_dir / "Settings" / f"{store.target_system}.ini"
         hs_dir = Path(config.hyperspin_dir)
-        art_path, art_status = install_system_wheel_art(
+        summary.bundled_assets = install_bundled_system_assets(
             hs_dir, store.target_system, dry_run=True
         )
-        summary.wheel_art_path = art_path
-        summary.wheel_art_status = art_status
         return summary
 
     # ── 1. Database XML ──────────────────────────────────────────────────────
@@ -563,15 +562,10 @@ def rebuild(
     hs_dir = Path(config.hyperspin_dir)
     write_hyperspin_system_ini(store.target_system, hs_dir)
 
-    # ── 5. Bundled Main Menu wheel art ──────────────────────────────────────
-    # Install the package-bundled PNG to Media/Main Menu/Images/Wheel/ so the
-    # wheel shows a logo instead of plain text in HyperSpin's system selector.
-    # Only written when absent — user replacements are never clobbered.
-    art_path, art_status = install_system_wheel_art(
-        hs_dir, store.target_system, dry_run=False
-    )
-    summary.wheel_art_path = art_path
-    summary.wheel_art_status = art_status
+    # ── 5. Bundled system media (wheel art, background, music) ──────────────
+    # Install all package-bundled assets for this synthetic system.
+    # Each asset is only written when absent — user files are never clobbered.
+    summary.bundled_assets = install_bundled_system_assets(hs_dir, store.target_system)
 
     return summary
 

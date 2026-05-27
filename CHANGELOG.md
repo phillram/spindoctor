@@ -8,9 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Bundled Main Menu wheel art for synthetic wheels** — SpinDoctor now ships high-quality logo images for all three synthetic wheels (`Favorites`, `Most Played`, `Recently Played`). These are automatically installed to `Media\Main Menu\Images\Wheel\` during every `rebuild --apply` run, so the wheels show a polished logo in HyperSpin's system selector instead of plain text. The install is idempotent: if you replace the bundled image with your own file, SpinDoctor will detect it and leave it untouched on every subsequent rebuild. Wheel art status (`installed` / `skipped` / `no_asset`) is reported in the rebuild summary.
+- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships twelve media assets (wheel logo + attract-mode background + attract-mode music + attract-mode video, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them to `Media\Main Menu\` — the directory HyperSpin reads for attract-mode / system-selector display:
+  - `Media\Main Menu\Images\Wheel\<SystemName>.png` — wheel selector logo (1536 × 1024 px)
+  - `Media\Main Menu\Images\Backgrounds\<SystemName>.png` — background shown during attract mode (2752 × 1536 px)
+  - `Media\Main Menu\Sound\<SystemName>.mp3` — music played during attract mode (192 kbps MP3)
+  - `Media\Main Menu\Video\<SystemName>.mp4` — attract-mode video: static background frame + looped music, duration = 2× the music track (Favorites 57.7 s, Most Played 57.9 s, Recently Played 61.5 s). HyperSpin advances to the next system when the video ends — no global timer configuration required.
 
-- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: what SpinDoctor installs automatically, and step-by-step instructions (CLI + manual) for system backgrounds, themes, navigation sounds, and video previews.
+  All installs are idempotent: if a file already exists (user-placed or previously installed), SpinDoctor skips it. The rebuild summary shows a `Wheel art / Background / Music / Video` row for each asset. MP3 and MP4 files are now included in the `pyproject.toml` package-data glob.
+
+- **`install_bundled_system_assets()`** — new umbrella function in `rocketlauncher.py` that runs `install_system_wheel_art()`, `install_system_background()`, `install_system_music()`, and `install_system_video()` in one call. Returns `{type: (path, status)}`.
+
+- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: full table of what gets auto-installed, and step-by-step instructions for themes, navigation sounds, and custom video replacement.
 
 ### Fixed
 
