@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Attract-mode videos not playing on Windows 7 / HyperSpin** — Bundled videos were encoded at 2752×1536 (native background resolution) with H.264 High Profile, Level 5.0. The HyperSpin Adobe AIR runtime and Windows 7's DirectShow decoders only support H.264 up to Main Profile, Level 4.0; Level 5.0 causes the video track to be silently dropped while audio continues playing. All three attract-mode videos are now encoded at **1920×1080, H.264 Main Profile, Level 4.0** (`-vf scale=1920:1080 -profile:v main -level 4.0`). HyperSpin scales the video to fit the screen — the resolution of the source frame does not need to match the cabinet display.
+
+- **`scrub --backup-dir` was silently skipped in dry-run mode** — Passing `--backup-dir` alongside a dry-run (`spindoctor scrub --backup-dir /path`) previously printed `"(--backup-dir is skipped in dry-run mode)"` and created no backup. The option now works in **both** dry-run and apply modes: in dry-run it creates the `scrub-<timestamp>/` snapshot (useful for capturing current state before deciding to apply), in apply mode it backs up then deletes as before. Output in dry-run: `"Snapshot created (N files) → <path>  (dry-run: no data was deleted)"`.
+
+### Changed
+
+- **GUI scrub panel**: "Backup first to" label updated to "Backup to" and helper text updated to clarify the backup runs on both dry-run and apply.
+
 ---
 
 ## [2.4.11] - 2026-05-27

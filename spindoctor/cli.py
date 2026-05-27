@@ -2628,7 +2628,8 @@ def _scrub_backup(
     help=(
         "Copy affected files to DIR/scrub-<timestamp>/ before deleting. "
         "Strongly recommended for --stats (Statistics.ini files are not "
-        "regenerable). Skipped in dry-run mode."
+        "regenerable). Works in both apply and dry-run modes — use it during "
+        "a dry-run to snapshot the current state before deciding to apply."
     ),
 )
 @click.option("--apply", "apply_changes", is_flag=True,
@@ -2657,7 +2658,9 @@ def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, appl
 
     \b
     --backup-dir     Copy files to DIR/scrub-<timestamp>/ before deleting.
-                     Use scrub-restore <folder> --apply to undo.
+                     Works in dry-run mode too — use it to snapshot state
+                     before committing.  Use scrub-restore <folder> --apply
+                     to undo.
 
     \b
     WARNING: --stats is irreversible without a --backup-dir copy.
@@ -2683,23 +2686,32 @@ def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, appl
         )
 
     # ── Optional backup ───────────────────────────────────────────────────────
-    if backup_dir and apply_changes:
+    # --backup-dir works in both apply and dry-run modes.  During a dry-run it
+    # snapshots the current state without touching the data — useful when you
+    # want to inspect first and apply later with confidence.
+    if backup_dir:
         backup_folder, manifest = _scrub_backup(
             backup_dir, scrub_favorites, scrub_stats, config,
             do_hs_favorites=scrub_hs_favorites,
         )
         n_backed = len(manifest)
-        console.print(
-            f"[green]✓ Backed up {n_backed} file(s) → "
-            f"[bold]{backup_folder}[/bold][/green]"
-        )
-        console.print(
-            f"  Restore with: [cyan]spindoctor scrub-restore \"{backup_folder}\" --apply[/cyan]"
-        )
-    elif backup_dir and not apply_changes:
-        console.print(
-            "[dim](--backup-dir is skipped in dry-run mode)[/dim]"
-        )
+        if apply_changes:
+            console.print(
+                f"[green]✓ Backed up {n_backed} file(s) → "
+                f"[bold]{backup_folder}[/bold][/green]"
+            )
+            console.print(
+                f"  Restore with: [cyan]spindoctor scrub-restore \"{backup_folder}\" --apply[/cyan]"
+            )
+        else:
+            console.print(
+                f"[green]✓ Snapshot created ({n_backed} file(s)) → "
+                f"[bold]{backup_folder}[/bold][/green]"
+            )
+            console.print(
+                "[dim]  (dry-run: no data was deleted — "
+                "re-run with --apply to commit)[/dim]"
+            )
 
     # ── Cross-system favorites store ──────────────────────────────────────────
     if scrub_favorites:

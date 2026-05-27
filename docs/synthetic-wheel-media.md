@@ -92,8 +92,60 @@ the attract rotation when it ends — no global timer setting is required.
 
 **File:** `Media\Main Menu\Video\<SystemName>.mp4`
 
+**Required video format (HyperSpin / Windows 7 compatibility):**
+
+HyperSpin is built on Adobe AIR, which uses the AIR runtime's H.264 decoder.
+Windows 7 (without hardware-accelerated codec packs) and older DirectShow
+filters only support H.264 up to **Main Profile, Level 4.0**.
+
+| Property | Required value |
+|----------|---------------|
+| Container | MP4 |
+| Video codec | H.264 (libx264) |
+| Profile | **Main** (not High) |
+| Level | **4.0** (not 5.0+) |
+| Resolution | **1920×1080** (HyperSpin scales to fit; large resolutions force higher levels) |
+| Pixel format | yuv420p |
+| Audio codec | AAC |
+
+> **Why not High Profile or 4K?**  The original 2752×1536 resolution forces H.264
+> Level 5.0, which the Windows 7 Adobe AIR runtime cannot decode — the video
+> track is silently dropped while audio still plays.  Encoding at 1920×1080 keeps
+> the level at 4.0 and plays correctly on all tested HyperSpin setups.
+
+**If you replace with your own video:** encode with the settings above.  An ffmpeg
+one-liner that produces a compatible file:
+
+```bat
+ffmpeg -loop 1 -i background.png -stream_loop -1 -i music.mp3 -t 57.7 ^
+  -vf scale=1920:1080 -c:v libx264 -profile:v main -level 4.0 -crf 28 ^
+  -c:a aac -b:a 192k -pix_fmt yuv420p -movflags +faststart Favorites.mp4
+```
+
 **To replace with your own:** Drop your `.mp4` at the path above, then rebuild.
 SpinDoctor detects the file exists and skips the install on every subsequent run.
+
+---
+
+### HyperSpin music and video not playing — settings checklist
+
+If the bundled MP3 music or video is not playing when a synthetic wheel is
+highlighted in the Main Menu, check the following HyperSpin settings:
+
+**`HyperSpin\Settings\HyperSpin.ini` — `[Main Menu]` section:**
+```ini
+[Main Menu]
+Music=true
+Use_Last_Playlist=false
+```
+
+If `Music=false` (or the key is missing), HyperSpin will not play `.mp3` files
+for any system in the main menu wheel, including the synthetic wheels.
+
+**Videos** only play during **attract mode** (when the cabinet is idle).
+They do not play while you are actively browsing the main menu wheel.
+The `Attract_Mode_Time` setting controls how long the cabinet must be idle
+before attract mode starts; videos advance automatically when they end.
 
 ---
 
