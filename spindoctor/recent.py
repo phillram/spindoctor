@@ -501,12 +501,10 @@ def _build_synthetic_wheel(
         target_name = target_names[f"{fe.system}::{fe.rom_name}"]
         source_db = _safe_load(fe.system, config)
         source_game = source_db.get(fe.rom_name) if source_db else None
+        base_desc = fe.display_name or (source_game.description if source_game else fe.rom_name)
         merged = GameEntry(
             name=target_name,
-            description=(
-                fe.display_name
-                or (source_game.description if source_game else fe.rom_name)
-            ),
+            description=f"{base_desc} ({fe.system})",
             cloneof=source_game.cloneof if source_game else "",
             crc=source_game.crc if source_game else "",
             manufacturer=source_game.manufacturer if source_game else "",
