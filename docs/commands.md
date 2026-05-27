@@ -27,6 +27,8 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 
 ## Core library
 
+> **Synthetic wheels (Favorites, Recently Played, Most Played) are automatically excluded when `--all` is used.** These wheels mirror their media from source systems — scanning or scraping them wastes API calls. A dim banner is printed for each skipped wheel. Passing `--system Favorites` (or any synthetic name) explicitly exits with an error directing you to the source system.
+
 ### `systems`
 
 List every system detected across `roms_dir` and `Databases/`.
