@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`scrub --backup-dir DIR`** — copy all affected files to `DIR/scrub-<timestamp>/` before deleting. Creates `favorites.json` and every `Statistics.ini` file (across all three RL layouts) in a plain folder with a `manifest.json` index. The backup is skipped in dry-run mode. Strongly recommended before `--stats` (Statistics.ini files are not regenerable by SpinDoctor).
+
+- **`scrub-restore <backup-path> [--apply]`** — restore files from a `scrub --backup-dir` backup. Reads `manifest.json` and copies each file back to its original location. Dry-run by default; `--apply` to commit.
+
+- **Scrub panel in GUI** — "Scrub cabinet data" section added to the Backup & Restore tab. Provides checkboxes for Favorites / Play statistics, optional backup directory (with Browse), Apply checkbox, and a separate Restore sub-panel. Confirmation dialogs warn before destructive applies and require extra confirmation when `--stats` is selected without a backup directory.
+
+### Changed
+
+- **`scrub` now exposes file lists per flag** — the `--favorites` and `--stats` options are independent; selecting neither defaults to both (existing behaviour preserved). The `--backup-dir` option is additive on top of either flag.
+
 ---
 
 ## [2.4.8] - 2026-05-26

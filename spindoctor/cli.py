@@ -2442,35 +2442,136 @@ def stats_report_clear_wheel(target_system, apply_changes):
     _print_clear_wheel_summary(target_system, summary, apply_changes)
 
 
+def _collect_stat_files(rl: Path) -> list[Path]:
+    """Return all RocketLauncher Statistics.ini paths across every known layout.
+
+    Three layouts are scanned (a cabinet may use more than one):
+    - Classic  : ``Settings/Global Statistics/<System>.ini``
+    - Legacy   : ``Settings/<System>/Statistics.ini``
+    - Newer    : ``Data/Statistics/<System>.ini`` (excludes the aggregate file)
+    """
+    stat_files: list[Path] = []
+
+    global_dir = rl / "Settings" / "Global Statistics"
+    if global_dir.is_dir():
+        stat_files.extend(global_dir.glob("*.ini"))
+
+    settings_dir = rl / "Settings"
+    if settings_dir.is_dir():
+        for sys_dir in settings_dir.iterdir():
+            if sys_dir.is_dir():
+                s = sys_dir / "Statistics.ini"
+                if s.is_file():
+                    stat_files.append(s)
+
+    data_stats_dir = rl / "Data" / "Statistics"
+    if data_stats_dir.is_dir():
+        stat_files.extend(
+            ini for ini in data_stats_dir.glob("*.ini")
+            if ini.stem.lower() != "global statistics"
+        )
+
+    return stat_files
+
+
+def _scrub_backup(
+    backup_dir: Path,
+    do_favorites: bool,
+    do_stats: bool,
+    config,
+) -> tuple[Path, list[dict]]:
+    """Copy scrub-target files into a timestamped subfolder.
+
+    Returns ``(backup_folder, manifest)`` where *manifest* is the list of
+    dicts written to ``manifest.json`` inside the backup folder.  Each dict
+    has keys ``"original"`` (absolute source path string) and ``"backup"``
+    (path string relative to *backup_folder*).
+
+    Only files that actually exist are copied.  The backup_folder is always
+    created so the manifest is written even when nothing exists yet.
+    """
+    import json as _json
+    import shutil as _shutil
+    from datetime import datetime as _dt
+    from .favorites import FAVORITES_FILE
+
+    stamp = _dt.now().strftime("%Y%m%d-%H%M%S")
+    backup_folder = backup_dir / f"scrub-{stamp}"
+    backup_folder.mkdir(parents=True, exist_ok=True)
+
+    manifest: list[dict] = []
+
+    if do_favorites and FAVORITES_FILE.exists():
+        dest = backup_folder / "favorites.json"
+        _shutil.copy2(FAVORITES_FILE, dest)
+        manifest.append({"original": str(FAVORITES_FILE), "backup": "favorites.json"})
+
+    if do_stats and config.rocketlauncher_dir:
+        rl = Path(config.rocketlauncher_dir)
+        for stat_file in _collect_stat_files(rl):
+            try:
+                rel = stat_file.relative_to(rl)
+            except ValueError:
+                rel = Path(stat_file.name)
+            dest = backup_folder / "stats" / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            _shutil.copy2(stat_file, dest)
+            manifest.append({
+                "original": str(stat_file),
+                "backup": str(Path("stats") / rel),
+            })
+
+    (backup_folder / "manifest.json").write_text(
+        _json.dumps({"created": stamp, "files": manifest}, indent=2),
+        encoding="utf-8",
+    )
+    return backup_folder, manifest
+
+
 @cli.command("scrub")
 @click.option("--favorites", "scrub_favorites", is_flag=True,
               help="Clear the favorites store (favorites.json).")
 @click.option("--stats", "scrub_stats", is_flag=True,
               help="Delete all RocketLauncher Statistics.ini files.")
+@click.option(
+    "--backup-dir",
+    type=click.Path(file_okay=False, writable=True, path_type=Path),
+    default=None,
+    metavar="DIR",
+    help=(
+        "Copy affected files to DIR/scrub-<timestamp>/ before deleting. "
+        "Strongly recommended for --stats (Statistics.ini files are not "
+        "regenerable). Skipped in dry-run mode."
+    ),
+)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit changes — DESTRUCTIVE.  Default is dry-run preview.")
-def scrub_cmd(scrub_favorites, scrub_stats, apply_changes):
+def scrub_cmd(scrub_favorites, scrub_stats, backup_dir, apply_changes):
     """Destructively reset cabinet data.  Requires --apply.
 
     \b
     Without --favorites or --stats, both are cleared (full scrub).
 
     \b
-    --favorites clears ~/.spindoctor/favorites.json entirely.
-    The generated Favorites wheel is also removed from disk.
+    --favorites   Clear ~/.spindoctor/favorites.json and remove the
+                  Favorites wheel from disk.
 
     \b
-    --stats deletes every per-system Statistics.ini file that RocketLauncher
-    has written.  This resets Most Played and Recently Played to zero.
-    The wheel content is also cleared.
+    --stats       Delete every RocketLauncher Statistics.ini file.
+                  Also clears the Recently Played and Most Played wheels.
+                  Scans three layouts: Settings/Global Statistics/,
+                  Settings/<System>/Statistics.ini, Data/Statistics/.
 
     \b
-    WARNING: --stats is irreversible.  Back up your RocketLauncher
-    Statistics files before running.
+    --backup-dir  Copy files to DIR/scrub-<timestamp>/ before deleting.
+                  Use scrub-restore <folder> --apply to undo.
+
+    \b
+    WARNING: --stats is irreversible without a --backup-dir copy.
     """
     from .favorites import clear_favorites, load_store
     from .recent import (
-        SYNTHETIC_SYSTEM_NAMES, clear_wheel_artifacts, collect_play_records,
+        clear_wheel_artifacts,
         DEFAULT_RECENT_SYSTEM,
     )
     from .playtime import DEFAULT_PLAYED_SYSTEM
@@ -2485,6 +2586,24 @@ def scrub_cmd(scrub_favorites, scrub_stats, apply_changes):
         console.print(
             "[yellow bold][DRY RUN][/yellow bold] No changes will be made. "
             "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    # ── Optional backup ───────────────────────────────────────────────────────
+    if backup_dir and apply_changes:
+        backup_folder, manifest = _scrub_backup(
+            backup_dir, scrub_favorites, scrub_stats, config,
+        )
+        n_backed = len(manifest)
+        console.print(
+            f"[green]✓ Backed up {n_backed} file(s) → "
+            f"[bold]{backup_folder}[/bold][/green]"
+        )
+        console.print(
+            f"  Restore with: [cyan]spindoctor scrub-restore \"{backup_folder}\" --apply[/cyan]"
+        )
+    elif backup_dir and not apply_changes:
+        console.print(
+            "[dim](--backup-dir is skipped in dry-run mode)[/dim]"
         )
 
     # ── Favorites ────────────────────────────────────────────────────────────
@@ -2508,29 +2627,7 @@ def scrub_cmd(scrub_favorites, scrub_stats, apply_changes):
             )
         else:
             rl = Path(config.rocketlauncher_dir)
-            stat_files: list[Path] = []
-
-            # Classic layout: Settings/Global Statistics/<system>.ini
-            global_dir = rl / "Settings" / "Global Statistics"
-            if global_dir.is_dir():
-                stat_files.extend(global_dir.glob("*.ini"))
-
-            # Oldest layout: Settings/<system>/Statistics.ini
-            settings_dir = rl / "Settings"
-            if settings_dir.is_dir():
-                for sys_dir in settings_dir.iterdir():
-                    if sys_dir.is_dir():
-                        s = sys_dir / "Statistics.ini"
-                        if s.is_file():
-                            stat_files.append(s)
-
-            # Newer layout: Data/Statistics/<system>.ini (not the aggregate file)
-            data_stats_dir = rl / "Data" / "Statistics"
-            if data_stats_dir.is_dir():
-                stat_files.extend(
-                    ini for ini in data_stats_dir.glob("*.ini")
-                    if ini.stem.lower() != "global statistics"
-                )
+            stat_files = _collect_stat_files(rl)
 
             verb = "Would delete" if not apply_changes else "Deleted"
             if stat_files:
@@ -2555,6 +2652,83 @@ def scrub_cmd(scrub_favorites, scrub_stats, apply_changes):
                     config, sys_name, dry_run=not apply_changes
                 )
                 _print_clear_wheel_summary(sys_name, summary, apply_changes)
+
+
+@cli.command("scrub-restore")
+@click.argument(
+    "backup_path",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the restore.  Default is dry-run preview.")
+def scrub_restore_cmd(backup_path: Path, apply_changes: bool):
+    """Restore files from a backup created by scrub --backup-dir.
+
+    BACKUP_PATH is the timestamped folder produced by
+    ``spindoctor scrub --backup-dir <dir>``,  e.g.
+    ``E:\\Backups\\scrub-20260526-143012``.
+
+    Reads the manifest.json inside BACKUP_PATH and copies each file
+    back to its original location.  Dry-run by default — pass --apply
+    to commit.
+    """
+    import json as _json
+    import shutil as _shutil
+
+    manifest_path = backup_path / "manifest.json"
+    if not manifest_path.exists():
+        console.print(
+            f"[red]Error:[/red] No manifest.json found in {backup_path}. "
+            "Is this a scrub backup folder?"
+        )
+        raise SystemExit(1)
+
+    try:
+        data = _json.loads(manifest_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        console.print(f"[red]Error reading manifest:[/red] {exc}")
+        raise SystemExit(1)
+
+    files = data.get("files", [])
+    created = data.get("created", "unknown")
+
+    console.print(
+        f"[bold]Scrub backup:[/bold] {backup_path}  "
+        f"([dim]created {created}[/dim])"
+    )
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    if not files:
+        console.print("[yellow]No files in manifest — nothing to restore.[/yellow]")
+        return
+
+    errors = 0
+    for entry in files:
+        src = backup_path / entry["backup"]
+        dst = Path(entry["original"])
+        verb = "Would restore" if not apply_changes else "Restored"
+        console.print(f"  {verb}: [dim]{dst}[/dim]")
+        if apply_changes:
+            try:
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                _shutil.copy2(src, dst)
+            except OSError as exc:
+                console.print(f"    [red]Error: {exc}[/red]")
+                errors += 1
+
+    if apply_changes:
+        if errors:
+            console.print(f"[yellow]Restore finished with {errors} error(s).[/yellow]")
+        else:
+            console.print(
+                f"[green]✓ Restored {len(files)} file(s) from "
+                f"[bold]{backup_path}[/bold][/green]"
+            )
 
 
 def _sibling_exe(name: str) -> str:
