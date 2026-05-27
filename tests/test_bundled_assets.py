@@ -126,8 +126,17 @@ class TestInstallBundledSystemAssets:
     def test_all_assets_installed_for_synthetic(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=False)
-        for key, (path, status) in result.items():
-            assert status == "installed", f"Key {key!r}: expected 'installed', got {status!r}"
+        # "music" is intentionally no_asset — attract-mode audio is in the MP4.
+        expected = {
+            "wheel_art": "installed",
+            "background": "installed",
+            "music": "no_asset",
+            "video": "installed",
+            "theme": "installed",
+        }
+        for key, expected_status in expected.items():
+            _, status = result[key]
+            assert status == expected_status, f"Key {key!r}: expected {expected_status!r}, got {status!r}"
 
     def test_theme_overwritten_when_overwrite_true(self, tmp_path):
         hs = _hs_dir(tmp_path)
@@ -168,10 +177,12 @@ def test_background_installs(tmp_path, system_name):
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
-def test_music_installs(tmp_path, system_name):
+def test_music_returns_no_asset(tmp_path, system_name):
+    # _MUSIC_ASSETS is intentionally empty — attract-mode audio is in the MP4.
+    # Active-browsing (main-menu scrolling) plays silence.
     hs = _hs_dir(tmp_path)
     _, status = install_system_music(hs, system_name)
-    assert status == "installed"
+    assert status == "no_asset"
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)

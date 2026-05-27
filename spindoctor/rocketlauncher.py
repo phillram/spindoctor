@@ -459,13 +459,15 @@ _BACKGROUND_ASSETS: dict[str, str] = {
     "Recently Played": "bg_Recently_Played.png",
 }
 
-# Background music — plays while the user browses the wheel.
-# HyperSpin path: Media\Main Menu\Sound\<SystemName>.mp3
-_MUSIC_ASSETS: dict[str, str] = {
-    "Favorites":       "music_Favorites.mp3",
-    "Most Played":     "music_Most_Played.mp3",
-    "Recently Played": "music_Recently_Played.mp3",
-}
+# Background music — plays while the user browses the wheel (active browsing,
+# not attract-mode idle).  HyperSpin path: Media\Main Menu\Sound\<SystemName>.mp3
+#
+# Intentionally empty: the attract-mode MP4 already contains the audio track,
+# and that covers the idle/attract use-case the cabinet cares about.  Separate
+# MP3 files would only add active-browsing music (when the user is scrolling the
+# main-menu wheel); we ship nothing there so HyperSpin uses silence during
+# active browsing.  Add entries here and drop MP3 files in assets/ to restore.
+_MUSIC_ASSETS: dict[str, str] = {}
 
 # Attract-mode video — static-frame MP4 containing the background image and
 # looped music at exactly 2× the music duration.  HyperSpin plays this video
@@ -615,9 +617,14 @@ def install_system_music(
 
         <hyperspin_dir>/Media/Main Menu/Sound/<system_name>.mp3
 
-    HyperSpin reads system-level attract-mode audio from ``Media/Main Menu/Sound/``.
-    This plays on the main menu while the wheel is highlighting this system,
-    not inside the system's game list.
+    HyperSpin reads active-browsing audio from ``Media/Main Menu/Sound/`` — this
+    plays while the user is scrolling through systems on the main menu, distinct
+    from the attract-mode audio carried by the MP4 video.
+
+    ``_MUSIC_ASSETS`` is currently empty: the attract-mode MP4 provides all the
+    audio the cabinet needs, and active-browsing silence is acceptable.
+    This function always returns ``("no_asset", None)`` until entries are added
+    to ``_MUSIC_ASSETS`` and matching MP3 files placed in ``assets/``.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
     When *overwrite* is ``True`` (``mainmenu add``) it is always written.

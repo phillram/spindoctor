@@ -40,16 +40,17 @@ SYSTEMS = [
 # ── Theme.xml ─────────────────────────────────────────────────────────────────
 
 # w="1" h="1": video element is a single invisible pixel → audio plays, image hidden.
-# x="512" y="384": centred on HyperSpin's 1024×768 canvas so the 1px dot appears
-# at dead-centre (barely visible even if HyperSpin renders it at minimum size).
+# x="1" y="1": top-left corner of HyperSpin's 1024×768 canvas — out of the way.
+#   (x/y is the centre-point of the element; at (1,1) the 1px element sits at the
+#    top-left corner and is fully on-screen)
 # forceaspect="none": do not scale up to preserve aspect ratio.
 # All other attributes copied verbatim from the MAME reference theme (BakerMan 2016).
 THEME_XML = """\
 <Theme>
     <video w="1"
            h="1"
-           x="512"
-           y="384"
+           x="1"
+           y="1"
            r="0"
            rx="0"
            ry="0"

@@ -34,12 +34,12 @@ Every `rebuild --apply` run installs these files without extra flags:
 | `Favorites.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
 | `Most Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
 | `Recently Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Favorites.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
-| `Most Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
-| `Recently Played.mp3` | `Media\Main Menu\Sound\` | Music played during attract mode |
-| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 57.7 s) |
-| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 57.9 s) |
-| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background + music, 61.5 s) |
+| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 57.7 s) |
+| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 57.9 s) |
+| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 61.5 s) |
+| `Favorites.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
+| `Most Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
+| `Recently Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
@@ -49,8 +49,9 @@ The rebuild summary reports each asset:
 ```
 Wheel art:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
 Background:  installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
-Music:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Sound\Favorites.mp3
+Music:       no bundled asset
 Video:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
+Theme zip:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
 ```
 
 ---
@@ -62,14 +63,15 @@ HyperSpin's attract mode (when the cabinet is idle) cycles through every system 
 
 1. The **wheel logo** (`Images\Wheel\<System>.png`) — always shown
 2. The **background image** (`Images\Backgrounds\<System>.png`) — shown behind the logo
-3. The **video** (`Video\<System>.mp4`) — plays if present; attract mode timer controls
-   when it advances regardless of video length (see `Attract_Mode_Time` in
-   `HyperSpin\Settings\HyperSpin.ini`)
-4. The **music** (`Sound\<System>.mp3`) — plays while this system is highlighted
+3. The **video** (`Video\<System>.mp4`) + **theme zip** (`Themes\<System>.zip`) —
+   the theme zip is required for HyperSpin to play the video; the video's visual
+   is hidden (1×1 px) so only its audio track plays and the background PNG shows
+4. The **active-browsing music** (`Sound\<System>.mp3`) — plays while the user
+   is *scrolling* the main-menu wheel (not during attract idle). SpinDoctor does
+   **not** bundle MP3 files — this slot plays silence during active browsing.
 
-The three synthetic wheels are part of this rotation.  Items 1, 2, and 4 are bundled
-and installed automatically.  Item 3 (attract mode video) is **not** bundled — see below
-if you want to add one.
+The three synthetic wheels are part of this rotation.  Items 1, 2, and 3 are
+bundled and installed automatically.  Item 4 is intentionally silent.
 
 ---
 
@@ -127,25 +129,29 @@ SpinDoctor detects the file exists and skips the install on every subsequent run
 
 ---
 
-### HyperSpin music and video not playing — settings checklist
+### HyperSpin video / audio not playing — settings checklist
 
-If the bundled MP3 music or video is not playing when a synthetic wheel is
-highlighted in the Main Menu, check the following HyperSpin settings:
+If attract-mode audio/video is not playing for a synthetic wheel, check:
 
 **`HyperSpin\Settings\HyperSpin.ini` — `[Main Menu]` section:**
 ```ini
 [Main Menu]
-Music=true
 Use_Last_Playlist=false
 ```
 
-If `Music=false` (or the key is missing), HyperSpin will not play `.mp3` files
-for any system in the main menu wheel, including the synthetic wheels.
+**Theme zip must exist** — `Media\Main Menu\Themes\<System>.zip` is required.
+Without it HyperSpin ignores the video entirely.  SpinDoctor installs this
+automatically during `rebuild --apply` and `mainmenu add --apply`.
 
-**Videos** only play during **attract mode** (when the cabinet is idle).
+**Videos only play during attract mode** (when the cabinet is idle).
 They do not play while you are actively browsing the main menu wheel.
 The `Attract_Mode_Time` setting controls how long the cabinet must be idle
 before attract mode starts; videos advance automatically when they end.
+
+> **Note on active-browsing music** — HyperSpin can play a separate `.mp3`
+> from `Media\Main Menu\Sound\<System>.mp3` while the user scrolls the wheel.
+> SpinDoctor does not bundle these files, so active-browsing plays silence.
+> To add browsing music, drop your own `.mp3` at that path manually.
 
 ---
 
@@ -252,17 +258,14 @@ HyperSpin\
         │       ├── Favorites.png          ← AUTO: attract-mode background
         │       ├── Most Played.png        ← AUTO: attract-mode background
         │       └── Recently Played.png    ← AUTO: attract-mode background
-        ├── Sound\
-        │   ├── Favorites.mp3              ← AUTO: attract-mode music
-        │   ├── Most Played.mp3            ← AUTO: attract-mode music
-        │   └── Recently Played.mp3        ← AUTO: attract-mode music
+        ├── Sound\                         ← active-browsing music (not bundled; plays silence)
         ├── Video\
-        │   ├── Favorites.mp4              ← AUTO: attract-mode video (57.7 s)
-        │   ├── Most Played.mp4            ← AUTO: attract-mode video (57.9 s)
-        │   ├── Recently Played.mp4        ← AUTO: attract-mode video (61.5 s)
+        │   ├── Favorites.mp4              ← AUTO: attract-mode video + audio (57.7 s)
+        │   ├── Most Played.mp4            ← AUTO: attract-mode video + audio (57.9 s)
+        │   ├── Recently Played.mp4        ← AUTO: attract-mode video + audio (61.5 s)
         │   └── ...
         └── Themes\
-            ├── Favorites.zip              ← AUTO: attract-mode theme (Theme.xml + SWFs + thumbnail)
+            ├── Favorites.zip              ← AUTO: attract-mode theme (Theme.xml — 1×1 video, top-left)
             ├── Most Played.zip            ← AUTO: attract-mode theme
             ├── Recently Played.zip        ← AUTO: attract-mode theme
             └── ...
