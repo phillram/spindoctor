@@ -78,6 +78,10 @@ _PART_FILE_STALE_DAYS = 7
 # but most manifests are < 1 MB. 50 MB is the "you've never cleaned up"
 # threshold; below that, no warning.
 _MANIFEST_DIR_WARN_BYTES = 50 * 1024 * 1024
+# Atomic-write temp files only live for milliseconds under normal operation.
+# A 5-minute threshold is generous enough to avoid false positives on a
+# heavily loaded machine, while still catching any genuine orphan.
+_ATOMIC_TMP_STALE_MINUTES = 5
 
 
 def _walk_size(path: Path) -> int:
@@ -309,6 +313,77 @@ def check_orphan_part_files(report: SelfDoctorReport, config) -> SelfCheck:
     return check
 
 
+def check_stale_atomic_writes(report: SelfDoctorReport, config) -> SelfCheck:
+    """Scan for ``*.tmp`` files left behind when an atomic XML/JSON write
+    was interrupted (power cut, forced shutdown) before the rename could
+    complete.
+
+    Under normal operation a ``.tmp`` file lives for milliseconds; anything
+    older than :data:`_ATOMIC_TMP_STALE_MINUTES` is almost certainly an
+    orphan and safe to delete.  The live ``.xml`` is unaffected — the temp
+    represents the *new* content that was never swapped in.
+    """
+    stale_minutes_threshold = _ATOMIC_TMP_STALE_MINUTES / (60 * 24)  # convert to days
+    stale: list[Path] = []
+    stale_bytes = 0
+    fresh = 0
+
+    # Search locations: Databases tree (XML writes) + config dir (JSON store)
+    search_roots: list[Path] = [CONFIG_DIR]
+    db_dir = getattr(config, "databases_dir", None)
+    if db_dir and Path(db_dir).exists():
+        search_roots.append(Path(db_dir))
+
+    for root in search_roots:
+        pattern_iter = root.rglob("*.tmp") if root == Path(db_dir or "") else root.glob("*.tmp")
+        for p in pattern_iter:
+            if not p.is_file():
+                continue
+            days = _days_since(p)
+            if days is None:
+                continue
+            if days > stale_minutes_threshold:
+                stale.append(p)
+                try:
+                    stale_bytes += p.stat().st_size
+                except OSError:
+                    pass
+            else:
+                fresh += 1
+
+    if not stale and not fresh:
+        check = SelfCheck(
+            name="stale_atomic_writes", status=Status.OK,
+            detail="No leftover atomic-write temp files found.",
+        )
+    elif not stale:
+        check = SelfCheck(
+            name="stale_atomic_writes", status=Status.OK,
+            detail=(
+                f"{fresh} .tmp file(s) present, all under "
+                f"{_ATOMIC_TMP_STALE_MINUTES} minutes old — likely "
+                "in-flight writes, not orphans."
+            ),
+        )
+    else:
+        check = SelfCheck(
+            name="stale_atomic_writes", status=Status.WARN,
+            detail=(
+                f"{len(stale)} orphan .tmp file(s) older than "
+                f"{_ATOMIC_TMP_STALE_MINUTES} minutes, totalling "
+                f"{format_bytes(stale_bytes)}. These were left by an "
+                "interrupted XML/JSON save (power cut or forced shutdown). "
+                "The live .xml files are intact. --fix will remove them, "
+                "or: spindoctor cleanup run --include stale-atomic-writes "
+                "--apply"
+            ),
+            reclaimable_bytes=stale_bytes,
+            fixable=True,
+        )
+    report.add(check)
+    return check
+
+
 def check_metadata_cache(report: SelfDoctorReport, config) -> SelfCheck:
     """The metadata cache (one JSON per scraped game) can grow into
     the hundreds of MB on a big library. INFO-level reporting — never
@@ -337,8 +412,9 @@ def check_metadata_cache(report: SelfDoctorReport, config) -> SelfCheck:
 
 def run_self_checks(config, fix: bool = False) -> SelfDoctorReport:
     """Run every check; return a populated report. When ``fix=True``,
-    safe deletions (stale rescue copies, stale .part files) are
-    performed in-place and recorded in ``report.fixes_applied``.
+    safe deletions (stale rescue copies, stale .part files, orphan
+    atomic-write temps) are performed in-place and recorded in
+    ``report.fixes_applied``.
     """
     report = SelfDoctorReport()
     check_config_dir_exists(report)
@@ -346,10 +422,11 @@ def run_self_checks(config, fix: bool = False) -> SelfDoctorReport:
     rescue_check = check_rescue_copies(report)
     check_manifest_dir_sizes(report)
     part_check = check_orphan_part_files(report, config)
+    atomic_check = check_stale_atomic_writes(report, config)
     check_metadata_cache(report, config)
 
     if fix:
-        _apply_safe_fixes(report, rescue_check, part_check, config)
+        _apply_safe_fixes(report, rescue_check, part_check, atomic_check, config)
     return report
 
 
@@ -357,12 +434,14 @@ def _apply_safe_fixes(
     report: SelfDoctorReport,
     rescue_check: SelfCheck,
     part_check: SelfCheck,
+    atomic_check: SelfCheck,
     config,
 ) -> None:
-    """Delete stale rescue copies + .part files. Never touches manifests,
-    config, current backups, or the metadata cache.
+    """Delete stale rescue copies, .part files, and orphan atomic-write
+    temps. Never touches manifests, config, current backups, or the
+    metadata cache.
 
-    Both stale-set computations re-walk disk (rather than caching the
+    All stale-set computations re-walk disk (rather than caching the
     list inside the SelfCheck) because the check ran moments ago — fast
     enough — and a fresh walk avoids deleting a file the user just
     explicitly created between check and fix.
@@ -391,6 +470,33 @@ def _apply_safe_fixes(
                         p.unlink()
                         report.fixes_applied.append(
                             f"Deleted stale .part file: {p.name}"
+                        )
+                    except OSError as e:
+                        report.fixes_applied.append(
+                            f"Could not delete {p.name}: {e}"
+                        )
+
+    if atomic_check.fixable and atomic_check.reclaimable_bytes > 0:
+        stale_threshold = _ATOMIC_TMP_STALE_MINUTES / (60 * 24)
+        search_roots: list[Path] = [CONFIG_DIR]
+        db_dir = getattr(config, "databases_dir", None)
+        if db_dir and Path(db_dir).exists():
+            search_roots.append(Path(db_dir))
+        for root in search_roots:
+            pattern_iter = (
+                root.rglob("*.tmp")
+                if root != CONFIG_DIR
+                else root.glob("*.tmp")
+            )
+            for p in pattern_iter:
+                if not p.is_file():
+                    continue
+                days = _days_since(p)
+                if days is not None and days > stale_threshold:
+                    try:
+                        p.unlink()
+                        report.fixes_applied.append(
+                            f"Deleted orphan atomic-write temp: {p.name}"
                         )
                     except OSError as e:
                         report.fixes_applied.append(

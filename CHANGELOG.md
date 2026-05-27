@@ -20,6 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **XML writes were not shutdown-safe** — Direct `file.write_bytes(data)` calls left a window where a forced shutdown mid-save produced a truncated, unparseable HyperSpin XML. All XML and JSON store writes in `database.py` and `favorites.py` now use a **temp-file + `os.replace` atomic rename**: the live path is only swapped in once the new content is fully flushed. The previous `.bak` mechanism is unchanged — shutdown safety now operates at the write level as well as the backup level.
 
+- **New `stale-atomic-writes` cleanup category** — If a write was interrupted before the atomic rename completed (power cut, `SIGKILL`), a `.tmp` sidecar file is left next to the live XML. `cleanup audit` and `cleanup run --include stale-atomic-writes` now surface and remove these. `self-doctor --fix` also removes them automatically (5-minute age threshold — a write normally completes in milliseconds).
+
 ---
 
 ## [2.4.10] - 2026-05-26

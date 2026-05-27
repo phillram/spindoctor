@@ -276,6 +276,47 @@ def _audit_exports(config: Config) -> CategoryReport:
     )
 
 
+def _stale_atomic_writes(config: Config) -> CategoryReport:
+    """``*.tmp`` files left behind when a write was interrupted before the
+    atomic rename completed (power cut, SIGKILL).
+
+    SpinDoctor writes all HyperSpin XML and JSON store files via a
+    temp-file + ``os.replace()`` rename.  Under normal operation the
+    ``.tmp`` file lives for milliseconds; after a forced shutdown it is
+    left beside the real file.  It contains the new (possibly partial)
+    content that was never swapped in — the live ``.xml`` is intact.
+    These files are always safe to delete.
+
+    Scans: ``<HyperSpin>/Databases/`` (recursive) for the XML write
+    paths, and ``~/.spindoctor/`` (non-recursive) for the JSON store
+    write path.
+    """
+    files: list[FileEntry] = []
+    db_base = config.databases_dir if config.hyperspin_dir else None
+    if db_base and Path(db_base).exists():
+        files += _scan_glob(Path(db_base), "*.tmp", recursive=True)
+    if CONFIG_DIR.exists():
+        files += _scan_glob(CONFIG_DIR, "*.tmp", recursive=False)
+    location_parts = []
+    if db_base:
+        location_parts.append(str(db_base))
+    location_parts.append(str(CONFIG_DIR))
+    return CategoryReport(
+        key="stale-atomic-writes",
+        label="Interrupted XML/JSON write temps",
+        description=(
+            "``*.tmp`` sidecar files left behind when an atomic write was "
+            "interrupted (power cut, forced shutdown) before the rename "
+            "completed. The real ``.xml``/``.json`` is intact. Always safe "
+            "to delete."
+        ),
+        location=", ".join(location_parts),
+        safe=True,
+        files=files,
+        note="These can only appear after an abnormal shutdown mid-save.",
+    )
+
+
 _CATEGORY_FNS: tuple[_CategoryFn, ...] = (
     _match_cache,
     _media_pick_cache,
@@ -284,6 +325,7 @@ _CATEGORY_FNS: tuple[_CategoryFn, ...] = (
     _listxml_cache,
     _preview_temp,
     _partial_downloads,
+    _stale_atomic_writes,
     _audit_exports,
     _misplaced_manifests,
     _migration_manifests,
