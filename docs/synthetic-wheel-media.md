@@ -14,12 +14,25 @@ Every `rebuild` / `--apply` run installs these files without extra flags:
 | `Favorites.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
 | `Most Played.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
 | `Recently Played.png` | `Media\Main Menu\Images\Wheel\` | Logo shown in HyperSpin's system selector |
+| `Favorites.png` | `Media\Favorites\Images\Backgrounds\` | Background image while browsing |
+| `Most Played.png` | `Media\Most Played\Images\Backgrounds\` | Background image while browsing |
+| `Recently Played.png` | `Media\Recently Played\Images\Backgrounds\` | Background image while browsing |
+| `Favorites.mp3` | `Media\Favorites\Sound\` | Background music while browsing |
+| `Most Played.mp3` | `Media\Most Played\Sound\` | Background music while browsing |
+| `Recently Played.mp3` | `Media\Recently Played\Sound\` | Background music while browsing |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
-**Install condition:** wheel art is only written when the destination file is absent —
-SpinDoctor never overwrites a file you placed there yourself.  To replace the bundled
-image with your own version, drop your PNG at the path above and rebuild will leave it
-alone on every subsequent run.
+**Install condition:** every asset is only written when the destination is absent —
+SpinDoctor never overwrites a file you placed there yourself.  To replace any bundled
+file with your own version, drop your file at the path shown above and rebuild will leave
+it alone on every subsequent run.
+
+The rebuild summary shows the status of each asset:
+```
+Wheel art:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
+Background:  installed → D:\Arcade\HyperSpin\Media\Favorites\Images\Backgrounds\Favorites.png
+Music:       installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\Favorites.mp3
+```
 
 Per-game media (wheel logos, backgrounds, videos, themes for each individual game in the
 list) is mirrored from the source system automatically by the media-mirror step.
@@ -28,10 +41,13 @@ list) is mirrored from the source system automatically by the media-mirror step.
 
 ## Media that requires manual setup
 
-The assets below control the look of the wheel itself (not the games inside it).
+The assets below are **not** bundled with SpinDoctor and require manual placement.
 They live under `Media\<SystemName>\` — for example `Media\Favorites\`.
 
 ### System background image
+
+> **Already bundled.** SpinDoctor installs a default background automatically.
+> Follow these instructions only if you want to replace it with your own.
 
 Shown as the backdrop when you're browsing inside the wheel.
 
@@ -78,6 +94,31 @@ spindoctor media-add "path\to\Favorites.zip" --system "Favorites" --type theme -
 
 **Manually:** Copy the `.zip` file (do **not** extract it — HyperSpin reads the archive
 directly) to the Themes path above.
+
+---
+
+### Background music
+
+> **Already bundled.** SpinDoctor installs default background music automatically.
+> Follow these instructions only if you want to replace it with your own.
+
+Plays on loop while browsing the wheel.
+
+**File:** `Media\<SystemName>\Sound\<SystemName>.mp3`
+
+**Examples:**
+```
+Media\Favorites\Sound\Favorites.mp3
+Media\Most Played\Sound\Most Played.mp3
+Media\Recently Played\Sound\Recently Played.mp3
+```
+
+**Via SpinDoctor CLI:**
+```bat
+spindoctor media-add "path\to\Favorites.mp3" --system "Favorites" --type sound --game "Favorites" --apply
+```
+
+**Manually:** Copy your `.mp3` to the Sound path above.
 
 ---
 
@@ -141,27 +182,31 @@ HyperSpin\
     ├── Main Menu\
     │   └── Images\
     │       └── Wheel\
-    │           ├── Favorites.png          ← installed automatically by rebuild
-    │           ├── Most Played.png        ← installed automatically by rebuild
-    │           └── Recently Played.png    ← installed automatically by rebuild
+    │           ├── Favorites.png          ← AUTO: wheel selector logo
+    │           ├── Most Played.png        ← AUTO: wheel selector logo
+    │           └── Recently Played.png    ← AUTO: wheel selector logo
     │
     └── Favorites\
         ├── Images\
         │   ├── Wheel\                     ← per-game wheel art (mirrored from source)
         │   ├── Backgrounds\
-        │   │   └── Favorites.png          ← system background (manual)
+        │   │   └── Favorites.png          ← AUTO: system background image
         │   └── Artwork1\                  ← per-game art (mirrored from source)
         ├── Themes\
-        │   ├── Favorites.zip              ← system theme (manual)
+        │   ├── Favorites.zip              ← system theme (manual — see above)
         │   └── <game>.zip                 ← per-game themes (mirrored from source)
         ├── Sound\
-        │   ├── navigate.mp3               ← navigation sounds (manual)
+        │   ├── Favorites.mp3              ← AUTO: background music
+        │   ├── navigate.mp3               ← navigation sounds (manual — see above)
         │   ├── select.mp3
         │   └── ...
         └── Video\
-            ├── Favorites.mp4              ← system intro video (manual)
+            ├── Favorites.mp4              ← system intro video (manual — see above)
             └── <game>.mp4                 ← per-game videos (mirrored from source)
 ```
+
+**AUTO** = installed by `rebuild --apply` from the bundled package assets.  Only written
+when absent — user files at these paths are never overwritten.
 
 > The same layout applies to `Most Played\` and `Recently Played\` — substitute the
 > system name everywhere `Favorites` appears.

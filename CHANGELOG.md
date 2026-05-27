@@ -8,9 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **Bundled Main Menu wheel art for synthetic wheels** — SpinDoctor now ships high-quality logo images for all three synthetic wheels (`Favorites`, `Most Played`, `Recently Played`). These are automatically installed to `Media\Main Menu\Images\Wheel\` during every `rebuild --apply` run, so the wheels show a polished logo in HyperSpin's system selector instead of plain text. The install is idempotent: if you replace the bundled image with your own file, SpinDoctor will detect it and leave it untouched on every subsequent rebuild. Wheel art status (`installed` / `skipped` / `no_asset`) is reported in the rebuild summary.
+- **Bundled system media for all three synthetic wheels** — SpinDoctor now ships nine media assets (wheel selector logo + system background + background music, one of each per wheel) for `Favorites`, `Most Played`, and `Recently Played`. Every `rebuild --apply` automatically installs them at the correct HyperSpin paths:
+  - `Media\Main Menu\Images\Wheel\<SystemName>.png` — wheel selector logo (1536 × 1024 px)
+  - `Media\<SystemName>\Images\Backgrounds\<SystemName>.png` — background image while browsing (2752 × 1536 px)
+  - `Media\<SystemName>\Sound\<SystemName>.mp3` — background music while browsing (192 kbps MP3)
 
-- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: what SpinDoctor installs automatically, and step-by-step instructions (CLI + manual) for system backgrounds, themes, navigation sounds, and video previews.
+  All installs are idempotent: if a file already exists (user-placed or previously installed), SpinDoctor skips it. The rebuild summary shows a `Wheel art / Background / Music` row for each asset (`installed` / `skipped` / `no_asset`). MP3 files are now included in the `pyproject.toml` package-data glob.
+
+- **`install_bundled_system_assets()`** — new umbrella function in `rocketlauncher.py` that runs `install_system_wheel_art()`, `install_system_background()`, and `install_system_music()` in one call. Returns `{type: (path, status)}`.
+
+- **`docs/synthetic-wheel-media.md`** — new guide covering all media layers for the synthetic wheels: full table of what gets auto-installed, and step-by-step instructions (CLI + manual) for themes, navigation sounds, and video previews.
 
 ---
 
