@@ -1063,9 +1063,15 @@ class ColorEntry:
             raise ValueError(
                 f"Expected exactly 6 hex digits (RRGGBB), got '{hex_str}'"
             )
-        r255 = int(h[0:2], 16)
-        g255 = int(h[2:4], 16)
-        b255 = int(h[4:6], 16)
+        try:
+            r255 = int(h[0:2], 16)
+            g255 = int(h[2:4], 16)
+            b255 = int(h[4:6], 16)
+        except ValueError:
+            raise ValueError(
+                f"'{hex_str}' contains invalid characters. "
+                "Expected 6 hex digits (0-9, A-F), e.g. 'FF0000' for red."
+            )
         return cls(
             name=name,
             r=round(r255 / 255 * 48),
@@ -1223,6 +1229,15 @@ def apply_color_rename(
         If ``ledblinky_dir`` is not configured, ``Color-RGB.ini`` is absent,
         or ``old_name`` is not found in the file.
     """
+    # Validate new RGB values are within the 0-48 intensity range
+    for _ch, _val in (("R", new_r), ("G", new_g), ("B", new_b)):
+        if _val is not None and not (0 <= _val <= 48):
+            raise ValueError(
+                f"{_ch} value {_val} is outside the valid 0-48 intensity range "
+                f"(LedBlinky uses 0-48, not 0-255). "
+                f"Use --hex for standard 8-bit hex input."
+            )
+
     result = ColorRenameResult(
         old_name=old_name, new_name=new_name, dry_run=dry_run
     )

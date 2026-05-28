@@ -6043,7 +6043,10 @@ class _SpinDoctorGUI:
         self.ttk.Label(pre_bkp_frame, text="Backup folder").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
-        self._pre_migrate_backup_var = self.tk.StringVar()
+        _migrate_cfg = load_config()
+        self._pre_migrate_backup_var = self.tk.StringVar(
+            value=getattr(_migrate_cfg, "backup_dir", "") or ""
+        )
         self.ttk.Entry(
             pre_bkp_frame, textvariable=self._pre_migrate_backup_var, width=50,
         ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
@@ -9878,6 +9881,23 @@ class _SpinDoctorGUI:
         name_changed = (new_name != old_name)
         hex_changed = (len(hex_val) == 6 and hex_val != self._color_original_hex)
 
+        # Validate hex string before sending to CLI
+        if len(hex_val) > 0 and len(hex_val) != 6:
+            self.messagebox.showwarning(
+                "Invalid hex color",
+                f"'{hex_val}' must be exactly 6 hex characters (e.g. FF0000 for red).",
+            )
+            return
+        if hex_changed:
+            import re as _re
+            if not _re.fullmatch(r"[0-9A-Fa-f]{6}", hex_val):
+                self.messagebox.showwarning(
+                    "Invalid hex color",
+                    f"'{hex_val}' contains non-hex characters.\n"
+                    "Use digits 0-9 and letters A-F only (e.g. FF0000 for red).",
+                )
+                return
+
         if not name_changed and not hex_changed:
             self.messagebox.showinfo(
                 "No changes",
@@ -10467,7 +10487,9 @@ class _SpinDoctorGUI:
         scrub_restore_path_row = self.ttk.Frame(scrub_restore_lf)
         scrub_restore_path_row.pack(fill="x", padx=6, pady=(4, 2))
         self.ttk.Label(scrub_restore_path_row, text="Backup folder:").pack(side="left")
-        self._scrub_restore_path_var = self.tk.StringVar()
+        self._scrub_restore_path_var = self.tk.StringVar(
+            value=getattr(_scrub_cfg, "backup_dir", "") or ""
+        )
         self.ttk.Entry(
             scrub_restore_path_row, textvariable=self._scrub_restore_path_var, width=50,
         ).pack(side="left", padx=6, fill="x", expand=True)
