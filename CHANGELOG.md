@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.17] - 2026-05-28
+
 ### Changed
 
 - **LEDBlinky tab — Settings.ini Patch — in-game unused buttons** — replaced the "Turn off unused buttons during gameplay" checkbox with an **In-game unused buttons** animation picker (combobox, same style as FE idle animation). Leave blank to silence unused buttons (the recommended default, same as before); select any `.lwa` file to play that animation on all unmapped buttons during gameplay. The same **Refresh list** button populates both animation pickers. `GamePlayLWAFile` is always written explicitly so the setting is never left at LedBlinky's default `<Random>`.
@@ -1012,7 +1016,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.16...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.17...HEAD
+[2.4.17]: https://github.com/phillram/spindoctor/compare/v2.4.16...v2.4.17
 [2.4.16]: https://github.com/phillram/spindoctor/compare/v2.4.15...v2.4.16
 [2.4.15]: https://github.com/phillram/spindoctor/compare/v2.4.14...v2.4.15
 [2.4.14]: https://github.com/phillram/spindoctor/compare/v2.4.13...v2.4.14
