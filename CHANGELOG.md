@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.14] - 2026-05-27
+
 ### Added
 
 - **`Default.zip` theme fallback for per-game media mirror** — When a game has no per-game `<GameName>.zip` in the source system's Themes folder, SpinDoctor now copies the source system's `Default.zip` (HyperSpin's console-wide fallback theme) as `<GameName>.zip` in the synthetic wheel's Themes folder. This means games like Kirby's Adventure — which rely on the NES console theme rather than a dedicated per-game zip — now display the same themed background and video layout in Favorites / Recently Played / Most Played that they show in their native wheel. The fallback only fires when `Default.zip` exists in the source system's Themes folder and the game has no per-game theme; games with per-game themes are unaffected.
@@ -960,7 +964,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.13...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.14...HEAD
+[2.4.14]: https://github.com/phillram/spindoctor/compare/v2.4.13...v2.4.14
 [2.4.13]: https://github.com/phillram/spindoctor/compare/v2.4.12...v2.4.13
 [2.4.12]: https://github.com/phillram/spindoctor/compare/v2.4.11...v2.4.12
 [2.4.11]: https://github.com/phillram/spindoctor/compare/v2.4.10...v2.4.11
