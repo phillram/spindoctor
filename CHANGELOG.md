@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.15] - 2026-05-27
+
 ### Fixed
 
 - **`Kirby's Adventure (Favorites)` no longer appears in Recently Played / Most Played** — Two gaps in the synthetic-system exclusion logic allowed `system="Favorites"` entries to leak into the rebuilt wheels. (1) The `Global Statistics.ini` fallback parser (`_read_global_statistics_ini`) in both `recent.py` and `playtime.py` only skipped the `Toolkit` pseudo-system; it now also respects the full `exclude_systems` set, so `Favorites` / `Recently Played` / `Most Played` entries are dropped even when the fallback path is active. (2) `get_systems()` returns synthetic wheel names as "known systems" because SpinDoctor creates `Databases/Favorites/` etc. on disk; `rebuild` and `build_most_played_wheel` now strip `SYNTHETIC_SYSTEM_NAMES` from `known` before the source-system filter runs, closing the second path. Galaga played directly from MAME still appears in both wheels — only entries whose recorded system is a synthetic wheel name are excluded.
@@ -968,7 +972,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.14...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.15...HEAD
+[2.4.15]: https://github.com/phillram/spindoctor/compare/v2.4.14...v2.4.15
 [2.4.14]: https://github.com/phillram/spindoctor/compare/v2.4.13...v2.4.14
 [2.4.13]: https://github.com/phillram/spindoctor/compare/v2.4.12...v2.4.13
 [2.4.12]: https://github.com/phillram/spindoctor/compare/v2.4.11...v2.4.12
