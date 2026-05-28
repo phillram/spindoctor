@@ -6198,6 +6198,103 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
         )
 
 
+@ledblinky_group.command("patch-settings")
+@click.option(
+    "--fe-lwa", default=None,
+    help="LWA animation filename for the frontend idle state (FELWAFile in "
+         "[FEOptions]).  E.g. 'Slow Fade.lwa'.  Pass empty string to stop "
+         "all animation and show static colors.  Omit to leave unchanged.",
+)
+@click.option(
+    "--game-lwa", default="",
+    help="LWA animation filename for in-game unassigned buttons "
+         "(GamePlayLWAFile in [GameOptions]).  Default: '' (empty) which "
+         "turns off random flashing on unused buttons during gameplay.",
+)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the patch (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the .bak backup when writing in-place.")
+def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
+    """Patch Settings.ini to fix idle animation and silent unused buttons.
+
+    \b
+    Targets two keys in LEDBlinky's Settings.ini:
+
+      GamePlayLWAFile (in [GameOptions])
+        Controls what happens to buttons NOT used by the current game.
+        Default new value: "" (empty) — unassigned buttons go dark in-game
+        instead of flashing randomly.
+
+      FELWAFile (in [FEOptions])
+        Controls the animation while browsing the HyperSpin frontend.
+        Specify --fe-lwa to swap <Random> for a calmer animation file, or
+        pass "" to show static colors instead.
+
+    \b
+    Examples:
+      spindoctor ledblinky patch-settings               # preview only
+      spindoctor ledblinky patch-settings --apply       # fix in-game flash
+      spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply
+      spindoctor ledblinky patch-settings --fe-lwa "" --apply  # static FE
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    try:
+        result = lb.patch_ledblinky_settings(
+            config,
+            fe_lwa_file=fe_lwa,
+            game_play_lwa_file=game_lwa,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1) from exc
+
+    console.print(f"\n[blue bold]Settings.ini[/blue bold]  {result.settings_path}")
+
+    if not result.changes:
+        console.print(
+            "  [green]✓ No changes needed — already at the requested values.[/green]"
+        )
+    else:
+        for change in result.changes:
+            verb = (
+                "[yellow]would change[/yellow]"
+                if result.dry_run
+                else "[green]changed[/green]"
+            )
+            console.print(f"  {verb}: {change}")
+
+        if not result.dry_run and result.backup_path:
+            console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
+
+    # Hint: list available .lwa files
+    lwa_files = lb.list_lwa_files(config)
+    if lwa_files:
+        sample = ", ".join(lwa_files[:8])
+        ellipsis_ = " …" if len(lwa_files) > 8 else ""
+        console.print(
+            f"\n[dim]Available .lwa files ({len(lwa_files)} found): "
+            f"{sample}{ellipsis_}[/dim]"
+        )
+    elif config.ledblinky_dir:
+        console.print(
+            "[dim]No .lwa files found in ledblinky_dir — "
+            "check that the directory is correct.[/dim]"
+        )
+
+
 # ─── add-system ───────────────────────────────────────────────────────────────
 
 # HyperSpin Main Menu media slots that we know how to fetch from ScreenScraper.

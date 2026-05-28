@@ -9512,12 +9512,123 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             frame,
             text=("Tip: configure ledblinky_dir in the Setup tab if your "
-                  "LEDBlinky install isn't at the default location. The "
-                  "Backup tab can snapshot the LEDBlinky install before "
-                  "you run Generate with --overwrite."),
+                  "LEDBlinky install isn't at the default location. Generate "
+                  "automatically saves .bak copies of controls.ini and "
+                  "colors.ini when backup_before_modify is enabled (default)."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 
+        # ── Settings.ini Patch ───────────────────────────────────────────────
+        _led_cfg = load_config()
+
+        sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
+        sp_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(sp_frame, text="FE idle animation").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_fe_lwa_var = self.tk.StringVar(value="<Random>")
+        self._led_fe_lwa_combo = self.ttk.Combobox(
+            sp_frame, textvariable=self._led_fe_lwa_var, width=36,
+        )
+        self._led_fe_lwa_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            sp_frame, text="Refresh list",
+            command=self._refresh_led_lwa_list,
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self.ttk.Label(
+            sp_frame,
+            text=("Tip: open your LEDBlinky folder to see available .lwa files. "
+                  "Use 'Refresh list' to populate the dropdown. "
+                  "Leave blank to show static colors during idle."),
+            wraplength=700, justify="left", foreground=_FG_DIM,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+
+        self._led_quiet_gameplay_var = self.tk.BooleanVar(value=True)
+        self.ttk.Checkbutton(
+            sp_frame,
+            text="Turn off unused buttons during gameplay (recommended)",
+            variable=self._led_quiet_gameplay_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self._led_patch_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sp_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_patch_apply_var,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            sp_frame, text="Patch Settings.ini",
+            command=self._run_led_patch_settings,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # Populate .lwa list immediately if ledblinky_dir is already set
+        self._refresh_led_lwa_list()
+
+        # ── Backup / Restore ─────────────────────────────────────────────────
+        _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
+
+        br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
+        br_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(br_frame, text="Backup folder").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_backup_dir_var = self.tk.StringVar(value=_led_backup_default)
+        self.ttk.Entry(
+            br_frame, textvariable=self._led_backup_dir_var, width=48,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            br_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._led_backup_dir_var, "Pick LEDBlinky backup folder",
+            ),
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self._led_backup_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            br_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_backup_apply_var,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            br_frame, text="Create backup",
+            command=self._run_led_backup,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        self.ttk.Separator(br_frame, orient="horizontal").grid(
+            row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4),
+        )
+
+        self.ttk.Label(br_frame, text="Restore from").grid(
+            row=4, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_restore_path_var = self.tk.StringVar(value=_led_backup_default)
+        self.ttk.Entry(
+            br_frame, textvariable=self._led_restore_path_var, width=48,
+        ).grid(row=4, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            br_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._led_restore_path_var, "Pick LEDBlinky backup to restore",
+            ),
+        ).grid(row=4, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self._led_restore_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            br_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_restore_apply_var,
+        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            br_frame, text="Restore backup",
+            command=self._run_led_restore,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        frame.columnconfigure(1, weight=1)
         return frame
 
     def _run_led_generate(self) -> None:
@@ -9540,6 +9651,71 @@ class _SpinDoctorGUI:
         # the same Apply checkbox the Generate path uses.
         args = ["ledblinky", "fix"]
         if self._led_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_backup(self) -> None:
+        target = self._led_backup_dir_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick the folder where the backup should be written.",
+            )
+            return
+        args = ["backup", "create", "--target", target, "--include", "ledblinky"]
+        if self._led_backup_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_restore(self) -> None:
+        backup_path = self._led_restore_path_var.get().strip()
+        if not backup_path:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick the backup folder to restore from.",
+            )
+            return
+        if self._led_restore_apply_var.get():
+            if not self.messagebox.askyesno(
+                "Restore LEDBlinky backup?",
+                f"This will restore LEDBlinky files from:\n{backup_path}\n\n"
+                "Existing files on disk may be overwritten. "
+                "This cannot be undone.\n\nContinue?",
+            ):
+                return
+        args = ["backup", "restore", "--backup", backup_path, "--include", "ledblinky"]
+        if self._led_restore_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _refresh_led_lwa_list(self) -> None:
+        """Populate the FE-animation combobox with .lwa files from ledblinky_dir."""
+        try:
+            from . import ledblinky as lb
+            cfg = load_config()
+            lwa_files = lb.list_lwa_files(cfg)
+        except Exception:
+            lwa_files = []
+        # Always include a blank entry (static / no animation) and preserve
+        # the current text so it isn't clobbered by the refresh.
+        values = [""] + lwa_files
+        self._led_fe_lwa_combo["values"] = values
+        # Keep the current value if it's still valid; otherwise leave as-is.
+        current = self._led_fe_lwa_var.get()
+        if current not in values and current != "<Random>":
+            pass  # leave the user's freeform text alone
+
+    def _run_led_patch_settings(self) -> None:
+        fe_lwa = self._led_fe_lwa_var.get().strip()
+        # Treat the legacy "<Random>" sentinel as "leave unchanged" (None)
+        # so an accidental click doesn't write "<Random>" literally.
+        fe_lwa_arg = None if fe_lwa == "<Random>" else fe_lwa
+
+        game_lwa = "" if self._led_quiet_gameplay_var.get() else "<Random>"
+        args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
+        if fe_lwa_arg is not None:
+            args += ["--fe-lwa", fe_lwa_arg]
+        if self._led_patch_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 

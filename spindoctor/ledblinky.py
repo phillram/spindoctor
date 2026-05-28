@@ -881,3 +881,149 @@ def apply_fix(
         results["menu_inis"].append(info)
 
     return results
+
+
+# ─── Settings.ini patch ────────────────────────────────────────────────────────
+
+
+def list_lwa_files(config: Config) -> list[str]:
+    """Return a sorted list of ``.lwa`` filenames found in ``ledblinky_dir``.
+
+    These are the animation files LedBlinky can play.  The list is used to
+    populate the FE-animation picker in the GUI and the dry-run hint in the CLI.
+    Returns an empty list if ``ledblinky_dir`` is not set or the directory does
+    not exist yet.
+    """
+    if not config.ledblinky_dir:
+        return []
+    base = Path(config.ledblinky_dir)
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.glob("*.lwa") if p.is_file())
+
+
+def _patch_ini_keys(
+    text: str, patches: "dict[str, dict[str, str]]"
+) -> "tuple[str, list[str]]":
+    """Patch ``key=value`` pairs in specific sections of an INI text blob.
+
+    ``patches`` maps ``{section_name: {key: new_value}}``.  Only lines whose
+    key matches exactly (case-sensitive) are touched; everything else —
+    comments, blank lines, ordering, line endings — is preserved verbatim.
+
+    Returns ``(patched_text, list_of_human_readable_change_descriptions)``.
+    """
+    lines = text.splitlines(keepends=True)
+    current_section: Optional[str] = None
+    result: list[str] = []
+    changes: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        # Track current [Section]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            result.append(line)
+            continue
+
+        if current_section and current_section in patches:
+            section_patches = patches[current_section]
+            replaced = False
+            for key, new_value in section_patches.items():
+                # Match "Key=..." or "Key =..." (with optional space before =)
+                if re.match(rf"^{re.escape(key)}\s*=", stripped):
+                    old_value = stripped.split("=", 1)[1]
+                    if old_value != new_value:
+                        ending = (
+                            "\r\n" if line.endswith("\r\n")
+                            else "\n" if line.endswith("\n")
+                            else ""
+                        )
+                        result.append(f"{key}={new_value}{ending}")
+                        changes.append(
+                            f"[{current_section}] {key}: "
+                            f"'{old_value}' → '{new_value}'"
+                        )
+                    else:
+                        result.append(line)
+                    replaced = True
+                    break
+            if not replaced:
+                result.append(line)
+        else:
+            result.append(line)
+
+    return "".join(result), changes
+
+
+@dataclass
+class SettingsPatchResult:
+    """Outcome of :func:`patch_ledblinky_settings`."""
+
+    settings_path: Optional[Path] = None
+    backup_path: Optional[Path] = None
+    changes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    dry_run: bool = False
+
+
+def patch_ledblinky_settings(
+    config: Config,
+    fe_lwa_file: Optional[str] = None,
+    game_play_lwa_file: str = "",
+    dry_run: bool = True,
+    backup: bool = True,
+) -> SettingsPatchResult:
+    """Patch ``<ledblinky_dir>/Settings.ini`` for better idle and in-game behavior.
+
+    Parameters
+    ----------
+    fe_lwa_file:
+        Animation file (basename only, e.g. ``"Slow Fade.lwa"``) to set as the
+        frontend idle animation (``FELWAFile`` in ``[FEOptions]``).
+        Pass ``None`` to leave the key unchanged.
+        Pass ``""`` to silence all animation (static colors while browsing).
+    game_play_lwa_file:
+        Animation file for buttons *not* used by the current game during
+        gameplay (``GamePlayLWAFile`` in ``[GameOptions]``).
+        Defaults to ``""`` (empty string), which silences the random-flash on
+        unused buttons and lets them fall back to their ``defaultInactive``
+        color (typically ``0,0,0,0`` = off in the default control group).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured or ``Settings.ini`` is absent.
+    """
+    result = SettingsPatchResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    settings_path = Path(config.ledblinky_dir) / "Settings.ini"
+    result.settings_path = settings_path
+
+    if not settings_path.exists():
+        raise ValueError(f"Settings.ini not found at {settings_path}")
+
+    text = settings_path.read_text(encoding="utf-8", errors="replace")
+
+    # Build patch map — only include FELWAFile if caller explicitly passed a value.
+    patches: dict[str, dict[str, str]] = {
+        "GameOptions": {"GamePlayLWAFile": game_play_lwa_file},
+    }
+    if fe_lwa_file is not None:
+        patches.setdefault("FEOptions", {})["FELWAFile"] = fe_lwa_file
+
+    new_text, changes = _patch_ini_keys(text, patches)
+    result.changes = changes
+
+    if changes and not dry_run:
+        if backup:
+            result.backup_path = _backup(settings_path)
+        settings_path.write_text(new_text, encoding="utf-8")
+
+    return result
