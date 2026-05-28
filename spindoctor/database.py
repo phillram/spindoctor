@@ -336,7 +336,7 @@ class HyperspinDatabase:
         if backup and target.exists() and output_path is None:
             stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             if backup_dir is not None:
-                subfolder = backup_dir / target.stem
+                subfolder = backup_dir / "HyperSpin"
                 try:
                     subfolder.mkdir(parents=True, exist_ok=True)
                 except OSError as exc:

@@ -1085,39 +1085,59 @@ A timestamped `.bak` backup is written next to each modified file before any cha
 
 When a ROM has no entry in `Colors.ini`, LedBlinky treats all of its buttons as inactive and turns them off. This is the expected behavior for MAME games (SpinDoctor's `generate` populates their entries), but console games, PC games, and any other system that doesn't feed MAME data will have no entry — meaning all buttons go dark during gameplay.
 
-`fill-defaults` closes that gap by appending a uniform default entry for every ROM in the HyperSpin databases that is not already covered:
+`fill-defaults` closes that gap by appending a uniform default entry for every ROM in the HyperSpin databases that is not already covered. With `--players 2` and `--buttons 8` each generated entry looks like:
 
 ```ini
 [rom_name]
 P1_BUTTON1=White
-P1_BUTTON2=White
 ...
+P1_BUTTON8=White
 P1_JOYSTICK=White
 P1_START=White
 P1_COIN=White
+P2_BUTTON1=White
+...
+P2_BUTTON8=White
+P2_JOYSTICK=White
+P2_START=White
+P2_COIN=White
 ```
 
-Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified.
+If `--admin-buttons 6 --admin-color Green` is also set, an additional admin block is appended on the next player slot (P3 for a 2-player cabinet):
+
+```ini
+P3_BUTTON1=Green
+...
+P3_BUTTON6=Green
+P3_COIN=Green
+P3_START=Green
+```
+
+Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified. **Synthetic wheels** (Favorites, Recently Played, Most Played) are included in the scan so games that appear only in those wheels also receive entries. Because `Colors.ini` is keyed by ROM name (not by system), any ROM whose name already exists from a real-system run is automatically covered for synthetic wheels too.
 
 ```bat
-spindoctor ledblinky fill-defaults                         :: preview all unmapped ROMs
-spindoctor ledblinky fill-defaults --apply                 :: add default White entries
-spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply  :: one system only
-spindoctor ledblinky fill-defaults --color Blue --apply    :: use Blue instead of White
-spindoctor ledblinky fill-defaults --buttons 8 --apply     :: generate 8 button entries per ROM
+spindoctor ledblinky fill-defaults                                     :: preview all
+spindoctor ledblinky fill-defaults --apply                             :: commit all
+spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply    :: 2-player, 8 buttons
+spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
+spindoctor ledblinky fill-defaults --color Purple --apply              :: purple buttons
+spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply   :: one system
 ```
 
 **Options:**
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--color NAME` | `White` | Named color from `Color-RGB.ini` to assign to every button |
-| `--buttons N` | `6` | Number of P1_BUTTON entries to generate per ROM (1-8) |
-| `--system SYSTEM` | _(all systems)_ | Limit to one HyperSpin system |
+| `--color NAME` | `White` | Named color from `Color-RGB.ini` for player buttons |
+| `--buttons N` | `6` | Number of P{n}_BUTTON entries per player (1-8) |
+| `--players N` | `1` | Player blocks to generate (1-4). All players mirror P1's color |
+| `--admin-buttons N` | `0` | Extra admin/cabinet buttons on player slot `players+1`. 0 = disabled |
+| `--admin-color NAME` | `White` | Color for the admin button block |
+| `--system SYSTEM` | _(all, incl. synthetic)_ | Limit to one HyperSpin system |
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip `.bak` backup before writing |
 
-**Recommended workflow** for a cabinet with mixed MAME + console games:
+**Recommended workflow** for a 2-player cabinet with mixed MAME + console games:
 
 ```bat
 :: 1. Generate MAME entries (hex format)
@@ -1126,12 +1146,64 @@ spindoctor ledblinky generate --system MAME --apply
 :: 2. Convert hex entries to named format so renames propagate
 spindoctor ledblinky colors normalize --apply
 
-:: 3. Fill gaps for console/PC ROMs with no entry
-spindoctor ledblinky fill-defaults --apply
+:: 3. Fill gaps for console/PC ROMs — 2 players, 8 buttons each, 6 admin buttons
+spindoctor ledblinky fill-defaults --players 2 --buttons 8 --admin-buttons 6 --admin-color Green --apply
 
 :: 4. Suppress unused-button flash (Settings.ini)
 spindoctor ledblinky patch-settings --apply
 ```
+
+#### `ledblinky colors brightness`
+
+Set all `Color-RGB.ini` colors to a uniform brightness level. Each color is first **normalized to its maximum possible intensity** (dominant channel → 48), then scaled by `SCALE/100`. This means every button — P1, P2, admin, Start — is guaranteed to be at the same brightness level at any given percentage, even if some colors were previously stored at reduced intensity.
+
+```bat
+spindoctor ledblinky colors brightness --scale 100 --apply   :: maximum brightness (normalizes all colors)
+spindoctor ledblinky colors brightness --scale 50  --apply   :: half brightness
+spindoctor ledblinky colors brightness --scale 10  --apply   :: night mode
+spindoctor ledblinky colors brightness --scale 75            :: preview 75% (dry-run)
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--scale PCT` | _(required)_ | Target brightness 0–100 %. **100 = maximum brightness** (dominant channel = 48); dim colors are boosted. 0 = all off |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip `.bak` backup before writing |
+
+A timestamped `.bak` backup of `Color-RGB.ini` is written to the configured backup folder (or next to the source file if no backup folder is set) before any change. Pure-black entries (0,0,0) are left untouched so truly-off buttons stay off.
+
+#### `ledblinky admin-buttons set`
+
+Set fixed per-button colors for your cabinet-level (admin) buttons **across every ROM section** in `Colors.ini`. Unlike `fill-defaults` (which only touches ROMs with no existing entry), this command walks every existing section and writes (or overwrites) the `P{player}_BUTTON*` keys so the admin buttons always show the same colors regardless of which game is running.
+
+```bat
+:: Per-button colors (one color per button, comma-separated)
+spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply
+
+:: All buttons the same color
+spindoctor ledblinky admin-buttons set --color Green --count 6 --apply
+
+:: Specify the player slot explicitly (default: 3 for a 2-player cabinet)
+spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" --apply
+
+:: Dry-run preview (default — no files written)
+spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow"
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--player N` | `3` | Player slot for admin buttons (P1–P6). Use `players+1` of your cabinet — e.g. 3 for a 2-player cabinet |
+| `--colors C1,C2,...` | _(required)_ | Comma-separated color names, one per button. Length determines button count. Use `--colors` **or** `--color`+`--count`, not both |
+| `--color COLOR` | — | Single color applied to all buttons (convenience; combine with `--count`) |
+| `--count N` | `6` | Number of buttons when using `--color` (ignored with `--colors`) |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip `.bak` backup before writing |
+
+All color names are validated against the `Color-RGB.ini` palette. A timestamped `.bak` backup of `Colors.ini` is written to the configured backup folder before any change.
 
 ---
 
