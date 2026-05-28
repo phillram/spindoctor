@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Release zip reduced by ~120 MB** — The `assets/archive/` subfolder (deprecated oversized originals kept for reference) was accidentally bundled into every PyInstaller exe via a recursive `--add-data` on the whole assets directory. The pip package already excluded it (non-recursive glob in `pyproject.toml`); the build script now does the same by adding only top-level asset files.
+
 ---
 
 ## [2.4.15] - 2026-05-27
