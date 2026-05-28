@@ -122,10 +122,15 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
         # repo.
         cmd += ["--icon", str(ICON)]
     if ASSETS_DIR.exists():
-        # `--onefile` extracts to a temp dir at runtime, so `_apply_icon()`
-        # (gui.py) needs the assets bundled or its `iconbitmap()` call
-        # silently fails and the window header keeps the feather.
-        cmd += ["--add-data", f"{ASSETS_DIR}{os.pathsep}spindoctor/assets"]
+        # Bundle only the top-level asset files — NOT subdirectories.
+        # The `archive/` subdirectory holds deprecated originals kept for
+        # reference; it is intentionally excluded from pip installs (the
+        # pyproject.toml glob `assets/*.ext` is non-recursive) and must
+        # also be excluded here so it doesn't bloat every frozen exe by
+        # ~24 MB × 5 = ~120 MB in the release zip.
+        for asset_file in sorted(ASSETS_DIR.iterdir()):
+            if asset_file.is_file():
+                cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS:
         cmd += ["--hidden-import", hi]
     cmd.append(str(shim))
