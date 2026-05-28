@@ -6530,6 +6530,8 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
       spindoctor ledblinky colors normalize              :: preview changes
       spindoctor ledblinky colors normalize --apply      :: commit changes
     """
+    from . import ledblinky as lb
+
     config = _cfg()
     try:
         result = lb.normalize_colors_ini(
