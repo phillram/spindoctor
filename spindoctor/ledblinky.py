@@ -1027,3 +1027,274 @@ def patch_ledblinky_settings(
         settings_path.write_text(new_text, encoding="utf-8")
 
     return result
+
+
+# ─── Color-RGB.ini management ─────────────────────────────────────────────────
+
+COLOR_RGB_NAME = "Color-RGB.ini"
+
+
+@dataclass
+class ColorEntry:
+    """One named color from ``Color-RGB.ini`` (intensity 0-48 per channel)."""
+
+    name: str
+    r: int   # 0-48
+    g: int   # 0-48
+    b: int   # 0-48
+
+    def to_hex(self) -> str:
+        """Return ``#RRGGBB`` string (0-48 intensity scaled to 0-255)."""
+        return "#{:02X}{:02X}{:02X}".format(
+            round(self.r / 48 * 255),
+            round(self.g / 48 * 255),
+            round(self.b / 48 * 255),
+        )
+
+    @classmethod
+    def from_hex(cls, name: str, hex_str: str) -> "ColorEntry":
+        """Build a :class:`ColorEntry` from a ``RRGGBB`` or ``#RRGGBB`` string.
+
+        The 0-255 channel values are scaled down to the 0-48 intensity range
+        used by ``Color-RGB.ini``.
+        """
+        h = hex_str.lstrip("#")
+        if len(h) != 6:
+            raise ValueError(
+                f"Expected exactly 6 hex digits (RRGGBB), got '{hex_str}'"
+            )
+        r255 = int(h[0:2], 16)
+        g255 = int(h[2:4], 16)
+        b255 = int(h[4:6], 16)
+        return cls(
+            name=name,
+            r=round(r255 / 255 * 48),
+            g=round(g255 / 255 * 48),
+            b=round(b255 / 255 * 48),
+        )
+
+
+def parse_color_rgb_ini(path: Path) -> "tuple[list[str], list[ColorEntry]]":
+    """Parse ``Color-RGB.ini`` into header lines and ordered color entries.
+
+    The *header* is every line that appears before ``[Colors]`` (comments,
+    blanks, version sections) and is preserved verbatim on write so the file
+    round-trips cleanly.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    header: list[str] = []
+    entries: list[ColorEntry] = []
+    in_colors = False
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.lower() == "[colors]":
+            in_colors = True
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_colors = False
+        if not in_colors:
+            header.append(line)
+            continue
+        if not stripped or stripped.startswith(";"):
+            continue
+        if "=" in stripped:
+            name_part, _, val = stripped.partition("=")
+            parts = [p.strip() for p in val.split(",")]
+            if len(parts) == 3:
+                try:
+                    entries.append(ColorEntry(
+                        name=name_part.strip(),
+                        r=int(parts[0]),
+                        g=int(parts[1]),
+                        b=int(parts[2]),
+                    ))
+                except ValueError:
+                    pass  # skip malformed lines silently
+
+    return header, entries
+
+
+def write_color_rgb_ini(
+    header: "list[str]",
+    entries: "list[ColorEntry]",
+    path: Path,
+) -> None:
+    """Write ``Color-RGB.ini``, reproducing the original header verbatim.
+
+    Uses ``\\r\\n`` line endings (standard for LedBlinky Windows files).
+    """
+    lines: list[str] = list(header)
+    # Drop trailing blank lines from the header — we'll add a fresh one
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append("")
+    lines.append("[Colors]")
+    for e in entries:
+        lines.append(f"{e.name}={e.r},{e.g},{e.b}")
+    lines.append("")
+    path.write_text("\r\n".join(lines), encoding="utf-8")
+
+
+def _replace_color_in_colors_ini(
+    path: Path, old_name: str, new_name: str
+) -> "tuple[str, int]":
+    """Replace exact color-name values in ``Colors.ini``.
+
+    Only touches lines where the entire value (right-hand side of ``=``) is
+    exactly ``old_name``.  Hex-value entries such as ``ledcolor1=FF0000`` are
+    not affected.
+
+    Returns ``(new_text, replacement_count)``.  Does **not** write to disk.
+    """
+    if not path.exists():
+        return "", 0
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # ^(?!;)([^=]+=)  — non-comment line with a key=
+    # \s*<OldName>\s*\r?$  — value is exactly old_name (with optional blanks)
+    pattern = re.compile(
+        rf"^(?!;)([^=]+=)\s*{re.escape(old_name)}\s*\r?$",
+        re.MULTILINE,
+    )
+    new_text, count = pattern.subn(rf"\g<1>{new_name}", text)
+    return new_text, count
+
+
+def _replace_color_in_controls_xml(
+    path: Path, old_name: str, new_name: str
+) -> "tuple[str, int]":
+    """Replace ``color="<old_name>"`` XML attributes in ``LEDBlinkyControls.xml``.
+
+    Returns ``(new_text, replacement_count)``.  Does **not** write to disk.
+    """
+    if not path.exists():
+        return "", 0
+    text = path.read_text(encoding="utf-8", errors="replace")
+    new_text, count = re.subn(
+        rf'color="{re.escape(old_name)}"',
+        f'color="{new_name}"',
+        text,
+    )
+    return new_text, count
+
+
+@dataclass
+class ColorRenameResult:
+    """Outcome of :func:`apply_color_rename`."""
+
+    old_name: str
+    new_name: str
+    color_rgb_path: Optional[Path] = None
+    colors_ini_replacements: int = 0
+    controls_xml_replacements: int = 0
+    backup_paths: list[Path] = field(default_factory=list)
+    dry_run: bool = False
+
+
+def apply_color_rename(
+    config: Config,
+    old_name: str,
+    new_name: str,
+    new_r: Optional[int] = None,
+    new_g: Optional[int] = None,
+    new_b: Optional[int] = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> ColorRenameResult:
+    """Rename (and optionally recolor) a named color across all LEDBlinky files.
+
+    The three files touched in order:
+
+    1. ``Color-RGB.ini`` — the entry is renamed; R,G,B updated when provided.
+    2. ``Colors.ini`` — every line whose value is exactly ``old_name`` is
+       updated to ``new_name``.
+    3. ``LEDBlinkyControls.xml`` — every ``color="<old_name>"`` attribute is
+       updated to ``color="<new_name>"``.
+
+    Parameters
+    ----------
+    new_r, new_g, new_b:
+        New intensity values (0-48).  Pass ``None`` to keep the existing
+        values (rename-only, no recolor).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, ``Color-RGB.ini`` is absent,
+        or ``old_name`` is not found in the file.
+    """
+    result = ColorRenameResult(
+        old_name=old_name, new_name=new_name, dry_run=dry_run
+    )
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    base = Path(config.ledblinky_dir)
+
+    # ── 1. Color-RGB.ini ─────────────────────────────────────────────────────
+    color_rgb_path = base / COLOR_RGB_NAME
+    result.color_rgb_path = color_rgb_path
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    header, entries = parse_color_rgb_ini(color_rgb_path)
+    names = [e.name for e in entries]
+    if old_name not in names:
+        raise ValueError(
+            f"Color '{old_name}' not found in {COLOR_RGB_NAME}. "
+            f"Available: {', '.join(names)}"
+        )
+
+    updated_entries = [
+        ColorEntry(
+            name=new_name,
+            r=new_r if new_r is not None else e.r,
+            g=new_g if new_g is not None else e.g,
+            b=new_b if new_b is not None else e.b,
+        )
+        if e.name == old_name
+        else e
+        for e in entries
+    ]
+
+    # ── 2. Pre-compute replacements (safe, no writes yet) ────────────────────
+    colors_ini_path = base / "Colors.ini"
+    new_colors_ini_text, colors_ini_count = _replace_color_in_colors_ini(
+        colors_ini_path, old_name, new_name
+    )
+    result.colors_ini_replacements = colors_ini_count
+
+    controls_xml_path = base / CONTROLS_XML_NAME
+    new_controls_xml_text, controls_xml_count = _replace_color_in_controls_xml(
+        controls_xml_path, old_name, new_name
+    )
+    result.controls_xml_replacements = controls_xml_count
+
+    if dry_run:
+        return result
+
+    # ── 3. Write with backups ─────────────────────────────────────────────────
+    if backup:
+        bp = _backup(color_rgb_path)
+        if bp:
+            result.backup_paths.append(bp)
+    write_color_rgb_ini(header, updated_entries, color_rgb_path)
+
+    if colors_ini_count > 0:
+        if backup and colors_ini_path.exists():
+            bp = _backup(colors_ini_path)
+            if bp:
+                result.backup_paths.append(bp)
+        colors_ini_path.write_text(new_colors_ini_text, encoding="utf-8")
+
+    if controls_xml_count > 0:
+        if backup and controls_xml_path.exists():
+            bp = _backup(controls_xml_path)
+            if bp:
+                result.backup_paths.append(bp)
+        controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
+
+    return result

@@ -997,6 +997,9 @@ spindoctor ledblinky fix --apply           :: commit the patch
 spindoctor ledblinky patch-settings        :: preview Settings.ini changes
 spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
+spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
+spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
+spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
 ```
 
 `generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
@@ -1029,6 +1032,34 @@ spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: smooth f
 ```
 
 A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.
+
+### `ledblinky colors` — manage named color definitions
+
+`Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
+
+`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically.
+
+```bat
+spindoctor ledblinky colors list                                                 :: show all definitions
+spindoctor ledblinky colors edit Blue                                            :: inspect Blue
+spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply     :: rename + recolor
+spindoctor ledblinky colors edit Orange --name Amber --apply                    :: rename only
+spindoctor ledblinky colors edit Red --rgb 48,0,12 --apply                      :: shift Red toward pink
+```
+
+`--hex RRGGBB` accepts standard 8-bit hex (0-255 per channel) and converts to the 0-48 intensity range stored in `Color-RGB.ini`. `--rgb R,G,B` accepts values directly in the 0-48 range.
+
+Files updated by `edit --apply`:
+
+| File | What changes |
+|------|-------------|
+| `Color-RGB.ini` | Entry is renamed and/or R,G,B values updated |
+| `Colors.ini` | Every line whose value equals the old name exactly (e.g. `P1_COIN=Orange`) is updated |
+| `LEDBlinkyControls.xml` | Every `color="<old-name>"` XML attribute is updated |
+
+Hex-value entries in `Colors.ini` (e.g. `ledcolor1=FF0000`) are not touched — they reference colors by raw value, not by name.
+
+A timestamped `.bak` backup is written next to each modified file before any change. Pass `--no-backup` to skip.
 
 ---
 

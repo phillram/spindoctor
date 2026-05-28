@@ -410,6 +410,25 @@ which controls active-browsing music at the top-level system wheel.
 | `C:\LEDBlinky\LEDBlinkyControls.xml` | Per-emulator / per-ROM XML control map used by LedBlinky at runtime |
 | `C:\LEDBlinky\*.lwa` | Animation files — played for idle / attract / in-game states |
 
+### `Color-RGB.ini` — master color dictionary
+
+LedBlinky's named color system uses `Color-RGB.ini` as its source of truth. Each entry maps a name to R, G, B intensity values in the **0-48 range** (not 0-255):
+
+```ini
+[Colors]
+Blue=0,0,48      ; equivalent to #0000FF at full brightness
+Red=48,0,0       ; equivalent to #FF0000
+Orange=48,24,0
+```
+
+These names are referenced in two places:
+- `Colors.ini` — as values, e.g. `P1_COIN=Orange`
+- `LEDBlinkyControls.xml` — as XML attributes, e.g. `color="Red"`
+
+`spindoctor ledblinky colors edit` renames a color in all three files atomically. Hex input (0-255 per channel) is accepted and auto-converted to the 0-48 range.
+
+SpinDoctor-generated entries in `Colors.ini` use hex values directly (`ledcolor1=FF0000`) — these are not affected by name renames.
+
 ### `controls.ini` and `colors.ini`
 
 SpinDoctor generates these from `mame -listxml` output (cached in `~/.spindoctor/mame_listxml_cache/`). Existing community-maintained entries are preserved unless `--overwrite` is passed. The source is entirely local — no scraper API, no quota.

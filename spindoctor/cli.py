@@ -6295,6 +6295,204 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
         )
 
 
+@ledblinky_group.group("colors")
+def ledblinky_colors_group():
+    """Manage named color definitions in Color-RGB.ini.
+
+    \b
+    Subcommands:
+      list   Show all color definitions
+      edit   Rename / recolor a color and propagate the change
+    """
+
+
+@ledblinky_colors_group.command("list")
+def ledblinky_colors_list():
+    """List all named color definitions from Color-RGB.ini.
+
+    Shows the name, native R/G/B intensity values (0-48 range as stored in
+    the file), and the equivalent #RRGGBB hex code for reference.
+    """
+    from pathlib import Path as _Path
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    path = _Path(config.ledblinky_dir) / lb.COLOR_RGB_NAME
+    if not path.exists():
+        console.print(f"[red]{lb.COLOR_RGB_NAME} not found at {path}[/red]")
+        raise SystemExit(1)
+
+    _, entries = lb.parse_color_rgb_ini(path)
+
+    tbl = Table(box=box.SIMPLE, show_header=True)
+    tbl.add_column("Name", style="cyan", no_wrap=True)
+    tbl.add_column("R (0-48)", justify="right")
+    tbl.add_column("G (0-48)", justify="right")
+    tbl.add_column("B (0-48)", justify="right")
+    tbl.add_column("Hex (#RRGGBB)")
+    for e in entries:
+        tbl.add_row(e.name, str(e.r), str(e.g), str(e.b), e.to_hex())
+
+    console.print(tbl)
+    console.print(f"\n[dim]{len(entries)} color definitions in {path}[/dim]")
+
+
+@ledblinky_colors_group.command("edit")
+@click.argument("color_name")
+@click.option("--name", "new_name", default=None,
+              help="New name for the color (omit to keep the existing name).")
+@click.option(
+    "--hex", "hex_color", default=None,
+    help="New color as a RRGGBB hex string (e.g. 06BEE1). "
+         "Converted from 0-255 per channel to the 0-48 intensity range for storage. "
+         "Mutually exclusive with --rgb.",
+)
+@click.option(
+    "--rgb", "rgb_values", default=None,
+    help="New R,G,B values in the native 0-48 intensity range (e.g. 0,38,42). "
+         "Mutually exclusive with --hex.",
+)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit changes to disk (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip .bak backups when writing in-place.")
+def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_changes, no_backup):
+    """Edit a color definition and propagate the rename to all LEDBlinky files.
+
+    \b
+    COLOR_NAME  current name in Color-RGB.ini (e.g. 'Blue').
+
+    At least one of --name, --hex, or --rgb must be supplied.
+    Run with just the color name to inspect its current definition.
+
+    \b
+    Three files are updated:
+      1. Color-RGB.ini          — name and/or R,G,B values
+      2. Colors.ini             — every value that equals COLOR_NAME exactly
+      3. LEDBlinkyControls.xml  — every  color="COLOR_NAME"  attribute
+
+    \b
+    Examples:
+      spindoctor ledblinky colors edit Blue              :: inspect current Blue
+      spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply
+      spindoctor ledblinky colors edit Red --rgb 48,0,12 --apply
+      spindoctor ledblinky colors edit Orange --name Amber --apply
+    """
+    from pathlib import Path as _Path
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    # ── Inspect-only (no options given) ──────────────────────────────────────
+    if new_name is None and hex_color is None and rgb_values is None:
+        path = _Path(config.ledblinky_dir) / lb.COLOR_RGB_NAME
+        if not path.exists():
+            console.print(f"[red]{lb.COLOR_RGB_NAME} not found at {path}[/red]")
+            raise SystemExit(1)
+        _, entries = lb.parse_color_rgb_ini(path)
+        for e in entries:
+            if e.name == color_name:
+                console.print(
+                    f"[cyan]{e.name}[/cyan]  "
+                    f"R={e.r}  G={e.g}  B={e.b}  ({e.to_hex()})"
+                )
+                return
+        console.print(f"[red]Color '{color_name}' not found in {lb.COLOR_RGB_NAME}.[/red]")
+        raise SystemExit(1)
+
+    # ── Mutual exclusion ─────────────────────────────────────────────────────
+    if hex_color and rgb_values:
+        console.print("[red]Error: --hex and --rgb are mutually exclusive.[/red]")
+        raise SystemExit(1)
+
+    # ── Parse new RGB values ──────────────────────────────────────────────────
+    new_r = new_g = new_b = None
+
+    if hex_color:
+        try:
+            tmp = lb.ColorEntry.from_hex("_", hex_color)
+            new_r, new_g, new_b = tmp.r, tmp.g, tmp.b
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise SystemExit(1) from exc
+
+    elif rgb_values:
+        parts = [p.strip() for p in rgb_values.split(",")]
+        if len(parts) != 3:
+            console.print(
+                "[red]Error: --rgb requires three comma-separated integers "
+                "in the 0-48 range, e.g. 0,0,48.[/red]"
+            )
+            raise SystemExit(1)
+        try:
+            new_r, new_g, new_b = int(parts[0]), int(parts[1]), int(parts[2])
+            if not all(0 <= v <= 48 for v in (new_r, new_g, new_b)):
+                raise ValueError("all values must be in the range 0-48")
+        except ValueError as exc:
+            console.print(f"[red]Error: --rgb {exc}[/red]")
+            raise SystemExit(1) from exc
+
+    resolved_name = new_name if new_name is not None else color_name
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    try:
+        result = lb.apply_color_rename(
+            config,
+            old_name=color_name,
+            new_name=resolved_name,
+            new_r=new_r,
+            new_g=new_g,
+            new_b=new_b,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1) from exc
+
+    # ── Report ────────────────────────────────────────────────────────────────
+    verb = "would update" if result.dry_run else "updated"
+    console.print(f"\n[blue bold]Color-RGB.ini[/blue bold]  {result.color_rgb_path}")
+
+    if resolved_name != color_name:
+        console.print(
+            f"  Name: [yellow]{color_name}[/yellow] → [green]{resolved_name}[/green]"
+        )
+    if new_r is not None:
+        preview = lb.ColorEntry("_", new_r, new_g, new_b).to_hex()
+        console.print(f"  RGB: R={new_r}, G={new_g}, B={new_b}  ({preview})")
+
+    console.print(
+        f"\n  Colors.ini: "
+        + (f"[green]{result.colors_ini_replacements}[/green]"
+           if result.colors_ini_replacements
+           else "[dim]0[/dim]")
+        + f" reference(s) {verb}"
+    )
+    console.print(
+        f"  LEDBlinkyControls.xml: "
+        + (f"[green]{result.controls_xml_replacements}[/green]"
+           if result.controls_xml_replacements
+           else "[dim]0[/dim]")
+        + f" attribute(s) {verb}"
+    )
+
+    if not result.dry_run and result.backup_paths:
+        console.print(
+            "\n[dim]Backups: "
+            + ", ".join(str(p) for p in result.backup_paths)
+            + "[/dim]"
+        )
+
+
 # ─── add-system ───────────────────────────────────────────────────────────────
 
 # HyperSpin Main Menu media slots that we know how to fetch from ScreenScraper.

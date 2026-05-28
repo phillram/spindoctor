@@ -448,6 +448,12 @@ spindoctor ledblinky patch-settings --apply                               :: tur
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply     :: also swap idle animation
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                   :: static colors while browsing
 
+:: Color-RGB.ini — rename/recolor named colors and propagate throughout
+spindoctor ledblinky colors list
+spindoctor ledblinky colors edit Blue                                     :: inspect
+spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply
+spindoctor ledblinky colors edit Orange --name Amber --apply              :: rename only
+
 :: Backup / restore LEDBlinky files only
 spindoctor backup create --include ledblinky --target D:\Backups --apply
 spindoctor backup restore --backup D:\Backups\spindoctor-backup-... --include ledblinky --apply

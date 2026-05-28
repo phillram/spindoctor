@@ -153,6 +153,8 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Backup / Restore (LEDBlinky only)** — quick backup and restore scoped to the LEDBlinky component only. Backup folder and Restore-from fields both default to `config.backup_dir`. Dry-run by default. CLI equivalent: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
 
+**Color Definitions (Color-RGB.ini)** — Treeview listing all named colors (Name, R/G/B 0-48, hex). Click a row to load it into the edit fields. Change the name and/or paste a `#RRGGBB` hex code (a live color swatch previews your input); tick Apply and click **Update & Rename** to propagate the change through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml` in one shot. A `.bak` backup is written for every modified file. CLI equivalent: `spindoctor ledblinky colors edit`.
+
 ### Lightgun
 
 **Detect** installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), **Audit** per-system wiring, and **Configure** one system's RocketLauncher INI with optional `-target` / extra-args overrides. CLI equivalent: `spindoctor lightgun detect / audit / configure`.

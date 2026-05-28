@@ -9628,6 +9628,88 @@ class _SpinDoctorGUI:
             command=self._run_led_restore,
         ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
+        # ── Color Definitions ────────────────────────────────────────────────
+        self._color_original_hex: str = ""   # set when a row is selected
+
+        cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
+        cd_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.columnconfigure(0, weight=1)
+
+        # Treeview + vertical scrollbar
+        tree_outer = self.ttk.Frame(cd_frame)
+        tree_outer.grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 2))
+        tree_outer.columnconfigure(0, weight=1)
+
+        _led_cols = ("name", "r", "g", "b", "hex")
+        self._color_tree = self.ttk.Treeview(
+            tree_outer, columns=_led_cols, show="headings",
+            height=6, selectmode="browse",
+        )
+        for _col, _heading, _w, _stretch in [
+            ("name", "Name",     110, True),
+            ("r",    "R (0-48)",  70, False),
+            ("g",    "G (0-48)",  70, False),
+            ("b",    "B (0-48)",  70, False),
+            ("hex",  "Hex",       86, False),
+        ]:
+            self._color_tree.heading(_col, text=_heading)
+            self._color_tree.column(_col, width=_w, stretch=_stretch)
+        _led_vsb = self.ttk.Scrollbar(
+            tree_outer, orient="vertical", command=self._color_tree.yview,
+        )
+        self._color_tree.configure(yscrollcommand=_led_vsb.set)
+        self._color_tree.grid(row=0, column=0, sticky="nsew")
+        _led_vsb.grid(row=0, column=1, sticky="ns")
+        self._color_tree.bind("<<TreeviewSelect>>", self._on_color_tree_select)
+
+        self.ttk.Button(
+            cd_frame, text="Refresh list",
+            command=self._refresh_color_list,
+        ).grid(row=1, column=0, sticky="w", padx=6, pady=(2, 4))
+
+        # ── Edit fields ────────────────────────────────────────────────────
+        edit_f = self.ttk.Frame(cd_frame)
+        edit_f.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(edit_f, text="New name:").grid(
+            row=0, column=0, sticky="w", padx=(0, 4),
+        )
+        self._color_new_name_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_new_name_var, width=16,
+        ).grid(row=0, column=1, sticky="w")
+
+        self.ttk.Label(edit_f, text="New color (#RRGGBB):").grid(
+            row=0, column=2, sticky="w", padx=(14, 4),
+        )
+        self._color_hex_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_hex_var, width=10,
+        ).grid(row=0, column=3, sticky="w")
+
+        # Plain tk.Label so background= is honoured (ttk.Label uses styles)
+        self._color_preview = self.tk.Label(
+            edit_f, text="  ", background="#FFFFFF",
+            relief="solid", width=3,
+        )
+        self._color_preview.grid(row=0, column=4, sticky="w", padx=(4, 0))
+        self._color_hex_var.trace_add("write", self._update_color_preview)
+
+        # ── Apply + button ─────────────────────────────────────────────────
+        self._color_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cd_frame, text="Apply (uncheck for dry-run)",
+            variable=self._color_apply_var,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            cd_frame, text="Update & Rename",
+            command=self._run_color_edit,
+        ).grid(row=4, column=0, sticky="w", padx=6, pady=(2, 8))
+
+        # Populate immediately if ledblinky_dir is already configured
+        self._refresh_color_list()
+
         frame.columnconfigure(1, weight=1)
         return frame
 
@@ -9716,6 +9798,91 @@ class _SpinDoctorGUI:
         if fe_lwa_arg is not None:
             args += ["--fe-lwa", fe_lwa_arg]
         if self._led_patch_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Color Definitions helpers ─────────────────────────────────────────────
+
+    def _refresh_color_list(self) -> None:
+        """Load Color-RGB.ini entries into the Treeview."""
+        try:
+            from . import ledblinky as lb
+            from pathlib import Path as _Path
+            cfg = load_config()
+            if not getattr(cfg, "ledblinky_dir", ""):
+                return
+            path = _Path(cfg.ledblinky_dir) / lb.COLOR_RGB_NAME
+            if not path.exists():
+                return
+            _, entries = lb.parse_color_rgb_ini(path)
+        except Exception:
+            return
+        self._color_tree.delete(*self._color_tree.get_children())
+        for e in entries:
+            self._color_tree.insert(
+                "", "end", iid=e.name,
+                values=(e.name, e.r, e.g, e.b, e.to_hex()),
+            )
+
+    def _on_color_tree_select(self, _event=None) -> None:
+        """Populate the edit fields when the user clicks a color row."""
+        sel = self._color_tree.selection()
+        if not sel:
+            return
+        values = self._color_tree.item(sel[0], "values")
+        if len(values) >= 5:
+            name, _r, _g, _b, hex_val = values
+            self._color_new_name_var.set(name)
+            clean = hex_val.lstrip("#")
+            self._color_original_hex = clean
+            self._color_hex_var.set(clean)
+
+    def _update_color_preview(self, *_) -> None:
+        """Update the color swatch when the hex entry changes."""
+        raw = self._color_hex_var.get().strip().lstrip("#")
+        if len(raw) == 6:
+            try:
+                int(raw, 16)   # validate before applying
+                try:
+                    self._color_preview.configure(background=f"#{raw}")
+                except Exception:
+                    pass
+            except ValueError:
+                pass
+
+    def _run_color_edit(self) -> None:
+        """Run ``ledblinky colors edit`` for the selected color."""
+        sel = self._color_tree.selection()
+        if not sel:
+            self.messagebox.showwarning(
+                "No color selected",
+                "Click a color row in the list, then edit its name or value.",
+            )
+            return
+        old_name = sel[0]   # iid is the old name
+        new_name = self._color_new_name_var.get().strip()
+        hex_val = self._color_hex_var.get().strip().lstrip("#")
+
+        if not new_name:
+            self.messagebox.showwarning("Name required", "Enter a name for the color.")
+            return
+
+        name_changed = (new_name != old_name)
+        hex_changed = (len(hex_val) == 6 and hex_val != self._color_original_hex)
+
+        if not name_changed and not hex_changed:
+            self.messagebox.showinfo(
+                "No changes",
+                "Change the name or the hex color value to make an edit.",
+            )
+            return
+
+        args = ["ledblinky", "colors", "edit", old_name]
+        if name_changed:
+            args += ["--name", new_name]
+        if hex_changed and len(hex_val) == 6:
+            args += ["--hex", hex_val]
+        if self._color_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
