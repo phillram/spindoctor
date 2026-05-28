@@ -17,6 +17,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 - [Custom wheels](#custom-wheels)
 - [Resetting cabinet data](#resetting-cabinet-data)
 - [Themes & art](#themes--art)
+- [LEDBlinky](#ledblinky)
 - [Light guns](#light-guns)
 - [Config](#config)
 - [Tips](#tips)
@@ -423,6 +424,36 @@ spindoctor theme-pack-create D:\my-pack --target frontend
 ```
 
 Reference: [Command reference → theme-pack-create](commands.md#theme-pack-create).
+
+---
+
+## LEDBlinky
+
+```bat
+:: Generate controls.ini + colors.ini from MAME -listxml (local, no quota)
+spindoctor ledblinky generate                                             :: dry-run preview
+spindoctor ledblinky generate --apply                                     :: commit
+spindoctor ledblinky generate --overwrite --apply                         :: replace community entries too
+
+:: Audit coverage — which ROMs have / lack control data
+spindoctor ledblinky audit
+
+:: Fix HyperSpin Search/Genre/Favorites overlay crash caused by LEDBlinky hooks
+spindoctor ledblinky check
+spindoctor ledblinky fix --apply
+
+:: Patch Settings.ini — silence unused-button flash + improve idle animation
+spindoctor ledblinky patch-settings                                       :: preview
+spindoctor ledblinky patch-settings --apply                               :: turn off in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply     :: also swap idle animation
+spindoctor ledblinky patch-settings --fe-lwa "" --apply                   :: static colors while browsing
+
+:: Backup / restore LEDBlinky files only
+spindoctor backup create --include ledblinky --target D:\Backups --apply
+spindoctor backup restore --backup D:\Backups\spindoctor-backup-... --include ledblinky --apply
+```
+
+Reference: [Command reference → LEDBlinky](commands.md#ledblinky), [Cabinet architecture → LEDBlinky](cabinet-architecture-reference.md#ledblinky).
 
 ---
 

@@ -994,9 +994,12 @@ spindoctor ledblinky audit
 spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
 spindoctor ledblinky fix                   :: dry-run preview of the patch
 spindoctor ledblinky fix --apply           :: commit the patch
+spindoctor ledblinky patch-settings        :: preview Settings.ini changes
+spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
 ```
 
-`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`.
+`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
 
 `check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search overlay crashes when LEDBlinky is installed:
 
@@ -1011,6 +1014,21 @@ spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: stage ins
 ```
 
 The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.
+
+`patch-settings` makes two targeted tweaks to `<ledblinky_dir>/Settings.ini`:
+
+| Key | Section | Default fix | Effect |
+|-----|---------|-------------|--------|
+| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Unassigned buttons go dark during gameplay instead of flashing randomly |
+| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Swaps `<Random>` for a chosen animation file while browsing HyperSpin |
+
+```bat
+spindoctor ledblinky patch-settings --apply                          :: silence in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "" --apply              :: also use static colors while browsing
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: smooth fade instead of random flash
+```
+
+A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.
 
 ---
 

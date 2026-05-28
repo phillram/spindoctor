@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`spindoctor ledblinky patch-settings`** — patches `<ledblinky_dir>/Settings.ini` to fix two common LED annoyances without requiring access to LedBlinky's configuration UI: (1) sets `GamePlayLWAFile=` (empty) in `[GameOptions]` so buttons not used by the current game go dark in-game instead of flashing randomly; (2) optionally sets `FELWAFile` in `[FEOptions]` to a user-supplied `.lwa` animation file (or empty for static colors) instead of the jarring `<Random>` selection. `--fe-lwa`, `--game-lwa`, `--apply`, and `--no-backup` flags. A `.bak` copy of `Settings.ini` is written before any change. `list_lwa_files()` scans `ledblinky_dir` for available animation files. `_patch_ini_keys()` helper preserves line endings, comments, and key ordering exactly.
+
+- **LEDBlinky tab — Settings.ini Patch section** — "FE idle animation" combobox auto-populated from `.lwa` files in `ledblinky_dir` (Refresh button), "Turn off unused buttons during gameplay" checkbox (on by default), Apply checkbox, and **Patch Settings.ini** button. Equivalent to `spindoctor ledblinky patch-settings`.
+
+- **LEDBlinky tab — Backup / Restore section** — Quick backup and restore scoped to the `ledblinky` component only. Both folder fields default to `config.backup_dir`. Dry-run by default. Equivalent to `spindoctor backup create/restore --include ledblinky`.
+
+- **Docs** — LEDBlinky section added to `cabinet-architecture-reference.md` (key files, `Settings.ini` key anatomy, `LEDBlinkyControls.xml` / Search compatibility). LEDBlinky section added to `cli-cheatsheet.md` (was entirely absent). `commands.md`, `gui.md`, and `troubleshooting.md` updated for `patch-settings`, new GUI sections, and three new FAQ entries.
+
 ### Fixed
 
 - **Release zip reduced by ~120 MB** — The `assets/archive/` subfolder (deprecated oversized originals kept for reference) was accidentally bundled into every PyInstaller exe via a recursive `--add-data` on the whole assets directory. The pip package already excluded it (non-recursive glob in `pyproject.toml`); the build script now does the same by adding only top-level asset files.

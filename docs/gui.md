@@ -149,6 +149,10 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Generate** (controls.ini + colors.ini), **Audit coverage**, **Check**, and **Fix**. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. CLI equivalent: `spindoctor ledblinky generate / audit / check / fix`.
 
+**Settings.ini Patch** — fixes two common annoyances without touching LedBlinky's main UI. A "FE idle animation" combobox lists every `.lwa` file found in `ledblinky_dir` (populate it with the **Refresh list** button); leave blank to show static colors, or pick a fade file. The "Turn off unused buttons during gameplay" checkbox (on by default) empties `GamePlayLWAFile` so buttons not used by the current game go dark instead of flashing randomly. Apply checkbox + **Patch Settings.ini** button; a `.bak` backup is written automatically. CLI equivalent: `spindoctor ledblinky patch-settings`.
+
+**Backup / Restore (LEDBlinky only)** — quick backup and restore scoped to the LEDBlinky component only. Backup folder and Restore-from fields both default to `config.backup_dir`. Dry-run by default. CLI equivalent: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
+
 ### Lightgun
 
 **Detect** installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), **Audit** per-system wiring, and **Configure** one system's RocketLauncher INI with optional `-target` / extra-args overrides. CLI equivalent: `spindoctor lightgun detect / audit / configure`.

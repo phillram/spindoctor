@@ -395,3 +395,50 @@ in the synthetic wheel. This preserves the console-themed background and video l
 it as `Media\<SystemName>\Sound\navigate.mp3` for each synthetic wheel during `rebuild --apply`
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
+
+---
+
+## LEDBlinky
+
+### Key files
+
+| File | Purpose |
+|------|---------|
+| `C:\LEDBlinky\Settings.ini` | Main application settings — animation modes, emulator config paths, speech, audio |
+| `C:\LEDBlinky\Controls.ini` | Per-ROM button assignments (what buttons a game uses) |
+| `C:\LEDBlinky\Colors.ini` | Per-ROM LED colors for each assigned button |
+| `C:\LEDBlinky\LEDBlinkyControls.xml` | Per-emulator / per-ROM XML control map used by LedBlinky at runtime |
+| `C:\LEDBlinky\*.lwa` | Animation files — played for idle / attract / in-game states |
+
+### `controls.ini` and `colors.ini`
+
+SpinDoctor generates these from `mame -listxml` output (cached in `~/.spindoctor/mame_listxml_cache/`). Existing community-maintained entries are preserved unless `--overwrite` is passed. The source is entirely local — no scraper API, no quota.
+
+### `Settings.ini` — idle animation and in-game behavior
+
+Two keys control behaviors that aren't obvious in LedBlinky's configuration UI:
+
+**`[GameOptions] GamePlayLWAFile=`**
+Controls what happens to buttons **not used by the current game** while a game is running. The default value `<Random>` makes LedBlinky play a random animation on all unassigned buttons — which looks like random flashing on unused buttons.
+Setting it to empty (`""`) causes LedBlinky to fall back to each button's `defaultInactive` color from `LEDBlinkyControls.xml`. The DEFAULT control group has `defaultInactive="0,0,0,0"`, so unused buttons go off.
+
+**`[FEOptions] FELWAFile=`**
+Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific `.lwa` filename (e.g. `Slow Fade.lwa`) for a consistent smooth effect, or empty for static colors.
+
+SpinDoctor patches both keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change.
+
+```bat
+spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also fix idle animation
+```
+
+### `LEDBlinkyControls.xml` and HyperSpin Search compatibility
+
+LedBlinky injects process hooks (`Start_Hyperspin_Process` / `Exit_Hyperspin_Process`) into the HyperSpin per-menu `Settings.ini` files for Search, Genre, and Favorites. These hooks crash HyperSpin's overlay launcher for those menus. Additionally, `LEDBlinkyControls.xml` has no entry for the Search special menu, causing a lookup failure.
+
+SpinDoctor diagnoses and repairs both issues:
+
+```bat
+spindoctor ledblinky check         :: read-only scan
+spindoctor ledblinky fix --apply   :: comment out hooks + add XML entries
+```
