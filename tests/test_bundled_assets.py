@@ -119,21 +119,22 @@ class TestInstallSystemTheme:
 
 class TestInstallBundledSystemAssets:
 
-    def test_returns_all_five_keys(self, tmp_path):
+    def test_returns_all_keys(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=True)
-        assert set(result) == {"wheel_art", "background", "music", "video", "theme"}
+        assert set(result) == {"wheel_art", "background", "music", "video", "theme", "navigate_sound"}
 
     def test_all_assets_installed_for_synthetic(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=False)
         # "music" is intentionally no_asset — attract-mode audio is in the MP4.
         expected = {
-            "wheel_art": "installed",
-            "background": "installed",
-            "music": "no_asset",
-            "video": "installed",
-            "theme": "installed",
+            "wheel_art":      "installed",
+            "background":     "installed",
+            "music":          "no_asset",
+            "video":          "installed",
+            "theme":          "installed",
+            "navigate_sound": "installed",
         }
         for key, expected_status in expected.items():
             _, status = result[key]

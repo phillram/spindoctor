@@ -40,6 +40,9 @@ Every `rebuild --apply` run installs these files without extra flags:
 | `Favorites.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Most Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Recently Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
+| `navigate.mp3` | `Media\Favorites\Sound\` | Sound played on every left/right cursor move inside the Favorites wheel |
+| `navigate.mp3` | `Media\Most Played\Sound\` | Sound played on every left/right cursor move inside the Most Played wheel |
+| `navigate.mp3` | `Media\Recently Played\Sound\` | Sound played on every left/right cursor move inside the Recently Played wheel |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
@@ -47,11 +50,12 @@ SpinDoctor never overwrites a file you placed there yourself.
 
 The rebuild summary reports each asset:
 ```
-Wheel art:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
-Background:  installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
-Music:       no bundled asset
-Video:       installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
-Theme zip:   installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
+Wheel art:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
+Background:     installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
+Music:          no bundled asset
+Video:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
+Theme zip:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
+Navigate sound: installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\navigate.mp3
 ```
 
 ---
@@ -216,13 +220,39 @@ select a game while browsing the game list **inside** a synthetic wheel.
 Not all files are required — HyperSpin falls back to its global sounds for any that
 are missing.
 
-**Via SpinDoctor CLI:**
+**`navigate.mp3` is bundled** — SpinDoctor installs it automatically during
+`rebuild --apply` (skip-if-exists).  The other navigation sounds (`select.mp3`,
+`back.mp3`, `letter.mp3`) are not bundled; add them manually if wanted.
+
+**Manually (non-navigate sounds):**
 ```bat
-spindoctor media-add "path\to\navigate.mp3" --system "Favorites" --type sound --game "navigate" --apply
-spindoctor media-add "path\to\select.mp3"   --system "Favorites" --type sound --game "select"   --apply
+spindoctor media-add "path\to\select.mp3" --system "Favorites" --type sound --game "select" --apply
 ```
 
-**Manually:** Copy `.mp3` files to `Media\Favorites\Sound\` (or `Most Played`, etc.).
+Or copy `.mp3` files directly to `Media\Favorites\Sound\` (or `Most Played`, etc.).
+
+---
+
+### Per-game theme fallback (`Default.zip`)
+
+When a game has no per-game theme zip in the source system, HyperSpin falls back
+to `Default.zip` in that system's Themes folder — a console-wide template that
+provides the layout (background, video position, overlays) for all games without
+their own theme.
+
+**During a media mirror, SpinDoctor copies the source system's `Default.zip` as
+`<GameName>.zip` in the synthetic wheel's Themes folder** whenever no per-game
+theme exists.  This gives the game the same themed background and video layout
+in Favorites / Recently Played / Most Played that it has in its native wheel.
+
+Example — Kirby's Adventure has no `Kirby's Adventure.zip` in the NES Themes
+folder.  SpinDoctor copies `Media\Nintendo Entertainment System\Themes\Default.zip`
+to `Media\Favorites\Themes\Kirby's Adventure.zip` so HyperSpin renders it with
+the NES console theme rather than a blank layout.
+
+**Fallback only fires when:** `Default.zip` exists at
+`Media\<SourceSystem>\Themes\Default.zip` and the game has no per-game theme.
+Systems that already have per-game themes are unaffected.
 
 ---
 
@@ -262,12 +292,13 @@ HyperSpin\
 
     └── Favorites\                         ← per-game media (auto-mirrored from source systems)
         ├── Images\
-        │   ├── Wheel\      ← per-game logos
+        │   ├── Wheel\       ← per-game logos
         │   ├── Backgrounds\ ← per-game backgrounds
-        │   └── Artwork1\   ← per-game art
-        ├── Themes\         ← per-game themes
-        ├── Sound\          ← navigation sounds (manual, optional)
-        └── Video\          ← per-game videos
+        │   └── Artwork1\    ← per-game art
+        ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied)
+        ├── Sound\
+        │   └── navigate.mp3 ← AUTO: cursor-move click sound
+        └── Video\           ← per-game videos
 ```
 
 **AUTO** = installed by `rebuild --apply` from bundled package assets.

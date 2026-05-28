@@ -110,13 +110,26 @@ def plan_mirror(
         src_dir = src_root / sub
         if not src_dir.is_dir():
             continue
+        theme_found = False
         for entry in src_dir.iterdir():
             if not entry.is_file():
                 continue
             if entry.stem != source_stem or entry.suffix.lower() not in _FILE_EXTS:
                 continue
+            if sub == "Themes":
+                theme_found = True
             dest = dst_root / sub / f"{target_stem}{entry.suffix}"
             plan.actions.append(_classify(entry, dest, is_dir=False))
+
+        # When the source system has no per-game theme, fall back to
+        # Default.zip (the console-level fallback HyperSpin uses in the
+        # source wheel). Copy it as <target_stem>.zip so the same themed
+        # background and video layout appear in the synthetic wheel.
+        if sub == "Themes" and not theme_found:
+            default_theme = src_dir / "Default.zip"
+            if default_theme.is_file():
+                dest = dst_root / sub / f"{target_stem}.zip"
+                plan.actions.append(_classify(default_theme, dest, is_dir=False))
 
     for sub in MEDIA_DIR_SUBDIRS:
         src_dir = src_root / sub / source_stem

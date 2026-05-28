@@ -497,6 +497,17 @@ _THEME_ASSETS: dict[str, str] = {
     "Recently Played": "theme_Recently_Played.zip",
 }
 
+# Navigate sound — plays on every left/right cursor move while browsing the
+# game list inside a synthetic wheel.
+# HyperSpin path: Media\<SystemName>\Sound\navigate.mp3
+# (per-system Sound folder, not Media\Main Menu\Sound which is for the top-level
+# wheel browsing music — a separate HyperSpin concept).
+_NAVIGATE_SOUND_ASSETS: dict[str, str] = {
+    "Favorites":       "navigate_sound.mp3",
+    "Most Played":     "navigate_sound.mp3",
+    "Recently Played": "navigate_sound.mp3",
+}
+
 
 def _install_asset(
     src: Path,
@@ -701,6 +712,34 @@ def install_system_theme(
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
 
 
+def install_system_navigate_sound(
+    hyperspin_dir: Path,
+    system_name: str,
+    *,
+    dry_run: bool = False,
+    overwrite: bool = False,
+) -> tuple[Optional[Path], str]:
+    """Copy the bundled navigate sound for *system_name* to HyperSpin.
+
+    Destination::
+
+        <hyperspin_dir>/Media/<system_name>/Sound/navigate.mp3
+
+    HyperSpin plays this file on every left/right cursor move while the user
+    browses the game list inside the wheel.  Unlike ``install_system_music``
+    (which targets ``Media\\Main Menu\\Sound\\`` for top-level wheel browsing),
+    this file lives inside the per-system ``Sound/`` folder.
+
+    Returns ``(dest_path, status)`` where *status* ∈
+    ``{"installed", "overwritten", "skipped", "no_asset", "dry_run"}``.
+    """
+    src = _resolve_asset(_NAVIGATE_SOUND_ASSETS, system_name)
+    if src is None:
+        return None, "no_asset"
+    dest = hyperspin_dir / "Media" / system_name / "Sound" / "navigate.mp3"
+    return _install_asset(src, dest, dry_run, overwrite=overwrite)
+
+
 def install_bundled_system_assets(
     hyperspin_dir: Path,
     system_name: str,
@@ -726,21 +765,23 @@ def install_bundled_system_assets(
     Return value::
 
         {
-            "wheel_art":  (Path | None, status),
-            "background": (Path | None, status),
-            "music":      (Path | None, status),
-            "video":      (Path | None, status),
-            "theme":      (Path | None, status),
+            "wheel_art":      (Path | None, status),
+            "background":     (Path | None, status),
+            "music":          (Path | None, status),
+            "video":          (Path | None, status),
+            "theme":          (Path | None, status),
+            "navigate_sound": (Path | None, status),
         }
 
     Each *status* ∈ ``{"installed", "overwritten", "skipped", "no_asset", "dry_run"}``.
     """
     return {
-        "wheel_art":  install_system_wheel_art( hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
-        "background": install_system_background(hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
-        "music":      install_system_music(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
-        "video":      install_system_video(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
-        "theme":      install_system_theme(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "wheel_art":      install_system_wheel_art(     hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "background":     install_system_background(    hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "music":          install_system_music(         hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "video":          install_system_video(         hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "theme":          install_system_theme(         hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
+        "navigate_sound": install_system_navigate_sound(hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
     }
 
 
