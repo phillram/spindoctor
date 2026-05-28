@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.18] - 2026-05-28
+
 ### Fixed
 
 - **`ledblinky fill-defaults` — `TypeError: 'method' object is not iterable`** — `fill_default_colors()` iterated `db.games` (the method object) instead of calling `db.games()`. Every other call site in the codebase uses `db.games()` correctly; this was the only exception. The crash made `fill-defaults` completely unusable on any real cabinet config.
@@ -1028,7 +1032,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.17...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.18...HEAD
+[2.4.18]: https://github.com/phillram/spindoctor/compare/v2.4.17...v2.4.18
 [2.4.17]: https://github.com/phillram/spindoctor/compare/v2.4.16...v2.4.17
 [2.4.16]: https://github.com/phillram/spindoctor/compare/v2.4.15...v2.4.16
 [2.4.15]: https://github.com/phillram/spindoctor/compare/v2.4.14...v2.4.15
