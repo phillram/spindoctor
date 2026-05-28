@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **LEDBlinky tab — Settings.ini Patch — in-game unused buttons** — replaced the "Turn off unused buttons during gameplay" checkbox with an **In-game unused buttons** animation picker (combobox, same style as FE idle animation). Leave blank to silence unused buttons (the recommended default, same as before); select any `.lwa` file to play that animation on all unmapped buttons during gameplay. The same **Refresh list** button populates both animation pickers. `GamePlayLWAFile` is always written explicitly so the setting is never left at LedBlinky's default `<Random>`.
 
+- **Docs** — `commands.md`, `cli-cheatsheet.md`, `gui.md`, and `cabinet-architecture-reference.md` updated: `GamePlayLWAFile` table entry now documents the animation-file option; cheatsheet adds `--game-lwa` example; architecture reference clarifies that `.lwa` files live under `lwa/` subdirectories and that `GamePlayLWAFile` is global (no per-system override).
+
 ---
 
 ## [2.4.16] - 2026-05-28
