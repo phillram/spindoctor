@@ -363,13 +363,30 @@ def emit_ini(sections: dict[str, IniSection], path: Path, header_lines: list[str
     path.write_text("\n".join(out), encoding="utf-8")
 
 
-def _backup(path: Path) -> Optional[Path]:
+def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
+    """Create a timestamped backup of *path*.
+
+    When *backup_dir* is provided the backup is written to
+    ``backup_dir / "LEDBlinky" / "<filename>.<stamp>.bak"`` (the subdirectory
+    is created on demand).  When omitted the backup sits next to the source
+    file as before.
+    """
     if not path.exists():
         return None
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup = path.with_suffix(path.suffix + f".{stamp}.bak")
+    if backup_dir:
+        dest_dir = backup_dir / "LEDBlinky"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        backup = dest_dir / f"{path.name}.{stamp}.bak"
+    else:
+        backup = path.with_suffix(path.suffix + f".{stamp}.bak")
     shutil.copy2(path, backup)
     return backup
+
+
+def _config_backup_dir(config: "Config") -> Optional[Path]:
+    """Return ``Path(config.backup_dir)`` when configured, else ``None``."""
+    return Path(config.backup_dir) if getattr(config, "backup_dir", None) else None
 
 
 @dataclass
@@ -460,8 +477,9 @@ def generate_for_roms(
         "; Existing community-maintained entries are preserved as-is.",
     ]
     if output_dir is None and config.backup_before_modify:
-        _backup(controls_path)
-        _backup(colors_path)
+        _bd = _config_backup_dir(config)
+        _backup(controls_path, _bd)
+        _backup(colors_path, _bd)
 
     emit_ini(out_controls, controls_path, header)
     emit_ini(out_colors, colors_path, header)
@@ -1034,7 +1052,7 @@ def patch_ledblinky_settings(
 
     if changes and not dry_run:
         if backup:
-            result.backup_path = _backup(settings_path)
+            result.backup_path = _backup(settings_path, _config_backup_dir(config))
         settings_path.write_text(new_text, encoding="utf-8")
 
     return result
@@ -1151,9 +1169,10 @@ def write_color_rgb_ini(
         lines.append(f"{e.name}={e.r},{e.g},{e.b}")
     lines.append("")
     # Write with explicit newline="" so Python's text-mode translation does not
-    # double the \r on Windows (write_text in text mode converts \n → \r\n,
-    # which would turn our deliberate \r\n separators into \r\r\n).
-    path.write_text("\r\n".join(lines), encoding="utf-8", newline="")
+    # double the \r on Windows (open() newline="" has been supported since
+    # Python 3.0; write_text(newline=) only exists from Python 3.10+).
+    with path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write("\r\n".join(lines))
 
 
 def _replace_color_in_colors_ini(
@@ -1306,22 +1325,23 @@ def apply_color_rename(
         return result
 
     # ── 3. Write with backups ─────────────────────────────────────────────────
+    _bd = _config_backup_dir(config)
     if backup:
-        bp = _backup(color_rgb_path)
+        bp = _backup(color_rgb_path, _bd)
         if bp:
             result.backup_paths.append(bp)
     write_color_rgb_ini(header, updated_entries, color_rgb_path)
 
     if colors_ini_count > 0:
         if backup and colors_ini_path.exists():
-            bp = _backup(colors_ini_path)
+            bp = _backup(colors_ini_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
         colors_ini_path.write_text(new_colors_ini_text, encoding="utf-8")
 
     if controls_xml_count > 0:
         if backup and controls_xml_path.exists():
-            bp = _backup(controls_xml_path)
+            bp = _backup(controls_xml_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
         controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
@@ -1529,7 +1549,7 @@ def normalize_colors_ini(
 
     if keys_converted > 0 and not dry_run:
         if backup:
-            result.backup_path = _backup(colors_ini_path)
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
 
     return result
@@ -1560,6 +1580,9 @@ def fill_default_colors(
     config: Config,
     default_color: str = "White",
     n_buttons: int = 6,
+    n_players: int = 1,
+    admin_buttons: int = 0,
+    admin_color: str = "White",
     system: Optional[str] = None,
     dry_run: bool = True,
     backup: bool = True,
@@ -1572,31 +1595,61 @@ def fill_default_colors(
     off.  This function closes that gap by appending a uniform default entry
     for every ROM in the HyperSpin databases that is not already covered.
 
-    Each generated entry looks like::
+    With ``n_players=2`` and ``n_buttons=8`` each generated entry looks like::
 
         [rom_name]
         P1_BUTTON1=White
-        P1_BUTTON2=White
         ...
+        P1_BUTTON8=White
         P1_JOYSTICK=White
         P1_START=White
         P1_COIN=White
+        P2_BUTTON1=White
+        ...
+        P2_BUTTON8=White
+        P2_JOYSTICK=White
+        P2_START=White
+        P2_COIN=White
+
+    If ``admin_buttons > 0`` an additional admin block is appended using the
+    next available player number (``n_players + 1``) with ``admin_color``::
+
+        P3_BUTTON1=Green
+        ...
+        P3_BUTTON6=Green
+        P3_COIN=Green
+        P3_START=Green
 
     Only ROMs that have no section at all in ``Colors.ini`` are touched.
     Existing entries (including community-maintained named entries and
     SpinDoctor-generated hex entries) are never modified.
 
+    Synthetic wheels (Favorites, Recently Played, Most Played) are included in
+    the scan so that games that appear only in those wheels also receive a
+    default entry.  Because ``Colors.ini`` is keyed by ROM name (not by
+    system), any ROM whose name already appears in a real-system entry is
+    automatically covered for synthetic wheels too.
+
     Parameters
     ----------
     default_color:
-        Named color from ``Color-RGB.ini`` to assign to every button.
+        Named color from ``Color-RGB.ini`` to assign to every player button.
         Defaults to ``"White"``.
     n_buttons:
-        Number of P1_BUTTON entries to generate (1-8).  Defaults to 6,
-        which covers the majority of arcade games.
+        Number of ``P{n}_BUTTON`` entries to generate per player (1-8).
+        Defaults to 6.
+    n_players:
+        Number of player blocks to generate (1-4).  Blocks are always
+        mirrored — every player gets the same ``default_color``.  Defaults to 1.
+    admin_buttons:
+        Number of extra "admin/cabinet" button entries to add using the next
+        player slot (``n_players + 1``).  0 disables the admin block.
+    admin_color:
+        Named color for the admin button block.  Validated against
+        ``Color-RGB.ini`` the same as ``default_color``.
     system:
         If given, only process ROMs for this one system.  By default all
-        systems in the HyperSpin databases directory are processed.
+        systems (including synthetic wheels) are processed.
 
     Raises
     ------
@@ -1606,7 +1659,6 @@ def fill_default_colors(
     """
     from .config import get_systems
     from .database import find_database, load_database
-    from .recent import SYNTHETIC_SYSTEM_NAMES
 
     result = FillDefaultsResult(dry_run=dry_run)
 
@@ -1626,33 +1678,36 @@ def fill_default_colors(
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
 
-    # Validate color name against Color-RGB.ini palette
+    # Validate color names against Color-RGB.ini palette
     color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
     if color_rgb_path.exists():
         _, palette = parse_color_rgb_ini(color_rgb_path)
         valid_names = {e.name for e in palette}
-        if default_color not in valid_names:
-            raise ValueError(
-                f"Color '{default_color}' not found in {COLOR_RGB_NAME}. "
-                f"Available: {', '.join(sorted(valid_names))}"
-            )
+        for label, color in (("default", default_color), ("admin", admin_color)):
+            if color not in valid_names:
+                raise ValueError(
+                    f"{label.capitalize()} color '{color}' not found in "
+                    f"{COLOR_RGB_NAME}. Available: {', '.join(sorted(valid_names))}"
+                )
 
     n_buttons = max(1, min(8, n_buttons))
+    n_players = max(1, min(4, n_players))
+    admin_buttons = max(0, admin_buttons)
+    admin_player = n_players + 1  # e.g. P3 when n_players=2
 
-    # Read existing Colors.ini sections
+    # Read existing Colors.ini sections (strip whitespace from names to be safe)
     existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
-    existing_sections: set[str] = set(
-        re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
-    )
+    existing_sections: set[str] = {
+        m.strip()
+        for m in re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
+    }
 
-    # Discover which systems to scan
+    # Discover which systems to scan — include synthetic wheels so games that
+    # only appear in Favorites / Recently Played / Most Played are covered too.
     if system:
         systems_to_scan = [system]
     else:
-        systems_to_scan = [
-            s for s in get_systems(config)
-            if s not in SYNTHETIC_SYSTEM_NAMES
-        ]
+        systems_to_scan = list(get_systems(config))
 
     new_entries: list[str] = []
     roms_checked = 0
@@ -1669,16 +1724,25 @@ def fill_default_colors(
             roms_checked += 1
             if rom_name in existing_sections:
                 continue
-            # Build default entry
+            # Build default entry — one block per player, all mirrored
             lines = [f"[{rom_name}]"]
-            for i in range(1, n_buttons + 1):
-                lines.append(f"P1_BUTTON{i}={default_color}")
-            lines.append(f"P1_JOYSTICK={default_color}")
-            lines.append(f"P1_START={default_color}")
-            lines.append(f"P1_COIN={default_color}")
+            for p in range(1, n_players + 1):
+                prefix = f"P{p}"
+                for i in range(1, n_buttons + 1):
+                    lines.append(f"{prefix}_BUTTON{i}={default_color}")
+                lines.append(f"{prefix}_JOYSTICK={default_color}")
+                lines.append(f"{prefix}_START={default_color}")
+                lines.append(f"{prefix}_COIN={default_color}")
+            # Admin/cabinet button block (optional)
+            if admin_buttons > 0:
+                ap = f"P{admin_player}"
+                for i in range(1, admin_buttons + 1):
+                    lines.append(f"{ap}_BUTTON{i}={admin_color}")
+                lines.append(f"{ap}_COIN={admin_color}")
+                lines.append(f"{ap}_START={admin_color}")
             lines.append("")  # blank line between sections
             new_entries.append("\n".join(lines))
-            # Mark as seen so a ROM name present in multiple system databases
+            # Mark as seen so a ROM appearing in multiple system databases
             # is only emitted once (Colors.ini does not support duplicate sections).
             existing_sections.add(rom_name)
 
@@ -1687,12 +1751,312 @@ def fill_default_colors(
 
     if new_entries and not dry_run:
         if backup:
-            result.backup_path = _backup(colors_ini_path)
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         # Append new entries (preserves all existing content exactly)
         separator = "\n" if existing_text.endswith("\n") else "\n\n"
         colors_ini_path.write_text(
             existing_text + separator + "\n".join(new_entries),
             encoding="utf-8",
         )
+
+    return result
+
+
+# ─── Color-RGB.ini brightness scaling ─────────────────────────────────────────
+
+
+@dataclass
+class BrightnessResult:
+    """Return value from :func:`scale_colors_brightness`."""
+
+    dry_run: bool
+    color_rgb_path: Optional[Path] = None
+    colors_scaled: int = 0
+    backup_path: Optional[Path] = None
+    scale_pct: float = 100.0
+
+
+def _normalize_scale_entry(entry: ColorEntry, factor: float) -> ColorEntry:
+    """Return *entry* with channels normalized to max intensity, then scaled.
+
+    The dominant channel (``max(R, G, B)``) is always brought to 48 before
+    applying *factor*, so ``factor=1.0`` produces the brightest possible
+    representation of every color regardless of how dimly it was previously
+    stored.  Hue and saturation ratios are preserved exactly.
+
+    Pure-black entries (all-zero) are returned unchanged so true "off"
+    buttons remain off.
+    """
+    mx = max(entry.r, entry.g, entry.b)
+    if mx == 0:
+        return ColorEntry(name=entry.name, r=0, g=0, b=0)
+    scale = (48.0 / mx) * factor
+    return ColorEntry(
+        name=entry.name,
+        r=min(48, round(entry.r * scale)),
+        g=min(48, round(entry.g * scale)),
+        b=min(48, round(entry.b * scale)),
+    )
+
+
+def scale_colors_brightness(
+    config: Config,
+    scale_pct: float,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> BrightnessResult:
+    """Set all ``Color-RGB.ini`` colors to a uniform brightness level.
+
+    Every color is first **normalized to its maximum possible intensity**
+    (dominant channel → 48), then scaled down by ``scale_pct / 100``.  This
+    means:
+
+    * ``scale_pct=100`` — every color at **full brightness** (dominant channel
+      = 48).  Colors that were previously stored at reduced intensity are
+      brought up to their maximum.
+    * ``scale_pct=50``  — half brightness; all dominant channels = 24.
+    * ``scale_pct=10``  — near-dark night mode; dominant channel ≈ 5.
+    * ``scale_pct=0``   — all buttons off.
+
+    Because the normalization step is applied before scaling, **all buttons
+    across all player slots are guaranteed to be at the same brightness level**
+    at any given percentage — the Start button is never dimmer than P1_BUTTON1,
+    and admin buttons are never dimmer than game buttons.
+
+    Pure-black entries (0,0,0) are left untouched.
+
+    Parameters
+    ----------
+    scale_pct:
+        Target brightness as a percentage (0–100).  Values above 100 are
+        clamped to 100.
+    dry_run:
+        When ``True`` (default) no files are written.
+    backup:
+        When ``True`` (default) a timestamped backup of ``Color-RGB.ini`` is
+        created before writing.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured or ``Color-RGB.ini`` is absent.
+    """
+    result = BrightnessResult(dry_run=dry_run, scale_pct=scale_pct)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    result.color_rgb_path = color_rgb_path
+
+    header, entries = parse_color_rgb_ini(color_rgb_path)
+
+    # Clamp scale to 0–100 %
+    factor = max(0.0, min(1.0, scale_pct / 100.0))
+
+    scaled_entries = [_normalize_scale_entry(e, factor) for e in entries]
+    result.colors_scaled = len(scaled_entries)
+
+    if not dry_run:
+        if backup:
+            result.backup_path = _backup(color_rgb_path, _config_backup_dir(config))
+        write_color_rgb_ini(header, scaled_entries, color_rgb_path)
+
+    return result
+
+
+# ─── Admin/cabinet button color override ──────────────────────────────────────
+
+
+@dataclass
+class AdminButtonPatchResult:
+    """Return value from :func:`patch_admin_button_colors`."""
+
+    dry_run: bool
+    colors_ini_path: Optional[Path] = None
+    sections_updated: int = 0
+    backup_path: Optional[Path] = None
+    admin_player: int = 0
+    button_colors: list = field(default_factory=list)
+
+
+def _patch_admin_buttons_in_text(
+    text: str,
+    admin_player: int,
+    button_colors: "list[str]",
+) -> "tuple[str, int]":
+    """Update or insert ``P{admin_player}_BUTTON{i}=color`` in every INI section.
+
+    Returns ``(new_text, sections_modified_count)``.  Only
+    ``P{admin_player}_BUTTON*`` keys are touched; all other lines are
+    preserved verbatim.
+    """
+    admin_keys: dict[str, str] = {
+        f"P{admin_player}_BUTTON{i}": color
+        for i, color in enumerate(button_colors, start=1)
+    }
+
+    lines = text.splitlines(keepends=True)
+    result: list[str] = []
+    in_section = False
+    seen_keys: set[str] = set()
+    section_changed = False
+    sections_modified = 0
+
+    def _flush_missing() -> "list[str]":
+        missing = []
+        for i, color in enumerate(button_colors, start=1):
+            key = f"P{admin_player}_BUTTON{i}"
+            if key not in seen_keys:
+                missing.append(f"{key}={color}\n")
+        return missing
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Section header — flush any missing keys for the outgoing section
+        if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
+            if in_section:
+                missing = _flush_missing()
+                if missing:
+                    section_changed = True
+                    result.extend(missing)
+                if section_changed:
+                    sections_modified += 1
+            in_section = True
+            seen_keys = set()
+            section_changed = False
+            result.append(line)
+            continue
+
+        if in_section:
+            # Replace matching admin button keys in-place
+            m = re.match(r"^(P\d+_BUTTON\d+)\s*=\s*(.+)", stripped)
+            if m:
+                key = m.group(1)
+                if key in admin_keys:
+                    new_val = admin_keys[key]
+                    old_val = m.group(2).strip()
+                    if old_val != new_val:
+                        ending = (
+                            "\r\n" if line.endswith("\r\n")
+                            else "\n" if line.endswith("\n")
+                            else ""
+                        )
+                        result.append(f"{key}={new_val}{ending}")
+                        section_changed = True
+                    else:
+                        result.append(line)
+                    seen_keys.add(key)
+                    continue
+
+        result.append(line)
+
+    # End of file — flush missing keys for the last section
+    if in_section:
+        missing = _flush_missing()
+        if missing:
+            section_changed = True
+            result.extend(missing)
+        if section_changed:
+            sections_modified += 1
+
+    return "".join(result), sections_modified
+
+
+def patch_admin_button_colors(
+    config: Config,
+    button_colors: "list[str]",
+    admin_player: int = 3,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminButtonPatchResult:
+    """Set individual admin/cabinet button colors globally in ``Colors.ini``.
+
+    Unlike :func:`fill_default_colors` which only touches ROMs with no
+    existing entry, this function walks **every** section in ``Colors.ini``
+    and updates (or inserts) ``P{admin_player}_BUTTON{i}`` keys so that the
+    cabinet-level buttons always display the configured colors regardless of
+    which game is running.
+
+    With ``admin_player=3`` and ``button_colors=["Red","Blue","Green","White","White","Yellow"]``
+    every ROM section gets::
+
+        P3_BUTTON1=Red
+        P3_BUTTON2=Blue
+        P3_BUTTON3=Green
+        P3_BUTTON4=White
+        P3_BUTTON5=White
+        P3_BUTTON6=Yellow
+
+    Parameters
+    ----------
+    button_colors:
+        Ordered list of color names — one per cabinet button.  The length of
+        the list determines how many button keys are written.  All names are
+        validated against the ``Color-RGB.ini`` palette.
+    admin_player:
+        Player slot used for the admin/cabinet buttons (default ``3``).
+        For a 2-player cabinet the admin buttons typically use ``P3``.
+        For a 1-player cabinet use ``2``.
+    dry_run:
+        When ``True`` (default) no files are written.
+    backup:
+        When ``True`` (default) a timestamped backup of ``Colors.ini`` is
+        created before writing.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, ``Colors.ini`` is absent,
+        ``button_colors`` is empty, or a color name is not in the palette.
+    """
+    result = AdminButtonPatchResult(
+        dry_run=dry_run,
+        admin_player=admin_player,
+        button_colors=list(button_colors),
+    )
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not button_colors:
+        raise ValueError("button_colors must not be empty.")
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+    result.colors_ini_path = colors_ini_path
+
+    # Validate color names against Color-RGB.ini palette
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if color_rgb_path.exists():
+        _, palette = parse_color_rgb_ini(color_rgb_path)
+        valid_names = {e.name for e in palette}
+        bad = [c for c in button_colors if c not in valid_names]
+        if bad:
+            raise ValueError(
+                f"Unknown color(s): {', '.join(repr(c) for c in bad)}. "
+                f"Available: {', '.join(sorted(valid_names))}"
+            )
+
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    new_text, sections_updated = _patch_admin_buttons_in_text(
+        existing_text, admin_player, list(button_colors)
+    )
+    result.sections_updated = sections_updated
+
+    if not dry_run and sections_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text(new_text, encoding="utf-8")
 
     return result

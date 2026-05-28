@@ -429,6 +429,58 @@ These names are referenced in two places:
 
 SpinDoctor-generated entries in `Colors.ini` use hex values directly (`ledcolor1=FF0000`) — these are not affected by name renames.
 
+### `Colors.ini` — multi-player and admin key naming
+
+`Colors.ini` sections support any `P{n}_*` prefix. LedBlinky recognises the following key pattern for each player number `n`:
+
+| Key | Description |
+|-----|-------------|
+| `P{n}_BUTTON1` … `P{n}_BUTTON8` | Action buttons (1-8 per player) |
+| `P{n}_JOYSTICK` | Joystick / directional |
+| `P{n}_START` | Player-n Start button |
+| `P{n}_COIN` | Player-n Coin/Credit button |
+
+Standard cabinets use P1 and P2. Four-player cabinets extend to P3/P4. SpinDoctor's `fill-defaults --players N` generates blocks for P1 through P{N} all mirrored to the same color.
+
+**Admin / cabinet-level buttons** (functions like Select, Exit, Search, Pause) live on the *next available player slot*. For a 2-player cabinet this is P3; for a 4-player cabinet it's P5. Use `--admin-buttons N --admin-color COLOR` to add these entries automatically:
+
+```ini
+P3_BUTTON1=Green
+...
+P3_BUTTON6=Green
+P3_COIN=Green
+P3_START=Green
+```
+
+**Per-button admin color override** — `spindoctor ledblinky admin-buttons set` walks *every* existing section in `Colors.ini` (not just new ones) and writes individual colors to each `P{player}_BUTTON*` key. This is the right command when you want specific buttons to always show specific colors regardless of the current game (e.g. Select=Green, Exit=Red, Search=Blue):
+
+```bat
+spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" --apply
+```
+
+This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
+
+### `Color-RGB.ini` — brightness
+
+Each named color is stored as three 0-48 integer intensities (not 0-255). `spindoctor ledblinky colors brightness --scale PCT` normalizes every color's dominant channel to 48 first, then scales by `PCT/100`. This means:
+
+- **100 %** = every color at maximum brightness (dominant channel = 48). Any colors previously stored at reduced intensity are boosted up. This ensures all buttons (P1, P2, admin, Start) are uniformly bright.
+- **50 %** = half brightness (dominant channel = 24).
+- **10 %** = near-dark night mode.
+- **0 %** = all off.
+
+Pure-black entries (0,0,0) are left untouched. The operation is reversible by running at 100 % to restore full brightness, or restoring from the auto-generated `.bak` backup.
+
+Auto-backups are routed to subsystem-specific subfolders under `config.backup_dir` when that field is configured:
+
+| Operation | Backup subfolder |
+|-----------|-----------------|
+| LEDBlinky (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) | `config.backup_dir/LEDBlinky/` |
+| HyperSpin database saves (update-db, batch-edit, fav/recent/stats rebuild) | `config.backup_dir/HyperSpin/` |
+| RocketLauncher INI writes (generate-config) | `config.backup_dir/RocketLauncher/` |
+
+If `backup_dir` is not configured, backups land next to the source file (timestamped `.bak` sibling).
+
 ### `controls.ini` and `colors.ini`
 
 SpinDoctor generates these from `mame -listxml` output (cached in `~/.spindoctor/mame_listxml_cache/`). Existing community-maintained entries are preserved unless `--overwrite` is passed. The source is entirely local — no scraper API, no quota.
