@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.16] - 2026-05-28
+
 ### Added
 
 - **`spindoctor ledblinky colors normalize`** — converts SpinDoctor-generated hex-format `Colors.ini` entries to LedBlinky's native named format. `ledcolor1=FF0000` → `P1_BUTTON1=Red`, `joystick=FFFFFF` → `P1_JOYSTICK=White`, etc. Each hex value is matched to the nearest entry in `Color-RGB.ini` using Euclidean distance in RGB space (exact matches are found immediately; custom colors fall back to nearest neighbour). Sections already in named format are untouched. Run before `colors edit` so renames reach every section. Dry-run by default; `--apply` commits; `--no-backup` skips the `.bak` copy. `normalize_colors_ini()` + `NormalizeResult` + `_is_hex_color()` + `_nearest_color_name()` + `_LEDCOLOR_RE` + `_LEGACY_KEY_MAP` added to `ledblinky.py`.
@@ -998,7 +1002,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.15...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.16...HEAD
+[2.4.16]: https://github.com/phillram/spindoctor/compare/v2.4.15...v2.4.16
 [2.4.15]: https://github.com/phillram/spindoctor/compare/v2.4.14...v2.4.15
 [2.4.14]: https://github.com/phillram/spindoctor/compare/v2.4.13...v2.4.14
 [2.4.13]: https://github.com/phillram/spindoctor/compare/v2.4.12...v2.4.13
