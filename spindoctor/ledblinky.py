@@ -1169,9 +1169,10 @@ def write_color_rgb_ini(
         lines.append(f"{e.name}={e.r},{e.g},{e.b}")
     lines.append("")
     # Write with explicit newline="" so Python's text-mode translation does not
-    # double the \r on Windows (write_text in text mode converts \n → \r\n,
-    # which would turn our deliberate \r\n separators into \r\r\n).
-    path.write_text("\r\n".join(lines), encoding="utf-8", newline="")
+    # double the \r on Windows (open() newline="" has been supported since
+    # Python 3.0; write_text(newline=) only exists from Python 3.10+).
+    with path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write("\r\n".join(lines))
 
 
 def _replace_color_in_colors_ini(
