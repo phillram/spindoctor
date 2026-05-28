@@ -9558,35 +9558,118 @@ class _SpinDoctorGUI:
             fd_frame, textvariable=self._fd_buttons_var,
             from_=1, to=8, width=5,
         ).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            fd_frame, text="per player", foreground=_FG_DIM,
+        ).grid(row=2, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Label(fd_frame, text="Players (1-4)").grid(
+            row=3, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_players_var = self.tk.StringVar(value="1")
+        self.ttk.Spinbox(
+            fd_frame, textvariable=self._fd_players_var,
+            from_=1, to=4, width=5,
+        ).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            fd_frame,
+            text="P1–P4 blocks, all mirrored to same color",
+            foreground=_FG_DIM,
+        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Label(fd_frame, text="Admin buttons").grid(
+            row=4, column=0, sticky="w", padx=6, pady=2,
+        )
+        _fd_admin_inner = self.ttk.Frame(fd_frame)
+        _fd_admin_inner.grid(row=4, column=1, columnspan=2, sticky="w",
+                             padx=6, pady=2)
+        self._fd_admin_buttons_var = self.tk.StringVar(value="0")
+        self.ttk.Spinbox(
+            _fd_admin_inner, textvariable=self._fd_admin_buttons_var,
+            from_=0, to=12, width=5,
+        ).grid(row=0, column=0, sticky="w")
+        self.ttk.Label(_fd_admin_inner, text="  Color:").grid(
+            row=0, column=1, sticky="w",
+        )
+        self._fd_admin_color_var = self.tk.StringVar(value="White")
+        self._fd_admin_color_combo = self.ttk.Combobox(
+            _fd_admin_inner, textvariable=self._fd_admin_color_var,
+            width=14, state="readonly",
+        )
+        self._fd_admin_color_combo.grid(row=0, column=2, sticky="w", padx=(4, 0))
+        self.ttk.Label(
+            _fd_admin_inner,
+            text="  (0 = disabled, uses next player slot P{players+1})",
+            foreground=_FG_DIM,
+        ).grid(row=0, column=3, sticky="w", padx=(4, 0))
 
         self.ttk.Label(fd_frame, text="System (optional)").grid(
-            row=3, column=0, sticky="w", padx=6, pady=2,
+            row=5, column=0, sticky="w", padx=6, pady=2,
         )
         self._fd_system_var = self.tk.StringVar(value="")
         self._fd_system_combo = self.ttk.Combobox(
             fd_frame, textvariable=self._fd_system_var, width=24,
         )
-        self._fd_system_combo.grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        self._fd_system_combo.grid(row=5, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Label(
-            fd_frame, text="(leave blank = all systems)", foreground=_FG_DIM,
-        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
+            fd_frame,
+            text="(leave blank = all systems incl. Favorites / Recently Played)",
+            foreground=_FG_DIM,
+        ).grid(row=5, column=2, sticky="w", padx=(0, 6))
 
         self._fd_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             fd_frame, text="Apply (uncheck for dry-run)",
             variable=self._fd_apply_var,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
         self.ttk.Button(
             fd_frame, text="Fill Default Colors",
             command=self._run_fill_defaults,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # ── Brightness ───────────────────────────────────────────────────────
+        br2_frame = self.ttk.LabelFrame(frame, text="Brightness")
+        br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br2_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            br2_frame,
+            text=("Scale all Color-RGB.ini intensities up or down uniformly. "
+                  "100% = unchanged. 50% = half brightness. 10% = night mode. "
+                  "0% = all off. Changes affect every game at once."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(br2_frame, text="Brightness %").grid(
+            row=1, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._led_brightness_var = self.tk.IntVar(value=100)
+        self.ttk.Scale(
+            br2_frame, from_=0, to=100,
+            variable=self._led_brightness_var, orient="horizontal",
+            command=lambda _: self._led_brightness_label.config(
+                text=f"{self._led_brightness_var.get()}%"
+            ),
+        ).grid(row=1, column=1, sticky="ew", padx=6, pady=4)
+        self._led_brightness_label = self.ttk.Label(br2_frame, text="100%", width=6)
+        self._led_brightness_label.grid(row=1, column=2, sticky="w", padx=(0, 6))
+
+        self._led_brightness_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            br2_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_brightness_apply_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            br2_frame, text="Scale Brightness",
+            command=self._run_led_brightness,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Settings.ini Patch ───────────────────────────────────────────────
         _led_cfg = load_config()
 
         sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
-        sp_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(sp_frame, text="FE idle animation").grid(
@@ -9644,7 +9727,7 @@ class _SpinDoctorGUI:
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
-        br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -9705,7 +9788,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
-        cd_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
         # Treeview + vertical scrollbar
@@ -9905,11 +9988,17 @@ class _SpinDoctorGUI:
                 values=(e.name, e.r, e.g, e.b, e.to_hex()),
             )
             color_names.append(e.name)
-        # Also populate the Fill Defaults color dropdown
-        if hasattr(self, "_fd_color_combo"):
-            self._fd_color_combo["values"] = color_names
-            if color_names and self._fd_color_var.get() not in color_names:
-                self._fd_color_var.set("White" if "White" in color_names else color_names[0])
+        # Also populate the Fill Defaults color dropdowns (default + admin)
+        for combo_attr, var_attr in (
+            ("_fd_color_combo", "_fd_color_var"),
+            ("_fd_admin_color_combo", "_fd_admin_color_var"),
+        ):
+            combo = getattr(self, combo_attr, None)
+            var = getattr(self, var_attr, None)
+            if combo is not None and var is not None:
+                combo["values"] = color_names
+                if color_names and var.get() not in color_names:
+                    var.set("White" if "White" in color_names else color_names[0])
 
     def _on_color_tree_select(self, _event=None) -> None:
         """Populate the edit fields when the user clicks a color row."""
@@ -10015,10 +10104,36 @@ class _SpinDoctorGUI:
             n = 6
         if n != 6:
             args += ["--buttons", str(n)]
+        try:
+            players = int(self._fd_players_var.get())
+        except ValueError:
+            players = 1
+        if players != 1:
+            args += ["--players", str(players)]
+        try:
+            admin_n = int(self._fd_admin_buttons_var.get())
+        except ValueError:
+            admin_n = 0
+        if admin_n > 0:
+            args += ["--admin-buttons", str(admin_n)]
+            admin_color = self._fd_admin_color_var.get().strip()
+            if admin_color and admin_color != "White":
+                args += ["--admin-color", admin_color]
         system = self._fd_system_var.get().strip()
         if system:
             args += ["--system", system]
         if self._fd_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_brightness(self) -> None:
+        """Run ``ledblinky colors brightness`` to scale Color-RGB.ini values."""
+        try:
+            scale = int(self._led_brightness_var.get())
+        except (ValueError, AttributeError):
+            scale = 100
+        args = ["ledblinky", "colors", "brightness", "--scale", str(scale)]
+        if self._led_brightness_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 

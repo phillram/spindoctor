@@ -449,11 +449,13 @@ spindoctor ledblinky patch-settings --game-lwa "lwa\Slow Fade.lwa" --apply      
 spindoctor ledblinky patch-settings --fe-lwa "lwa\Slow Fade.lwa" --apply         :: swap idle animation too
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                           :: static colors while browsing
 
-:: Fill default Colors.ini entries for ROMs with no LED mapping (console games etc.)
-spindoctor ledblinky fill-defaults                                        :: preview unmapped ROMs
-spindoctor ledblinky fill-defaults --apply                                :: add White entries for all unmapped
-spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply      :: one system only
-spindoctor ledblinky fill-defaults --color Blue --buttons 8 --apply       :: custom color + button count
+:: Fill default Colors.ini entries for ROMs with no LED mapping (console games, synthetic wheels)
+spindoctor ledblinky fill-defaults                                                          :: preview
+spindoctor ledblinky fill-defaults --apply                                                  :: commit (all systems incl. Favorites)
+spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply                         :: 2-player, 8 buttons each
+spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply :: + 6 admin buttons in Green
+spindoctor ledblinky fill-defaults --color Purple --apply                                   :: Purple for all unmapped ROMs
+spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply                        :: one system only
 
 :: Color-RGB.ini — rename/recolor named colors and propagate throughout
 spindoctor ledblinky colors list
@@ -464,6 +466,12 @@ spindoctor ledblinky colors edit Orange --name Amber --apply              :: ren
 :: Normalize hex-format Colors.ini entries to named format (run before rename)
 spindoctor ledblinky colors normalize                                     :: preview
 spindoctor ledblinky colors normalize --apply                             :: commit
+
+:: Scale all Color-RGB.ini brightness values (affects every game globally)
+spindoctor ledblinky colors brightness --scale 100 --apply               :: full brightness
+spindoctor ledblinky colors brightness --scale 50  --apply               :: half brightness / dim room
+spindoctor ledblinky colors brightness --scale 10  --apply               :: night mode
+spindoctor ledblinky colors brightness --scale 75                        :: preview 75% (dry-run)
 
 :: Backup / restore LEDBlinky files only
 spindoctor backup create --include ledblinky --target D:\Backups --apply

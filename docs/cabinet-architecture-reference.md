@@ -429,6 +429,35 @@ These names are referenced in two places:
 
 SpinDoctor-generated entries in `Colors.ini` use hex values directly (`ledcolor1=FF0000`) — these are not affected by name renames.
 
+### `Colors.ini` — multi-player and admin key naming
+
+`Colors.ini` sections support any `P{n}_*` prefix. LedBlinky recognises the following key pattern for each player number `n`:
+
+| Key | Description |
+|-----|-------------|
+| `P{n}_BUTTON1` … `P{n}_BUTTON8` | Action buttons (1-8 per player) |
+| `P{n}_JOYSTICK` | Joystick / directional |
+| `P{n}_START` | Player-n Start button |
+| `P{n}_COIN` | Player-n Coin/Credit button |
+
+Standard cabinets use P1 and P2. Four-player cabinets extend to P3/P4. SpinDoctor's `fill-defaults --players N` generates blocks for P1 through P{N} all mirrored to the same color.
+
+**Admin / cabinet-level buttons** (functions like Select, Exit, Search, Pause) live on the *next available player slot*. For a 2-player cabinet this is P3; for a 4-player cabinet it's P5. Use `--admin-buttons N --admin-color COLOR` to add these entries automatically:
+
+```ini
+P3_BUTTON1=Green
+...
+P3_BUTTON6=Green
+P3_COIN=Green
+P3_START=Green
+```
+
+### `Color-RGB.ini` — brightness
+
+Each named color is stored as three 0-48 integer intensities (not 0-255). `spindoctor ledblinky colors brightness --scale PCT` multiplies every channel by `PCT/100`, rounding and clamping to 0-48. Running at 100 % is a no-op; 10 % produces near-dark colors for night play. The operation is reversible by running again at 100 %, or restoring from the auto-generated `.bak` backup.
+
+Auto-backups written by any SpinDoctor LEDBlinky operation (fill-defaults, patch-settings, normalize, colors edit, brightness) are routed to `config.backup_dir/LEDBlinky/` when `backup_dir` is configured, otherwise they land next to the source file.
+
 ### `controls.ini` and `colors.ini`
 
 SpinDoctor generates these from `mame -listxml` output (cached in `~/.spindoctor/mame_listxml_cache/`). Existing community-maintained entries are preserved unless `--overwrite` is passed. The source is entirely local — no scraper API, no quota.

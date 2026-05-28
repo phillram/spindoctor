@@ -149,7 +149,17 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Generate** (controls.ini + colors.ini), **Audit coverage**, **Check**, and **Fix**. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. CLI equivalent: `spindoctor ledblinky generate / audit / check / fix`.
 
-**Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Without an entry LedBlinky treats all buttons as inactive (off). A "Default color" dropdown (populated from `Color-RGB.ini`), a "Buttons (1-8)" spinner, and an optional "System" filter let you scope the fill. Apply checkbox + **Fill Default Colors** button. Run this after `generate` + `normalize` to close the gap for console and PC games that don't have MAME data. CLI equivalent: `spindoctor ledblinky fill-defaults`.
+**Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Controls:
+
+- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize.
+- **Buttons (1-8)** — how many `P{n}_BUTTON` keys to generate *per player*.
+- **Players (1-4)** — number of player blocks (P1–P4). All players are mirrored to the same color. Set to match your cabinet (e.g. 2 for a 2-player cab).
+- **Admin buttons** — optional extra button block using the next player slot (P{players+1}). Set to 0 to disable. Use a separate **Color** dropdown for the admin block (e.g. Green to distinguish admin buttons from game buttons).
+- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are now included).
+
+Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults`.
+
+**Brightness** — scales all `Color-RGB.ini` intensity values uniformly. Drag the slider (0–100 %) and click **Scale Brightness**. 100 % = unchanged; 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode. The change affects every game at once. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
 
 **Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. Two animation pickers, both populated by the same **Refresh list** button:
 

@@ -363,13 +363,30 @@ def emit_ini(sections: dict[str, IniSection], path: Path, header_lines: list[str
     path.write_text("\n".join(out), encoding="utf-8")
 
 
-def _backup(path: Path) -> Optional[Path]:
+def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
+    """Create a timestamped backup of *path*.
+
+    When *backup_dir* is provided the backup is written to
+    ``backup_dir / "LEDBlinky" / "<filename>.<stamp>.bak"`` (the subdirectory
+    is created on demand).  When omitted the backup sits next to the source
+    file as before.
+    """
     if not path.exists():
         return None
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup = path.with_suffix(path.suffix + f".{stamp}.bak")
+    if backup_dir:
+        dest_dir = backup_dir / "LEDBlinky"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        backup = dest_dir / f"{path.name}.{stamp}.bak"
+    else:
+        backup = path.with_suffix(path.suffix + f".{stamp}.bak")
     shutil.copy2(path, backup)
     return backup
+
+
+def _config_backup_dir(config: "Config") -> Optional[Path]:
+    """Return ``Path(config.backup_dir)`` when configured, else ``None``."""
+    return Path(config.backup_dir) if getattr(config, "backup_dir", None) else None
 
 
 @dataclass
@@ -460,8 +477,9 @@ def generate_for_roms(
         "; Existing community-maintained entries are preserved as-is.",
     ]
     if output_dir is None and config.backup_before_modify:
-        _backup(controls_path)
-        _backup(colors_path)
+        _bd = _config_backup_dir(config)
+        _backup(controls_path, _bd)
+        _backup(colors_path, _bd)
 
     emit_ini(out_controls, controls_path, header)
     emit_ini(out_colors, colors_path, header)
@@ -1034,7 +1052,7 @@ def patch_ledblinky_settings(
 
     if changes and not dry_run:
         if backup:
-            result.backup_path = _backup(settings_path)
+            result.backup_path = _backup(settings_path, _config_backup_dir(config))
         settings_path.write_text(new_text, encoding="utf-8")
 
     return result
@@ -1306,22 +1324,23 @@ def apply_color_rename(
         return result
 
     # ── 3. Write with backups ─────────────────────────────────────────────────
+    _bd = _config_backup_dir(config)
     if backup:
-        bp = _backup(color_rgb_path)
+        bp = _backup(color_rgb_path, _bd)
         if bp:
             result.backup_paths.append(bp)
     write_color_rgb_ini(header, updated_entries, color_rgb_path)
 
     if colors_ini_count > 0:
         if backup and colors_ini_path.exists():
-            bp = _backup(colors_ini_path)
+            bp = _backup(colors_ini_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
         colors_ini_path.write_text(new_colors_ini_text, encoding="utf-8")
 
     if controls_xml_count > 0:
         if backup and controls_xml_path.exists():
-            bp = _backup(controls_xml_path)
+            bp = _backup(controls_xml_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
         controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
@@ -1529,7 +1548,7 @@ def normalize_colors_ini(
 
     if keys_converted > 0 and not dry_run:
         if backup:
-            result.backup_path = _backup(colors_ini_path)
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
 
     return result
@@ -1560,6 +1579,9 @@ def fill_default_colors(
     config: Config,
     default_color: str = "White",
     n_buttons: int = 6,
+    n_players: int = 1,
+    admin_buttons: int = 0,
+    admin_color: str = "White",
     system: Optional[str] = None,
     dry_run: bool = True,
     backup: bool = True,
@@ -1572,31 +1594,61 @@ def fill_default_colors(
     off.  This function closes that gap by appending a uniform default entry
     for every ROM in the HyperSpin databases that is not already covered.
 
-    Each generated entry looks like::
+    With ``n_players=2`` and ``n_buttons=8`` each generated entry looks like::
 
         [rom_name]
         P1_BUTTON1=White
-        P1_BUTTON2=White
         ...
+        P1_BUTTON8=White
         P1_JOYSTICK=White
         P1_START=White
         P1_COIN=White
+        P2_BUTTON1=White
+        ...
+        P2_BUTTON8=White
+        P2_JOYSTICK=White
+        P2_START=White
+        P2_COIN=White
+
+    If ``admin_buttons > 0`` an additional admin block is appended using the
+    next available player number (``n_players + 1``) with ``admin_color``::
+
+        P3_BUTTON1=Green
+        ...
+        P3_BUTTON6=Green
+        P3_COIN=Green
+        P3_START=Green
 
     Only ROMs that have no section at all in ``Colors.ini`` are touched.
     Existing entries (including community-maintained named entries and
     SpinDoctor-generated hex entries) are never modified.
 
+    Synthetic wheels (Favorites, Recently Played, Most Played) are included in
+    the scan so that games that appear only in those wheels also receive a
+    default entry.  Because ``Colors.ini`` is keyed by ROM name (not by
+    system), any ROM whose name already appears in a real-system entry is
+    automatically covered for synthetic wheels too.
+
     Parameters
     ----------
     default_color:
-        Named color from ``Color-RGB.ini`` to assign to every button.
+        Named color from ``Color-RGB.ini`` to assign to every player button.
         Defaults to ``"White"``.
     n_buttons:
-        Number of P1_BUTTON entries to generate (1-8).  Defaults to 6,
-        which covers the majority of arcade games.
+        Number of ``P{n}_BUTTON`` entries to generate per player (1-8).
+        Defaults to 6.
+    n_players:
+        Number of player blocks to generate (1-4).  Blocks are always
+        mirrored — every player gets the same ``default_color``.  Defaults to 1.
+    admin_buttons:
+        Number of extra "admin/cabinet" button entries to add using the next
+        player slot (``n_players + 1``).  0 disables the admin block.
+    admin_color:
+        Named color for the admin button block.  Validated against
+        ``Color-RGB.ini`` the same as ``default_color``.
     system:
         If given, only process ROMs for this one system.  By default all
-        systems in the HyperSpin databases directory are processed.
+        systems (including synthetic wheels) are processed.
 
     Raises
     ------
@@ -1606,7 +1658,6 @@ def fill_default_colors(
     """
     from .config import get_systems
     from .database import find_database, load_database
-    from .recent import SYNTHETIC_SYSTEM_NAMES
 
     result = FillDefaultsResult(dry_run=dry_run)
 
@@ -1626,33 +1677,36 @@ def fill_default_colors(
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
 
-    # Validate color name against Color-RGB.ini palette
+    # Validate color names against Color-RGB.ini palette
     color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
     if color_rgb_path.exists():
         _, palette = parse_color_rgb_ini(color_rgb_path)
         valid_names = {e.name for e in palette}
-        if default_color not in valid_names:
-            raise ValueError(
-                f"Color '{default_color}' not found in {COLOR_RGB_NAME}. "
-                f"Available: {', '.join(sorted(valid_names))}"
-            )
+        for label, color in (("default", default_color), ("admin", admin_color)):
+            if color not in valid_names:
+                raise ValueError(
+                    f"{label.capitalize()} color '{color}' not found in "
+                    f"{COLOR_RGB_NAME}. Available: {', '.join(sorted(valid_names))}"
+                )
 
     n_buttons = max(1, min(8, n_buttons))
+    n_players = max(1, min(4, n_players))
+    admin_buttons = max(0, admin_buttons)
+    admin_player = n_players + 1  # e.g. P3 when n_players=2
 
-    # Read existing Colors.ini sections
+    # Read existing Colors.ini sections (strip whitespace from names to be safe)
     existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
-    existing_sections: set[str] = set(
-        re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
-    )
+    existing_sections: set[str] = {
+        m.strip()
+        for m in re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
+    }
 
-    # Discover which systems to scan
+    # Discover which systems to scan — include synthetic wheels so games that
+    # only appear in Favorites / Recently Played / Most Played are covered too.
     if system:
         systems_to_scan = [system]
     else:
-        systems_to_scan = [
-            s for s in get_systems(config)
-            if s not in SYNTHETIC_SYSTEM_NAMES
-        ]
+        systems_to_scan = list(get_systems(config))
 
     new_entries: list[str] = []
     roms_checked = 0
@@ -1669,16 +1723,25 @@ def fill_default_colors(
             roms_checked += 1
             if rom_name in existing_sections:
                 continue
-            # Build default entry
+            # Build default entry — one block per player, all mirrored
             lines = [f"[{rom_name}]"]
-            for i in range(1, n_buttons + 1):
-                lines.append(f"P1_BUTTON{i}={default_color}")
-            lines.append(f"P1_JOYSTICK={default_color}")
-            lines.append(f"P1_START={default_color}")
-            lines.append(f"P1_COIN={default_color}")
+            for p in range(1, n_players + 1):
+                prefix = f"P{p}"
+                for i in range(1, n_buttons + 1):
+                    lines.append(f"{prefix}_BUTTON{i}={default_color}")
+                lines.append(f"{prefix}_JOYSTICK={default_color}")
+                lines.append(f"{prefix}_START={default_color}")
+                lines.append(f"{prefix}_COIN={default_color}")
+            # Admin/cabinet button block (optional)
+            if admin_buttons > 0:
+                ap = f"P{admin_player}"
+                for i in range(1, admin_buttons + 1):
+                    lines.append(f"{ap}_BUTTON{i}={admin_color}")
+                lines.append(f"{ap}_COIN={admin_color}")
+                lines.append(f"{ap}_START={admin_color}")
             lines.append("")  # blank line between sections
             new_entries.append("\n".join(lines))
-            # Mark as seen so a ROM name present in multiple system databases
+            # Mark as seen so a ROM appearing in multiple system databases
             # is only emitted once (Colors.ini does not support duplicate sections).
             existing_sections.add(rom_name)
 
@@ -1687,12 +1750,101 @@ def fill_default_colors(
 
     if new_entries and not dry_run:
         if backup:
-            result.backup_path = _backup(colors_ini_path)
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         # Append new entries (preserves all existing content exactly)
         separator = "\n" if existing_text.endswith("\n") else "\n\n"
         colors_ini_path.write_text(
             existing_text + separator + "\n".join(new_entries),
             encoding="utf-8",
         )
+
+    return result
+
+
+# ─── Color-RGB.ini brightness scaling ─────────────────────────────────────────
+
+
+@dataclass
+class BrightnessResult:
+    """Return value from :func:`scale_colors_brightness`."""
+
+    dry_run: bool
+    color_rgb_path: Optional[Path] = None
+    colors_scaled: int = 0
+    backup_path: Optional[Path] = None
+    scale_pct: float = 100.0
+
+
+def scale_colors_brightness(
+    config: Config,
+    scale_pct: float,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> BrightnessResult:
+    """Scale all R,G,B intensity values in ``Color-RGB.ini`` by *scale_pct* %.
+
+    LedBlinky stores colors as integer intensities in the 0–48 range.
+    This function multiplies every channel by ``scale_pct / 100``, rounds to
+    the nearest integer, and clamps to 0–48.  Examples:
+
+    * ``scale_pct=100`` — no change (identity).
+    * ``scale_pct=50``  — half brightness, good for dim-room gaming.
+    * ``scale_pct=10``  — near-dark night mode.
+    * ``scale_pct=0``   — all buttons off (black).
+
+    The operation is fully reversible: run again at 100 % to restore originals
+    (or restore from the auto-generated ``.bak`` backup).
+
+    Parameters
+    ----------
+    scale_pct:
+        Target brightness as a percentage (0–100).  Values above 100 are
+        clamped to 100 to avoid saturating channels that are already at
+        maximum brightness (48).
+    dry_run:
+        When ``True`` (default) no files are written.
+    backup:
+        When ``True`` (default) a timestamped backup of ``Color-RGB.ini`` is
+        created before writing.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured or ``Color-RGB.ini`` is absent.
+    """
+    result = BrightnessResult(dry_run=dry_run, scale_pct=scale_pct)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    result.color_rgb_path = color_rgb_path
+
+    header, entries = parse_color_rgb_ini(color_rgb_path)
+
+    # Clamp scale to 0–100 % (can't go above max intensity 48)
+    factor = max(0.0, min(1.0, scale_pct / 100.0))
+
+    scaled_entries = [
+        ColorEntry(
+            name=e.name,
+            r=min(48, round(e.r * factor)),
+            g=min(48, round(e.g * factor)),
+            b=min(48, round(e.b * factor)),
+        )
+        for e in entries
+    ]
+    result.colors_scaled = len(scaled_entries)
+
+    if not dry_run:
+        if backup:
+            result.backup_path = _backup(color_rgb_path, _config_backup_dir(config))
+        write_color_rgb_ini(header, scaled_entries, color_rgb_path)
 
     return result

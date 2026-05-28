@@ -6566,49 +6566,124 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
             console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
-@ledblinky_group.command("fill-defaults")
-@click.option("--color", "default_color", default="White", show_default=True,
-              help="Named color from Color-RGB.ini to assign to every button. "
-                   "Must exist in Color-RGB.ini.")
-@click.option("--buttons", "n_buttons", default=6, show_default=True, type=int,
-              help="Number of P1_BUTTON entries to generate per ROM (clamped 1-8).")
-@click.option("--system", default=None, metavar="SYSTEM",
-              help="Process only this HyperSpin system.  Default: all systems.")
+@ledblinky_colors_group.command("brightness")
+@click.option("--scale", "scale_pct", required=True, type=float,
+              metavar="PCT",
+              help="Target brightness as a percentage (0–100).  "
+                   "100 = unchanged, 50 = half brightness, 10 = night mode.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
-def ledblinky_fill_defaults(default_color, n_buttons, system, apply_changes, no_backup):
+def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
+    """Scale all Color-RGB.ini brightness values up or down.
+
+    LedBlinky stores each color as R,G,B intensities in the 0–48 range.
+    This command multiplies every channel by SCALE_PCT/100, rounding to the
+    nearest integer and clamping to 0–48.
+
+    \b
+    Examples:
+      spindoctor ledblinky colors brightness --scale 100 --apply   :: full brightness
+      spindoctor ledblinky colors brightness --scale 50  --apply   :: half brightness
+      spindoctor ledblinky colors brightness --scale 10  --apply   :: night mode
+      spindoctor ledblinky colors brightness --scale 75           :: preview 75%
+    """
+    from . import ledblinky as lb
+
+    if not (0.0 <= scale_pct <= 100.0):
+        console.print("[red]Error:[/red] --scale must be between 0 and 100.")
+        raise SystemExit(1)
+
+    config = _cfg()
+    try:
+        result = lb.scale_colors_brightness(
+            config,
+            scale_pct=scale_pct,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would scale" if result.dry_run else "scaled"
+    console.print(
+        f"\n[blue bold]Color-RGB.ini[/blue bold]  {result.color_rgb_path}"
+    )
+    console.print(
+        f"  {verb}: [green]{result.colors_scaled}[/green] color(s) "
+        f"at [cyan]{scale_pct:.0f}%[/cyan] brightness"
+    )
+    if result.dry_run:
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+        )
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+
+@ledblinky_group.command("fill-defaults")
+@click.option("--color", "default_color", default="White", show_default=True,
+              help="Named color from Color-RGB.ini for player buttons. "
+                   "Must exist in Color-RGB.ini.")
+@click.option("--buttons", "n_buttons", default=6, show_default=True, type=int,
+              help="Number of P{n}_BUTTON entries per player (clamped 1-8).")
+@click.option("--players", "n_players", default=1, show_default=True,
+              type=click.IntRange(1, 4),
+              help="Number of player blocks to generate (P1–P4).  "
+                   "All players get the same color (mirrored).")
+@click.option("--admin-buttons", "admin_buttons", default=0, show_default=True,
+              type=int,
+              help="Extra admin/cabinet buttons to add on the next player slot "
+                   "(P{players+1}).  0 disables the admin block.")
+@click.option("--admin-color", "admin_color", default="White", show_default=True,
+              help="Named color for the admin button block.")
+@click.option("--system", default=None, metavar="SYSTEM",
+              help="Process only this HyperSpin system.  Default: all systems "
+                   "(including Favorites / Recently Played / Most Played).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_fill_defaults(
+    default_color, n_buttons, n_players, admin_buttons, admin_color,
+    system, apply_changes, no_backup,
+):
     """Add default Colors.ini entries for ROMs with no LED mapping.
 
     When a ROM has no entry in Colors.ini, LedBlinky treats all of its buttons
     as inactive and turns them off (black).  Use this command to append a
-    uniform default entry for every ROM that is not already covered, so unused
-    buttons glow a steady color instead of going dark.
+    uniform default entry for every ROM that is not already covered, so
+    unmapped buttons glow a steady color instead of going dark.
 
-    Each generated entry uses named format::
+    With --players 2 --buttons 8 each generated entry looks like::
 
     \b
         [rom_name]
-        P1_BUTTON1=White
-        P1_BUTTON2=White
-        ...
-        P1_JOYSTICK=White
-        P1_START=White
-        P1_COIN=White
+        P1_BUTTON1=White  ...  P1_BUTTON8=White
+        P1_JOYSTICK=White  P1_START=White  P1_COIN=White
+        P2_BUTTON1=White  ...  P2_BUTTON8=White
+        P2_JOYSTICK=White  P2_START=White  P2_COIN=White
 
-    Only ROMs with no existing section are touched.  Existing entries (including
-    MAME-generated hex entries and any community-maintained named entries) are
-    never modified.  Run normalize first if you want those hex entries converted
-    before filling the gaps.
+    Add --admin-buttons 6 --admin-color Green for cabinet-level buttons::
+
+    \b
+        P3_BUTTON1=Green  ...  P3_BUTTON6=Green
+        P3_COIN=Green  P3_START=Green
+
+    Only ROMs with no existing section are touched.  Existing entries are
+    never modified.  Synthetic wheels (Favorites, Recently Played, Most Played)
+    are included so games that appear only in those wheels are also covered.
 
     \b
     Examples:
-      spindoctor ledblinky fill-defaults                         :: preview all
-      spindoctor ledblinky fill-defaults --apply                 :: commit all
-      spindoctor ledblinky fill-defaults --system "MAME"         :: one system
-      spindoctor ledblinky fill-defaults --color Blue --apply    :: blue buttons
-      spindoctor ledblinky fill-defaults --buttons 8 --apply     :: 8 buttons
+      spindoctor ledblinky fill-defaults                              :: preview
+      spindoctor ledblinky fill-defaults --apply                      :: commit
+      spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply
+      spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
+      spindoctor ledblinky fill-defaults --system "MAME"              :: one system
+      spindoctor ledblinky fill-defaults --color Purple --apply
     """
     from . import ledblinky as lb
 
@@ -6618,6 +6693,9 @@ def ledblinky_fill_defaults(default_color, n_buttons, system, apply_changes, no_
             config,
             default_color=default_color,
             n_buttons=n_buttons,
+            n_players=n_players,
+            admin_buttons=admin_buttons,
+            admin_color=admin_color,
             system=system,
             dry_run=not apply_changes,
             backup=not no_backup,
@@ -6638,10 +6716,18 @@ def ledblinky_fill_defaults(default_color, n_buttons, system, apply_changes, no_
             "\n[dim]Nothing to add — every ROM already has a Colors.ini entry.[/dim]"
         )
     else:
+        players_desc = (
+            f"players=[cyan]{n_players}[/cyan], " if n_players > 1 else ""
+        )
+        admin_desc = (
+            f", admin=[cyan]{admin_buttons}×{admin_color}[/cyan]"
+            if admin_buttons > 0 else ""
+        )
         console.print(
             f"  {verb}      : [green]{result.roms_added}[/green] "
             f"default entr{'y' if result.roms_added == 1 else 'ies'} "
-            f"(color=[cyan]{default_color}[/cyan], buttons=[cyan]{n_buttons}[/cyan])"
+            f"({players_desc}color=[cyan]{default_color}[/cyan], "
+            f"buttons=[cyan]{n_buttons}[/cyan]{admin_desc})"
         )
         if result.dry_run:
             console.print(

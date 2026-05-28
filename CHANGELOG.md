@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky fill-defaults` — multi-player support (`--players 1-4`)** — generates `P1`…`P{N}` button blocks for every new entry. All players are mirrored to the same color. A 2-player, 8-button-per-side cabinet: `fill-defaults --players 2 --buttons 8 --apply`. `n_players` param added to `fill_default_colors()`.
+
+- **`ledblinky fill-defaults` — admin/cabinet button block (`--admin-buttons N --admin-color COLOR`)** — appends an extra `P{players+1}` block (e.g. P3 for a 2-player cabinet) using a separate color for cabinet-level buttons (Select, Exit, Search, Pause, etc.). Admin block gets `P{n}_BUTTON1…N`, `P{n}_COIN`, `P{n}_START`. `admin_buttons` + `admin_color` params added to `fill_default_colors()`.
+
+- **`ledblinky fill-defaults` — synthetic wheels included by default** — Favorites, Recently Played, and Most Played are no longer excluded from the scan. ROMs in those wheels whose name already appears in a real-system `Colors.ini` entry are automatically covered (Colors.ini is keyed by ROM name, not system). ROMs that only exist in synthetic wheels now receive a default entry.
+
+- **`ledblinky colors brightness` — new CLI command** — scales all `Color-RGB.ini` R,G,B intensity values (0-48 range) by a percentage. `--scale 100` = unchanged; `--scale 50` = half brightness; `--scale 10` = night mode; `--scale 0` = all off. Reversible. Auto-backup before write. `scale_colors_brightness()` + `BrightnessResult` added to `ledblinky.py`.
+
+- **GUI — Fill Default Colors: Players spinner and Admin Buttons row** — "Players (1-4)" Spinbox generates P1–P4 blocks. "Admin buttons" Spinbox (0=disabled) + separate color dropdown for the admin block. Both color dropdowns auto-refresh when Color-RGB.ini changes.
+
+- **GUI — Brightness section (LEDBlinky tab)** — slider (0–100 %), Apply checkbox, and **Scale Brightness** button. Equivalent to `spindoctor ledblinky colors brightness`.
+
+### Fixed
+
+- **LEDBlinky auto-backups now respect `config.backup_dir`** — the `_backup()` helper in `ledblinky.py` previously always wrote `.bak` files next to the source file, ignoring the `backup_dir` setting. Now when `backup_dir` is configured, all auto-backups (fill-defaults, patch-settings, normalize, colors edit, brightness) are written to `backup_dir/LEDBlinky/<filename>.<stamp>.bak`. The subdirectory is created automatically.
+
+### Changed
+
+- **Docs** — `commands.md` fill-defaults table updated (new flags, synthetic-wheel note, recommended 2-player workflow); new `colors brightness` subsection. `cli-cheatsheet.md` updated with multi-player and brightness examples. `gui.md` Fill Default Colors section rewritten; Brightness section added. `cabinet-architecture-reference.md` adds multi-player key naming table, admin block convention, brightness model, and backup routing note.
+
 ---
 
 ## [2.4.18] - 2026-05-28
