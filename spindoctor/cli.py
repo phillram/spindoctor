@@ -2521,7 +2521,8 @@ def _collect_stat_files(rl: Path) -> list[Path]:
     Three layouts are scanned (a cabinet may use more than one):
     - Classic  : ``Settings/Global Statistics/<System>.ini``
     - Legacy   : ``Settings/<System>/Statistics.ini``
-    - Newer    : ``Data/Statistics/<System>.ini`` (excludes the aggregate file)
+    - Newer    : ``Data/Statistics/<System>.ini`` (including the aggregate
+                 ``Global Statistics.ini`` — RL regenerates it on next launch)
     """
     stat_files: list[Path] = []
 
@@ -2539,10 +2540,7 @@ def _collect_stat_files(rl: Path) -> list[Path]:
 
     data_stats_dir = rl / "Data" / "Statistics"
     if data_stats_dir.is_dir():
-        stat_files.extend(
-            ini for ini in data_stats_dir.glob("*.ini")
-            if ini.stem.lower() != "global statistics"
-        )
+        stat_files.extend(data_stats_dir.glob("*.ini"))
 
     return stat_files
 
@@ -2668,7 +2666,8 @@ def scrub_cmd(scrub_favorites, scrub_stats, scrub_hs_favorites, backup_dir, appl
                      Favorites wheel from disk.
 
     \b
-    --stats          Delete every RocketLauncher Statistics.ini file.
+    --stats          Delete every RocketLauncher Statistics.ini file,
+                     including Data/Statistics/Global Statistics.ini.
                      Also clears the Recently Played and Most Played wheels.
                      Scans three layouts: Settings/Global Statistics/,
                      Settings/<System>/Statistics.ini, Data/Statistics/.
