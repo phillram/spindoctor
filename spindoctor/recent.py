@@ -658,7 +658,7 @@ def rebuild(
     pseudo_entries = [
         FavoriteEntry(
             system=r.system, rom_name=r.rom_name,
-            display_name=r.rom_name, added=r.isoformat(),
+            display_name="", added=r.isoformat(),
         )
         for r in top
     ]
