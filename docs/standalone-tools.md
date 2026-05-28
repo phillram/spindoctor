@@ -136,12 +136,21 @@ The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refres
 If you need to register by hand (e.g. a group-policy environment that restricts the GUI), generate the script pair first by clicking *Schedule auto-refresh* once, then adapt the task to point at the generated VBS:
 
 ```bat
-:: Step 1 — let the GUI write the .bat/.vbs pair (close the GUI after).
-:: Step 2 — register the task manually, pointing at the VBS:
+:: Step 1 — let the GUI write the .bat/.vbs pair.
+::   The GUI output panel shows the exact path it used, e.g.:
+::   [Auto-refresh] wrote hidden-run shim → D:\SpinDoctor\spindoctor-refresh-wheels.vbs
+::   Use that path in step 2.
+::
+:: Step 2 — register the task manually (replace the path with the one from step 1):
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
   /delay 0002:00 ^
-  /tr "wscript.exe //B \"%USERPROFILE%\.spindoctor\spindoctor-refresh-wheels.vbs\""
+  /tr "wscript.exe //B \"D:\SpinDoctor\spindoctor-refresh-wheels.vbs\""
 ```
+
+> **Where is the VBS?** For a frozen-binary install (the `.exe` download) the files are written to the
+> **same folder as `spindoctor.exe`**, because the `.bat` embeds full paths to the sibling executables and
+> must sit adjacent to them. For a source/`pip install` setup they go to `%USERPROFILE%\.spindoctor\`.
+> The GUI output panel always prints the exact path used — check there rather than guessing.
 
 > **Do not** register `cmd.exe /c bat.bat` directly — that runs at normal process priority and opens a console window, both of which can stall the cabinet frontend.
 
