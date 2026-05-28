@@ -159,7 +159,16 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults`.
 
-**Brightness** — scales all `Color-RGB.ini` intensity values uniformly. Drag the slider (0–100 %) and click **Scale Brightness**. 100 % = unchanged; 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode. The change affects every game at once. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
+**Brightness** — sets all `Color-RGB.ini` colors to a uniform brightness level. Drag the slider (0–100 %) and click **Scale Brightness**. Each color is first normalized to its maximum possible intensity, then scaled to the chosen percentage — so **100 % = every button at maximum brightness** (dim colors are boosted up, not left dim). 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode; 0 % = all off. This guarantees every button (P1, P2, admin, Start) is at the same level. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
+
+**Admin Button Colors** — sets fixed per-button colors for the cabinet-level (admin) buttons across **every** ROM section in `Colors.ini`. Unlike Fill Default Colors (which only adds missing entries), this writes to every existing section so the admin buttons always show the same colors regardless of the current game. Controls:
+
+- **Player slot (1–6)** — which player slot the admin buttons live on. Default `3` for a 2-player cabinet (use `2` for a 1-player cabinet).
+- **Button count (1–8)** — how many admin buttons to update. Only the first N color dropdowns are sent.
+- **BUTTON1–BUTTON8** — individual color dropdowns, one per button, **populated from `Color-RGB.ini`** (same palette as Fill Default Colors). Use **Refresh colors** to reload the list after editing colors or when first configuring the cabinet.
+- **Refresh colors** button — reloads the `Color-RGB.ini` palette into all color dropdowns (same as the "Refresh list" button in Color Definitions).
+
+Apply checkbox + **Set Admin Button Colors** button. A `.bak` backup of `Colors.ini` is written automatically. CLI equivalent: `spindoctor ledblinky admin-buttons set`.
 
 **Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. Two animation pickers, both populated by the same **Refresh list** button:
 

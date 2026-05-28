@@ -1775,32 +1775,60 @@ class BrightnessResult:
     scale_pct: float = 100.0
 
 
+def _normalize_scale_entry(entry: ColorEntry, factor: float) -> ColorEntry:
+    """Return *entry* with channels normalized to max intensity, then scaled.
+
+    The dominant channel (``max(R, G, B)``) is always brought to 48 before
+    applying *factor*, so ``factor=1.0`` produces the brightest possible
+    representation of every color regardless of how dimly it was previously
+    stored.  Hue and saturation ratios are preserved exactly.
+
+    Pure-black entries (all-zero) are returned unchanged so true "off"
+    buttons remain off.
+    """
+    mx = max(entry.r, entry.g, entry.b)
+    if mx == 0:
+        return ColorEntry(name=entry.name, r=0, g=0, b=0)
+    scale = (48.0 / mx) * factor
+    return ColorEntry(
+        name=entry.name,
+        r=min(48, round(entry.r * scale)),
+        g=min(48, round(entry.g * scale)),
+        b=min(48, round(entry.b * scale)),
+    )
+
+
 def scale_colors_brightness(
     config: Config,
     scale_pct: float,
     dry_run: bool = True,
     backup: bool = True,
 ) -> BrightnessResult:
-    """Scale all R,G,B intensity values in ``Color-RGB.ini`` by *scale_pct* %.
+    """Set all ``Color-RGB.ini`` colors to a uniform brightness level.
 
-    LedBlinky stores colors as integer intensities in the 0–48 range.
-    This function multiplies every channel by ``scale_pct / 100``, rounds to
-    the nearest integer, and clamps to 0–48.  Examples:
+    Every color is first **normalized to its maximum possible intensity**
+    (dominant channel → 48), then scaled down by ``scale_pct / 100``.  This
+    means:
 
-    * ``scale_pct=100`` — no change (identity).
-    * ``scale_pct=50``  — half brightness, good for dim-room gaming.
-    * ``scale_pct=10``  — near-dark night mode.
-    * ``scale_pct=0``   — all buttons off (black).
+    * ``scale_pct=100`` — every color at **full brightness** (dominant channel
+      = 48).  Colors that were previously stored at reduced intensity are
+      brought up to their maximum.
+    * ``scale_pct=50``  — half brightness; all dominant channels = 24.
+    * ``scale_pct=10``  — near-dark night mode; dominant channel ≈ 5.
+    * ``scale_pct=0``   — all buttons off.
 
-    The operation is fully reversible: run again at 100 % to restore originals
-    (or restore from the auto-generated ``.bak`` backup).
+    Because the normalization step is applied before scaling, **all buttons
+    across all player slots are guaranteed to be at the same brightness level**
+    at any given percentage — the Start button is never dimmer than P1_BUTTON1,
+    and admin buttons are never dimmer than game buttons.
+
+    Pure-black entries (0,0,0) are left untouched.
 
     Parameters
     ----------
     scale_pct:
         Target brightness as a percentage (0–100).  Values above 100 are
-        clamped to 100 to avoid saturating channels that are already at
-        maximum brightness (48).
+        clamped to 100.
     dry_run:
         When ``True`` (default) no files are written.
     backup:
@@ -1828,23 +1856,206 @@ def scale_colors_brightness(
 
     header, entries = parse_color_rgb_ini(color_rgb_path)
 
-    # Clamp scale to 0–100 % (can't go above max intensity 48)
+    # Clamp scale to 0–100 %
     factor = max(0.0, min(1.0, scale_pct / 100.0))
 
-    scaled_entries = [
-        ColorEntry(
-            name=e.name,
-            r=min(48, round(e.r * factor)),
-            g=min(48, round(e.g * factor)),
-            b=min(48, round(e.b * factor)),
-        )
-        for e in entries
-    ]
+    scaled_entries = [_normalize_scale_entry(e, factor) for e in entries]
     result.colors_scaled = len(scaled_entries)
 
     if not dry_run:
         if backup:
             result.backup_path = _backup(color_rgb_path, _config_backup_dir(config))
         write_color_rgb_ini(header, scaled_entries, color_rgb_path)
+
+    return result
+
+
+# ─── Admin/cabinet button color override ──────────────────────────────────────
+
+
+@dataclass
+class AdminButtonPatchResult:
+    """Return value from :func:`patch_admin_button_colors`."""
+
+    dry_run: bool
+    colors_ini_path: Optional[Path] = None
+    sections_updated: int = 0
+    backup_path: Optional[Path] = None
+    admin_player: int = 0
+    button_colors: list = field(default_factory=list)
+
+
+def _patch_admin_buttons_in_text(
+    text: str,
+    admin_player: int,
+    button_colors: "list[str]",
+) -> "tuple[str, int]":
+    """Update or insert ``P{admin_player}_BUTTON{i}=color`` in every INI section.
+
+    Returns ``(new_text, sections_modified_count)``.  Only
+    ``P{admin_player}_BUTTON*`` keys are touched; all other lines are
+    preserved verbatim.
+    """
+    admin_keys: dict[str, str] = {
+        f"P{admin_player}_BUTTON{i}": color
+        for i, color in enumerate(button_colors, start=1)
+    }
+
+    lines = text.splitlines(keepends=True)
+    result: list[str] = []
+    in_section = False
+    seen_keys: set[str] = set()
+    section_changed = False
+    sections_modified = 0
+
+    def _flush_missing() -> "list[str]":
+        missing = []
+        for i, color in enumerate(button_colors, start=1):
+            key = f"P{admin_player}_BUTTON{i}"
+            if key not in seen_keys:
+                missing.append(f"{key}={color}\n")
+        return missing
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Section header — flush any missing keys for the outgoing section
+        if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
+            if in_section:
+                missing = _flush_missing()
+                if missing:
+                    section_changed = True
+                    result.extend(missing)
+                if section_changed:
+                    sections_modified += 1
+            in_section = True
+            seen_keys = set()
+            section_changed = False
+            result.append(line)
+            continue
+
+        if in_section:
+            # Replace matching admin button keys in-place
+            m = re.match(r"^(P\d+_BUTTON\d+)\s*=\s*(.+)", stripped)
+            if m:
+                key = m.group(1)
+                if key in admin_keys:
+                    new_val = admin_keys[key]
+                    old_val = m.group(2).strip()
+                    if old_val != new_val:
+                        ending = (
+                            "\r\n" if line.endswith("\r\n")
+                            else "\n" if line.endswith("\n")
+                            else ""
+                        )
+                        result.append(f"{key}={new_val}{ending}")
+                        section_changed = True
+                    else:
+                        result.append(line)
+                    seen_keys.add(key)
+                    continue
+
+        result.append(line)
+
+    # End of file — flush missing keys for the last section
+    if in_section:
+        missing = _flush_missing()
+        if missing:
+            section_changed = True
+            result.extend(missing)
+        if section_changed:
+            sections_modified += 1
+
+    return "".join(result), sections_modified
+
+
+def patch_admin_button_colors(
+    config: Config,
+    button_colors: "list[str]",
+    admin_player: int = 3,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminButtonPatchResult:
+    """Set individual admin/cabinet button colors globally in ``Colors.ini``.
+
+    Unlike :func:`fill_default_colors` which only touches ROMs with no
+    existing entry, this function walks **every** section in ``Colors.ini``
+    and updates (or inserts) ``P{admin_player}_BUTTON{i}`` keys so that the
+    cabinet-level buttons always display the configured colors regardless of
+    which game is running.
+
+    With ``admin_player=3`` and ``button_colors=["Red","Blue","Green","White","White","Yellow"]``
+    every ROM section gets::
+
+        P3_BUTTON1=Red
+        P3_BUTTON2=Blue
+        P3_BUTTON3=Green
+        P3_BUTTON4=White
+        P3_BUTTON5=White
+        P3_BUTTON6=Yellow
+
+    Parameters
+    ----------
+    button_colors:
+        Ordered list of color names — one per cabinet button.  The length of
+        the list determines how many button keys are written.  All names are
+        validated against the ``Color-RGB.ini`` palette.
+    admin_player:
+        Player slot used for the admin/cabinet buttons (default ``3``).
+        For a 2-player cabinet the admin buttons typically use ``P3``.
+        For a 1-player cabinet use ``2``.
+    dry_run:
+        When ``True`` (default) no files are written.
+    backup:
+        When ``True`` (default) a timestamped backup of ``Colors.ini`` is
+        created before writing.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, ``Colors.ini`` is absent,
+        ``button_colors`` is empty, or a color name is not in the palette.
+    """
+    result = AdminButtonPatchResult(
+        dry_run=dry_run,
+        admin_player=admin_player,
+        button_colors=list(button_colors),
+    )
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not button_colors:
+        raise ValueError("button_colors must not be empty.")
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+    result.colors_ini_path = colors_ini_path
+
+    # Validate color names against Color-RGB.ini palette
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if color_rgb_path.exists():
+        _, palette = parse_color_rgb_ini(color_rgb_path)
+        valid_names = {e.name for e in palette}
+        bad = [c for c in button_colors if c not in valid_names]
+        if bad:
+            raise ValueError(
+                f"Unknown color(s): {', '.join(repr(c) for c in bad)}. "
+                f"Available: {', '.join(sorted(valid_names))}"
+            )
+
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    new_text, sections_updated = _patch_admin_buttons_in_text(
+        existing_text, admin_player, list(button_colors)
+    )
+    result.sections_updated = sections_updated
+
+    if not dry_run and sections_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text(new_text, encoding="utf-8")
 
     return result

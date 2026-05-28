@@ -467,11 +467,19 @@ spindoctor ledblinky colors edit Orange --name Amber --apply              :: ren
 spindoctor ledblinky colors normalize                                     :: preview
 spindoctor ledblinky colors normalize --apply                             :: commit
 
-:: Scale all Color-RGB.ini brightness values (affects every game globally)
-spindoctor ledblinky colors brightness --scale 100 --apply               :: full brightness
+:: Set uniform brightness for all colors (normalizes to max first, then scales)
+:: 100% = every color at maximum brightness; dim colors are boosted up
+:: 50% = half brightness; 10% = night mode; 0% = all off
+spindoctor ledblinky colors brightness --scale 100 --apply               :: maximum brightness
 spindoctor ledblinky colors brightness --scale 50  --apply               :: half brightness / dim room
 spindoctor ledblinky colors brightness --scale 10  --apply               :: night mode
 spindoctor ledblinky colors brightness --scale 75                        :: preview 75% (dry-run)
+
+:: Set fixed per-button admin/cabinet button colors across ALL Colors.ini sections
+spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply   :: per-button
+spindoctor ledblinky admin-buttons set --color Green --count 6 --apply                         :: uniform
+spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" :: preview
+:: (default player=3 for 2-player cabinet; use --player 2 for 1-player cabinet)
 
 :: Backup / restore LEDBlinky files only
 spindoctor backup create --include ledblinky --target D:\Backups --apply

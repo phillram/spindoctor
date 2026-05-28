@@ -452,11 +452,34 @@ P3_COIN=Green
 P3_START=Green
 ```
 
+**Per-button admin color override** — `spindoctor ledblinky admin-buttons set` walks *every* existing section in `Colors.ini` (not just new ones) and writes individual colors to each `P{player}_BUTTON*` key. This is the right command when you want specific buttons to always show specific colors regardless of the current game (e.g. Select=Green, Exit=Red, Search=Blue):
+
+```bat
+spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" --apply
+```
+
+This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
+
 ### `Color-RGB.ini` — brightness
 
-Each named color is stored as three 0-48 integer intensities (not 0-255). `spindoctor ledblinky colors brightness --scale PCT` multiplies every channel by `PCT/100`, rounding and clamping to 0-48. Running at 100 % is a no-op; 10 % produces near-dark colors for night play. The operation is reversible by running again at 100 %, or restoring from the auto-generated `.bak` backup.
+Each named color is stored as three 0-48 integer intensities (not 0-255). `spindoctor ledblinky colors brightness --scale PCT` normalizes every color's dominant channel to 48 first, then scales by `PCT/100`. This means:
 
-Auto-backups written by any SpinDoctor LEDBlinky operation (fill-defaults, patch-settings, normalize, colors edit, brightness) are routed to `config.backup_dir/LEDBlinky/` when `backup_dir` is configured, otherwise they land next to the source file.
+- **100 %** = every color at maximum brightness (dominant channel = 48). Any colors previously stored at reduced intensity are boosted up. This ensures all buttons (P1, P2, admin, Start) are uniformly bright.
+- **50 %** = half brightness (dominant channel = 24).
+- **10 %** = near-dark night mode.
+- **0 %** = all off.
+
+Pure-black entries (0,0,0) are left untouched. The operation is reversible by running at 100 % to restore full brightness, or restoring from the auto-generated `.bak` backup.
+
+Auto-backups are routed to subsystem-specific subfolders under `config.backup_dir` when that field is configured:
+
+| Operation | Backup subfolder |
+|-----------|-----------------|
+| LEDBlinky (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) | `config.backup_dir/LEDBlinky/` |
+| HyperSpin database saves (update-db, batch-edit, fav/recent/stats rebuild) | `config.backup_dir/HyperSpin/` |
+| RocketLauncher INI writes (generate-config) | `config.backup_dir/RocketLauncher/` |
+
+If `backup_dir` is not configured, backups land next to the source file (timestamped `.bak` sibling).
 
 ### `controls.ini` and `colors.ini`
 

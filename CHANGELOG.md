@@ -14,19 +14,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`ledblinky fill-defaults` — synthetic wheels included by default** — Favorites, Recently Played, and Most Played are no longer excluded from the scan. ROMs in those wheels whose name already appears in a real-system `Colors.ini` entry are automatically covered (Colors.ini is keyed by ROM name, not system). ROMs that only exist in synthetic wheels now receive a default entry.
 
-- **`ledblinky colors brightness` — new CLI command** — scales all `Color-RGB.ini` R,G,B intensity values (0-48 range) by a percentage. `--scale 100` = unchanged; `--scale 50` = half brightness; `--scale 10` = night mode; `--scale 0` = all off. Reversible. Auto-backup before write. `scale_colors_brightness()` + `BrightnessResult` added to `ledblinky.py`.
+- **`ledblinky colors brightness` — new CLI command** — sets all `Color-RGB.ini` R,G,B intensities to a uniform brightness level. Each color's dominant channel is normalized to 48 first, then scaled by the target percentage. `--scale 100` = maximum brightness (all dim colors boosted to full); `--scale 50` = half brightness; `--scale 10` = night mode; `--scale 0` = all off. This ensures every button (P1, P2, admin, Start) is at the same brightness regardless of prior stored values. Auto-backup before write. `scale_colors_brightness()` + `_normalize_scale_entry()` + `BrightnessResult` added to `ledblinky.py`.
+
+- **`ledblinky admin-buttons set` — per-button admin/cabinet color override** — walks **every** section in `Colors.ini` and updates or inserts `P{player}_BUTTON*` keys with individual per-button colors. Complements `fill-defaults --admin-buttons` (which only touches new ROM entries) by ensuring all existing entries also carry the correct admin button colors. Supports `--player N` (1–6, default 3), `--colors "C1,C2,..."` (per-button), `--color C --count N` (uniform), `--apply`, `--no-backup`. `patch_admin_button_colors()` + `AdminButtonPatchResult` + `_patch_admin_buttons_in_text()` added to `ledblinky.py`.
 
 - **GUI — Fill Default Colors: Players spinner and Admin Buttons row** — "Players (1-4)" Spinbox generates P1–P4 blocks. "Admin buttons" Spinbox (0=disabled) + separate color dropdown for the admin block. Both color dropdowns auto-refresh when Color-RGB.ini changes.
 
 - **GUI — Brightness section (LEDBlinky tab)** — slider (0–100 %), Apply checkbox, and **Scale Brightness** button. Equivalent to `spindoctor ledblinky colors brightness`.
 
+- **GUI — Admin Button Colors section (LEDBlinky tab)** — player-slot Spinbox (1–6), button-count Spinbox (1–8), eight per-button color dropdowns (BUTTON1–BUTTON8, all populated from `Color-RGB.ini`), **Refresh colors** button (reloads palette from `Color-RGB.ini`), Apply checkbox, and **Set Admin Button Colors** button. Only the first `button count` dropdowns are sent. Equivalent to `spindoctor ledblinky admin-buttons set`.
+
+- **GUI — "Refresh colors" button added to Fill Default Colors and Admin Button Colors sections** — both sections previously relied on the Color Definitions "Refresh list" button (at the bottom of the tab) to load the `Color-RGB.ini` palette into their color dropdowns. Each section now has its own **Refresh colors** button so the palette can be reloaded without scrolling.
+
 ### Fixed
 
-- **LEDBlinky auto-backups now respect `config.backup_dir`** — the `_backup()` helper in `ledblinky.py` previously always wrote `.bak` files next to the source file, ignoring the `backup_dir` setting. Now when `backup_dir` is configured, all auto-backups (fill-defaults, patch-settings, normalize, colors edit, brightness) are written to `backup_dir/LEDBlinky/<filename>.<stamp>.bak`. The subdirectory is created automatically.
+- **LEDBlinky auto-backups now respect `config.backup_dir`** — the `_backup()` helper in `ledblinky.py` previously always wrote `.bak` files next to the source file, ignoring the `backup_dir` setting. Now when `backup_dir` is configured, all auto-backups (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) are written to `backup_dir/LEDBlinky/<filename>.<stamp>.bak`. The subdirectory is created automatically.
+
+- **HyperSpin database backups now use `backup_dir/HyperSpin/` subfolder** — `HyperspinDatabase.save()` previously placed backups in `backup_dir/<system-name>/` (e.g. `backup_dir/MAME/`). Changed to the tab-consistent `backup_dir/HyperSpin/` subfolder so all HyperSpin database backups (from update-db, batch-edit, fav/recent/stats rebuild) land in one predictable location.
+
+- **RocketLauncher INI backups now respect `config.backup_dir`** — `generate-config`'s internal `_backup_if_exists()` closure always wrote `.bak` siblings next to source INI files, ignoring `backup_dir`. Now routes to `backup_dir/RocketLauncher/<filename>.<stamp>.bak` when configured.
 
 ### Changed
 
-- **Docs** — `commands.md` fill-defaults table updated (new flags, synthetic-wheel note, recommended 2-player workflow); new `colors brightness` subsection. `cli-cheatsheet.md` updated with multi-player and brightness examples. `gui.md` Fill Default Colors section rewritten; Brightness section added. `cabinet-architecture-reference.md` adds multi-player key naming table, admin block convention, brightness model, and backup routing note.
+- **`ledblinky colors brightness` — behavior changed from relative-scale to normalize-to-max** — the previous implementation multiplied each channel by `scale_pct/100`, which preserved existing brightness differences between colors (a dim color stored at intensity 20 would stay at 20 after a 100% run). The new implementation normalizes each color's dominant channel to 48 first, then scales — so 100% always produces the maximum possible intensity for every color regardless of what was previously stored. The practical effect: running at 100% guarantees all buttons (P1, P2, admin, Start) are at identical LED output levels; running at 50% halves that uniformly. Pure-black (0,0,0) entries are left untouched. 20 new unit tests cover the normalization math and integration paths.
+
+- **Docs** — `commands.md` fill-defaults table updated (new flags, synthetic-wheel note, recommended 2-player workflow); new `colors brightness` and `admin-buttons set` subsections. `cli-cheatsheet.md` updated with multi-player, brightness, and admin-buttons examples. `gui.md` Fill Default Colors section rewritten; Brightness and Admin Button Colors sections added; Refresh colors notes added. `cabinet-architecture-reference.md` adds multi-player key naming table, admin block convention, per-button override, normalize-to-max brightness model, and unified backup routing table.
 
 ---
 

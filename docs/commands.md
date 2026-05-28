@@ -1155,10 +1155,10 @@ spindoctor ledblinky patch-settings --apply
 
 #### `ledblinky colors brightness`
 
-Scale all `Color-RGB.ini` intensity values up or down uniformly. LedBlinky stores R,G,B channels as integers in the 0–48 range. This command multiplies every channel by `SCALE/100`, rounds to the nearest integer, and clamps to 0–48.
+Set all `Color-RGB.ini` colors to a uniform brightness level. Each color is first **normalized to its maximum possible intensity** (dominant channel → 48), then scaled by `SCALE/100`. This means every button — P1, P2, admin, Start — is guaranteed to be at the same brightness level at any given percentage, even if some colors were previously stored at reduced intensity.
 
 ```bat
-spindoctor ledblinky colors brightness --scale 100 --apply   :: full brightness (restore)
+spindoctor ledblinky colors brightness --scale 100 --apply   :: maximum brightness (normalizes all colors)
 spindoctor ledblinky colors brightness --scale 50  --apply   :: half brightness
 spindoctor ledblinky colors brightness --scale 10  --apply   :: night mode
 spindoctor ledblinky colors brightness --scale 75            :: preview 75% (dry-run)
@@ -1168,11 +1168,42 @@ spindoctor ledblinky colors brightness --scale 75            :: preview 75% (dry
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--scale PCT` | _(required)_ | Target brightness 0–100 % (100 = unchanged) |
+| `--scale PCT` | _(required)_ | Target brightness 0–100 %. **100 = maximum brightness** (dominant channel = 48); dim colors are boosted. 0 = all off |
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip `.bak` backup before writing |
 
-A timestamped `.bak` backup of `Color-RGB.ini` is written to the configured backup folder (or next to the source file if no backup folder is set) before any change.
+A timestamped `.bak` backup of `Color-RGB.ini` is written to the configured backup folder (or next to the source file if no backup folder is set) before any change. Pure-black entries (0,0,0) are left untouched so truly-off buttons stay off.
+
+#### `ledblinky admin-buttons set`
+
+Set fixed per-button colors for your cabinet-level (admin) buttons **across every ROM section** in `Colors.ini`. Unlike `fill-defaults` (which only touches ROMs with no existing entry), this command walks every existing section and writes (or overwrites) the `P{player}_BUTTON*` keys so the admin buttons always show the same colors regardless of which game is running.
+
+```bat
+:: Per-button colors (one color per button, comma-separated)
+spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply
+
+:: All buttons the same color
+spindoctor ledblinky admin-buttons set --color Green --count 6 --apply
+
+:: Specify the player slot explicitly (default: 3 for a 2-player cabinet)
+spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" --apply
+
+:: Dry-run preview (default — no files written)
+spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow"
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--player N` | `3` | Player slot for admin buttons (P1–P6). Use `players+1` of your cabinet — e.g. 3 for a 2-player cabinet |
+| `--colors C1,C2,...` | _(required)_ | Comma-separated color names, one per button. Length determines button count. Use `--colors` **or** `--color`+`--count`, not both |
+| `--color COLOR` | — | Single color applied to all buttons (convenience; combine with `--count`) |
+| `--count N` | `6` | Number of buttons when using `--color` (ignored with `--colors`) |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip `.bak` backup before writing |
+
+All color names are validated against the `Color-RGB.ini` palette. A timestamped `.bak` backup of `Colors.ini` is written to the configured backup folder before any change.
 
 ---
 
