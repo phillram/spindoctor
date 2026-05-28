@@ -887,19 +887,26 @@ def apply_fix(
 
 
 def list_lwa_files(config: Config) -> list[str]:
-    """Return a sorted list of ``.lwa`` filenames found in ``ledblinky_dir``.
+    """Return a sorted list of ``.lwa`` paths (relative to ``ledblinky_dir``).
 
-    These are the animation files LedBlinky can play.  The list is used to
-    populate the FE-animation picker in the GUI and the dry-run hint in the CLI.
-    Returns an empty list if ``ledblinky_dir`` is not set or the directory does
-    not exist yet.
+    LedBlinky stores animation files in ``<ledblinky_dir>/lwa/`` and its
+    subdirectories.  The returned paths are relative to ``ledblinky_dir``
+    (e.g. ``lwa\\Slow Fade.lwa``) so they can be written directly into
+    ``Settings.ini`` as LedBlinky expects them.
+
+    Returns an empty list if ``ledblinky_dir`` is not set or the directory
+    does not exist yet.
     """
     if not config.ledblinky_dir:
         return []
     base = Path(config.ledblinky_dir)
     if not base.is_dir():
         return []
-    return sorted(p.name for p in base.glob("*.lwa") if p.is_file())
+    return sorted(
+        str(p.relative_to(base))
+        for p in base.rglob("*.lwa")
+        if p.is_file()
+    )
 
 
 def _patch_ini_keys(

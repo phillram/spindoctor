@@ -151,7 +151,12 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Without an entry LedBlinky treats all buttons as inactive (off). A "Default color" dropdown (populated from `Color-RGB.ini`), a "Buttons (1-8)" spinner, and an optional "System" filter let you scope the fill. Apply checkbox + **Fill Default Colors** button. Run this after `generate` + `normalize` to close the gap for console and PC games that don't have MAME data. CLI equivalent: `spindoctor ledblinky fill-defaults`.
 
-**Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. A "FE idle animation" combobox lists every `.lwa` file found in `ledblinky_dir` (populate it with the **Refresh list** button); leave blank to show static colors, or pick a fade file. The "Turn off unused buttons during gameplay" checkbox (on by default) empties `GamePlayLWAFile` so buttons not used by the current game go dark instead of flashing randomly during play. The brief flash when a game first loads is intentional and left as-is. Apply checkbox + **Patch Settings.ini** button; a `.bak` backup is written automatically. CLI equivalent: `spindoctor ledblinky patch-settings`.
+**Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. Two animation pickers, both populated by the same **Refresh list** button:
+
+- **FE idle animation** — controls `FELWAFile` (the animation while browsing HyperSpin). Leave blank for static colors, or pick a fade file.
+- **In-game unused buttons** — controls `GamePlayLWAFile` (buttons the current game doesn't use). Leave **blank** to silence them entirely (recommended — buttons go dark). Select an `.lwa` animation to play that animation on all unmapped buttons during every game on every system.
+
+Both settings are global — there is no per-system or per-game override available in `Settings.ini`. Apply checkbox + **Patch Settings.ini** button; a `.bak` backup is written automatically. CLI equivalent: `spindoctor ledblinky patch-settings`.
 
 **Backup / Restore (LEDBlinky only)** — quick backup and restore scoped to the LEDBlinky component only. Backup folder and Restore-from fields both default to `config.backup_dir`. Dry-run by default. CLI equivalent: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
 

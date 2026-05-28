@@ -443,10 +443,11 @@ spindoctor ledblinky check
 spindoctor ledblinky fix --apply
 
 :: Patch Settings.ini — silence unused-button flash + improve idle animation
-spindoctor ledblinky patch-settings                                       :: preview
-spindoctor ledblinky patch-settings --apply                               :: turn off in-game unused-button flash
-spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply     :: also swap idle animation
-spindoctor ledblinky patch-settings --fe-lwa "" --apply                   :: static colors while browsing
+spindoctor ledblinky patch-settings                                               :: preview
+spindoctor ledblinky patch-settings --apply                                       :: silence in-game unused-button flash (dark/off)
+spindoctor ledblinky patch-settings --game-lwa "lwa\Slow Fade.lwa" --apply       :: play animation on unused buttons instead
+spindoctor ledblinky patch-settings --fe-lwa "lwa\Slow Fade.lwa" --apply         :: swap idle animation too
+spindoctor ledblinky patch-settings --fe-lwa "" --apply                           :: static colors while browsing
 
 :: Fill default Colors.ini entries for ROMs with no LED mapping (console games etc.)
 spindoctor ledblinky fill-defaults                                        :: preview unmapped ROMs

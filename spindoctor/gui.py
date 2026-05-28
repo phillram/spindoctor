@@ -9604,29 +9604,38 @@ class _SpinDoctorGUI:
 
         self.ttk.Label(
             sp_frame,
-            text=("Tip: open your LEDBlinky folder to see available .lwa files. "
-                  "Use 'Refresh list' to populate the dropdown. "
-                  "Leave blank to show static colors during idle."),
+            text=("Tip: leave blank for static colors during idle. "
+                  "Use 'Refresh list' to populate both dropdowns from your LEDBlinky folder."),
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
-        self._led_quiet_gameplay_var = self.tk.BooleanVar(value=True)
-        self.ttk.Checkbutton(
+        self.ttk.Label(sp_frame, text="In-game unused buttons").grid(
+            row=2, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_game_lwa_var = self.tk.StringVar(value="")
+        self._led_game_lwa_combo = self.ttk.Combobox(
+            sp_frame, textvariable=self._led_game_lwa_var, width=36,
+        )
+        self._led_game_lwa_combo.grid(row=2, column=1, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(
             sp_frame,
-            text="Turn off unused buttons during gameplay (recommended)",
-            variable=self._led_quiet_gameplay_var,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+            text=("Leave blank to turn unused buttons off during gameplay (recommended). "
+                  "Select an animation to play on all unmapped buttons instead — "
+                  "applies globally to every game on every system."),
+            wraplength=700, justify="left", foreground=_FG_DIM,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
         self._led_patch_apply_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             sp_frame, text="Apply (uncheck for dry-run)",
             variable=self._led_patch_apply_var,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
         self.ttk.Button(
             sp_frame, text="Patch Settings.ini",
             command=self._run_led_patch_settings,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # Populate .lwa list immediately if ledblinky_dir is already set
         self._refresh_led_lwa_list()
@@ -9843,21 +9852,18 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _refresh_led_lwa_list(self) -> None:
-        """Populate the FE-animation combobox with .lwa files from ledblinky_dir."""
+        """Populate the FE-animation and in-game animation comboboxes from ledblinky_dir."""
         try:
             from . import ledblinky as lb
             cfg = load_config()
             lwa_files = lb.list_lwa_files(cfg)
         except Exception:
             lwa_files = []
-        # Always include a blank entry (static / no animation) and preserve
-        # the current text so it isn't clobbered by the refresh.
+        # Always include a blank entry (silent / no animation).
         values = [""] + lwa_files
         self._led_fe_lwa_combo["values"] = values
-        # Keep the current value if it's still valid; otherwise leave as-is.
-        current = self._led_fe_lwa_var.get()
-        if current not in values and current != "<Random>":
-            pass  # leave the user's freeform text alone
+        if hasattr(self, "_led_game_lwa_combo"):
+            self._led_game_lwa_combo["values"] = values
 
     def _run_led_patch_settings(self) -> None:
         fe_lwa = self._led_fe_lwa_var.get().strip()
@@ -9865,7 +9871,9 @@ class _SpinDoctorGUI:
         # so an accidental click doesn't write "<Random>" literally.
         fe_lwa_arg = None if fe_lwa == "<Random>" else fe_lwa
 
-        game_lwa = "" if self._led_quiet_gameplay_var.get() else "<Random>"
+        # Blank = silence unused buttons (recommended default).
+        # A specific .lwa path = play that animation on unused buttons.
+        game_lwa = self._led_game_lwa_var.get().strip()
         args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
         if fe_lwa_arg is not None:
             args += ["--fe-lwa", fe_lwa_arg]
