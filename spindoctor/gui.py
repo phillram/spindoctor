@@ -5461,6 +5461,12 @@ class _SpinDoctorGUI:
                 # references it.
                 var.set(default if default in systems else systems[0])
 
+        # Fill Defaults system combo — populate values but never auto-select;
+        # blank = all systems is the intended default.
+        fd_combo = getattr(self, "_fd_system_combo", None)
+        if fd_combo is not None:
+            fd_combo["values"] = systems
+
         # Migrate systems Listbox — different widget type, handled separately.
         lb = getattr(self, "_migrate_systems_lb", None)
         if lb is not None:
@@ -6043,7 +6049,10 @@ class _SpinDoctorGUI:
         self.ttk.Label(pre_bkp_frame, text="Backup folder").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
-        self._pre_migrate_backup_var = self.tk.StringVar()
+        _migrate_cfg = load_config()
+        self._pre_migrate_backup_var = self.tk.StringVar(
+            value=getattr(_migrate_cfg, "backup_dir", "") or ""
+        )
         self.ttk.Entry(
             pre_bkp_frame, textvariable=self._pre_migrate_backup_var, width=50,
         ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
@@ -9512,12 +9521,268 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             frame,
             text=("Tip: configure ledblinky_dir in the Setup tab if your "
-                  "LEDBlinky install isn't at the default location. The "
-                  "Backup tab can snapshot the LEDBlinky install before "
-                  "you run Generate with --overwrite."),
+                  "LEDBlinky install isn't at the default location. Generate "
+                  "automatically saves .bak copies of controls.ini and "
+                  "colors.ini when backup_before_modify is enabled (default)."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 
+        # ── Fill Defaults ────────────────────────────────────────────────────
+        fd_frame = self.ttk.LabelFrame(frame, text="Fill Default Colors")
+        fd_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            fd_frame,
+            text=("Add a default Colors.ini entry for every ROM that has no LED "
+                  "mapping yet. Without an entry LedBlinky treats all buttons as "
+                  "inactive (off). After running fill-defaults, unmapped games "
+                  "will glow a steady color instead of going dark."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(fd_frame, text="Default color").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_color_var = self.tk.StringVar(value="White")
+        self._fd_color_combo = self.ttk.Combobox(
+            fd_frame, textvariable=self._fd_color_var, width=16, state="readonly",
+        )
+        self._fd_color_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(fd_frame, text="Buttons (1-8)").grid(
+            row=2, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_buttons_var = self.tk.StringVar(value="6")
+        self.ttk.Spinbox(
+            fd_frame, textvariable=self._fd_buttons_var,
+            from_=1, to=8, width=5,
+        ).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(fd_frame, text="System (optional)").grid(
+            row=3, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_system_var = self.tk.StringVar(value="")
+        self._fd_system_combo = self.ttk.Combobox(
+            fd_frame, textvariable=self._fd_system_var, width=24,
+        )
+        self._fd_system_combo.grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            fd_frame, text="(leave blank = all systems)", foreground=_FG_DIM,
+        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
+
+        self._fd_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            fd_frame, text="Apply (uncheck for dry-run)",
+            variable=self._fd_apply_var,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            fd_frame, text="Fill Default Colors",
+            command=self._run_fill_defaults,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # ── Settings.ini Patch ───────────────────────────────────────────────
+        _led_cfg = load_config()
+
+        sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
+        sp_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(sp_frame, text="FE idle animation").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_fe_lwa_var = self.tk.StringVar(value="<Random>")
+        self._led_fe_lwa_combo = self.ttk.Combobox(
+            sp_frame, textvariable=self._led_fe_lwa_var, width=36,
+        )
+        self._led_fe_lwa_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            sp_frame, text="Refresh list",
+            command=self._refresh_led_lwa_list,
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self.ttk.Label(
+            sp_frame,
+            text=("Tip: open your LEDBlinky folder to see available .lwa files. "
+                  "Use 'Refresh list' to populate the dropdown. "
+                  "Leave blank to show static colors during idle."),
+            wraplength=700, justify="left", foreground=_FG_DIM,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+
+        self._led_quiet_gameplay_var = self.tk.BooleanVar(value=True)
+        self.ttk.Checkbutton(
+            sp_frame,
+            text="Turn off unused buttons during gameplay (recommended)",
+            variable=self._led_quiet_gameplay_var,
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self._led_patch_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            sp_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_patch_apply_var,
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            sp_frame, text="Patch Settings.ini",
+            command=self._run_led_patch_settings,
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # Populate .lwa list immediately if ledblinky_dir is already set
+        self._refresh_led_lwa_list()
+
+        # ── Backup / Restore ─────────────────────────────────────────────────
+        _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
+
+        br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
+        br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(br_frame, text="Backup folder").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_backup_dir_var = self.tk.StringVar(value=_led_backup_default)
+        self.ttk.Entry(
+            br_frame, textvariable=self._led_backup_dir_var, width=48,
+        ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            br_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._led_backup_dir_var, "Pick LEDBlinky backup folder",
+            ),
+        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self._led_backup_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            br_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_backup_apply_var,
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            br_frame, text="Create backup",
+            command=self._run_led_backup,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        self.ttk.Separator(br_frame, orient="horizontal").grid(
+            row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4),
+        )
+
+        self.ttk.Label(br_frame, text="Restore from").grid(
+            row=4, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_restore_path_var = self.tk.StringVar(value=_led_backup_default)
+        self.ttk.Entry(
+            br_frame, textvariable=self._led_restore_path_var, width=48,
+        ).grid(row=4, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            br_frame, text="Browse…",
+            command=lambda: self._browse_backup_dir(
+                self._led_restore_path_var, "Pick LEDBlinky backup to restore",
+            ),
+        ).grid(row=4, column=2, sticky="w", padx=(0, 6), pady=2)
+
+        self._led_restore_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            br_frame, text="Apply (uncheck for dry-run)",
+            variable=self._led_restore_apply_var,
+        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            br_frame, text="Restore backup",
+            command=self._run_led_restore,
+        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+
+        # ── Color Definitions ────────────────────────────────────────────────
+        self._color_original_hex: str = ""   # set when a row is selected
+
+        cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
+        cd_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.columnconfigure(0, weight=1)
+
+        # Treeview + vertical scrollbar
+        tree_outer = self.ttk.Frame(cd_frame)
+        tree_outer.grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 2))
+        tree_outer.columnconfigure(0, weight=1)
+
+        _led_cols = ("name", "r", "g", "b", "hex")
+        self._color_tree = self.ttk.Treeview(
+            tree_outer, columns=_led_cols, show="headings",
+            height=6, selectmode="browse",
+        )
+        for _col, _heading, _w, _stretch in [
+            ("name", "Name",     110, True),
+            ("r",    "R (0-48)",  70, False),
+            ("g",    "G (0-48)",  70, False),
+            ("b",    "B (0-48)",  70, False),
+            ("hex",  "Hex",       86, False),
+        ]:
+            self._color_tree.heading(_col, text=_heading)
+            self._color_tree.column(_col, width=_w, stretch=_stretch)
+        _led_vsb = self.ttk.Scrollbar(
+            tree_outer, orient="vertical", command=self._color_tree.yview,
+        )
+        self._color_tree.configure(yscrollcommand=_led_vsb.set)
+        self._color_tree.grid(row=0, column=0, sticky="nsew")
+        _led_vsb.grid(row=0, column=1, sticky="ns")
+        self._color_tree.bind("<<TreeviewSelect>>", self._on_color_tree_select)
+
+        self.ttk.Button(
+            cd_frame, text="Refresh list",
+            command=self._refresh_color_list,
+        ).grid(row=1, column=0, sticky="w", padx=6, pady=(2, 4))
+
+        # ── Edit fields ────────────────────────────────────────────────────
+        edit_f = self.ttk.Frame(cd_frame)
+        edit_f.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(edit_f, text="New name:").grid(
+            row=0, column=0, sticky="w", padx=(0, 4),
+        )
+        self._color_new_name_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_new_name_var, width=16,
+        ).grid(row=0, column=1, sticky="w")
+
+        self.ttk.Label(edit_f, text="New color (#RRGGBB):").grid(
+            row=0, column=2, sticky="w", padx=(14, 4),
+        )
+        self._color_hex_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_hex_var, width=10,
+        ).grid(row=0, column=3, sticky="w")
+
+        # Plain tk.Label so background= is honoured (ttk.Label uses styles)
+        self._color_preview = self.tk.Label(
+            edit_f, text="  ", background="#FFFFFF",
+            relief="solid", width=3,
+        )
+        self._color_preview.grid(row=0, column=4, sticky="w", padx=(4, 0))
+        self._color_hex_var.trace_add("write", self._update_color_preview)
+
+        # ── Apply + button ─────────────────────────────────────────────────
+        self._color_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            cd_frame, text="Apply (uncheck for dry-run)",
+            variable=self._color_apply_var,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+
+        btn_row = self.ttk.Frame(cd_frame)
+        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+
+        self.ttk.Button(
+            btn_row, text="Update & Rename",
+            command=self._run_color_edit,
+        ).pack(side="left", padx=(0, 8))
+
+        self.ttk.Button(
+            btn_row, text="Normalize Colors.ini",
+            command=self._run_color_normalize,
+        ).pack(side="left")
+
+        # Populate immediately if ledblinky_dir is already configured
+        self._refresh_color_list()
+
+        frame.columnconfigure(1, weight=1)
         return frame
 
     def _run_led_generate(self) -> None:
@@ -9540,6 +9805,212 @@ class _SpinDoctorGUI:
         # the same Apply checkbox the Generate path uses.
         args = ["ledblinky", "fix"]
         if self._led_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_backup(self) -> None:
+        target = self._led_backup_dir_var.get().strip()
+        if not target:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick the folder where the backup should be written.",
+            )
+            return
+        args = ["backup", "create", "--target", target, "--include", "ledblinky"]
+        if self._led_backup_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_restore(self) -> None:
+        backup_path = self._led_restore_path_var.get().strip()
+        if not backup_path:
+            self.messagebox.showwarning(
+                "Backup folder required",
+                "Pick the backup folder to restore from.",
+            )
+            return
+        if self._led_restore_apply_var.get():
+            if not self.messagebox.askyesno(
+                "Restore LEDBlinky backup?",
+                f"This will restore LEDBlinky files from:\n{backup_path}\n\n"
+                "Existing files on disk may be overwritten. "
+                "This cannot be undone.\n\nContinue?",
+            ):
+                return
+        args = ["backup", "restore", "--backup", backup_path, "--include", "ledblinky"]
+        if self._led_restore_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _refresh_led_lwa_list(self) -> None:
+        """Populate the FE-animation combobox with .lwa files from ledblinky_dir."""
+        try:
+            from . import ledblinky as lb
+            cfg = load_config()
+            lwa_files = lb.list_lwa_files(cfg)
+        except Exception:
+            lwa_files = []
+        # Always include a blank entry (static / no animation) and preserve
+        # the current text so it isn't clobbered by the refresh.
+        values = [""] + lwa_files
+        self._led_fe_lwa_combo["values"] = values
+        # Keep the current value if it's still valid; otherwise leave as-is.
+        current = self._led_fe_lwa_var.get()
+        if current not in values and current != "<Random>":
+            pass  # leave the user's freeform text alone
+
+    def _run_led_patch_settings(self) -> None:
+        fe_lwa = self._led_fe_lwa_var.get().strip()
+        # Treat the legacy "<Random>" sentinel as "leave unchanged" (None)
+        # so an accidental click doesn't write "<Random>" literally.
+        fe_lwa_arg = None if fe_lwa == "<Random>" else fe_lwa
+
+        game_lwa = "" if self._led_quiet_gameplay_var.get() else "<Random>"
+        args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
+        if fe_lwa_arg is not None:
+            args += ["--fe-lwa", fe_lwa_arg]
+        if self._led_patch_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    # ── Color Definitions helpers ─────────────────────────────────────────────
+
+    def _refresh_color_list(self) -> None:
+        """Load Color-RGB.ini entries into the Treeview and Fill Defaults combo."""
+        try:
+            from . import ledblinky as lb
+            from pathlib import Path as _Path
+            cfg = load_config()
+            if not getattr(cfg, "ledblinky_dir", ""):
+                return
+            path = _Path(cfg.ledblinky_dir) / lb.COLOR_RGB_NAME
+            if not path.exists():
+                return
+            _, entries = lb.parse_color_rgb_ini(path)
+        except Exception:
+            return
+        self._color_tree.delete(*self._color_tree.get_children())
+        color_names: list[str] = []
+        for e in entries:
+            self._color_tree.insert(
+                "", "end", iid=e.name,
+                values=(e.name, e.r, e.g, e.b, e.to_hex()),
+            )
+            color_names.append(e.name)
+        # Also populate the Fill Defaults color dropdown
+        if hasattr(self, "_fd_color_combo"):
+            self._fd_color_combo["values"] = color_names
+            if color_names and self._fd_color_var.get() not in color_names:
+                self._fd_color_var.set("White" if "White" in color_names else color_names[0])
+
+    def _on_color_tree_select(self, _event=None) -> None:
+        """Populate the edit fields when the user clicks a color row."""
+        sel = self._color_tree.selection()
+        if not sel:
+            return
+        values = self._color_tree.item(sel[0], "values")
+        if len(values) >= 5:
+            name, _r, _g, _b, hex_val = values
+            self._color_new_name_var.set(name)
+            clean = hex_val.lstrip("#")
+            self._color_original_hex = clean
+            self._color_hex_var.set(clean)
+
+    def _update_color_preview(self, *_) -> None:
+        """Update the color swatch when the hex entry changes."""
+        raw = self._color_hex_var.get().strip().lstrip("#")
+        if len(raw) == 6:
+            try:
+                int(raw, 16)   # validate before applying
+                try:
+                    self._color_preview.configure(background=f"#{raw}")
+                except Exception:
+                    pass
+            except ValueError:
+                pass
+
+    def _run_color_edit(self) -> None:
+        """Run ``ledblinky colors edit`` for the selected color."""
+        sel = self._color_tree.selection()
+        if not sel:
+            self.messagebox.showwarning(
+                "No color selected",
+                "Click a color row in the list, then edit its name or value.",
+            )
+            return
+        old_name = sel[0]   # iid is the old name
+        new_name = self._color_new_name_var.get().strip()
+        hex_val = self._color_hex_var.get().strip().lstrip("#")
+
+        if not new_name:
+            self.messagebox.showwarning("Name required", "Enter a name for the color.")
+            return
+
+        name_changed = (new_name != old_name)
+        hex_changed = (len(hex_val) == 6 and hex_val != self._color_original_hex)
+
+        # Validate hex string before sending to CLI
+        if len(hex_val) > 0 and len(hex_val) != 6:
+            self.messagebox.showwarning(
+                "Invalid hex color",
+                f"'{hex_val}' must be exactly 6 hex characters (e.g. FF0000 for red).",
+            )
+            return
+        if hex_changed:
+            import re as _re
+            if not _re.fullmatch(r"[0-9A-Fa-f]{6}", hex_val):
+                self.messagebox.showwarning(
+                    "Invalid hex color",
+                    f"'{hex_val}' contains non-hex characters.\n"
+                    "Use digits 0-9 and letters A-F only (e.g. FF0000 for red).",
+                )
+                return
+
+        if not name_changed and not hex_changed:
+            self.messagebox.showinfo(
+                "No changes",
+                "Change the name or the hex color value to make an edit.",
+            )
+            return
+
+        args = ["ledblinky", "colors", "edit", old_name]
+        if name_changed:
+            args += ["--name", new_name]
+        if hex_changed and len(hex_val) == 6:
+            args += ["--hex", hex_val]
+        if self._color_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
+        )
+
+    def _run_color_normalize(self) -> None:
+        """Run ``ledblinky colors normalize`` to convert hex entries to named format."""
+        args = ["ledblinky", "colors", "normalize"]
+        if self._color_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
+        )
+
+    def _run_fill_defaults(self) -> None:
+        """Run ``ledblinky fill-defaults`` to add default entries for unmapped ROMs."""
+        args = ["ledblinky", "fill-defaults"]
+        color = self._fd_color_var.get().strip()
+        if color and color != "White":
+            args += ["--color", color]
+        try:
+            n = int(self._fd_buttons_var.get())
+        except ValueError:
+            n = 6
+        if n != 6:
+            args += ["--buttons", str(n)]
+        system = self._fd_system_var.get().strip()
+        if system:
+            args += ["--system", system]
+        if self._fd_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -10109,7 +10580,9 @@ class _SpinDoctorGUI:
         scrub_restore_path_row = self.ttk.Frame(scrub_restore_lf)
         scrub_restore_path_row.pack(fill="x", padx=6, pady=(4, 2))
         self.ttk.Label(scrub_restore_path_row, text="Backup folder:").pack(side="left")
-        self._scrub_restore_path_var = self.tk.StringVar()
+        self._scrub_restore_path_var = self.tk.StringVar(
+            value=getattr(_scrub_cfg, "backup_dir", "") or ""
+        )
         self.ttk.Entry(
             scrub_restore_path_row, textvariable=self._scrub_restore_path_var, width=50,
         ).pack(side="left", padx=6, fill="x", expand=True)

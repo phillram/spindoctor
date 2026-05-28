@@ -277,6 +277,34 @@ spindoctor ledblinky fix --apply     :: commit the patch
 
 The fix is reversible — `.bak` files are written and disabled lines are commented out (not deleted) and tagged.
 
+### All unused buttons flash randomly during gameplay
+
+Caused by `GamePlayLWAFile=<Random>` in `[GameOptions]` of `Settings.ini`. LedBlinky applies a random animation to every button not defined for the current game. Fix:
+
+```bat
+spindoctor ledblinky patch-settings             :: preview
+spindoctor ledblinky patch-settings --apply     :: set GamePlayLWAFile= (empty) → unused buttons go dark
+```
+
+The empty value causes LedBlinky to fall back to each button's `defaultInactive` color. In the DEFAULT control group (`LEDBlinkyControls.xml`) that is `0,0,0,0` — off.
+
+### LEDs flash randomly while browsing HyperSpin menus
+
+Caused by `FELWAFile=<Random>` in `[FEOptions]` of `Settings.ini`. Fix by choosing a specific animation file, or silencing animation entirely:
+
+```bat
+:: List available .lwa files in your ledblinky_dir, then pick one:
+spindoctor ledblinky patch-settings --apply                              :: preview first
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply    :: smooth fade
+spindoctor ledblinky patch-settings --fe-lwa "" --apply                  :: static colors, no animation
+```
+
+Use the **Refresh list** button in the GUI's LEDBlinky → Settings.ini Patch section to see which `.lwa` files are in your install.
+
+### Where does `ledblinky generate` pull its data from?
+
+Locally — `mame -listxml` is run as a subprocess and the output is cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.
+
 ## Migration / drives
 
 ### After a migration, wheel art is missing

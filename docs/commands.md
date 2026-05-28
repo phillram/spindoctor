@@ -994,9 +994,17 @@ spindoctor ledblinky audit
 spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
 spindoctor ledblinky fix                   :: dry-run preview of the patch
 spindoctor ledblinky fix --apply           :: commit the patch
+spindoctor ledblinky patch-settings        :: preview Settings.ini changes
+spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
+spindoctor ledblinky fill-defaults         :: preview default entries for ROMs with no LED mapping
+spindoctor ledblinky fill-defaults --apply :: add default White entries for all unmapped ROMs
+spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
+spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
+spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
 ```
 
-`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`.
+`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
 
 `check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search overlay crashes when LEDBlinky is installed:
 
@@ -1011,6 +1019,116 @@ spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: stage ins
 ```
 
 The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.
+
+`patch-settings` makes targeted tweaks to `<ledblinky_dir>/Settings.ini`:
+
+| Key | Section | Default fix | Effect |
+|-----|---------|-------------|--------|
+| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Unassigned buttons go dark during gameplay instead of flashing randomly |
+| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Swaps `<Random>` for a chosen animation file while browsing HyperSpin |
+
+```bat
+spindoctor ledblinky patch-settings --apply                          :: silence in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "" --apply              :: also use static colors while browsing
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: smooth fade instead of random flash
+```
+
+A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.
+
+### `ledblinky colors` — manage named color definitions
+
+`Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
+
+`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section.
+
+```bat
+spindoctor ledblinky colors list                                                 :: show all definitions
+spindoctor ledblinky colors edit Blue                                            :: inspect Blue
+spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply     :: rename + recolor
+spindoctor ledblinky colors edit Orange --name Amber --apply                    :: rename only
+spindoctor ledblinky colors edit Red --rgb 48,0,12 --apply                      :: shift Red toward pink
+spindoctor ledblinky colors normalize                                            :: preview hex→named conversion
+spindoctor ledblinky colors normalize --apply                                    :: commit conversion
+```
+
+`--hex RRGGBB` accepts standard 8-bit hex (0-255 per channel) and converts to the 0-48 intensity range stored in `Color-RGB.ini`. `--rgb R,G,B` accepts values directly in the 0-48 range.
+
+Files updated by `edit --apply`:
+
+| File | What changes |
+|------|-------------|
+| `Color-RGB.ini` | Entry is renamed and/or R,G,B values updated |
+| `Colors.ini` | Every line whose value equals the old name exactly (e.g. `P1_COIN=Orange`) is updated |
+| `LEDBlinkyControls.xml` | Every `color="<old-name>"` XML attribute is updated |
+
+Hex-value entries in `Colors.ini` (e.g. `ledcolor1=FF0000`) are **not** touched by `edit` — they reference colors by raw value, not by name. Run `colors normalize` first to convert them.
+
+#### `ledblinky colors normalize`
+
+SpinDoctor-generated `Colors.ini` entries use bare hex values (`ledcolor1=FF0000`). LedBlinky's native format uses named colors (`P1_BUTTON1=Red`). `normalize` rewrites every hex-format section using nearest-color matching against `Color-RGB.ini`. Sections already in named format are left completely untouched.
+
+Key conversion mapping:
+
+| Legacy key | Named key | Example |
+|-----------|-----------|---------|
+| `ledcolor1` … `ledcolorN` | `P1_BUTTON1` … `P1_BUTTONN` | `ledcolor3=00FF00` → `P1_BUTTON3=Lime` |
+| `joystick` | `P1_JOYSTICK` | `joystick=FFFFFF` → `P1_JOYSTICK=White` |
+| `start` | `P1_START` | `start=FFFFFF` → `P1_START=White` |
+| `coin` | `P1_COIN` | `coin=FF8000` → `P1_COIN=Orange` |
+
+A timestamped `.bak` backup is written next to each modified file before any change. Pass `--no-backup` to skip.
+
+#### `ledblinky fill-defaults`
+
+When a ROM has no entry in `Colors.ini`, LedBlinky treats all of its buttons as inactive and turns them off. This is the expected behavior for MAME games (SpinDoctor's `generate` populates their entries), but console games, PC games, and any other system that doesn't feed MAME data will have no entry — meaning all buttons go dark during gameplay.
+
+`fill-defaults` closes that gap by appending a uniform default entry for every ROM in the HyperSpin databases that is not already covered:
+
+```ini
+[rom_name]
+P1_BUTTON1=White
+P1_BUTTON2=White
+...
+P1_JOYSTICK=White
+P1_START=White
+P1_COIN=White
+```
+
+Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified.
+
+```bat
+spindoctor ledblinky fill-defaults                         :: preview all unmapped ROMs
+spindoctor ledblinky fill-defaults --apply                 :: add default White entries
+spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply  :: one system only
+spindoctor ledblinky fill-defaults --color Blue --apply    :: use Blue instead of White
+spindoctor ledblinky fill-defaults --buttons 8 --apply     :: generate 8 button entries per ROM
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--color NAME` | `White` | Named color from `Color-RGB.ini` to assign to every button |
+| `--buttons N` | `6` | Number of P1_BUTTON entries to generate per ROM (1-8) |
+| `--system SYSTEM` | _(all systems)_ | Limit to one HyperSpin system |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip `.bak` backup before writing |
+
+**Recommended workflow** for a cabinet with mixed MAME + console games:
+
+```bat
+:: 1. Generate MAME entries (hex format)
+spindoctor ledblinky generate --system MAME --apply
+
+:: 2. Convert hex entries to named format so renames propagate
+spindoctor ledblinky colors normalize --apply
+
+:: 3. Fill gaps for console/PC ROMs with no entry
+spindoctor ledblinky fill-defaults --apply
+
+:: 4. Suppress unused-button flash (Settings.ini)
+spindoctor ledblinky patch-settings --apply
+```
 
 ---
 
