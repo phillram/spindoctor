@@ -20,7 +20,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **LEDBlinky tab — Backup / Restore section** — Quick backup and restore scoped to the `ledblinky` component only. Both folder fields default to `config.backup_dir`. Dry-run by default. Equivalent to `spindoctor backup create/restore --include ledblinky`.
 
-- **Docs** — LEDBlinky section added to `cabinet-architecture-reference.md` (key files, `Settings.ini` key anatomy, `LEDBlinkyControls.xml` / Search compatibility). LEDBlinky section added to `cli-cheatsheet.md` (was entirely absent). `commands.md`, `gui.md`, `cli-cheatsheet.md`, and `troubleshooting.md` updated for `patch-settings`, `colors normalize`, new GUI sections (Normalize button, Settings.ini Patch, Backup/Restore), and three new FAQ entries.
+- **`spindoctor ledblinky fill-defaults`** — adds a default `Colors.ini` entry for every ROM in the HyperSpin databases that has no LED mapping yet. Without an entry LedBlinky treats all buttons as inactive (off); after running `fill-defaults`, unmapped games glow a steady color instead of going dark. Each generated entry uses `P1_BUTTON1`…`P1_BUTTONn`, `P1_JOYSTICK`, `P1_START`, `P1_COIN` in named format. Options: `--color` (default White, validated against `Color-RGB.ini`), `--buttons` (1-8, default 6), `--system` (limit to one system), `--apply`, `--no-backup`. Existing entries are never modified. `fill_default_colors()` + `FillDefaultsResult` added to `ledblinky.py`.
+
+- **`spindoctor ledblinky patch-settings` — `--game-start-lwa` flag** — `GameStartLWAFile` is now patched alongside `GamePlayLWAFile`. Both default to `""` (empty) so unused buttons are suppressed both during the game-load sequence and during gameplay. The old `--game-lwa` flag still controls `GamePlayLWAFile`; `--game-start-lwa` controls `GameStartLWAFile`.
+
+- **LEDBlinky tab — Fill Default Colors section** — color dropdown (populated from `Color-RGB.ini` on refresh), button-count Spinbox (1-8), optional system filter, Apply checkbox, and **Fill Default Colors** button. Equivalent to `spindoctor ledblinky fill-defaults`.
+
+- **Docs** — LEDBlinky section added to `cabinet-architecture-reference.md` (key files, `Settings.ini` key anatomy, `LEDBlinkyControls.xml` / Search compatibility). LEDBlinky section added to `cli-cheatsheet.md` (was entirely absent). `commands.md`, `gui.md`, `cli-cheatsheet.md`, and `troubleshooting.md` updated for `patch-settings`, `colors normalize`, `fill-defaults`, new GUI sections (Normalize button, Fill Default Colors, Settings.ini Patch, Backup/Restore), and three new FAQ entries.
 
 ### Fixed
 

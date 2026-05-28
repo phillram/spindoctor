@@ -5441,6 +5441,7 @@ class _SpinDoctorGUI:
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_led_system_combo",      "_led_system_var",      "MAME"),
+            ("_fd_system_combo",       "_fd_system_var",       None),
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
             ("_systems_old_combo",     "_systems_old_var",     None),
@@ -9521,11 +9522,66 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 
+        # ── Fill Defaults ────────────────────────────────────────────────────
+        fd_frame = self.ttk.LabelFrame(frame, text="Fill Default Colors")
+        fd_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            fd_frame,
+            text=("Add a default Colors.ini entry for every ROM that has no LED "
+                  "mapping yet. Without an entry LedBlinky treats all buttons as "
+                  "inactive (off). After running fill-defaults, unmapped games "
+                  "will glow a steady color instead of going dark."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(fd_frame, text="Default color").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_color_var = self.tk.StringVar(value="White")
+        self._fd_color_combo = self.ttk.Combobox(
+            fd_frame, textvariable=self._fd_color_var, width=16, state="readonly",
+        )
+        self._fd_color_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(fd_frame, text="Buttons (1-8)").grid(
+            row=2, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_buttons_var = self.tk.StringVar(value="6")
+        self.ttk.Spinbox(
+            fd_frame, textvariable=self._fd_buttons_var,
+            from_=1, to=8, width=5,
+        ).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(fd_frame, text="System (optional)").grid(
+            row=3, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_system_var = self.tk.StringVar(value="")
+        self._fd_system_combo = self.ttk.Combobox(
+            fd_frame, textvariable=self._fd_system_var, width=24,
+        )
+        self._fd_system_combo.grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            fd_frame, text="(leave blank = all systems)", foreground=_FG_DIM,
+        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
+
+        self._fd_apply_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            fd_frame, text="Apply (uncheck for dry-run)",
+            variable=self._fd_apply_var,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+
+        self.ttk.Button(
+            fd_frame, text="Fill Default Colors",
+            command=self._run_fill_defaults,
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
         # ── Settings.ini Patch ───────────────────────────────────────────────
         _led_cfg = load_config()
 
         sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
-        sp_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(sp_frame, text="FE idle animation").grid(
@@ -9574,7 +9630,7 @@ class _SpinDoctorGUI:
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
-        br_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -9635,7 +9691,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
-        cd_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
         # Treeview + vertical scrollbar
@@ -9815,7 +9871,7 @@ class _SpinDoctorGUI:
     # ── Color Definitions helpers ─────────────────────────────────────────────
 
     def _refresh_color_list(self) -> None:
-        """Load Color-RGB.ini entries into the Treeview."""
+        """Load Color-RGB.ini entries into the Treeview and Fill Defaults combo."""
         try:
             from . import ledblinky as lb
             from pathlib import Path as _Path
@@ -9829,11 +9885,18 @@ class _SpinDoctorGUI:
         except Exception:
             return
         self._color_tree.delete(*self._color_tree.get_children())
+        color_names: list[str] = []
         for e in entries:
             self._color_tree.insert(
                 "", "end", iid=e.name,
                 values=(e.name, e.r, e.g, e.b, e.to_hex()),
             )
+            color_names.append(e.name)
+        # Also populate the Fill Defaults color dropdown
+        if hasattr(self, "_fd_color_combo"):
+            self._fd_color_combo["values"] = color_names
+            if color_names and self._fd_color_var.get() not in color_names:
+                self._fd_color_var.set("White" if "White" in color_names else color_names[0])
 
     def _on_color_tree_select(self, _event=None) -> None:
         """Populate the edit fields when the user clicks a color row."""
@@ -9918,6 +9981,25 @@ class _SpinDoctorGUI:
         """Run ``ledblinky colors normalize`` to convert hex entries to named format."""
         args = ["ledblinky", "colors", "normalize"]
         if self._color_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_fill_defaults(self) -> None:
+        """Run ``ledblinky fill-defaults`` to add default entries for unmapped ROMs."""
+        args = ["ledblinky", "fill-defaults"]
+        color = self._fd_color_var.get().strip()
+        if color and color != "White":
+            args += ["--color", color]
+        try:
+            n = int(self._fd_buttons_var.get())
+        except ValueError:
+            n = 6
+        if n != 6:
+            args += ["--buttons", str(n)]
+        system = self._fd_system_var.get().strip()
+        if system:
+            args += ["--system", system]
+        if self._fd_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 

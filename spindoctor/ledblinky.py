@@ -971,6 +971,7 @@ def patch_ledblinky_settings(
     config: Config,
     fe_lwa_file: Optional[str] = None,
     game_play_lwa_file: str = "",
+    game_start_lwa_file: str = "",
     dry_run: bool = True,
     backup: bool = True,
 ) -> SettingsPatchResult:
@@ -989,6 +990,11 @@ def patch_ledblinky_settings(
         Defaults to ``""`` (empty string), which silences the random-flash on
         unused buttons and lets them fall back to their ``defaultInactive``
         color (typically ``0,0,0,0`` = off in the default control group).
+    game_start_lwa_file:
+        Animation file that plays on unused buttons during the game-start
+        sequence (``GameStartLWAFile`` in ``[GameOptions]``).
+        Defaults to ``""`` (empty string), suppressing the brief flash burst
+        that fires on unused buttons when a game first loads.
 
     Raises
     ------
@@ -1013,7 +1019,10 @@ def patch_ledblinky_settings(
 
     # Build patch map — only include FELWAFile if caller explicitly passed a value.
     patches: dict[str, dict[str, str]] = {
-        "GameOptions": {"GamePlayLWAFile": game_play_lwa_file},
+        "GameOptions": {
+            "GamePlayLWAFile":  game_play_lwa_file,
+            "GameStartLWAFile": game_start_lwa_file,
+        },
     }
     if fe_lwa_file is not None:
         patches.setdefault("FEOptions", {})["FELWAFile"] = fe_lwa_file
@@ -1517,5 +1526,165 @@ def normalize_colors_ini(
         if backup:
             result.backup_path = _backup(colors_ini_path)
         colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini default-entry fill ────────────────────────────────────────────
+
+# Controls that make up the "default" entry for an unsupported ROM.
+_DEFAULT_FILL_CONTROLS = (
+    ("P1_BUTTON1", "P1_BUTTON2", "P1_BUTTON3",
+     "P1_BUTTON4", "P1_BUTTON5", "P1_BUTTON6"),  # indexed, trimmed to n_buttons
+    ("P1_JOYSTICK", "P1_START", "P1_COIN"),       # always included
+)
+
+
+@dataclass
+class FillDefaultsResult:
+    """Return value from :func:`fill_default_colors`."""
+
+    colors_ini_path: Optional[Path] = None
+    roms_checked: int = 0
+    roms_added: int = 0
+    backup_path: Optional[Path] = None
+    dry_run: bool = False
+
+
+def fill_default_colors(
+    config: Config,
+    default_color: str = "White",
+    n_buttons: int = 6,
+    system: Optional[str] = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> FillDefaultsResult:
+    """Add default ``Colors.ini`` entries for ROMs that have no LED mapping yet.
+
+    SpinDoctor's ``ledblinky generate`` populates ``Colors.ini`` from MAME
+    data.  ROMs from other systems (consoles, non-MAME arcade boards) have no
+    entry, so LedBlinky treats all their buttons as inactive and turns them
+    off.  This function closes that gap by appending a uniform default entry
+    for every ROM in the HyperSpin databases that is not already covered.
+
+    Each generated entry looks like::
+
+        [rom_name]
+        P1_BUTTON1=White
+        P1_BUTTON2=White
+        ...
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=White
+
+    Only ROMs that have no section at all in ``Colors.ini`` are touched.
+    Existing entries (including community-maintained named entries and
+    SpinDoctor-generated hex entries) are never modified.
+
+    Parameters
+    ----------
+    default_color:
+        Named color from ``Color-RGB.ini`` to assign to every button.
+        Defaults to ``"White"``.
+    n_buttons:
+        Number of P1_BUTTON entries to generate (1-8).  Defaults to 6,
+        which covers the majority of arcade games.
+    system:
+        If given, only process ROMs for this one system.  By default all
+        systems in the HyperSpin databases directory are processed.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` or ``databases_dir`` is not configured, or
+        ``Colors.ini`` is absent.
+    """
+    from .config import get_systems
+    from .database import find_database, load_database
+    from .recent import SYNTHETIC_SYSTEM_NAMES
+
+    result = FillDefaultsResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not config.databases_dir or not Path(config.databases_dir).exists():
+        raise ValueError(
+            "databases_dir not configured or not found. "
+            "Run: spindoctor config set databases_dir <path>"
+        )
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    # Validate color name against Color-RGB.ini palette
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if color_rgb_path.exists():
+        _, palette = parse_color_rgb_ini(color_rgb_path)
+        valid_names = {e.name for e in palette}
+        if default_color not in valid_names:
+            raise ValueError(
+                f"Color '{default_color}' not found in {COLOR_RGB_NAME}. "
+                f"Available: {', '.join(sorted(valid_names))}"
+            )
+
+    n_buttons = max(1, min(8, n_buttons))
+
+    # Read existing Colors.ini sections
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_sections: set[str] = set(
+        re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
+    )
+
+    # Discover which systems to scan
+    if system:
+        systems_to_scan = [system]
+    else:
+        systems_to_scan = [
+            s for s in get_systems(config)
+            if s not in SYNTHETIC_SYSTEM_NAMES
+        ]
+
+    new_entries: list[str] = []
+    roms_checked = 0
+
+    for sys_name in systems_to_scan:
+        db_path = find_database(sys_name, Path(config.databases_dir))
+        if db_path is None:
+            continue
+        try:
+            db = load_database(sys_name, Path(config.databases_dir))
+        except Exception:
+            continue
+        for rom_name in db.games:
+            roms_checked += 1
+            if rom_name in existing_sections:
+                continue
+            # Build default entry
+            lines = [f"[{rom_name}]"]
+            for i in range(1, n_buttons + 1):
+                lines.append(f"P1_BUTTON{i}={default_color}")
+            lines.append(f"P1_JOYSTICK={default_color}")
+            lines.append(f"P1_START={default_color}")
+            lines.append(f"P1_COIN={default_color}")
+            lines.append("")  # blank line between sections
+            new_entries.append("\n".join(lines))
+
+    result.roms_checked = roms_checked
+    result.roms_added = len(new_entries)
+
+    if new_entries and not dry_run:
+        if backup:
+            result.backup_path = _backup(colors_ini_path)
+        # Append new entries (preserves all existing content exactly)
+        separator = "\n" if existing_text.endswith("\n") else "\n\n"
+        colors_ini_path.write_text(
+            existing_text + separator + "\n".join(new_entries),
+            encoding="utf-8",
+        )
 
     return result

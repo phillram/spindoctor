@@ -448,6 +448,12 @@ spindoctor ledblinky patch-settings --apply                               :: tur
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply     :: also swap idle animation
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                   :: static colors while browsing
 
+:: Fill default Colors.ini entries for ROMs with no LED mapping (console games etc.)
+spindoctor ledblinky fill-defaults                                        :: preview unmapped ROMs
+spindoctor ledblinky fill-defaults --apply                                :: add White entries for all unmapped
+spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply      :: one system only
+spindoctor ledblinky fill-defaults --color Blue --buttons 8 --apply       :: custom color + button count
+
 :: Color-RGB.ini — rename/recolor named colors and propagate throughout
 spindoctor ledblinky colors list
 spindoctor ledblinky colors edit Blue                                     :: inspect

@@ -5715,7 +5715,18 @@ def self_doctor(fix):
 
 @cli.group("ledblinky")
 def ledblinky_group():
-    """Generate and audit LEDBlinky controls.ini / colors.ini."""
+    """Generate and audit LEDBlinky controls.ini / colors.ini.
+
+    \b
+    Subcommands:
+      generate       Generate / merge Controls.ini and Colors.ini from MAME data
+      audit          Audit ROM → Colors.ini coverage
+      check          Check LEDBlinky compatibility with HyperSpin
+      fix            Fix LEDBlinky compatibility issues
+      patch-settings Patch Settings.ini to suppress unused-button flash
+      fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
+      colors         Manage named color definitions (list / edit / normalize)
+    """
 
 
 @ledblinky_group.command("generate")
@@ -6211,25 +6222,33 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
          "(GamePlayLWAFile in [GameOptions]).  Default: '' (empty) which "
          "turns off random flashing on unused buttons during gameplay.",
 )
+@click.option(
+    "--game-start-lwa", default="",
+    help="LWA animation filename for the game-start sequence "
+         "(GameStartLWAFile in [GameOptions]).  Default: '' (empty) which "
+         "suppresses the brief flash on unused buttons when a game loads.",
+)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit the patch (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the .bak backup when writing in-place.")
-def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
-    """Patch Settings.ini to fix idle animation and silent unused buttons.
+def ledblinky_patch_settings(fe_lwa, game_lwa, game_start_lwa, apply_changes, no_backup):
+    """Patch Settings.ini to fix idle animation and silence unused buttons.
 
     \b
-    Targets two keys in LEDBlinky's Settings.ini:
+    Patches three keys in Settings.ini by default:
 
       GamePlayLWAFile (in [GameOptions])
-        Controls what happens to buttons NOT used by the current game.
-        Default new value: "" (empty) — unassigned buttons go dark in-game
-        instead of flashing randomly.
+        Animation on unassigned buttons DURING gameplay.
+        Default: "" (empty) — unused buttons go dark instead of flashing.
+
+      GameStartLWAFile (in [GameOptions])
+        Animation on unassigned buttons during the game-START sequence.
+        Default: "" (empty) — suppresses the flash burst when a game loads.
 
       FELWAFile (in [FEOptions])
-        Controls the animation while browsing the HyperSpin frontend.
-        Specify --fe-lwa to swap <Random> for a calmer animation file, or
-        pass "" to show static colors instead.
+        Animation while browsing HyperSpin (omit flag to leave unchanged).
+        Pass a .lwa filename for a smooth fade, or "" for static colors.
 
     \b
     Examples:
@@ -6254,6 +6273,7 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
             config,
             fe_lwa_file=fe_lwa,
             game_play_lwa_file=game_lwa,
+            game_start_lwa_file=game_start_lwa,
             dry_run=not apply_changes,
             backup=not no_backup,
         )
@@ -6546,6 +6566,91 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
             f"  {verb}: "
             f"[green]{result.sections_converted}[/green] section(s), "
             f"[green]{result.keys_converted}[/green] key(s)"
+        )
+        if result.dry_run:
+            console.print(
+                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+            )
+        elif result.backup_path:
+            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+
+@ledblinky_group.command("fill-defaults")
+@click.option("--color", "default_color", default="White", show_default=True,
+              help="Named color from Color-RGB.ini to assign to every button. "
+                   "Must exist in Color-RGB.ini.")
+@click.option("--buttons", "n_buttons", default=6, show_default=True, type=int,
+              help="Number of P1_BUTTON entries to generate per ROM (clamped 1-8).")
+@click.option("--system", default=None, metavar="SYSTEM",
+              help="Process only this HyperSpin system.  Default: all systems.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_fill_defaults(default_color, n_buttons, system, apply_changes, no_backup):
+    """Add default Colors.ini entries for ROMs with no LED mapping.
+
+    When a ROM has no entry in Colors.ini, LedBlinky treats all of its buttons
+    as inactive and turns them off (black).  Use this command to append a
+    uniform default entry for every ROM that is not already covered, so unused
+    buttons glow a steady color instead of going dark.
+
+    Each generated entry uses named format::
+
+    \b
+        [rom_name]
+        P1_BUTTON1=White
+        P1_BUTTON2=White
+        ...
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=White
+
+    Only ROMs with no existing section are touched.  Existing entries (including
+    MAME-generated hex entries and any community-maintained named entries) are
+    never modified.  Run normalize first if you want those hex entries converted
+    before filling the gaps.
+
+    \b
+    Examples:
+      spindoctor ledblinky fill-defaults                         :: preview all
+      spindoctor ledblinky fill-defaults --apply                 :: commit all
+      spindoctor ledblinky fill-defaults --system "MAME"         :: one system
+      spindoctor ledblinky fill-defaults --color Blue --apply    :: blue buttons
+      spindoctor ledblinky fill-defaults --buttons 8 --apply     :: 8 buttons
+    """
+    from . import ledblinky as lb
+
+    config = _load_config()
+    try:
+        result = lb.fill_default_colors(
+            config,
+            default_color=default_color,
+            n_buttons=n_buttons,
+            system=system,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would add" if result.dry_run else "added"
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+    console.print(
+        f"  ROMs checked : [cyan]{result.roms_checked}[/cyan]"
+    )
+    if result.roms_added == 0:
+        console.print(
+            "\n[dim]Nothing to add — every ROM already has a Colors.ini entry.[/dim]"
+        )
+    else:
+        console.print(
+            f"  {verb}      : [green]{result.roms_added}[/green] "
+            f"default entr{'y' if result.roms_added == 1 else 'ies'} "
+            f"(color=[cyan]{default_color}[/cyan], buttons=[cyan]{n_buttons}[/cyan])"
         )
         if result.dry_run:
             console.print(

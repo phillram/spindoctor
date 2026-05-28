@@ -997,6 +997,8 @@ spindoctor ledblinky fix --apply           :: commit the patch
 spindoctor ledblinky patch-settings        :: preview Settings.ini changes
 spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
+spindoctor ledblinky fill-defaults         :: preview default entries for ROMs with no LED mapping
+spindoctor ledblinky fill-defaults --apply :: add default White entries for all unmapped ROMs
 spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
 spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
@@ -1018,17 +1020,19 @@ spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: stage ins
 
 The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.
 
-`patch-settings` makes two targeted tweaks to `<ledblinky_dir>/Settings.ini`:
+`patch-settings` makes targeted tweaks to `<ledblinky_dir>/Settings.ini`:
 
 | Key | Section | Default fix | Effect |
 |-----|---------|-------------|--------|
 | `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Unassigned buttons go dark during gameplay instead of flashing randomly |
+| `GameStartLWAFile` | `[GameOptions]` | `""` (empty) | Suppresses the brief flash on unused buttons when a game first loads |
 | `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Swaps `<Random>` for a chosen animation file while browsing HyperSpin |
 
 ```bat
 spindoctor ledblinky patch-settings --apply                          :: silence in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "" --apply              :: also use static colors while browsing
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: smooth fade instead of random flash
+spindoctor ledblinky patch-settings --game-start-lwa "MyAnim.lwa" --apply :: custom game-load animation
 ```
 
 A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.
@@ -1075,6 +1079,58 @@ Key conversion mapping:
 | `coin` | `P1_COIN` | `coin=FF8000` → `P1_COIN=Orange` |
 
 A timestamped `.bak` backup is written next to each modified file before any change. Pass `--no-backup` to skip.
+
+#### `ledblinky fill-defaults`
+
+When a ROM has no entry in `Colors.ini`, LedBlinky treats all of its buttons as inactive and turns them off. This is the expected behavior for MAME games (SpinDoctor's `generate` populates their entries), but console games, PC games, and any other system that doesn't feed MAME data will have no entry — meaning all buttons go dark during gameplay.
+
+`fill-defaults` closes that gap by appending a uniform default entry for every ROM in the HyperSpin databases that is not already covered:
+
+```ini
+[rom_name]
+P1_BUTTON1=White
+P1_BUTTON2=White
+...
+P1_JOYSTICK=White
+P1_START=White
+P1_COIN=White
+```
+
+Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified.
+
+```bat
+spindoctor ledblinky fill-defaults                         :: preview all unmapped ROMs
+spindoctor ledblinky fill-defaults --apply                 :: add default White entries
+spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply  :: one system only
+spindoctor ledblinky fill-defaults --color Blue --apply    :: use Blue instead of White
+spindoctor ledblinky fill-defaults --buttons 8 --apply     :: generate 8 button entries per ROM
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--color NAME` | `White` | Named color from `Color-RGB.ini` to assign to every button |
+| `--buttons N` | `6` | Number of P1_BUTTON entries to generate per ROM (1-8) |
+| `--system SYSTEM` | _(all systems)_ | Limit to one HyperSpin system |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip `.bak` backup before writing |
+
+**Recommended workflow** for a cabinet with mixed MAME + console games:
+
+```bat
+:: 1. Generate MAME entries (hex format)
+spindoctor ledblinky generate --system MAME --apply
+
+:: 2. Convert hex entries to named format so renames propagate
+spindoctor ledblinky colors normalize --apply
+
+:: 3. Fill gaps for console/PC ROMs with no entry
+spindoctor ledblinky fill-defaults --apply
+
+:: 4. Suppress unused-button flash (Settings.ini)
+spindoctor ledblinky patch-settings --apply
+```
 
 ---
 
