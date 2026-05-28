@@ -439,10 +439,14 @@ Two keys control behaviors that aren't obvious in LedBlinky's configuration UI:
 
 **`[GameOptions] GamePlayLWAFile=`**
 Controls what happens to buttons **not used by the current game** while a game is running. The default value `<Random>` makes LedBlinky play a random animation on all unassigned buttons — which looks like random flashing on unused buttons.
-Setting it to empty (`""`) causes LedBlinky to fall back to each button's `defaultInactive` color from `LEDBlinkyControls.xml`. The DEFAULT control group has `defaultInactive="0,0,0,0"`, so unused buttons go off.
+
+- **`""` (empty)** — LedBlinky falls back to each button's `defaultInactive` color from `LEDBlinkyControls.xml`. The DEFAULT control group has `defaultInactive="0,0,0,0"`, so unused buttons go off. Recommended for a clean gameplay experience.
+- **`lwa\MyAnim.lwa`** (relative path from `ledblinky_dir`) — LedBlinky plays that animation on all unused buttons during gameplay. This is a global setting; `Settings.ini` has no per-game or per-system override for this key.
+
+`.lwa` animation files are stored under `<ledblinky_dir>\lwa\` and its subdirectories.
 
 **`[FEOptions] FELWAFile=`**
-Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific `.lwa` filename (e.g. `Slow Fade.lwa`) for a consistent smooth effect, or empty for static colors.
+Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific `.lwa` path (relative to `ledblinky_dir`, e.g. `lwa\Slow Fade.lwa`) for a consistent smooth effect, or empty for static colors.
 
 SpinDoctor patches both keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change.
 
