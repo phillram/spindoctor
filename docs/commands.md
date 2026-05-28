@@ -765,7 +765,8 @@ All `Statistics.ini` files that RocketLauncher has written, across all three lay
 |---|---|---|
 | Classic | `<rl>/Settings/Global Statistics/<System>.ini` | One file per system |
 | Legacy | `<rl>/Settings/<System>/Statistics.ini` | Older RL builds |
-| Newer | `<rl>/Data/Statistics/<System>.ini` | Excludes the aggregate `Global Statistics.ini` |
+| Newer | `<rl>/Data/Statistics/<System>.ini` | Per-system files |
+| Newer (aggregate) | `<rl>/Data/Statistics/Global Statistics.ini` | RL's top-10 summary — included so refresh starts blank |
 
 Every matching file is **permanently deleted** — RocketLauncher will create new (empty) files the next time games are launched. In addition, the generated Recently Played and Most Played wheels are cleared:
 
@@ -790,6 +791,7 @@ When `--backup-dir DIR` is given alongside `--apply`, SpinDoctor creates `DIR/sc
 | `stats/Settings/Global Statistics/<System>.ini` | Classic layout stats (if `--stats`) |
 | `stats/Settings/<System>/Statistics.ini` | Legacy layout stats (if `--stats`) |
 | `stats/Data/Statistics/<System>.ini` | Newer layout stats (if `--stats`) |
+| `stats/Data/Statistics/Global Statistics.ini` | RL aggregate summary (if `--stats`, if present) |
 | `hs_favorites/<System>/<System>_Favorites.ini` | Per-system INI favorites (if `--hs-favorites`) |
 | `hs_favorites/<System>/favorites.txt` | Per-system txt favorites (if `--hs-favorites`) |
 | `hs_favorites/<System>/<System>.xml` | System XML before attribute stripping (if `--hs-favorites`) |

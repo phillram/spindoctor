@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`scrub --stats` now clears `Global Statistics.ini`** — RocketLauncher's aggregate `Data/Statistics/Global Statistics.ini` was not deleted during a stats scrub. After the per-system files were removed, the "Recently Played" and "Most Played" refresh fell back to reading this file and repopulated the wheels with the same old games. The aggregate is now included in the scrub (backed up when `--backup-dir` is given); RL regenerates it fresh on the next game launch.
+
 ---
 
 ## [2.4.12] - 2026-05-27
