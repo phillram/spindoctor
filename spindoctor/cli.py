@@ -6222,29 +6222,19 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
          "(GamePlayLWAFile in [GameOptions]).  Default: '' (empty) which "
          "turns off random flashing on unused buttons during gameplay.",
 )
-@click.option(
-    "--game-start-lwa", default="",
-    help="LWA animation filename for the game-start sequence "
-         "(GameStartLWAFile in [GameOptions]).  Default: '' (empty) which "
-         "suppresses the brief flash on unused buttons when a game loads.",
-)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit the patch (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the .bak backup when writing in-place.")
-def ledblinky_patch_settings(fe_lwa, game_lwa, game_start_lwa, apply_changes, no_backup):
+def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
     """Patch Settings.ini to fix idle animation and silence unused buttons.
 
     \b
-    Patches three keys in Settings.ini by default:
+    Patches two keys in Settings.ini by default:
 
       GamePlayLWAFile (in [GameOptions])
         Animation on unassigned buttons DURING gameplay.
         Default: "" (empty) — unused buttons go dark instead of flashing.
-
-      GameStartLWAFile (in [GameOptions])
-        Animation on unassigned buttons during the game-START sequence.
-        Default: "" (empty) — suppresses the flash burst when a game loads.
 
       FELWAFile (in [FEOptions])
         Animation while browsing HyperSpin (omit flag to leave unchanged).
@@ -6273,7 +6263,6 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, game_start_lwa, apply_changes, no
             config,
             fe_lwa_file=fe_lwa,
             game_play_lwa_file=game_lwa,
-            game_start_lwa_file=game_start_lwa,
             dry_run=not apply_changes,
             backup=not no_backup,
         )

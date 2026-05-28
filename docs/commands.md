@@ -1025,14 +1025,12 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 | Key | Section | Default fix | Effect |
 |-----|---------|-------------|--------|
 | `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Unassigned buttons go dark during gameplay instead of flashing randomly |
-| `GameStartLWAFile` | `[GameOptions]` | `""` (empty) | Suppresses the brief flash on unused buttons when a game first loads |
 | `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Swaps `<Random>` for a chosen animation file while browsing HyperSpin |
 
 ```bat
 spindoctor ledblinky patch-settings --apply                          :: silence in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "" --apply              :: also use static colors while browsing
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: smooth fade instead of random flash
-spindoctor ledblinky patch-settings --game-start-lwa "MyAnim.lwa" --apply :: custom game-load animation
 ```
 
 A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.

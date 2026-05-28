@@ -971,7 +971,6 @@ def patch_ledblinky_settings(
     config: Config,
     fe_lwa_file: Optional[str] = None,
     game_play_lwa_file: str = "",
-    game_start_lwa_file: str = "",
     dry_run: bool = True,
     backup: bool = True,
 ) -> SettingsPatchResult:
@@ -990,11 +989,6 @@ def patch_ledblinky_settings(
         Defaults to ``""`` (empty string), which silences the random-flash on
         unused buttons and lets them fall back to their ``defaultInactive``
         color (typically ``0,0,0,0`` = off in the default control group).
-    game_start_lwa_file:
-        Animation file that plays on unused buttons during the game-start
-        sequence (``GameStartLWAFile`` in ``[GameOptions]``).
-        Defaults to ``""`` (empty string), suppressing the brief flash burst
-        that fires on unused buttons when a game first loads.
 
     Raises
     ------
@@ -1020,8 +1014,7 @@ def patch_ledblinky_settings(
     # Build patch map — only include FELWAFile if caller explicitly passed a value.
     patches: dict[str, dict[str, str]] = {
         "GameOptions": {
-            "GamePlayLWAFile":  game_play_lwa_file,
-            "GameStartLWAFile": game_start_lwa_file,
+            "GamePlayLWAFile": game_play_lwa_file,
         },
     }
     if fe_lwa_file is not None:

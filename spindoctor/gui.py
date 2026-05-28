@@ -5441,7 +5441,6 @@ class _SpinDoctorGUI:
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_led_system_combo",      "_led_system_var",      "MAME"),
-            ("_fd_system_combo",       "_fd_system_var",       None),
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
             ("_systems_old_combo",     "_systems_old_var",     None),
@@ -5461,6 +5460,12 @@ class _SpinDoctorGUI:
                 # sees a system that doesn't exist and the resulting argv
                 # references it.
                 var.set(default if default in systems else systems[0])
+
+        # Fill Defaults system combo — populate values but never auto-select;
+        # blank = all systems is the intended default.
+        fd_combo = getattr(self, "_fd_system_combo", None)
+        if fd_combo is not None:
+            fd_combo["values"] = systems
 
         # Migrate systems Listbox — different widget type, handled separately.
         lb = getattr(self, "_migrate_systems_lb", None)
@@ -9975,14 +9980,20 @@ class _SpinDoctorGUI:
             args += ["--hex", hex_val]
         if self._color_apply_var.get():
             args.append("--apply")
-        self._run_cli("spindoctor", args)
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
+        )
 
     def _run_color_normalize(self) -> None:
         """Run ``ledblinky colors normalize`` to convert hex entries to named format."""
         args = ["ledblinky", "colors", "normalize"]
         if self._color_apply_var.get():
             args.append("--apply")
-        self._run_cli("spindoctor", args)
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
+        )
 
     def _run_fill_defaults(self) -> None:
         """Run ``ledblinky fill-defaults`` to add default entries for unmapped ROMs."""
