@@ -131,6 +131,7 @@ _GLOBAL_STATS_SKIP_SYSTEMS = frozenset({"toolkit"})
 def _read_global_statistics_ini(
     path: Path,
     *,
+    exclude_systems: "frozenset[str] | None" = None,
     warnings: "list[str] | None" = None,
 ) -> list[PlayStat]:
     """Parse RocketLauncher's aggregate ``Global Statistics.ini`` for playtime data.
@@ -138,7 +139,9 @@ def _read_global_statistics_ini(
     This file (``Data/Statistics/Global Statistics.ini``) contains top-10
     summaries rather than full per-game history.  It is used as a fallback
     when no per-system ``<system>.ini`` files are found.  Entries from the
-    ``Toolkit`` pseudo-system are skipped.
+    ``Toolkit`` pseudo-system are skipped.  *exclude_systems* is applied on
+    top so that synthetic wheel names (Favorites, Recently Played, Most Played)
+    are also dropped when this function is called from :func:`load_all_playtime`.
 
     Reads two sections:
       * ``[TopTen_Time_Played]`` — total seconds per game
@@ -175,6 +178,8 @@ def _read_global_statistics_ini(
                 continue
             if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
                 continue
+            if exclude_systems and system in exclude_systems:
+                continue
             key = (system, name)
             by_key[key] = PlayStat(
                 system=system, game=name, display_name=name,
@@ -198,6 +203,8 @@ def _read_global_statistics_ini(
             if not system or not name:
                 continue
             if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
+                continue
+            if exclude_systems and system in exclude_systems:
                 continue
             key = (system, name)
             if key in by_key:
@@ -331,7 +338,11 @@ def load_all_playtime(
         global_stats_path = rl / "Data" / "Statistics" / "Global Statistics.ini"
         if global_stats_path.is_file():
             before = len(by_key)
-            _merge(_read_global_statistics_ini(global_stats_path, warnings=warnings))
+            _merge(_read_global_statistics_ini(
+                global_stats_path,
+                exclude_systems=_excluded if _excluded else None,
+                warnings=warnings,
+            ))
             added = len(by_key) - before
             if added:
                 _note(
@@ -521,7 +532,10 @@ def build_most_played_wheel(
         from .recent import RecentSummary
         return RecentSummary(target_system=target_system)
 
-    known = set(get_systems(config))
+    # Restrict to real source systems only — exclude synthetic wheel directories
+    # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
+    # known-system filter, letting stray stats entries leak into this wheel).
+    known = set(get_systems(config)) - SYNTHETIC_SYSTEM_NAMES - {target_system}
     read_warnings: list[str] = []
     read_notes: list[str] = []
     stats = [

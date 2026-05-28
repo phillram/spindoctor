@@ -321,3 +321,58 @@ def test_collect_play_records_excludes_custom_target_system(isolated_config, tmp
     systems = {r.system for r in records}
     assert "MAME" in systems
     assert "My Custom Wheel" not in systems
+
+
+def test_rebuild_excludes_favorites_system_via_fallback(isolated_config, tmp_path):
+    """Entries with system='Favorites' from Global Statistics.ini fallback must be excluded.
+
+    When a game is played from the Favorites wheel, RocketLauncher records a
+    'Favorites' system entry in Global Statistics.ini.  If the cabinet has no
+    per-system stats files, the fallback reads that file — and 'Favorites' entries
+    must be dropped so they don't land in the Recently Played wheel.
+    """
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+
+    (roms / "Nintendo Entertainment System").mkdir(parents=True)
+    (hs / "Databases" / "Nintendo Entertainment System").mkdir(parents=True)
+    (hs / "Databases" / "Nintendo Entertainment System" /
+     "Nintendo Entertainment System.xml").write_text(
+        "<menu><game name=\"Kirby's Adventure\">"
+        "<description>Kirby's Adventure</description></game></menu>",
+        encoding="utf-8",
+    )
+    # Simulate Favorites DB dir existing on disk (created by a prior fav rebuild)
+    (hs / "Databases" / "Favorites").mkdir(parents=True)
+    (hs / "Media" / "Nintendo Entertainment System" / "Images" / "Wheel").mkdir(parents=True)
+    (hs / "Media" / "Nintendo Entertainment System" / "Images" / "Wheel" /
+     "Kirby's Adventure.png").write_bytes(b"w")
+
+    # No per-system stats files — only the aggregate Global Statistics.ini,
+    # which contains a 'Favorites' entry from a Favorites-wheel launch.
+    agg = rl / "Data" / "Statistics" / "Global Statistics.ini"
+    agg.parent.mkdir(parents=True, exist_ok=True)
+    agg.write_text(
+        "[Last_Played_Games]\n"
+        "1_System=Favorites\n"
+        "1_Name=Kirby's Adventure\n"
+        "1_Date=Friday May 23, 2026 07:19:22 AM\n"
+        "2_System=Nintendo Entertainment System\n"
+        "2_Name=Kirby's Adventure\n"
+        "2_Date=Friday May 23, 2026 07:18:00 AM\n",
+        encoding="utf-8",
+    )
+
+    cfg = Config(
+        roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
+    )
+    save_config(cfg)
+
+    summary = rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+
+    # The NES entry should appear; the Favorites entry must not
+    assert summary.entries == 1
+    db_text = summary.db_path.read_text(encoding="utf-8")
+    assert "Nintendo Entertainment System" in db_text
+    assert "Favorites" not in db_text
