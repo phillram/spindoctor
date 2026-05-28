@@ -1150,7 +1150,10 @@ def write_color_rgb_ini(
     for e in entries:
         lines.append(f"{e.name}={e.r},{e.g},{e.b}")
     lines.append("")
-    path.write_text("\r\n".join(lines), encoding="utf-8")
+    # Write with explicit newline="" so Python's text-mode translation does not
+    # double the \r on Windows (write_text in text mode converts \n → \r\n,
+    # which would turn our deliberate \r\n separators into \r\r\n).
+    path.write_text("\r\n".join(lines), encoding="utf-8", newline="")
 
 
 def _replace_color_in_colors_ini(
@@ -1675,6 +1678,9 @@ def fill_default_colors(
             lines.append(f"P1_COIN={default_color}")
             lines.append("")  # blank line between sections
             new_entries.append("\n".join(lines))
+            # Mark as seen so a ROM name present in multiple system databases
+            # is only emitted once (Colors.ini does not support duplicate sections).
+            existing_sections.add(rom_name)
 
     result.roms_checked = roms_checked
     result.roms_added = len(new_entries)

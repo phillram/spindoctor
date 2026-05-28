@@ -10,7 +10,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`ledblinky fill-defaults` — `TypeError: 'method' object is not iterable`** — `fill_default_colors()` iterated `db.games` (the method object) instead of calling `db.games()`. Every other call site in the codebase uses `db.games()` correctly; this was the only exception. The crash made `fill-defaults` completely unusable on any real cabinet config.
 
+- **`ledblinky colors normalize` — `NameError: name 'lb' is not defined`** — `ledblinky_colors_normalize` in `cli.py` called `lb.normalize_colors_ini(...)` without first importing the module locally (`from . import ledblinky as lb`). Every sibling command (`patch-settings`, `colors edit`, `fill-defaults`) had the import; `normalize` was the only one missing it. The command crashed immediately on every invocation.
+
 - **LEDBlinky animation dropdowns empty — `.lwax` files not found** — `list_lwa_files()` only searched for `*.lwa` files. LedBlinky's current animation format is `.lwax` (extended); the older `*.lwa` format is rarely used in practice. Changed to match both extensions so the FE idle animation and In-game unused buttons pickers populate correctly when the LedBlinky `lwa/` directory contains `.lwax` files.
+
+- **`fill_default_colors` — duplicate `Colors.ini` sections when a ROM name appears in multiple system databases** — `existing_sections` was populated once from the on-disk `Colors.ini` but never updated as new entries were accumulated. A ROM name present in two system XMLs (e.g. the same game in both a `MAME` and an `Arcade` database) was emitted twice, producing duplicate `[rom_name]` sections. LedBlinky reads only the first; the second was dead weight and confused subsequent `normalize` / `colors edit` passes. Fix: mark each ROM name in `existing_sections` immediately after queuing its entry.
+
+- **`write_color_rgb_ini` — `\r\r\n` line endings on Windows corrupted `Color-RGB.ini`** — The function joined lines with `"\r\n"` then called `path.write_text(..., encoding="utf-8")` in Python's default text mode. On Windows, text mode translates every `\n` → `\r\n`, so each `\r\n` separator became `\r\r\n`. LedBlinky failed to parse the resulting file or showed garbled color names. Fix: pass `newline=""` to `write_text` to suppress the translation.
 
 ---
 
