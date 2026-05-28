@@ -145,6 +145,7 @@ _GLOBAL_STATS_SKIP_SYSTEMS = frozenset({"toolkit"})
 def _read_global_statistics_ini(
     path: Path,
     *,
+    exclude_systems: "frozenset[str] | None" = None,
     warnings: "list[str] | None" = None,
 ) -> list[PlayRecord]:
     """Parse the ``[Last_Played_Games]`` section of RocketLauncher's aggregate
@@ -153,7 +154,9 @@ def _read_global_statistics_ini(
     This file contains only top-10/top-20 summaries, not full history.  It is
     used as a **fallback** when no per-system ``<system>.ini`` files are found.
     Entries from the ``Toolkit`` pseudo-system (SpinDoctor/RocketLauncherUI
-    meta-launches) are skipped automatically.
+    meta-launches) are skipped automatically.  *exclude_systems* is applied on
+    top so that synthetic wheel names (Favorites, Recently Played, Most Played)
+    are also dropped when this function is called from :func:`collect_play_records`.
     """
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
@@ -184,6 +187,8 @@ def _read_global_statistics_ini(
         if not system or not name:
             continue
         if system.lower() in _GLOBAL_STATS_SKIP_SYSTEMS:
+            continue
+        if exclude_systems and system in exclude_systems:
             continue
         ts = _parse_time(date_str)
         if ts:
@@ -293,7 +298,9 @@ def collect_play_records(
         global_stats_path = rl / "Data" / "Statistics" / "Global Statistics.ini"
         if global_stats_path.is_file():
             fallback = _read_global_statistics_ini(
-                global_stats_path, warnings=warnings
+                global_stats_path,
+                exclude_systems=_excluded if _excluded else None,
+                warnings=warnings,
             )
             records.extend(fallback)
             if fallback:
@@ -632,9 +639,10 @@ def rebuild(
     if not config.hyperspin_dir:
         return RecentSummary(target_system=target_system)
 
-    # Restrict to systems we actually know about so a stray INI doesn't
-    # break the rebuild with an unknown source DB.
-    known = set(get_systems(config))
+    # Restrict to real source systems only — exclude synthetic wheel directories
+    # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
+    # known-system filter, letting stray stats entries leak into this wheel).
+    known = set(get_systems(config)) - SYNTHETIC_SYSTEM_NAMES - {target_system}
     read_warnings: list[str] = []
     read_notes: list[str] = []
     raw = collect_play_records(
