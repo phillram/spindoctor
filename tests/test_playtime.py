@@ -446,3 +446,59 @@ def test_read_global_statistics_ini_extracts_time_and_count(tmp_path):
     assert by_key[("MAME", "sf2")].times_played == 130
     # Count-only entry (not in time list)
     assert by_key[("MAME", "1942")].times_played == 340
+
+
+def test_build_most_played_excludes_favorites_system_via_fallback(
+    isolated_config, tmp_path,
+):
+    """Entries with system='Favorites' from Global Statistics.ini fallback must be excluded.
+
+    When a game is played from the Favorites wheel, RL records a 'Favorites'
+    system entry in Global Statistics.ini.  The wheel builder must drop those
+    so they don't appear in Most Played.
+    """
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+
+    (roms / "Nintendo Entertainment System").mkdir(parents=True)
+    (hs / "Databases" / "Nintendo Entertainment System").mkdir(parents=True)
+    (hs / "Databases" / "Nintendo Entertainment System" /
+     "Nintendo Entertainment System.xml").write_text(
+        "<menu><game name=\"Kirby's Adventure\">"
+        "<description>Kirby's Adventure</description></game></menu>",
+        encoding="utf-8",
+    )
+    # Simulate Favorites DB dir existing on disk
+    (hs / "Databases" / "Favorites").mkdir(parents=True)
+    (hs / "Media" / "Nintendo Entertainment System" / "Images" / "Wheel").mkdir(parents=True)
+    (hs / "Media" / "Nintendo Entertainment System" / "Images" / "Wheel" /
+     "Kirby's Adventure.png").write_bytes(b"w")
+
+    # No per-system stats files — only Global Statistics.ini with a Favorites entry
+    _write_global_statistics_ini(
+        rl / "Data" / "Statistics" / "Global Statistics.ini",
+        top_time=[
+            ("Favorites", "Kirby's Adventure", 1800),
+            ("Nintendo Entertainment System", "Kirby's Adventure", 1800),
+        ],
+        top_count=[
+            ("Favorites", "Kirby's Adventure", 1),
+            ("Nintendo Entertainment System", "Kirby's Adventure", 5),
+        ],
+    )
+
+    cfg = Config(
+        roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
+    )
+    save_config(cfg)
+
+    summary = build_most_played_wheel(
+        cfg, limit=20, media_mode=LinkMode.COPY, register_in_main_menu=False,
+    )
+
+    # NES entry should appear; Favorites entry must not
+    assert summary.entries == 1
+    db_text = summary.db_path.read_text(encoding="utf-8")
+    assert "Nintendo Entertainment System" in db_text
+    assert "Favorites" not in db_text
