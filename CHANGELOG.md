@@ -34,6 +34,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`ledblinky fill-defaults` / `colors normalize` — `NameError: '_load_config' is not defined`** — both commands accidentally called `_load_config()` instead of the correct `_cfg()` helper, causing an immediate crash on every invocation. All other `ledblinky` commands used `_cfg()` correctly; these two were copied with the wrong name.
+
+- **`ledblinky patch-settings` — FE idle animation dropdown empty** — `list_lwa_files()` only performed a flat `glob("*.lwa")` on `ledblinky_dir`, missing the standard `lwa/` subdirectory (and its nested subdirectories) where LedBlinky ships its animation files. Changed to `rglob("*.lwa")` returning paths relative to `ledblinky_dir` (e.g. `lwa\Slow Fade.lwa`) so dropdown values match exactly what LedBlinky expects in `Settings.ini`.
+
 - **Release zip reduced by ~120 MB** — The `assets/archive/` subfolder (deprecated oversized originals kept for reference) was accidentally bundled into every PyInstaller exe via a recursive `--add-data` on the whole assets directory. The pip package already excluded it (non-recursive glob in `pyproject.toml`); the build script now does the same by adding only top-level asset files.
 
 ---
