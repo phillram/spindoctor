@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`Default.zip` theme fallback for per-game media mirror** — When a game has no per-game `<GameName>.zip` in the source system's Themes folder, SpinDoctor now copies the source system's `Default.zip` (HyperSpin's console-wide fallback theme) as `<GameName>.zip` in the synthetic wheel's Themes folder. This means games like Kirby's Adventure — which rely on the NES console theme rather than a dedicated per-game zip — now display the same themed background and video layout in Favorites / Recently Played / Most Played that they show in their native wheel. The fallback only fires when `Default.zip` exists in the source system's Themes folder and the game has no per-game theme; games with per-game themes are unaffected.
+
+- **Bundled `navigate.mp3` for all three synthetic wheels** — SpinDoctor now ships a wheel-click navigation sound and installs it as `Media\<SystemName>\Sound\navigate.mp3` for `Favorites`, `Most Played`, and `Recently Played` during every `rebuild --apply` (skip-if-exists). HyperSpin plays this file on every left/right cursor move while browsing the game list inside the wheel. `install_system_navigate_sound()` added to `rocketlauncher.py`; `install_bundled_system_assets()` now returns a sixth key `"navigate_sound"`. Rebuild summary shows a `Navigate sound:` row. `pyproject.toml` package-data glob updated to include `assets/*.mp3`.
+
 ---
 
 ## [2.4.13] - 2026-05-27
