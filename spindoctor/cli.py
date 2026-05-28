@@ -5715,7 +5715,18 @@ def self_doctor(fix):
 
 @cli.group("ledblinky")
 def ledblinky_group():
-    """Generate and audit LEDBlinky controls.ini / colors.ini."""
+    """Generate and audit LEDBlinky controls.ini / colors.ini.
+
+    \b
+    Subcommands:
+      generate       Generate / merge Controls.ini and Colors.ini from MAME data
+      audit          Audit ROM → Colors.ini coverage
+      check          Check LEDBlinky compatibility with HyperSpin
+      fix            Fix LEDBlinky compatibility issues
+      patch-settings Patch Settings.ini to suppress unused-button flash
+      fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
+      colors         Manage named color definitions (list / edit / normalize)
+    """
 
 
 @ledblinky_group.command("generate")
@@ -6196,6 +6207,446 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
         console.print(
             "\n[dim]Backups saved as <file>.YYYYMMDD_HHMMSS.bak next to each modified file.[/dim]"
         )
+
+
+@ledblinky_group.command("patch-settings")
+@click.option(
+    "--fe-lwa", default=None,
+    help="LWA animation filename for the frontend idle state (FELWAFile in "
+         "[FEOptions]).  E.g. 'Slow Fade.lwa'.  Pass empty string to stop "
+         "all animation and show static colors.  Omit to leave unchanged.",
+)
+@click.option(
+    "--game-lwa", default="",
+    help="LWA animation filename for in-game unassigned buttons "
+         "(GamePlayLWAFile in [GameOptions]).  Default: '' (empty) which "
+         "turns off random flashing on unused buttons during gameplay.",
+)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the patch (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the .bak backup when writing in-place.")
+def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
+    """Patch Settings.ini to fix idle animation and silence unused buttons.
+
+    \b
+    Patches two keys in Settings.ini by default:
+
+      GamePlayLWAFile (in [GameOptions])
+        Animation on unassigned buttons DURING gameplay.
+        Default: "" (empty) — unused buttons go dark instead of flashing.
+
+      FELWAFile (in [FEOptions])
+        Animation while browsing HyperSpin (omit flag to leave unchanged).
+        Pass a .lwa filename for a smooth fade, or "" for static colors.
+
+    \b
+    Examples:
+      spindoctor ledblinky patch-settings               # preview only
+      spindoctor ledblinky patch-settings --apply       # fix in-game flash
+      spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply
+      spindoctor ledblinky patch-settings --fe-lwa "" --apply  # static FE
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    try:
+        result = lb.patch_ledblinky_settings(
+            config,
+            fe_lwa_file=fe_lwa,
+            game_play_lwa_file=game_lwa,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1) from exc
+
+    console.print(f"\n[blue bold]Settings.ini[/blue bold]  {result.settings_path}")
+
+    if not result.changes:
+        console.print(
+            "  [green]✓ No changes needed — already at the requested values.[/green]"
+        )
+    else:
+        for change in result.changes:
+            verb = (
+                "[yellow]would change[/yellow]"
+                if result.dry_run
+                else "[green]changed[/green]"
+            )
+            console.print(f"  {verb}: {change}")
+
+        if not result.dry_run and result.backup_path:
+            console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
+
+    # Hint: list available .lwa files
+    lwa_files = lb.list_lwa_files(config)
+    if lwa_files:
+        sample = ", ".join(lwa_files[:8])
+        ellipsis_ = " …" if len(lwa_files) > 8 else ""
+        console.print(
+            f"\n[dim]Available .lwa files ({len(lwa_files)} found): "
+            f"{sample}{ellipsis_}[/dim]"
+        )
+    elif config.ledblinky_dir:
+        console.print(
+            "[dim]No .lwa files found in ledblinky_dir — "
+            "check that the directory is correct.[/dim]"
+        )
+
+
+@ledblinky_group.group("colors")
+def ledblinky_colors_group():
+    """Manage named color definitions in Color-RGB.ini.
+
+    \b
+    Subcommands:
+      list       Show all color definitions
+      edit       Rename / recolor a color and propagate the change
+      normalize  Convert hex-format Colors.ini entries to named P1_BUTTON format
+    """
+
+
+@ledblinky_colors_group.command("list")
+def ledblinky_colors_list():
+    """List all named color definitions from Color-RGB.ini.
+
+    Shows the name, native R/G/B intensity values (0-48 range as stored in
+    the file), and the equivalent #RRGGBB hex code for reference.
+    """
+    from pathlib import Path as _Path
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    path = _Path(config.ledblinky_dir) / lb.COLOR_RGB_NAME
+    if not path.exists():
+        console.print(f"[red]{lb.COLOR_RGB_NAME} not found at {path}[/red]")
+        raise SystemExit(1)
+
+    _, entries = lb.parse_color_rgb_ini(path)
+
+    tbl = Table(box=box.SIMPLE, show_header=True)
+    tbl.add_column("Name", style="cyan", no_wrap=True)
+    tbl.add_column("R (0-48)", justify="right")
+    tbl.add_column("G (0-48)", justify="right")
+    tbl.add_column("B (0-48)", justify="right")
+    tbl.add_column("Hex (#RRGGBB)")
+    for e in entries:
+        tbl.add_row(e.name, str(e.r), str(e.g), str(e.b), e.to_hex())
+
+    console.print(tbl)
+    console.print(f"\n[dim]{len(entries)} color definitions in {path}[/dim]")
+
+
+@ledblinky_colors_group.command("edit")
+@click.argument("color_name")
+@click.option("--name", "new_name", default=None,
+              help="New name for the color (omit to keep the existing name).")
+@click.option(
+    "--hex", "hex_color", default=None,
+    help="New color as a RRGGBB hex string (e.g. 06BEE1). "
+         "Converted from 0-255 per channel to the 0-48 intensity range for storage. "
+         "Mutually exclusive with --rgb.",
+)
+@click.option(
+    "--rgb", "rgb_values", default=None,
+    help="New R,G,B values in the native 0-48 intensity range (e.g. 0,38,42). "
+         "Mutually exclusive with --hex.",
+)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit changes to disk (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip .bak backups when writing in-place.")
+def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_changes, no_backup):
+    """Edit a color definition and propagate the rename to all LEDBlinky files.
+
+    \b
+    COLOR_NAME  current name in Color-RGB.ini (e.g. 'Blue').
+
+    At least one of --name, --hex, or --rgb must be supplied.
+    Run with just the color name to inspect its current definition.
+
+    \b
+    Three files are updated:
+      1. Color-RGB.ini          — name and/or R,G,B values
+      2. Colors.ini             — every value that equals COLOR_NAME exactly
+      3. LEDBlinkyControls.xml  — every  color="COLOR_NAME"  attribute
+
+    \b
+    Examples:
+      spindoctor ledblinky colors edit Blue              :: inspect current Blue
+      spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply
+      spindoctor ledblinky colors edit Red --rgb 48,0,12 --apply
+      spindoctor ledblinky colors edit Orange --name Amber --apply
+    """
+    from pathlib import Path as _Path
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    # ── Inspect-only (no options given) ──────────────────────────────────────
+    if new_name is None and hex_color is None and rgb_values is None:
+        path = _Path(config.ledblinky_dir) / lb.COLOR_RGB_NAME
+        if not path.exists():
+            console.print(f"[red]{lb.COLOR_RGB_NAME} not found at {path}[/red]")
+            raise SystemExit(1)
+        _, entries = lb.parse_color_rgb_ini(path)
+        for e in entries:
+            if e.name == color_name:
+                console.print(
+                    f"[cyan]{e.name}[/cyan]  "
+                    f"R={e.r}  G={e.g}  B={e.b}  ({e.to_hex()})"
+                )
+                return
+        console.print(f"[red]Color '{color_name}' not found in {lb.COLOR_RGB_NAME}.[/red]")
+        raise SystemExit(1)
+
+    # ── Mutual exclusion ─────────────────────────────────────────────────────
+    if hex_color and rgb_values:
+        console.print("[red]Error: --hex and --rgb are mutually exclusive.[/red]")
+        raise SystemExit(1)
+
+    # ── Parse new RGB values ──────────────────────────────────────────────────
+    new_r = new_g = new_b = None
+
+    if hex_color:
+        try:
+            tmp = lb.ColorEntry.from_hex("_", hex_color)
+            new_r, new_g, new_b = tmp.r, tmp.g, tmp.b
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise SystemExit(1) from exc
+
+    elif rgb_values:
+        parts = [p.strip() for p in rgb_values.split(",")]
+        if len(parts) != 3:
+            console.print(
+                "[red]Error: --rgb requires three comma-separated integers "
+                "in the 0-48 range, e.g. 0,0,48.[/red]"
+            )
+            raise SystemExit(1)
+        try:
+            new_r, new_g, new_b = int(parts[0]), int(parts[1]), int(parts[2])
+            if not all(0 <= v <= 48 for v in (new_r, new_g, new_b)):
+                raise ValueError("all values must be in the range 0-48")
+        except ValueError as exc:
+            console.print(f"[red]Error: --rgb {exc}[/red]")
+            raise SystemExit(1) from exc
+
+    resolved_name = new_name if new_name is not None else color_name
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    try:
+        result = lb.apply_color_rename(
+            config,
+            old_name=color_name,
+            new_name=resolved_name,
+            new_r=new_r,
+            new_g=new_g,
+            new_b=new_b,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1) from exc
+
+    # ── Report ────────────────────────────────────────────────────────────────
+    verb = "would update" if result.dry_run else "updated"
+    console.print(f"\n[blue bold]Color-RGB.ini[/blue bold]  {result.color_rgb_path}")
+
+    if resolved_name != color_name:
+        console.print(
+            f"  Name: [yellow]{color_name}[/yellow] → [green]{resolved_name}[/green]"
+        )
+    if new_r is not None:
+        preview = lb.ColorEntry("_", new_r, new_g, new_b).to_hex()
+        console.print(f"  RGB: R={new_r}, G={new_g}, B={new_b}  ({preview})")
+
+    console.print(
+        f"\n  Colors.ini: "
+        + (f"[green]{result.colors_ini_replacements}[/green]"
+           if result.colors_ini_replacements
+           else "[dim]0[/dim]")
+        + f" reference(s) {verb}"
+    )
+    console.print(
+        f"  LEDBlinkyControls.xml: "
+        + (f"[green]{result.controls_xml_replacements}[/green]"
+           if result.controls_xml_replacements
+           else "[dim]0[/dim]")
+        + f" attribute(s) {verb}"
+    )
+
+    if not result.dry_run and result.backup_paths:
+        console.print(
+            "\n[dim]Backups: "
+            + ", ".join(str(p) for p in result.backup_paths)
+            + "[/dim]"
+        )
+
+
+@ledblinky_colors_group.command("normalize")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_colors_normalize(apply_changes, no_backup):
+    """Convert hex-format Colors.ini entries to named P1_BUTTON format.
+
+    SpinDoctor-generated Colors.ini entries use bare hex values::
+
+    \b
+        [powerins]
+        ledcolor1=FF0000      →  P1_BUTTON1=Red
+        ledcolor2=FFFF00      →  P1_BUTTON2=Yellow
+        joystick=FFFFFF       →  P1_JOYSTICK=White
+        start=FFFFFF          →  P1_START=White
+        coin=FF8000           →  P1_COIN=Orange
+
+    The nearest match from Color-RGB.ini is chosen for each hex value.
+    Sections already in named format are left completely untouched.
+    Run normalize before colors edit so renames propagate to every section.
+
+    \b
+    Examples:
+      spindoctor ledblinky colors normalize              :: preview changes
+      spindoctor ledblinky colors normalize --apply      :: commit changes
+    """
+    config = _load_config()
+    try:
+        result = lb.normalize_colors_ini(
+            config,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would convert" if result.dry_run else "converted"
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+
+    if result.keys_converted == 0:
+        console.print(
+            "\n[dim]Nothing to normalise — all sections already use named format.[/dim]"
+        )
+    else:
+        console.print(
+            f"  {verb}: "
+            f"[green]{result.sections_converted}[/green] section(s), "
+            f"[green]{result.keys_converted}[/green] key(s)"
+        )
+        if result.dry_run:
+            console.print(
+                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+            )
+        elif result.backup_path:
+            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+
+@ledblinky_group.command("fill-defaults")
+@click.option("--color", "default_color", default="White", show_default=True,
+              help="Named color from Color-RGB.ini to assign to every button. "
+                   "Must exist in Color-RGB.ini.")
+@click.option("--buttons", "n_buttons", default=6, show_default=True, type=int,
+              help="Number of P1_BUTTON entries to generate per ROM (clamped 1-8).")
+@click.option("--system", default=None, metavar="SYSTEM",
+              help="Process only this HyperSpin system.  Default: all systems.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_fill_defaults(default_color, n_buttons, system, apply_changes, no_backup):
+    """Add default Colors.ini entries for ROMs with no LED mapping.
+
+    When a ROM has no entry in Colors.ini, LedBlinky treats all of its buttons
+    as inactive and turns them off (black).  Use this command to append a
+    uniform default entry for every ROM that is not already covered, so unused
+    buttons glow a steady color instead of going dark.
+
+    Each generated entry uses named format::
+
+    \b
+        [rom_name]
+        P1_BUTTON1=White
+        P1_BUTTON2=White
+        ...
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=White
+
+    Only ROMs with no existing section are touched.  Existing entries (including
+    MAME-generated hex entries and any community-maintained named entries) are
+    never modified.  Run normalize first if you want those hex entries converted
+    before filling the gaps.
+
+    \b
+    Examples:
+      spindoctor ledblinky fill-defaults                         :: preview all
+      spindoctor ledblinky fill-defaults --apply                 :: commit all
+      spindoctor ledblinky fill-defaults --system "MAME"         :: one system
+      spindoctor ledblinky fill-defaults --color Blue --apply    :: blue buttons
+      spindoctor ledblinky fill-defaults --buttons 8 --apply     :: 8 buttons
+    """
+    from . import ledblinky as lb
+
+    config = _load_config()
+    try:
+        result = lb.fill_default_colors(
+            config,
+            default_color=default_color,
+            n_buttons=n_buttons,
+            system=system,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would add" if result.dry_run else "added"
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+    console.print(
+        f"  ROMs checked : [cyan]{result.roms_checked}[/cyan]"
+    )
+    if result.roms_added == 0:
+        console.print(
+            "\n[dim]Nothing to add — every ROM already has a Colors.ini entry.[/dim]"
+        )
+    else:
+        console.print(
+            f"  {verb}      : [green]{result.roms_added}[/green] "
+            f"default entr{'y' if result.roms_added == 1 else 'ies'} "
+            f"(color=[cyan]{default_color}[/cyan], buttons=[cyan]{n_buttons}[/cyan])"
+        )
+        if result.dry_run:
+            console.print(
+                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+            )
+        elif result.backup_path:
+            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 # ─── add-system ───────────────────────────────────────────────────────────────

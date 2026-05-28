@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`spindoctor ledblinky colors normalize`** — converts SpinDoctor-generated hex-format `Colors.ini` entries to LedBlinky's native named format. `ledcolor1=FF0000` → `P1_BUTTON1=Red`, `joystick=FFFFFF` → `P1_JOYSTICK=White`, etc. Each hex value is matched to the nearest entry in `Color-RGB.ini` using Euclidean distance in RGB space (exact matches are found immediately; custom colors fall back to nearest neighbour). Sections already in named format are untouched. Run before `colors edit` so renames reach every section. Dry-run by default; `--apply` commits; `--no-backup` skips the `.bak` copy. `normalize_colors_ini()` + `NormalizeResult` + `_is_hex_color()` + `_nearest_color_name()` + `_LEDCOLOR_RE` + `_LEGACY_KEY_MAP` added to `ledblinky.py`.
+
+- **`spindoctor ledblinky colors list / edit`** — manage named color definitions in `Color-RGB.ini`. `list` shows all entries as a table (name, R/G/B in 0-48 range, #RRGGBB hex). `edit <NAME>` renames a color and/or updates its value (`--hex RRGGBB` converts from standard 8-bit hex to the 0-48 intensity range; `--rgb R,G,B` for native values) and propagates the rename to: (1) `Color-RGB.ini`, (2) every exact-value reference in `Colors.ini`, (3) every `color="<NAME>"` attribute in `LEDBlinkyControls.xml`. Dry-run by default; `--apply` commits; `.bak` backups written for each modified file. `apply_color_rename()` + `parse_color_rgb_ini()` + `write_color_rgb_ini()` + `ColorEntry` + `ColorRenameResult` added to `ledblinky.py`.
+
+- **LEDBlinky tab — Color Definitions section** — Treeview showing all entries from `Color-RGB.ini` (Name, R, G, B, Hex columns). Refresh button populates from `ledblinky_dir`. Click a row to load it into the edit fields; edit the name and/or hex color code (live preview swatch); Apply checkbox + **Update & Rename** button runs the propagation; **Normalize Colors.ini** button converts the whole file from hex format to named format in one click. After either action completes successfully the color list (and the Fill Defaults color dropdown) auto-refresh. Equivalent to `spindoctor ledblinky colors edit` / `spindoctor ledblinky colors normalize`.
+
+- **`spindoctor ledblinky patch-settings`** — patches `<ledblinky_dir>/Settings.ini` to fix two common LED annoyances without requiring access to LedBlinky's configuration UI: (1) sets `GamePlayLWAFile=` (empty) in `[GameOptions]` so buttons not used by the current game go dark in-game instead of flashing randomly; (2) optionally sets `FELWAFile` in `[FEOptions]` to a user-supplied `.lwa` animation file (or empty for static colors) instead of the jarring `<Random>` selection. `--fe-lwa`, `--game-lwa`, `--apply`, and `--no-backup` flags. A `.bak` copy of `Settings.ini` is written before any change. `list_lwa_files()` scans `ledblinky_dir` for available animation files. `_patch_ini_keys()` helper preserves line endings, comments, and key ordering exactly.
+
+- **LEDBlinky tab — Settings.ini Patch section** — "FE idle animation" combobox auto-populated from `.lwa` files in `ledblinky_dir` (Refresh button), "Turn off unused buttons during gameplay" checkbox (on by default), Apply checkbox, and **Patch Settings.ini** button. Equivalent to `spindoctor ledblinky patch-settings`.
+
+- **LEDBlinky tab — Backup / Restore section** — Quick backup and restore scoped to the `ledblinky` component only. Both folder fields default to `config.backup_dir`. Dry-run by default. Equivalent to `spindoctor backup create/restore --include ledblinky`.
+
+- **`spindoctor ledblinky fill-defaults`** — adds a default `Colors.ini` entry for every ROM in the HyperSpin databases that has no LED mapping yet. Without an entry LedBlinky treats all buttons as inactive (off); after running `fill-defaults`, unmapped games glow a steady color instead of going dark. Each generated entry uses `P1_BUTTON1`…`P1_BUTTONn`, `P1_JOYSTICK`, `P1_START`, `P1_COIN` in named format. Options: `--color` (default White, validated against `Color-RGB.ini`), `--buttons` (1-8, default 6), `--system` (limit to one system), `--apply`, `--no-backup`. Existing entries are never modified. `fill_default_colors()` + `FillDefaultsResult` added to `ledblinky.py`.
+
+- **`spindoctor ledblinky patch-settings` — only `GamePlayLWAFile` is patched** — the in-game unused-button flash is silenced; the brief flash at game-load start is intentional and left alone.
+
+- **LEDBlinky tab — Fill Default Colors section** — color dropdown (auto-populated from `Color-RGB.ini`; refreshes automatically after **Update & Rename** or **Normalize Colors.ini** completes), button-count Spinbox (1-8), optional system filter (leave blank for all systems), Apply checkbox, and **Fill Default Colors** button. Equivalent to `spindoctor ledblinky fill-defaults`.
+
+- **Docs** — LEDBlinky section added to `cabinet-architecture-reference.md` (key files, `Settings.ini` key anatomy, `LEDBlinkyControls.xml` / Search compatibility). LEDBlinky section added to `cli-cheatsheet.md` (was entirely absent). `commands.md`, `gui.md`, `cli-cheatsheet.md`, and `troubleshooting.md` updated for `patch-settings`, `colors normalize`, `fill-defaults`, new GUI sections (Normalize button, Fill Default Colors, Settings.ini Patch, Backup/Restore), and three new FAQ entries.
+
 ### Fixed
 
 - **Release zip reduced by ~120 MB** — The `assets/archive/` subfolder (deprecated oversized originals kept for reference) was accidentally bundled into every PyInstaller exe via a recursive `--add-data` on the whole assets directory. The pip package already excluded it (non-recursive glob in `pyproject.toml`); the build script now does the same by adding only top-level asset files.

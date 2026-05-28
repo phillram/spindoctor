@@ -881,3 +881,803 @@ def apply_fix(
         results["menu_inis"].append(info)
 
     return results
+
+
+# ─── Settings.ini patch ────────────────────────────────────────────────────────
+
+
+def list_lwa_files(config: Config) -> list[str]:
+    """Return a sorted list of ``.lwa`` filenames found in ``ledblinky_dir``.
+
+    These are the animation files LedBlinky can play.  The list is used to
+    populate the FE-animation picker in the GUI and the dry-run hint in the CLI.
+    Returns an empty list if ``ledblinky_dir`` is not set or the directory does
+    not exist yet.
+    """
+    if not config.ledblinky_dir:
+        return []
+    base = Path(config.ledblinky_dir)
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.glob("*.lwa") if p.is_file())
+
+
+def _patch_ini_keys(
+    text: str, patches: "dict[str, dict[str, str]]"
+) -> "tuple[str, list[str]]":
+    """Patch ``key=value`` pairs in specific sections of an INI text blob.
+
+    ``patches`` maps ``{section_name: {key: new_value}}``.  Only lines whose
+    key matches exactly (case-sensitive) are touched; everything else —
+    comments, blank lines, ordering, line endings — is preserved verbatim.
+
+    Returns ``(patched_text, list_of_human_readable_change_descriptions)``.
+    """
+    lines = text.splitlines(keepends=True)
+    current_section: Optional[str] = None
+    result: list[str] = []
+    changes: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        # Track current [Section]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            result.append(line)
+            continue
+
+        if current_section and current_section in patches:
+            section_patches = patches[current_section]
+            replaced = False
+            for key, new_value in section_patches.items():
+                # Match "Key=..." or "Key =..." (with optional space before =)
+                if re.match(rf"^{re.escape(key)}\s*=", stripped):
+                    old_value = stripped.split("=", 1)[1]
+                    if old_value != new_value:
+                        ending = (
+                            "\r\n" if line.endswith("\r\n")
+                            else "\n" if line.endswith("\n")
+                            else ""
+                        )
+                        result.append(f"{key}={new_value}{ending}")
+                        changes.append(
+                            f"[{current_section}] {key}: "
+                            f"'{old_value}' → '{new_value}'"
+                        )
+                    else:
+                        result.append(line)
+                    replaced = True
+                    break
+            if not replaced:
+                result.append(line)
+        else:
+            result.append(line)
+
+    return "".join(result), changes
+
+
+@dataclass
+class SettingsPatchResult:
+    """Outcome of :func:`patch_ledblinky_settings`."""
+
+    settings_path: Optional[Path] = None
+    backup_path: Optional[Path] = None
+    changes: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    dry_run: bool = False
+
+
+def patch_ledblinky_settings(
+    config: Config,
+    fe_lwa_file: Optional[str] = None,
+    game_play_lwa_file: str = "",
+    dry_run: bool = True,
+    backup: bool = True,
+) -> SettingsPatchResult:
+    """Patch ``<ledblinky_dir>/Settings.ini`` for better idle and in-game behavior.
+
+    Parameters
+    ----------
+    fe_lwa_file:
+        Animation file (basename only, e.g. ``"Slow Fade.lwa"``) to set as the
+        frontend idle animation (``FELWAFile`` in ``[FEOptions]``).
+        Pass ``None`` to leave the key unchanged.
+        Pass ``""`` to silence all animation (static colors while browsing).
+    game_play_lwa_file:
+        Animation file for buttons *not* used by the current game during
+        gameplay (``GamePlayLWAFile`` in ``[GameOptions]``).
+        Defaults to ``""`` (empty string), which silences the random-flash on
+        unused buttons and lets them fall back to their ``defaultInactive``
+        color (typically ``0,0,0,0`` = off in the default control group).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured or ``Settings.ini`` is absent.
+    """
+    result = SettingsPatchResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    settings_path = Path(config.ledblinky_dir) / "Settings.ini"
+    result.settings_path = settings_path
+
+    if not settings_path.exists():
+        raise ValueError(f"Settings.ini not found at {settings_path}")
+
+    text = settings_path.read_text(encoding="utf-8", errors="replace")
+
+    # Build patch map — only include FELWAFile if caller explicitly passed a value.
+    patches: dict[str, dict[str, str]] = {
+        "GameOptions": {
+            "GamePlayLWAFile": game_play_lwa_file,
+        },
+    }
+    if fe_lwa_file is not None:
+        patches.setdefault("FEOptions", {})["FELWAFile"] = fe_lwa_file
+
+    new_text, changes = _patch_ini_keys(text, patches)
+    result.changes = changes
+
+    if changes and not dry_run:
+        if backup:
+            result.backup_path = _backup(settings_path)
+        settings_path.write_text(new_text, encoding="utf-8")
+
+    return result
+
+
+# ─── Color-RGB.ini management ─────────────────────────────────────────────────
+
+COLOR_RGB_NAME = "Color-RGB.ini"
+
+
+@dataclass
+class ColorEntry:
+    """One named color from ``Color-RGB.ini`` (intensity 0-48 per channel)."""
+
+    name: str
+    r: int   # 0-48
+    g: int   # 0-48
+    b: int   # 0-48
+
+    def to_hex(self) -> str:
+        """Return ``#RRGGBB`` string (0-48 intensity scaled to 0-255)."""
+        return "#{:02X}{:02X}{:02X}".format(
+            round(self.r / 48 * 255),
+            round(self.g / 48 * 255),
+            round(self.b / 48 * 255),
+        )
+
+    @classmethod
+    def from_hex(cls, name: str, hex_str: str) -> "ColorEntry":
+        """Build a :class:`ColorEntry` from a ``RRGGBB`` or ``#RRGGBB`` string.
+
+        The 0-255 channel values are scaled down to the 0-48 intensity range
+        used by ``Color-RGB.ini``.
+        """
+        h = hex_str.lstrip("#")
+        if len(h) != 6:
+            raise ValueError(
+                f"Expected exactly 6 hex digits (RRGGBB), got '{hex_str}'"
+            )
+        try:
+            r255 = int(h[0:2], 16)
+            g255 = int(h[2:4], 16)
+            b255 = int(h[4:6], 16)
+        except ValueError:
+            raise ValueError(
+                f"'{hex_str}' contains invalid characters. "
+                "Expected 6 hex digits (0-9, A-F), e.g. 'FF0000' for red."
+            )
+        return cls(
+            name=name,
+            r=round(r255 / 255 * 48),
+            g=round(g255 / 255 * 48),
+            b=round(b255 / 255 * 48),
+        )
+
+
+def parse_color_rgb_ini(path: Path) -> "tuple[list[str], list[ColorEntry]]":
+    """Parse ``Color-RGB.ini`` into header lines and ordered color entries.
+
+    The *header* is every line that appears before ``[Colors]`` (comments,
+    blanks, version sections) and is preserved verbatim on write so the file
+    round-trips cleanly.
+    """
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    header: list[str] = []
+    entries: list[ColorEntry] = []
+    in_colors = False
+
+    for line in raw.splitlines():
+        stripped = line.strip()
+        if stripped.lower() == "[colors]":
+            in_colors = True
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_colors = False
+        if not in_colors:
+            header.append(line)
+            continue
+        if not stripped or stripped.startswith(";"):
+            continue
+        if "=" in stripped:
+            name_part, _, val = stripped.partition("=")
+            parts = [p.strip() for p in val.split(",")]
+            if len(parts) == 3:
+                try:
+                    entries.append(ColorEntry(
+                        name=name_part.strip(),
+                        r=int(parts[0]),
+                        g=int(parts[1]),
+                        b=int(parts[2]),
+                    ))
+                except ValueError:
+                    pass  # skip malformed lines silently
+
+    return header, entries
+
+
+def write_color_rgb_ini(
+    header: "list[str]",
+    entries: "list[ColorEntry]",
+    path: Path,
+) -> None:
+    """Write ``Color-RGB.ini``, reproducing the original header verbatim.
+
+    Uses ``\\r\\n`` line endings (standard for LedBlinky Windows files).
+    """
+    lines: list[str] = list(header)
+    # Drop trailing blank lines from the header — we'll add a fresh one
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.append("")
+    lines.append("[Colors]")
+    for e in entries:
+        lines.append(f"{e.name}={e.r},{e.g},{e.b}")
+    lines.append("")
+    path.write_text("\r\n".join(lines), encoding="utf-8")
+
+
+def _replace_color_in_colors_ini(
+    path: Path, old_name: str, new_name: str
+) -> "tuple[str, int]":
+    """Replace exact color-name values in ``Colors.ini``.
+
+    Only touches lines where the entire value (right-hand side of ``=``) is
+    exactly ``old_name``.  Hex-value entries such as ``ledcolor1=FF0000`` are
+    not affected.
+
+    Returns ``(new_text, replacement_count)``.  Does **not** write to disk.
+    """
+    if not path.exists():
+        return "", 0
+    text = path.read_text(encoding="utf-8", errors="replace")
+    # ^(?!;)([^=]+=)  — non-comment line with a key=
+    # \s*<OldName>\s*\r?$  — value is exactly old_name (with optional blanks)
+    pattern = re.compile(
+        rf"^(?!;)([^=]+=)\s*{re.escape(old_name)}\s*\r?$",
+        re.MULTILINE,
+    )
+    new_text, count = pattern.subn(rf"\g<1>{new_name}", text)
+    return new_text, count
+
+
+def _replace_color_in_controls_xml(
+    path: Path, old_name: str, new_name: str
+) -> "tuple[str, int]":
+    """Replace ``color="<old_name>"`` XML attributes in ``LEDBlinkyControls.xml``.
+
+    Returns ``(new_text, replacement_count)``.  Does **not** write to disk.
+    """
+    if not path.exists():
+        return "", 0
+    text = path.read_text(encoding="utf-8", errors="replace")
+    new_text, count = re.subn(
+        rf'color="{re.escape(old_name)}"',
+        f'color="{new_name}"',
+        text,
+    )
+    return new_text, count
+
+
+@dataclass
+class ColorRenameResult:
+    """Outcome of :func:`apply_color_rename`."""
+
+    old_name: str
+    new_name: str
+    color_rgb_path: Optional[Path] = None
+    colors_ini_replacements: int = 0
+    controls_xml_replacements: int = 0
+    backup_paths: list[Path] = field(default_factory=list)
+    dry_run: bool = False
+
+
+def apply_color_rename(
+    config: Config,
+    old_name: str,
+    new_name: str,
+    new_r: Optional[int] = None,
+    new_g: Optional[int] = None,
+    new_b: Optional[int] = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> ColorRenameResult:
+    """Rename (and optionally recolor) a named color across all LEDBlinky files.
+
+    The three files touched in order:
+
+    1. ``Color-RGB.ini`` — the entry is renamed; R,G,B updated when provided.
+    2. ``Colors.ini`` — every line whose value is exactly ``old_name`` is
+       updated to ``new_name``.
+    3. ``LEDBlinkyControls.xml`` — every ``color="<old_name>"`` attribute is
+       updated to ``color="<new_name>"``.
+
+    Parameters
+    ----------
+    new_r, new_g, new_b:
+        New intensity values (0-48).  Pass ``None`` to keep the existing
+        values (rename-only, no recolor).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, ``Color-RGB.ini`` is absent,
+        or ``old_name`` is not found in the file.
+    """
+    # Validate new RGB values are within the 0-48 intensity range
+    for _ch, _val in (("R", new_r), ("G", new_g), ("B", new_b)):
+        if _val is not None and not (0 <= _val <= 48):
+            raise ValueError(
+                f"{_ch} value {_val} is outside the valid 0-48 intensity range "
+                f"(LedBlinky uses 0-48, not 0-255). "
+                f"Use --hex for standard 8-bit hex input."
+            )
+
+    result = ColorRenameResult(
+        old_name=old_name, new_name=new_name, dry_run=dry_run
+    )
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    base = Path(config.ledblinky_dir)
+
+    # ── 1. Color-RGB.ini ─────────────────────────────────────────────────────
+    color_rgb_path = base / COLOR_RGB_NAME
+    result.color_rgb_path = color_rgb_path
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    header, entries = parse_color_rgb_ini(color_rgb_path)
+    names = [e.name for e in entries]
+    if old_name not in names:
+        raise ValueError(
+            f"Color '{old_name}' not found in {COLOR_RGB_NAME}. "
+            f"Available: {', '.join(names)}"
+        )
+
+    updated_entries = [
+        ColorEntry(
+            name=new_name,
+            r=new_r if new_r is not None else e.r,
+            g=new_g if new_g is not None else e.g,
+            b=new_b if new_b is not None else e.b,
+        )
+        if e.name == old_name
+        else e
+        for e in entries
+    ]
+
+    # ── 2. Pre-compute replacements (safe, no writes yet) ────────────────────
+    colors_ini_path = base / "Colors.ini"
+    new_colors_ini_text, colors_ini_count = _replace_color_in_colors_ini(
+        colors_ini_path, old_name, new_name
+    )
+    result.colors_ini_replacements = colors_ini_count
+
+    controls_xml_path = base / CONTROLS_XML_NAME
+    new_controls_xml_text, controls_xml_count = _replace_color_in_controls_xml(
+        controls_xml_path, old_name, new_name
+    )
+    result.controls_xml_replacements = controls_xml_count
+
+    if dry_run:
+        return result
+
+    # ── 3. Write with backups ─────────────────────────────────────────────────
+    if backup:
+        bp = _backup(color_rgb_path)
+        if bp:
+            result.backup_paths.append(bp)
+    write_color_rgb_ini(header, updated_entries, color_rgb_path)
+
+    if colors_ini_count > 0:
+        if backup and colors_ini_path.exists():
+            bp = _backup(colors_ini_path)
+            if bp:
+                result.backup_paths.append(bp)
+        colors_ini_path.write_text(new_colors_ini_text, encoding="utf-8")
+
+    if controls_xml_count > 0:
+        if backup and controls_xml_path.exists():
+            bp = _backup(controls_xml_path)
+            if bp:
+                result.backup_paths.append(bp)
+        controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini normalisation ─────────────────────────────────────────────────
+
+# Regex matching SpinDoctor-generated hex button keys: ledcolor1, ledcolor2, …
+_LEDCOLOR_RE = re.compile(r"^ledcolor(\d+)$", re.IGNORECASE)
+
+# Other legacy hex-value keys → canonical P1_ names
+_LEGACY_KEY_MAP: dict[str, str] = {
+    "joystick": "P1_JOYSTICK",
+    "start":    "P1_START",
+    "coin":     "P1_COIN",
+}
+
+
+def _is_hex_color(val: str) -> bool:
+    """Return ``True`` if *val* is a bare 6-character hex string (``FF0000``)."""
+    return bool(re.fullmatch(r"[0-9A-Fa-f]{6}", val))
+
+
+def _nearest_color_name(hex_code: str, palette: "list[ColorEntry]") -> str:
+    """Return the palette entry name closest to *hex_code* (``RRGGBB``) in RGB space.
+
+    Distance is Euclidean in 0-255 space; ties broken by palette insertion order.
+    An exact match short-circuits the search immediately.
+    """
+    r = int(hex_code[0:2], 16)
+    g = int(hex_code[2:4], 16)
+    b = int(hex_code[4:6], 16)
+    best_name = palette[0].name
+    best_dist: float = float("inf")
+    for entry in palette:
+        er = round(entry.r / 48 * 255)
+        eg = round(entry.g / 48 * 255)
+        eb = round(entry.b / 48 * 255)
+        dist = (r - er) ** 2 + (g - eg) ** 2 + (b - eb) ** 2
+        if dist < best_dist:
+            best_dist = dist
+            best_name = entry.name
+        if dist == 0:
+            break  # exact match — stop early
+    return best_name
+
+
+@dataclass
+class NormalizeResult:
+    """Return value from :func:`normalize_colors_ini`."""
+
+    colors_ini_path: Optional[Path] = None
+    sections_converted: int = 0
+    keys_converted: int = 0
+    backup_path: Optional[Path] = None
+    dry_run: bool = False
+
+
+def normalize_colors_ini(
+    config,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> NormalizeResult:
+    """Convert hex-format ``Colors.ini`` entries to named ``P1_*`` format.
+
+    SpinDoctor generates ``Colors.ini`` sections using bare hex values::
+
+        [powerins]
+        ledcolor1=FF0000
+        ledcolor2=FFFF00
+        joystick=FFFFFF
+        start=FFFFFF
+        coin=FF8000
+
+    The preferred (LedBlinky-native) form uses named colours::
+
+        [powerins]
+        P1_BUTTON1=Red
+        P1_BUTTON2=Yellow
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=Orange
+
+    This function rewrites every section that contains convertible hex-format
+    keys using nearest-colour matching against ``Color-RGB.ini``.  Sections
+    that already use named keys (``P1_BUTTON1=White``) are left **completely
+    untouched**.
+
+    Key mapping
+    -----------
+    ``ledcolor1`` → ``P1_BUTTON1``, ``ledcolor2`` → ``P1_BUTTON2``, …
+    ``joystick``  → ``P1_JOYSTICK``,  ``start`` → ``P1_START``,
+    ``coin``      → ``P1_COIN``
+
+    Any other key whose value happens to be a 6-char hex string is left alone
+    (only the explicitly mapped keys are converted).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, or ``Colors.ini`` /
+        ``Color-RGB.ini`` is absent or empty.
+    """
+    result = NormalizeResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    base = Path(config.ledblinky_dir)
+
+    colors_ini_path = base / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    color_rgb_path = base / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    _, palette = parse_color_rgb_ini(color_rgb_path)
+    if not palette:
+        raise ValueError(f"{COLOR_RGB_NAME} contains no colour entries")
+
+    text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+
+    def _flush(
+        buf: "list[str]", has_hex: bool
+    ) -> "tuple[list[str], int, int]":
+        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta)."""
+        if not has_hex:
+            return buf, 0, 0
+        new_buf: list[str] = []
+        kc = 0
+        for ln in buf:
+            stripped = ln.rstrip("\r\n")
+            eol = ln[len(stripped):]
+            if "=" in stripped and not stripped.lstrip().startswith(";"):
+                key_s, _, val_s = stripped.partition("=")
+                key_s = key_s.strip()
+                val_s = val_s.strip()
+                if _is_hex_color(val_s):
+                    m = _LEDCOLOR_RE.match(key_s)
+                    if m:
+                        new_key = f"P1_BUTTON{m.group(1)}"
+                        color_name = _nearest_color_name(val_s, palette)
+                        new_buf.append(f"{new_key}={color_name}{eol}")
+                        kc += 1
+                        continue
+                    mapped = _LEGACY_KEY_MAP.get(key_s.lower())
+                    if mapped:
+                        color_name = _nearest_color_name(val_s, palette)
+                        new_buf.append(f"{mapped}={color_name}{eol}")
+                        kc += 1
+                        continue
+            new_buf.append(ln)
+        return new_buf, 1, kc
+
+    out_lines: list[str] = []
+    section_buffer: list[str] = []
+    section_has_hex = False
+    sections_converted = 0
+    keys_converted = 0
+
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
+            # Flush the previous section
+            if section_buffer:
+                flushed, sc, kc = _flush(section_buffer, section_has_hex)
+                out_lines.extend(flushed)
+                sections_converted += sc
+                keys_converted += kc
+            # Start a new section
+            section_buffer = [line]
+            section_has_hex = False
+        elif section_buffer:
+            # Detect whether this section needs conversion
+            if "=" in stripped and not stripped.lstrip().startswith(";"):
+                k, _, v = stripped.partition("=")
+                k = k.strip()
+                v = v.strip()
+                if _is_hex_color(v) and (
+                    _LEDCOLOR_RE.match(k) or k.lower() in _LEGACY_KEY_MAP
+                ):
+                    section_has_hex = True
+            section_buffer.append(line)
+        else:
+            # Lines before the first section header
+            out_lines.append(line)
+
+    # Flush the final section
+    if section_buffer:
+        flushed, sc, kc = _flush(section_buffer, section_has_hex)
+        out_lines.extend(flushed)
+        sections_converted += sc
+        keys_converted += kc
+
+    result.sections_converted = sections_converted
+    result.keys_converted = keys_converted
+
+    if keys_converted > 0 and not dry_run:
+        if backup:
+            result.backup_path = _backup(colors_ini_path)
+        colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini default-entry fill ────────────────────────────────────────────
+
+# Controls that make up the "default" entry for an unsupported ROM.
+_DEFAULT_FILL_CONTROLS = (
+    ("P1_BUTTON1", "P1_BUTTON2", "P1_BUTTON3",
+     "P1_BUTTON4", "P1_BUTTON5", "P1_BUTTON6"),  # indexed, trimmed to n_buttons
+    ("P1_JOYSTICK", "P1_START", "P1_COIN"),       # always included
+)
+
+
+@dataclass
+class FillDefaultsResult:
+    """Return value from :func:`fill_default_colors`."""
+
+    colors_ini_path: Optional[Path] = None
+    roms_checked: int = 0
+    roms_added: int = 0
+    backup_path: Optional[Path] = None
+    dry_run: bool = False
+
+
+def fill_default_colors(
+    config: Config,
+    default_color: str = "White",
+    n_buttons: int = 6,
+    system: Optional[str] = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> FillDefaultsResult:
+    """Add default ``Colors.ini`` entries for ROMs that have no LED mapping yet.
+
+    SpinDoctor's ``ledblinky generate`` populates ``Colors.ini`` from MAME
+    data.  ROMs from other systems (consoles, non-MAME arcade boards) have no
+    entry, so LedBlinky treats all their buttons as inactive and turns them
+    off.  This function closes that gap by appending a uniform default entry
+    for every ROM in the HyperSpin databases that is not already covered.
+
+    Each generated entry looks like::
+
+        [rom_name]
+        P1_BUTTON1=White
+        P1_BUTTON2=White
+        ...
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=White
+
+    Only ROMs that have no section at all in ``Colors.ini`` are touched.
+    Existing entries (including community-maintained named entries and
+    SpinDoctor-generated hex entries) are never modified.
+
+    Parameters
+    ----------
+    default_color:
+        Named color from ``Color-RGB.ini`` to assign to every button.
+        Defaults to ``"White"``.
+    n_buttons:
+        Number of P1_BUTTON entries to generate (1-8).  Defaults to 6,
+        which covers the majority of arcade games.
+    system:
+        If given, only process ROMs for this one system.  By default all
+        systems in the HyperSpin databases directory are processed.
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` or ``databases_dir`` is not configured, or
+        ``Colors.ini`` is absent.
+    """
+    from .config import get_systems
+    from .database import find_database, load_database
+    from .recent import SYNTHETIC_SYSTEM_NAMES
+
+    result = FillDefaultsResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not config.databases_dir or not Path(config.databases_dir).exists():
+        raise ValueError(
+            "databases_dir not configured or not found. "
+            "Run: spindoctor config set databases_dir <path>"
+        )
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    # Validate color name against Color-RGB.ini palette
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if color_rgb_path.exists():
+        _, palette = parse_color_rgb_ini(color_rgb_path)
+        valid_names = {e.name for e in palette}
+        if default_color not in valid_names:
+            raise ValueError(
+                f"Color '{default_color}' not found in {COLOR_RGB_NAME}. "
+                f"Available: {', '.join(sorted(valid_names))}"
+            )
+
+    n_buttons = max(1, min(8, n_buttons))
+
+    # Read existing Colors.ini sections
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_sections: set[str] = set(
+        re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
+    )
+
+    # Discover which systems to scan
+    if system:
+        systems_to_scan = [system]
+    else:
+        systems_to_scan = [
+            s for s in get_systems(config)
+            if s not in SYNTHETIC_SYSTEM_NAMES
+        ]
+
+    new_entries: list[str] = []
+    roms_checked = 0
+
+    for sys_name in systems_to_scan:
+        db_path = find_database(sys_name, Path(config.databases_dir))
+        if db_path is None:
+            continue
+        try:
+            db = load_database(sys_name, Path(config.databases_dir))
+        except Exception:
+            continue
+        for rom_name in db.games:
+            roms_checked += 1
+            if rom_name in existing_sections:
+                continue
+            # Build default entry
+            lines = [f"[{rom_name}]"]
+            for i in range(1, n_buttons + 1):
+                lines.append(f"P1_BUTTON{i}={default_color}")
+            lines.append(f"P1_JOYSTICK={default_color}")
+            lines.append(f"P1_START={default_color}")
+            lines.append(f"P1_COIN={default_color}")
+            lines.append("")  # blank line between sections
+            new_entries.append("\n".join(lines))
+
+    result.roms_checked = roms_checked
+    result.roms_added = len(new_entries)
+
+    if new_entries and not dry_run:
+        if backup:
+            result.backup_path = _backup(colors_ini_path)
+        # Append new entries (preserves all existing content exactly)
+        separator = "\n" if existing_text.endswith("\n") else "\n\n"
+        colors_ini_path.write_text(
+            existing_text + separator + "\n".join(new_entries),
+            encoding="utf-8",
+        )
+
+    return result

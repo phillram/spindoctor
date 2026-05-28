@@ -149,6 +149,16 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Generate** (controls.ini + colors.ini), **Audit coverage**, **Check**, and **Fix**. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. CLI equivalent: `spindoctor ledblinky generate / audit / check / fix`.
 
+**Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Without an entry LedBlinky treats all buttons as inactive (off). A "Default color" dropdown (populated from `Color-RGB.ini`), a "Buttons (1-8)" spinner, and an optional "System" filter let you scope the fill. Apply checkbox + **Fill Default Colors** button. Run this after `generate` + `normalize` to close the gap for console and PC games that don't have MAME data. CLI equivalent: `spindoctor ledblinky fill-defaults`.
+
+**Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. A "FE idle animation" combobox lists every `.lwa` file found in `ledblinky_dir` (populate it with the **Refresh list** button); leave blank to show static colors, or pick a fade file. The "Turn off unused buttons during gameplay" checkbox (on by default) empties `GamePlayLWAFile` so buttons not used by the current game go dark instead of flashing randomly during play. The brief flash when a game first loads is intentional and left as-is. Apply checkbox + **Patch Settings.ini** button; a `.bak` backup is written automatically. CLI equivalent: `spindoctor ledblinky patch-settings`.
+
+**Backup / Restore (LEDBlinky only)** — quick backup and restore scoped to the LEDBlinky component only. Backup folder and Restore-from fields both default to `config.backup_dir`. Dry-run by default. CLI equivalent: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
+
+**Color Definitions (Color-RGB.ini)** — Treeview listing all named colors (Name, R/G/B 0-48, hex). Click a row to load it into the edit fields. Change the name and/or paste a `#RRGGBB` hex code (a live color swatch previews your input); tick Apply and click **Update & Rename** to propagate the change through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml` in one shot. A `.bak` backup is written for every modified file. CLI equivalent: `spindoctor ledblinky colors edit`.
+
+**Normalize Colors.ini** button — converts SpinDoctor-generated hex-format entries (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) to LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Each hex value is matched to the nearest color in `Color-RGB.ini`. Sections already in named format are untouched. Run this before **Update & Rename** so renames reach every section. Uses the same Apply checkbox. CLI equivalent: `spindoctor ledblinky colors normalize`.
+
 ### Lightgun
 
 **Detect** installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), **Audit** per-system wiring, and **Configure** one system's RocketLauncher INI with optional `-target` / extra-args overrides. CLI equivalent: `spindoctor lightgun detect / audit / configure`.
