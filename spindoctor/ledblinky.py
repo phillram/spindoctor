@@ -1298,3 +1298,209 @@ def apply_color_rename(
         controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
 
     return result
+
+
+# ─── Colors.ini normalisation ─────────────────────────────────────────────────
+
+# Regex matching SpinDoctor-generated hex button keys: ledcolor1, ledcolor2, …
+_LEDCOLOR_RE = re.compile(r"^ledcolor(\d+)$", re.IGNORECASE)
+
+# Other legacy hex-value keys → canonical P1_ names
+_LEGACY_KEY_MAP: dict[str, str] = {
+    "joystick": "P1_JOYSTICK",
+    "start":    "P1_START",
+    "coin":     "P1_COIN",
+}
+
+
+def _is_hex_color(val: str) -> bool:
+    """Return ``True`` if *val* is a bare 6-character hex string (``FF0000``)."""
+    return bool(re.fullmatch(r"[0-9A-Fa-f]{6}", val))
+
+
+def _nearest_color_name(hex_code: str, palette: "list[ColorEntry]") -> str:
+    """Return the palette entry name closest to *hex_code* (``RRGGBB``) in RGB space.
+
+    Distance is Euclidean in 0-255 space; ties broken by palette insertion order.
+    An exact match short-circuits the search immediately.
+    """
+    r = int(hex_code[0:2], 16)
+    g = int(hex_code[2:4], 16)
+    b = int(hex_code[4:6], 16)
+    best_name = palette[0].name
+    best_dist: float = float("inf")
+    for entry in palette:
+        er = round(entry.r / 48 * 255)
+        eg = round(entry.g / 48 * 255)
+        eb = round(entry.b / 48 * 255)
+        dist = (r - er) ** 2 + (g - eg) ** 2 + (b - eb) ** 2
+        if dist < best_dist:
+            best_dist = dist
+            best_name = entry.name
+        if dist == 0:
+            break  # exact match — stop early
+    return best_name
+
+
+@dataclass
+class NormalizeResult:
+    """Return value from :func:`normalize_colors_ini`."""
+
+    colors_ini_path: Optional[Path] = None
+    sections_converted: int = 0
+    keys_converted: int = 0
+    backup_path: Optional[Path] = None
+    dry_run: bool = False
+
+
+def normalize_colors_ini(
+    config,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> NormalizeResult:
+    """Convert hex-format ``Colors.ini`` entries to named ``P1_*`` format.
+
+    SpinDoctor generates ``Colors.ini`` sections using bare hex values::
+
+        [powerins]
+        ledcolor1=FF0000
+        ledcolor2=FFFF00
+        joystick=FFFFFF
+        start=FFFFFF
+        coin=FF8000
+
+    The preferred (LedBlinky-native) form uses named colours::
+
+        [powerins]
+        P1_BUTTON1=Red
+        P1_BUTTON2=Yellow
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=Orange
+
+    This function rewrites every section that contains convertible hex-format
+    keys using nearest-colour matching against ``Color-RGB.ini``.  Sections
+    that already use named keys (``P1_BUTTON1=White``) are left **completely
+    untouched**.
+
+    Key mapping
+    -----------
+    ``ledcolor1`` → ``P1_BUTTON1``, ``ledcolor2`` → ``P1_BUTTON2``, …
+    ``joystick``  → ``P1_JOYSTICK``,  ``start`` → ``P1_START``,
+    ``coin``      → ``P1_COIN``
+
+    Any other key whose value happens to be a 6-char hex string is left alone
+    (only the explicitly mapped keys are converted).
+
+    Raises
+    ------
+    ValueError
+        If ``ledblinky_dir`` is not configured, or ``Colors.ini`` /
+        ``Color-RGB.ini`` is absent or empty.
+    """
+    result = NormalizeResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+    base = Path(config.ledblinky_dir)
+
+    colors_ini_path = base / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    color_rgb_path = base / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    _, palette = parse_color_rgb_ini(color_rgb_path)
+    if not palette:
+        raise ValueError(f"{COLOR_RGB_NAME} contains no colour entries")
+
+    text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines(keepends=True)
+
+    def _flush(
+        buf: "list[str]", has_hex: bool
+    ) -> "tuple[list[str], int, int]":
+        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta)."""
+        if not has_hex:
+            return buf, 0, 0
+        new_buf: list[str] = []
+        kc = 0
+        for ln in buf:
+            stripped = ln.rstrip("\r\n")
+            eol = ln[len(stripped):]
+            if "=" in stripped and not stripped.lstrip().startswith(";"):
+                key_s, _, val_s = stripped.partition("=")
+                key_s = key_s.strip()
+                val_s = val_s.strip()
+                if _is_hex_color(val_s):
+                    m = _LEDCOLOR_RE.match(key_s)
+                    if m:
+                        new_key = f"P1_BUTTON{m.group(1)}"
+                        color_name = _nearest_color_name(val_s, palette)
+                        new_buf.append(f"{new_key}={color_name}{eol}")
+                        kc += 1
+                        continue
+                    mapped = _LEGACY_KEY_MAP.get(key_s.lower())
+                    if mapped:
+                        color_name = _nearest_color_name(val_s, palette)
+                        new_buf.append(f"{mapped}={color_name}{eol}")
+                        kc += 1
+                        continue
+            new_buf.append(ln)
+        return new_buf, 1, kc
+
+    out_lines: list[str] = []
+    section_buffer: list[str] = []
+    section_has_hex = False
+    sections_converted = 0
+    keys_converted = 0
+
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
+            # Flush the previous section
+            if section_buffer:
+                flushed, sc, kc = _flush(section_buffer, section_has_hex)
+                out_lines.extend(flushed)
+                sections_converted += sc
+                keys_converted += kc
+            # Start a new section
+            section_buffer = [line]
+            section_has_hex = False
+        elif section_buffer:
+            # Detect whether this section needs conversion
+            if "=" in stripped and not stripped.lstrip().startswith(";"):
+                k, _, v = stripped.partition("=")
+                k = k.strip()
+                v = v.strip()
+                if _is_hex_color(v) and (
+                    _LEDCOLOR_RE.match(k) or k.lower() in _LEGACY_KEY_MAP
+                ):
+                    section_has_hex = True
+            section_buffer.append(line)
+        else:
+            # Lines before the first section header
+            out_lines.append(line)
+
+    # Flush the final section
+    if section_buffer:
+        flushed, sc, kc = _flush(section_buffer, section_has_hex)
+        out_lines.extend(flushed)
+        sections_converted += sc
+        keys_converted += kc
+
+    result.sections_converted = sections_converted
+    result.keys_converted = keys_converted
+
+    if keys_converted > 0 and not dry_run:
+        if backup:
+            result.backup_path = _backup(colors_ini_path)
+        colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
+
+    return result

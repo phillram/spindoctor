@@ -6301,8 +6301,9 @@ def ledblinky_colors_group():
 
     \b
     Subcommands:
-      list   Show all color definitions
-      edit   Rename / recolor a color and propagate the change
+      list       Show all color definitions
+      edit       Rename / recolor a color and propagate the change
+      normalize  Convert hex-format Colors.ini entries to named P1_BUTTON format
     """
 
 
@@ -6491,6 +6492,67 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
             + ", ".join(str(p) for p in result.backup_paths)
             + "[/dim]"
         )
+
+
+@ledblinky_colors_group.command("normalize")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_colors_normalize(apply_changes, no_backup):
+    """Convert hex-format Colors.ini entries to named P1_BUTTON format.
+
+    SpinDoctor-generated Colors.ini entries use bare hex values::
+
+    \b
+        [powerins]
+        ledcolor1=FF0000      →  P1_BUTTON1=Red
+        ledcolor2=FFFF00      →  P1_BUTTON2=Yellow
+        joystick=FFFFFF       →  P1_JOYSTICK=White
+        start=FFFFFF          →  P1_START=White
+        coin=FF8000           →  P1_COIN=Orange
+
+    The nearest match from Color-RGB.ini is chosen for each hex value.
+    Sections already in named format are left completely untouched.
+    Run normalize before colors edit so renames propagate to every section.
+
+    \b
+    Examples:
+      spindoctor ledblinky colors normalize              :: preview changes
+      spindoctor ledblinky colors normalize --apply      :: commit changes
+    """
+    config = _load_config()
+    try:
+        result = lb.normalize_colors_ini(
+            config,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would convert" if result.dry_run else "converted"
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+
+    if result.keys_converted == 0:
+        console.print(
+            "\n[dim]Nothing to normalise — all sections already use named format.[/dim]"
+        )
+    else:
+        console.print(
+            f"  {verb}: "
+            f"[green]{result.sections_converted}[/green] section(s), "
+            f"[green]{result.keys_converted}[/green] key(s)"
+        )
+        if result.dry_run:
+            console.print(
+                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+            )
+        elif result.backup_path:
+            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 # ─── add-system ───────────────────────────────────────────────────────────────

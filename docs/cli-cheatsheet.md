@@ -454,6 +454,10 @@ spindoctor ledblinky colors edit Blue                                     :: ins
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply
 spindoctor ledblinky colors edit Orange --name Amber --apply              :: rename only
 
+:: Normalize hex-format Colors.ini entries to named format (run before rename)
+spindoctor ledblinky colors normalize                                     :: preview
+spindoctor ledblinky colors normalize --apply                             :: commit
+
 :: Backup / restore LEDBlinky files only
 spindoctor backup create --include ledblinky --target D:\Backups --apply
 spindoctor backup restore --backup D:\Backups\spindoctor-backup-... --include ledblinky --apply

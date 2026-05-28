@@ -155,6 +155,8 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Color Definitions (Color-RGB.ini)** — Treeview listing all named colors (Name, R/G/B 0-48, hex). Click a row to load it into the edit fields. Change the name and/or paste a `#RRGGBB` hex code (a live color swatch previews your input); tick Apply and click **Update & Rename** to propagate the change through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml` in one shot. A `.bak` backup is written for every modified file. CLI equivalent: `spindoctor ledblinky colors edit`.
 
+**Normalize Colors.ini** button — converts SpinDoctor-generated hex-format entries (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) to LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Each hex value is matched to the nearest color in `Color-RGB.ini`. Sections already in named format are untouched. Run this before **Update & Rename** so renames reach every section. Uses the same Apply checkbox. CLI equivalent: `spindoctor ledblinky colors normalize`.
+
 ### Lightgun
 
 **Detect** installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), **Audit** per-system wiring, and **Configure** one system's RocketLauncher INI with optional `-target` / extra-args overrides. CLI equivalent: `spindoctor lightgun detect / audit / configure`.

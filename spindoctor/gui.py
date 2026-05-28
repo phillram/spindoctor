@@ -9702,10 +9702,18 @@ class _SpinDoctorGUI:
             variable=self._color_apply_var,
         ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
 
+        btn_row = self.ttk.Frame(cd_frame)
+        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+
         self.ttk.Button(
-            cd_frame, text="Update & Rename",
+            btn_row, text="Update & Rename",
             command=self._run_color_edit,
-        ).grid(row=4, column=0, sticky="w", padx=6, pady=(2, 8))
+        ).pack(side="left", padx=(0, 8))
+
+        self.ttk.Button(
+            btn_row, text="Normalize Colors.ini",
+            command=self._run_color_normalize,
+        ).pack(side="left")
 
         # Populate immediately if ledblinky_dir is already configured
         self._refresh_color_list()
@@ -9882,6 +9890,13 @@ class _SpinDoctorGUI:
             args += ["--name", new_name]
         if hex_changed and len(hex_val) == 6:
             args += ["--hex", hex_val]
+        if self._color_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_color_normalize(self) -> None:
+        """Run ``ledblinky colors normalize`` to convert hex entries to named format."""
+        args = ["ledblinky", "colors", "normalize"]
         if self._color_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)

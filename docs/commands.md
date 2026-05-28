@@ -1037,7 +1037,7 @@ A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `
 
 `Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
 
-`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically.
+`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section.
 
 ```bat
 spindoctor ledblinky colors list                                                 :: show all definitions
@@ -1045,6 +1045,8 @@ spindoctor ledblinky colors edit Blue                                           
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply     :: rename + recolor
 spindoctor ledblinky colors edit Orange --name Amber --apply                    :: rename only
 spindoctor ledblinky colors edit Red --rgb 48,0,12 --apply                      :: shift Red toward pink
+spindoctor ledblinky colors normalize                                            :: preview hex→named conversion
+spindoctor ledblinky colors normalize --apply                                    :: commit conversion
 ```
 
 `--hex RRGGBB` accepts standard 8-bit hex (0-255 per channel) and converts to the 0-48 intensity range stored in `Color-RGB.ini`. `--rgb R,G,B` accepts values directly in the 0-48 range.
@@ -1057,7 +1059,20 @@ Files updated by `edit --apply`:
 | `Colors.ini` | Every line whose value equals the old name exactly (e.g. `P1_COIN=Orange`) is updated |
 | `LEDBlinkyControls.xml` | Every `color="<old-name>"` XML attribute is updated |
 
-Hex-value entries in `Colors.ini` (e.g. `ledcolor1=FF0000`) are not touched — they reference colors by raw value, not by name.
+Hex-value entries in `Colors.ini` (e.g. `ledcolor1=FF0000`) are **not** touched by `edit` — they reference colors by raw value, not by name. Run `colors normalize` first to convert them.
+
+#### `ledblinky colors normalize`
+
+SpinDoctor-generated `Colors.ini` entries use bare hex values (`ledcolor1=FF0000`). LedBlinky's native format uses named colors (`P1_BUTTON1=Red`). `normalize` rewrites every hex-format section using nearest-color matching against `Color-RGB.ini`. Sections already in named format are left completely untouched.
+
+Key conversion mapping:
+
+| Legacy key | Named key | Example |
+|-----------|-----------|---------|
+| `ledcolor1` … `ledcolorN` | `P1_BUTTON1` … `P1_BUTTONN` | `ledcolor3=00FF00` → `P1_BUTTON3=Lime` |
+| `joystick` | `P1_JOYSTICK` | `joystick=FFFFFF` → `P1_JOYSTICK=White` |
+| `start` | `P1_START` | `start=FFFFFF` → `P1_START=White` |
+| `coin` | `P1_COIN` | `coin=FF8000` → `P1_COIN=Orange` |
 
 A timestamped `.bak` backup is written next to each modified file before any change. Pass `--no-backup` to skip.
 
