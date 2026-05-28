@@ -887,11 +887,12 @@ def apply_fix(
 
 
 def list_lwa_files(config: Config) -> list[str]:
-    """Return a sorted list of ``.lwa`` paths (relative to ``ledblinky_dir``).
+    """Return a sorted list of ``.lwa`` / ``.lwax`` paths relative to ``ledblinky_dir``.
 
     LedBlinky stores animation files in ``<ledblinky_dir>/lwa/`` and its
-    subdirectories.  The returned paths are relative to ``ledblinky_dir``
-    (e.g. ``lwa\\Slow Fade.lwa``) so they can be written directly into
+    subdirectories.  Both the classic ``.lwa`` and the newer ``.lwax`` (extended)
+    formats are included.  The returned paths are relative to ``ledblinky_dir``
+    (e.g. ``lwa\\Slow Fade.lwax``) so they can be written directly into
     ``Settings.ini`` as LedBlinky expects them.
 
     Returns an empty list if ``ledblinky_dir`` is not set or the directory
@@ -902,11 +903,12 @@ def list_lwa_files(config: Config) -> list[str]:
     base = Path(config.ledblinky_dir)
     if not base.is_dir():
         return []
-    return sorted(
-        str(p.relative_to(base))
-        for p in base.rglob("*.lwa")
-        if p.is_file()
-    )
+    matches = [
+        p
+        for p in base.rglob("*")
+        if p.is_file() and p.suffix.lower() in (".lwa", ".lwax")
+    ]
+    return sorted(str(p.relative_to(base)) for p in matches)
 
 
 def _patch_ini_keys(
@@ -1660,7 +1662,7 @@ def fill_default_colors(
             db = load_database(sys_name, Path(config.databases_dir))
         except Exception:
             continue
-        for rom_name in db.games:
+        for rom_name in db.games():
             roms_checked += 1
             if rom_name in existing_sections:
                 continue

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ledblinky fill-defaults` — `TypeError: 'method' object is not iterable`** — `fill_default_colors()` iterated `db.games` (the method object) instead of calling `db.games()`. Every other call site in the codebase uses `db.games()` correctly; this was the only exception. The crash made `fill-defaults` completely unusable on any real cabinet config.
+
+- **LEDBlinky animation dropdowns empty — `.lwax` files not found** — `list_lwa_files()` only searched for `*.lwa` files. LedBlinky's current animation format is `.lwax` (extended); the older `*.lwa` format is rarely used in practice. Changed to match both extensions so the FE idle animation and In-game unused buttons pickers populate correctly when the LedBlinky `lwa/` directory contains `.lwax` files.
+
 ---
 
 ## [2.4.17] - 2026-05-28
