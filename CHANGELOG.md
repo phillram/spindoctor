@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.13] - 2026-05-27
+
 ### Fixed
 
 - **`scrub --stats` now clears `Global Statistics.ini`** — RocketLauncher's aggregate `Data/Statistics/Global Statistics.ini` was not deleted during a stats scrub. After the per-system files were removed, the "Recently Played" and "Most Played" refresh fell back to reading this file and repopulated the wheels with the same old games. The aggregate is now included in the scrub (backed up when `--backup-dir` is given); RL regenerates it fresh on the next game launch.
@@ -950,7 +954,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.12...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.13...HEAD
+[2.4.13]: https://github.com/phillram/spindoctor/compare/v2.4.12...v2.4.13
 [2.4.12]: https://github.com/phillram/spindoctor/compare/v2.4.11...v2.4.12
 [2.4.11]: https://github.com/phillram/spindoctor/compare/v2.4.10...v2.4.11
 [2.4.10]: https://github.com/phillram/spindoctor/compare/v2.4.9...v2.4.10
