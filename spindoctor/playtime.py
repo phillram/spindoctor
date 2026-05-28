@@ -552,7 +552,7 @@ def build_most_played_wheel(
     pseudo_entries = [
         FavoriteEntry(
             system=s.system, rom_name=s.game,
-            display_name=s.display_name or s.game,
+            display_name="",
             added=(
                 s.last_played.isoformat(timespec="seconds")
                 if s.last_played else ""

@@ -376,3 +376,39 @@ def test_rebuild_excludes_favorites_system_via_fallback(isolated_config, tmp_pat
     db_text = summary.db_path.read_text(encoding="utf-8")
     assert "Nintendo Entertainment System" in db_text
     assert "Favorites" not in db_text
+
+
+def test_rebuild_uses_description_not_rom_name(isolated_config, tmp_path):
+    """Regression: wheel description must come from the DB description field, not the ROM filename."""
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)
+    (hs / "Databases" / "MAME").mkdir(parents=True)
+    (hs / "Databases" / "MAME" / "MAME.xml").write_text(
+        "<menu><game name=\"mslug\">"
+        "<description>Metal Slug - Super Vehicle-001</description>"
+        "</game></menu>",
+        encoding="utf-8",
+    )
+    (hs / "Media" / "MAME" / "Images" / "Wheel").mkdir(parents=True)
+    (hs / "Media" / "MAME" / "Images" / "Wheel" / "mslug.png").write_bytes(b"w")
+
+    _write_stats_ini(
+        rl / "Settings" / "Global Statistics" / "MAME.ini",
+        [("mslug", "2026-05-01 12:00:00", 3)],
+    )
+    cfg = Config(
+        roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
+    )
+    save_config(cfg)
+
+    summary = rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert summary.entries == 1
+    db_text = summary.db_path.read_text(encoding="utf-8")
+    assert "Metal Slug - Super Vehicle-001" in db_text, (
+        "description should use the DB description, not the raw ROM name"
+    )
+    assert ">mslug<" not in db_text, (
+        "raw ROM name must not appear as the description in the wheel DB"
+    )
