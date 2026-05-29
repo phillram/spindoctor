@@ -456,6 +456,8 @@ spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply              
 spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply :: + 6 admin buttons in Green
 spindoctor ledblinky fill-defaults --color Purple --apply                                   :: Purple for all unmapped ROMs
 spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply                        :: one system only
+spindoctor ledblinky fill-defaults --color White --override-uniform --apply                 :: re-color existing uniform entries
+spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply   :: override values only, don't add new keys
 
 :: Color-RGB.ini — rename/recolor named colors and propagate throughout
 spindoctor ledblinky colors list

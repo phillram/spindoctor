@@ -6648,6 +6648,13 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
                    "(P{players+1}).  0 disables the admin block.")
 @click.option("--admin-color", "admin_color", default="White", show_default=True,
               help="Named color for the admin button block.")
+@click.option("--override-uniform", is_flag=True,
+              help="Also update existing sections where ALL button colors are "
+                   "the same value.  Mixed-color sections are never touched.")
+@click.option("--no-add-keys", is_flag=True,
+              help="When overriding, only replace values of keys already "
+                   "present — do not insert new P*_BUTTON/JOYSTICK/START/COIN "
+                   "keys.  Only meaningful with --override-uniform.")
 @click.option("--system", default=None, metavar="SYSTEM",
               help="Process only this HyperSpin system.  Default: all systems "
                    "(including Favorites / Recently Played / Most Played).")
@@ -6657,7 +6664,7 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
               help="Skip the automatic .bak backup before writing.")
 def ledblinky_fill_defaults(
     default_color, n_buttons, n_players, admin_buttons, admin_color,
-    system, apply_changes, no_backup,
+    override_uniform, no_add_keys, system, apply_changes, no_backup,
 ):
     """Add default Colors.ini entries for ROMs with no LED mapping.
 
@@ -6681,9 +6688,18 @@ def ledblinky_fill_defaults(
         P3_BUTTON1=Green  ...  P3_BUTTON6=Green
         P3_COIN=Green  P3_START=Green
 
-    Only ROMs with no existing section are touched.  Existing entries are
-    never modified.  Synthetic wheels (Favorites, Recently Played, Most Played)
-    are included so games that appear only in those wheels are also covered.
+    By default only ROMs with no existing section are touched.  Pass
+    --override-uniform to also update existing entries where all button colors
+    are identical (e.g. all White), replacing them with the new --color.
+    Sections with mixed colors (e.g. one Red button, one Blue button) are
+    never modified regardless of flags.
+
+    Use --no-add-keys with --override-uniform to preserve the exact set of
+    keys already in the section — only the color VALUES are replaced, and no
+    new P*_BUTTON entries are inserted.
+
+    Synthetic wheels (Favorites, Recently Played, Most Played) are included
+    so games that appear only in those wheels are also covered.
 
     \b
     Examples:
@@ -6693,6 +6709,8 @@ def ledblinky_fill_defaults(
       spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
       spindoctor ledblinky fill-defaults --system "MAME"              :: one system
       spindoctor ledblinky fill-defaults --color Purple --apply
+      spindoctor ledblinky fill-defaults --color White --override-uniform --apply
+      spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply
     """
     from . import ledblinky as lb
 
@@ -6705,6 +6723,8 @@ def ledblinky_fill_defaults(
             n_players=n_players,
             admin_buttons=admin_buttons,
             admin_color=admin_color,
+            override_uniform=override_uniform,
+            no_add_keys=no_add_keys,
             system=system,
             dry_run=not apply_changes,
             backup=not no_backup,
@@ -6713,37 +6733,60 @@ def ledblinky_fill_defaults(
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
 
-    verb = "would add" if result.dry_run else "added"
+    verb_add = "would add" if result.dry_run else "added"
+    verb_ovr = "would update" if result.dry_run else "updated"
     console.print(
         f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
     )
     console.print(
-        f"  ROMs checked : [cyan]{result.roms_checked}[/cyan]"
+        f"  ROMs checked   : [cyan]{result.roms_checked}[/cyan]"
     )
-    if result.roms_added == 0:
+
+    players_desc = (
+        f"players=[cyan]{n_players}[/cyan], " if n_players > 1 else ""
+    )
+    admin_desc = (
+        f", admin=[cyan]{admin_buttons}×{admin_color}[/cyan]"
+        if admin_buttons > 0 else ""
+    )
+    color_desc = (
+        f"({players_desc}color=[cyan]{default_color}[/cyan], "
+        f"buttons=[cyan]{n_buttons}[/cyan]{admin_desc})"
+    )
+
+    if result.roms_added:
         console.print(
-            "\n[dim]Nothing to add — every ROM already has a Colors.ini entry.[/dim]"
+            f"  {verb_add:12s} : [green]{result.roms_added}[/green] "
+            f"new entr{'y' if result.roms_added == 1 else 'ies'} {color_desc}"
         )
-    else:
-        players_desc = (
-            f"players=[cyan]{n_players}[/cyan], " if n_players > 1 else ""
-        )
-        admin_desc = (
-            f", admin=[cyan]{admin_buttons}×{admin_color}[/cyan]"
-            if admin_buttons > 0 else ""
-        )
+    if result.roms_overridden:
+        no_keys_note = " [no new keys]" if no_add_keys else ""
         console.print(
-            f"  {verb}      : [green]{result.roms_added}[/green] "
-            f"default entr{'y' if result.roms_added == 1 else 'ies'} "
-            f"({players_desc}color=[cyan]{default_color}[/cyan], "
-            f"buttons=[cyan]{n_buttons}[/cyan]{admin_desc})"
+            f"  {verb_ovr:12s} : [green]{result.roms_overridden}[/green] "
+            f"uniform entr{'y' if result.roms_overridden == 1 else 'ies'} "
+            f"→ [cyan]{default_color}[/cyan]{no_keys_note}"
         )
-        if result.dry_run:
+    if result.roms_skipped_mixed:
+        console.print(
+            f"  skipped mixed  : [yellow]{result.roms_skipped_mixed}[/yellow] "
+            f"entr{'y' if result.roms_skipped_mixed == 1 else 'ies'} "
+            f"(mixed colors — not overridden)"
+        )
+    if result.roms_added == 0 and result.roms_overridden == 0:
+        console.print(
+            "\n[dim]Nothing to change — every ROM already has a Colors.ini entry.[/dim]"
+        )
+        if override_uniform and result.roms_skipped_mixed:
             console.print(
-                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+                "[dim]  (some entries have mixed colors and were intentionally skipped)[/dim]"
             )
-        elif result.backup_path:
-            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+    if result.dry_run and (result.roms_added or result.roms_overridden):
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+        )
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 # ─── ledblinky admin-buttons ──────────────────────────────────────────────────
@@ -7584,7 +7627,9 @@ def backup_group():
                    "'pre-migration', 'weekly').")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Execute the backup. Without this flag, prints a dry-run plan.")
-def backup_create(target, include, label, apply_changes):
+@click.option("--verbose", is_flag=True,
+              help="Print each file/folder being copied.")
+def backup_create(target, include, label, apply_changes, verbose):
     """Create a new backup of selected library components.
 
     \b
@@ -7690,6 +7735,10 @@ def backup_create(target, include, label, apply_changes):
                     task,
                     description=f"Backing up {item.component}: {Path(item.src).name}",
                 )
+                if verbose:
+                    progress.console.print(
+                        f"[dim][verbose] copying {item.src} → {item.dest}[/dim]"
+                    )
             elif status == "done":
                 progress.update(task, advance=1)
 
@@ -7824,7 +7873,9 @@ def backup_info(backup_path):
                    "restore aborts if any destination is non-empty.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Execute the restore. Without this flag, prints a dry-run plan.")
-def backup_restore(backup_path, include, use_current_paths, overwrite, apply_changes):
+@click.option("--verbose", is_flag=True,
+              help="Print each file/folder being restored.")
+def backup_restore(backup_path, include, use_current_paths, overwrite, apply_changes, verbose):
     """Restore from a backup back to the library paths.
 
     \b
@@ -7927,6 +7978,10 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
                     task,
                     description=f"Restoring {item.component} → {Path(item.dest).name}",
                 )
+                if verbose:
+                    progress.console.print(
+                        f"[dim][verbose] restoring {item.src} → {item.dest}[/dim]"
+                    )
             elif status == "done":
                 progress.update(task, advance=1)
 

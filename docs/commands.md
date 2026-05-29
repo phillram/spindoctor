@@ -1113,7 +1113,13 @@ P3_COIN=Green
 P3_START=Green
 ```
 
-Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified. **Synthetic wheels** (Favorites, Recently Played, Most Played) are included in the scan so games that appear only in those wheels also receive entries. Because `Colors.ini` is keyed by ROM name (not by system), any ROM whose name already exists from a real-system run is automatically covered for synthetic wheels too.
+By default only ROMs with **no existing section** are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified unless you explicitly opt in with `--override-uniform`.
+
+**`--override-uniform`** — also update existing sections where **every** button color is identical (e.g. all White, all Red). If any button has a different color the section is left completely untouched, so hand-crafted mixed-color entries are safe.
+
+**`--no-add-keys`** — when combined with `--override-uniform`, only the *values* of already-present keys are changed. No new `P*_BUTTON`, `JOYSTICK`, `START`, or `COIN` lines are inserted. Use this when a section intentionally has fewer buttons (e.g. a 3-button game) and you don't want to extend it to the full `--buttons` count.
+
+**Synthetic wheels** (Favorites, Recently Played, Most Played) are included in the scan so games that appear only in those wheels also receive entries. Because `Colors.ini` is keyed by ROM name (not by system), any ROM whose name already exists from a real-system run is automatically covered for synthetic wheels too.
 
 ```bat
 spindoctor ledblinky fill-defaults                                     :: preview all
@@ -1122,6 +1128,8 @@ spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply    :: 2-playe
 spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
 spindoctor ledblinky fill-defaults --color Purple --apply              :: purple buttons
 spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply   :: one system
+spindoctor ledblinky fill-defaults --color White --override-uniform --apply          :: re-color uniform entries
+spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply :: values only, no new keys
 ```
 
 **Options:**
@@ -1133,6 +1141,8 @@ spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply   :: one sy
 | `--players N` | `1` | Player blocks to generate (1-4). All players mirror P1's color |
 | `--admin-buttons N` | `0` | Extra admin/cabinet buttons on player slot `players+1`. 0 = disabled |
 | `--admin-color NAME` | `White` | Color for the admin button block |
+| `--override-uniform` | off | Update existing sections where all button colors are identical |
+| `--no-add-keys` | off | With `--override-uniform`: only update existing key values, add no new keys |
 | `--system SYSTEM` | _(all, incl. synthetic)_ | Limit to one HyperSpin system |
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip `.bak` backup before writing |

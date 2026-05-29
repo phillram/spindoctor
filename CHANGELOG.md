@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`ledblinky fill-defaults --override-uniform`** — new flag that also updates existing `Colors.ini` sections where **every** button color is identical. If any button in a section has a different color, that section is left completely untouched (so hand-crafted mixed-color entries are always safe). Reports separate counts for entries added (new ROMs), overridden (uniform), and skipped (mixed).
+
+- **`ledblinky fill-defaults --no-add-keys`** — companion to `--override-uniform`. When set, only the *values* of already-present `P*_BUTTON/JOYSTICK/START/COIN` keys are replaced; no new button keys are inserted. Use when a section intentionally has fewer buttons than the `--buttons` count (e.g. a 3-button game entry) and you don't want it extended.
+
 - **`ledblinky fill-defaults` — multi-player support (`--players 1-4`)** — generates `P1`…`P{N}` button blocks for every new entry. All players are mirrored to the same color. A 2-player, 8-button-per-side cabinet: `fill-defaults --players 2 --buttons 8 --apply`. `n_players` param added to `fill_default_colors()`.
 
 - **`ledblinky fill-defaults` — admin/cabinet button block (`--admin-buttons N --admin-color COLOR`)** — appends an extra `P{players+1}` block (e.g. P3 for a 2-player cabinet) using a separate color for cabinet-level buttons (Select, Exit, Search, Pause, etc.). Admin block gets `P{n}_BUTTON1…N`, `P{n}_COIN`, `P{n}_START`. `admin_buttons` + `admin_color` params added to `fill_default_colors()`.
@@ -31,6 +35,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI — "Refresh colors" button added to Fill Default Colors and Admin Button Colors sections** — both sections previously relied on the Color Definitions "Refresh list" button (at the bottom of the tab) to load the `Color-RGB.ini` palette into their color dropdowns. Each section now has its own **Refresh colors** button so the palette can be reloaded without scrolling.
 
 ### Fixed
+
+- **`get_systems()` — `AttributeError` when `databases_dir` is a string** — the function called `.exists()` directly on `config.databases_dir` which is a `Path` on the real `Config` but a plain `str` in test and SimpleNamespace configs. Changed to `Path(config.databases_dir)` (consistent with the `roms_dir` handling on the line above).
 
 - **LEDBlinky auto-backups now respect `config.backup_dir`** — the `_backup()` helper in `ledblinky.py` previously always wrote `.bak` files next to the source file, ignoring the `backup_dir` setting. Now when `backup_dir` is configured, all auto-backups (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) are written to `backup_dir/LEDBlinky/<filename>.<stamp>.bak`. The subdirectory is created automatically.
 
