@@ -314,3 +314,171 @@ def test_cleanup_run_verbose_prints_full_paths(tmp_path, monkeypatch):
     assert str(cache_file) in flat
     # The file itself must be gone.
     assert not cache_file.exists()
+
+
+# ─── ledblinky fill-defaults --verbose ────────────────────────────────────────
+
+def test_ledblinky_fill_defaults_verbose_prints_path(tmp_path, monkeypatch):
+    """fill-defaults --verbose prints the Colors.ini path in output."""
+    import types
+    home = _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    # Minimal HyperSpin database so fill-defaults finds one ROM
+    db_dir = hs / "Databases" / "MAME"
+    db_dir.mkdir(parents=True)
+    (db_dir / "MAME.xml").write_text(
+        '<?xml version="1.0"?><menu>'
+        '<game name="pacman"><description>Pac-Man</description></game>'
+        '</menu>',
+        encoding="utf-8",
+    )
+
+    led_dir = tmp_path / "ledblinky"
+    led_dir.mkdir()
+    colors_ini = led_dir / "Colors.ini"
+    colors_ini.write_text("", encoding="utf-8")
+    color_rgb = led_dir / "Color-RGB.ini"
+    color_rgb.write_text("[Colors]\nWhite=48,48,48\nRed=48,0,0\n", encoding="utf-8")
+
+    cfg = Config(
+        roms_dir=str(roms),
+        hyperspin_dir=str(hs),
+        ledblinky_dir=str(led_dir),
+    )
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["ledblinky", "fill-defaults", "--apply", "--verbose"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert str(colors_ini) in flat
+    assert "added=1" in flat
+
+
+# ─── ledblinky colors brightness --verbose ───────────────────────────────────
+
+def test_ledblinky_colors_brightness_verbose_prints_path(tmp_path, monkeypatch):
+    """colors brightness --verbose prints the Color-RGB.ini path."""
+    home = _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    led_dir = tmp_path / "ledblinky"
+    led_dir.mkdir()
+    color_rgb = led_dir / "Color-RGB.ini"
+    color_rgb.write_text("[Colors]\nWhite=48,48,48\nRed=48,0,0\n", encoding="utf-8")
+
+    cfg = Config(
+        roms_dir=str(roms),
+        hyperspin_dir=str(hs),
+        ledblinky_dir=str(led_dir),
+    )
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["ledblinky", "colors", "brightness", "--scale", "50", "--apply", "--verbose"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert str(color_rgb) in flat
+    # The verbose line shows the path and count
+    assert "50%" in flat
+
+
+# ─── ledblinky admin-buttons set --verbose ───────────────────────────────────
+
+def test_ledblinky_admin_buttons_set_verbose_prints_path(tmp_path, monkeypatch):
+    """admin-buttons set --verbose prints the Colors.ini path."""
+    home = _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    led_dir = tmp_path / "ledblinky"
+    led_dir.mkdir()
+    colors_ini = led_dir / "Colors.ini"
+    colors_ini.write_text(
+        "[pacman]\nP1_BUTTON1=White\nP1_BUTTON2=White\n",
+        encoding="utf-8",
+    )
+    color_rgb = led_dir / "Color-RGB.ini"
+    color_rgb.write_text("[Colors]\nWhite=48,48,48\nRed=48,0,0\n", encoding="utf-8")
+
+    cfg = Config(
+        roms_dir=str(roms),
+        hyperspin_dir=str(hs),
+        ledblinky_dir=str(led_dir),
+    )
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        [
+            "ledblinky", "admin-buttons", "set",
+            "--player", "3", "--colors", "Red,White",
+            "--apply", "--verbose",
+        ],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert str(colors_ini) in flat
+
+
+# ─── ledblinky colors randomize --verbose ────────────────────────────────────
+
+def test_ledblinky_colors_randomize_verbose_prints_path(tmp_path, monkeypatch):
+    """colors randomize --verbose prints the Colors.ini path and stats."""
+    home = _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    led_dir = tmp_path / "ledblinky"
+    led_dir.mkdir()
+    colors_ini = led_dir / "Colors.ini"
+    colors_ini.write_text(
+        "[pacman]\nP1_BUTTON1=White\nP1_COIN=White\n",
+        encoding="utf-8",
+    )
+    color_rgb = led_dir / "Color-RGB.ini"
+    color_rgb.write_text("[Colors]\nWhite=48,48,48\nRed=48,0,0\nBlue=0,0,48\n",
+                         encoding="utf-8")
+
+    cfg = Config(
+        roms_dir=str(roms),
+        hyperspin_dir=str(hs),
+        ledblinky_dir=str(led_dir),
+    )
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["ledblinky", "colors", "randomize", "--seed", "1", "--apply", "--verbose"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    assert str(colors_ini) in flat
+    assert "updated=1" in flat

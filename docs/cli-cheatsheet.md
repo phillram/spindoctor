@@ -456,6 +456,8 @@ spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply              
 spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply :: + 6 admin buttons in Green
 spindoctor ledblinky fill-defaults --color Purple --apply                                   :: Purple for all unmapped ROMs
 spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply                        :: one system only
+spindoctor ledblinky fill-defaults --color White --override-uniform --apply                 :: re-color existing uniform entries
+spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply   :: override values only, don't add new keys
 
 :: Color-RGB.ini — rename/recolor named colors and propagate throughout
 spindoctor ledblinky colors list
@@ -474,6 +476,14 @@ spindoctor ledblinky colors brightness --scale 100 --apply               :: maxi
 spindoctor ledblinky colors brightness --scale 50  --apply               :: half brightness / dim room
 spindoctor ledblinky colors brightness --scale 10  --apply               :: night mode
 spindoctor ledblinky colors brightness --scale 75                        :: preview 75% (dry-run)
+
+:: Randomize Colors.ini — give every game its own random button color
+:: Buttons (P*_BUTTON* / P*_JOYSTICK) get one random color; Coin/Start get a second.
+:: Only existing keys are updated — dark buttons stay dark.
+spindoctor ledblinky colors randomize                                     :: preview (dry-run)
+spindoctor ledblinky colors randomize --apply                             :: commit fresh shuffle
+spindoctor ledblinky colors randomize --seed 42 --apply                   :: reproducible run
+spindoctor ledblinky colors randomize --apply --verbose                   :: show Colors.ini path + stats
 
 :: Set fixed per-button admin/cabinet button colors across ALL Colors.ini sections
 spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply   :: per-button

@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun detect` / `audit`) need no flag and never modify anything.
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. (`lightgun detect` is read-only without `--apply`; with `--apply` it seeds config.)
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -373,6 +373,7 @@ Other useful flags:
 |---|---|
 | `--no-update-config` | Skip the config rewrite even on a real move |
 | `--include hyperspin,emulators` | Multi-component selection — comma-separated |
+| `--verbose` | Print each file/folder path as it is moved or copied |
 
 The pre-flight plan reports total bytes to transfer and free space at the target, and aborts the apply if there isn't enough room.
 
@@ -990,6 +991,7 @@ databases
 ```bat
 spindoctor ledblinky generate              :: dry-run preview
 spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini
+spindoctor ledblinky generate --apply --verbose  :: also print file paths written
 spindoctor ledblinky audit
 spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
 spindoctor ledblinky fix                   :: dry-run preview of the patch
@@ -997,8 +999,10 @@ spindoctor ledblinky fix --apply           :: commit the patch
 spindoctor ledblinky patch-settings        :: preview Settings.ini changes
 spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
+spindoctor ledblinky patch-settings --apply --verbose                :: print each key patched
 spindoctor ledblinky fill-defaults         :: preview default entries for ROMs with no LED mapping
 spindoctor ledblinky fill-defaults --apply :: add default White entries for all unmapped ROMs
+spindoctor ledblinky fill-defaults --apply --verbose  :: also print path + added/overridden/skipped counts
 spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
 spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
@@ -1113,7 +1117,13 @@ P3_COIN=Green
 P3_START=Green
 ```
 
-Only ROMs with no existing section are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified. **Synthetic wheels** (Favorites, Recently Played, Most Played) are included in the scan so games that appear only in those wheels also receive entries. Because `Colors.ini` is keyed by ROM name (not by system), any ROM whose name already exists from a real-system run is automatically covered for synthetic wheels too.
+By default only ROMs with **no existing section** are touched. Existing entries (including MAME-generated hex entries and community-maintained named entries) are never modified unless you explicitly opt in with `--override-uniform`.
+
+**`--override-uniform`** — also update existing sections where **every** button color is identical (e.g. all White, all Red). If any button has a different color the section is left completely untouched, so hand-crafted mixed-color entries are safe.
+
+**`--no-add-keys`** — when combined with `--override-uniform`, only the *values* of already-present keys are changed. No new `P*_BUTTON`, `JOYSTICK`, `START`, or `COIN` lines are inserted. Use this when a section intentionally has fewer buttons (e.g. a 3-button game) and you don't want to extend it to the full `--buttons` count.
+
+**Synthetic wheels** (Favorites, Recently Played, Most Played) are included in the scan so games that appear only in those wheels also receive entries. Because `Colors.ini` is keyed by ROM name (not by system), any ROM whose name already exists from a real-system run is automatically covered for synthetic wheels too.
 
 ```bat
 spindoctor ledblinky fill-defaults                                     :: preview all
@@ -1122,6 +1132,8 @@ spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply    :: 2-playe
 spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
 spindoctor ledblinky fill-defaults --color Purple --apply              :: purple buttons
 spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply   :: one system
+spindoctor ledblinky fill-defaults --color White --override-uniform --apply          :: re-color uniform entries
+spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply :: values only, no new keys
 ```
 
 **Options:**
@@ -1133,6 +1145,8 @@ spindoctor ledblinky fill-defaults --system "Super Nintendo" --apply   :: one sy
 | `--players N` | `1` | Player blocks to generate (1-4). All players mirror P1's color |
 | `--admin-buttons N` | `0` | Extra admin/cabinet buttons on player slot `players+1`. 0 = disabled |
 | `--admin-color NAME` | `White` | Color for the admin button block |
+| `--override-uniform` | off | Update existing sections where all button colors are identical |
+| `--no-add-keys` | off | With `--override-uniform`: only update existing key values, add no new keys |
 | `--system SYSTEM` | _(all, incl. synthetic)_ | Limit to one HyperSpin system |
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip `.bak` backup before writing |
@@ -1174,6 +1188,42 @@ spindoctor ledblinky colors brightness --scale 75            :: preview 75% (dry
 
 A timestamped `.bak` backup of `Color-RGB.ini` is written to the configured backup folder (or next to the source file if no backup folder is set) before any change. Pure-black entries (0,0,0) are left untouched so truly-off buttons stay off.
 
+#### `ledblinky colors randomize`
+
+Assign each game its own random button colors. For every section in `Colors.ini` that contains at least one player-button key:
+
+- All `P*_BUTTON*` and `P*_JOYSTICK` keys → one randomly chosen color (the same shade across all players, so every button on a game glows in unison).
+- All `P*_COIN` and `P*_START` keys → a **second** independently chosen color (the accent/meta color).
+- Each game section gets its own independent draw — the cabinet looks varied.
+- **Only existing keys are updated.** New button entries are never inserted, so buttons intentionally left dark (absent from the section) stay dark.
+- Pure-black / off colors (all channels 0 in `Color-RGB.ini`) are excluded from the draw.
+
+```bat
+:: Preview what colors would be assigned (dry-run, no files written)
+spindoctor ledblinky colors randomize
+
+:: Commit a fresh random shuffle
+spindoctor ledblinky colors randomize --apply
+
+:: Reproducible run — same seed always produces the same assignments
+spindoctor ledblinky colors randomize --seed 42 --apply
+
+:: Same seed, preview first then apply
+spindoctor ledblinky colors randomize --seed 42
+spindoctor ledblinky colors randomize --seed 42 --apply
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--seed N` | _(random)_ | Integer seed for reproducible output. Omit for a fresh shuffle every run |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip the `.bak` backup before writing |
+| `--verbose` | off | Print the Colors.ini path, palette size, and sections updated |
+
+A timestamped `.bak` backup of `Colors.ini` is written (to the configured backup folder, or next to the source file) before any change, unless `--no-backup` is passed.
+
 #### `ledblinky admin-buttons set`
 
 Set fixed per-button colors for your cabinet-level (admin) buttons **across every ROM section** in `Colors.ini`. Unlike `fill-defaults` (which only touches ROMs with no existing entry), this command walks every existing section and writes (or overwrites) the `P{player}_BUTTON*` keys so the admin buttons always show the same colors regardless of which game is running.
@@ -1214,9 +1264,11 @@ All color names are validated against the `Color-RGB.ini` palette. A timestamped
 ```bat
 spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems
 spindoctor lightgun detect --apply                    :: also seed lightgun: true for each pre-wired system
+spindoctor lightgun detect --apply --verbose          :: print install paths + system counts
 spindoctor lightgun audit                             :: status table for every system marked lightgun
 spindoctor lightgun configure --system "Sega Naomi"   :: dry-run preview of the INI hooks
 spindoctor lightgun configure --system "Sega Naomi" --apply
+spindoctor lightgun configure --system "Sega Naomi" --apply --verbose  :: print INI path + hook values written
 spindoctor lightgun configure --system MAME --target mame --extra-args "-noresize"
 ```
 

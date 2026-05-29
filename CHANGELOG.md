@@ -6,11 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Global Apply / Verbose checkboxes in status bar** — the per-tab Apply checkboxes that previously lived inside individual tab sections have been consolidated into two persistent controls at the very bottom of the GUI window, always visible regardless of which tab is active. **Apply** gates whether commands write to disk (unchecked = dry-run, the safe default). **Verbose** passes `--verbose` to every command that supports it, printing file paths written, per-item counts (added / overridden / skipped), and key→value detail.
+
+- **`--verbose` flag added to**: `ledblinky generate` (prints controls + colors paths), `ledblinky patch-settings` (prints each key patched + file path), `ledblinky colors brightness` (prints Color-RGB.ini path + color count), `ledblinky fill-defaults` (prints Colors.ini path + added/overridden/skipped counts), `ledblinky admin-buttons set` (prints Colors.ini path + sections updated), `ledblinky colors randomize` (prints Colors.ini path + palette size + sections updated), `migrate` (prints each file/folder as it moves), `lightgun detect` (prints install paths + system counts), `lightgun configure` (prints INI path + Pre/Post launch hook values). `backup create` and `backup restore` already had `--verbose`; all others now consistently support it.
+
+- **`ledblinky colors randomize` — new CLI command** — assigns each game in `Colors.ini` its own independent random button color. All `P*_BUTTON*` / `P*_JOYSTICK` keys in a section get one randomly chosen color; all `P*_COIN` / `P*_START` keys get a second independently drawn color. Only **existing** keys are updated — buttons intentionally absent from a section (dark) are never touched. Pure-black / off colors are excluded from the draw. Supports `--seed N` for reproducible runs. Auto-backup before write. `randomize_entry_colors()` + `_randomize_section_body()` + `RandomizeColorsResult` added to `ledblinky.py`. GUI: new **Randomize Entry Colors** panel in the LEDBlinky tab with optional seed field.
+
 ---
 
 ## [2.4.19] - 2026-05-28
 
 ### Added
+
+- **`ledblinky fill-defaults --override-uniform`** — new flag that also updates existing `Colors.ini` sections where **every** button color is identical. If any button in a section has a different color, that section is left completely untouched (so hand-crafted mixed-color entries are always safe). Reports separate counts for entries added (new ROMs), overridden (uniform), and skipped (mixed).
+
+- **`ledblinky fill-defaults --no-add-keys`** — companion to `--override-uniform`. When set, only the *values* of already-present `P*_BUTTON/JOYSTICK/START/COIN` keys are replaced; no new button keys are inserted. Use when a section intentionally has fewer buttons than the `--buttons` count (e.g. a 3-button game entry) and you don't want it extended.
 
 - **`ledblinky fill-defaults` — multi-player support (`--players 1-4`)** — generates `P1`…`P{N}` button blocks for every new entry. All players are mirrored to the same color. A 2-player, 8-button-per-side cabinet: `fill-defaults --players 2 --buttons 8 --apply`. `n_players` param added to `fill_default_colors()`.
 
@@ -31,6 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI — "Refresh colors" button added to Fill Default Colors and Admin Button Colors sections** — both sections previously relied on the Color Definitions "Refresh list" button (at the bottom of the tab) to load the `Color-RGB.ini` palette into their color dropdowns. Each section now has its own **Refresh colors** button so the palette can be reloaded without scrolling.
 
 ### Fixed
+
+- **`get_systems()` — `AttributeError` when `databases_dir` is a string** — the function called `.exists()` directly on `config.databases_dir` which is a `Path` on the real `Config` but a plain `str` in test and SimpleNamespace configs. Changed to `Path(config.databases_dir)` (consistent with the `roms_dir` handling on the line above).
 
 - **LEDBlinky auto-backups now respect `config.backup_dir`** — the `_backup()` helper in `ledblinky.py` previously always wrote `.bak` files next to the source file, ignoring the `backup_dir` setting. Now when `backup_dir` is configured, all auto-backups (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) are written to `backup_dir/LEDBlinky/<filename>.<stamp>.bak`. The subdirectory is created automatically.
 

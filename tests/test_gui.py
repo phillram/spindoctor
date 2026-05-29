@@ -237,7 +237,7 @@ def test_build_fetch_meta_args_round_trip():
         _meta_no_cache_var = _FakeVar(True)
         _meta_source_var = _FakeVar("screenscraper")
         _meta_threshold_var = _FakeVar("0.5")
-        _meta_apply_var = _FakeVar(True)
+        _global_apply_var = _FakeVar(True)   # global apply replaced per-tab _meta_apply_var
         messagebox = type("M", (), {
             "showerror": staticmethod(lambda *_a, **_k: None),
         })
@@ -268,7 +268,7 @@ def test_build_fetch_meta_args_rejects_out_of_range_threshold():
         _meta_no_cache_var = _FakeVar(False)
         _meta_source_var = _FakeVar("config default")
         _meta_threshold_var = _FakeVar("1.5")  # out of range
-        _meta_apply_var = _FakeVar(False)
+        _global_apply_var = _FakeVar(False)   # global apply replaced per-tab _meta_apply_var
         messagebox = type("M", (), {
             "showerror": staticmethod(
                 lambda *a, **_k: captured.update({"err": a}),
@@ -1319,7 +1319,7 @@ def test_run_migrate_apply_shows_confirm_dialog_keep_source(monkeypatch):
     try:
         app._migrate_target_var.set("/tmp/spindoctor-test-dest")
         app._migrate_keep_source_var.set(True)
-        app._migrate_apply_var.set(True)
+        app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
         # All other component checkboxes default to True per the tab
         # builder, so _selected_migrate_components returns None (which
         # passes the guard).
@@ -1349,7 +1349,7 @@ def test_run_migrate_apply_shows_confirm_dialog_destructive_move(monkeypatch):
     try:
         app._migrate_target_var.set("/tmp/spindoctor-test-dest")
         app._migrate_keep_source_var.set(False)
-        app._migrate_apply_var.set(True)
+        app._global_apply_var.set(True)   # global apply replaced per-tab _migrate_apply_var
 
         asks: list[tuple[str, str]] = []
         monkeypatch.setattr(
@@ -1641,7 +1641,7 @@ def test_run_pc_rename_passes_single_positional_arg(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         app._systems_old_var.set("PC Games")
-        app._systems_apply_var.set(False)
+        app._global_apply_var.set(False)   # global apply replaced per-tab _systems_apply_var
         ran: list[list[str]] = []
         monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
 

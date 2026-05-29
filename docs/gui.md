@@ -47,7 +47,18 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 ## Layout primer
 
-A single window with a workflow-ordered tab strip across the top, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar showing the current command + a Stop button. Every tab scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
+A single window with a workflow-ordered tab strip across the top, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom showing the current command and control buttons. Every tab scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
+
+### Global Apply and Verbose checkboxes
+
+The status bar contains two checkboxes that apply to **every command in every tab**:
+
+| Checkbox | Effect |
+|---|---|
+| **Apply** | When checked, commands run with `--apply` and write changes to disk. When unchecked (default), commands run in dry-run mode — output shows what *would* happen, nothing is written. |
+| **Verbose** | When checked, commands run with `--verbose` and print additional detail: file paths being written, per-item counts (added / overridden / skipped), old→new values. When unchecked (default), only the summary line is shown. |
+
+These replace the per-section Apply checkboxes that previously lived inside each tab. The single always-visible location makes it impossible to forget which mode you're in before clicking a button.
 
 ## Per-tab health badges
 
@@ -151,15 +162,29 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Controls:
 
-- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize.
+- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize. **Refresh colors** button reloads the palette without scrolling to Color Definitions.
 - **Buttons (1-8)** — how many `P{n}_BUTTON` keys to generate *per player*.
 - **Players (1-4)** — number of player blocks (P1–P4). All players are mirrored to the same color. Set to match your cabinet (e.g. 2 for a 2-player cab).
 - **Admin buttons** — optional extra button block using the next player slot (P{players+1}). Set to 0 to disable. Use a separate **Color** dropdown for the admin block (e.g. Green to distinguish admin buttons from game buttons).
-- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are now included).
+- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are included).
+- **Override existing entries if all buttons are the same color** — when checked, sections in `Colors.ini` where every `P*_BUTTON/JOYSTICK/START/COIN` key has the *same* value are updated to the new Default color. Sections with mixed per-button colors (intentional game-specific layouts) are never touched.
+- **Don't add new keys when overriding** — when checked alongside the override option, only the *values* of already-present keys are replaced. No new `P*_BUTTON`, `JOYSTICK`, `START`, or `COIN` lines are inserted. Use this when an existing entry intentionally has fewer buttons than the **Buttons** count (e.g. a 3-button game entry that should stay at 3 buttons).
 
-Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults`.
+Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults [--override-uniform] [--no-add-keys]`.
 
 **Brightness** — sets all `Color-RGB.ini` colors to a uniform brightness level. Drag the slider (0–100 %) and click **Scale Brightness**. Each color is first normalized to its maximum possible intensity, then scaled to the chosen percentage — so **100 % = every button at maximum brightness** (dim colors are boosted up, not left dim). 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode; 0 % = all off. This guarantees every button (P1, P2, admin, Start) is at the same level. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
+
+**Randomize Entry Colors** — gives each game its own independent random button color drawn from the `Color-RGB.ini` palette (black/off excluded). For every section in `Colors.ini` that has player-button keys:
+
+- All `P*_BUTTON*` and `P*_JOYSTICK` keys are set to **one random color** — all buttons on that game glow the same shade.
+- All `P*_COIN` and `P*_START` keys are set to a **second independently drawn color** — the accent/meta color for that game.
+- Only **existing** keys are updated; buttons intentionally absent from a section (i.e. intentionally dark) are never touched.
+
+Controls:
+- **Seed (optional)** — enter an integer for a reproducible run (same seed → same color assignments). Leave blank for a fresh random shuffle every run.
+- Apply checkbox + **Randomize Entry Colors** button. A `.bak` backup of `Colors.ini` is written automatically.
+
+CLI equivalent: `spindoctor ledblinky colors randomize [--seed N]`.
 
 **Admin Button Colors** — sets fixed per-button colors for the cabinet-level (admin) buttons across **every** ROM section in `Colors.ini`. Unlike Fill Default Colors (which only adds missing entries), this writes to every existing section so the admin buttons always show the same colors regardless of the current game. Controls:
 

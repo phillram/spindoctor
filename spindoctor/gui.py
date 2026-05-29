@@ -898,6 +898,14 @@ class _SpinDoctorGUI:
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
 
+        # Global Apply / Verbose flags — shared across all tabs.
+        # The actual BooleanVar objects are initialised inside _build_layout()
+        # (they need self.tk to exist and the root window to be ready).
+        # Declare as None here so type-checkers and any early references
+        # survive without AttributeError.
+        self._global_apply_var = None  # type: ignore[assignment]
+        self._global_verbose_var = None  # type: ignore[assignment]
+
         self._build_layout()
         # Defer the system scan and health checks until after the first
         # paint. They touch disk (HyperSpin databases dir) and spawn a
@@ -2075,6 +2083,18 @@ class _SpinDoctorGUI:
             command=self._toggle_output,
         )
         self._output_toggle_btn.pack(side="right", padx=(0, 6))
+
+        # Global Apply / Verbose checkboxes — shared across all tabs.
+        # Packed side="right" AFTER the other right-side buttons so they
+        # appear to the left of Hide/Copy/Clear/Stop in the status bar.
+        self._global_apply_var = self.tk.BooleanVar(value=False)
+        self._global_verbose_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            bar, text="Verbose", variable=self._global_verbose_var,
+        ).pack(side="right", padx=(6, 0))
+        self.ttk.Checkbutton(
+            bar, text="Apply", variable=self._global_apply_var,
+        ).pack(side="right", padx=(6, 0))
 
         # Ctrl+1..9 jump to notebook tabs by 1-based index. Cabinet
         # owners on touchscreens benefit from a keyboard fallback, and
@@ -4571,18 +4591,6 @@ class _SpinDoctorGUI:
         # ── Verbose flag ─────────────────────────────────────────────────────
         # When checked, passes --verbose to the rebuild commands so each
         # copied/linked media file is logged as "copy  <src>\n   →  <dest>".
-        # Useful when diagnosing media problems or auditing a large rebuild.
-        # The full output is captured in the Logs tab and can be saved to a
-        # .txt file with the "Save selected output…" button.
-        self._wheel_verbose_var = self.tk.BooleanVar(value=False)
-        verbose_row = self.ttk.Frame(frame)
-        verbose_row.pack(anchor="w", pady=(0, 4))
-        self.ttk.Checkbutton(
-            verbose_row,
-            text="Verbose — log each file copied/linked (--verbose)",
-            variable=self._wheel_verbose_var,
-        ).pack(side="left")
-
         btn_row = self.ttk.Frame(frame)
         btn_row.pack(anchor="w", pady=3)
         self.ttk.Button(
@@ -4805,8 +4813,7 @@ class _SpinDoctorGUI:
         run_next(steps, 0)
 
     def _refresh_all_wheels(self) -> None:
-        verbose = getattr(self, "_wheel_verbose_var", None)
-        extra = ["--verbose"] if (verbose is not None and verbose.get()) else []
+        extra = ["--verbose"] if self._global_verbose_var.get() else []
         all_steps: list[tuple[str, str, list[str]]] = [
             ("Favorites",        "spindoctor-fav",    ["rebuild", "--apply"] + extra),
             ("Recently Played",  "spindoctor-recent", ["rebuild", "--apply"] + extra),
@@ -5609,16 +5616,10 @@ class _SpinDoctorGUI:
             row=0, column=1, sticky="w", padx=6, pady=2,
         )
 
-        self._backup_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            create_frame, text="Apply (uncheck for dry-run)",
-            variable=self._backup_apply_var,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             create_frame, text="Create backup",
             command=self._run_backup_create,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         # ── List section ─────────────────────────────────────────────────────
         list_frame = self.ttk.LabelFrame(frame, text="List backups")
@@ -5668,23 +5669,6 @@ class _SpinDoctorGUI:
             variable=self._backup_overwrite_var,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
-        self._backup_restore_apply_var = self.tk.BooleanVar(value=False)
-        _restore_apply_check = self.ttk.Checkbutton(
-            restore_frame, text="Apply (uncheck for dry-run)",
-            variable=self._backup_restore_apply_var,
-        )
-        _restore_apply_check.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-        _attach_tooltip(
-            _restore_apply_check,
-            "Unchecked: dry-run — print every file that *would* be "
-            "copied back, but touch nothing on disk. Checked: actually "
-            "overwrite the live cabinet's folders with the backup's "
-            "contents. There is NO undo for restore — the live state "
-            "is replaced wholesale. Run a fresh backup first if you're "
-            "not sure.",
-            self.tk,
-        )
-
         # Two button rows: read-only inspection on top, destructive
         # action (Restore) on its own row beneath a Separator. Sharing
         # the row with Info / Compare made it easy to fat-finger Restore
@@ -5725,7 +5709,7 @@ class _SpinDoctorGUI:
             )
             return
         backup_dir = self._scrub_backup_var.get().strip()
-        apply_ = self._scrub_apply_var.get()
+        apply_ = self._global_apply_var.get()
         if apply_ and not backup_dir and do_stats:
             if not self.messagebox.askyesno(
                 "No backup configured",
@@ -5778,7 +5762,7 @@ class _SpinDoctorGUI:
             )
             return
         args = ["scrub-restore", path]
-        if self._scrub_restore_apply_var.get():
+        if self._global_apply_var.get():
             if not self.messagebox.askyesno(
                 "Confirm restore",
                 f"Restore files from:\n{path}\n\n"
@@ -5924,8 +5908,10 @@ class _SpinDoctorGUI:
         label = self._backup_label_var.get().strip()
         if label:
             args += ["--label", label]
-        if self._backup_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_backup_list(self) -> None:
@@ -5982,7 +5968,7 @@ class _SpinDoctorGUI:
                 "Tick at least one component to restore.",
             )
             return
-        if self._backup_restore_apply_var.get():
+        if self._global_apply_var.get():
             if not self.messagebox.askyesno(
                 "Restore backup?",
                 f"This will restore files from:\n{backup_path}\n\n"
@@ -5997,8 +5983,10 @@ class _SpinDoctorGUI:
             args.append("--use-current-paths")
         if self._backup_overwrite_var.get():
             args.append("--overwrite")
-        if self._backup_restore_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Migrate tab ───────────────────────────────────────────────────────────
@@ -6185,25 +6173,9 @@ class _SpinDoctorGUI:
             self.tk,
         )
 
-        self._migrate_apply_var = self.tk.BooleanVar(value=False)
-        _mig_apply = self.ttk.Checkbutton(
-            opt_frame, text="Apply (uncheck for dry-run)",
-            variable=self._migrate_apply_var,
-        )
-        _mig_apply.grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=2)
-        _attach_tooltip(
-            _mig_apply,
-            "Unchecked: dry-run — print the move plan, change nothing. "
-            "Checked: actually move every file. Migrate writes a "
-            "manifest under ~/.spindoctor/migrations/ so the entire "
-            "operation is reversible via 'migrate --undo' even if you "
-            "later move things around at the destination.",
-            self.tk,
-        )
-
         self.ttk.Button(
             opt_frame, text="Run migration", command=self._run_migrate,
-        ).grid(row=8, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         # ── Undo / list manifests ────────────────────────────────────────────
         undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
@@ -6228,14 +6200,8 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6)
 
-        self._migrate_undo_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            undo_frame, text="Apply (uncheck for dry-run)",
-            variable=self._migrate_undo_apply_var,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-
         btn_row = self.ttk.Frame(undo_frame)
-        btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        btn_row.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
         self.ttk.Button(
             btn_row, text="List manifests",
             command=lambda: self._run_cli(
@@ -6290,7 +6256,7 @@ class _SpinDoctorGUI:
             args.append("--no-update-config")
         if self._migrate_preserve_names_var.get():
             args.append("--preserve-names")
-        if self._migrate_apply_var.get():
+        if self._global_apply_var.get():
             keep_source = self._migrate_keep_source_var.get()
             if keep_source:
                 msg = (
@@ -6315,6 +6281,8 @@ class _SpinDoctorGUI:
             if not self.messagebox.askyesno("Migrate library?", msg):
                 return
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_migrate_undo(self) -> None:
@@ -6326,8 +6294,10 @@ class _SpinDoctorGUI:
             )
             return
         args = ["migrate", "--undo", manifest]
-        if self._migrate_undo_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_pre_migrate_backup(self) -> None:
@@ -6443,14 +6413,9 @@ class _SpinDoctorGUI:
             values=["alpha", "manufacturer", "year"],
             state="readonly", width=14,
         ).grid(row=0, column=1, sticky="w", padx=4)
-        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            sort_frame, text="Apply (uncheck for dry-run)",
-            variable=self._mainmenu_apply_var,
-        ).grid(row=0, column=2, sticky="w", padx=8)
         self.ttk.Button(
             sort_frame, text="Sort", command=self._run_mainmenu_sort,
-        ).grid(row=0, column=3, sticky="w", padx=4, pady=4)
+        ).grid(row=0, column=2, sticky="w", padx=4, pady=4)
 
         # ── Add / Remove ─────────────────────────────────────────────────────
         mgmt_frame = self.ttk.LabelFrame(frame, text="Add / Remove system")
@@ -6863,7 +6828,7 @@ class _SpinDoctorGUI:
     def _run_mainmenu_sort(self) -> None:
         strategy = self._mainmenu_sort_var.get()
         args = ["mainmenu", "sort", strategy]
-        if self._mainmenu_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -7138,12 +7103,6 @@ class _SpinDoctorGUI:
             sys_row, textvariable=self._meta_subset_label_var,
             foreground=_FG_DIM,
         ).pack(side="left")
-        self._meta_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            sys_row, text="Apply (uncheck for dry-run)",
-            variable=self._meta_apply_var,
-        ).pack(side="left", padx=6)
-
         # ── fetch-meta ───────────────────────────────────────────────────────
         meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
         meta_frame.pack(fill="x", pady=(4, 4))
@@ -7542,7 +7501,7 @@ class _SpinDoctorGUI:
             args += ["--set", set_clause]
         if report:
             args += ["--report", report]
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -7600,7 +7559,7 @@ class _SpinDoctorGUI:
                 )
                 return None
             args += ["--threshold", str(t)]
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         return args
 
@@ -7630,7 +7589,7 @@ class _SpinDoctorGUI:
         # Confirm before launching — chained fetch-meta on 20 systems
         # can take an hour, and the apply toggle is easy to miss.
         n = len(self._meta_subset)
-        will_apply = self._meta_apply_var.get()
+        will_apply = self._global_apply_var.get()
         mode = "WRITING (--apply)" if will_apply else "DRY RUN"
         if not self.messagebox.askyesno(
             "Run fetch-meta on subset?",
@@ -7776,7 +7735,7 @@ class _SpinDoctorGUI:
             args += ["--types", selected_types]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -7792,7 +7751,7 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
         args = ["media-scan", source, *sys_args]
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args += ["--apply", "--action", self._meta_scan_action_var.get()]
         self._run_cli("spindoctor", args)
 
@@ -7805,13 +7764,13 @@ class _SpinDoctorGUI:
             args.append("--remove-orphans")
         if self._meta_strip_variant_var.get():
             args.append("--strip-variant-tags")
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_generate_config(self) -> None:
         args = ["generate-config"]
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -7895,7 +7854,7 @@ class _SpinDoctorGUI:
             fetch_media_args += ["--types", selected_types]
         if self._meta_overwrite_var.get():
             fetch_media_args.append("--overwrite")
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             fetch_media_args.append("--apply")
 
         update_db_args = ["update-db", *sys_args]
@@ -7903,7 +7862,7 @@ class _SpinDoctorGUI:
             update_db_args.append("--remove-orphans")
         if self._meta_strip_variant_var.get():
             update_db_args.append("--strip-variant-tags")
-        if self._meta_apply_var.get():
+        if self._global_apply_var.get():
             update_db_args.append("--apply")
 
         step_defs: list[tuple[str, list[str]]] = [
@@ -8042,21 +8001,6 @@ class _SpinDoctorGUI:
             "the system once and confirmed the archive is correct.",
             self.tk,
         )
-        self._curate_apply_var = self.tk.BooleanVar(value=False)
-        _curate_apply_check = self.ttk.Checkbutton(
-            cur_flags, text="Apply (uncheck for dry-run)",
-            variable=self._curate_apply_var,
-        )
-        _curate_apply_check.pack(side="left", padx=10)
-        _attach_tooltip(
-            _curate_apply_check,
-            "Unchecked: dry-run — show the plan but make no changes. "
-            "Checked: actually archive (or delete) the duplicates "
-            "according to the Action selector above. Every apply run "
-            "writes a manifest under ~/.spindoctor/curate/ for undo.",
-            self.tk,
-        )
-
         self.ttk.Label(
             cur_frame,
             text="archive = moves duplicates to a zip archive (reversible via Undo)."
@@ -8132,12 +8076,6 @@ class _SpinDoctorGUI:
             cln_opts, from_=0, to=365, textvariable=self._cleanup_older_var,
             width=6,
         ).pack(side="left", padx=6)
-        self._cleanup_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            cln_opts, text="Apply (uncheck for dry-run)",
-            variable=self._cleanup_apply_var,
-        ).pack(side="left", padx=10)
-
         cln_reset_row = self.ttk.Frame(cln_frame)
         cln_reset_row.pack(anchor="w", padx=6, pady=(0, 2))
         self.ttk.Button(
@@ -8285,7 +8223,7 @@ class _SpinDoctorGUI:
         action = self._curate_action_var.get()
         if action != "archive":
             args += ["--action", action]
-        if self._curate_apply_var.get():
+        if self._global_apply_var.get():
             if action == "delete":
                 system_label = (
                     "ALL systems" if self._curate_all_var.get()
@@ -8663,7 +8601,7 @@ class _SpinDoctorGUI:
                 )
                 return
             args += ["--older-than", older]
-        if self._cleanup_apply_var.get():
+        if self._global_apply_var.get():
             args += ["--apply", "--yes"]
         self._run_cli("spindoctor", args)
 
@@ -8850,12 +8788,6 @@ class _SpinDoctorGUI:
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        self._systems_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            frame, text="Apply (uncheck for dry-run)",
-            variable=self._systems_apply_var,
-        ).pack(anchor="w", pady=(0, 8))
-
         # ── Main menu carousel (formerly Main Menu tab) ───────────────────────
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
         # the same module the CLI uses. The GUI never parses or writes
@@ -8944,14 +8876,9 @@ class _SpinDoctorGUI:
             values=["alpha", "manufacturer", "year"],
             state="readonly", width=14,
         ).grid(row=0, column=1, sticky="w", padx=4)
-        self._mainmenu_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            sort_frame, text="Apply (uncheck for dry-run)",
-            variable=self._mainmenu_apply_var,
-        ).grid(row=0, column=2, sticky="w", padx=8)
         self.ttk.Button(
             sort_frame, text="Sort", command=self._run_mainmenu_sort,
-        ).grid(row=0, column=3, sticky="w", padx=4, pady=4)
+        ).grid(row=0, column=2, sticky="w", padx=4, pady=4)
 
         # Add / Remove
         mgmt_frame = self.ttk.LabelFrame(mm_lf, text="Add / Remove system")
@@ -9380,7 +9307,7 @@ class _SpinDoctorGUI:
             # rename / clone above so users don't accidentally move ROMs
             # while learning the tool. Sort-wheel writes are XML-only and
             # always live (no apply flag exists for them).
-            if self._systems_apply_var.get():
+            if self._global_apply_var.get():
                 args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -9417,7 +9344,7 @@ class _SpinDoctorGUI:
             )
             return
         args = [verb, "--system", sys_, "--game", game, "--to", to]
-        if self._systems_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -9441,7 +9368,7 @@ class _SpinDoctorGUI:
             # proposed title. Users who want to curate titles can run
             # `spindoctor pc-rename <system>` from a terminal.
             args.append("--no-interactive")
-        if self._systems_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -9458,7 +9385,7 @@ class _SpinDoctorGUI:
         # GUI also passes --no-interactive so the per-game review path
         # doesn't hang on stdin; matches the add-pc-system pattern.
         args = ["pc-rename", system, "--no-interactive"]
-        if self._systems_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -9491,14 +9418,8 @@ class _SpinDoctorGUI:
             variable=self._led_overwrite_var,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
-        self._led_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            frame, text="Apply (uncheck for dry-run)",
-            variable=self._led_apply_var,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-
         btn_row = self.ttk.Frame(frame)
-        btn_row.grid(row=4, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        btn_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(8, 4))
         self.ttk.Button(
             btn_row, text="Generate (controls + colors)",
             command=self._run_led_generate,
@@ -9620,11 +9541,33 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).grid(row=5, column=2, sticky="w", padx=(0, 6))
 
-        self._fd_apply_var = self.tk.BooleanVar(value=False)
+        # Override options
+        _fd_override_inner = self.ttk.Frame(fd_frame)
+        _fd_override_inner.grid(row=6, column=0, columnspan=3, sticky="w",
+                                padx=6, pady=(4, 2))
+        self._fd_override_uniform_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            fd_frame, text="Apply (uncheck for dry-run)",
-            variable=self._fd_apply_var,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+            _fd_override_inner,
+            text="Override existing entries if all buttons are the same color",
+            variable=self._fd_override_uniform_var,
+        ).grid(row=0, column=0, sticky="w")
+        self.ttk.Label(
+            _fd_override_inner,
+            text="  (mixed-color entries are never touched)",
+            foreground=_FG_DIM,
+        ).grid(row=0, column=1, sticky="w")
+
+        self._fd_no_add_keys_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            _fd_override_inner,
+            text="Don't add new keys when overriding",
+            variable=self._fd_no_add_keys_var,
+        ).grid(row=1, column=0, sticky="w")
+        self.ttk.Label(
+            _fd_override_inner,
+            text="  (only update values of existing keys)",
+            foreground=_FG_DIM,
+        ).grid(row=1, column=1, sticky="w")
 
         self.ttk.Button(
             fd_frame, text="Fill Default Colors",
@@ -9660,20 +9603,48 @@ class _SpinDoctorGUI:
         self._led_brightness_label = self.ttk.Label(br2_frame, text="100%", width=6)
         self._led_brightness_label.grid(row=1, column=2, sticky="w", padx=(0, 6))
 
-        self._led_brightness_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            br2_frame, text="Apply (uncheck for dry-run)",
-            variable=self._led_brightness_apply_var,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             br2_frame, text="Scale Brightness",
             command=self._run_led_brightness,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # ── Randomize Entry Colors ───────────────────────────────────────────
+        rz_frame = self.ttk.LabelFrame(frame, text="Randomize Entry Colors")
+        rz_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        rz_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            rz_frame,
+            text=("Give each game its own random button colors. Every ROM section "
+                  "in Colors.ini receives an independent random color for all "
+                  "P*_BUTTON* / P*_JOYSTICK keys, and a second independent random "
+                  "color for P*_COIN / P*_START keys. Only existing keys are "
+                  "updated — buttons intentionally left dark stay dark."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(rz_frame, text="Seed (optional)").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._rz_seed_var = self.tk.StringVar(value="")
+        self.ttk.Entry(
+            rz_frame, textvariable=self._rz_seed_var, width=12,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            rz_frame,
+            text="(leave blank for a fresh random shuffle each run; "
+                 "enter an integer for reproducible output)",
+            foreground=_FG_DIM,
+        ).grid(row=1, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Button(
+            rz_frame, text="Randomize Entry Colors",
+            command=self._run_randomize_entry_colors,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Admin Button Colors ──────────────────────────────────────────────
         ab_frame = self.ttk.LabelFrame(frame, text="Admin Button Colors")
-        ab_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        ab_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
@@ -9731,22 +9702,16 @@ class _SpinDoctorGUI:
             self._admin_color_vars.append(var)
             self._admin_color_combos.append(combo)
 
-        self._admin_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            ab_frame, text="Apply (uncheck for dry-run)",
-            variable=self._admin_apply_var,
-        ).grid(row=4, column=0, columnspan=5, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             ab_frame, text="Set Admin Button Colors",
             command=self._run_admin_button_colors,
-        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
         # ── Settings.ini Patch ───────────────────────────────────────────────
         _led_cfg = load_config()
 
         sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
-        sp_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(sp_frame, text="FE idle animation").grid(
@@ -9786,16 +9751,10 @@ class _SpinDoctorGUI:
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
-        self._led_patch_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            sp_frame, text="Apply (uncheck for dry-run)",
-            variable=self._led_patch_apply_var,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             sp_frame, text="Patch Settings.ini",
             command=self._run_led_patch_settings,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # Populate .lwa list immediately if ledblinky_dir is already set
         self._refresh_led_lwa_list()
@@ -9804,7 +9763,7 @@ class _SpinDoctorGUI:
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
-        br_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -9821,51 +9780,39 @@ class _SpinDoctorGUI:
             ),
         ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
 
-        self._led_backup_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            br_frame, text="Apply (uncheck for dry-run)",
-            variable=self._led_backup_apply_var,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             br_frame, text="Create backup",
             command=self._run_led_backup,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         self.ttk.Separator(br_frame, orient="horizontal").grid(
-            row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4),
+            row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4),
         )
 
         self.ttk.Label(br_frame, text="Restore from").grid(
-            row=4, column=0, sticky="w", padx=6, pady=2,
+            row=3, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_restore_path_var = self.tk.StringVar(value=_led_backup_default)
         self.ttk.Entry(
             br_frame, textvariable=self._led_restore_path_var, width=48,
-        ).grid(row=4, column=1, sticky="ew", padx=6, pady=2)
+        ).grid(row=3, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
             br_frame, text="Browse…",
             command=lambda: self._browse_backup_dir(
                 self._led_restore_path_var, "Pick LEDBlinky backup to restore",
             ),
-        ).grid(row=4, column=2, sticky="w", padx=(0, 6), pady=2)
-
-        self._led_restore_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            br_frame, text="Apply (uncheck for dry-run)",
-            variable=self._led_restore_apply_var,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        ).grid(row=3, column=2, sticky="w", padx=(0, 6), pady=2)
 
         self.ttk.Button(
             br_frame, text="Restore backup",
             command=self._run_led_restore,
-        ).grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         # ── Color Definitions ────────────────────────────────────────────────
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
-        cd_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
         # Treeview + vertical scrollbar
@@ -9928,15 +9875,9 @@ class _SpinDoctorGUI:
         self._color_preview.grid(row=0, column=4, sticky="w", padx=(4, 0))
         self._color_hex_var.trace_add("write", self._update_color_preview)
 
-        # ── Apply + button ─────────────────────────────────────────────────
-        self._color_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            cd_frame, text="Apply (uncheck for dry-run)",
-            variable=self._color_apply_var,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
-
+        # ── Buttons ─────────────────────────────────────────────────
         btn_row = self.ttk.Frame(cd_frame)
-        btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+        btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
 
         self.ttk.Button(
             btn_row, text="Update & Rename",
@@ -9959,8 +9900,10 @@ class _SpinDoctorGUI:
         args = ["ledblinky", "generate", "--system", system]
         if self._led_overwrite_var.get():
             args.append("--overwrite")
-        if self._led_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_audit(self) -> None:
@@ -9973,7 +9916,7 @@ class _SpinDoctorGUI:
         # `ledblinky fix` is a writer; it respects --apply, so we forward
         # the same Apply checkbox the Generate path uses.
         args = ["ledblinky", "fix"]
-        if self._led_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
@@ -9986,8 +9929,10 @@ class _SpinDoctorGUI:
             )
             return
         args = ["backup", "create", "--target", target, "--include", "ledblinky"]
-        if self._led_backup_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_restore(self) -> None:
@@ -9998,7 +9943,7 @@ class _SpinDoctorGUI:
                 "Pick the backup folder to restore from.",
             )
             return
-        if self._led_restore_apply_var.get():
+        if self._global_apply_var.get():
             if not self.messagebox.askyesno(
                 "Restore LEDBlinky backup?",
                 f"This will restore LEDBlinky files from:\n{backup_path}\n\n"
@@ -10007,8 +9952,10 @@ class _SpinDoctorGUI:
             ):
                 return
         args = ["backup", "restore", "--backup", backup_path, "--include", "ledblinky"]
-        if self._led_restore_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _refresh_led_lwa_list(self) -> None:
@@ -10037,8 +9984,10 @@ class _SpinDoctorGUI:
         args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
         if fe_lwa_arg is not None:
             args += ["--fe-lwa", fe_lwa_arg]
-        if self._led_patch_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Color Definitions helpers ─────────────────────────────────────────────
@@ -10161,7 +10110,7 @@ class _SpinDoctorGUI:
             args += ["--name", new_name]
         if hex_changed and len(hex_val) == 6:
             args += ["--hex", hex_val]
-        if self._color_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
             "spindoctor", args,
@@ -10171,7 +10120,7 @@ class _SpinDoctorGUI:
     def _run_color_normalize(self) -> None:
         """Run ``ledblinky colors normalize`` to convert hex entries to named format."""
         args = ["ledblinky", "colors", "normalize"]
-        if self._color_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
             "spindoctor", args,
@@ -10208,8 +10157,14 @@ class _SpinDoctorGUI:
         system = self._fd_system_var.get().strip()
         if system:
             args += ["--system", system]
-        if self._fd_apply_var.get():
+        if self._fd_override_uniform_var.get():
+            args.append("--override-uniform")
+        if self._fd_no_add_keys_var.get():
+            args.append("--no-add-keys")
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_brightness(self) -> None:
@@ -10219,8 +10174,26 @@ class _SpinDoctorGUI:
         except (ValueError, AttributeError):
             scale = 100
         args = ["ledblinky", "colors", "brightness", "--scale", str(scale)]
-        if self._led_brightness_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_randomize_entry_colors(self) -> None:
+        """Run ``ledblinky colors randomize`` to assign random colors per game."""
+        args = ["ledblinky", "colors", "randomize"]
+        seed_raw = self._rz_seed_var.get().strip()
+        if seed_raw:
+            try:
+                int(seed_raw)
+                args += ["--seed", seed_raw]
+            except ValueError:
+                pass  # ignore non-integer seed input
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_admin_button_colors(self) -> None:
@@ -10242,8 +10215,10 @@ class _SpinDoctorGUI:
             "--player", str(player),
             "--colors", ",".join(colors),
         ]
-        if self._admin_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Lightgun tab ──────────────────────────────────────────────────────────
@@ -10265,15 +10240,8 @@ class _SpinDoctorGUI:
         det_frame = self.ttk.LabelFrame(frame, text="Detect & audit")
         det_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
 
-        self._lg_detect_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            det_frame,
-            text="Persist detected systems into config (--apply)",
-            variable=self._lg_detect_apply_var,
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=2)
-
         btn_row = self.ttk.Frame(det_frame)
-        btn_row.grid(row=1, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
+        btn_row.grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
         self.ttk.Button(
             btn_row, text="Detect installed gear",
             command=self._run_lg_detect,
@@ -10329,23 +10297,19 @@ class _SpinDoctorGUI:
             cfg_frame, textvariable=self._lg_extra_args_var, width=30,
         ).grid(row=3, column=1, sticky="w", padx=6, pady=2)
 
-        self._lg_configure_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            cfg_frame, text="Apply (uncheck for dry-run)",
-            variable=self._lg_configure_apply_var,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
-
         self.ttk.Button(
             cfg_frame, text="Configure system",
             command=self._run_lg_configure,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
         return frame
 
     def _run_lg_detect(self) -> None:
         args = ["lightgun", "detect"]
-        if self._lg_detect_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_lg_configure(self) -> None:
@@ -10363,8 +10327,10 @@ class _SpinDoctorGUI:
         extra = self._lg_extra_args_var.get().strip()
         if extra:
             args += ["--extra-args", extra]
-        if self._lg_configure_apply_var.get():
+        if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
@@ -10397,12 +10363,6 @@ class _SpinDoctorGUI:
             self.ttk.Checkbutton(
                 wheels_checks, text=label, variable=var,
             ).pack(anchor="w", pady=2)
-
-        self._wheel_verbose_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            wheels_lf, text="Verbose output (--verbose)",
-            variable=self._wheel_verbose_var,
-        ).pack(anchor="w", padx=6, pady=(0, 2))
 
         self.ttk.Button(
             wheels_lf, text="Refresh selected", width=28,
@@ -10784,26 +10744,13 @@ class _SpinDoctorGUI:
             foreground="#888888",
         ).pack(anchor="w", padx=6, pady=(0, 4))
 
-        # Apply + Scrub button
+        # Scrub button
         scrub_btn_row = self.ttk.Frame(scrub_lf)
         scrub_btn_row.pack(anchor="w", padx=6, pady=(2, 6))
-        self._scrub_apply_var = self.tk.BooleanVar(value=False)
-        _scrub_apply_chk = self.ttk.Checkbutton(
-            scrub_btn_row, text="Apply (uncheck for dry-run)",
-            variable=self._scrub_apply_var,
-        )
-        _scrub_apply_chk.pack(side="left")
-        _attach_tooltip(
-            _scrub_apply_chk,
-            "Unchecked: preview only — shows what would be deleted without touching files.\n"
-            "Checked: permanently deletes the selected data. "
-            "Cannot be undone without a backup.",
-            self.tk,
-        )
         self.ttk.Button(
             scrub_btn_row, text="Scrub",
             command=self._run_scrub,
-        ).pack(side="left", padx=(16, 0))
+        ).pack(side="left")
 
         # Restore section
         scrub_restore_lf = self.ttk.LabelFrame(scrub_lf, text="Restore from scrub backup")
@@ -10828,15 +10775,10 @@ class _SpinDoctorGUI:
 
         scrub_restore_btn_row = self.ttk.Frame(scrub_restore_lf)
         scrub_restore_btn_row.pack(anchor="w", padx=6, pady=(2, 6))
-        self._scrub_restore_apply_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            scrub_restore_btn_row, text="Apply (uncheck for dry-run)",
-            variable=self._scrub_restore_apply_var,
-        ).pack(side="left")
         self.ttk.Button(
             scrub_restore_btn_row, text="Restore",
             command=self._run_scrub_restore,
-        ).pack(side="left", padx=(16, 0))
+        ).pack(side="left")
 
         return frame
 
