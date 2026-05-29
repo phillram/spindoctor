@@ -5745,7 +5745,8 @@ def ledblinky_group():
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write to this directory instead of <ledblinky_dir>.")
-def ledblinky_generate(system, overwrite, apply_changes, output_dir):
+@click.option("--verbose", is_flag=True, help="Print the controls and colors file paths written.")
+def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
     """Generate / merge LEDBlinky controls.ini and colors.ini.
 
     Strategy: existing entries from <ledblinky_dir> are preserved verbatim;
@@ -5805,6 +5806,9 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir):
         console.print(
             f"  Skipped (no -listxml input data): [yellow]{result.skipped_no_input}[/yellow]"
         )
+    if verbose:
+        console.print(f"[dim][verbose] controls → {result.controls_path}[/dim]")
+        console.print(f"[dim][verbose] colors   → {result.colors_path}[/dim]")
 
 
 @ledblinky_group.command("audit")
@@ -6233,7 +6237,8 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
               help="Commit the patch (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the .bak backup when writing in-place.")
-def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
+@click.option("--verbose", is_flag=True, help="Print the settings file path being patched.")
+def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose):
     """Patch Settings.ini to fix idle animation and silence unused buttons.
 
     \b
@@ -6291,6 +6296,8 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup):
                 else "[green]changed[/green]"
             )
             console.print(f"  {verb}: {change}")
+            if verbose:
+                console.print(f"[dim][verbose]   file → {result.settings_path}[/dim]")
 
         if not result.dry_run and result.backup_path:
             console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
@@ -6583,7 +6590,8 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
-def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
+@click.option("--verbose", is_flag=True, help="Print the Color-RGB.ini path and color count scaled.")
+def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
     """Set all Color-RGB.ini colors to a uniform brightness level.
 
     Each color is first normalized to its maximum possible intensity (dominant
@@ -6630,6 +6638,87 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
         )
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+    if verbose:
+        console.print(
+            f"[dim][verbose] {result.color_rgb_path} "
+            f"({result.colors_scaled} color(s) at {scale_pct:.0f}%)[/dim]"
+        )
+
+
+@ledblinky_colors_group.command("randomize")
+@click.option("--seed", type=int, default=None,
+              help="Integer seed for reproducible output.  "
+                   "Omit for a fresh random shuffle every run.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", is_flag=True,
+              help="Print the Colors.ini path, palette size, and sections updated.")
+def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
+    """Give each game its own random button colors.
+
+    For every section in Colors.ini that has player-button keys:
+
+    \b
+      - All P*_BUTTON* and P*_JOYSTICK keys → one random color (same for all
+        players, so every button on a game glows the same shade).
+      - All P*_COIN and P*_START keys → a second independently-drawn random
+        color (the accent color for the meta-buttons).
+      - Each game gets its own independent draw — the cabinet looks varied.
+      - Only EXISTING keys are updated.  New button lines are never added,
+        so buttons intentionally left dark (absent from the section) stay dark.
+      - Black / off colors (all-zero channels) are excluded from the pool.
+
+    \b
+    Examples:
+      spindoctor ledblinky colors randomize               :: preview
+      spindoctor ledblinky colors randomize --apply       :: commit
+      spindoctor ledblinky colors randomize --seed 42 --apply  :: reproducible
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    try:
+        result = lb.randomize_entry_colors(
+            config,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+            seed=seed,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would update" if result.dry_run else "updated"
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+    console.print(
+        f"  Palette size   : [cyan]{result.palette_size}[/cyan] non-black colors"
+    )
+    console.print(
+        f"  Sections {verb:13s}: [green]{result.sections_updated}[/green]"
+    )
+    if result.sections_skipped:
+        console.print(
+            f"  Sections skipped : [dim]{result.sections_skipped}[/dim] "
+            f"(no player keys — left unchanged)"
+        )
+    if result.seed is not None:
+        console.print(f"  Seed             : [dim]{result.seed}[/dim]")
+    if result.dry_run and result.sections_updated:
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+        )
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+    if verbose:
+        console.print(
+            f"[dim][verbose] {result.colors_ini_path} "
+            f"(palette={result.palette_size}, updated={result.sections_updated}, "
+            f"skipped={result.sections_skipped})[/dim]"
+        )
 
 
 @ledblinky_group.command("fill-defaults")
@@ -6648,6 +6737,13 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
                    "(P{players+1}).  0 disables the admin block.")
 @click.option("--admin-color", "admin_color", default="White", show_default=True,
               help="Named color for the admin button block.")
+@click.option("--override-uniform", is_flag=True,
+              help="Also update existing sections where ALL button colors are "
+                   "the same value.  Mixed-color sections are never touched.")
+@click.option("--no-add-keys", is_flag=True,
+              help="When overriding, only replace values of keys already "
+                   "present — do not insert new P*_BUTTON/JOYSTICK/START/COIN "
+                   "keys.  Only meaningful with --override-uniform.")
 @click.option("--system", default=None, metavar="SYSTEM",
               help="Process only this HyperSpin system.  Default: all systems "
                    "(including Favorites / Recently Played / Most Played).")
@@ -6655,9 +6751,10 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup):
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", is_flag=True, help="Print the Colors.ini path and add/override/skip counts.")
 def ledblinky_fill_defaults(
     default_color, n_buttons, n_players, admin_buttons, admin_color,
-    system, apply_changes, no_backup,
+    override_uniform, no_add_keys, system, apply_changes, no_backup, verbose,
 ):
     """Add default Colors.ini entries for ROMs with no LED mapping.
 
@@ -6681,9 +6778,18 @@ def ledblinky_fill_defaults(
         P3_BUTTON1=Green  ...  P3_BUTTON6=Green
         P3_COIN=Green  P3_START=Green
 
-    Only ROMs with no existing section are touched.  Existing entries are
-    never modified.  Synthetic wheels (Favorites, Recently Played, Most Played)
-    are included so games that appear only in those wheels are also covered.
+    By default only ROMs with no existing section are touched.  Pass
+    --override-uniform to also update existing entries where all button colors
+    are identical (e.g. all White), replacing them with the new --color.
+    Sections with mixed colors (e.g. one Red button, one Blue button) are
+    never modified regardless of flags.
+
+    Use --no-add-keys with --override-uniform to preserve the exact set of
+    keys already in the section — only the color VALUES are replaced, and no
+    new P*_BUTTON entries are inserted.
+
+    Synthetic wheels (Favorites, Recently Played, Most Played) are included
+    so games that appear only in those wheels are also covered.
 
     \b
     Examples:
@@ -6693,6 +6799,8 @@ def ledblinky_fill_defaults(
       spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply
       spindoctor ledblinky fill-defaults --system "MAME"              :: one system
       spindoctor ledblinky fill-defaults --color Purple --apply
+      spindoctor ledblinky fill-defaults --color White --override-uniform --apply
+      spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply
     """
     from . import ledblinky as lb
 
@@ -6705,6 +6813,8 @@ def ledblinky_fill_defaults(
             n_players=n_players,
             admin_buttons=admin_buttons,
             admin_color=admin_color,
+            override_uniform=override_uniform,
+            no_add_keys=no_add_keys,
             system=system,
             dry_run=not apply_changes,
             backup=not no_backup,
@@ -6713,37 +6823,66 @@ def ledblinky_fill_defaults(
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
 
-    verb = "would add" if result.dry_run else "added"
+    verb_add = "would add" if result.dry_run else "added"
+    verb_ovr = "would update" if result.dry_run else "updated"
     console.print(
         f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
     )
     console.print(
-        f"  ROMs checked : [cyan]{result.roms_checked}[/cyan]"
+        f"  ROMs checked   : [cyan]{result.roms_checked}[/cyan]"
     )
-    if result.roms_added == 0:
+
+    players_desc = (
+        f"players=[cyan]{n_players}[/cyan], " if n_players > 1 else ""
+    )
+    admin_desc = (
+        f", admin=[cyan]{admin_buttons}×{admin_color}[/cyan]"
+        if admin_buttons > 0 else ""
+    )
+    color_desc = (
+        f"({players_desc}color=[cyan]{default_color}[/cyan], "
+        f"buttons=[cyan]{n_buttons}[/cyan]{admin_desc})"
+    )
+
+    if result.roms_added:
         console.print(
-            "\n[dim]Nothing to add — every ROM already has a Colors.ini entry.[/dim]"
+            f"  {verb_add:12s} : [green]{result.roms_added}[/green] "
+            f"new entr{'y' if result.roms_added == 1 else 'ies'} {color_desc}"
         )
-    else:
-        players_desc = (
-            f"players=[cyan]{n_players}[/cyan], " if n_players > 1 else ""
-        )
-        admin_desc = (
-            f", admin=[cyan]{admin_buttons}×{admin_color}[/cyan]"
-            if admin_buttons > 0 else ""
-        )
+    if result.roms_overridden:
+        no_keys_note = " [no new keys]" if no_add_keys else ""
         console.print(
-            f"  {verb}      : [green]{result.roms_added}[/green] "
-            f"default entr{'y' if result.roms_added == 1 else 'ies'} "
-            f"({players_desc}color=[cyan]{default_color}[/cyan], "
-            f"buttons=[cyan]{n_buttons}[/cyan]{admin_desc})"
+            f"  {verb_ovr:12s} : [green]{result.roms_overridden}[/green] "
+            f"uniform entr{'y' if result.roms_overridden == 1 else 'ies'} "
+            f"→ [cyan]{default_color}[/cyan]{no_keys_note}"
         )
-        if result.dry_run:
+    if result.roms_skipped_mixed:
+        console.print(
+            f"  skipped mixed  : [yellow]{result.roms_skipped_mixed}[/yellow] "
+            f"entr{'y' if result.roms_skipped_mixed == 1 else 'ies'} "
+            f"(mixed colors — not overridden)"
+        )
+    if result.roms_added == 0 and result.roms_overridden == 0:
+        console.print(
+            "\n[dim]Nothing to change — every ROM already has a Colors.ini entry.[/dim]"
+        )
+        if override_uniform and result.roms_skipped_mixed:
             console.print(
-                "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+                "[dim]  (some entries have mixed colors and were intentionally skipped)[/dim]"
             )
-        elif result.backup_path:
-            console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+    if result.dry_run and (result.roms_added or result.roms_overridden):
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+        )
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+    if verbose:
+        console.print(
+            f"[dim][verbose] {result.colors_ini_path} "
+            f"(added={result.roms_added}, overridden={result.roms_overridden}, "
+            f"skipped={result.roms_skipped_mixed})[/dim]"
+        )
 
 
 # ─── ledblinky admin-buttons ──────────────────────────────────────────────────
@@ -6777,8 +6916,9 @@ def ledblinky_admin_buttons_group():
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", is_flag=True, help="Print the Colors.ini path and sections updated.")
 def ledblinky_admin_buttons_set(
-    admin_player, colors_csv, uniform_color, button_count, apply_changes, no_backup
+    admin_player, colors_csv, uniform_color, button_count, apply_changes, no_backup, verbose,
 ):
     """Set individual admin/cabinet button colors across ALL Colors.ini sections.
 
@@ -6873,6 +7013,11 @@ def ledblinky_admin_buttons_set(
             )
         elif result.backup_path:
             console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+    if verbose:
+        console.print(
+            f"[dim][verbose] {result.colors_ini_path} "
+            f"(sections updated={result.sections_updated}, player=P{result.admin_player})[/dim]"
+        )
 
 
 # ─── add-system ───────────────────────────────────────────────────────────────
@@ -7584,7 +7729,9 @@ def backup_group():
                    "'pre-migration', 'weekly').")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Execute the backup. Without this flag, prints a dry-run plan.")
-def backup_create(target, include, label, apply_changes):
+@click.option("--verbose", is_flag=True,
+              help="Print each file/folder being copied.")
+def backup_create(target, include, label, apply_changes, verbose):
     """Create a new backup of selected library components.
 
     \b
@@ -7690,6 +7837,10 @@ def backup_create(target, include, label, apply_changes):
                     task,
                     description=f"Backing up {item.component}: {Path(item.src).name}",
                 )
+                if verbose:
+                    progress.console.print(
+                        f"[dim][verbose] copying {item.src} → {item.dest}[/dim]"
+                    )
             elif status == "done":
                 progress.update(task, advance=1)
 
@@ -7824,7 +7975,9 @@ def backup_info(backup_path):
                    "restore aborts if any destination is non-empty.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Execute the restore. Without this flag, prints a dry-run plan.")
-def backup_restore(backup_path, include, use_current_paths, overwrite, apply_changes):
+@click.option("--verbose", is_flag=True,
+              help="Print each file/folder being restored.")
+def backup_restore(backup_path, include, use_current_paths, overwrite, apply_changes, verbose):
     """Restore from a backup back to the library paths.
 
     \b
@@ -7927,6 +8080,10 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
                     task,
                     description=f"Restoring {item.component} → {Path(item.dest).name}",
                 )
+                if verbose:
+                    progress.console.print(
+                        f"[dim][verbose] restoring {item.src} → {item.dest}[/dim]"
+                    )
             elif status == "done":
                 progress.update(task, advance=1)
 
@@ -8272,8 +8429,9 @@ def diff(backup_folder, component):
                    "Use 'latest' to undo the most recent migration.")
 @click.option("--list-manifests", is_flag=True,
               help="List all migration manifests on disk and exit.")
+@click.option("--verbose", is_flag=True, help="Print each file/folder path as it is moved or copied.")
 def migrate(target, include, systems, apply_changes, keep_source, verify,
-            no_update_config, preserve_names, undo_path, list_manifests):
+            no_update_config, preserve_names, undo_path, list_manifests, verbose):
     """Migrate the library to a new drive.
 
     \b
@@ -8458,6 +8616,9 @@ def migrate(target, include, systems, apply_changes, keep_source, verify,
         def _cb(move, status):
             if status == "start":
                 progress.update(task, description=f"Migrating {move.component}: {Path(move.src).name}")
+                if verbose:
+                    action = "copying" if keep_source else "moving"
+                    progress.console.print(f"[dim][verbose] {action} {move.src} → {move.dest}[/dim]")
             elif status == "done":
                 progress.update(task, advance=1)
 
@@ -8960,7 +9121,8 @@ def lightgun_group():
 @lightgun_group.command("detect")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Persist detected lightgun systems into spindoctor config.")
-def lightgun_detect(apply_changes):
+@click.option("--verbose", is_flag=True, help="Print install paths and pre-wired system count.")
+def lightgun_detect(apply_changes, verbose):
     """Detect installed lightgun gear and pre-wired systems."""
     from . import lightgun as lg
 
@@ -9004,6 +9166,12 @@ def lightgun_detect(apply_changes):
         save_config(config)
         console.print(f"\n[green]✓[/green] Marked {len(new_systems)} "
                       f"system(s) as lightgun in spindoctor config.")
+    if verbose:
+        console.print(
+            f"[dim][verbose] sinden={install.sinden_software_dir or 'not found'}, "
+            f"demulshooter={install.demulshooter_exe or 'not found'}, "
+            f"pre-wired={len(pre_wired)}, new={len(new_systems)}[/dim]"
+        )
 
 
 @lightgun_group.command("audit")
@@ -9054,7 +9222,8 @@ def lightgun_audit():
                    "(default: from config or '-noresize').")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Write the INI changes. Without this flag, dry-run only.")
-def lightgun_configure(system, target, extra_args, apply_changes):
+@click.option("--verbose", is_flag=True, help="Print the INI path and Pre/Post launch commands written.")
+def lightgun_configure(system, target, extra_args, apply_changes, verbose):
     """Wire DemulShooter pre/post-launch hooks into a system's RL INI."""
     from . import lightgun as lg
 
@@ -9099,6 +9268,10 @@ def lightgun_configure(system, target, extra_args, apply_changes):
     console.print(f"\n[green]✓[/green] Wrote DemulShooter hooks to "
                   f"[cyan]{written}[/cyan] and marked '{system}' as a "
                   "lightgun system in spindoctor config.")
+    if verbose:
+        console.print(f"[dim][verbose] INI: {plan.ini_path}[/dim]")
+        console.print(f"[dim][verbose] Pre_Launch_App={plan.pre_launch_command}[/dim]")
+        console.print(f"[dim][verbose] Post_Launch_App={plan.post_launch_command}[/dim]")
 
 
 # ─── find-global ──────────────────────────────────────────────────────────────

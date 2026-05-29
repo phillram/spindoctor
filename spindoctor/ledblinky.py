@@ -30,6 +30,7 @@ This module covers two related concerns:
 """
 from __future__ import annotations
 
+import random as _random
 import re
 import shutil
 import subprocess
@@ -1572,8 +1573,190 @@ class FillDefaultsResult:
     colors_ini_path: Optional[Path] = None
     roms_checked: int = 0
     roms_added: int = 0
+    roms_overridden: int = 0      # existing uniform sections updated
+    roms_skipped_mixed: int = 0   # existing mixed-color sections left untouched
     backup_path: Optional[Path] = None
     dry_run: bool = False
+
+
+# ── fill-defaults helpers ──────────────────────────────────────────────────────
+
+#: Matches P{n}_BUTTON{i}, P{n}_JOYSTICK, P{n}_START, P{n}_COIN (all players).
+_PLAYER_KEY_RE = re.compile(
+    r"^P(\d+)_(BUTTON\d+|JOYSTICK|START|COIN)\s*=\s*(.*?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _split_ini_by_sections(
+    text: str,
+) -> "list[tuple[Optional[str], Optional[str], list[str]]]":
+    """Split INI text into ``(section_name, original_header_line, body_lines)`` tuples.
+
+    The very first tuple has ``section_name=None`` and ``header_line=None``
+    for any content that precedes the first ``[header]`` line.  Each
+    ``body_lines`` list contains the raw lines (with original line endings)
+    that belong to that section, *excluding* the header line itself.
+    """
+    result: "list[tuple[Optional[str], Optional[str], list[str]]]" = []
+    current_name: Optional[str] = None
+    current_header: Optional[str] = None
+    current_lines: "list[str]" = []
+
+    for line in text.splitlines(keepends=True):
+        m = re.match(r"^\[([^\]]+)\]", line.rstrip("\r\n"))
+        if m:
+            result.append((current_name, current_header, current_lines))
+            current_name = m.group(1).strip()
+            current_header = line
+            current_lines = []
+        else:
+            current_lines.append(line)
+
+    result.append((current_name, current_header, current_lines))
+    return result
+
+
+def _uniform_section_color(body_lines: "list[str]") -> "Optional[str]":
+    """Return the single color if **every** ``P*_BUTTON/JOYSTICK/START/COIN``
+    key in *body_lines* shares the same value.
+
+    Returns ``None`` when the colors are mixed, or when there are no matching
+    keys at all (can't determine uniformity for an empty / hex-only section).
+    """
+    values: "set[str]" = set()
+    for line in body_lines:
+        m = _PLAYER_KEY_RE.match(line.strip())
+        if m:
+            values.add(m.group(3))  # the value after "="
+    if len(values) == 1:
+        return values.pop()
+    return None
+
+
+def _rewrite_section_body(
+    body_lines: "list[str]",
+    new_color: str,
+    n_players: int,
+    n_buttons: int,
+    admin_player: int,
+    admin_buttons: int,
+    admin_color: str,
+    no_add_keys: bool,
+) -> "list[str]":
+    """Return *body_lines* with every ``P*_BUTTON/JOYSTICK/START/COIN``
+    value replaced by *new_color* (or *admin_color* for the admin player).
+
+    When *no_add_keys* is ``False``, any missing keys (up to ``n_players ×
+    n_buttons`` plus optional admin block) are **appended** before trailing
+    blank lines so the section stays compact.
+
+    When *no_add_keys* is ``True``, only existing keys are updated — no new
+    keys are inserted.
+    """
+    result: "list[str]" = []
+    existing_upper: "set[str]" = set()
+
+    for line in body_lines:
+        stripped = line.strip()
+        m = _PLAYER_KEY_RE.match(stripped)
+        if m:
+            key_full = f"P{m.group(1)}_{m.group(2)}"
+            p_num = int(m.group(1))
+            upper_key = key_full.upper()
+            existing_upper.add(upper_key)
+            color = (
+                admin_color
+                if admin_buttons > 0 and p_num == admin_player
+                else new_color
+            )
+            # Preserve original line ending
+            ending = "\r\n" if line.endswith("\r\n") else "\n"
+            result.append(f"{key_full}={color}{ending}")
+        else:
+            result.append(line)
+
+    if no_add_keys:
+        return result
+
+    # Build the list of keys to add (preserving the generated ordering)
+    to_add: "list[str]" = []
+    for p in range(1, n_players + 1):
+        px = f"P{p}"
+        for i in range(1, n_buttons + 1):
+            if f"{px}_BUTTON{i}".upper() not in existing_upper:
+                to_add.append(f"{px}_BUTTON{i}={new_color}\n")
+        for suffix in ("JOYSTICK", "START", "COIN"):
+            if f"{px}_{suffix}".upper() not in existing_upper:
+                to_add.append(f"{px}_{suffix}={new_color}\n")
+    if admin_buttons > 0:
+        ap = f"P{admin_player}"
+        for i in range(1, admin_buttons + 1):
+            if f"{ap}_BUTTON{i}".upper() not in existing_upper:
+                to_add.append(f"{ap}_BUTTON{i}={admin_color}\n")
+        for suffix in ("COIN", "START"):
+            if f"{ap}_{suffix}".upper() not in existing_upper:
+                to_add.append(f"{ap}_{suffix}={admin_color}\n")
+
+    if not to_add:
+        return result
+
+    # Insert additions before any trailing blank lines to keep structure tidy
+    insert_idx = len(result)
+    while insert_idx > 0 and result[insert_idx - 1].strip() == "":
+        insert_idx -= 1
+    for addition in reversed(to_add):
+        result.insert(insert_idx, addition)
+
+    return result
+
+
+def _rewrite_colors_ini_with_overrides(
+    text: str,
+    roms_to_override: "set[str]",
+    new_color: str,
+    n_players: int,
+    n_buttons: int,
+    admin_player: int,
+    admin_buttons: int,
+    admin_color: str,
+    no_add_keys: bool,
+) -> "tuple[str, int]":
+    """Rewrite *text* (a full Colors.ini) so that every section whose name is
+    in *roms_to_override* has its player-button values replaced in-place.
+
+    Returns ``(new_text, count_of_sections_updated)``.
+    """
+    sections = _split_ini_by_sections(text)
+    parts: "list[str]" = []
+    updated = 0
+
+    for section_name, header_line, body_lines in sections:
+        if section_name is None:
+            # Content before the first [header] — preserve verbatim
+            parts.extend(body_lines)
+            continue
+
+        assert header_line is not None  # guaranteed when section_name is set
+        parts.append(header_line)
+
+        if section_name in roms_to_override:
+            new_body = _rewrite_section_body(
+                body_lines,
+                new_color,
+                n_players,
+                n_buttons,
+                admin_player,
+                admin_buttons,
+                admin_color,
+                no_add_keys,
+            )
+            parts.extend(new_body)
+            updated += 1
+        else:
+            parts.extend(body_lines)
+
+    return "".join(parts), updated
 
 
 def fill_default_colors(
@@ -1583,6 +1766,8 @@ def fill_default_colors(
     n_players: int = 1,
     admin_buttons: int = 0,
     admin_color: str = "White",
+    override_uniform: bool = False,
+    no_add_keys: bool = False,
     system: Optional[str] = None,
     dry_run: bool = True,
     backup: bool = True,
@@ -1620,9 +1805,25 @@ def fill_default_colors(
         P3_COIN=Green
         P3_START=Green
 
-    Only ROMs that have no section at all in ``Colors.ini`` are touched.
-    Existing entries (including community-maintained named entries and
-    SpinDoctor-generated hex entries) are never modified.
+    **Overriding existing uniform entries** (``override_uniform=True``):
+
+    When *override_uniform* is ``True``, ROMs that already have a section in
+    ``Colors.ini`` are also examined.  If **every** ``P*_BUTTON/JOYSTICK/START/
+    COIN`` key in that section has the **same** value (i.e. the entry is
+    uniform), that section is updated in-place with *default_color*.  Sections
+    with mixed colors are left completely untouched — only all-the-same entries
+    qualify for override.
+
+    The ``no_add_keys`` flag (only meaningful with ``override_uniform=True``)
+    controls whether missing button keys are added:
+
+    * ``no_add_keys=False`` (default): override the existing values **and**
+      fill in any missing ``P*_BUTTON`` / ``JOYSTICK`` / ``START`` / ``COIN``
+      keys up to the requested ``n_players × n_buttons`` count.
+    * ``no_add_keys=True``: **only** replace the values of keys that are
+      already present — do not add any new keys.  Use this when a section
+      intentionally has fewer buttons (e.g. a 3-button game) and you don't
+      want to extend it.
 
     Synthetic wheels (Favorites, Recently Played, Most Played) are included in
     the scan so that games that appear only in those wheels also receive a
@@ -1647,6 +1848,15 @@ def fill_default_colors(
     admin_color:
         Named color for the admin button block.  Validated against
         ``Color-RGB.ini`` the same as ``default_color``.
+    override_uniform:
+        When ``True``, existing sections where all button colors are identical
+        are updated with *default_color*.  Mixed-color sections are never
+        modified.  Defaults to ``False``.
+    no_add_keys:
+        Only meaningful when *override_uniform* is ``True``.  When ``True``,
+        only update values of **already-present** keys; do not add new
+        ``P*_BUTTON``, ``JOYSTICK``, ``START``, or ``COIN`` keys.  Defaults
+        to ``False``.
     system:
         If given, only process ROMs for this one system.  By default all
         systems (including synthetic wheels) are processed.
@@ -1702,6 +1912,17 @@ def fill_default_colors(
         for m in re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
     }
 
+    # Pre-parse section bodies for the override path (only when needed)
+    if override_uniform:
+        _ini_sections = _split_ini_by_sections(existing_text)
+        _section_bodies: "dict[str, list[str]]" = {
+            name: lines
+            for name, _hdr, lines in _ini_sections
+            if name is not None
+        }
+    else:
+        _section_bodies = {}
+
     # Discover which systems to scan — include synthetic wheels so games that
     # only appear in Favorites / Recently Played / Most Played are covered too.
     if system:
@@ -1710,6 +1931,8 @@ def fill_default_colors(
         systems_to_scan = list(get_systems(config))
 
     new_entries: list[str] = []
+    roms_to_override: "set[str]" = set()
+    _seen_override_check: "set[str]" = set()  # prevent double-counting across systems
     roms_checked = 0
 
     for sys_name in systems_to_scan:
@@ -1723,8 +1946,16 @@ def fill_default_colors(
         for rom_name in db.games():
             roms_checked += 1
             if rom_name in existing_sections:
+                # ROM already has a Colors.ini section.  Check for override.
+                if override_uniform and rom_name not in _seen_override_check:
+                    _seen_override_check.add(rom_name)
+                    body = _section_bodies.get(rom_name, [])
+                    if _uniform_section_color(body) is not None:
+                        roms_to_override.add(rom_name)
+                    else:
+                        result.roms_skipped_mixed += 1
                 continue
-            # Build default entry — one block per player, all mirrored
+            # ROM has no section at all — build a full default entry
             lines = [f"[{rom_name}]"]
             for p in range(1, n_players + 1):
                 prefix = f"P{p}"
@@ -1748,16 +1979,34 @@ def fill_default_colors(
 
     result.roms_checked = roms_checked
     result.roms_added = len(new_entries)
+    result.roms_overridden = len(roms_to_override)
 
-    if new_entries and not dry_run:
+    needs_write = bool(new_entries) or bool(roms_to_override)
+
+    if needs_write and not dry_run:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
-        # Append new entries (preserves all existing content exactly)
-        separator = "\n" if existing_text.endswith("\n") else "\n\n"
-        colors_ini_path.write_text(
-            existing_text + separator + "\n".join(new_entries),
-            encoding="utf-8",
-        )
+
+        if roms_to_override:
+            new_text, _ = _rewrite_colors_ini_with_overrides(
+                existing_text,
+                roms_to_override,
+                default_color,
+                n_players,
+                n_buttons,
+                admin_player,
+                admin_buttons,
+                admin_color,
+                no_add_keys,
+            )
+        else:
+            new_text = existing_text
+
+        if new_entries:
+            separator = "\n" if new_text.endswith("\n") else "\n\n"
+            new_text = new_text + separator + "\n".join(new_entries)
+
+        colors_ini_path.write_text(new_text, encoding="utf-8")
 
     return result
 
@@ -2058,5 +2307,178 @@ def patch_admin_button_colors(
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text(new_text, encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini per-entry colour randomisation ────────────────────────────────
+
+
+@dataclass
+class RandomizeColorsResult:
+    """Return value from :func:`randomize_entry_colors`."""
+
+    dry_run: bool
+    colors_ini_path: Optional[Path] = None
+    sections_updated: int = 0    # sections that had player keys and were recoloured
+    sections_skipped: int = 0    # sections with no player keys (left unchanged)
+    backup_path: Optional[Path] = None
+    seed: Optional[int] = None
+    palette_size: int = 0        # number of non-black colors available to draw from
+
+
+#: Matches P{n}_BUTTON{i} or P{n}_JOYSTICK keys — the "gameplay" button family.
+_RAND_BUTTON_KEY_RE = re.compile(
+    r"^P(\d+)_(BUTTON\d+|JOYSTICK)\s*=",
+    re.IGNORECASE,
+)
+
+#: Matches P{n}_COIN or P{n}_START keys — the "meta" button family.
+_RAND_COIN_START_KEY_RE = re.compile(
+    r"^P(\d+)_(COIN|START)\s*=",
+    re.IGNORECASE,
+)
+
+
+def _randomize_section_body(
+    body_lines: "list[str]",
+    button_color: str,
+    coin_start_color: str,
+) -> "tuple[list[str], bool]":
+    """Return ``(new_lines, had_any_player_key)`` with existing key values randomized.
+
+    * ``P*_BUTTON*`` / ``P*_JOYSTICK`` keys → *button_color*.
+    * ``P*_COIN`` / ``P*_START`` keys → *coin_start_color*.
+    * All other lines are preserved exactly.
+    * **No new keys are ever inserted.**
+
+    Returns the rewritten body and a flag indicating whether at least one
+    player key was found (used to count sections as updated vs skipped).
+    """
+    result: "list[str]" = []
+    had_keys = False
+
+    for line in body_lines:
+        stripped = line.strip()
+        bm = _RAND_BUTTON_KEY_RE.match(stripped)
+        csm = _RAND_COIN_START_KEY_RE.match(stripped)
+        if bm:
+            key = f"P{bm.group(1)}_{bm.group(2)}"
+            ending = "\r\n" if line.endswith("\r\n") else "\n"
+            result.append(f"{key}={button_color}{ending}")
+            had_keys = True
+        elif csm:
+            key = f"P{csm.group(1)}_{csm.group(2)}"
+            ending = "\r\n" if line.endswith("\r\n") else "\n"
+            result.append(f"{key}={coin_start_color}{ending}")
+            had_keys = True
+        else:
+            result.append(line)
+
+    return result, had_keys
+
+
+def randomize_entry_colors(
+    config: Config,
+    dry_run: bool = True,
+    backup: bool = True,
+    seed: Optional[int] = None,
+) -> RandomizeColorsResult:
+    """Assign a random color to each game section's existing button keys.
+
+    For **every** section in ``Colors.ini`` that contains at least one
+    player-button key:
+
+    * One random non-black color from ``Color-RGB.ini`` is chosen for all
+      ``P*_BUTTON*`` and ``P*_JOYSTICK`` keys across every player slot —
+      so all buttons in a game glow the same color.
+    * A **second** independent random draw picks a color for all ``P*_COIN``
+      and ``P*_START`` keys — the coin/start buttons get their own accent color
+      (which may happen to match the button color by chance).
+    * Both picks are **per-section** — each game gets its own independent draw,
+      so the cabinet looks varied.
+    * Only **existing** keys are updated.  New button entries are **never** added,
+      so buttons that are intentionally dark (absent from the section) stay dark.
+    * Pure-black / off colors (all R,G,B = 0) are excluded from the draw.
+
+    Pass *seed* to make the run reproducible — the same *seed* on the same
+    ``Colors.ini`` always produces the same per-game color assignments.
+
+    Parameters
+    ----------
+    seed:
+        Optional integer seed for the PRNG.  ``None`` (default) uses system
+        entropy so each run produces a fresh shuffle.
+    """
+    result = RandomizeColorsResult(dry_run=dry_run, seed=seed)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    # Build the palette of non-black named colors from Color-RGB.ini
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(
+            f"{COLOR_RGB_NAME} not found at {color_rgb_path}. "
+            "The palette file is required to build the random color pool."
+        )
+    _, palette = parse_color_rgb_ini(color_rgb_path)
+    non_black = [e.name for e in palette if max(e.r, e.g, e.b) > 0]
+    if not non_black:
+        raise ValueError(
+            "Color-RGB.ini contains no non-black colors to draw from. "
+            "Add at least one color with non-zero R, G, or B."
+        )
+    result.palette_size = len(non_black)
+
+    # Seed the PRNG — None means system entropy (different every run)
+    rng = _random.Random(seed)
+
+    # Parse Colors.ini into (name, header, body) sections
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    sections = _split_ini_by_sections(existing_text)
+
+    parts: "list[str]" = []
+    sections_updated = 0
+    sections_skipped = 0
+
+    for section_name, header_line, body_lines in sections:
+        if section_name is None:
+            # Preamble before the first [header] — preserve verbatim
+            parts.extend(body_lines)
+            continue
+
+        assert header_line is not None
+        parts.append(header_line)
+
+        # Independent random picks for this game
+        button_color = rng.choice(non_black)
+        coin_start_color = rng.choice(non_black)
+
+        new_body, had_keys = _randomize_section_body(
+            body_lines, button_color, coin_start_color
+        )
+        parts.extend(new_body)
+
+        if had_keys:
+            sections_updated += 1
+        else:
+            sections_skipped += 1
+
+    result.sections_updated = sections_updated
+    result.sections_skipped = sections_skipped
+
+    if not dry_run and sections_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text("".join(parts), encoding="utf-8")
 
     return result

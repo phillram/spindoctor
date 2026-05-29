@@ -377,7 +377,7 @@ def get_rom_extensions(system_name: str) -> list[str]:
 def get_systems(config: Config) -> list[str]:
     systems: set[str] = set()
     roms_path = Path(config.roms_dir)
-    db_path = config.databases_dir
+    db_path = Path(config.databases_dir)  # handle both Path and str configs
     if roms_path.exists():
         systems.update(p.name for p in roms_path.iterdir() if p.is_dir())
     if db_path.exists():

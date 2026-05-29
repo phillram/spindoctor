@@ -475,3 +475,499 @@ def test_patch_admin_button_colors_validates_colors(tmp_path):
         patch_admin_button_colors(
             cfg, button_colors=["NotAColor"], admin_player=3, dry_run=True,
         )
+
+
+# ── _uniform_section_color ─────────────────────────────────────────────────────
+
+def test_uniform_section_color_single_color():
+    """All button keys share one color → returns that color."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "P1_BUTTON1=White\n",
+        "P1_BUTTON2=White\n",
+        "P1_JOYSTICK=White\n",
+        "P1_START=White\n",
+        "P1_COIN=White\n",
+    ]
+    assert _uniform_section_color(lines) == "White"
+
+
+def test_uniform_section_color_mixed():
+    """Mixed colors → returns None."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "P1_BUTTON1=Blue\n",
+        "P1_BUTTON2=Orange\n",
+        "P1_START=White\n",
+    ]
+    assert _uniform_section_color(lines) is None
+
+
+def test_uniform_section_color_two_players_uniform():
+    """P1 and P2 all same color → uniform."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "P1_BUTTON1=Red\n",
+        "P1_BUTTON2=Red\n",
+        "P2_BUTTON1=Red\n",
+        "P2_BUTTON2=Red\n",
+    ]
+    assert _uniform_section_color(lines) == "Red"
+
+
+def test_uniform_section_color_two_players_mixed_across():
+    """P1=Red but P2=Green → mixed → None."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "P1_BUTTON1=Red\n",
+        "P2_BUTTON1=Green\n",
+    ]
+    assert _uniform_section_color(lines) is None
+
+
+def test_uniform_section_color_no_player_keys():
+    """Section with no P*_BUTTON keys → None (can't determine uniformity)."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "ledcolor1=FF0000\n",
+        "ledcolor2=00FF00\n",
+    ]
+    assert _uniform_section_color(lines) is None
+
+
+def test_uniform_section_color_empty():
+    """Empty section body → None."""
+    from spindoctor.ledblinky import _uniform_section_color
+    assert _uniform_section_color([]) is None
+
+
+def test_uniform_section_color_ignores_non_player_lines():
+    """Non-button lines (blank, comments, hex entries) don't count."""
+    from spindoctor.ledblinky import _uniform_section_color
+    lines = [
+        "\n",
+        "; this is a comment\n",
+        "P1_BUTTON1=Blue\n",
+        "P1_BUTTON2=Blue\n",
+    ]
+    assert _uniform_section_color(lines) == "Blue"
+
+
+# ── _rewrite_section_body ──────────────────────────────────────────────────────
+
+def test_rewrite_section_body_replaces_values():
+    """Existing key values are replaced with new_color."""
+    from spindoctor.ledblinky import _rewrite_section_body
+    lines = ["P1_BUTTON1=Red\n", "P1_BUTTON2=Red\n"]
+    out = _rewrite_section_body(lines, "White", n_players=1, n_buttons=2,
+                                admin_player=2, admin_buttons=0,
+                                admin_color="White", no_add_keys=True)
+    assert "P1_BUTTON1=White\n" in out
+    assert "P1_BUTTON2=White\n" in out
+
+
+def test_rewrite_section_body_no_add_keys_adds_nothing():
+    """With no_add_keys=True, no new keys are inserted."""
+    from spindoctor.ledblinky import _rewrite_section_body
+    lines = ["P1_BUTTON1=Red\n", "P1_BUTTON2=Red\n"]
+    out = _rewrite_section_body(lines, "White", n_players=1, n_buttons=6,
+                                admin_player=2, admin_buttons=0,
+                                admin_color="White", no_add_keys=True)
+    keys = [l.split("=")[0] for l in out if "=" in l]
+    assert keys == ["P1_BUTTON1", "P1_BUTTON2"]
+
+
+def test_rewrite_section_body_adds_missing_keys():
+    """With no_add_keys=False, missing keys are added."""
+    from spindoctor.ledblinky import _rewrite_section_body
+    lines = ["P1_BUTTON1=Red\n", "P1_BUTTON2=Red\n"]
+    out = _rewrite_section_body(lines, "White", n_players=1, n_buttons=3,
+                                admin_player=2, admin_buttons=0,
+                                admin_color="White", no_add_keys=False)
+    out_text = "".join(out)
+    assert "P1_BUTTON3=White" in out_text
+    assert "P1_JOYSTICK=White" in out_text
+    assert "P1_START=White" in out_text
+    assert "P1_COIN=White" in out_text
+
+
+def test_rewrite_section_body_admin_color():
+    """Admin player gets admin_color, not new_color."""
+    from spindoctor.ledblinky import _rewrite_section_body
+    lines = [
+        "P1_BUTTON1=Red\n",
+        "P3_BUTTON1=Red\n",
+    ]
+    out = _rewrite_section_body(lines, "White", n_players=1, n_buttons=1,
+                                admin_player=3, admin_buttons=1,
+                                admin_color="Green", no_add_keys=True)
+    out_text = "".join(out)
+    assert "P1_BUTTON1=White" in out_text
+    assert "P3_BUTTON1=Green" in out_text
+
+
+# ── fill_default_colors with override_uniform ──────────────────────────────────
+
+def _make_cfg(tmp_path):
+    import types
+    cfg = types.SimpleNamespace(
+        ledblinky_dir=str(tmp_path),
+        databases_dir=str(tmp_path / "Databases"),
+        hyperspin_dir=str(tmp_path),
+        roms_dir=str(tmp_path / "Roms"),
+        backup_dir="",
+        backup_before_modify=False,
+    )
+    (tmp_path / "Roms").mkdir(exist_ok=True)
+    return cfg
+
+
+def _write_db(tmp_path, system, roms):
+    """Create a minimal HyperSpin database XML."""
+    db_dir = tmp_path / "Databases" / system
+    db_dir.mkdir(parents=True, exist_ok=True)
+    entries = "".join(f'  <game name="{r}"><description>{r}</description></game>\n' for r in roms)
+    (db_dir / f"{system}.xml").write_text(
+        f'<?xml version="1.0"?><menu>{entries}</menu>', encoding="utf-8"
+    )
+
+
+def test_fill_default_override_uniform_replaces_same_color(tmp_path):
+    """Sections where all buttons share one color are rewritten with new color."""
+    from spindoctor.ledblinky import fill_default_colors
+    cfg = _make_cfg(tmp_path)
+    _write_db(tmp_path, "Arcade", ["pacman", "galaga"])
+
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text(
+        "[pacman]\nP1_BUTTON1=Red\nP1_BUTTON2=Red\n\n"
+        "[galaga]\nP1_BUTTON1=Blue\nP1_BUTTON2=Orange\n\n",
+        encoding="utf-8",
+    )
+
+    result = fill_default_colors(
+        cfg, default_color="White", n_buttons=2, n_players=1,
+        override_uniform=True, no_add_keys=True, dry_run=False, backup=False,
+    )
+
+    text = colors_ini.read_text(encoding="utf-8")
+    # pacman was uniform (all Red) → overridden to White
+    assert "P1_BUTTON1=White" in text
+    assert result.roms_overridden == 1
+    # galaga was mixed → left untouched
+    assert "P1_BUTTON2=Orange" in text
+    assert result.roms_skipped_mixed == 1
+
+
+def test_fill_default_override_uniform_dry_run_no_write(tmp_path):
+    """Dry-run does not modify Colors.ini even with override_uniform."""
+    from spindoctor.ledblinky import fill_default_colors
+    cfg = _make_cfg(tmp_path)
+    _write_db(tmp_path, "Arcade", ["pacman"])
+
+    original = "[pacman]\nP1_BUTTON1=Red\nP1_BUTTON2=Red\n"
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text(original, encoding="utf-8")
+
+    result = fill_default_colors(
+        cfg, default_color="White", n_buttons=2, n_players=1,
+        override_uniform=True, dry_run=True, backup=False,
+    )
+
+    assert colors_ini.read_text(encoding="utf-8") == original
+    assert result.dry_run is True
+    assert result.roms_overridden == 1  # detected but not written
+
+
+def test_fill_default_no_add_keys_preserves_key_count(tmp_path):
+    """no_add_keys=True: overriding a 2-button section stays at 2 buttons."""
+    from spindoctor.ledblinky import fill_default_colors
+    cfg = _make_cfg(tmp_path)
+    _write_db(tmp_path, "Arcade", ["pacman"])
+
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text("[pacman]\nP1_BUTTON1=Red\nP1_BUTTON2=Red\n",
+                          encoding="utf-8")
+
+    fill_default_colors(
+        cfg, default_color="White", n_buttons=6, n_players=1,
+        override_uniform=True, no_add_keys=True, dry_run=False, backup=False,
+    )
+
+    text = colors_ini.read_text(encoding="utf-8")
+    # Should NOT have added BUTTON3–BUTTON6 or JOYSTICK/START/COIN
+    assert "P1_BUTTON3" not in text
+    assert "P1_JOYSTICK" not in text
+    assert "P1_BUTTON1=White" in text
+    assert "P1_BUTTON2=White" in text
+
+
+def test_fill_default_add_keys_extends_section(tmp_path):
+    """no_add_keys=False (default): missing keys are added when overriding."""
+    from spindoctor.ledblinky import fill_default_colors
+    cfg = _make_cfg(tmp_path)
+    _write_db(tmp_path, "Arcade", ["pacman"])
+
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text("[pacman]\nP1_BUTTON1=Red\nP1_BUTTON2=Red\n",
+                          encoding="utf-8")
+
+    fill_default_colors(
+        cfg, default_color="White", n_buttons=3, n_players=1,
+        override_uniform=True, no_add_keys=False, dry_run=False, backup=False,
+    )
+
+    text = colors_ini.read_text(encoding="utf-8")
+    assert "P1_BUTTON3=White" in text
+    assert "P1_JOYSTICK=White" in text
+
+
+def test_fill_default_new_entries_still_added_alongside_overrides(tmp_path):
+    """fill_default_colors adds NEW entries AND applies overrides in one pass."""
+    from spindoctor.ledblinky import fill_default_colors
+    cfg = _make_cfg(tmp_path)
+    _write_db(tmp_path, "Arcade", ["pacman", "newgame"])
+
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text("[pacman]\nP1_BUTTON1=Red\nP1_BUTTON2=Red\n\n",
+                          encoding="utf-8")
+
+    result = fill_default_colors(
+        cfg, default_color="White", n_buttons=2, n_players=1,
+        override_uniform=True, no_add_keys=True, dry_run=False, backup=False,
+    )
+
+    text = colors_ini.read_text(encoding="utf-8")
+    assert result.roms_added == 1       # newgame added
+    assert result.roms_overridden == 1  # pacman overridden
+    assert "[newgame]" in text
+    assert "P1_BUTTON1=White" in text   # both pacman override and newgame entry
+
+
+# ─── _randomize_section_body ─────────────────────────────────────────────────
+
+
+def test_randomize_section_body_rewrites_button_keys():
+    """BUTTON* and JOYSTICK keys are replaced with button_color."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = [
+        "P1_BUTTON1=Red\n",
+        "P1_BUTTON2=Red\n",
+        "P1_JOYSTICK=Red\n",
+    ]
+    new_body, had_keys = _randomize_section_body(body, "Blue", "Green")
+    assert had_keys is True
+    assert new_body == [
+        "P1_BUTTON1=Blue\n",
+        "P1_BUTTON2=Blue\n",
+        "P1_JOYSTICK=Blue\n",
+    ]
+
+
+def test_randomize_section_body_coin_start_use_second_color():
+    """COIN and START keys get coin_start_color, not button_color."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = [
+        "P1_BUTTON1=White\n",
+        "P1_COIN=White\n",
+        "P1_START=White\n",
+    ]
+    new_body, had_keys = _randomize_section_body(body, "Yellow", "Cyan")
+    assert had_keys is True
+    texts = "".join(new_body)
+    assert "P1_BUTTON1=Yellow" in texts
+    assert "P1_COIN=Cyan" in texts
+    assert "P1_START=Cyan" in texts
+
+
+def test_randomize_section_body_no_new_keys_added():
+    """_randomize_section_body never inserts lines that were not already there."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = ["P1_BUTTON1=Red\n"]
+    new_body, had_keys = _randomize_section_body(body, "Blue", "Green")
+    # Exactly one line in, exactly one line out
+    assert len(new_body) == 1
+    assert "P1_BUTTON2" not in "".join(new_body)
+    assert "P1_JOYSTICK" not in "".join(new_body)
+
+
+def test_randomize_section_body_empty_section_returns_no_keys():
+    """An empty (or comment-only) section returns had_keys=False."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = ["; comment line\n", "\n"]
+    new_body, had_keys = _randomize_section_body(body, "Blue", "Green")
+    assert had_keys is False
+    assert new_body == ["; comment line\n", "\n"]
+
+
+def test_randomize_section_body_preserves_non_player_lines():
+    """Non-player-key lines (comments, blanks, custom keys) pass through unchanged."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = [
+        "; some comment\n",
+        "P1_BUTTON1=Old\n",
+        "\n",
+        "CustomKey=something\n",
+    ]
+    new_body, had_keys = _randomize_section_body(body, "New", "New")
+    assert had_keys is True
+    assert new_body[0] == "; some comment\n"
+    assert new_body[2] == "\n"
+    assert new_body[3] == "CustomKey=something\n"
+    assert new_body[1] == "P1_BUTTON1=New\n"
+
+
+def test_randomize_section_body_multi_player_all_updated():
+    """P2, P3 button keys are also updated."""
+    from spindoctor.ledblinky import _randomize_section_body
+    body = [
+        "P1_BUTTON1=Red\n",
+        "P2_BUTTON1=Red\n",
+        "P2_JOYSTICK=Red\n",
+        "P1_START=Red\n",
+    ]
+    new_body, had_keys = _randomize_section_body(body, "Blue", "Orange")
+    texts = "".join(new_body)
+    assert "P1_BUTTON1=Blue" in texts
+    assert "P2_BUTTON1=Blue" in texts
+    assert "P2_JOYSTICK=Blue" in texts
+    assert "P1_START=Orange" in texts
+
+
+# ─── randomize_entry_colors (integration) ────────────────────────────────────
+
+
+def test_randomize_entry_colors_updates_all_sections(tmp_path):
+    """Every section with player keys gets new colors."""
+    import types
+    from spindoctor.ledblinky import randomize_entry_colors, COLOR_RGB_NAME
+
+    (tmp_path / COLOR_RGB_NAME).write_text(
+        "[Colors]\nRed=48,0,0\nBlue=0,0,48\nGreen=0,48,0\n",
+        encoding="utf-8",
+    )
+    colors_ini = tmp_path / "Colors.ini"
+    original = (
+        "[pacman]\nP1_BUTTON1=White\nP1_COIN=White\n\n"
+        "[galaga]\nP1_BUTTON1=White\nP1_START=White\n"
+    )
+    colors_ini.write_text(original, encoding="utf-8")
+
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
+                                backup_before_modify=False)
+    result = randomize_entry_colors(cfg, dry_run=False, backup=False, seed=1)
+
+    assert result.dry_run is False
+    assert result.sections_updated == 2
+    assert result.sections_skipped == 0
+    assert result.palette_size == 3
+
+    text = colors_ini.read_text(encoding="utf-8")
+    # Keys must still be present
+    assert "P1_BUTTON1=" in text
+    assert "P1_COIN=" in text
+    assert "P1_START=" in text
+    # Original color "White" must be gone (replaced)
+    assert "=White" not in text
+
+
+def test_randomize_entry_colors_dry_run_does_not_write(tmp_path):
+    """Dry-run leaves Colors.ini unchanged."""
+    import types
+    from spindoctor.ledblinky import randomize_entry_colors, COLOR_RGB_NAME
+
+    (tmp_path / COLOR_RGB_NAME).write_text(
+        "[Colors]\nRed=48,0,0\nBlue=0,0,48\n",
+        encoding="utf-8",
+    )
+    colors_ini = tmp_path / "Colors.ini"
+    original = "[pacman]\nP1_BUTTON1=White\n"
+    colors_ini.write_text(original, encoding="utf-8")
+
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
+                                backup_before_modify=False)
+    result = randomize_entry_colors(cfg, dry_run=True, backup=False, seed=99)
+
+    assert result.dry_run is True
+    assert result.sections_updated == 1  # detected but not written
+    assert colors_ini.read_text(encoding="utf-8") == original
+
+
+def test_randomize_entry_colors_reproducible_with_seed(tmp_path):
+    """The same seed applied twice produces identical Colors.ini output."""
+    import types
+    from spindoctor.ledblinky import randomize_entry_colors, COLOR_RGB_NAME
+
+    palette = "[Colors]\nRed=48,0,0\nBlue=0,0,48\nGreen=0,48,0\nYellow=48,48,0\n"
+    (tmp_path / COLOR_RGB_NAME).write_text(palette, encoding="utf-8")
+
+    original = (
+        "[pacman]\nP1_BUTTON1=White\nP1_COIN=White\n\n"
+        "[galaga]\nP1_BUTTON1=White\n\n"
+        "[mspacman]\nP1_BUTTON1=White\nP1_START=White\n"
+    )
+
+    # First run
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text(original, encoding="utf-8")
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
+                                backup_before_modify=False)
+    randomize_entry_colors(cfg, dry_run=False, backup=False, seed=42)
+    text_first = colors_ini.read_text(encoding="utf-8")
+
+    # Second run with same seed
+    colors_ini.write_text(original, encoding="utf-8")
+    randomize_entry_colors(cfg, dry_run=False, backup=False, seed=42)
+    text_second = colors_ini.read_text(encoding="utf-8")
+
+    assert text_first == text_second
+
+
+def test_randomize_entry_colors_skips_sections_without_player_keys(tmp_path):
+    """Sections with no P*_BUTTON*/JOYSTICK/COIN/START keys are counted as skipped."""
+    import types
+    from spindoctor.ledblinky import randomize_entry_colors, COLOR_RGB_NAME
+
+    (tmp_path / COLOR_RGB_NAME).write_text(
+        "[Colors]\nRed=48,0,0\n",
+        encoding="utf-8",
+    )
+    colors_ini = tmp_path / "Colors.ini"
+    colors_ini.write_text(
+        "[no_keys_game]\nSomeOtherKey=value\n",
+        encoding="utf-8",
+    )
+
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
+                                backup_before_modify=False)
+    result = randomize_entry_colors(cfg, dry_run=False, backup=False, seed=0)
+
+    assert result.sections_updated == 0
+    assert result.sections_skipped == 1
+
+
+def test_randomize_entry_colors_never_assigns_black(tmp_path):
+    """Off/black colors (all channels 0) are never chosen."""
+    import types
+    from spindoctor.ledblinky import randomize_entry_colors, COLOR_RGB_NAME
+
+    # Palette with one real color and one off/black entry
+    (tmp_path / COLOR_RGB_NAME).write_text(
+        "[Colors]\nRed=48,0,0\nOff=0,0,0\n",
+        encoding="utf-8",
+    )
+    colors_ini = tmp_path / "Colors.ini"
+    # Many sections so statistically we'd hit black if it were in the pool
+    sections = "\n".join(
+        f"[game{i}]\nP1_BUTTON1=White\nP1_COIN=White\n"
+        for i in range(20)
+    )
+    colors_ini.write_text(sections, encoding="utf-8")
+
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
+                                backup_before_modify=False)
+    randomize_entry_colors(cfg, dry_run=False, backup=False)
+
+    text = colors_ini.read_text(encoding="utf-8")
+    assert "=Off" not in text
+    assert "=Red" in text  # Red must have been chosen for all games
