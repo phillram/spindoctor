@@ -483,6 +483,7 @@ spindoctor ledblinky colors brightness --scale 75                        :: prev
 spindoctor ledblinky colors randomize                                     :: preview (dry-run)
 spindoctor ledblinky colors randomize --apply                             :: commit fresh shuffle
 spindoctor ledblinky colors randomize --seed 42 --apply                   :: reproducible run
+spindoctor ledblinky colors randomize --apply --verbose                   :: show Colors.ini path + stats
 
 :: Set fixed per-button admin/cabinet button colors across ALL Colors.ini sections
 spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply   :: per-button

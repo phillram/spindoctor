@@ -1220,6 +1220,7 @@ spindoctor ledblinky colors randomize --seed 42 --apply
 | `--seed N` | _(random)_ | Integer seed for reproducible output. Omit for a fresh shuffle every run |
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip the `.bak` backup before writing |
+| `--verbose` | off | Print the Colors.ini path, palette size, and sections updated |
 
 A timestamped `.bak` backup of `Colors.ini` is written (to the configured backup folder, or next to the source file) before any change, unless `--no-backup` is passed.
 

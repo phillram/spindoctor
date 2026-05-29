@@ -6653,7 +6653,9 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
-def ledblinky_colors_randomize(seed, apply_changes, no_backup):
+@click.option("--verbose", is_flag=True,
+              help="Print the Colors.ini path, palette size, and sections updated.")
+def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
     """Give each game its own random button colors.
 
     For every section in Colors.ini that has player-button keys:
@@ -6711,6 +6713,12 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup):
         )
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+    if verbose:
+        console.print(
+            f"[dim][verbose] {result.colors_ini_path} "
+            f"(palette={result.palette_size}, updated={result.sections_updated}, "
+            f"skipped={result.sections_skipped})[/dim]"
+        )
 
 
 @ledblinky_group.command("fill-defaults")

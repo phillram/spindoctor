@@ -10192,6 +10192,8 @@ class _SpinDoctorGUI:
                 pass  # ignore non-integer seed input
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_admin_button_colors(self) -> None:
