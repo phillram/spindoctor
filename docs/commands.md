@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun detect` / `audit`) need no flag and never modify anything.
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. (`lightgun detect` is read-only without `--apply`; with `--apply` it seeds config.)
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -373,6 +373,7 @@ Other useful flags:
 |---|---|
 | `--no-update-config` | Skip the config rewrite even on a real move |
 | `--include hyperspin,emulators` | Multi-component selection — comma-separated |
+| `--verbose` | Print each file/folder path as it is moved or copied |
 
 The pre-flight plan reports total bytes to transfer and free space at the target, and aborts the apply if there isn't enough room.
 
@@ -990,6 +991,7 @@ databases
 ```bat
 spindoctor ledblinky generate              :: dry-run preview
 spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini
+spindoctor ledblinky generate --apply --verbose  :: also print file paths written
 spindoctor ledblinky audit
 spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
 spindoctor ledblinky fix                   :: dry-run preview of the patch
@@ -997,8 +999,10 @@ spindoctor ledblinky fix --apply           :: commit the patch
 spindoctor ledblinky patch-settings        :: preview Settings.ini changes
 spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
+spindoctor ledblinky patch-settings --apply --verbose                :: print each key patched
 spindoctor ledblinky fill-defaults         :: preview default entries for ROMs with no LED mapping
 spindoctor ledblinky fill-defaults --apply :: add default White entries for all unmapped ROMs
+spindoctor ledblinky fill-defaults --apply --verbose  :: also print path + added/overridden/skipped counts
 spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
 spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
@@ -1259,9 +1263,11 @@ All color names are validated against the `Color-RGB.ini` palette. A timestamped
 ```bat
 spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems
 spindoctor lightgun detect --apply                    :: also seed lightgun: true for each pre-wired system
+spindoctor lightgun detect --apply --verbose          :: print install paths + system counts
 spindoctor lightgun audit                             :: status table for every system marked lightgun
 spindoctor lightgun configure --system "Sega Naomi"   :: dry-run preview of the INI hooks
 spindoctor lightgun configure --system "Sega Naomi" --apply
+spindoctor lightgun configure --system "Sega Naomi" --apply --verbose  :: print INI path + hook values written
 spindoctor lightgun configure --system MAME --target mame --extra-args "-noresize"
 ```
 
