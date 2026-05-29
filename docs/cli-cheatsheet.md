@@ -477,6 +477,13 @@ spindoctor ledblinky colors brightness --scale 50  --apply               :: half
 spindoctor ledblinky colors brightness --scale 10  --apply               :: night mode
 spindoctor ledblinky colors brightness --scale 75                        :: preview 75% (dry-run)
 
+:: Randomize Colors.ini — give every game its own random button color
+:: Buttons (P*_BUTTON* / P*_JOYSTICK) get one random color; Coin/Start get a second.
+:: Only existing keys are updated — dark buttons stay dark.
+spindoctor ledblinky colors randomize                                     :: preview (dry-run)
+spindoctor ledblinky colors randomize --apply                             :: commit fresh shuffle
+spindoctor ledblinky colors randomize --seed 42 --apply                   :: reproducible run
+
 :: Set fixed per-button admin/cabinet button colors across ALL Colors.ini sections
 spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply   :: per-button
 spindoctor ledblinky admin-buttons set --color Green --count 6 --apply                         :: uniform

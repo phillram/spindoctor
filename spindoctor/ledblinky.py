@@ -30,6 +30,7 @@ This module covers two related concerns:
 """
 from __future__ import annotations
 
+import random as _random
 import re
 import shutil
 import subprocess
@@ -2306,5 +2307,178 @@ def patch_admin_button_colors(
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text(new_text, encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini per-entry colour randomisation ────────────────────────────────
+
+
+@dataclass
+class RandomizeColorsResult:
+    """Return value from :func:`randomize_entry_colors`."""
+
+    dry_run: bool
+    colors_ini_path: Optional[Path] = None
+    sections_updated: int = 0    # sections that had player keys and were recoloured
+    sections_skipped: int = 0    # sections with no player keys (left unchanged)
+    backup_path: Optional[Path] = None
+    seed: Optional[int] = None
+    palette_size: int = 0        # number of non-black colors available to draw from
+
+
+#: Matches P{n}_BUTTON{i} or P{n}_JOYSTICK keys — the "gameplay" button family.
+_RAND_BUTTON_KEY_RE = re.compile(
+    r"^P(\d+)_(BUTTON\d+|JOYSTICK)\s*=",
+    re.IGNORECASE,
+)
+
+#: Matches P{n}_COIN or P{n}_START keys — the "meta" button family.
+_RAND_COIN_START_KEY_RE = re.compile(
+    r"^P(\d+)_(COIN|START)\s*=",
+    re.IGNORECASE,
+)
+
+
+def _randomize_section_body(
+    body_lines: "list[str]",
+    button_color: str,
+    coin_start_color: str,
+) -> "tuple[list[str], bool]":
+    """Return ``(new_lines, had_any_player_key)`` with existing key values randomized.
+
+    * ``P*_BUTTON*`` / ``P*_JOYSTICK`` keys → *button_color*.
+    * ``P*_COIN`` / ``P*_START`` keys → *coin_start_color*.
+    * All other lines are preserved exactly.
+    * **No new keys are ever inserted.**
+
+    Returns the rewritten body and a flag indicating whether at least one
+    player key was found (used to count sections as updated vs skipped).
+    """
+    result: "list[str]" = []
+    had_keys = False
+
+    for line in body_lines:
+        stripped = line.strip()
+        bm = _RAND_BUTTON_KEY_RE.match(stripped)
+        csm = _RAND_COIN_START_KEY_RE.match(stripped)
+        if bm:
+            key = f"P{bm.group(1)}_{bm.group(2)}"
+            ending = "\r\n" if line.endswith("\r\n") else "\n"
+            result.append(f"{key}={button_color}{ending}")
+            had_keys = True
+        elif csm:
+            key = f"P{csm.group(1)}_{csm.group(2)}"
+            ending = "\r\n" if line.endswith("\r\n") else "\n"
+            result.append(f"{key}={coin_start_color}{ending}")
+            had_keys = True
+        else:
+            result.append(line)
+
+    return result, had_keys
+
+
+def randomize_entry_colors(
+    config: Config,
+    dry_run: bool = True,
+    backup: bool = True,
+    seed: Optional[int] = None,
+) -> RandomizeColorsResult:
+    """Assign a random color to each game section's existing button keys.
+
+    For **every** section in ``Colors.ini`` that contains at least one
+    player-button key:
+
+    * One random non-black color from ``Color-RGB.ini`` is chosen for all
+      ``P*_BUTTON*`` and ``P*_JOYSTICK`` keys across every player slot —
+      so all buttons in a game glow the same color.
+    * A **second** independent random draw picks a color for all ``P*_COIN``
+      and ``P*_START`` keys — the coin/start buttons get their own accent color
+      (which may happen to match the button color by chance).
+    * Both picks are **per-section** — each game gets its own independent draw,
+      so the cabinet looks varied.
+    * Only **existing** keys are updated.  New button entries are **never** added,
+      so buttons that are intentionally dark (absent from the section) stay dark.
+    * Pure-black / off colors (all R,G,B = 0) are excluded from the draw.
+
+    Pass *seed* to make the run reproducible — the same *seed* on the same
+    ``Colors.ini`` always produces the same per-game color assignments.
+
+    Parameters
+    ----------
+    seed:
+        Optional integer seed for the PRNG.  ``None`` (default) uses system
+        entropy so each run produces a fresh shuffle.
+    """
+    result = RandomizeColorsResult(dry_run=dry_run, seed=seed)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    result.colors_ini_path = colors_ini_path
+    if not colors_ini_path.exists():
+        raise ValueError(f"Colors.ini not found at {colors_ini_path}")
+
+    # Build the palette of non-black named colors from Color-RGB.ini
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(
+            f"{COLOR_RGB_NAME} not found at {color_rgb_path}. "
+            "The palette file is required to build the random color pool."
+        )
+    _, palette = parse_color_rgb_ini(color_rgb_path)
+    non_black = [e.name for e in palette if max(e.r, e.g, e.b) > 0]
+    if not non_black:
+        raise ValueError(
+            "Color-RGB.ini contains no non-black colors to draw from. "
+            "Add at least one color with non-zero R, G, or B."
+        )
+    result.palette_size = len(non_black)
+
+    # Seed the PRNG — None means system entropy (different every run)
+    rng = _random.Random(seed)
+
+    # Parse Colors.ini into (name, header, body) sections
+    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    sections = _split_ini_by_sections(existing_text)
+
+    parts: "list[str]" = []
+    sections_updated = 0
+    sections_skipped = 0
+
+    for section_name, header_line, body_lines in sections:
+        if section_name is None:
+            # Preamble before the first [header] — preserve verbatim
+            parts.extend(body_lines)
+            continue
+
+        assert header_line is not None
+        parts.append(header_line)
+
+        # Independent random picks for this game
+        button_color = rng.choice(non_black)
+        coin_start_color = rng.choice(non_black)
+
+        new_body, had_keys = _randomize_section_body(
+            body_lines, button_color, coin_start_color
+        )
+        parts.extend(new_body)
+
+        if had_keys:
+            sections_updated += 1
+        else:
+            sections_skipped += 1
+
+    result.sections_updated = sections_updated
+    result.sections_skipped = sections_skipped
+
+    if not dry_run and sections_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text("".join(parts), encoding="utf-8")
 
     return result

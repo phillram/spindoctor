@@ -163,6 +163,18 @@ Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor led
 
 **Brightness** — sets all `Color-RGB.ini` colors to a uniform brightness level. Drag the slider (0–100 %) and click **Scale Brightness**. Each color is first normalized to its maximum possible intensity, then scaled to the chosen percentage — so **100 % = every button at maximum brightness** (dim colors are boosted up, not left dim). 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode; 0 % = all off. This guarantees every button (P1, P2, admin, Start) is at the same level. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
 
+**Randomize Entry Colors** — gives each game its own independent random button color drawn from the `Color-RGB.ini` palette (black/off excluded). For every section in `Colors.ini` that has player-button keys:
+
+- All `P*_BUTTON*` and `P*_JOYSTICK` keys are set to **one random color** — all buttons on that game glow the same shade.
+- All `P*_COIN` and `P*_START` keys are set to a **second independently drawn color** — the accent/meta color for that game.
+- Only **existing** keys are updated; buttons intentionally absent from a section (i.e. intentionally dark) are never touched.
+
+Controls:
+- **Seed (optional)** — enter an integer for a reproducible run (same seed → same color assignments). Leave blank for a fresh random shuffle every run.
+- Apply checkbox + **Randomize Entry Colors** button. A `.bak` backup of `Colors.ini` is written automatically.
+
+CLI equivalent: `spindoctor ledblinky colors randomize [--seed N]`.
+
 **Admin Button Colors** — sets fixed per-button colors for the cabinet-level (admin) buttons across **every** ROM section in `Colors.ini`. Unlike Fill Default Colors (which only adds missing entries), this writes to every existing section so the admin buttons always show the same colors regardless of the current game. Controls:
 
 - **Player slot (1–6)** — which player slot the admin buttons live on. Default `3` for a 2-player cabinet (use `2` for a 1-player cabinet).

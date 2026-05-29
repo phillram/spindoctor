@@ -5910,6 +5910,8 @@ class _SpinDoctorGUI:
             args += ["--label", label]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_backup_list(self) -> None:
@@ -5983,6 +5985,8 @@ class _SpinDoctorGUI:
             args.append("--overwrite")
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Migrate tab ───────────────────────────────────────────────────────────
@@ -6277,6 +6281,8 @@ class _SpinDoctorGUI:
             if not self.messagebox.askyesno("Migrate library?", msg):
                 return
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_migrate_undo(self) -> None:
@@ -9600,9 +9606,43 @@ class _SpinDoctorGUI:
             command=self._run_led_brightness,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
+        # ── Randomize Entry Colors ───────────────────────────────────────────
+        rz_frame = self.ttk.LabelFrame(frame, text="Randomize Entry Colors")
+        rz_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        rz_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            rz_frame,
+            text=("Give each game its own random button colors. Every ROM section "
+                  "in Colors.ini receives an independent random color for all "
+                  "P*_BUTTON* / P*_JOYSTICK keys, and a second independent random "
+                  "color for P*_COIN / P*_START keys. Only existing keys are "
+                  "updated — buttons intentionally left dark stay dark."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(rz_frame, text="Seed (optional)").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._rz_seed_var = self.tk.StringVar(value="")
+        self.ttk.Entry(
+            rz_frame, textvariable=self._rz_seed_var, width=12,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            rz_frame,
+            text="(leave blank for a fresh random shuffle each run; "
+                 "enter an integer for reproducible output)",
+            foreground=_FG_DIM,
+        ).grid(row=1, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Button(
+            rz_frame, text="Randomize Entry Colors",
+            command=self._run_randomize_entry_colors,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
         # ── Admin Button Colors ──────────────────────────────────────────────
         ab_frame = self.ttk.LabelFrame(frame, text="Admin Button Colors")
-        ab_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        ab_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
@@ -9669,7 +9709,7 @@ class _SpinDoctorGUI:
         _led_cfg = load_config()
 
         sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
-        sp_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(sp_frame, text="FE idle animation").grid(
@@ -9721,7 +9761,7 @@ class _SpinDoctorGUI:
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
-        br_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -9770,7 +9810,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
-        cd_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
         # Treeview + vertical scrollbar
@@ -9860,6 +9900,8 @@ class _SpinDoctorGUI:
             args.append("--overwrite")
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_audit(self) -> None:
@@ -9887,6 +9929,8 @@ class _SpinDoctorGUI:
         args = ["backup", "create", "--target", target, "--include", "ledblinky"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_restore(self) -> None:
@@ -9908,6 +9952,8 @@ class _SpinDoctorGUI:
         args = ["backup", "restore", "--backup", backup_path, "--include", "ledblinky"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _refresh_led_lwa_list(self) -> None:
@@ -9938,6 +9984,8 @@ class _SpinDoctorGUI:
             args += ["--fe-lwa", fe_lwa_arg]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Color Definitions helpers ─────────────────────────────────────────────
@@ -10113,6 +10161,8 @@ class _SpinDoctorGUI:
             args.append("--no-add-keys")
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_led_brightness(self) -> None:
@@ -10122,6 +10172,22 @@ class _SpinDoctorGUI:
         except (ValueError, AttributeError):
             scale = 100
         args = ["ledblinky", "colors", "brightness", "--scale", str(scale)]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_randomize_entry_colors(self) -> None:
+        """Run ``ledblinky colors randomize`` to assign random colors per game."""
+        args = ["ledblinky", "colors", "randomize"]
+        seed_raw = self._rz_seed_var.get().strip()
+        if seed_raw:
+            try:
+                int(seed_raw)
+                args += ["--seed", seed_raw]
+            except ValueError:
+                pass  # ignore non-integer seed input
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -10147,6 +10213,8 @@ class _SpinDoctorGUI:
         ]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Lightgun tab ──────────────────────────────────────────────────────────

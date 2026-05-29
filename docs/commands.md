@@ -1184,6 +1184,41 @@ spindoctor ledblinky colors brightness --scale 75            :: preview 75% (dry
 
 A timestamped `.bak` backup of `Color-RGB.ini` is written to the configured backup folder (or next to the source file if no backup folder is set) before any change. Pure-black entries (0,0,0) are left untouched so truly-off buttons stay off.
 
+#### `ledblinky colors randomize`
+
+Assign each game its own random button colors. For every section in `Colors.ini` that contains at least one player-button key:
+
+- All `P*_BUTTON*` and `P*_JOYSTICK` keys → one randomly chosen color (the same shade across all players, so every button on a game glows in unison).
+- All `P*_COIN` and `P*_START` keys → a **second** independently chosen color (the accent/meta color).
+- Each game section gets its own independent draw — the cabinet looks varied.
+- **Only existing keys are updated.** New button entries are never inserted, so buttons intentionally left dark (absent from the section) stay dark.
+- Pure-black / off colors (all channels 0 in `Color-RGB.ini`) are excluded from the draw.
+
+```bat
+:: Preview what colors would be assigned (dry-run, no files written)
+spindoctor ledblinky colors randomize
+
+:: Commit a fresh random shuffle
+spindoctor ledblinky colors randomize --apply
+
+:: Reproducible run — same seed always produces the same assignments
+spindoctor ledblinky colors randomize --seed 42 --apply
+
+:: Same seed, preview first then apply
+spindoctor ledblinky colors randomize --seed 42
+spindoctor ledblinky colors randomize --seed 42 --apply
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--seed N` | _(random)_ | Integer seed for reproducible output. Omit for a fresh shuffle every run |
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip the `.bak` backup before writing |
+
+A timestamped `.bak` backup of `Colors.ini` is written (to the configured backup folder, or next to the source file) before any change, unless `--no-backup` is passed.
+
 #### `ledblinky admin-buttons set`
 
 Set fixed per-button colors for your cabinet-level (admin) buttons **across every ROM section** in `Colors.ini`. Unlike `fill-defaults` (which only touches ROMs with no existing entry), this command walks every existing section and writes (or overwrites) the `P{player}_BUTTON*` keys so the admin buttons always show the same colors regardless of which game is running.

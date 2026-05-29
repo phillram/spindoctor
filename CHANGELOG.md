@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky colors randomize` — new CLI command** — assigns each game in `Colors.ini` its own independent random button color. All `P*_BUTTON*` / `P*_JOYSTICK` keys in a section get one randomly chosen color; all `P*_COIN` / `P*_START` keys get a second independently drawn color. Only **existing** keys are updated — buttons intentionally absent from a section (dark) are never touched. Pure-black / off colors are excluded from the draw. Supports `--seed N` for reproducible runs. Auto-backup before write. `randomize_entry_colors()` + `_randomize_section_body()` + `RandomizeColorsResult` added to `ledblinky.py`. GUI: new **Randomize Entry Colors** panel in the LEDBlinky tab with optional seed field.
+
 ---
 
 ## [2.4.19] - 2026-05-28
