@@ -51,7 +51,6 @@ Validates `config.json`, walks `roms_dir` / `hyperspin_dir`, probes scraper cred
 
 ```bat
 spindoctor doctor
-spindoctor doctor --verbose      :: include passing checks too
 ```
 
 Reference: [Command reference → doctor](commands.md#doctor).
@@ -72,7 +71,6 @@ Reference: [Command reference → audit](commands.md#audit).
 
 ```bat
 spindoctor verify --system NES --dat path\to\nointro-nes.dat
-spindoctor verify --system NES --dat path\to.dat --report D:\verify.csv
 ```
 
 Reference: [Command reference → verify](commands.md#verify).
@@ -81,7 +79,7 @@ Reference: [Command reference → verify](commands.md#verify).
 
 ```bat
 spindoctor find-global "house of the dead"
-spindoctor find-global zelda --fuzzy
+spindoctor find-global zelda --limit 20
 ```
 
 Reference: [Command reference → find-global](commands.md#find-global).
@@ -139,8 +137,8 @@ Reference: [Command reference → batch-edit](commands.md#batch-edit).
 ### `rename` / `clone` — single-game ROM + XML edits in one shot
 
 ```bat
-spindoctor rename "Sony Playstation" "Final Fantasy VII" "Final Fantasy 7" --apply
-spindoctor clone  "Sony Playstation" "Resident Evil"     "Resident Evil (clone)" --apply
+spindoctor rename --system "Sony Playstation" --game "Final Fantasy VII" --to "Final Fantasy 7" --apply
+spindoctor clone  --system "Sony Playstation" --game "Resident Evil" --to "Resident Evil (clone)" --apply
 ```
 
 Reference: [rename](commands.md#rename), [clone](commands.md#clone).
@@ -152,7 +150,7 @@ Picks the canonical ROM per game from a multi-version dump (USA / Europe / Japan
 ```bat
 spindoctor curate --all                         :: preview only
 spindoctor curate --all --regions USA,World     :: regional preference
-spindoctor curate --all --revision newest       :: prefer the latest rev
+spindoctor curate --all --prefer-revision latest :: prefer the latest rev
 spindoctor curate --all --action archive --apply
 spindoctor curate --all --action delete --apply :: DESTRUCTIVE, no undo
 spindoctor curate --undo latest --apply         :: roll back the last archive run
@@ -174,8 +172,8 @@ Reference: [Command reference → cleanup](commands.md#cleanup).
 
 ```bat
 spindoctor ignore list
-spindoctor ignore add --system MAME --rom "neogeo.zip"
-spindoctor ignore remove --system MAME --rom "neogeo.zip"
+spindoctor ignore add "neogeo.zip" --system MAME
+spindoctor ignore remove "neogeo.zip" --system MAME
 
 spindoctor match list                            :: cached match decisions
 spindoctor match clear --system MAME --yes       :: forget MAME decisions
@@ -257,6 +255,11 @@ spindoctor backup list --target E:\Backups
 spindoctor backup info --backup E:\Backups\spindoctor-backup-20260101_120000
 spindoctor backup restore --backup E:\Backups\spindoctor-backup-20260101_120000 --apply
 spindoctor backup restore --backup ... --include databases --apply   :: partial restore
+
+:: Per-file sidecar rollback (undo a single bad edit without restoring the whole library)
+spindoctor backup sidecar list "D:\HyperSpin\Databases\Main Menu\Main Menu.xml"
+spindoctor backup sidecar restore "D:\...\Main Menu.xml" --from "D:\...\Main Menu.20260519_153045.bak"
+spindoctor backup sidecar restore "D:\...\Main Menu.xml" --from "D:\...\Main Menu.20260519_153045.bak" --apply
 ```
 
 Reference: [Command reference → backup](commands.md#backup).
@@ -273,9 +276,9 @@ Reference: [Command reference → diff](commands.md#diff).
 ### `migrate` — move the whole library to a new drive
 
 ```bat
-spindoctor migrate --target E:\Cab                  :: preview
-spindoctor migrate --target E:\Cab --apply          :: COPY, keep source
-spindoctor migrate --target E:\Cab --move --apply   :: DESTRUCTIVE move
+spindoctor migrate --target E:\Cab                         :: preview
+spindoctor migrate --target E:\Cab --apply                 :: move (default — source removed after verify)
+spindoctor migrate --target E:\Cab --keep-source --apply   :: copy, leave source in place
 spindoctor migrate --list-manifests
 spindoctor migrate --undo latest --apply
 ```
