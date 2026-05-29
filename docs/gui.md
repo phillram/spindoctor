@@ -151,13 +151,15 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 **Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Controls:
 
-- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize.
+- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize. **Refresh colors** button reloads the palette without scrolling to Color Definitions.
 - **Buttons (1-8)** — how many `P{n}_BUTTON` keys to generate *per player*.
 - **Players (1-4)** — number of player blocks (P1–P4). All players are mirrored to the same color. Set to match your cabinet (e.g. 2 for a 2-player cab).
 - **Admin buttons** — optional extra button block using the next player slot (P{players+1}). Set to 0 to disable. Use a separate **Color** dropdown for the admin block (e.g. Green to distinguish admin buttons from game buttons).
-- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are now included).
+- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are included).
+- **Override existing entries if all buttons are the same color** — when checked, sections in `Colors.ini` where every `P*_BUTTON/JOYSTICK/START/COIN` key has the *same* value are updated to the new Default color. Sections with mixed per-button colors (intentional game-specific layouts) are never touched.
+- **Don't add new keys when overriding** — when checked alongside the override option, only the *values* of already-present keys are replaced. No new `P*_BUTTON`, `JOYSTICK`, `START`, or `COIN` lines are inserted. Use this when an existing entry intentionally has fewer buttons than the **Buttons** count (e.g. a 3-button game entry that should stay at 3 buttons).
 
-Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults`.
+Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults [--override-uniform] [--no-add-keys]`.
 
 **Brightness** — sets all `Color-RGB.ini` colors to a uniform brightness level. Drag the slider (0–100 %) and click **Scale Brightness**. Each color is first normalized to its maximum possible intensity, then scaled to the chosen percentage — so **100 % = every button at maximum brightness** (dim colors are boosted up, not left dim). 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode; 0 % = all off. This guarantees every button (P1, P2, admin, Start) is at the same level. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
 

@@ -460,6 +460,13 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
+**Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:</p>
+
+```bat
+:: Re-color all uniform entries to White without adding new keys
+spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply
+```
+
 ### `Color-RGB.ini` — brightness
 
 Each named color is stored as three 0-48 integer intensities (not 0-255). `spindoctor ledblinky colors brightness --scale PCT` normalizes every color's dominant channel to 48 first, then scales by `PCT/100`. This means:
