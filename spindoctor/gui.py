@@ -6296,6 +6296,8 @@ class _SpinDoctorGUI:
         args = ["migrate", "--undo", manifest]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_pre_migrate_backup(self) -> None:
@@ -10304,6 +10306,8 @@ class _SpinDoctorGUI:
         args = ["lightgun", "detect"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     def _run_lg_configure(self) -> None:
@@ -10323,6 +10327,8 @@ class _SpinDoctorGUI:
             args += ["--extra-args", extra]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli("spindoctor", args)
 
     # ── Tools tab (Custom wheels + Install wheel helpers) ─────────────────────
