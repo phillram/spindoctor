@@ -1401,6 +1401,8 @@ class NormalizeResult:
     keys_converted: int = 0
     backup_path: Optional[Path] = None
     dry_run: bool = False
+    # Per-section detail for --verbose: (section_name, [(old_key, new_key, color_name), ...])
+    converted_details: "list[tuple[str, list[tuple[str, str, str]]]]" = field(default_factory=list)
 
 
 def normalize_colors_ini(
@@ -1473,14 +1475,16 @@ def normalize_colors_ini(
     text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines(keepends=True)
 
+    # key_changes accumulates (old_key, new_key, color_name) per converted line
     def _flush(
         buf: "list[str]", has_hex: bool
-    ) -> "tuple[list[str], int, int]":
-        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta)."""
+    ) -> "tuple[list[str], int, int, list[tuple[str, str, str]]]":
+        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta, key_changes)."""
         if not has_hex:
-            return buf, 0, 0
+            return buf, 0, 0, []
         new_buf: list[str] = []
         kc = 0
+        key_changes: "list[tuple[str, str, str]]" = []
         for ln in buf:
             stripped = ln.rstrip("\r\n")
             eol = ln[len(stripped):]
@@ -1494,33 +1498,40 @@ def normalize_colors_ini(
                         new_key = f"P1_BUTTON{m.group(1)}"
                         color_name = _nearest_color_name(val_s, palette)
                         new_buf.append(f"{new_key}={color_name}{eol}")
+                        key_changes.append((key_s, new_key, color_name))
                         kc += 1
                         continue
                     mapped = _LEGACY_KEY_MAP.get(key_s.lower())
                     if mapped:
                         color_name = _nearest_color_name(val_s, palette)
                         new_buf.append(f"{mapped}={color_name}{eol}")
+                        key_changes.append((key_s, mapped, color_name))
                         kc += 1
                         continue
             new_buf.append(ln)
-        return new_buf, 1, kc
+        return new_buf, 1, kc, key_changes
 
     out_lines: list[str] = []
     section_buffer: list[str] = []
+    current_section_name: str = ""
     section_has_hex = False
     sections_converted = 0
     keys_converted = 0
+    converted_details: "list[tuple[str, list[tuple[str, str, str]]]]" = []
 
     for line in lines:
         stripped = line.rstrip("\r\n")
         if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
             # Flush the previous section
             if section_buffer:
-                flushed, sc, kc = _flush(section_buffer, section_has_hex)
+                flushed, sc, kc, kchanges = _flush(section_buffer, section_has_hex)
                 out_lines.extend(flushed)
                 sections_converted += sc
                 keys_converted += kc
+                if kchanges:
+                    converted_details.append((current_section_name, kchanges))
             # Start a new section
+            current_section_name = stripped[1:-1]
             section_buffer = [line]
             section_has_hex = False
         elif section_buffer:
@@ -1540,13 +1551,16 @@ def normalize_colors_ini(
 
     # Flush the final section
     if section_buffer:
-        flushed, sc, kc = _flush(section_buffer, section_has_hex)
+        flushed, sc, kc, kchanges = _flush(section_buffer, section_has_hex)
         out_lines.extend(flushed)
         sections_converted += sc
         keys_converted += kc
+        if kchanges:
+            converted_details.append((current_section_name, kchanges))
 
     result.sections_converted = sections_converted
     result.keys_converted = keys_converted
+    result.converted_details = converted_details
 
     if keys_converted > 0 and not dry_run:
         if backup:
@@ -2029,6 +2043,8 @@ class BrightnessResult:
     colors_scaled: int = 0
     backup_path: Optional[Path] = None
     scale_pct: float = 100.0
+    # Per-color detail for --verbose: (name, old_r,g,b, new_r,g,b)
+    color_changes: "list[tuple[str, int, int, int, int, int, int]]" = field(default_factory=list)
 
 
 def _normalize_scale_entry(entry: ColorEntry, factor: float) -> ColorEntry:
@@ -2117,6 +2133,10 @@ def scale_colors_brightness(
 
     scaled_entries = [_normalize_scale_entry(e, factor) for e in entries]
     result.colors_scaled = len(scaled_entries)
+    result.color_changes = [
+        (e.name, old.r, old.g, old.b, e.r, e.g, e.b)
+        for old, e in zip(entries, scaled_entries)
+    ]
 
     if not dry_run:
         if backup:
@@ -2330,10 +2350,14 @@ class RandomizeColorsResult:
 
     dry_run: bool
     colors_ini_path: Optional[Path] = None
-    sections_updated: int = 0    # sections that had player keys and were recoloured
-    sections_skipped: int = 0    # sections with no player keys (left unchanged)
+    sections_updated: int = 0        # sections that had P*_BUTTON* keys and were recoloured
+    sections_skipped: int = 0        # sections with no player keys at all (empty/unknown)
+    sections_skipped_old_format: int = 0  # sections using ledcolor1=/joystick= hex format
     backup_path: Optional[Path] = None
     seed: Optional[int] = None
+    palette_size: int = 0
+    # Per-section detail for --verbose output: (section_name, button_color, coin_start_color)
+    updated_details: "list[tuple[str, str, str]]" = field(default_factory=list)
     palette_size: int = 0        # number of non-black colors available to draw from
 
 
@@ -2456,9 +2480,17 @@ def randomize_entry_colors(
     existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
     sections = _split_ini_by_sections(existing_text)
 
+    # Pre-compile the regex for old-format keys so we can classify skips.
+    _OLD_FORMAT_RE = re.compile(
+        r"^(ledcolor\d+|joystick|start|coin)\s*=",
+        re.IGNORECASE,
+    )
+
     parts: "list[str]" = []
     sections_updated = 0
     sections_skipped = 0
+    sections_skipped_old_format = 0
+    updated_details: "list[tuple[str, str, str]]" = []
 
     for section_name, header_line, body_lines in sections:
         if section_name is None:
@@ -2469,7 +2501,8 @@ def randomize_entry_colors(
         assert header_line is not None
         parts.append(header_line)
 
-        # Independent random picks for this game
+        # Independent random picks for this game (drawn even if skipped so
+        # the PRNG sequence stays stable regardless of format classification).
         button_color = rng.choice(non_black)
         coin_start_color = rng.choice(non_black)
 
@@ -2480,11 +2513,23 @@ def randomize_entry_colors(
 
         if had_keys:
             sections_updated += 1
+            updated_details.append((section_name, button_color, coin_start_color))
         else:
-            sections_skipped += 1
+            # Classify the skip: old hex-format keys vs genuinely empty section.
+            is_old_format = any(
+                _OLD_FORMAT_RE.match(line.strip())
+                for line in body_lines
+                if line.strip()
+            )
+            if is_old_format:
+                sections_skipped_old_format += 1
+            else:
+                sections_skipped += 1
 
     result.sections_updated = sections_updated
     result.sections_skipped = sections_skipped
+    result.sections_skipped_old_format = sections_skipped_old_format
+    result.updated_details = updated_details
 
     if not dry_run and sections_updated > 0:
         if backup:

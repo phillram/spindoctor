@@ -6326,7 +6326,13 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose
             )
             console.print(f"  {verb}: {change}")
             if verbose:
-                console.print(f"[dim][verbose]   file → {result.settings_path}[/dim]")
+                console.print(f"[dim][verbose] Settings.ini: {result.settings_path}[/dim]")
+                if result.changes:
+                    console.print(f"[dim][verbose] keys patched ({len(result.changes)}):[/dim]")
+                    for change in result.changes:
+                        console.print(f"[dim]  {change}[/dim]")
+                else:
+                    console.print("[dim][verbose] all keys already at target values[/dim]")
 
         if not result.dry_run and result.backup_path:
             console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
@@ -6551,7 +6557,9 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
-def ledblinky_colors_normalize(apply_changes, no_backup):
+@click.option("--verbose", is_flag=True,
+              help="Print each section converted and the key mapping applied.")
+def ledblinky_colors_normalize(apply_changes, no_backup, verbose):
     """Convert hex-format Colors.ini entries to named P1_BUTTON format.
 
     SpinDoctor-generated Colors.ini entries use bare hex values::
@@ -6567,11 +6575,13 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
     The nearest match from Color-RGB.ini is chosen for each hex value.
     Sections already in named format are left completely untouched.
     Run normalize before colors edit so renames propagate to every section.
+    Run normalize before colors randomize so all sections are reachable.
 
     \b
     Examples:
       spindoctor ledblinky colors normalize              :: preview changes
       spindoctor ledblinky colors normalize --apply      :: commit changes
+      spindoctor ledblinky colors normalize --apply --verbose  :: show per-section detail
     """
     from . import ledblinky as lb
 
@@ -6607,6 +6617,22 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
             )
         elif result.backup_path:
             console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+    if verbose and result.converted_details:
+        _VERBOSE_SAMPLE = 50
+        shown = result.converted_details[:_VERBOSE_SAMPLE]
+        console.print(
+            f"\n[dim][verbose] first {len(shown)} converted sections "
+            f"(of {result.sections_converted}):[/dim]"
+        )
+        for sec_name, key_changes in shown:
+            console.print(f"[dim]  [{sec_name}][/dim]")
+            for old_k, new_k, color in key_changes:
+                console.print(f"[dim]    {old_k} → {new_k}={color}[/dim]")
+        if len(result.converted_details) > _VERBOSE_SAMPLE:
+            console.print(
+                f"[dim]  … {len(result.converted_details) - _VERBOSE_SAMPLE} more sections[/dim]"
+            )
 
 
 @ledblinky_colors_group.command("brightness")
@@ -6668,10 +6694,17 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
-        console.print(
-            f"[dim][verbose] {result.color_rgb_path} "
-            f"({result.colors_scaled} color(s) at {scale_pct:.0f}%)[/dim]"
-        )
+        console.print(f"\n[dim][verbose] Color-RGB.ini: {result.color_rgb_path}[/dim]")
+        if result.color_changes:
+            console.print(f"[dim][verbose] per-color changes at {scale_pct:.0f}%:[/dim]")
+            for name, or_, og, ob, nr, ng, nb in result.color_changes:
+                old_hex = f"#{round(or_/48*255):02X}{round(og/48*255):02X}{round(ob/48*255):02X}"
+                new_hex = f"#{round(nr/48*255):02X}{round(ng/48*255):02X}{round(nb/48*255):02X}"
+                changed = "→" if (or_, og, ob) != (nr, ng, nb) else "="
+                console.print(
+                    f"[dim]  {name:<20s}  {or_:2d},{og:2d},{ob:2d} ({old_hex})  "
+                    f"{changed}  {nr:2d},{ng:2d},{nb:2d} ({new_hex})[/dim]"
+                )
 
 
 @ledblinky_colors_group.command("randomize")
@@ -6729,10 +6762,22 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
     console.print(
         f"  Sections {verb:13s}: [green]{result.sections_updated}[/green]"
     )
+    if result.sections_skipped_old_format:
+        console.print(
+            f"  [yellow]Sections skipped (old format): "
+            f"{result.sections_skipped_old_format}[/yellow]"
+        )
+        console.print(
+            "  [yellow]→ These use ledcolor1=/joystick=/start=/coin= hex keys.[/yellow]"
+        )
+        console.print(
+            "  [yellow]→ Run [bold]spindoctor ledblinky colors normalize --apply[/bold] "
+            "first, then re-run randomize.[/yellow]"
+        )
     if result.sections_skipped:
         console.print(
-            f"  Sections skipped : [dim]{result.sections_skipped}[/dim] "
-            f"(no player keys — left unchanged)"
+            f"  Sections skipped (empty)  : [dim]{result.sections_skipped}[/dim] "
+            f"(no player keys or ledcolor keys — left unchanged)"
         )
     if result.seed is not None:
         console.print(f"  Seed             : [dim]{result.seed}[/dim]")
@@ -6743,11 +6788,28 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
+        console.print(f"\n[dim][verbose] Colors.ini: {result.colors_ini_path}[/dim]")
         console.print(
-            f"[dim][verbose] {result.colors_ini_path} "
-            f"(palette={result.palette_size}, updated={result.sections_updated}, "
-            f"skipped={result.sections_skipped})[/dim]"
+            f"[dim][verbose] palette={result.palette_size} colors  "
+            f"updated={result.sections_updated}  "
+            f"skipped_old_fmt={result.sections_skipped_old_format}  "
+            f"skipped_empty={result.sections_skipped}[/dim]"
         )
+        if result.updated_details:
+            _VERBOSE_SAMPLE = 50
+            shown = result.updated_details[:_VERBOSE_SAMPLE]
+            console.print(
+                f"[dim][verbose] first {len(shown)} updated sections "
+                f"(of {result.sections_updated}):[/dim]"
+            )
+            for sec_name, btn_color, cs_color in shown:
+                console.print(
+                    f"[dim]  {sec_name:<30s}  buttons={btn_color}  coin/start={cs_color}[/dim]"
+                )
+            if len(result.updated_details) > _VERBOSE_SAMPLE:
+                console.print(
+                    f"[dim]  … {len(result.updated_details) - _VERBOSE_SAMPLE} more[/dim]"
+                )
 
 
 @ledblinky_group.command("fill-defaults")
