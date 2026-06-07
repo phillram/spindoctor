@@ -20,7 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`ledblinky fix` — "not found" Settings.ini shown as an error** — now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
 
-- **`ledblinky colors randomize` — skipped MAME sections now identified as old-format, not silently dropped** — now counted separately as "old format" with an actionable yellow warning: *Run `colors normalize --apply` first, then re-run randomize.*
+- **`ledblinky generate` — Colors.ini now written in native `P1_BUTTON1=` format** — `generate` previously wrote `Colors.ini` entries in SpinDoctor's internal hex format (`ledcolor1=FF0000`, `joystick=FFFFFF`), which **LedBlinky itself cannot read**. LedBlinky requires the named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). This was why every game showed White after running `generate` — LedBlinky was falling back to its default color because it couldn't parse the entries. `generate` now loads `Color-RGB.ini` at generation time and converts each hex value to the nearest named color, writing native format directly. The separate `normalize` step is no longer required after `generate` (though it remains useful for existing old-format files). If `Color-RGB.ini` is missing, `generate` falls back to the old hex format and warns the user to run `normalize` after.
+
+- **`ledblinky colors randomize` — skipped MAME sections now identified as old-format, not silently dropped** — existing `Colors.ini` files in the legacy hex format (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) cannot be reached by `randomize` because it only matches `P*_BUTTON*` / `P*_JOYSTICK` keys. Previously these appeared as "no player keys — left unchanged" with no explanation. Now they are counted separately as "old format" and the output prints an actionable yellow warning: *Run `colors normalize --apply` first, then re-run randomize.* After running normalize, all legacy sections will be converted and randomize will cover them.
 
 ### Changed
 

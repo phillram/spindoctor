@@ -5806,9 +5806,19 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
         console.print(
             f"  Skipped (no -listxml input data): [yellow]{result.skipped_no_input}[/yellow]"
         )
+    # Warn if Color-RGB.ini was missing (colors written in legacy format)
+    has_legacy_warning = any("ledcolor=" in w or "P1_BUTTON1=" in w for w in result.warnings)
+    if not has_legacy_warning and result.colors_synthesised:
+        console.print(
+            "[dim]  colors.ini written in native P1_BUTTON1= format "
+            "(Color-RGB.ini palette used for color name lookup)[/dim]"
+        )
     if verbose:
-        console.print(f"[dim][verbose] controls → {result.controls_path}[/dim]")
+        console.print(f"\n[dim][verbose] controls → {result.controls_path}[/dim]")
         console.print(f"[dim][verbose] colors   → {result.colors_path}[/dim]")
+        if result.colors_synthesised:
+            fmt = "legacy ledcolor=" if has_legacy_warning else "native P1_BUTTON1="
+            console.print(f"[dim][verbose] colors format: {fmt}[/dim]")
 
 
 @ledblinky_group.command("audit")
