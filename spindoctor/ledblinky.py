@@ -559,6 +559,172 @@ class CoverageRow:
         return "missing"
 
 
+def inspect_rom(config: Config, rom_name: str) -> dict:
+    """Collect all LEDBlinky-relevant data for one ROM for diagnostic purposes.
+
+    Returns a dict with keys:
+
+    ``rom_name``        — the name looked up
+    ``colors_ini_path`` — Path to Colors.ini (may not exist)
+    ``colors_entry``    — list of ``"key=value"`` strings from Colors.ini, or ``[]``
+    ``controls_ini_path`` — Path to controls.ini
+    ``controls_entry``  — list of ``"key=value"`` strings from controls.ini, or ``[]``
+    ``xml_path``        — Path to LEDBlinkyControls.xml
+    ``xml_emulators``   — list of emulator names found in the XML
+    ``xml_rom_entries`` — list of ``{"emulator": ..., "attrs": {...}}`` for any
+                          ``<game>``/``<rom>`` XML elements whose ``name`` attribute
+                          matches *rom_name* (case-insensitive)
+    ``log_path``        — guessed path to LEDBlinkyLog.txt
+    ``listxml``         — ``{"players": N, "buttons": N, "controls": [...]}`` or ``None``
+    ``warnings``        — list of diagnostic warning strings
+    """
+    result: dict = {
+        "rom_name": rom_name,
+        "colors_ini_path": None,
+        "colors_entry": [],
+        "controls_ini_path": None,
+        "controls_entry": [],
+        "xml_path": None,
+        "xml_emulators": [],
+        "xml_rom_entries": [],
+        "log_path": None,
+        "listxml": None,
+        "warnings": [],
+    }
+
+    if not config.ledblinky_dir:
+        result["warnings"].append("ledblinky_dir is not configured.")
+        return result
+
+    base = Path(config.ledblinky_dir)
+
+    # Colors.ini
+    colors_path = base / "Colors.ini"
+    result["colors_ini_path"] = colors_path
+    if colors_path.exists():
+        sections = parse_existing_colors_ini(colors_path)
+        entry = sections.get(rom_name)
+        if entry is None:
+            # Try case-insensitive search
+            lower = rom_name.lower()
+            for k, v in sections.items():
+                if k.lower() == lower:
+                    entry = v
+                    result["warnings"].append(
+                        f"Colors.ini: found [{k}] (case differs from [{rom_name}]). "
+                        f"LEDBlinky lookup is case-sensitive on some versions."
+                    )
+                    break
+        result["colors_entry"] = entry.lines if entry else []
+        if not entry:
+            result["warnings"].append(
+                f"Colors.ini: no section [{rom_name}] found — "
+                f"LEDBlinky will use its DEFAULT control group colors."
+            )
+    else:
+        result["warnings"].append(f"Colors.ini not found at {colors_path}.")
+
+    # controls.ini
+    controls_path = base / "controls.ini"
+    result["controls_ini_path"] = controls_path
+    if controls_path.exists():
+        sections = parse_existing_controls_ini(controls_path)
+        entry = sections.get(rom_name)
+        if entry is None:
+            lower = rom_name.lower()
+            for k, v in sections.items():
+                if k.lower() == lower:
+                    entry = v
+                    result["warnings"].append(
+                        f"controls.ini: found [{k}] (case differs from [{rom_name}])."
+                    )
+                    break
+        result["controls_entry"] = entry.lines if entry else []
+        if not entry:
+            result["warnings"].append(
+                f"controls.ini: no section [{rom_name}] found — "
+                f"LEDBlinky may not know which buttons this game uses."
+            )
+    else:
+        result["warnings"].append(f"controls.ini not found at {controls_path}.")
+
+    # LEDBlinkyControls.xml — scan for the ROM name and emulator structure
+    xml_path = base / CONTROLS_XML_NAME
+    result["xml_path"] = xml_path
+    if xml_path.exists():
+        try:
+            import xml.etree.ElementTree as _ET
+            tree = _ET.parse(xml_path)
+            root = tree.getroot()
+            # Collect emulator names
+            emulators = []
+            for el in root.iter():
+                if el.tag.lower() in ("emulator", "game") and el.get("name"):
+                    # "emulator" tag = top-level emulator entries
+                    if el.tag.lower() == "emulator":
+                        emulators.append(el.get("name"))
+            result["xml_emulators"] = emulators
+            # Search for rom_name as game/rom entry under any emulator
+            lower = rom_name.lower()
+            xml_entries = []
+            for el in root.iter():
+                n = el.get("name") or el.get("romName") or ""
+                if n.lower() == lower and el.tag.lower() not in ("emulator",):
+                    # find parent emulator name
+                    parent_name = ""
+                    for anc in root.iter():
+                        if el in list(anc):
+                            parent_name = anc.get("name") or anc.tag
+                    xml_entries.append({
+                        "tag": el.tag,
+                        "emulator": parent_name,
+                        "attrs": dict(el.attrib),
+                    })
+            result["xml_rom_entries"] = xml_entries
+            if not xml_entries:
+                result["warnings"].append(
+                    f"LEDBlinkyControls.xml: no entry for [{rom_name}] found. "
+                    f"LEDBlinky will use the DEFAULT control group for the emulator. "
+                    f"Colors.ini overrides may or may not apply depending on LEDBlinky version."
+                )
+        except Exception as exc:
+            result["warnings"].append(f"LEDBlinkyControls.xml could not be parsed: {exc}")
+    else:
+        result["warnings"].append(f"LEDBlinkyControls.xml not found at {xml_path}.")
+
+    # LEDBlinky log file
+    for log_name in ("LEDBlinkyLog.txt", "LedBlinkyLog.txt", "log.txt"):
+        lp = base / log_name
+        if lp.exists():
+            result["log_path"] = lp
+            break
+    if result["log_path"] is None:
+        result["log_path"] = base / "LEDBlinkyLog.txt"  # guessed path
+        result["warnings"].append(
+            f"LEDBlinky log not found at expected path ({result['log_path']}). "
+            f"Enable logging in LEDBlinky's Settings to capture game-launch events."
+        )
+
+    # MAME listxml
+    listxml = load_listxml_for_system(config, "MAME", warnings=result["warnings"])
+    info = listxml.get(rom_name)
+    if info:
+        result["listxml"] = {
+            "description": info.description,
+            "players": info.num_players,
+            "buttons": info.num_buttons,
+            "controls": info.control_types,
+            "has_input": info.has_input,
+        }
+    else:
+        result["warnings"].append(
+            f"MAME listxml: no entry for [{rom_name}] — "
+            f"either MAME is not configured, or this ROM is not in MAME's database."
+        )
+
+    return result
+
+
 def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow]:
     """Return per-ROM coverage info: existing entries vs. -listxml synthesis."""
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
