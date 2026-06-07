@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI — LEDBlinky tab fully reorganized into a step-by-step workflow** — sections are now labeled Step 1 through Step 6 and ordered logically: **Step 1 — Generate & Normalize** (MAME import) → **Step 2 — Fill Default Colors** (console/other gaps) → **Step 3 — Randomize Entry Colors** → **Step 4 — Admin Button Colors** → **Step 5 — Brightness** → **Step 6 — Settings.ini** → **Overlay Hook Fix** (one-time setup) → **Color Definitions** (advanced palette editing) → **Backup / Restore**. Previously Brightness appeared before Randomize and Admin Buttons, Overlay Hook buttons were mixed into the Generate area, and Color Definitions came after Backup.
+
 - **GUI — "Normalize Colors.ini" button added to the Generate section** — the button previously existed only in the Color Definitions section at the bottom of the LEDBlinky tab. It is now also in the top button row (Generate → **Normalize Colors.ini** → Audit coverage → …) so the step is immediately visible after generating. The section description now explains the four-step workflow: Generate → Normalize → Fill Defaults → Randomize. The tip text also explains that "Check overlay hooks" / "Fix overlay hooks" always write in-place.
 
 - **`ledblinky colors normalize --verbose`** — new `--verbose` flag that prints per-section conversion detail: for each section converted, lists every key mapping applied (`ledcolor1=FF0000 → P1_BUTTON1=Red`, `joystick=FFFFFF → P1_JOYSTICK=White`, etc.). First 50 sections are shown; a summary count follows if there are more.
