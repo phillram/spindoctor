@@ -9429,13 +9429,13 @@ class _SpinDoctorGUI:
             command=self._run_led_audit,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Check existing INIs",
+            btn_row, text="Check overlay hooks",
             command=lambda: self._run_cli(
                 "spindoctor", ["ledblinky", "check"],
             ),
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Fix INI issues",
+            btn_row, text="Fix overlay hooks",
             command=self._run_led_fix,
         ).pack(side="left", padx=6)
 
@@ -9444,7 +9444,12 @@ class _SpinDoctorGUI:
             text=("Tip: configure ledblinky_dir in the Setup tab if your "
                   "LEDBlinky install isn't at the default location. Generate "
                   "automatically saves .bak copies of controls.ini and "
-                  "colors.ini when backup_before_modify is enabled (default)."),
+                  "colors.ini when backup_before_modify is enabled (default). "
+                  "\"Check overlay hooks\" scans for LEDBlinky hook lines that "
+                  "cause HyperSpin Search/Genre/Favorites overlays to hang. "
+                  "\"Fix overlay hooks\" removes those hooks and adds stub "
+                  "LEDBlinkyControls.xml entries — always writes in-place to "
+                  "ledblinky_dir and hyperspin_dir, not the output_dir setting."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 

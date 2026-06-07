@@ -265,7 +265,7 @@ _INIT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("rocketlauncher_dir",    "RocketLauncher directory",                          r"D:\RocketLauncher",             False),
     ("ledblinky_dir",         "LEDBlinky install directory ('-' to skip)",         r"C:\LEDBlinky",                  True),
     ("mame_executable",       "MAME executable ('-' to skip)",                     r"D:\Emulators\MAME\mame.exe",    True),
-    ("output_dir",            "Default output directory ('-' for in-place writes)", r"D:\SpinDoctorOutput",          True),
+    ("output_dir",            "Staging directory for generated files (unused by most commands — prefer --output-dir flag)", r"D:\SpinDoctorOutput", True),
     ("auto_audit_export_dir", "Auto-audit export directory ('-' to skip)",         r"D:\SpinDoctorAudits",           True),
 )
 
@@ -6137,27 +6137,40 @@ def ledblinky_check(menus):
               help="Comma-separated special menus to patch. Default: Search. "
                    "Other options: Genre, Favorites.")
 def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
-    """Patch LEDBlinkyControls.xml + HyperSpin Search Settings.ini for compatibility.
+    """Fix LEDBlinky overlay hooks so Search / Genre / Favorites don't hang HyperSpin.
 
     \b
-    Two patches are applied:
-      1. Add a stub entry to LEDBlinkyControls.xml for each requested menu
-         so LedBlinky's lookup succeeds when the special menu activates.
-      2. Comment out the Start_Hyperspin_Process / Exit_Hyperspin_Process
-         lines in the per-menu Settings.ini that point at LEDBlinky.exe.
+    When LedBlinky hooks are active, HyperSpin's Search, Genre, and Favorites
+    overlays can freeze or crash because LedBlinky tries to look up controls for
+    a system name that doesn't exist in LEDBlinkyControls.xml.  Two patches fix
+    this:
+
+      1. LEDBlinkyControls.xml — adds a stub entry for each requested menu
+         (Search, Genre, Favorites) so LedBlinky's lookup finds it and continues.
+      2. HyperSpin per-menu Settings.ini — comments out any
+         Start_Hyperspin_Process / Exit_Hyperspin_Process lines that launch or
+         kill LEDBlinky.exe when the overlay opens/closes.  If the Settings.ini
+         does not exist, there are no hooks to remove — this is not an error.
+
+    \b
+    Writes in-place to ledblinky_dir and hyperspin_dir (not to output_dir).
+    Use --output-dir only when you want to preview the patched files without
+    touching your live cabinet install.
 
     \b
     Examples:
-      spindoctor ledblinky fix                              # preview (default)
-      spindoctor ledblinky fix --apply                      # commit
+      spindoctor ledblinky fix                              :: preview (default)
+      spindoctor ledblinky fix --apply                      :: commit in-place
       spindoctor ledblinky fix --apply --menus Search,Genre,Favorites
-      spindoctor ledblinky fix --apply --output-dir D:\\Output
+      spindoctor ledblinky fix --apply --output-dir D:\\Output  :: write to D:\\Output (test)
     """
     from . import ledblinky as lb
 
     config = _cfg()
     _check_config(config)
-    out_base = config.effective_output_dir(output_dir)
+    # ledblinky fix is an in-place patcher — do NOT fall back to config.output_dir.
+    # Only use an explicit --output-dir when one is passed on the command line.
+    out_base = Path(output_dir) if output_dir else None
     menu_list = [m.strip() for m in menus.split(",") if m.strip()]
 
     if not apply_changes:
@@ -6174,6 +6187,10 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
         menus=menu_list,
     )
 
+    # Show config paths used so the user can verify they point to the right places.
+    console.print(f"\n[dim]ledblinky_dir : {config.ledblinky_dir or '[not set]'}[/dim]")
+    console.print(f"[dim]hyperspin_dir : {config.hyperspin_dir or '[not set]'}[/dim]")
+
     cx = result["controls_xml"]
     console.print("\n[blue bold]LEDBlinkyControls.xml[/blue bold]")
     if cx is None:
@@ -6186,6 +6203,11 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
         console.print("  [green]✓ Already contains all requested menu entries.[/green]")
 
     console.print("\n[blue bold]HyperSpin per-menu INIs[/blue bold]")
+    console.print(
+        "[dim]  (path: <hyperspin_dir>\\Menu\\<MenuName>\\Settings.ini — "
+        "removes LEDBlinky process hooks that cause HyperSpin to hang "
+        "when Search / Genre / Favorites overlays open)[/dim]"
+    )
     tbl = Table(box=box.SIMPLE, show_header=True)
     tbl.add_column("Menu", style="cyan")
     tbl.add_column("Path")
@@ -6193,10 +6215,17 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
     tbl.add_column("Status")
     for info in result["menu_inis"]:
         if info.get("error"):
-            tbl.add_row(info["menu"], str(info["src"]), "—", f"[dim]{info['error']}[/dim]")
+            # "not found" is non-fatal — it just means HyperSpin has never written
+            # LEDBlinky hooks into that menu's Settings.ini, so there's nothing to remove.
+            err_text = info["error"]
+            if "not found" in err_text:
+                status = "[dim]✓ no Settings.ini → no hooks to remove[/dim]"
+            else:
+                status = f"[yellow]{err_text}[/yellow]"
+            tbl.add_row(info["menu"], str(info["src"]), "—", status)
             continue
         if info["lines_changed"] == 0:
-            status = "[green]nothing to do[/green]"
+            status = "[green]✓ no hooks found[/green]"
         elif apply_changes and info["wrote"]:
             status = "[green]patched[/green]"
         else:

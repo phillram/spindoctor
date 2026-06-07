@@ -324,7 +324,8 @@ def apply_batch_edit(
     if not manifest_entries:
         return results, None
 
-    out_root = config.effective_output_dir(str(output_dir) if output_dir else None)
+    # Use explicit output_dir only — do NOT fall back to config.output_dir.
+    out_root = output_dir
     _tmp = config.effective_atomic_tmp_dir
     if out_root is not None:
         target = out_root / "Databases" / system / f"{system}.xml"
@@ -710,7 +711,8 @@ def apply_rename(
         db.remove_game(op.old_rom_name)
         db.upsert_game(renamed)
 
-    out_root = config.effective_output_dir(str(output_dir) if output_dir else None)
+    # Use explicit output_dir only — do NOT fall back to config.output_dir.
+    out_root = output_dir
     _tmp = config.effective_atomic_tmp_dir
     if out_root is not None:
         target = out_root / "Databases" / op.system / f"{op.system}.xml"

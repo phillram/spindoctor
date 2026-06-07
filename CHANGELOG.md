@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ledblinky fix` / `batch-edit` / `rename` / `clone` — wrong output path when `output_dir` is configured** — these commands were calling `config.effective_output_dir()`, which falls back to the global `output_dir` config setting when no explicit `--output-dir` flag is given. If `output_dir` was set (e.g. `J:\spindoctor\output`), files were written there instead of in-place (`LEDBlinkyControls.xml` for `ledblinky fix`; edited database XML for `batch-edit`, `rename`, `clone`). All four commands now use the explicit `--output-dir` value only (`Path(output_dir) if output_dir else None`), never falling back to `config.output_dir`.
+
+- **`ledblinky fix` — "not found" Settings.ini shown as an error** — when HyperSpin has never written LEDBlinky hooks into a menu's `Settings.ini` (the file doesn't exist), the command showed a generic "not found" message that looked like a failure. It now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
+
+### Changed
+
+- **GUI — "Fix INI issues" button renamed to "Fix overlay hooks"** — more accurately describes what the command does: removes LEDBlinky hook lines from HyperSpin's Search/Genre/Favorites overlay Settings.ini files and adds stub entries to `LEDBlinkyControls.xml`. The paired "Check existing INIs" button is also renamed to "Check overlay hooks".
+
+- **`ledblinky fix` — improved CLI docstring and output** — the command docstring now explicitly states that it writes in-place to `ledblinky_dir` / `hyperspin_dir` (not `output_dir`), and the HyperSpin INIs section header now includes a one-line explanation of what the patch removes. `commands.md` and `cli-cheatsheet.md` updated accordingly.
+
 ---
 
 ## [2.4.20] - 2026-06-07
