@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.20] - 2026-06-07
+
 ### Added
 
 - **`rename` / `clone` — `--verbose` flag** — after `--apply` completes, prints every file path moved or copied (ROM, all media types, DB entry) so you can confirm exactly what changed on disk.
@@ -36,6 +40,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`--verbose` flag added to**: `ledblinky generate` (prints controls + colors paths), `ledblinky patch-settings` (prints each key patched + file path), `ledblinky colors brightness` (prints Color-RGB.ini path + color count), `ledblinky fill-defaults` (prints Colors.ini path + added/overridden/skipped counts), `ledblinky admin-buttons set` (prints Colors.ini path + sections updated), `ledblinky colors randomize` (prints Colors.ini path + palette size + sections updated), `migrate` (prints each file/folder as it moves), `lightgun detect` (prints install paths + system counts), `lightgun configure` (prints INI path + Pre/Post launch hook values). `backup create` and `backup restore` already had `--verbose`; all others now consistently support it.
 
 - **`ledblinky colors randomize` — new CLI command** — assigns each game in `Colors.ini` its own independent random button color. All `P*_BUTTON*` / `P*_JOYSTICK` keys in a section get one randomly chosen color; all `P*_COIN` / `P*_START` keys get a second independently drawn color. Only **existing** keys are updated — buttons intentionally absent from a section (dark) are never touched. Pure-black / off colors are excluded from the draw. Supports `--seed N` for reproducible runs. Auto-backup before write. `randomize_entry_colors()` + `_randomize_section_body()` + `RandomizeColorsResult` added to `ledblinky.py`. GUI: new **Randomize Entry Colors** panel in the LEDBlinky tab with optional seed field.
+
+### Changed
+
+- **CI — `actions/checkout` bumped from 6.0.2 → 6.0.3** — patch update across `ci.yml`, `release.yml`, and `security.yml`. Fixes SHA-256 repository checkout init; no user-facing impact.
 
 ---
 
@@ -1107,7 +1115,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.19...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.20...HEAD
+[2.4.20]: https://github.com/phillram/spindoctor/compare/v2.4.19...v2.4.20
 [2.4.19]: https://github.com/phillram/spindoctor/compare/v2.4.18...v2.4.19
 [2.4.18]: https://github.com/phillram/spindoctor/compare/v2.4.17...v2.4.18
 [2.4.17]: https://github.com/phillram/spindoctor/compare/v2.4.16...v2.4.17
