@@ -5821,6 +5821,123 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
             console.print(f"[dim][verbose] colors format: {fmt}[/dim]")
 
 
+@ledblinky_group.command("inspect-rom")
+@click.argument("rom_name")
+def ledblinky_inspect_rom(rom_name):
+    """Diagnose why a ROM's LED colors may not be applying.
+
+    Reads Colors.ini, controls.ini, LEDBlinkyControls.xml, and MAME listxml
+    for the given ROM and reports what LEDBlinky would see — including
+    mismatches, missing entries, and the path to LEDBlinky's log file.
+
+    \b
+    This is the first command to run when game colors are showing white or
+    not changing from the default.
+
+    \b
+    Examples:
+      spindoctor ledblinky inspect-rom 005
+      spindoctor ledblinky inspect-rom 1942
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    data = lb.inspect_rom(config, rom_name)
+
+    console.print(f"\n[blue bold]LEDBlinky ROM Inspection — [{rom_name}][/blue bold]")
+
+    # Colors.ini
+    console.print(f"\n[bold]Colors.ini[/bold]  {data['colors_ini_path']}")
+    if data["colors_entry"]:
+        console.print(f"  [green]✓ Found[/green] [{rom_name}] — {len(data['colors_entry'])} key(s):")
+        for line in data["colors_entry"]:
+            console.print(f"    [dim]{line}[/dim]")
+    else:
+        console.print(f"  [red]✗ NOT FOUND[/red] — LEDBlinky will use DEFAULT colors")
+
+    # controls.ini
+    console.print(f"\n[bold]controls.ini[/bold]  {data['controls_ini_path']}")
+    if data["controls_entry"]:
+        console.print(f"  [green]✓ Found[/green] [{rom_name}] — {len(data['controls_entry'])} key(s):")
+        for line in data["controls_entry"]:
+            console.print(f"    [dim]{line}[/dim]")
+    else:
+        console.print(f"  [yellow]⚠ NOT FOUND[/yellow] — LEDBlinky won't know which buttons this game uses")
+
+    # LEDBlinkyControls.xml
+    console.print(f"\n[bold]LEDBlinkyControls.xml[/bold]  {data['xml_path']}")
+    if data["xml_emulators"]:
+        console.print(f"  Emulators in XML: {', '.join(data['xml_emulators'])}")
+    if data["xml_rom_entries"]:
+        console.print(f"  [green]✓ ROM entry found:[/green]")
+        for entry in data["xml_rom_entries"]:
+            console.print(f"    tag={entry['tag']}  emulator={entry['emulator']}")
+            for k, v in entry["attrs"].items():
+                console.print(f"      {k}={v}")
+    else:
+        console.print(
+            f"  [yellow]⚠ No entry for [{rom_name}][/yellow] — "
+            f"LEDBlinky uses DEFAULT control group. "
+            f"Colors.ini overrides may not apply."
+        )
+
+    # MAME listxml
+    console.print(f"\n[bold]MAME listxml[/bold]")
+    if data["listxml"]:
+        lx = data["listxml"]
+        console.print(f"  [green]✓ Found[/green] — {lx['description']}")
+        console.print(f"    Players: {lx['players']}  Buttons: {lx['buttons']}  "
+                      f"Controls: {', '.join(lx['controls']) or 'none'}")
+    else:
+        console.print(f"  [dim]Not found in MAME listxml (MAME not configured or ROM not in DB)[/dim]")
+
+    # Log file
+    console.print(f"\n[bold]LEDBlinky log[/bold]  {data['log_path']}")
+    if data["log_path"] and Path(str(data["log_path"])).exists():
+        console.print(
+            f"  [green]✓ Log exists[/green] — open it and search for [{rom_name}] "
+            f"to see what name LEDBlinky received when the game last launched."
+        )
+    else:
+        console.print(
+            f"  [yellow]⚠ Log not found[/yellow] — enable logging in LEDBlinky Settings "
+            f"to capture game-launch events and verify the ROM name being sent."
+        )
+
+    # Warnings / diagnostics
+    if data["warnings"]:
+        console.print(f"\n[bold]Diagnostics[/bold]")
+        for w in data["warnings"]:
+            if "NOT FOUND" in w or "NOT found" in w or "not found" in w:
+                console.print(f"  [yellow]⚠[/yellow] {w}")
+            elif "case" in w.lower():
+                console.print(f"  [red]✗[/red] {w}")
+            else:
+                console.print(f"  [dim]·[/dim] {w}")
+
+    # Summary guidance
+    console.print(f"\n[bold]What to check next[/bold]")
+    if not data["colors_entry"]:
+        console.print(
+            "  1. Run [cyan]spindoctor ledblinky colors normalize --apply[/cyan] "
+            "to ensure Colors.ini is in native format, then re-run generate+randomize."
+        )
+    if not data["xml_rom_entries"]:
+        console.print(
+            "  2. Open LEDBlinkyControls.xml and check the MAME emulator entry. "
+            "If Colors.ini overrides are not applying, your version of LEDBlinky "
+            "may require per-game XML entries, not just Colors.ini sections."
+        )
+    console.print(
+        "  3. Open the LEDBlinky log and search for the game name to verify "
+        "what name RocketLauncher sends to LEDBlinky at game launch. "
+        "The name must exactly match the Colors.ini section header."
+    )
+    console.print(
+        "  4. In LEDBlinky's main UI, check Settings → 'Use Color File' is enabled."
+    )
+
+
 @ledblinky_group.command("audit")
 @click.option("--system", "-s", default="MAME")
 def ledblinky_audit(system):
