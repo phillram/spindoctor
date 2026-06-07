@@ -237,9 +237,9 @@ def test_normalize_scale_entry_name_preserved():
 def test_patch_admin_buttons_adds_missing_keys():
     """All specified button keys are added when none exist in a section."""
     text = "[galaga]\nP1_BUTTON1=White\nP1_BUTTON2=White\n\n"
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                                     button_colors=["Red", "Blue"])
-    assert count == 1
+    assert len(names) == 1
     assert "P3_BUTTON1=Red" in new_text
     assert "P3_BUTTON2=Blue" in new_text
     # Existing keys must be untouched
@@ -249,9 +249,9 @@ def test_patch_admin_buttons_adds_missing_keys():
 def test_patch_admin_buttons_updates_existing_keys():
     """Existing admin button keys are updated to new values."""
     text = "[galaga]\nP3_BUTTON1=White\nP3_BUTTON2=White\n"
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                                     button_colors=["Red", "Green"])
-    assert count == 1
+    assert len(names) == 1
     assert "P3_BUTTON1=Red" in new_text
     assert "P3_BUTTON2=Green" in new_text
     assert "P3_BUTTON1=White" not in new_text
@@ -261,9 +261,9 @@ def test_patch_admin_buttons_updates_existing_keys():
 def test_patch_admin_buttons_no_change_when_same():
     """Sections where all values already match are not counted as updated."""
     text = "[galaga]\nP3_BUTTON1=Red\nP3_BUTTON2=Blue\n"
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                                     button_colors=["Red", "Blue"])
-    assert count == 0  # nothing changed
+    assert len(names) == 0  # nothing changed
     assert new_text == text
 
 
@@ -276,9 +276,9 @@ def test_patch_admin_buttons_multiple_sections():
         [pacman]
         P1_BUTTON1=Blue
     """)
-    _, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    _, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                              button_colors=["Green"])
-    assert count == 2
+    assert len(names) == 2
 
 
 def test_patch_admin_buttons_does_not_touch_other_players():
@@ -295,18 +295,18 @@ def test_patch_admin_buttons_does_not_touch_other_players():
 def test_patch_admin_buttons_empty_sections():
     """Empty input text with no sections returns zero count and empty text."""
     text = ""
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                                     button_colors=["Red"])
-    assert count == 0
+    assert len(names) == 0
     assert new_text == ""
 
 
 def test_patch_admin_buttons_partial_existing():
     """When only some button keys exist they are updated; missing ones are added."""
     text = "[galaga]\nP3_BUTTON1=White\n"
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=3,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=3,
                                                     button_colors=["Red", "Blue", "Green"])
-    assert count == 1
+    assert len(names) == 1
     assert "P3_BUTTON1=Red" in new_text    # updated
     assert "P3_BUTTON2=Blue" in new_text   # added
     assert "P3_BUTTON3=Green" in new_text  # added
@@ -315,16 +315,16 @@ def test_patch_admin_buttons_partial_existing():
 def test_patch_admin_buttons_different_player_slots():
     """Admin player slot is respected; other slot keys are not touched."""
     text = "[game]\nP2_BUTTON1=White\n"
-    new_text, count = _patch_admin_buttons_in_text(text, admin_player=2,
+    new_text, names = _patch_admin_buttons_in_text(text, admin_player=2,
                                                     button_colors=["Red"])
-    assert count == 1
+    assert len(names) == 1
     assert "P2_BUTTON1=Red" in new_text
 
     # Using player=5 on the same text adds P5 and leaves P2 alone
     text2 = "[game]\nP2_BUTTON1=White\n"
-    new_text2, count2 = _patch_admin_buttons_in_text(text2, admin_player=5,
+    new_text2, names2 = _patch_admin_buttons_in_text(text2, admin_player=5,
                                                       button_colors=["Green"])
-    assert count2 == 1
+    assert len(names2) == 1
     assert "P2_BUTTON1=White" in new_text2
     assert "P5_BUTTON1=Green" in new_text2
 

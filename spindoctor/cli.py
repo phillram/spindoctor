@@ -6878,11 +6878,20 @@ def ledblinky_fill_defaults(
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
-        console.print(
-            f"[dim][verbose] {result.colors_ini_path} "
-            f"(added={result.roms_added}, overridden={result.roms_overridden}, "
-            f"skipped={result.roms_skipped_mixed})[/dim]"
-        )
+        console.print(f"\n[dim][verbose] Colors.ini: {result.colors_ini_path}[/dim]")
+        if result.added_rom_names:
+            console.print(f"[dim][verbose] added ({len(result.added_rom_names)}):[/dim]")
+            for name in result.added_rom_names:
+                console.print(f"[dim]  + {name}[/dim]")
+        if result.overridden_rom_names:
+            console.print(f"[dim][verbose] overridden ({len(result.overridden_rom_names)}):[/dim]")
+            for name in result.overridden_rom_names:
+                console.print(f"[dim]  ~ {name}[/dim]")
+        if result.roms_skipped_mixed:
+            console.print(
+                f"[dim][verbose] skipped mixed: {result.roms_skipped_mixed} "
+                f"(hand-crafted entries left untouched)[/dim]"
+            )
 
 
 # ─── ledblinky admin-buttons ──────────────────────────────────────────────────
@@ -7014,10 +7023,16 @@ def ledblinky_admin_buttons_set(
         elif result.backup_path:
             console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
-        console.print(
-            f"[dim][verbose] {result.colors_ini_path} "
-            f"(sections updated={result.sections_updated}, player=P{result.admin_player})[/dim]"
-        )
+        console.print(f"\n[dim][verbose] Colors.ini: {result.colors_ini_path}[/dim]")
+        if result.updated_section_names:
+            console.print(
+                f"[dim][verbose] sections updated ({len(result.updated_section_names)}, "
+                f"player=P{result.admin_player}):[/dim]"
+            )
+            for name in result.updated_section_names:
+                console.print(f"[dim]  ~ {name}[/dim]")
+        else:
+            console.print(f"[dim][verbose] no sections updated (player=P{result.admin_player})[/dim]")
 
 
 # ─── add-system ───────────────────────────────────────────────────────────────
@@ -8853,7 +8868,7 @@ def _print_rename_table(plan, title: str) -> None:
 
 def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
                         apply_changes, undo_manifest, list_manifests_flag,
-                        output_dir):
+                        output_dir, verbose: bool = False):
     from .edit import (
         RENAME_DIR, apply_rename, list_rename_manifests, plan_rename,
         rename_manifest_summary, undo_rename,
@@ -8938,6 +8953,13 @@ def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
         sys.exit(1)
 
     console.print(f"\n[green]+[/green] {verb} complete — {len(applied)} change(s)")
+    if verbose:
+        for ch in applied:
+            if ch.src and ch.dest:
+                action = "copied" if clone else "moved"
+                console.print(f"[dim]  {ch.kind}: {ch.src} → {ch.dest}[/dim]")
+            elif ch.note:
+                console.print(f"[dim]  {ch.kind}: {ch.note}[/dim]")
     if manifest:
         console.print(
             f"Manifest: {manifest.name}\n"
@@ -8960,8 +8982,10 @@ def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
 @click.option("--output-dir", default=None, type=click.Path(),
               help="Write the edited DB into <output-dir>/Databases/<system>/ "
                    "instead of the live HyperSpin tree.")
+@click.option("--verbose", is_flag=True,
+              help="Print each file path moved / updated after the rename completes.")
 def rename_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
-               list_manifests_flag, output_dir):
+               list_manifests_flag, output_dir, verbose):
     """Rename a game's ROM, DB entry, and every media file in one shot.
 
     \b
@@ -8977,6 +9001,7 @@ def rename_cmd(system, game, to_name, display_name, apply_changes, undo_manifest
         system=system, game=game, to=to_name, display_name=display_name,
         apply_changes=apply_changes, undo_manifest=undo_manifest,
         list_manifests_flag=list_manifests_flag, output_dir=output_dir,
+        verbose=verbose,
     )
 
 
@@ -8995,8 +9020,10 @@ def rename_cmd(system, game, to_name, display_name, apply_changes, undo_manifest
 @click.option("--output-dir", default=None, type=click.Path(),
               help="Write the edited DB into <output-dir>/Databases/<system>/ "
                    "instead of the live HyperSpin tree.")
+@click.option("--verbose", is_flag=True,
+              help="Print each file path copied / updated after the clone completes.")
 def clone_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
-              list_manifests_flag, output_dir):
+              list_manifests_flag, output_dir, verbose):
     """Duplicate a game (ROM, DB entry, all media) under a new name.
 
     \b
@@ -9012,6 +9039,7 @@ def clone_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
         system=system, game=game, to=to_name, display_name=display_name,
         apply_changes=apply_changes, undo_manifest=undo_manifest,
         list_manifests_flag=list_manifests_flag, output_dir=output_dir,
+        verbose=verbose,
     )
 
 

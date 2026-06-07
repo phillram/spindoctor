@@ -331,7 +331,8 @@ def apply_batch_edit(
         target.parent.mkdir(parents=True, exist_ok=True)
         db.save(output_path=target, tmp_dir=_tmp)
     else:
-        db.save(tmp_dir=_tmp)
+        _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+        db.save(backup_dir=_bak_dir, tmp_dir=_tmp)
 
     out_dir = manifest_dir or EDIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -716,7 +717,8 @@ def apply_rename(
         target.parent.mkdir(parents=True, exist_ok=True)
         db.save(output_path=target, tmp_dir=_tmp)
     else:
-        db.save(tmp_dir=_tmp)
+        _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+        db.save(backup_dir=_bak_dir, tmp_dir=_tmp)
 
     if db_change is not None:
         applied.append(db_change)
