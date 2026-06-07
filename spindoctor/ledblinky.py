@@ -330,20 +330,44 @@ def synth_controls_section(info: ControlInfo) -> IniSection:
     return IniSection(name=info.rom_name, lines=lines)
 
 
-def synth_colors_section(info: ControlInfo, palette: dict[str, str]) -> IniSection:
-    """Build a colors.ini section using the configured default palette."""
+def synth_colors_section(
+    info: ControlInfo,
+    palette: dict[str, str],
+    named_palette: "Optional[list]" = None,
+) -> IniSection:
+    """Build a Colors.ini section for *info* using the configured default palette.
+
+    When *named_palette* (a list of :class:`ColorEntry`) is supplied the
+    output uses LedBlinky's native **named** format::
+
+        P1_BUTTON1=Red
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=Orange
+
+    When *named_palette* is ``None`` the legacy hex format is used instead
+    (``ledcolor1=FF0000``, ``joystick=FFFFFF``, …).  The legacy format is not
+    readable by LedBlinky itself; callers should always provide *named_palette*
+    when ``Color-RGB.ini`` is available.
+    """
     lines = []
     n = info.num_buttons or 6
     for i in range(1, n + 1):
         key = f"button{i}"
-        color = palette.get(key) or palette.get(f"button{((i - 1) % 6) + 1}", "FFFFFF")
-        lines.append(f"ledcolor{i}={color}")
-    if "joystick" in palette:
-        lines.append(f"joystick={palette['joystick']}")
-    if "start" in palette:
-        lines.append(f"start={palette['start']}")
-    if "coin" in palette:
-        lines.append(f"coin={palette['coin']}")
+        hex_color = palette.get(key) or palette.get(f"button{((i - 1) % 6) + 1}", "FFFFFF")
+        if named_palette is not None:
+            color_name = _nearest_color_name(hex_color, named_palette)
+            lines.append(f"P1_BUTTON{i}={color_name}")
+        else:
+            lines.append(f"ledcolor{i}={hex_color}")
+    for old_key, new_key in (("joystick", "P1_JOYSTICK"), ("start", "P1_START"), ("coin", "P1_COIN")):
+        if old_key in palette:
+            hex_color = palette[old_key]
+            if named_palette is not None:
+                color_name = _nearest_color_name(hex_color, named_palette)
+                lines.append(f"{new_key}={color_name}")
+            else:
+                lines.append(f"{old_key}={hex_color}")
     return IniSection(name=info.rom_name, lines=lines)
 
 
@@ -436,6 +460,28 @@ def generate_for_roms(
         parse_existing_colors_ini(src_colors, warnings=result.warnings) if src_colors else {}
     )
 
+    # Load Color-RGB.ini so generate writes native P1_BUTTON1=Red format that
+    # LedBlinky can actually read.  Fall back to legacy hex format with a warning
+    # when Color-RGB.ini is absent so generate still works on a fresh install.
+    named_palette = None
+    if src_base is not None:
+        color_rgb_path = src_base / COLOR_RGB_NAME
+        if color_rgb_path.exists():
+            try:
+                _, named_palette = parse_color_rgb_ini(color_rgb_path)
+            except Exception as exc:
+                result.warnings.append(
+                    f"Could not load {COLOR_RGB_NAME}: {exc} — "
+                    f"colors.ini will use legacy ledcolor= format instead of P1_BUTTON1= named format. "
+                    f"Run 'ledblinky colors normalize --apply' after generating."
+                )
+        else:
+            result.warnings.append(
+                f"{COLOR_RGB_NAME} not found at {color_rgb_path} — "
+                f"colors.ini will use legacy ledcolor= format instead of P1_BUTTON1= named format. "
+                f"Run 'ledblinky colors normalize --apply' after generating."
+            )
+
     listxml = load_listxml_for_system(config, "MAME", warnings=result.warnings)
 
     out_controls: dict[str, IniSection] = dict(existing_controls)
@@ -461,7 +507,9 @@ def generate_for_roms(
         if rom in existing_colors and not overwrite_existing:
             result.colors_existing_kept += 1
         else:
-            out_colors[rom] = synth_colors_section(info, config.ledblinky_default_colors)
+            out_colors[rom] = synth_colors_section(
+                info, config.ledblinky_default_colors, named_palette=named_palette,
+            )
             result.colors_synthesised += 1
 
     controls_path = base / "controls.ini"
