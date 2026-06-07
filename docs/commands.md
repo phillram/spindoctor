@@ -1014,9 +1014,9 @@ spindoctor ledblinky generate              :: dry-run preview
 spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini
 spindoctor ledblinky generate --apply --verbose  :: also print file paths written
 spindoctor ledblinky audit
-spindoctor ledblinky check                 :: scan for HyperSpin Search-menu compatibility issues
-spindoctor ledblinky fix                   :: dry-run preview of the patch
-spindoctor ledblinky fix --apply           :: commit the patch
+spindoctor ledblinky check                 :: scan for overlay hook issues (read-only)
+spindoctor ledblinky fix                   :: dry-run preview of the overlay hook fix
+spindoctor ledblinky fix --apply           :: commit in-place (writes to ledblinky_dir / hyperspin_dir)
 spindoctor ledblinky patch-settings        :: preview Settings.ini changes
 spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also swap idle animation
@@ -1031,16 +1031,18 @@ spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: 
 
 `generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
 
-`check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search overlay crashes when LEDBlinky is installed:
+`check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search, Genre, and Favorites overlays hang or crash when LEDBlinky is installed. Two patches are applied:
 
-1. LEDBlinky injects `Start_Hyperspin_Process` / `Exit_Hyperspin_Process` lines into per-menu `Settings.ini` — Search's overlay launcher doesn't tolerate them.
-2. `LEDBlinkyControls.xml` has no entry for the Search special menu.
+1. **`LEDBlinkyControls.xml`** — adds a stub entry for each requested menu (Search, Genre, Favorites) so LedBlinky's lookup succeeds when the overlay activates.
+2. **HyperSpin per-menu `Settings.ini`** — comments out `Start_Hyperspin_Process` / `Exit_Hyperspin_Process` lines that tell HyperSpin to launch/kill LEDBlinky.exe when the overlay opens. If the `Settings.ini` does not exist, there are no hooks to remove — this is not an error.
 
-`fix` is reversible: timestamped `.bak` backups are saved next to every modified file, and disabled lines are commented out (not deleted), tagged so you can find them later.
+`fix` **always writes in-place** to `ledblinky_dir` and `hyperspin_dir`. It does not respect the global `output_dir` config setting. Pass `--output-dir` explicitly only when staging files for testing. Backups are written to `backup_dir` when configured.
+
+`fix` is reversible: timestamped `.bak` backups are written before each file is modified, and hook lines are commented out rather than deleted.
 
 ```bat
 spindoctor ledblinky fix --menus Search,Genre,Favorites --apply
-spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: stage instead of in-place
+spindoctor ledblinky fix --output-dir D:\SpinDoctorOutput --apply   :: write to D:\SpinDoctorOutput (testing only)
 ```
 
 The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlinky needs those hooks during gameplay.

@@ -441,9 +441,12 @@ spindoctor ledblinky generate --overwrite --apply                         :: rep
 :: Audit coverage — which ROMs have / lack control data
 spindoctor ledblinky audit
 
-:: Fix HyperSpin Search/Genre/Favorites overlay crash caused by LEDBlinky hooks
-spindoctor ledblinky check
-spindoctor ledblinky fix --apply
+:: Fix HyperSpin Search/Genre/Favorites overlay hang caused by LEDBlinky hooks
+:: check = read-only scan; fix = write in-place to ledblinky_dir + hyperspin_dir (not output_dir)
+spindoctor ledblinky check                                                        :: scan only
+spindoctor ledblinky fix                                                          :: preview
+spindoctor ledblinky fix --apply                                                  :: commit
+spindoctor ledblinky fix --menus Search,Genre,Favorites --apply                   :: all overlay menus
 
 :: Patch Settings.ini — silence unused-button flash + improve idle animation
 spindoctor ledblinky patch-settings                                               :: preview
