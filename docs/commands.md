@@ -1049,8 +1049,10 @@ Output includes:
 - **controls.ini** — whether a button-count entry exists for the ROM. If missing, LedBlinky may not know which buttons the game uses.
 - **LEDBlinkyControls.xml** — which emulators are defined and whether the ROM has its own `<game>` entry. If no per-ROM entry exists, LedBlinky uses the emulator's DEFAULT control group and may ignore `Colors.ini` entirely.
 - **MAME listxml** — player count, button count, and control types per MAME's own database.
-- **Log file path** — the path to `LEDBlinkyLog.txt`. Opening the log and searching for the ROM name after a game launch shows exactly what name RocketLauncher sent to LedBlinky — the name must match the `Colors.ini` section header exactly.
+- **LEDBlinky log path** — the path to `LEDBlinkyLog.txt` (written by LedBlinky itself, not SpinDoctor). Opening it and searching for the ROM name after a game launch shows exactly what name RocketLauncher sent to LedBlinky.
 - **Guided next steps** — actionable suggestions based on what's missing.
+
+When `output_dir` is configured, the full report is also saved to `<output_dir>/diagnostics/inspect-rom-<ROM>-<timestamp>.txt` for later reference.
 
 **Common causes when colors don't apply:**
 
