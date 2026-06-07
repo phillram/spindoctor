@@ -419,6 +419,27 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply  :
 spindoctor backup restore --backup E:\Backups\... --overwrite --apply          :: clobber non-empty dirs
 ```
 
+### `backup sidecar` — per-file rollback
+
+Every SpinDoctor command that modifies a file in-place writes a timestamped `.YYYYMMDD_HHMMSS.bak` sibling next to the modified file (when `backup_before_modify` is on, which is the default). These are *sidecar backups* — tiny single-file snapshots distinct from the full-library `backup create` archives.
+
+Use `backup sidecar` when you want to roll back one bad edit (e.g. a corrupted `Main Menu.xml`, a `Colors.ini` you accidentally overrode) without restoring the entire library.
+
+```bat
+:: List all sidecar backups for a specific file
+spindoctor backup sidecar list "D:\HyperSpin\Databases\Main Menu\Main Menu.xml"
+
+:: Preview what a restore would do (dry-run, default)
+spindoctor backup sidecar restore "D:\HyperSpin\Databases\Main Menu\Main Menu.xml" ^
+    --from "D:\HyperSpin\Databases\Main Menu\Main Menu.20260519_153045.bak"
+
+:: Commit the restore
+spindoctor backup sidecar restore "D:\HyperSpin\Databases\Main Menu\Main Menu.xml" ^
+    --from "D:\HyperSpin\Databases\Main Menu\Main Menu.20260519_153045.bak" --apply
+```
+
+`backup sidecar restore --apply` itself backs up the current live file first, so the restore is undoable via another `sidecar restore` call — `--apply` is not a one-way door.
+
 ---
 
 ## Health & integrity

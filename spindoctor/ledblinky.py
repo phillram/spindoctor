@@ -841,7 +841,7 @@ def apply_fix(
         if would_add and not dry_run:
             try:
                 if backup and output_base is None and src_xml.exists():
-                    shutil.copy2(src_xml, src_xml.with_suffix(src_xml.suffix + f".{stamp}.bak"))
+                    _backup(src_xml, _config_backup_dir(config))
                 wrote, added = _ensure_controls_xml_entries(src_xml, dst_xml, menus)
                 entry["added"] = added
                 entry["wrote"] = wrote
@@ -890,7 +890,7 @@ def apply_fix(
         if changed and not dry_run:
             try:
                 if backup and output_base is None:
-                    shutil.copy2(src_ini, src_ini.with_suffix(src_ini.suffix + f".{stamp}.bak"))
+                    _backup(src_ini, _config_backup_dir(config))
                 dst_ini.parent.mkdir(parents=True, exist_ok=True)
                 dst_ini.write_text(new_text, encoding="utf-8")
                 info["wrote"] = True
@@ -1577,6 +1577,8 @@ class FillDefaultsResult:
     roms_skipped_mixed: int = 0   # existing mixed-color sections left untouched
     backup_path: Optional[Path] = None
     dry_run: bool = False
+    added_rom_names: "list[str]" = field(default_factory=list)
+    overridden_rom_names: "list[str]" = field(default_factory=list)
 
 
 # ── fill-defaults helpers ──────────────────────────────────────────────────────
@@ -1931,6 +1933,7 @@ def fill_default_colors(
         systems_to_scan = list(get_systems(config))
 
     new_entries: list[str] = []
+    new_entry_names: list[str] = []
     roms_to_override: "set[str]" = set()
     _seen_override_check: "set[str]" = set()  # prevent double-counting across systems
     roms_checked = 0
@@ -1973,6 +1976,7 @@ def fill_default_colors(
                 lines.append(f"{ap}_START={admin_color}")
             lines.append("")  # blank line between sections
             new_entries.append("\n".join(lines))
+            new_entry_names.append(rom_name)
             # Mark as seen so a ROM appearing in multiple system databases
             # is only emitted once (Colors.ini does not support duplicate sections).
             existing_sections.add(rom_name)
@@ -1980,6 +1984,8 @@ def fill_default_colors(
     result.roms_checked = roms_checked
     result.roms_added = len(new_entries)
     result.roms_overridden = len(roms_to_override)
+    result.added_rom_names = new_entry_names
+    result.overridden_rom_names = sorted(roms_to_override)
 
     needs_write = bool(new_entries) or bool(roms_to_override)
 
@@ -2133,16 +2139,17 @@ class AdminButtonPatchResult:
     backup_path: Optional[Path] = None
     admin_player: int = 0
     button_colors: list = field(default_factory=list)
+    updated_section_names: "list[str]" = field(default_factory=list)
 
 
 def _patch_admin_buttons_in_text(
     text: str,
     admin_player: int,
     button_colors: "list[str]",
-) -> "tuple[str, int]":
+) -> "tuple[str, list[str]]":
     """Update or insert ``P{admin_player}_BUTTON{i}=color`` in every INI section.
 
-    Returns ``(new_text, sections_modified_count)``.  Only
+    Returns ``(new_text, modified_section_names)``.  Only
     ``P{admin_player}_BUTTON*`` keys are touched; all other lines are
     preserved verbatim.
     """
@@ -2154,9 +2161,10 @@ def _patch_admin_buttons_in_text(
     lines = text.splitlines(keepends=True)
     result: list[str] = []
     in_section = False
+    current_section_name: str = ""
     seen_keys: set[str] = set()
     section_changed = False
-    sections_modified = 0
+    modified_sections: list[str] = []
 
     def _flush_missing() -> "list[str]":
         missing = []
@@ -2177,8 +2185,9 @@ def _patch_admin_buttons_in_text(
                     section_changed = True
                     result.extend(missing)
                 if section_changed:
-                    sections_modified += 1
+                    modified_sections.append(current_section_name)
             in_section = True
+            current_section_name = stripped[1:-1]
             seen_keys = set()
             section_changed = False
             result.append(line)
@@ -2214,9 +2223,9 @@ def _patch_admin_buttons_in_text(
             section_changed = True
             result.extend(missing)
         if section_changed:
-            sections_modified += 1
+            modified_sections.append(current_section_name)
 
-    return "".join(result), sections_modified
+    return "".join(result), modified_sections
 
 
 def patch_admin_button_colors(
@@ -2298,12 +2307,13 @@ def patch_admin_button_colors(
             )
 
     existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
-    new_text, sections_updated = _patch_admin_buttons_in_text(
+    new_text, updated_names = _patch_admin_buttons_in_text(
         existing_text, admin_player, list(button_colors)
     )
-    result.sections_updated = sections_updated
+    result.sections_updated = len(updated_names)
+    result.updated_section_names = updated_names
 
-    if not dry_run and sections_updated > 0:
+    if not dry_run and result.sections_updated > 0:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text(new_text, encoding="utf-8")

@@ -8,6 +8,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`rename` / `clone` — `--verbose` flag** — after `--apply` completes, prints every file path moved or copied (ROM, all media types, DB entry) so you can confirm exactly what changed on disk.
+
+- **`backup sidecar` — new subcommand group** — `backup sidecar list <FILE>` lists the timestamped `.YYYYMMDD_HHMMSS.bak` siblings SpinDoctor writes next to each modified file. `backup sidecar restore <FILE> --from <SIDECAR> --apply` restores the file from a chosen sidecar (backing up the current live file first so the restore itself is undoable). Documented in `commands.md` and `cli-cheatsheet.md`.
+
+### Fixed
+
+- **`ledblinky fix` — backups now route to `config.backup_dir`** — the `apply_fix()` function backed up `LEDBlinkyControls.xml` and per-menu `Settings.ini` using `shutil.copy2` directly next to the source file, ignoring the configured `backup_dir`. Fixed to use the same `_backup(path, _config_backup_dir(config))` call used by every other LEDBlinky command.
+
+- **`batch-edit` / `rename` / `clone` — DB backups now route to `config.backup_dir`** — `apply_batch_edit` and the rename/clone apply path called `db.save(tmp_dir=_tmp)` without passing `backup_dir`, so the `.bak` database backup landed next to the live XML. Both paths now pass `backup_dir=Path(config.backup_dir)` consistent with `update-db` and `fetch-meta`.
+
+- **`ledblinky fill-defaults --verbose` — now emits per-ROM detail** — the previous verbose output was identical to the non-verbose summary (just counts). Now prints each ROM name added (`+ romname`) and each ROM name overridden (`~ romname`), plus the mixed-skipped count.
+
+- **`ledblinky admin-buttons set --verbose` — now emits per-section detail** — previously printed only the total section count. Now prints each section name updated (`~ romname`).
+
+- **`cli-cheatsheet.md` — corrected seven broken examples**:
+  - `doctor --verbose` removed (flag does not exist on `doctor`).
+  - `verify --report` removed (flag does not exist on `verify`; only `audit` has `--report`).
+  - `find-global zelda --fuzzy` → `find-global zelda --limit 20` (`--fuzzy` does not exist).
+  - `rename` / `clone` corrected from positional syntax to named options (`--system`, `--game`, `--to`).
+  - `curate --revision newest` → `curate --prefer-revision latest` (correct flag name and value).
+  - `ignore add/remove --rom` → positional argument (`spindoctor ignore add "rom" --system MAME`).
+  - `migrate --move` → `migrate --keep-source` (default is already a move; `--keep-source` is the copy flag).
+
 - **Global Apply / Verbose checkboxes in status bar** — the per-tab Apply checkboxes that previously lived inside individual tab sections have been consolidated into two persistent controls at the very bottom of the GUI window, always visible regardless of which tab is active. **Apply** gates whether commands write to disk (unchecked = dry-run, the safe default). **Verbose** passes `--verbose` to every command that supports it, printing file paths written, per-item counts (added / overridden / skipped), and key→value detail.
 
 - **`--verbose` flag added to**: `ledblinky generate` (prints controls + colors paths), `ledblinky patch-settings` (prints each key patched + file path), `ledblinky colors brightness` (prints Color-RGB.ini path + color count), `ledblinky fill-defaults` (prints Colors.ini path + added/overridden/skipped counts), `ledblinky admin-buttons set` (prints Colors.ini path + sections updated), `ledblinky colors randomize` (prints Colors.ini path + palette size + sections updated), `migrate` (prints each file/folder as it moves), `lightgun detect` (prints install paths + system counts), `lightgun configure` (prints INI path + Pre/Post launch hook values). `backup create` and `backup restore` already had `--verbose`; all others now consistently support it.

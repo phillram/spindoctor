@@ -361,7 +361,7 @@ def test_ledblinky_fill_defaults_verbose_prints_path(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     flat = _flat(result.output)
     assert str(colors_ini) in flat
-    assert "added=1" in flat
+    assert "added" in flat and "pacman" in flat
 
 
 # ─── ledblinky colors brightness --verbose ───────────────────────────────────
