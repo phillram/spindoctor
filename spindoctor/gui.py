@@ -9398,7 +9398,11 @@ class _SpinDoctorGUI:
             text=("Generate and audit LEDBlinky controls.ini / colors.ini "
                   "from MAME's -listxml output. Generate is dry-run by "
                   "default and preserves community-maintained entries; "
-                  "tick Overwrite if you want to replace them."),
+                  "tick Overwrite if you want to replace them.\n\n"
+                  "⚠  Generate writes entries in an older hex format "
+                  "(ledcolor1=FF0000). Click Normalize Colors.ini afterward "
+                  "to convert them to P*_BUTTON* named format — required before "
+                  "Fill Defaults or Randomize will work on those entries."),
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
@@ -9425,6 +9429,10 @@ class _SpinDoctorGUI:
             command=self._run_led_generate,
         ).pack(side="left")
         self.ttk.Button(
+            btn_row, text="Normalize Colors.ini",
+            command=self._run_color_normalize,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
             btn_row, text="Audit coverage",
             command=self._run_led_audit,
         ).pack(side="left", padx=6)
@@ -9441,15 +9449,15 @@ class _SpinDoctorGUI:
 
         self.ttk.Label(
             frame,
-            text=("Tip: configure ledblinky_dir in the Setup tab if your "
-                  "LEDBlinky install isn't at the default location. Generate "
-                  "automatically saves .bak copies of controls.ini and "
-                  "colors.ini when backup_before_modify is enabled (default). "
-                  "\"Check overlay hooks\" scans for LEDBlinky hook lines that "
-                  "cause HyperSpin Search/Genre/Favorites overlays to hang. "
-                  "\"Fix overlay hooks\" removes those hooks and adds stub "
-                  "LEDBlinkyControls.xml entries — always writes in-place to "
-                  "ledblinky_dir and hyperspin_dir, not the output_dir setting."),
+            text=("Recommended workflow: (1) Generate — writes controls.ini + colors.ini "
+                  "from MAME -listxml in hex format.  "
+                  "(2) Normalize Colors.ini — converts ledcolor1=/joystick= hex keys to "
+                  "P1_BUTTON1=/P1_JOYSTICK= named keys required by Fill Defaults and Randomize.  "
+                  "(3) Fill Defaults — adds P*_BUTTON* entries for console/other ROMs not "
+                  "covered by Generate.  "
+                  "(4) Randomize — gives every game a unique button color.\n"
+                  "Check overlay hooks / Fix overlay hooks fix the Search/Genre/Favorites "
+                  "overlay hang — always write in-place to ledblinky_dir / hyperspin_dir."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
 
@@ -10127,6 +10135,8 @@ class _SpinDoctorGUI:
         args = ["ledblinky", "colors", "normalize"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli(
             "spindoctor", args,
             on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
