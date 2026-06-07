@@ -6,17 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky colors normalize --verbose`** — new `--verbose` flag that prints per-section conversion detail: for each section converted, lists every key mapping applied (`ledcolor1=FF0000 → P1_BUTTON1=Red`, `joystick=FFFFFF → P1_JOYSTICK=White`, etc.). First 50 sections are shown; a summary count follows if there are more.
+
 ### Fixed
 
-- **`ledblinky fix` / `batch-edit` / `rename` / `clone` — wrong output path when `output_dir` is configured** — these commands were calling `config.effective_output_dir()`, which falls back to the global `output_dir` config setting when no explicit `--output-dir` flag is given. If `output_dir` was set (e.g. `J:\spindoctor\output`), files were written there instead of in-place (`LEDBlinkyControls.xml` for `ledblinky fix`; edited database XML for `batch-edit`, `rename`, `clone`). All four commands now use the explicit `--output-dir` value only (`Path(output_dir) if output_dir else None`), never falling back to `config.output_dir`.
+- **`ledblinky fix` / `batch-edit` / `rename` / `clone` — wrong output path when `output_dir` is configured** — these commands were calling `config.effective_output_dir()`, which falls back to the global `output_dir` config setting when no explicit `--output-dir` flag is given. If `output_dir` was set (e.g. `J:\spindoctor\output`), files were written there instead of in-place. All four commands now use the explicit `--output-dir` value only, never falling back to `config.output_dir`.
 
-- **`ledblinky fix` — "not found" Settings.ini shown as an error** — when HyperSpin has never written LEDBlinky hooks into a menu's `Settings.ini` (the file doesn't exist), the command showed a generic "not found" message that looked like a failure. It now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
+- **`ledblinky fix` — "not found" Settings.ini shown as an error** — now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
+
+- **`ledblinky colors randomize` — skipped MAME sections now identified as old-format, not silently dropped** — now counted separately as "old format" with an actionable yellow warning: *Run `colors normalize --apply` first, then re-run randomize.*
 
 ### Changed
 
-- **GUI — "Fix INI issues" button renamed to "Fix overlay hooks"** — more accurately describes what the command does: removes LEDBlinky hook lines from HyperSpin's Search/Genre/Favorites overlay Settings.ini files and adds stub entries to `LEDBlinkyControls.xml`. The paired "Check existing INIs" button is also renamed to "Check overlay hooks".
+- **GUI — "Fix INI issues" button renamed to "Fix overlay hooks"** — more accurately describes what the command does. The paired "Check existing INIs" button is also renamed to "Check overlay hooks".
 
-- **`ledblinky fix` — improved CLI docstring and output** — the command docstring now explicitly states that it writes in-place to `ledblinky_dir` / `hyperspin_dir` (not `output_dir`), and the HyperSpin INIs section header now includes a one-line explanation of what the patch removes. `commands.md` and `cli-cheatsheet.md` updated accordingly.
+- **`ledblinky fix` — improved CLI docstring and output** — explicitly states it writes in-place to `ledblinky_dir` / `hyperspin_dir` (not `output_dir`).
+
+- **`ledblinky colors randomize --verbose`** — now shows per-section color assignments (first 50 sections) and breaks down skips into `skipped_old_fmt` vs `skipped_empty`.
+
+- **`ledblinky colors brightness --verbose`** — now shows per-color before→after with R,G,B and hex.
+
+- **`ledblinky patch-settings --verbose`** — now prints each key changed with old→new values.
 
 ---
 
