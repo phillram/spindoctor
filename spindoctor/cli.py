@@ -265,7 +265,7 @@ _INIT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("rocketlauncher_dir",    "RocketLauncher directory",                          r"D:\RocketLauncher",             False),
     ("ledblinky_dir",         "LEDBlinky install directory ('-' to skip)",         r"C:\LEDBlinky",                  True),
     ("mame_executable",       "MAME executable ('-' to skip)",                     r"D:\Emulators\MAME\mame.exe",    True),
-    ("output_dir",            "Default output directory ('-' for in-place writes)", r"D:\SpinDoctorOutput",          True),
+    ("output_dir",            "Staging directory for generated files (unused by most commands — prefer --output-dir flag)", r"D:\SpinDoctorOutput", True),
     ("auto_audit_export_dir", "Auto-audit export directory ('-' to skip)",         r"D:\SpinDoctorAudits",           True),
 )
 
@@ -6187,6 +6187,10 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
         menus=menu_list,
     )
 
+    # Show config paths used so the user can verify they point to the right places.
+    console.print(f"\n[dim]ledblinky_dir : {config.ledblinky_dir or '[not set]'}[/dim]")
+    console.print(f"[dim]hyperspin_dir : {config.hyperspin_dir or '[not set]'}[/dim]")
+
     cx = result["controls_xml"]
     console.print("\n[blue bold]LEDBlinkyControls.xml[/blue bold]")
     if cx is None:
@@ -6200,7 +6204,8 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
 
     console.print("\n[blue bold]HyperSpin per-menu INIs[/blue bold]")
     console.print(
-        "[dim]  (removes LEDBlinky process hooks that cause HyperSpin to hang "
+        "[dim]  (path: <hyperspin_dir>\\Menu\\<MenuName>\\Settings.ini — "
+        "removes LEDBlinky process hooks that cause HyperSpin to hang "
         "when Search / Genre / Favorites overlays open)[/dim]"
     )
     tbl = Table(box=box.SIMPLE, show_header=True)
