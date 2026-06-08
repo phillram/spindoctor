@@ -158,55 +158,71 @@ Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by de
 
 ### LEDBlinky
 
-**Generate** (controls.ini + colors.ini), **Audit coverage**, **Check**, and **Fix**. Per-system field defaults to MAME, plus an Overwrite toggle for community-maintained entries. Dry-run by default. CLI equivalent: `spindoctor ledblinky generate / audit / check / fix`.
+The LEDBlinky tab is organized as a step-by-step workflow. Follow the sections top to bottom when setting up LED colors for the first time.
 
-**Fill Default Colors** — adds `Colors.ini` entries for every ROM that has no LED mapping, so those games glow a steady color instead of going completely dark. Controls:
+**Step 1 — Generate & Normalize (MAME data)**
 
-- **Default color** — dropdown populated from `Color-RGB.ini`; auto-refreshes after Update & Rename or Normalize. **Refresh colors** button reloads the palette without scrolling to Color Definitions.
-- **Buttons (1-8)** — how many `P{n}_BUTTON` keys to generate *per player*.
-- **Players (1-4)** — number of player blocks (P1–P4). All players are mirrored to the same color. Set to match your cabinet (e.g. 2 for a 2-player cab).
-- **Admin buttons** — optional extra button block using the next player slot (P{players+1}). Set to 0 to disable. Use a separate **Color** dropdown for the admin block (e.g. Green to distinguish admin buttons from game buttons).
-- **System** — leave blank to scan all systems including Favorites / Recently Played / Most Played (synthetic wheels are included).
-- **Override existing entries if all buttons are the same color** — when checked, sections in `Colors.ini` where every `P*_BUTTON/JOYSTICK/START/COIN` key has the *same* value are updated to the new Default color. Sections with mixed per-button colors (intentional game-specific layouts) are never touched.
-- **Don't add new keys when overriding** — when checked alongside the override option, only the *values* of already-present keys are replaced. No new `P*_BUTTON`, `JOYSTICK`, `START`, or `COIN` lines are inserted. Use this when an existing entry intentionally has fewer buttons than the **Buttons** count (e.g. a 3-button game entry that should stay at 3 buttons).
+- **1a. Generate (controls + colors)** — reads MAME's `-listxml` data and writes `controls.ini` + `colors.ini` with per-game button assignments. Dry-run by default; preserves community-maintained entries (tick **Overwrite existing entries** to replace them). Output uses a legacy hex format (`ledcolor1=FF0000`) — run **1b. Normalize** immediately after. CLI: `spindoctor ledblinky generate`.
+- **1b. Normalize Colors.ini** — converts the hex-format entries from Generate (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) to LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Each hex value is matched to the nearest color in `Color-RGB.ini`. Sections already in named format are untouched. **Required before Fill Defaults or Randomize will work on MAME entries.** CLI: `spindoctor ledblinky colors normalize`.
+- **Audit coverage** — shows which ROMs have and lack control data. CLI: `spindoctor ledblinky audit`.
 
-Apply checkbox + **Fill Default Colors** button. CLI equivalent: `spindoctor ledblinky fill-defaults [--override-uniform] [--no-add-keys]`.
+**Step 2 — Fill Default Colors**
 
-**Brightness** — sets all `Color-RGB.ini` colors to a uniform brightness level. Drag the slider (0–100 %) and click **Scale Brightness**. Each color is first normalized to its maximum possible intensity, then scaled to the chosen percentage — so **100 % = every button at maximum brightness** (dim colors are boosted up, not left dim). 50 % = half brightness (dim-room gaming); 10 % = near-dark night mode; 0 % = all off. This guarantees every button (P1, P2, admin, Start) is at the same level. A `.bak` backup of `Color-RGB.ini` is written automatically. CLI equivalent: `spindoctor ledblinky colors brightness`.
+Adds `Colors.ini` entries for every ROM that has no LED mapping (console games, non-MAME systems not covered by Generate), so those games glow a steady color instead of going completely dark. Controls:
 
-**Randomize Entry Colors** — gives each game its own independent random button color drawn from the `Color-RGB.ini` palette (black/off excluded). For every section in `Colors.ini` that has player-button keys:
+- **Default color** — dropdown from `Color-RGB.ini`; **Refresh colors** reloads the palette.
+- **Buttons (1-8)** — how many `P{n}_BUTTON` keys per player.
+- **Players (1-4)** — number of player blocks (P1–P4), all mirrored to the same color.
+- **Admin buttons** — optional extra block using the next player slot. Set to 0 to disable.
+- **System** — leave blank for all systems including Favorites / Recently Played / Most Played.
+- **Override existing entries if all buttons are the same color** — updates uniform sections; leaves mixed-color entries untouched.
+- **Don't add new keys when overriding** — only updates values of already-present keys.
 
-- All `P*_BUTTON*` and `P*_JOYSTICK` keys are set to **one random color** — all buttons on that game glow the same shade.
-- All `P*_COIN` and `P*_START` keys are set to a **second independently drawn color** — the accent/meta color for that game.
-- Only **existing** keys are updated; buttons intentionally absent from a section (i.e. intentionally dark) are never touched.
+Apply checkbox + **Fill Default Colors** button. CLI: `spindoctor ledblinky fill-defaults`.
 
-Controls:
-- **Seed (optional)** — enter an integer for a reproducible run (same seed → same color assignments). Leave blank for a fresh random shuffle every run.
-- Apply checkbox + **Randomize Entry Colors** button. A `.bak` backup of `Colors.ini` is written automatically.
+**Step 3 — Randomize Entry Colors**
 
-CLI equivalent: `spindoctor ledblinky colors randomize [--seed N]`.
+Gives each game its own independent random button color. All `P*_BUTTON*` / `P*_JOYSTICK` keys get one random color; `P*_COIN` / `P*_START` get a second. Only existing keys are updated — buttons intentionally absent (dark) stay dark. **Requires normalized format (Step 1b). If most sections are skipped, run Normalize first.**
 
-**Admin Button Colors** — sets fixed per-button colors for the cabinet-level (admin) buttons across **every** ROM section in `Colors.ini`. Unlike Fill Default Colors (which only adds missing entries), this writes to every existing section so the admin buttons always show the same colors regardless of the current game. Controls:
+- **Seed (optional)** — integer for reproducible output; blank = fresh shuffle every run.
 
-- **Player slot (1–6)** — which player slot the admin buttons live on. Default `3` for a 2-player cabinet (use `2` for a 1-player cabinet).
-- **Button count (1–8)** — how many admin buttons to update. Only the first N color dropdowns are sent.
-- **BUTTON1–BUTTON8** — individual color dropdowns, one per button, **populated from `Color-RGB.ini`** (same palette as Fill Default Colors). Use **Refresh colors** to reload the list after editing colors or when first configuring the cabinet.
-- **Refresh colors** button — reloads the `Color-RGB.ini` palette into all color dropdowns (same as the "Refresh list" button in Color Definitions).
+Apply checkbox + **Randomize Entry Colors** button. CLI: `spindoctor ledblinky colors randomize [--seed N]`.
 
-Apply checkbox + **Set Admin Button Colors** button. A `.bak` backup of `Colors.ini` is written automatically. CLI equivalent: `spindoctor ledblinky admin-buttons set`.
+**Step 4 — Admin Button Colors**
 
-**Settings.ini Patch** — fixes common annoyances without touching LedBlinky's main UI. Two animation pickers, both populated by the same **Refresh list** button:
+Sets fixed per-button colors for cabinet-level (admin) buttons (Select, Exit, Search, Pause) across **every** ROM section. Run after Randomize so admin colors override game colors.
 
-- **FE idle animation** — controls `FELWAFile` (the animation while browsing HyperSpin). Leave blank for static colors, or pick a fade file.
-- **In-game unused buttons** — controls `GamePlayLWAFile` (buttons the current game doesn't use). Leave **blank** to silence them entirely (recommended — buttons go dark). Select an `.lwa` animation to play that animation on all unmapped buttons during every game on every system.
+- **Player slot (1–6)** — default `3` for a 2-player cabinet.
+- **Button count (1–8)** — how many buttons to update.
+- **BUTTON1–BUTTON8** — per-button color dropdowns. **Refresh colors** reloads from `Color-RGB.ini`.
 
-Both settings are global — there is no per-system or per-game override available in `Settings.ini`. Apply checkbox + **Patch Settings.ini** button; a `.bak` backup is written automatically. CLI equivalent: `spindoctor ledblinky patch-settings`.
+Apply checkbox + **Set Admin Button Colors** button. CLI: `spindoctor ledblinky admin-buttons set`.
 
-**Backup / Restore (LEDBlinky only)** — quick backup and restore scoped to the LEDBlinky component only. Backup folder and Restore-from fields both default to `config.backup_dir`. Dry-run by default. CLI equivalent: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
+**Step 5 — Brightness**
 
-**Color Definitions (Color-RGB.ini)** — Treeview listing all named colors (Name, R/G/B 0-48, hex). Click a row to load it into the edit fields. Change the name and/or paste a `#RRGGBB` hex code (a live color swatch previews your input); tick Apply and click **Update & Rename** to propagate the change through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml` in one shot. A `.bak` backup is written for every modified file. CLI equivalent: `spindoctor ledblinky colors edit`.
+Sets all `Color-RGB.ini` colors to a uniform brightness: **100 % = maximum** (dim colors boosted); 50 % = half; 10 % = night mode; 0 % = all off. Drag slider and click **Scale Brightness**. CLI: `spindoctor ledblinky colors brightness`.
 
-**Normalize Colors.ini** button — converts SpinDoctor-generated hex-format entries (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) to LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Each hex value is matched to the nearest color in `Color-RGB.ini`. Sections already in named format are untouched. Run this before **Update & Rename** so renames reach every section. Uses the same Apply checkbox. CLI equivalent: `spindoctor ledblinky colors normalize`.
+**Step 6 — Settings.ini Patch**
+
+- **FE idle animation** — `FELWAFile`: animation while browsing HyperSpin. Leave blank for static colors.
+- **In-game unused buttons** — `GamePlayLWAFile`: leave **blank** to silence unmapped buttons (recommended); select an `.lwa` file to animate them.
+
+**Refresh list** populates both dropdowns. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
+
+**Overlay Hook Fix (one-time setup)**
+
+Fixes HyperSpin Search / Genre / Favorites overlay crashes: adds a stub to `LEDBlinkyControls.xml` and comments out LEDBlinky process hooks in per-menu `Settings.ini`. Always writes in-place to `ledblinky_dir` / `hyperspin_dir`.
+
+- **Check overlay hooks** — read-only scan. CLI: `spindoctor ledblinky check`.
+- **Fix overlay hooks** — commits both patches. CLI: `spindoctor ledblinky fix --apply`.
+
+**Color Definitions — Color-RGB.ini (advanced)**
+
+Treeview of all named colors (Name, R/G/B 0-48, hex). Click a row to load it; edit name and/or paste `#RRGGBB`; click **Update & Rename** to propagate through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml`. **Normalize Colors.ini** also available here as a shortcut. CLI: `spindoctor ledblinky colors edit / normalize`.
+
+**Backup / Restore (LEDBlinky only)**
+
+Quick backup and restore scoped to LEDBlinky files. Both folder fields default to `config.backup_dir`. Dry-run by default. CLI: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
 
 ### Lightgun
 

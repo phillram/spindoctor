@@ -330,20 +330,44 @@ def synth_controls_section(info: ControlInfo) -> IniSection:
     return IniSection(name=info.rom_name, lines=lines)
 
 
-def synth_colors_section(info: ControlInfo, palette: dict[str, str]) -> IniSection:
-    """Build a colors.ini section using the configured default palette."""
+def synth_colors_section(
+    info: ControlInfo,
+    palette: dict[str, str],
+    named_palette: "Optional[list]" = None,
+) -> IniSection:
+    """Build a Colors.ini section for *info* using the configured default palette.
+
+    When *named_palette* (a list of :class:`ColorEntry`) is supplied the
+    output uses LedBlinky's native **named** format::
+
+        P1_BUTTON1=Red
+        P1_JOYSTICK=White
+        P1_START=White
+        P1_COIN=Orange
+
+    When *named_palette* is ``None`` the legacy hex format is used instead
+    (``ledcolor1=FF0000``, ``joystick=FFFFFF``, …).  The legacy format is not
+    readable by LedBlinky itself; callers should always provide *named_palette*
+    when ``Color-RGB.ini`` is available.
+    """
     lines = []
     n = info.num_buttons or 6
     for i in range(1, n + 1):
         key = f"button{i}"
-        color = palette.get(key) or palette.get(f"button{((i - 1) % 6) + 1}", "FFFFFF")
-        lines.append(f"ledcolor{i}={color}")
-    if "joystick" in palette:
-        lines.append(f"joystick={palette['joystick']}")
-    if "start" in palette:
-        lines.append(f"start={palette['start']}")
-    if "coin" in palette:
-        lines.append(f"coin={palette['coin']}")
+        hex_color = palette.get(key) or palette.get(f"button{((i - 1) % 6) + 1}", "FFFFFF")
+        if named_palette is not None:
+            color_name = _nearest_color_name(hex_color, named_palette)
+            lines.append(f"P1_BUTTON{i}={color_name}")
+        else:
+            lines.append(f"ledcolor{i}={hex_color}")
+    for old_key, new_key in (("joystick", "P1_JOYSTICK"), ("start", "P1_START"), ("coin", "P1_COIN")):
+        if old_key in palette:
+            hex_color = palette[old_key]
+            if named_palette is not None:
+                color_name = _nearest_color_name(hex_color, named_palette)
+                lines.append(f"{new_key}={color_name}")
+            else:
+                lines.append(f"{old_key}={hex_color}")
     return IniSection(name=info.rom_name, lines=lines)
 
 
@@ -436,6 +460,28 @@ def generate_for_roms(
         parse_existing_colors_ini(src_colors, warnings=result.warnings) if src_colors else {}
     )
 
+    # Load Color-RGB.ini so generate writes native P1_BUTTON1=Red format that
+    # LedBlinky can actually read.  Fall back to legacy hex format with a warning
+    # when Color-RGB.ini is absent so generate still works on a fresh install.
+    named_palette = None
+    if src_base is not None:
+        color_rgb_path = src_base / COLOR_RGB_NAME
+        if color_rgb_path.exists():
+            try:
+                _, named_palette = parse_color_rgb_ini(color_rgb_path)
+            except Exception as exc:
+                result.warnings.append(
+                    f"Could not load {COLOR_RGB_NAME}: {exc} — "
+                    f"colors.ini will use legacy ledcolor= format instead of P1_BUTTON1= named format. "
+                    f"Run 'ledblinky colors normalize --apply' after generating."
+                )
+        else:
+            result.warnings.append(
+                f"{COLOR_RGB_NAME} not found at {color_rgb_path} — "
+                f"colors.ini will use legacy ledcolor= format instead of P1_BUTTON1= named format. "
+                f"Run 'ledblinky colors normalize --apply' after generating."
+            )
+
     listxml = load_listxml_for_system(config, "MAME", warnings=result.warnings)
 
     out_controls: dict[str, IniSection] = dict(existing_controls)
@@ -461,7 +507,9 @@ def generate_for_roms(
         if rom in existing_colors and not overwrite_existing:
             result.colors_existing_kept += 1
         else:
-            out_colors[rom] = synth_colors_section(info, config.ledblinky_default_colors)
+            out_colors[rom] = synth_colors_section(
+                info, config.ledblinky_default_colors, named_palette=named_palette,
+            )
             result.colors_synthesised += 1
 
     controls_path = base / "controls.ini"
@@ -509,6 +557,172 @@ class CoverageRow:
         if self.in_listxml:
             return "no-input"
         return "missing"
+
+
+def inspect_rom(config: Config, rom_name: str) -> dict:
+    """Collect all LEDBlinky-relevant data for one ROM for diagnostic purposes.
+
+    Returns a dict with keys:
+
+    ``rom_name``        — the name looked up
+    ``colors_ini_path`` — Path to Colors.ini (may not exist)
+    ``colors_entry``    — list of ``"key=value"`` strings from Colors.ini, or ``[]``
+    ``controls_ini_path`` — Path to controls.ini
+    ``controls_entry``  — list of ``"key=value"`` strings from controls.ini, or ``[]``
+    ``xml_path``        — Path to LEDBlinkyControls.xml
+    ``xml_emulators``   — list of emulator names found in the XML
+    ``xml_rom_entries`` — list of ``{"emulator": ..., "attrs": {...}}`` for any
+                          ``<game>``/``<rom>`` XML elements whose ``name`` attribute
+                          matches *rom_name* (case-insensitive)
+    ``log_path``        — guessed path to LEDBlinkyLog.txt
+    ``listxml``         — ``{"players": N, "buttons": N, "controls": [...]}`` or ``None``
+    ``warnings``        — list of diagnostic warning strings
+    """
+    result: dict = {
+        "rom_name": rom_name,
+        "colors_ini_path": None,
+        "colors_entry": [],
+        "controls_ini_path": None,
+        "controls_entry": [],
+        "xml_path": None,
+        "xml_emulators": [],
+        "xml_rom_entries": [],
+        "log_path": None,
+        "listxml": None,
+        "warnings": [],
+    }
+
+    if not config.ledblinky_dir:
+        result["warnings"].append("ledblinky_dir is not configured.")
+        return result
+
+    base = Path(config.ledblinky_dir)
+
+    # Colors.ini
+    colors_path = base / "Colors.ini"
+    result["colors_ini_path"] = colors_path
+    if colors_path.exists():
+        sections = parse_existing_colors_ini(colors_path)
+        entry = sections.get(rom_name)
+        if entry is None:
+            # Try case-insensitive search
+            lower = rom_name.lower()
+            for k, v in sections.items():
+                if k.lower() == lower:
+                    entry = v
+                    result["warnings"].append(
+                        f"Colors.ini: found [{k}] (case differs from [{rom_name}]). "
+                        f"LEDBlinky lookup is case-sensitive on some versions."
+                    )
+                    break
+        result["colors_entry"] = entry.lines if entry else []
+        if not entry:
+            result["warnings"].append(
+                f"Colors.ini: no section [{rom_name}] found — "
+                f"LEDBlinky will use its DEFAULT control group colors."
+            )
+    else:
+        result["warnings"].append(f"Colors.ini not found at {colors_path}.")
+
+    # controls.ini
+    controls_path = base / "controls.ini"
+    result["controls_ini_path"] = controls_path
+    if controls_path.exists():
+        sections = parse_existing_controls_ini(controls_path)
+        entry = sections.get(rom_name)
+        if entry is None:
+            lower = rom_name.lower()
+            for k, v in sections.items():
+                if k.lower() == lower:
+                    entry = v
+                    result["warnings"].append(
+                        f"controls.ini: found [{k}] (case differs from [{rom_name}])."
+                    )
+                    break
+        result["controls_entry"] = entry.lines if entry else []
+        if not entry:
+            result["warnings"].append(
+                f"controls.ini: no section [{rom_name}] found — "
+                f"LEDBlinky may not know which buttons this game uses."
+            )
+    else:
+        result["warnings"].append(f"controls.ini not found at {controls_path}.")
+
+    # LEDBlinkyControls.xml — scan for the ROM name and emulator structure
+    xml_path = base / CONTROLS_XML_NAME
+    result["xml_path"] = xml_path
+    if xml_path.exists():
+        try:
+            import xml.etree.ElementTree as _ET
+            tree = _ET.parse(xml_path)
+            root = tree.getroot()
+            # Collect emulator names
+            emulators = []
+            for el in root.iter():
+                if el.tag.lower() in ("emulator", "game") and el.get("name"):
+                    # "emulator" tag = top-level emulator entries
+                    if el.tag.lower() == "emulator":
+                        emulators.append(el.get("name"))
+            result["xml_emulators"] = emulators
+            # Search for rom_name as game/rom entry under any emulator
+            lower = rom_name.lower()
+            xml_entries = []
+            for el in root.iter():
+                n = el.get("name") or el.get("romName") or ""
+                if n.lower() == lower and el.tag.lower() not in ("emulator",):
+                    # find parent emulator name
+                    parent_name = ""
+                    for anc in root.iter():
+                        if el in list(anc):
+                            parent_name = anc.get("name") or anc.tag
+                    xml_entries.append({
+                        "tag": el.tag,
+                        "emulator": parent_name,
+                        "attrs": dict(el.attrib),
+                    })
+            result["xml_rom_entries"] = xml_entries
+            if not xml_entries:
+                result["warnings"].append(
+                    f"LEDBlinkyControls.xml: no entry for [{rom_name}] found. "
+                    f"LEDBlinky will use the DEFAULT control group for the emulator. "
+                    f"Colors.ini overrides may or may not apply depending on LEDBlinky version."
+                )
+        except Exception as exc:
+            result["warnings"].append(f"LEDBlinkyControls.xml could not be parsed: {exc}")
+    else:
+        result["warnings"].append(f"LEDBlinkyControls.xml not found at {xml_path}.")
+
+    # LEDBlinky log file
+    for log_name in ("LEDBlinkyLog.txt", "LedBlinkyLog.txt", "log.txt"):
+        lp = base / log_name
+        if lp.exists():
+            result["log_path"] = lp
+            break
+    if result["log_path"] is None:
+        result["log_path"] = base / "LEDBlinkyLog.txt"  # guessed path
+        result["warnings"].append(
+            f"LEDBlinky log not found at expected path ({result['log_path']}). "
+            f"Enable logging in LEDBlinky's Settings to capture game-launch events."
+        )
+
+    # MAME listxml
+    listxml = load_listxml_for_system(config, "MAME", warnings=result["warnings"])
+    info = listxml.get(rom_name)
+    if info:
+        result["listxml"] = {
+            "description": info.description,
+            "players": info.num_players,
+            "buttons": info.num_buttons,
+            "controls": info.control_types,
+            "has_input": info.has_input,
+        }
+    else:
+        result["warnings"].append(
+            f"MAME listxml: no entry for [{rom_name}] — "
+            f"either MAME is not configured, or this ROM is not in MAME's database."
+        )
+
+    return result
 
 
 def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow]:
@@ -1401,6 +1615,8 @@ class NormalizeResult:
     keys_converted: int = 0
     backup_path: Optional[Path] = None
     dry_run: bool = False
+    # Per-section detail for --verbose: (section_name, [(old_key, new_key, color_name), ...])
+    converted_details: "list[tuple[str, list[tuple[str, str, str]]]]" = field(default_factory=list)
 
 
 def normalize_colors_ini(
@@ -1473,14 +1689,16 @@ def normalize_colors_ini(
     text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
     lines = text.splitlines(keepends=True)
 
+    # key_changes accumulates (old_key, new_key, color_name) per converted line
     def _flush(
         buf: "list[str]", has_hex: bool
-    ) -> "tuple[list[str], int, int]":
-        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta)."""
+    ) -> "tuple[list[str], int, int, list[tuple[str, str, str]]]":
+        """Rewrite *buf* if *has_hex*; return (lines, secs_delta, keys_delta, key_changes)."""
         if not has_hex:
-            return buf, 0, 0
+            return buf, 0, 0, []
         new_buf: list[str] = []
         kc = 0
+        key_changes: "list[tuple[str, str, str]]" = []
         for ln in buf:
             stripped = ln.rstrip("\r\n")
             eol = ln[len(stripped):]
@@ -1494,33 +1712,40 @@ def normalize_colors_ini(
                         new_key = f"P1_BUTTON{m.group(1)}"
                         color_name = _nearest_color_name(val_s, palette)
                         new_buf.append(f"{new_key}={color_name}{eol}")
+                        key_changes.append((key_s, new_key, color_name))
                         kc += 1
                         continue
                     mapped = _LEGACY_KEY_MAP.get(key_s.lower())
                     if mapped:
                         color_name = _nearest_color_name(val_s, palette)
                         new_buf.append(f"{mapped}={color_name}{eol}")
+                        key_changes.append((key_s, mapped, color_name))
                         kc += 1
                         continue
             new_buf.append(ln)
-        return new_buf, 1, kc
+        return new_buf, 1, kc, key_changes
 
     out_lines: list[str] = []
     section_buffer: list[str] = []
+    current_section_name: str = ""
     section_has_hex = False
     sections_converted = 0
     keys_converted = 0
+    converted_details: "list[tuple[str, list[tuple[str, str, str]]]]" = []
 
     for line in lines:
         stripped = line.rstrip("\r\n")
         if stripped.startswith("[") and stripped.endswith("]") and len(stripped) > 2:
             # Flush the previous section
             if section_buffer:
-                flushed, sc, kc = _flush(section_buffer, section_has_hex)
+                flushed, sc, kc, kchanges = _flush(section_buffer, section_has_hex)
                 out_lines.extend(flushed)
                 sections_converted += sc
                 keys_converted += kc
+                if kchanges:
+                    converted_details.append((current_section_name, kchanges))
             # Start a new section
+            current_section_name = stripped[1:-1]
             section_buffer = [line]
             section_has_hex = False
         elif section_buffer:
@@ -1540,13 +1765,16 @@ def normalize_colors_ini(
 
     # Flush the final section
     if section_buffer:
-        flushed, sc, kc = _flush(section_buffer, section_has_hex)
+        flushed, sc, kc, kchanges = _flush(section_buffer, section_has_hex)
         out_lines.extend(flushed)
         sections_converted += sc
         keys_converted += kc
+        if kchanges:
+            converted_details.append((current_section_name, kchanges))
 
     result.sections_converted = sections_converted
     result.keys_converted = keys_converted
+    result.converted_details = converted_details
 
     if keys_converted > 0 and not dry_run:
         if backup:
@@ -2029,6 +2257,8 @@ class BrightnessResult:
     colors_scaled: int = 0
     backup_path: Optional[Path] = None
     scale_pct: float = 100.0
+    # Per-color detail for --verbose: (name, old_r,g,b, new_r,g,b)
+    color_changes: "list[tuple[str, int, int, int, int, int, int]]" = field(default_factory=list)
 
 
 def _normalize_scale_entry(entry: ColorEntry, factor: float) -> ColorEntry:
@@ -2117,6 +2347,10 @@ def scale_colors_brightness(
 
     scaled_entries = [_normalize_scale_entry(e, factor) for e in entries]
     result.colors_scaled = len(scaled_entries)
+    result.color_changes = [
+        (e.name, old.r, old.g, old.b, e.r, e.g, e.b)
+        for old, e in zip(entries, scaled_entries)
+    ]
 
     if not dry_run:
         if backup:
@@ -2330,10 +2564,14 @@ class RandomizeColorsResult:
 
     dry_run: bool
     colors_ini_path: Optional[Path] = None
-    sections_updated: int = 0    # sections that had player keys and were recoloured
-    sections_skipped: int = 0    # sections with no player keys (left unchanged)
+    sections_updated: int = 0        # sections that had P*_BUTTON* keys and were recoloured
+    sections_skipped: int = 0        # sections with no player keys at all (empty/unknown)
+    sections_skipped_old_format: int = 0  # sections using ledcolor1=/joystick= hex format
     backup_path: Optional[Path] = None
     seed: Optional[int] = None
+    palette_size: int = 0
+    # Per-section detail for --verbose output: (section_name, button_color, coin_start_color)
+    updated_details: "list[tuple[str, str, str]]" = field(default_factory=list)
     palette_size: int = 0        # number of non-black colors available to draw from
 
 
@@ -2456,9 +2694,17 @@ def randomize_entry_colors(
     existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
     sections = _split_ini_by_sections(existing_text)
 
+    # Pre-compile the regex for old-format keys so we can classify skips.
+    _OLD_FORMAT_RE = re.compile(
+        r"^(ledcolor\d+|joystick|start|coin)\s*=",
+        re.IGNORECASE,
+    )
+
     parts: "list[str]" = []
     sections_updated = 0
     sections_skipped = 0
+    sections_skipped_old_format = 0
+    updated_details: "list[tuple[str, str, str]]" = []
 
     for section_name, header_line, body_lines in sections:
         if section_name is None:
@@ -2469,7 +2715,8 @@ def randomize_entry_colors(
         assert header_line is not None
         parts.append(header_line)
 
-        # Independent random picks for this game
+        # Independent random picks for this game (drawn even if skipped so
+        # the PRNG sequence stays stable regardless of format classification).
         button_color = rng.choice(non_black)
         coin_start_color = rng.choice(non_black)
 
@@ -2480,11 +2727,23 @@ def randomize_entry_colors(
 
         if had_keys:
             sections_updated += 1
+            updated_details.append((section_name, button_color, coin_start_color))
         else:
-            sections_skipped += 1
+            # Classify the skip: old hex-format keys vs genuinely empty section.
+            is_old_format = any(
+                _OLD_FORMAT_RE.match(line.strip())
+                for line in body_lines
+                if line.strip()
+            )
+            if is_old_format:
+                sections_skipped_old_format += 1
+            else:
+                sections_skipped += 1
 
     result.sections_updated = sections_updated
     result.sections_skipped = sections_skipped
+    result.sections_skipped_old_format = sections_skipped_old_format
+    result.updated_details = updated_details
 
     if not dry_run and sections_updated > 0:
         if backup:

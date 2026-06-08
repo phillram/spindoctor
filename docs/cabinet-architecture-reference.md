@@ -427,7 +427,7 @@ These names are referenced in two places:
 
 `spindoctor ledblinky colors edit` renames a color in all three files atomically. Hex input (0-255 per channel) is accepted and auto-converted to the 0-48 range.
 
-SpinDoctor-generated entries in `Colors.ini` use hex values directly (`ledcolor1=FF0000`) — these are not affected by name renames.
+SpinDoctor's `generate` command writes `Colors.ini` entries in LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`) by looking up each default color in `Color-RGB.ini`. Older SpinDoctor versions (pre-2.4.21) wrote a legacy hex format (`ledcolor1=FF0000`, `joystick=FFFFFF`) that LedBlinky itself cannot read — if you have an older `Colors.ini`, run `spindoctor ledblinky colors normalize --apply` once to convert it. Legacy hex entries are **not** affected by `colors edit` renames (which match by name, not value).
 
 ### `Colors.ini` — multi-player and admin key naming
 
@@ -524,3 +524,18 @@ SpinDoctor diagnoses and repairs both issues:
 spindoctor ledblinky check         :: read-only scan
 spindoctor ledblinky fix --apply   :: comment out hooks + add XML entries
 ```
+
+### Diagnosing colors not applying at runtime
+
+When game colors show as white despite correct `Colors.ini` entries, the most common causes are:
+
+1. **Name mismatch** — the name RocketLauncher sends to LedBlinky does not match the `[romname]` section header in `Colors.ini`. Check `LEDBlinkyLog.txt` for the exact name received.
+2. **Legacy hex format** — `Colors.ini` entries use `ledcolor1=FF0000` format that LedBlinky cannot read. Run `colors normalize --apply`.
+3. **No `LEDBlinkyControls.xml` per-game entry** — LedBlinky uses its DEFAULT control group and may ignore `Colors.ini` overrides for that game.
+4. **`Use Color File` disabled** — LedBlinky Settings UI has a toggle; if off, `Colors.ini` is never consulted.
+
+```bat
+spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, listxml for ROM "005"
+```
+
+`inspect-rom` reports what LedBlinky would see for a specific ROM, flags any mismatches, and prints the path to `LEDBlinkyLog.txt` with instructions on what to search for.

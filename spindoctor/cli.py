@@ -5806,9 +5806,165 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
         console.print(
             f"  Skipped (no -listxml input data): [yellow]{result.skipped_no_input}[/yellow]"
         )
+    # Warn if Color-RGB.ini was missing (colors written in legacy format)
+    has_legacy_warning = any("ledcolor=" in w or "P1_BUTTON1=" in w for w in result.warnings)
+    if not has_legacy_warning and result.colors_synthesised:
+        console.print(
+            "[dim]  colors.ini written in native P1_BUTTON1= format "
+            "(Color-RGB.ini palette used for color name lookup)[/dim]"
+        )
     if verbose:
-        console.print(f"[dim][verbose] controls → {result.controls_path}[/dim]")
+        console.print(f"\n[dim][verbose] controls → {result.controls_path}[/dim]")
         console.print(f"[dim][verbose] colors   → {result.colors_path}[/dim]")
+        if result.colors_synthesised:
+            fmt = "legacy ledcolor=" if has_legacy_warning else "native P1_BUTTON1="
+            console.print(f"[dim][verbose] colors format: {fmt}[/dim]")
+
+
+@ledblinky_group.command("inspect-rom")
+@click.argument("rom_name")
+def ledblinky_inspect_rom(rom_name):
+    """Diagnose why a ROM's LED colors may not be applying.
+
+    Reads Colors.ini, controls.ini, LEDBlinkyControls.xml, and MAME listxml
+    for the given ROM and reports what LEDBlinky would see — including
+    mismatches, missing entries, and the path to LEDBlinky's own log file
+    (written by LEDBlinky itself, not SpinDoctor).
+
+    When output_dir is configured the full report is also saved there as
+    ``<output_dir>/diagnostics/inspect-rom-<ROM>-<timestamp>.txt``.
+
+    \b
+    This is the first command to run when game colors are showing white or
+    not changing from the default.
+
+    \b
+    Examples:
+      spindoctor ledblinky inspect-rom 005
+      spindoctor ledblinky inspect-rom 1942
+    """
+    from datetime import datetime as _dt
+    from . import ledblinky as lb
+
+    config = _cfg()
+    data = lb.inspect_rom(config, rom_name)
+
+    # Build the report as plain text so we can both print and optionally save it.
+    lines: list[str] = []
+
+    def _pr(text: str = "") -> None:
+        """Print to console AND accumulate for the optional saved report."""
+        lines.append(text)
+        console.print(text)
+
+    _pr(f"\n[blue bold]LEDBlinky ROM Inspection — [{rom_name}][/blue bold]")
+
+    # Colors.ini
+    _pr(f"\n[bold]Colors.ini[/bold]  {data['colors_ini_path']}")
+    if data["colors_entry"]:
+        _pr(f"  [green]✓ Found[/green] [{rom_name}] — {len(data['colors_entry'])} key(s):")
+        for line in data["colors_entry"]:
+            _pr(f"    [dim]{line}[/dim]")
+    else:
+        _pr(f"  [red]✗ NOT FOUND[/red] — LEDBlinky will use DEFAULT colors")
+
+    # controls.ini
+    _pr(f"\n[bold]controls.ini[/bold]  {data['controls_ini_path']}")
+    if data["controls_entry"]:
+        _pr(f"  [green]✓ Found[/green] [{rom_name}] — {len(data['controls_entry'])} key(s):")
+        for line in data["controls_entry"]:
+            _pr(f"    [dim]{line}[/dim]")
+    else:
+        _pr(f"  [yellow]⚠ NOT FOUND[/yellow] — LEDBlinky won't know which buttons this game uses")
+
+    # LEDBlinkyControls.xml
+    _pr(f"\n[bold]LEDBlinkyControls.xml[/bold]  {data['xml_path']}")
+    if data["xml_emulators"]:
+        _pr(f"  Emulators in XML: {', '.join(data['xml_emulators'])}")
+    if data["xml_rom_entries"]:
+        _pr(f"  [green]✓ ROM entry found:[/green]")
+        for entry in data["xml_rom_entries"]:
+            _pr(f"    tag={entry['tag']}  emulator={entry['emulator']}")
+            for k, v in entry["attrs"].items():
+                _pr(f"      {k}={v}")
+    else:
+        _pr(
+            f"  [yellow]⚠ No entry for [{rom_name}][/yellow] — "
+            f"LEDBlinky uses DEFAULT control group. "
+            f"Colors.ini overrides may not apply."
+        )
+
+    # MAME listxml
+    _pr(f"\n[bold]MAME listxml[/bold]")
+    if data["listxml"]:
+        lx = data["listxml"]
+        _pr(f"  [green]✓ Found[/green] — {lx['description']}")
+        _pr(f"    Players: {lx['players']}  Buttons: {lx['buttons']}  "
+            f"Controls: {', '.join(lx['controls']) or 'none'}")
+    else:
+        _pr(f"  [dim]Not found in MAME listxml (MAME not configured or ROM not in DB)[/dim]")
+
+    # LEDBlinky's own log (written by LEDBlinky, not SpinDoctor)
+    _pr(f"\n[bold]LEDBlinky log[/bold]  (written by LEDBlinky itself — not SpinDoctor)")
+    _pr(f"  Path: {data['log_path']}")
+    if data["log_path"] and Path(str(data["log_path"])).exists():
+        _pr(
+            f"  [green]✓ Log exists[/green] — open it and search for [{rom_name}] "
+            f"to see what name LEDBlinky received when the game last launched."
+        )
+    else:
+        _pr(
+            f"  [yellow]⚠ Log not found[/yellow] — enable logging in LEDBlinky Settings "
+            f"to capture game-launch events and verify the ROM name being sent."
+        )
+
+    # Warnings / diagnostics
+    if data["warnings"]:
+        _pr(f"\n[bold]Diagnostics[/bold]")
+        for w in data["warnings"]:
+            if "NOT FOUND" in w or "NOT found" in w or "not found" in w:
+                _pr(f"  [yellow]⚠[/yellow] {w}")
+            elif "case" in w.lower():
+                _pr(f"  [red]✗[/red] {w}")
+            else:
+                _pr(f"  [dim]·[/dim] {w}")
+
+    # Summary guidance
+    _pr(f"\n[bold]What to check next[/bold]")
+    if not data["colors_entry"]:
+        _pr(
+            "  1. Run [cyan]spindoctor ledblinky colors normalize --apply[/cyan] "
+            "to ensure Colors.ini is in native format, then re-run generate+randomize."
+        )
+    if not data["xml_rom_entries"]:
+        _pr(
+            "  2. Open LEDBlinkyControls.xml and check the MAME emulator entry. "
+            "If Colors.ini overrides are not applying, your version of LEDBlinky "
+            "may require per-game XML entries, not just Colors.ini sections."
+        )
+    _pr(
+        "  3. Open the LEDBlinky log and search for the game name to verify "
+        "what name RocketLauncher sends to LEDBlinky at game launch. "
+        "The name must exactly match the Colors.ini section header."
+    )
+    _pr(
+        "  4. In LEDBlinky's main UI, check Settings → 'Use Color File' is enabled."
+    )
+
+    # Save report to output_dir if configured
+    if getattr(config, "output_dir", ""):
+        try:
+            stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+            out_dir = Path(config.output_dir) / "diagnostics"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            report_path = out_dir / f"inspect-rom-{rom_name}-{stamp}.txt"
+            # Strip Rich markup for the saved file
+            import re as _re
+            plain = _re.sub(r"\[/?[^\]]+\]", "", "\n".join(lines))
+            report_path.write_text(plain, encoding="utf-8")
+            console.print(f"\n[dim]Report saved: {report_path}[/dim]")
+        except OSError as exc:
+            err_console.print(f"[yellow]Could not save report to output_dir: {exc}[/yellow]")
 
 
 @ledblinky_group.command("audit")
@@ -6326,7 +6482,13 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose
             )
             console.print(f"  {verb}: {change}")
             if verbose:
-                console.print(f"[dim][verbose]   file → {result.settings_path}[/dim]")
+                console.print(f"[dim][verbose] Settings.ini: {result.settings_path}[/dim]")
+                if result.changes:
+                    console.print(f"[dim][verbose] keys patched ({len(result.changes)}):[/dim]")
+                    for change in result.changes:
+                        console.print(f"[dim]  {change}[/dim]")
+                else:
+                    console.print("[dim][verbose] all keys already at target values[/dim]")
 
         if not result.dry_run and result.backup_path:
             console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
@@ -6551,7 +6713,9 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
-def ledblinky_colors_normalize(apply_changes, no_backup):
+@click.option("--verbose", is_flag=True,
+              help="Print each section converted and the key mapping applied.")
+def ledblinky_colors_normalize(apply_changes, no_backup, verbose):
     """Convert hex-format Colors.ini entries to named P1_BUTTON format.
 
     SpinDoctor-generated Colors.ini entries use bare hex values::
@@ -6567,11 +6731,13 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
     The nearest match from Color-RGB.ini is chosen for each hex value.
     Sections already in named format are left completely untouched.
     Run normalize before colors edit so renames propagate to every section.
+    Run normalize before colors randomize so all sections are reachable.
 
     \b
     Examples:
       spindoctor ledblinky colors normalize              :: preview changes
       spindoctor ledblinky colors normalize --apply      :: commit changes
+      spindoctor ledblinky colors normalize --apply --verbose  :: show per-section detail
     """
     from . import ledblinky as lb
 
@@ -6607,6 +6773,22 @@ def ledblinky_colors_normalize(apply_changes, no_backup):
             )
         elif result.backup_path:
             console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+    if verbose and result.converted_details:
+        _VERBOSE_SAMPLE = 50
+        shown = result.converted_details[:_VERBOSE_SAMPLE]
+        console.print(
+            f"\n[dim][verbose] first {len(shown)} converted sections "
+            f"(of {result.sections_converted}):[/dim]"
+        )
+        for sec_name, key_changes in shown:
+            console.print(f"[dim]  [{sec_name}][/dim]")
+            for old_k, new_k, color in key_changes:
+                console.print(f"[dim]    {old_k} → {new_k}={color}[/dim]")
+        if len(result.converted_details) > _VERBOSE_SAMPLE:
+            console.print(
+                f"[dim]  … {len(result.converted_details) - _VERBOSE_SAMPLE} more sections[/dim]"
+            )
 
 
 @ledblinky_colors_group.command("brightness")
@@ -6668,10 +6850,17 @@ def ledblinky_colors_brightness(scale_pct, apply_changes, no_backup, verbose):
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
-        console.print(
-            f"[dim][verbose] {result.color_rgb_path} "
-            f"({result.colors_scaled} color(s) at {scale_pct:.0f}%)[/dim]"
-        )
+        console.print(f"\n[dim][verbose] Color-RGB.ini: {result.color_rgb_path}[/dim]")
+        if result.color_changes:
+            console.print(f"[dim][verbose] per-color changes at {scale_pct:.0f}%:[/dim]")
+            for name, or_, og, ob, nr, ng, nb in result.color_changes:
+                old_hex = f"#{round(or_/48*255):02X}{round(og/48*255):02X}{round(ob/48*255):02X}"
+                new_hex = f"#{round(nr/48*255):02X}{round(ng/48*255):02X}{round(nb/48*255):02X}"
+                changed = "→" if (or_, og, ob) != (nr, ng, nb) else "="
+                console.print(
+                    f"[dim]  {name:<20s}  {or_:2d},{og:2d},{ob:2d} ({old_hex})  "
+                    f"{changed}  {nr:2d},{ng:2d},{nb:2d} ({new_hex})[/dim]"
+                )
 
 
 @ledblinky_colors_group.command("randomize")
@@ -6729,10 +6918,22 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
     console.print(
         f"  Sections {verb:13s}: [green]{result.sections_updated}[/green]"
     )
+    if result.sections_skipped_old_format:
+        console.print(
+            f"  [yellow]Sections skipped (old format): "
+            f"{result.sections_skipped_old_format}[/yellow]"
+        )
+        console.print(
+            "  [yellow]→ These use ledcolor1=/joystick=/start=/coin= hex keys.[/yellow]"
+        )
+        console.print(
+            "  [yellow]→ Run [bold]spindoctor ledblinky colors normalize --apply[/bold] "
+            "first, then re-run randomize.[/yellow]"
+        )
     if result.sections_skipped:
         console.print(
-            f"  Sections skipped : [dim]{result.sections_skipped}[/dim] "
-            f"(no player keys — left unchanged)"
+            f"  Sections skipped (empty)  : [dim]{result.sections_skipped}[/dim] "
+            f"(no player keys or ledcolor keys — left unchanged)"
         )
     if result.seed is not None:
         console.print(f"  Seed             : [dim]{result.seed}[/dim]")
@@ -6743,11 +6944,28 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
     if verbose:
+        console.print(f"\n[dim][verbose] Colors.ini: {result.colors_ini_path}[/dim]")
         console.print(
-            f"[dim][verbose] {result.colors_ini_path} "
-            f"(palette={result.palette_size}, updated={result.sections_updated}, "
-            f"skipped={result.sections_skipped})[/dim]"
+            f"[dim][verbose] palette={result.palette_size} colors  "
+            f"updated={result.sections_updated}  "
+            f"skipped_old_fmt={result.sections_skipped_old_format}  "
+            f"skipped_empty={result.sections_skipped}[/dim]"
         )
+        if result.updated_details:
+            _VERBOSE_SAMPLE = 50
+            shown = result.updated_details[:_VERBOSE_SAMPLE]
+            console.print(
+                f"[dim][verbose] first {len(shown)} updated sections "
+                f"(of {result.sections_updated}):[/dim]"
+            )
+            for sec_name, btn_color, cs_color in shown:
+                console.print(
+                    f"[dim]  {sec_name:<30s}  buttons={btn_color}  coin/start={cs_color}[/dim]"
+                )
+            if len(result.updated_details) > _VERBOSE_SAMPLE:
+                console.print(
+                    f"[dim]  … {len(result.updated_details) - _VERBOSE_SAMPLE} more[/dim]"
+                )
 
 
 @ledblinky_group.command("fill-defaults")
