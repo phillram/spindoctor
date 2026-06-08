@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.21] - 2026-06-07
+
 ### Added
 
 - **GUI — LEDBlinky tab fully reorganized into a step-by-step workflow** — sections are now labeled Step 1 through Step 6 and ordered logically: **Step 1 — Generate & Normalize** (MAME import) → **Step 2 — Fill Default Colors** (console/other gaps) → **Step 3 — Randomize Entry Colors** → **Step 4 — Admin Button Colors** → **Step 5 — Brightness** → **Step 6 — Settings.ini** → **Overlay Hook Fix** (one-time setup) → **Color Definitions** (advanced palette editing) → **Backup / Restore**. Previously Brightness appeared before Randomize and Admin Buttons, Overlay Hook buttons were mixed into the Generate area, and Color Definitions came after Backup.
@@ -1147,7 +1151,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.20...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.21...HEAD
+[2.4.21]: https://github.com/phillram/spindoctor/compare/v2.4.20...v2.4.21
 [2.4.20]: https://github.com/phillram/spindoctor/compare/v2.4.19...v2.4.20
 [2.4.19]: https://github.com/phillram/spindoctor/compare/v2.4.18...v2.4.19
 [2.4.18]: https://github.com/phillram/spindoctor/compare/v2.4.17...v2.4.18
