@@ -6,17 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI — LEDBlinky tab fully reorganized into a step-by-step workflow** — sections are now labeled Step 1 through Step 6 and ordered logically: **Step 1 — Generate & Normalize** (MAME import) → **Step 2 — Fill Default Colors** (console/other gaps) → **Step 3 — Randomize Entry Colors** → **Step 4 — Admin Button Colors** → **Step 5 — Brightness** → **Step 6 — Settings.ini** → **Overlay Hook Fix** (one-time setup) → **Color Definitions** (advanced palette editing) → **Backup / Restore**. Previously Brightness appeared before Randomize and Admin Buttons, Overlay Hook buttons were mixed into the Generate area, and Color Definitions came after Backup.
+
+- **GUI — "Normalize Colors.ini" button added to the Generate section** — the button previously existed only in the Color Definitions section at the bottom of the LEDBlinky tab. It is now also in the top button row (Generate → **Normalize Colors.ini** → Audit coverage → …) so the step is immediately visible after generating. The section description now explains the four-step workflow: Generate → Normalize → Fill Defaults → Randomize. The tip text also explains that "Check overlay hooks" / "Fix overlay hooks" always write in-place.
+
+- **`ledblinky colors normalize --verbose`** — new `--verbose` flag that prints per-section conversion detail: for each section converted, lists every key mapping applied (`ledcolor1=FF0000 → P1_BUTTON1=Red`, `joystick=FFFFFF → P1_JOYSTICK=White`, etc.). First 50 sections are shown; a summary count follows if there are more.
+
 ### Fixed
 
-- **`ledblinky fix` / `batch-edit` / `rename` / `clone` — wrong output path when `output_dir` is configured** — these commands were calling `config.effective_output_dir()`, which falls back to the global `output_dir` config setting when no explicit `--output-dir` flag is given. If `output_dir` was set (e.g. `J:\spindoctor\output`), files were written there instead of in-place (`LEDBlinkyControls.xml` for `ledblinky fix`; edited database XML for `batch-edit`, `rename`, `clone`). All four commands now use the explicit `--output-dir` value only (`Path(output_dir) if output_dir else None`), never falling back to `config.output_dir`.
+- **`ledblinky fix` / `batch-edit` / `rename` / `clone` — wrong output path when `output_dir` is configured** — these commands were calling `config.effective_output_dir()`, which falls back to the global `output_dir` config setting when no explicit `--output-dir` flag is given. If `output_dir` was set (e.g. `J:\spindoctor\output`), files were written there instead of in-place. All four commands now use the explicit `--output-dir` value only, never falling back to `config.output_dir`.
 
-- **`ledblinky fix` — "not found" Settings.ini shown as an error** — when HyperSpin has never written LEDBlinky hooks into a menu's `Settings.ini` (the file doesn't exist), the command showed a generic "not found" message that looked like a failure. It now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
+- **`ledblinky fix` — "not found" Settings.ini shown as an error** — now shows "✓ no Settings.ini → no hooks to remove" to clarify this is expected and non-fatal.
+
+- **`ledblinky inspect-rom <ROM>` — new diagnostic command** — reads Colors.ini, controls.ini, `LEDBlinkyControls.xml`, and MAME listxml for a given ROM and reports everything LEDBlinky would see when the game launches: whether each file has an entry, what keys are present, whether the XML has a per-game entry (vs DEFAULT fallback), the path to `LEDBlinkyLog.txt`, and guided next-steps for the most common failure modes (missing Colors.ini section, DEFAULT XML fallback, name mismatch). When `output_dir` is configured the full report is also saved to `<output_dir>/diagnostics/inspect-rom-<ROM>-<timestamp>.txt`. The LEDBlinky log section clearly labels `LEDBlinkyLog.txt` as written by LEDBlinky itself (not SpinDoctor). Run this first when game colors are showing white despite Colors.ini having correct entries.
+
+- **`ledblinky generate` — Colors.ini now written in native `P1_BUTTON1=` format** — `generate` previously wrote `Colors.ini` entries in SpinDoctor's internal hex format (`ledcolor1=FF0000`, `joystick=FFFFFF`), which **LedBlinky itself cannot read**. LedBlinky requires the named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). This was why every game showed White after running `generate` — LedBlinky was falling back to its default color because it couldn't parse the entries. `generate` now loads `Color-RGB.ini` at generation time and converts each hex value to the nearest named color, writing native format directly. The separate `normalize` step is no longer required after `generate` (though it remains useful for existing old-format files). If `Color-RGB.ini` is missing, `generate` falls back to the old hex format and warns the user to run `normalize` after.
+
+- **`ledblinky colors randomize` — skipped MAME sections now identified as old-format, not silently dropped** — existing `Colors.ini` files in the legacy hex format (`ledcolor1=FF0000`, `joystick=FFFFFF`, etc.) cannot be reached by `randomize` because it only matches `P*_BUTTON*` / `P*_JOYSTICK` keys. Previously these appeared as "no player keys — left unchanged" with no explanation. Now they are counted separately as "old format" and the output prints an actionable yellow warning: *Run `colors normalize --apply` first, then re-run randomize.* After running normalize, all legacy sections will be converted and randomize will cover them.
 
 ### Changed
 
-- **GUI — "Fix INI issues" button renamed to "Fix overlay hooks"** — more accurately describes what the command does: removes LEDBlinky hook lines from HyperSpin's Search/Genre/Favorites overlay Settings.ini files and adds stub entries to `LEDBlinkyControls.xml`. The paired "Check existing INIs" button is also renamed to "Check overlay hooks".
+- **GUI — "Fix INI issues" button renamed to "Fix overlay hooks"** — more accurately describes what the command does. The paired "Check existing INIs" button is also renamed to "Check overlay hooks".
 
-- **`ledblinky fix` — improved CLI docstring and output** — the command docstring now explicitly states that it writes in-place to `ledblinky_dir` / `hyperspin_dir` (not `output_dir`), and the HyperSpin INIs section header now includes a one-line explanation of what the patch removes. `commands.md` and `cli-cheatsheet.md` updated accordingly.
+- **`ledblinky fix` — improved CLI docstring and output** — explicitly states it writes in-place to `ledblinky_dir` / `hyperspin_dir` (not `output_dir`).
+
+- **`ledblinky colors randomize --verbose`** — now shows per-section color assignments (first 50 sections) and breaks down skips into `skipped_old_fmt` vs `skipped_empty`.
+
+- **`ledblinky colors brightness --verbose`** — now shows per-color before→after with R,G,B and hex.
+
+- **`ledblinky patch-settings --verbose`** — now prints each key changed with old→new values.
 
 ---
 

@@ -9393,69 +9393,69 @@ class _SpinDoctorGUI:
 
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
-            frame,
-            text=("Generate and audit LEDBlinky controls.ini / colors.ini "
-                  "from MAME's -listxml output. Generate is dry-run by "
-                  "default and preserves community-maintained entries; "
-                  "tick Overwrite if you want to replace them."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
-        self.ttk.Label(frame, text="System").grid(
+        # ── Step 1 — Generate & Normalize ────────────────────────────────────
+        gen_frame = self.ttk.LabelFrame(
+            frame, text="Step 1 — Generate & Normalize (MAME data)",
+        )
+        gen_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
+        gen_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            gen_frame,
+            text=("Generate reads MAME's -listxml data and writes controls.ini + colors.ini "
+                  "with per-game button assignments. Output uses a hex format "
+                  "(ledcolor1=FF0000) — click Normalize immediately after to convert "
+                  "to P*_BUTTON* named format, which is required before Fill Defaults "
+                  "or Randomize will work on those entries."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(gen_frame, text="System").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_system_var = self.tk.StringVar(value="MAME")
         self._led_system_combo = self.ttk.Combobox(
-            frame, textvariable=self._led_system_var,
+            gen_frame, textvariable=self._led_system_var,
             state="readonly", width=24,
         )
         self._led_system_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            frame, text="Overwrite existing entries (--overwrite)",
+            gen_frame, text="Overwrite existing entries (--overwrite)",
             variable=self._led_overwrite_var,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
-        btn_row = self.ttk.Frame(frame)
-        btn_row.grid(row=3, column=0, columnspan=4, sticky="w", pady=(8, 4))
+        gen_btn_row = self.ttk.Frame(gen_frame)
+        gen_btn_row.grid(row=3, column=0, columnspan=4, sticky="w",
+                         padx=6, pady=(6, 4))
         self.ttk.Button(
-            btn_row, text="Generate (controls + colors)",
+            gen_btn_row, text="1a. Generate (controls + colors)",
             command=self._run_led_generate,
         ).pack(side="left")
         self.ttk.Button(
-            btn_row, text="Audit coverage",
+            gen_btn_row, text="1b. Normalize Colors.ini",
+            command=self._run_color_normalize,
+        ).pack(side="left", padx=(8, 0))
+        self.ttk.Button(
+            gen_btn_row, text="Audit coverage",
             command=self._run_led_audit,
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            btn_row, text="Check overlay hooks",
-            command=lambda: self._run_cli(
-                "spindoctor", ["ledblinky", "check"],
-            ),
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            btn_row, text="Fix overlay hooks",
-            command=self._run_led_fix,
-        ).pack(side="left", padx=6)
+        ).pack(side="left", padx=(8, 0))
 
         self.ttk.Label(
-            frame,
-            text=("Tip: configure ledblinky_dir in the Setup tab if your "
-                  "LEDBlinky install isn't at the default location. Generate "
-                  "automatically saves .bak copies of controls.ini and "
-                  "colors.ini when backup_before_modify is enabled (default). "
-                  "\"Check overlay hooks\" scans for LEDBlinky hook lines that "
-                  "cause HyperSpin Search/Genre/Favorites overlays to hang. "
-                  "\"Fix overlay hooks\" removes those hooks and adds stub "
-                  "LEDBlinkyControls.xml entries — always writes in-place to "
-                  "ledblinky_dir and hyperspin_dir, not the output_dir setting."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(10, 0))
+            gen_frame,
+            text=("After generating, run Normalize to convert ledcolor1=/joystick= "
+                  "hex keys to P1_BUTTON1=/P1_JOYSTICK= named format. "
+                  "Audit coverage shows which ROMs have / lack control data."),
+            wraplength=820, justify="left", foreground=_FG_DIM,
+        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
 
         # ── Fill Defaults ────────────────────────────────────────────────────
-        fd_frame = self.ttk.LabelFrame(frame, text="Fill Default Colors")
-        fd_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame = self.ttk.LabelFrame(
+            frame, text="Step 2 — Fill Default Colors",
+        )
+        fd_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9579,52 +9579,20 @@ class _SpinDoctorGUI:
             command=self._run_fill_defaults,
         ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
-        # ── Brightness ───────────────────────────────────────────────────────
-        br2_frame = self.ttk.LabelFrame(frame, text="Brightness")
-        br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
-        br2_frame.columnconfigure(1, weight=1)
-
-        self.ttk.Label(
-            br2_frame,
-            text=("Set all Color-RGB.ini colors to a uniform brightness level. "
-                  "100% = every color at maximum brightness (dominant channel = 48, "
-                  "any dim colors are boosted up). "
-                  "50% = half brightness. 10% = night mode. 0% = all off. "
-                  "All buttons (P1, P2, admin) are normalized to the same level."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
-
-        self.ttk.Label(br2_frame, text="Brightness %").grid(
-            row=1, column=0, sticky="w", padx=6, pady=4,
-        )
-        self._led_brightness_var = self.tk.IntVar(value=100)
-        self.ttk.Scale(
-            br2_frame, from_=0, to=100,
-            variable=self._led_brightness_var, orient="horizontal",
-            command=lambda _: self._led_brightness_label.config(
-                text=f"{self._led_brightness_var.get()}%"
-            ),
-        ).grid(row=1, column=1, sticky="ew", padx=6, pady=4)
-        self._led_brightness_label = self.ttk.Label(br2_frame, text="100%", width=6)
-        self._led_brightness_label.grid(row=1, column=2, sticky="w", padx=(0, 6))
-
-        self.ttk.Button(
-            br2_frame, text="Scale Brightness",
-            command=self._run_led_brightness,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
-
-        # ── Randomize Entry Colors ───────────────────────────────────────────
-        rz_frame = self.ttk.LabelFrame(frame, text="Randomize Entry Colors")
-        rz_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        # ── Step 3 — Randomize Entry Colors ─────────────────────────────────
+        rz_frame = self.ttk.LabelFrame(frame, text="Step 3 — Randomize Entry Colors")
+        rz_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
             rz_frame,
-            text=("Give each game its own random button colors. Every ROM section "
-                  "in Colors.ini receives an independent random color for all "
-                  "P*_BUTTON* / P*_JOYSTICK keys, and a second independent random "
-                  "color for P*_COIN / P*_START keys. Only existing keys are "
-                  "updated — buttons intentionally left dark stay dark."),
+            text=("Give each game its own random button color drawn from the Color-RGB.ini "
+                  "palette. Every ROM section receives an independent random color for all "
+                  "P*_BUTTON* / P*_JOYSTICK keys, and a second independent random color for "
+                  "P*_COIN / P*_START keys. Only existing keys are updated — buttons "
+                  "intentionally left dark stay dark.\n"
+                  "Requires normalized format (Step 1b). If most sections are skipped, "
+                  "run Normalize Colors.ini first."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
 
@@ -9647,16 +9615,16 @@ class _SpinDoctorGUI:
             command=self._run_randomize_entry_colors,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
-        # ── Admin Button Colors ──────────────────────────────────────────────
-        ab_frame = self.ttk.LabelFrame(frame, text="Admin Button Colors")
-        ab_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        # ── Step 4 — Admin Button Colors ─────────────────────────────────────
+        ab_frame = self.ttk.LabelFrame(frame, text="Step 4 — Admin Button Colors")
+        ab_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
             text=("Set fixed colors for your cabinet-level (admin) buttons across "
                   "ALL Colors.ini ROM sections — e.g. Select=Green, Exit=Red. "
-                  "Colors are written to the player slot you choose (P3 for a 2-player cabinet). "
-                  "Color options come from Color-RGB.ini (same palette as Fill Default Colors)."),
+                  "Colors are written to the player slot you choose (P3 for a 2-player "
+                  "cabinet). Run after Randomize so admin colors override game colors."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 4))
 
@@ -9712,41 +9680,83 @@ class _SpinDoctorGUI:
             command=self._run_admin_button_colors,
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
-        # ── Settings.ini Patch ───────────────────────────────────────────────
+        # ── Step 5 — Brightness ───────────────────────────────────────────────
+        br2_frame = self.ttk.LabelFrame(frame, text="Step 5 — Brightness")
+        br2_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br2_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            br2_frame,
+            text=("Set all Color-RGB.ini colors to a uniform brightness level. "
+                  "100% = every color at maximum brightness (dominant channel = 48, "
+                  "any dim colors are boosted up). "
+                  "50% = half brightness. 10% = night mode. 0% = all off. "
+                  "All buttons (P1, P2, admin) are normalized to the same level."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+
+        self.ttk.Label(br2_frame, text="Brightness %").grid(
+            row=1, column=0, sticky="w", padx=6, pady=4,
+        )
+        self._led_brightness_var = self.tk.IntVar(value=100)
+        self.ttk.Scale(
+            br2_frame, from_=0, to=100,
+            variable=self._led_brightness_var, orient="horizontal",
+            command=lambda _: self._led_brightness_label.config(
+                text=f"{self._led_brightness_var.get()}%"
+            ),
+        ).grid(row=1, column=1, sticky="ew", padx=6, pady=4)
+        self._led_brightness_label = self.ttk.Label(br2_frame, text="100%", width=6)
+        self._led_brightness_label.grid(row=1, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Button(
+            br2_frame, text="Scale Brightness",
+            command=self._run_led_brightness,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+
+        # ── Step 6 — Settings.ini Patch ───────────────────────────────────────
         _led_cfg = load_config()
 
-        sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini Patch")
-        sp_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame = self.ttk.LabelFrame(frame, text="Step 6 — Settings.ini Patch")
+        sp_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
+        self.ttk.Label(
+            sp_frame,
+            text=("Configure LEDBlinky's animation behavior. "
+                  "FE idle animation plays while browsing HyperSpin; "
+                  "In-game unused buttons controls what happens to unassigned buttons during gameplay."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
         self.ttk.Label(sp_frame, text="FE idle animation").grid(
-            row=0, column=0, sticky="w", padx=6, pady=2,
+            row=1, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_fe_lwa_var = self.tk.StringVar(value="<Random>")
         self._led_fe_lwa_combo = self.ttk.Combobox(
             sp_frame, textvariable=self._led_fe_lwa_var, width=36,
         )
-        self._led_fe_lwa_combo.grid(row=0, column=1, sticky="ew", padx=6, pady=2)
+        self._led_fe_lwa_combo.grid(row=1, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
             sp_frame, text="Refresh list",
             command=self._refresh_led_lwa_list,
-        ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
+        ).grid(row=1, column=2, sticky="w", padx=(0, 6), pady=2)
 
         self.ttk.Label(
             sp_frame,
-            text=("Tip: leave blank for static colors during idle. "
-                  "Use 'Refresh list' to populate both dropdowns from your LEDBlinky folder."),
+            text="Leave blank for static colors during idle. "
+                 "Use Refresh list to populate from your LEDBlinky folder.",
             wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
         self.ttk.Label(sp_frame, text="In-game unused buttons").grid(
-            row=2, column=0, sticky="w", padx=6, pady=2,
+            row=3, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_game_lwa_var = self.tk.StringVar(value="")
         self._led_game_lwa_combo = self.ttk.Combobox(
             sp_frame, textvariable=self._led_game_lwa_var, width=36,
         )
-        self._led_game_lwa_combo.grid(row=2, column=1, sticky="ew", padx=6, pady=2)
+        self._led_game_lwa_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=2)
 
         self.ttk.Label(
             sp_frame,
@@ -9754,21 +9764,144 @@ class _SpinDoctorGUI:
                   "Select an animation to play on all unmapped buttons instead — "
                   "applies globally to every game on every system."),
             wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
         self.ttk.Button(
             sp_frame, text="Patch Settings.ini",
             command=self._run_led_patch_settings,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # Populate .lwa list immediately if ledblinky_dir is already set
         self._refresh_led_lwa_list()
+
+        # ── Overlay Hooks (one-time fix) ──────────────────────────────────────
+        oh_frame = self.ttk.LabelFrame(
+            frame, text="Overlay Hook Fix (one-time setup)",
+        )
+        oh_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        oh_frame.columnconfigure(0, weight=1)
+
+        self.ttk.Label(
+            oh_frame,
+            text=("Fixes HyperSpin Search / Genre / Favorites overlay crashes caused "
+                  "by LEDBlinky process hooks. Two patches: (1) adds a stub entry to "
+                  "LEDBlinkyControls.xml for each overlay menu so LEDBlinky's lookup "
+                  "succeeds; (2) comments out Start_Hyperspin_Process / "
+                  "Exit_Hyperspin_Process lines in the per-menu Settings.ini files. "
+                  "Always writes in-place to ledblinky_dir / hyperspin_dir — "
+                  "not affected by the output_dir setting."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        oh_btn_row = self.ttk.Frame(oh_frame)
+        oh_btn_row.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+        self.ttk.Button(
+            oh_btn_row, text="Check overlay hooks",
+            command=lambda: self._run_cli("spindoctor", ["ledblinky", "check"]),
+        ).pack(side="left")
+        self.ttk.Button(
+            oh_btn_row, text="Fix overlay hooks",
+            command=self._run_led_fix,
+        ).pack(side="left", padx=(8, 0))
+
+        # ── Color Definitions (advanced) ──────────────────────────────────────
+        self._color_original_hex: str = ""   # set when a row is selected
+
+        cd_frame = self.ttk.LabelFrame(
+            frame, text="Color Definitions — Color-RGB.ini (advanced)",
+        )
+        cd_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.columnconfigure(0, weight=1)
+
+        self.ttk.Label(
+            cd_frame,
+            text=("View and edit the named color palette used by all other sections. "
+                  "Renaming a color propagates the change through Color-RGB.ini, "
+                  "Colors.ini, and LEDBlinkyControls.xml in one operation."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+
+        # Treeview + vertical scrollbar
+        tree_outer = self.ttk.Frame(cd_frame)
+        tree_outer.grid(row=1, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 2))
+        tree_outer.columnconfigure(0, weight=1)
+
+        _led_cols = ("name", "r", "g", "b", "hex")
+        self._color_tree = self.ttk.Treeview(
+            tree_outer, columns=_led_cols, show="headings",
+            height=6, selectmode="browse",
+        )
+        for _col, _heading, _w, _stretch in [
+            ("name", "Name",     110, True),
+            ("r",    "R (0-48)",  70, False),
+            ("g",    "G (0-48)",  70, False),
+            ("b",    "B (0-48)",  70, False),
+            ("hex",  "Hex",       86, False),
+        ]:
+            self._color_tree.heading(_col, text=_heading)
+            self._color_tree.column(_col, width=_w, stretch=_stretch)
+        _led_vsb = self.ttk.Scrollbar(
+            tree_outer, orient="vertical", command=self._color_tree.yview,
+        )
+        self._color_tree.configure(yscrollcommand=_led_vsb.set)
+        self._color_tree.grid(row=0, column=0, sticky="nsew")
+        _led_vsb.grid(row=0, column=1, sticky="ns")
+        self._color_tree.bind("<<TreeviewSelect>>", self._on_color_tree_select)
+
+        self.ttk.Button(
+            cd_frame, text="Refresh list",
+            command=self._refresh_color_list,
+        ).grid(row=2, column=0, sticky="w", padx=6, pady=(2, 4))
+
+        # Edit fields
+        edit_f = self.ttk.Frame(cd_frame)
+        edit_f.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(edit_f, text="New name:").grid(
+            row=0, column=0, sticky="w", padx=(0, 4),
+        )
+        self._color_new_name_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_new_name_var, width=16,
+        ).grid(row=0, column=1, sticky="w")
+
+        self.ttk.Label(edit_f, text="New color (#RRGGBB):").grid(
+            row=0, column=2, sticky="w", padx=(14, 4),
+        )
+        self._color_hex_var = self.tk.StringVar()
+        self.ttk.Entry(
+            edit_f, textvariable=self._color_hex_var, width=10,
+        ).grid(row=0, column=3, sticky="w")
+
+        # Plain tk.Label so background= is honoured (ttk.Label uses styles)
+        self._color_preview = self.tk.Label(
+            edit_f, text="  ", background="#FFFFFF",
+            relief="solid", width=3,
+        )
+        self._color_preview.grid(row=0, column=4, sticky="w", padx=(4, 0))
+        self._color_hex_var.trace_add("write", self._update_color_preview)
+
+        cd_btn_row = self.ttk.Frame(cd_frame)
+        cd_btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+
+        self.ttk.Button(
+            cd_btn_row, text="Update & Rename",
+            command=self._run_color_edit,
+        ).pack(side="left", padx=(0, 8))
+
+        self.ttk.Button(
+            cd_btn_row, text="Normalize Colors.ini",
+            command=self._run_color_normalize,
+        ).pack(side="left")
+
+        # Populate immediately if ledblinky_dir is already configured
+        self._refresh_color_list()
 
         # ── Backup / Restore ─────────────────────────────────────────────────
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
-        br_frame.grid(row=11, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -9812,90 +9945,6 @@ class _SpinDoctorGUI:
             br_frame, text="Restore backup",
             command=self._run_led_restore,
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
-
-        # ── Color Definitions ────────────────────────────────────────────────
-        self._color_original_hex: str = ""   # set when a row is selected
-
-        cd_frame = self.ttk.LabelFrame(frame, text="Color Definitions (Color-RGB.ini)")
-        cd_frame.grid(row=12, column=0, columnspan=4, sticky="ew", pady=(12, 0))
-        cd_frame.columnconfigure(0, weight=1)
-
-        # Treeview + vertical scrollbar
-        tree_outer = self.ttk.Frame(cd_frame)
-        tree_outer.grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 2))
-        tree_outer.columnconfigure(0, weight=1)
-
-        _led_cols = ("name", "r", "g", "b", "hex")
-        self._color_tree = self.ttk.Treeview(
-            tree_outer, columns=_led_cols, show="headings",
-            height=6, selectmode="browse",
-        )
-        for _col, _heading, _w, _stretch in [
-            ("name", "Name",     110, True),
-            ("r",    "R (0-48)",  70, False),
-            ("g",    "G (0-48)",  70, False),
-            ("b",    "B (0-48)",  70, False),
-            ("hex",  "Hex",       86, False),
-        ]:
-            self._color_tree.heading(_col, text=_heading)
-            self._color_tree.column(_col, width=_w, stretch=_stretch)
-        _led_vsb = self.ttk.Scrollbar(
-            tree_outer, orient="vertical", command=self._color_tree.yview,
-        )
-        self._color_tree.configure(yscrollcommand=_led_vsb.set)
-        self._color_tree.grid(row=0, column=0, sticky="nsew")
-        _led_vsb.grid(row=0, column=1, sticky="ns")
-        self._color_tree.bind("<<TreeviewSelect>>", self._on_color_tree_select)
-
-        self.ttk.Button(
-            cd_frame, text="Refresh list",
-            command=self._refresh_color_list,
-        ).grid(row=1, column=0, sticky="w", padx=6, pady=(2, 4))
-
-        # ── Edit fields ────────────────────────────────────────────────────
-        edit_f = self.ttk.Frame(cd_frame)
-        edit_f.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=2)
-
-        self.ttk.Label(edit_f, text="New name:").grid(
-            row=0, column=0, sticky="w", padx=(0, 4),
-        )
-        self._color_new_name_var = self.tk.StringVar()
-        self.ttk.Entry(
-            edit_f, textvariable=self._color_new_name_var, width=16,
-        ).grid(row=0, column=1, sticky="w")
-
-        self.ttk.Label(edit_f, text="New color (#RRGGBB):").grid(
-            row=0, column=2, sticky="w", padx=(14, 4),
-        )
-        self._color_hex_var = self.tk.StringVar()
-        self.ttk.Entry(
-            edit_f, textvariable=self._color_hex_var, width=10,
-        ).grid(row=0, column=3, sticky="w")
-
-        # Plain tk.Label so background= is honoured (ttk.Label uses styles)
-        self._color_preview = self.tk.Label(
-            edit_f, text="  ", background="#FFFFFF",
-            relief="solid", width=3,
-        )
-        self._color_preview.grid(row=0, column=4, sticky="w", padx=(4, 0))
-        self._color_hex_var.trace_add("write", self._update_color_preview)
-
-        # ── Buttons ─────────────────────────────────────────────────
-        btn_row = self.ttk.Frame(cd_frame)
-        btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
-
-        self.ttk.Button(
-            btn_row, text="Update & Rename",
-            command=self._run_color_edit,
-        ).pack(side="left", padx=(0, 8))
-
-        self.ttk.Button(
-            btn_row, text="Normalize Colors.ini",
-            command=self._run_color_normalize,
-        ).pack(side="left")
-
-        # Populate immediately if ledblinky_dir is already configured
-        self._refresh_color_list()
 
         frame.columnconfigure(1, weight=1)
         return frame
@@ -10127,6 +10176,8 @@ class _SpinDoctorGUI:
         args = ["ledblinky", "colors", "normalize"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         self._run_cli(
             "spindoctor", args,
             on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
