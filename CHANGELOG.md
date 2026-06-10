@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.23] - 2026-06-09
+
 ### Fixed
 
 - **`ledblinky patch-settings --verbose` — output no longer repeats per key** — the verbose block was inside the `for change in result.changes:` loop, causing it to print the full summary once per patched key instead of once total. Moved outside the loop.
@@ -1182,7 +1186,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.22...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.23...HEAD
+[2.4.23]: https://github.com/phillram/spindoctor/compare/v2.4.22...v2.4.23
 [2.4.22]: https://github.com/phillram/spindoctor/compare/v2.4.21...v2.4.22
 [2.4.21]: https://github.com/phillram/spindoctor/compare/v2.4.20...v2.4.21
 [2.4.20]: https://github.com/phillram/spindoctor/compare/v2.4.19...v2.4.20
