@@ -258,7 +258,7 @@ A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by
 
 ### Custom Command
 
-Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~245 canonical commands grouped by family (health/discovery, reports, audit, curate, metadata/media, database, wheels, main menu, generate/organize, add/bootstrap, rename/clone, LEDBlinky, lightgun, emulator titles, backup, migrate, scrub/restore, themes, tools, diff, config). Every CLI command with meaningful flag variants is represented. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
+Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~246 canonical commands organised into 19 named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 ## Menubar
 
