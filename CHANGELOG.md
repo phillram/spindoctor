@@ -9,6 +9,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **`ledblinky patch-settings --verbose` — output no longer repeats per key** — the verbose block was inside the `for change in result.changes:` loop, causing it to print the full summary once per patched key instead of once total. Moved outside the loop.
+- **`Colors.ini` casing standardised throughout codebase** — `generate_for_roms`, `sync_player_colors`, and two helper functions were opening `"colors.ini"` (lowercase) while every other function and all tests used `"Colors.ini"` (capital C — LedBlinky's own filename). On Windows the case-insensitive filesystem hid the mismatch; on Linux CI it produced `FileNotFoundError` in every `sync_player_colors` test. Fixed by introducing named constants `COLORS_INI_NAME = "Colors.ini"` and `CONTROLS_INI_NAME = "controls.ini"` in `ledblinky.py` (matching the existing `CONTROLS_XML_NAME` and `COLOR_RGB_NAME` pattern) and replacing all inline string literals with those constants. `health.py` also updated to use the constants. Two regression tests added: `test_filename_constants_exact_casing` asserts the exact spelling of all four filename constants; `test_no_bare_colors_ini_string_in_module` scans the module source to reject any future bare `"colors.ini"` string literal. Architecture reference updated with a dedicated "Filename casing" section documenting the rule and its history.
 
 ### Added
 

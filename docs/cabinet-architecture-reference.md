@@ -405,10 +405,30 @@ which controls active-browsing music at the top-level system wheel.
 | File | Purpose |
 |------|---------|
 | `C:\LEDBlinky\Settings.ini` | Main application settings — animation modes, emulator config paths, speech, audio |
-| `C:\LEDBlinky\Controls.ini` | Per-ROM button assignments (what buttons a game uses) |
+| `C:\LEDBlinky\controls.ini` | Per-ROM button assignments (what buttons a game uses) |
 | `C:\LEDBlinky\Colors.ini` | Per-ROM LED colors for each assigned button |
 | `C:\LEDBlinky\LEDBlinkyControls.xml` | Per-emulator / per-ROM XML control map used by LedBlinky at runtime |
+| `C:\LEDBlinky\Color-RGB.ini` | Master named color dictionary (R,G,B intensity 0-48) |
 | `C:\LEDBlinky\*.lwa` | Animation files — played for idle / attract / in-game states |
+
+### Filename casing — critical on Linux, invisible on Windows
+
+LedBlinky is a Windows application and its filenames use mixed case. Windows filesystems are case-insensitive so `Colors.ini` and `colors.ini` resolve to the same file. Linux filesystems (including CI runners) are case-sensitive — a single wrong character silently breaks every path lookup with no error message other than "file not found."
+
+**Authoritative filename spelling:**
+
+| Constant in `ledblinky.py` | Exact filename | Notes |
+|----------------------------|----------------|-------|
+| `COLORS_INI_NAME` | `Colors.ini` | capital **C** |
+| `CONTROLS_INI_NAME` | `controls.ini` | all lowercase |
+| `CONTROLS_XML_NAME` | `LEDBlinkyControls.xml` | all-caps **LED** |
+| `COLOR_RGB_NAME` | `Color-RGB.ini` | mixed case, hyphen |
+| _(inline)_ | `Settings.ini` | capital **S** |
+| _(inline)_ | `LEDBlinkyLog.txt` | all-caps **LED** |
+
+**Rule for contributors:** never write a LedBlinky filename as a bare string literal anywhere in `spindoctor/ledblinky.py`. Use the named constants above. The test `test_filename_constants_exact_casing` and `test_no_bare_colors_ini_string_in_module` in `tests/test_ledblinky.py` will fail in CI if a constant is changed or a bare string literal is introduced.
+
+> **History:** `Colors.ini` was accidentally written as `colors.ini` (lowercase) in four separate path constructions across `generate_for_roms`, `sync_player_colors`, and two helper functions. This was undetectable on any developer's Windows machine and only surfaced when CI ran on Linux (PR #248). The named-constant pattern was already used for `CONTROLS_XML_NAME` and `COLOR_RGB_NAME` but had not been applied to the two most-commonly referenced files. Fixed in the same PR by adding `COLORS_INI_NAME` and `CONTROLS_INI_NAME` and replacing all inline strings.
 
 ### `Color-RGB.ini` — master color dictionary
 

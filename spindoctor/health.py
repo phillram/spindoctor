@@ -360,7 +360,8 @@ def check_ledblinky(config: Config) -> Check:
         )
     base = Path(config.ledblinky_dir)
     parent = Check(name="LEDBlinky", status=Status.OK)
-    for fname in ("controls.ini", "Colors.ini"):
+    from .ledblinky import CONTROLS_INI_NAME, COLORS_INI_NAME
+    for fname in (CONTROLS_INI_NAME, COLORS_INI_NAME):
         p = base / fname
         if not p.exists():
             parent.children.append(Check(
