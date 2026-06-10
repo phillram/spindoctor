@@ -50,14 +50,32 @@ def test_parse_listxml_basic():
 
 
 def test_synth_controls_emits_buttons_and_joystick():
+    """controls.ini sections must use LedBlinky runtime key names.
+
+    LedBlinky treats every unrecognised key as a literal control identifier.
+    Keys like P1_NUMBUTTONS or P1_CONTROLS are not recognised and silently
+    replace the real button names, breaking LED mapping at game launch.
+    """
     info = parse_listxml(SAMPLE_LISTXML)["1942"]
     section = synth_controls_section(info)
     body = "\n".join(section.lines)
     assert "numPlayers=2" in body
-    assert "BUTTON1" in body
-    assert "BUTTON2" in body
-    assert "JOYSTICK_8WAY" in body
-    assert "P1_NUMBUTTONS=2" in body
+    assert "alternating=0" in body
+    # Buttons and joystick must use LedBlinky's runtime key names
+    assert "P1_BUTTON1=1" in body
+    assert "P1_BUTTON2=1" in body
+    assert "P1_JOYSTICK=1" in body
+    assert "P1_START=1" in body
+    assert "P1_COIN=1" in body
+    # P2 must also be present for a 2-player game
+    assert "P2_BUTTON1=1" in body
+    assert "P2_JOYSTICK=1" in body
+    assert "P2_START=1" in body
+    assert "P2_COIN=1" in body
+    # Old metadata-style keys must NOT appear
+    assert "P1_NUMBUTTONS" not in body
+    assert "P1_CONTROLS" not in body
+    assert "JOYSTICK_8WAY" not in body
 
 
 def test_synth_colors_uses_palette():
