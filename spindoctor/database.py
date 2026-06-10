@@ -80,16 +80,20 @@ def _atomic_write_bytes(target: Path, data: bytes,
     try:
         os.write(fd, data)
         os.close(fd)
+        fd = -1
         os.replace(tmp, target)
+        tmp = None
     except Exception:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
         raise
 
 

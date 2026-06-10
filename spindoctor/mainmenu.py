@@ -59,7 +59,7 @@ class MainMenu:
         for i, entry in enumerate(self.entries):
             if entry.system.strip().lower() == key:
                 return i
-        raise KeyError(system)
+        raise KeyError(system.strip())
 
     def get(self, system: str) -> MainMenuEntry:
         return self.entries[self.index_of(system)]

@@ -80,25 +80,22 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-15 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~70 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
+12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~246 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
 
 ### Tabs
 
 - **Setup** — paths + scraper credentials (ScreenScraper user/dev + TheGamesDB) and a **Test credentials** button that pings both providers and reports pass/fail.
-- **Wheels** — checkboxes for Favorites / Recently Played / Most Played plus a *Refresh selected* button that chains only the ticked ones; HyperSpin integration helpers below.
-- **Main Menu** — interactive Treeview of the live system order; select a row, click Move Up / Move Down / Toggle Visible, then Save Order to write `Main Menu.xml`.
-- **Audit & Doctor** — system-by-system audit and the global `doctor` health check.
-- **Diagnose** — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `verify` against a DAT, global search.
+- **Diagnostics** — system-by-system audit, the global `doctor` health check, `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `verify` against a DAT, global search.
 - **Metadata & Media** — `fetch-meta`, `fetch-media` with media-type checkboxes, `media-scan`, `update-db`, `generate-config`; *Full metadata refresh* chains all three.
-- **Curate** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes, ignore lifecycle with click-to-un-ignore viewer.
-- **Systems** — `add-system`, `add-pc-system`, `pc-rename`, and the per-system overrides form mentioned above.
-- **LEDBlinky** — generate / audit / check / fix the LED-light configuration.
+- **Maintenance** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes, ignore lifecycle with click-to-un-ignore viewer.
+- **Tools** — wheel rebuilds (Favorites / Recently Played / Most Played), HyperSpin Tools-menu helpers, and the Windows auto-refresh-on-log-on hook.
+- **Systems** — `add-system`, `add-pc-system`, `pc-rename`, per-system overrides form, and the interactive Main Menu Treeview (reorder / show-hide / sort systems).
+- **LEDBlinky** — nine-step workflow: overlay-hook fix, Settings.ini, MAME generate + sync, fill defaults, randomize, admin buttons, brightness, color definitions, backup.
 - **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
-- **Tools** — Tools-menu helpers and the Windows auto-refresh-on-log-on hook.
 - **Backup & Restore** — *Scan* populates the restore dropdown from your configured backup folder.
 - **Migrate** — multi-select systems filter, undo manifest dropdown pre-populated from `~/.spindoctor/migrations/`.
 - **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
-- **Custom Command** — type-or-pick CLI invocations; the dropdown is a curated tour of the whole CLI surface.
+- **Custom Command** — type-or-pick CLI invocations; ~246 presets across 19 named sections cover the full CLI surface.
 
 For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
 
