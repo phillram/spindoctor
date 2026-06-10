@@ -1083,16 +1083,16 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 
 | Key | Section | Default | Effect |
 |-----|---------|---------|--------|
-| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Pass `""` to silence unused buttons during gameplay (dark/off). Pass a `.lwa` path (e.g. `lwa\Slow Fade.lwa`) to play that animation on all unmapped buttons — globally, every game, every system. |
+| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Pass `""` to silence unused buttons during gameplay (dark/off). Pass a `.lwa` filename (e.g. `Slow Fade.lwa`) to play that animation on all unmapped buttons — globally, every game, every system. |
 | `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Swaps `<Random>` for a chosen animation file while browsing HyperSpin |
 
-`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. Use `spindoctor ledblinky check` or the GUI **Refresh list** button to see what's available.
+`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. The **Refresh list** button in the GUI and `list_lwa_files()` both return filenames relative to the `lwa\` subfolder (e.g. `Slow Fade.lwa`, not `lwa\Slow Fade.lwa`) — LedBlinky prepends `lwa\` itself when reading these keys from `Settings.ini`.
 
 ```bat
-spindoctor ledblinky patch-settings --apply                                    :: silence in-game unused-button flash
-spindoctor ledblinky patch-settings --game-lwa "lwa\Slow Fade.lwa" --apply    :: play animation on unused buttons
-spindoctor ledblinky patch-settings --fe-lwa "" --apply                        :: also use static colors while browsing
-spindoctor ledblinky patch-settings --fe-lwa "lwa\Slow Fade.lwa" --apply       :: smooth fade instead of random flash
+spindoctor ledblinky patch-settings --apply                               :: silence in-game unused-button flash
+spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply   :: play animation on unused buttons
+spindoctor ledblinky patch-settings --fe-lwa "" --apply                   :: also use static colors while browsing
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply      :: smooth fade instead of random flash
 ```
 
 A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `--no-backup` to skip it.
