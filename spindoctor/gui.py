@@ -766,6 +766,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky colors sync-players",
     "ledblinky colors sync-players --apply",
     "ledblinky colors sync-players --apply --verbose",
+    "ledblinky colors sync-players --apply --override",
+    "ledblinky colors sync-players --apply --override --verbose",
     "ledblinky fill-defaults",
     "ledblinky fill-defaults --admin-buttons 6 --admin-color <COLOR> --apply",
     "ledblinky fill-defaults --apply",
@@ -10368,7 +10370,7 @@ class _SpinDoctorGUI:
         )
 
     def _run_led_sync_players(self) -> None:
-        """Run ``ledblinky colors sync-players`` to mirror P1 colors to P2+."""
+        """Mirror P1 colors to all additional players (P2, P3, P4, …) based on controls.ini."""
         args = ["ledblinky", "colors", "sync-players"]
         if self._global_apply_var.get():
             args.append("--apply")

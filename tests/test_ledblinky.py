@@ -1150,3 +1150,70 @@ def test_sync_players_case_insensitive_rom_matching(tmp_path):
     assert result.roms_updated == 1
     text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
     assert "P2_BUTTON1=Purple" in text
+
+
+def test_sync_players_p3_p4_support(tmp_path):
+    """P3 and P4 keys in controls.ini are mirrored just like P2 keys."""
+    controls = (
+        "[4player]\n"
+        "numPlayers=4\n"
+        "P1_BUTTON1=1\nP1_JOYSTICK=1\n"
+        "P2_BUTTON1=1\nP2_JOYSTICK=1\n"
+        "P3_BUTTON1=1\nP3_JOYSTICK=1\n"
+        "P4_BUTTON1=1\nP4_JOYSTICK=1\n"
+    )
+    colors = "[4player]\nP1_BUTTON1=Red\nP1_JOYSTICK=White\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 1
+    assert result.keys_added == 6  # P2/P3/P4 × BUTTON1+JOYSTICK
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    for player in ("P2", "P3", "P4"):
+        assert f"{player}_BUTTON1=Red" in text
+        assert f"{player}_JOYSTICK=White" in text
+    # P1 keys untouched
+    assert "P1_BUTTON1=Red" in text
+
+
+def test_sync_players_override_replaces_existing_keys(tmp_path):
+    """With override=True, existing P2+ entries are replaced with P1-mirrored color."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Red\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False, override=True)
+
+    assert result.roms_updated == 1
+    assert result.keys_added == 0
+    assert result.keys_overwritten == 1
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Red" in text   # replaced with P1 color
+    assert "P2_BUTTON1=Green" not in text
+
+
+def test_sync_players_override_does_not_affect_p1(tmp_path):
+    """override=True never modifies P1 entries — only P2+ are touched."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Blue\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    sync_player_colors(cfg, dry_run=False, backup=False, override=True)
+
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P1_BUTTON1=Blue" in text  # P1 unchanged
+
+
+def test_sync_players_override_false_preserves_existing(tmp_path):
+    """Without --override, existing P2+ keys are never replaced (default behaviour)."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Red\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False, override=False)
+
+    assert result.roms_updated == 0
+    assert result.keys_overwritten == 0
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Green" in text  # original value preserved

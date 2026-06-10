@@ -1065,7 +1065,7 @@ When `output_dir` is configured, the full report is also saved to `<output_dir>/
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Player buttons never light, not even on press; Coin/Start work | `controls.ini` has old SpinDoctor format (`P1_NUMBUTTONS`) — LedBlinky treats those as control names, suppressing real button names | Run `ledblinky generate --overwrite --apply` |
-| P1 buttons correct color, P2+ buttons wrong color (XML fallback) | `Colors.ini` has P1 entries but is missing P2+ entries — `generate` only writes P1 keys | Run `ledblinky colors sync-players --apply` |
+| P1 buttons correct color, P2/P3/P4+ buttons wrong color (XML fallback) | `Colors.ini` has P1 entries but is missing additional-player entries — `generate` only writes P1 keys | Run `ledblinky colors sync-players --apply` (supports any number of players) |
 | All buttons white, coin dark | LedBlinky using DEFAULT XML control group | Check XML for per-ROM entry under correct emulator section; verify RL sends correct ROM name |
 | Colors.ini has entry but ignored | `ledcolor=` hex format (not readable by LedBlinky) | Run `colors normalize --apply` |
 | Wrong colors applied | ROM name mismatch (RL sends display name, not filename) | Check `LEDBlinkyLog.txt` for received name |
@@ -1109,7 +1109,7 @@ A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `
 
 `Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
 
-`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section. `colors sync-players` adds missing P2+/P3+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`.
+`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section. `colors sync-players` adds missing P2/P3/P4+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`; supports any number of additional players and accepts `--override` to replace existing non-P1 entries.
 
 ```bat
 spindoctor ledblinky colors list                                                 :: show all definitions
@@ -1300,16 +1300,17 @@ A timestamped `.bak` backup of `Colors.ini` is written (to the configured backup
 
 #### `ledblinky colors sync-players`
 
-Mirror P1 colors to P2+ players based on what `controls.ini` declares.
+Mirror P1 colors to all additional players (P2, P3, P4, …) based on what `controls.ini` declares.
 
-`ledblinky generate` writes `Colors.ini` sections with P1 keys only (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). For multi-player games, the P2+ buttons have no entry and fall back to the XML default color instead of the game-specific palette. `sync-players` closes that gap.
+`ledblinky generate` writes `Colors.ini` sections with P1 keys only (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). For multi-player games, the P2+ buttons have no entry and fall back to the XML default color instead of the game-specific palette. `sync-players` closes that gap for **any number of players**.
 
 **Rules:**
 
-- For every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it checks `controls.ini` for P{n≥2} keys.
-- Any missing `P{n}_KEY` in `Colors.ini` is added by mirroring the matching P1 color (e.g. `P2_BUTTON1` gets the same color as `P1_BUTTON1`).
+- For every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it checks `controls.ini` for P{n≥2} keys (P2, P3, P4, and beyond).
+- Any missing `P{n}_KEY` in `Colors.ini` is added by mirroring the matching P1 color (e.g. `P3_BUTTON1` gets the same color as `P1_BUTTON1`).
 - **Only adds keys listed in `controls.ini`** — no buttons are invented.
-- **Never overwrites existing keys** — only absent keys are filled.
+- **Never overwrites existing keys** unless `--override` is passed.
+- With `--override`, existing P2+ entries are replaced with the current P1-mirrored color. P1 keys are never modified.
 - If `P1_KEY` itself is absent from `Colors.ini`, that key is skipped (nothing to mirror from).
 - ROMs with no `controls.ini` entry are left untouched.
 
@@ -1322,6 +1323,9 @@ spindoctor ledblinky colors sync-players --apply
 
 :: Commit and print each key added per ROM
 spindoctor ledblinky colors sync-players --apply --verbose
+
+:: Replace existing P2+ entries with current P1-mirrored colors
+spindoctor ledblinky colors sync-players --apply --override
 ```
 
 **Options:**
@@ -1330,7 +1334,8 @@ spindoctor ledblinky colors sync-players --apply --verbose
 |------|---------|-------------|
 | `--apply` | dry-run | Commit writes |
 | `--no-backup` | off | Skip the `.bak` backup before writing |
-| `--verbose` | off | Print each key added per ROM |
+| `--override` | off | Replace existing P2+ entries with P1-mirrored colors (P1 keys never touched) |
+| `--verbose` | off | Print each key added or replaced per ROM |
 
 **Typical workflow** (run in order after a fresh generate):
 

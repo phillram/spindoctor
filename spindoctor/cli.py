@@ -6974,32 +6974,38 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
               help="Commit writes (default: dry-run preview).")
 @click.option("--no-backup", is_flag=True,
               help="Skip the automatic .bak backup before writing.")
+@click.option("--override", is_flag=True,
+              help="Replace existing P2+ color entries with the current P1-mirrored "
+                   "color. Without this flag, existing entries are never changed.")
 @click.option("--verbose", is_flag=True,
-              help="Print every key added per ROM.")
-def ledblinky_colors_sync_players(apply_changes, no_backup, verbose):
-    """Mirror P1 colors to P2+ players based on controls.ini.
+              help="Print every key added (or replaced) per ROM.")
+def ledblinky_colors_sync_players(apply_changes, no_backup, override, verbose):
+    """Mirror P1 colors to all additional players based on controls.ini.
 
     ``ledblinky generate`` writes Colors.ini sections with P1 keys only.
-    When a game has two (or more) players, the P2+ buttons have no color
-    entry and fall back to the XML default color instead of the per-game
+    When a game has multiple players (P2, P3, P4, …), those buttons have no
+    color entry and fall back to the XML default color instead of the per-game
     palette you configured.
 
     This command closes that gap: for every ROM that has both a Colors.ini
     section and a controls.ini entry, it adds any missing P{n}_KEY entries
-    (where n >= 2) by mirroring the matching P1 color.
+    (where n >= 2) by mirroring the matching P1 color.  Works for any number
+    of additional players — P2, P3, P4, and beyond.
 
     \b
     Rules:
       - Only adds keys that are listed in controls.ini (no invented buttons).
       - Only mirrors from P1 — if P1_KEY is absent, that key is skipped.
-      - Never overwrites existing Colors.ini keys.
+      - Never overwrites existing Colors.ini keys unless --override is passed.
       - ROMs with no controls.ini entry are left unchanged.
+      - P1 keys are never modified regardless of --override.
 
     \b
     Examples:
-      spindoctor ledblinky colors sync-players            :: preview
-      spindoctor ledblinky colors sync-players --apply    :: commit
+      spindoctor ledblinky colors sync-players                       :: preview
+      spindoctor ledblinky colors sync-players --apply               :: commit
       spindoctor ledblinky colors sync-players --apply --verbose
+      spindoctor ledblinky colors sync-players --apply --override    :: replace existing P2+ entries
     """
     from . import ledblinky as lb
 
@@ -7009,6 +7015,7 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, verbose):
             config,
             dry_run=not apply_changes,
             backup=not no_backup,
+            override=override,
         )
     except (ValueError, FileNotFoundError) as exc:
         console.print(f"[red]Error:[/red] {exc}")
@@ -7018,8 +7025,11 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, verbose):
         f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
     )
     verb = "would update" if result.dry_run else "updated"
+    keys_detail = f"[cyan]{result.keys_added}[/cyan] added"
+    if result.keys_overwritten:
+        keys_detail += f", [yellow]{result.keys_overwritten}[/yellow] replaced"
     console.print(f"  ROMs {verb:16s}: [green]{result.roms_updated}[/green]"
-                  f"  ([cyan]{result.keys_added}[/cyan] keys added)")
+                  f"  ({keys_detail})")
     console.print(
         f"  ROMs skipped (already complete) : [dim]{result.roms_skipped_complete}[/dim]"
     )
@@ -7035,7 +7045,7 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, verbose):
             f"(of {result.roms_updated}):[/dim]"
         )
         for rom_name, keys in shown:
-            console.print(f"[dim]  {rom_name:<30s}  added: {', '.join(keys)}[/dim]")
+            console.print(f"[dim]  {rom_name:<30s}  added/replaced: {', '.join(keys)}[/dim]")
         if len(result.details) > _SAMPLE:
             console.print(f"[dim]  … {len(result.details) - _SAMPLE} more[/dim]")
 
