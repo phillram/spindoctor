@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import textwrap
+import types
 
 from spindoctor import ledblinky
 from spindoctor.ledblinky import (
@@ -1258,3 +1259,204 @@ def test_no_bare_colors_ini_string_in_module():
         "Found bare 'colors.ini' string literal(s) in ledblinky.py — "
         "use COLORS_INI_NAME instead:\n" + "\n".join(offending)
     )
+
+
+# ─── patch_ledblinky_settings / read_ledblinky_settings_keys tests ────────────
+
+_SETTINGS_INI_SAMPLE = """\
+[VersionInfo]
+Major=8
+
+[GameOptions]
+LightGameControls=1
+GamePlayLWAFile=<Random>
+
+[FEOptions]
+FE=hyperspin
+FELWAFile=slowfadeupdown.lwax
+FEScreenSaverLWAFile=slowfadeupdown.lwax
+FEStartLWAFile=<Random>
+"""
+
+
+def _make_settings_cfg(tmp_path, content=_SETTINGS_INI_SAMPLE):
+    (tmp_path / "Settings.ini").write_text(content, encoding="utf-8")
+    return types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="")
+
+
+# ── read_ledblinky_settings_keys ──────────────────────────────────────────────
+
+def test_read_settings_keys_returns_current_values(tmp_path):
+    """All three patchable keys are read from their respective sections."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.read_ledblinky_settings_keys(cfg)
+    assert result["FELWAFile"] == "slowfadeupdown.lwax"
+    assert result["FEScreenSaverLWAFile"] == "slowfadeupdown.lwax"
+    assert result["GamePlayLWAFile"] == "<Random>"
+
+
+def test_read_settings_keys_empty_when_no_dir():
+    """Returns empty dict when ledblinky_dir is not configured."""
+    cfg = types.SimpleNamespace(ledblinky_dir="", backup_dir="")
+    assert ledblinky.read_ledblinky_settings_keys(cfg) == {}
+
+
+def test_read_settings_keys_empty_when_file_missing(tmp_path):
+    """Returns empty dict when Settings.ini does not exist."""
+    cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="")
+    assert ledblinky.read_ledblinky_settings_keys(cfg) == {}
+
+
+def test_read_settings_keys_empty_string_values(tmp_path):
+    """Keys present but set to empty string are returned as empty strings, not omitted."""
+    content = "[FEOptions]\nFELWAFile=\nFEScreenSaverLWAFile=\n[GameOptions]\nGamePlayLWAFile=\n"
+    cfg = _make_settings_cfg(tmp_path, content)
+    result = ledblinky.read_ledblinky_settings_keys(cfg)
+    assert result["FELWAFile"] == ""
+    assert result["FEScreenSaverLWAFile"] == ""
+    assert result["GamePlayLWAFile"] == ""
+
+
+def test_read_settings_keys_absent_key_not_in_result(tmp_path):
+    """A key that is absent from the file is absent from the result dict (not empty string)."""
+    content = "[FEOptions]\nFELWAFile=slowfadeupdown.lwax\n[GameOptions]\nGamePlayLWAFile=\n"
+    cfg = _make_settings_cfg(tmp_path, content)
+    result = ledblinky.read_ledblinky_settings_keys(cfg)
+    assert "FEScreenSaverLWAFile" not in result
+    assert result["FELWAFile"] == "slowfadeupdown.lwax"
+
+
+# ── patch_ledblinky_settings ──────────────────────────────────────────────────
+
+def test_patch_settings_fe_lwa_file(tmp_path):
+    """fe_lwa_file changes FELWAFile and writes the file."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        fe_lwa_file="Active.lwa",
+        game_play_lwa_file="<Random>",  # keep GamePlayLWAFile unchanged
+        dry_run=False,
+        backup=False,
+    )
+    assert any("FELWAFile" in c for c in result.changes)
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FELWAFile=Active.lwa" in text
+
+
+def test_patch_settings_fe_lwa_none_leaves_key_unchanged(tmp_path):
+    """fe_lwa_file=None does not touch FELWAFile."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        fe_lwa_file=None,
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    assert not any("FELWAFile" in c for c in result.changes)
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FELWAFile=slowfadeupdown.lwax" in text
+
+
+def test_patch_settings_ss_lwa_file(tmp_path):
+    """ss_lwa_file changes FEScreenSaverLWAFile and writes the file."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        ss_lwa_file="My Screen Saver.lwa",
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    assert any("FEScreenSaverLWAFile" in c for c in result.changes)
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FEScreenSaverLWAFile=My Screen Saver.lwa" in text
+
+
+def test_patch_settings_ss_lwa_empty_string_silences(tmp_path):
+    """ss_lwa_file='' writes an empty value to silence the screen saver animation."""
+    cfg = _make_settings_cfg(tmp_path)
+    ledblinky.patch_ledblinky_settings(
+        cfg,
+        ss_lwa_file="",
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FEScreenSaverLWAFile=\n" in text
+
+
+def test_patch_settings_ss_lwa_none_leaves_key_unchanged(tmp_path):
+    """ss_lwa_file=None does not touch FEScreenSaverLWAFile."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        ss_lwa_file=None,
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    assert not any("FEScreenSaverLWAFile" in c for c in result.changes)
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FEScreenSaverLWAFile=slowfadeupdown.lwax" in text
+
+
+def test_patch_settings_fe_and_ss_together(tmp_path):
+    """fe_lwa_file and ss_lwa_file can be changed in the same call."""
+    cfg = _make_settings_cfg(tmp_path)
+    ledblinky.patch_ledblinky_settings(
+        cfg,
+        fe_lwa_file="Active.lwa",
+        ss_lwa_file="Saver.lwa",
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "FELWAFile=Active.lwa" in text
+    assert "FEScreenSaverLWAFile=Saver.lwa" in text
+
+
+def test_patch_settings_game_play_lwa_file(tmp_path):
+    """game_play_lwa_file changes GamePlayLWAFile and writes the file."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        game_play_lwa_file="",
+        dry_run=False,
+        backup=False,
+    )
+    assert any("GamePlayLWAFile" in c for c in result.changes)
+    text = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    assert "GamePlayLWAFile=\n" in text
+
+
+def test_patch_settings_dry_run_does_not_write(tmp_path):
+    """dry_run=True detects changes but does not modify Settings.ini."""
+    cfg = _make_settings_cfg(tmp_path)
+    original = (tmp_path / "Settings.ini").read_text(encoding="utf-8")
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        ss_lwa_file="New.lwa",
+        game_play_lwa_file="",
+        dry_run=True,
+        backup=False,
+    )
+    assert result.changes  # changes detected
+    assert result.dry_run is True
+    assert (tmp_path / "Settings.ini").read_text(encoding="utf-8") == original
+
+
+def test_patch_settings_no_changes_when_values_match(tmp_path):
+    """Returns empty changes list when all requested values already match."""
+    cfg = _make_settings_cfg(tmp_path)
+    result = ledblinky.patch_ledblinky_settings(
+        cfg,
+        fe_lwa_file="slowfadeupdown.lwax",
+        ss_lwa_file="slowfadeupdown.lwax",
+        game_play_lwa_file="<Random>",
+        dry_run=False,
+        backup=False,
+    )
+    assert result.changes == []
