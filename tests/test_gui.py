@@ -627,7 +627,7 @@ def test_gui_constructs_against_real_tk():
     try:
         app.root.update_idletasks()
         # Sanity: every tab builder ran without exception, including the
-        # Curate tab (foreground TclError) and the Main Menu tab
+        # Maintenance tab (foreground TclError) and the Systems tab
         # (_output AttributeError). 12 = the documented tab count.
         assert len(app._tab_base_names) == 12
         # Pin the workflow-oriented order so a drive-by reorder doesn't
@@ -635,17 +635,17 @@ def test_gui_constructs_against_real_tk():
         # the rationale behind the sequencing.
         assert app._tab_base_names == [
             "Setup",
+            "Systems",
             "Diagnostics",
             "Metadata & Media",
             "Maintenance",
             "Tools",
-            "Systems",
             "LEDBlinky",
             "Lightgun",
             "Backup & Restore",
             "Migrate",
-            "Logs",
             "Custom Command",
+            "Logs",
         ]
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
@@ -913,17 +913,17 @@ def test_gui_survives_missing_keysym_in_bind_all():
             # See `_build_layout` for the rationale.
             assert app._tab_base_names == [
                 "Setup",
+                "Systems",
                 "Diagnostics",
                 "Metadata & Media",
                 "Maintenance",
                 "Tools",
-                "Systems",
                 "LEDBlinky",
                 "Lightgun",
                 "Backup & Restore",
                 "Migrate",
-                "Logs",
                 "Custom Command",
+                "Logs",
             ]
         finally:
             app.root.destroy()

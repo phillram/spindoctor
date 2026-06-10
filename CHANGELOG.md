@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI — tab order resequenced to match new-user journey** — tabs now appear in this order: Setup → Systems → Diagnostics → Metadata & Media → Maintenance → Tools → LEDBlinky → Lightgun → Backup & Restore → Migrate → Custom Command → Logs. Systems (formerly tab 6) is now tab 2 so cabinet owners configure their library before running diagnostics. Logs (formerly tab 11) is now the last tab. Custom Command (formerly last) is now tab 11. The `Ctrl+1–9` shortcuts still jump to tab N by visible position.
+- **GUI — all action tabs now use numbered Step sections** — Diagnostics (3 steps), Systems (4 steps), Metadata & Media (5 steps + 2 unnumbered advanced sections), Maintenance (Step 1), Lightgun (2 steps), Backup & Restore (3 steps), Migrate (4 steps). Tools tab split into Step 1 — Refresh custom wheels, Step 2 — Register in HyperSpin main menu, Step 3 — Manage favorites (formerly all packed into one "Custom wheels" LabelFrame). LEDBlinky already had Steps 1–9 from the previous release.
+- **GUI — Metadata & Media — "Full metadata refresh" chain button promoted to Step 1** — the one-click fetch-meta → fetch-media → update-db chain was previously a bare separator + button buried after Sync database to ROMs. It is now a prominent "Step 1 — Full metadata refresh" LabelFrame at the top of the tab with a description of what it does, so the common "refresh everything" workflow is the first thing a user sees.
+- **GUI — Backup & Restore — target folder + components merged into Step 1** — the shared target folder and component checkboxes were previously floating bare rows above the LabelFrames. They are now inside a "Step 1 — Target folder & components" LabelFrame. "List backups" is now a button inside Step 2 (Create backup) rather than its own thin LabelFrame.
+- **GUI — Migrate — target root + components + options merged into Step 3** — previously three separate LabelFrames (Target root bare row, Components, Options). Now a single "Step 3 — Migration settings" LabelFrame containing all three, numbered Step 3 to place it after the "Step 2 — Backup before migrating" safety step.
+- **GUI — Tools — "Install wheel helpers" renamed to "Install .bat helpers (optional)"** — clearer label indicating the section is optional and installs .bat files specifically.
+- **`docs/gui.md` — tab tour rewritten to match new tab order and step numbering** — all 12 tab sections appear in the new order; per-tab descriptions updated to reference numbered steps; "Custom Command" moved before "Logs"; tab tour intro paragraph updated.
+- **`docs/workflows.md` — stale tab names corrected** — "Diagnose tab" → "Diagnostics tab" (three occurrences); "Wheels tab" → "Tools tab" with updated description reflecting that `fav add / remove / list` is now accessible directly from the Tools tab (Step 3).
+- **`docs/standalone-tools.md` — "Wheels tab" reference corrected to "Tools tab"** — also updated to mention "Step 1 — Refresh custom wheels" for clarity.
+- **`docs/troubleshooting.md` — "Main Menu tab" heading corrected to "Systems tab"** — the Main Menu treeview lives inside the Systems tab.
+- **`ledblinky.py` — clarified `sync-players` skip-comment in `sync_player_colors`** — added an inline comment explaining that the `continue` on an already-present key is the intended idempotent path, and a note confirming the underscore in the key suffix is always present by regex construction.
+
 ### Fixed
 
 - **`backup` — partial cleanup now applies to all mid-copy failures, not just Ctrl+C** — the in-flight component sweep and partial-manifest write on interrupted backups previously only ran on `KeyboardInterrupt`. Other failures mid-copy (e.g. full disk, permission error) would leave a half-written component behind with no manifest. Broadened the handler to `BaseException` so cleanup and partial-manifest persistence run for any failure.
@@ -13,22 +27,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`database.py` — atomic write cleanup correctly tracks fd/tmp state** — after `os.close(fd)` the fd variable is reset to `-1` and after `os.replace()` the tmp variable is set to `None`, so the exception cleanup path cannot double-close the descriptor or attempt to unlink an already-renamed temp file.
 - **`mainmenu.py` — `index_of()` `KeyError` raises stripped system name** — previously the error was raised with the original (possibly whitespace-padded) input; it now strips whitespace to match what the lookup actually compared.
 
-### Changed
-
-- **`ledblinky.py` — clarified `sync-players` skip-comment in `sync_player_colors`** — added an inline comment explaining that the `continue` on an already-present key is the intended idempotent path, and a note confirming the underscore in the key suffix is always present by regex construction.
-
 ### Added
-
-- **`docs/commands.md` — `pc-rename` now has its own dedicated section** — the command was previously documented only as a companion note inside the `add-pc-system` section. It now has a standalone `### pc-rename` entry under Library generation covering dry-run vs `--apply`, `--no-interactive`, and `--undo`.
-- **`docs/commands.md` — new `## Config` section documenting all `config` subcommands** — `config init`, `config set`, `config show`, and `config verify-credentials` (with all credential override flags and JSON output mode) are now documented with examples. Previously `verify-credentials` had no dedicated reference entry.
-- **`docs/cli-cheatsheet.md` — `pc-rename` and `config verify-credentials` added** — `pc-rename` added to Edit & curate section; `verify-credentials` added to the Config section with credential-override examples.
-- **`README.md` — GUI section updated for current tab structure** — "15 dedicated tabs" corrected to 12; tab list updated to use current names (Diagnostics, Maintenance, Tools, Systems) replacing the old separate Audit & Doctor / Diagnose / Curate / Wheels / Main Menu entries; Custom Command dropdown count corrected from ~70 to ~246.
-- **`docs/gui.md` — tab tour restructured to match current GUI** — "Audit & Doctor" and "Diagnose" sections merged into a single "Diagnostics" section; "Curate" renamed to "Maintenance"; standalone "Wheels" and "Main Menu" sections removed and their content integrated into the "Tools" and "Systems" sections respectively.
-- **`docs/cli-cheatsheet.md` — Custom Command preset count corrected** — two references to "~70 presets" updated to "~246 presets" to match the 2.4.22 expansion.
-- **`docs/configuration.md` — GUI preferences section updated** — `gui_window_maximized` (bool) added; `gui_last_active_tab` and `gui_curate_regions` descriptions updated to use current tab names (Maintenance instead of Curate).
 
 - **`ledblinky patch-settings --ss-lwa` — new option to set the screen saver animation** — `Settings.ini` has two separate FE animation keys: `FELWAFile` (active browsing) and `FEScreenSaverLWAFile` (screen saver). Only `FELWAFile` was previously patchable via SpinDoctor. The new `--ss-lwa` option patches `FEScreenSaverLWAFile` in the same pass. Pass a `.lwa` filename to set the animation, `""` to silence it, or omit to leave unchanged. Both the CLI and GUI one-time setup (Step 2 — Settings.ini) have been updated with the new field. GUI label for the existing FE field updated from "FE idle animation" to "FE active animation" to match LedBlinky's own terminology.
 - **GUI — Settings.ini animation comboboxes now pre-populate from current Settings.ini values** — previously all three animation dropdowns (FE active, screen saver, in-game) always opened showing default placeholder values (`<Random>` / blank) regardless of what was actually set in `Settings.ini`. They now read the current values from `Settings.ini` on load and on every **Refresh list** click, so the GUI accurately reflects the current configuration. New `read_ledblinky_settings_keys` function added to `ledblinky.py`.
+- **`docs/commands.md` — `pc-rename` now has its own dedicated section** — the command was previously documented only as a companion note inside the `add-pc-system` section. It now has a standalone `### pc-rename` entry under Library generation covering dry-run vs `--apply`, `--no-interactive`, and `--undo`.
+- **`docs/commands.md` — new `## Config` section documenting all `config` subcommands** — `config init`, `config set`, `config show`, and `config verify-credentials` (with all credential override flags and JSON output mode) are now documented with examples. Previously `verify-credentials` had no dedicated reference entry.
+- **`docs/cli-cheatsheet.md` — `pc-rename` and `config verify-credentials` added** — `pc-rename` added to Edit & curate section; `verify-credentials` added to the Config section with credential-override examples.
+- **`docs/cli-cheatsheet.md` — Custom Command preset count corrected** — two references to "~70 presets" updated to "~246 presets" to match the 2.4.22 expansion.
+- **`docs/configuration.md` — GUI preferences section updated** — `gui_window_maximized` (bool) added; `gui_last_active_tab` and `gui_curate_regions` descriptions updated to use current tab names (Maintenance instead of Curate).
+- **`README.md` — GUI section updated for current tab structure** — "15 dedicated tabs" corrected to 12; tab list updated to use current names (Diagnostics, Maintenance, Tools, Systems) replacing the old separate Audit & Doctor / Diagnose / Curate / Wheels / Main Menu entries; Custom Command dropdown count corrected from ~70 to ~246.
+- **`docs/gui.md` — tab tour restructured to match current GUI** — "Audit & Doctor" and "Diagnose" sections merged into a single "Diagnostics" section; "Curate" renamed to "Maintenance"; standalone "Wheels" and "Main Menu" sections removed and their content integrated into the "Tools" and "Systems" sections respectively.
 
 ---
 

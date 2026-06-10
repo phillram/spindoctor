@@ -52,7 +52,7 @@ Folders must exist before they can be configured. Create the folder first, then 
 
 That system has ROMs but no HyperSpin database yet. Run `spindoctor add-system "<exact folder name>"` to bootstrap it (dry-run first; re-run with `--apply`).
 
-### Main Menu tab pops "Main Menu.xml could not be parsed"
+### Systems tab pops "Main Menu.xml could not be parsed"
 
 The GUI tried to read `<hyperspin_dir>/Databases/Main Menu/Main Menu.xml` and the parser rejected it. The Main Menu table is cleared (so you don't act on stale rows) and the dialog names the file path and the parser's error message. Common causes:
 
