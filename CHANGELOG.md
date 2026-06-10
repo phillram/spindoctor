@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.22] - 2026-06-09
+
 ### Changed
 
 - **GUI Custom Command preset dropdown reorganised with section headers and alphabetical ordering** — entries are now grouped under 19 named sections (`─── Health & Discovery ───`, `─── Reports & Stats ───`, `─── Audit & Inspect ───`, `─── Curate & Cleanup ───`, `─── Metadata & Media ───`, `─── Database ───`, `─── Wheels ───`, `─── Main Menu ───`, `─── Generate & Organize ───`, `─── Add & Bootstrap ───`, `─── Rename & Clone ───`, `─── LEDBlinky ───`, `─── Lightgun ───`, `─── Emulator Titles ───`, `─── Backup & Migration ───`, `─── Scrub & Restore ───`, `─── Themes ───`, `─── Tools ───`, `─── Config ───`). Commands within each section are sorted alphabetically. Selecting a section header auto-advances the Combobox to the first real command in that section; clicking Run while a header is selected flashes a validation hint instead of shelling out.
@@ -1161,7 +1165,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.21...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.22...HEAD
+[2.4.22]: https://github.com/phillram/spindoctor/compare/v2.4.21...v2.4.22
 [2.4.21]: https://github.com/phillram/spindoctor/compare/v2.4.20...v2.4.21
 [2.4.20]: https://github.com/phillram/spindoctor/compare/v2.4.19...v2.4.20
 [2.4.19]: https://github.com/phillram/spindoctor/compare/v2.4.18...v2.4.19
