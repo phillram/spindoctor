@@ -5721,11 +5721,11 @@ def self_doctor(fix):
 
 @cli.group("ledblinky")
 def ledblinky_group():
-    """Generate and audit LEDBlinky controls.ini / colors.ini.
+    """Generate and audit LEDBlinky controls.ini / Colors.ini.
 
     \b
     Subcommands:
-      generate       Generate / merge Controls.ini and Colors.ini from MAME data
+      generate       Generate / merge controls.ini and Colors.ini from MAME data
       audit          Audit ROM → Colors.ini coverage
       check          Check LEDBlinky compatibility with HyperSpin
       fix            Fix LEDBlinky compatibility issues
@@ -5747,7 +5747,7 @@ def ledblinky_group():
               help="Write to this directory instead of <ledblinky_dir>.")
 @click.option("--verbose", is_flag=True, help="Print the controls and colors file paths written.")
 def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
-    """Generate / merge LEDBlinky controls.ini and colors.ini.
+    """Generate / merge LEDBlinky controls.ini and Colors.ini.
 
     Strategy: existing entries from <ledblinky_dir> are preserved verbatim;
     ROMs not yet covered get synthesized entries derived from
@@ -5793,7 +5793,7 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
     console.print(f"\n{label} controls.ini → {result.controls_path}")
-    console.print(f"{label} colors.ini   → {result.colors_path}")
+    console.print(f"{label} Colors.ini   → {result.colors_path}")
     console.print(
         f"  Synthesised: [cyan]{result.controls_synthesised}[/cyan] controls, "
         f"[cyan]{result.colors_synthesised}[/cyan] colors"
@@ -5810,7 +5810,7 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
     has_legacy_warning = any("ledcolor=" in w or "P1_BUTTON1=" in w for w in result.warnings)
     if not has_legacy_warning and result.colors_synthesised:
         console.print(
-            "[dim]  colors.ini written in native P1_BUTTON1= format "
+            "[dim]  Colors.ini written in native P1_BUTTON1= format "
             "(Color-RGB.ini palette used for color name lookup)[/dim]"
         )
     if verbose:
@@ -5891,7 +5891,7 @@ def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
     console.print(f"{label} controls.ini → {gen_result.controls_path}")
-    console.print(f"{label} colors.ini   → {gen_result.colors_path}")
+    console.print(f"{label} Colors.ini   → {gen_result.colors_path}")
     console.print(
         f"  Synthesised: [cyan]{gen_result.controls_synthesised}[/cyan] controls, "
         f"[cyan]{gen_result.colors_synthesised}[/cyan] colors  "
@@ -6125,7 +6125,7 @@ def ledblinky_audit(system):
     summary = Table(title=f"LEDBlinky coverage — {system}", box=box.ROUNDED)
     summary.add_column("Status", style="cyan")
     summary.add_column("Count", justify="right")
-    summary.add_row("[green]Covered (controls.ini + colors.ini)[/green]", str(counts["covered"]))
+    summary.add_row("[green]Covered (controls.ini + Colors.ini)[/green]", str(counts["covered"]))
     summary.add_row("[yellow]Would synthesise from -listxml[/yellow]", str(counts["would-synth"]))
     summary.add_row("[dim]Game has no input[/dim]", str(counts["no-input"]))
     summary.add_row("[red]Not in -listxml[/red]", str(counts["missing"]))
@@ -6137,7 +6137,7 @@ def ledblinky_audit(system):
         tbl.add_column("ROM", style="cyan")
         tbl.add_column("In -listxml", justify="center")
         tbl.add_column("controls.ini", justify="center")
-        tbl.add_column("colors.ini", justify="center")
+        tbl.add_column("Colors.ini", justify="center")
         tbl.add_column("Status")
         for r in missing_or_synth[:60]:
             tbl.add_row(

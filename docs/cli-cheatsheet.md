@@ -443,7 +443,7 @@ spindoctor ledblinky setup --overwrite --apply                            :: rep
 
 :: ── Step 3a: Generate MAME control + color data (individual step) ─────────────
 :: Since 2.4.22: controls.ini uses LedBlinky runtime keys (P1_BUTTON1=1).
-:: Since 2.4.21: colors.ini uses native named format (P1_BUTTON1=Red).
+:: Since 2.4.21: Colors.ini uses native named format (P1_BUTTON1=Red).
 spindoctor ledblinky generate                                             :: dry-run preview
 spindoctor ledblinky generate --apply                                     :: commit
 spindoctor ledblinky generate --overwrite --apply                         :: replace existing entries (required after upgrading from <=2.4.21)

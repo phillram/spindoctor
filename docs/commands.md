@@ -1015,7 +1015,7 @@ spindoctor ledblinky setup --apply         :: commit both steps
 spindoctor ledblinky setup --apply --verbose :: also show per-step detail
 spindoctor ledblinky setup --overwrite --apply :: regenerate all entries, including existing ones
 spindoctor ledblinky generate              :: dry-run preview
-spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini (native P1_BUTTON1= format)
+spindoctor ledblinky generate --apply      :: commit controls.ini / Colors.ini (native P1_BUTTON1= format)
 spindoctor ledblinky generate --apply --verbose  :: also print file paths + format used
 spindoctor ledblinky inspect-rom 005       :: diagnose why 005's LED colors may not be applying
 spindoctor ledblinky audit
@@ -1036,7 +1036,7 @@ spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: 
 
 ### `ledblinky setup`
 
-One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
+One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
 
 ```bat
 spindoctor ledblinky setup                 :: dry-run: preview both steps
@@ -1047,12 +1047,12 @@ spindoctor ledblinky setup --overwrite --apply  :: replace existing entries (req
 
 | Flag | Effect |
 |------|--------|
-| `--overwrite` | Passed through to `generate` — replaces entries that already exist in `controls.ini` / `colors.ini` |
+| `--overwrite` | Passed through to `generate` — replaces entries that already exist in `controls.ini` / `Colors.ini` |
 | `--apply` | Commit both steps; omit for a dry-run preview |
 | `--no-backup` | Skip the timestamped `.bak` backup written before each file is modified |
 | `--verbose` | Print per-step detail: file paths for generate, per-ROM key counts for sync-players |
 
-`generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
+`generate` builds `controls.ini` and `Colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
 
 **`Colors.ini` format (since 2.4.21):** `generate` writes `Colors.ini` entries in LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Versions prior to 2.4.21 wrote a legacy hex format (`ledcolor1=FF0000`) that LedBlinky cannot read. If you have a `Colors.ini` from an older version, run `spindoctor ledblinky colors normalize --apply` once to convert it.
 
@@ -1091,7 +1091,7 @@ When `output_dir` is configured, the full report is also saved to `<output_dir>/
 | All buttons white, coin dark | LedBlinky using DEFAULT XML control group | Check XML for per-ROM entry under correct emulator section; verify RL sends correct ROM name |
 | Colors.ini has entry but ignored | `ledcolor=` hex format (not readable by LedBlinky) | Run `colors normalize --apply` |
 | Wrong colors applied | ROM name mismatch (RL sends display name, not filename) | Check `LEDBlinkyLog.txt` for received name |
-| No colors.ini entry found | ROM never ran through `generate` or `fill-defaults` | Run `generate --apply` then `fill-defaults --apply` |
+| No Colors.ini entry found | ROM never ran through `generate` or `fill-defaults` | Run `generate --apply` then `fill-defaults --apply` |
 
 `check` / `fix` diagnose and repair the well-known issue where HyperSpin's Search, Genre, and Favorites overlays hang or crash when LEDBlinky is installed. Two patches are applied:
 

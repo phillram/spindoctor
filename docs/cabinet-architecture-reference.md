@@ -559,7 +559,7 @@ LedBlinky resolves the control profile for a launched ROM in this order:
 
 `controls.ini` entries (when present and correctly formatted) define **which control names** appear in the control list. The XML then provides input codes and `alwaysActive` settings for those names.  If `controls.ini` has an entry for a ROM, it overrides the XML's control list — so a broken `controls.ini` entry will suppress the ROM-specific XML entry entirely.
 
-### `controls.ini` and `colors.ini` — generation
+### `controls.ini` and `Colors.ini` — generation
 
 `spindoctor ledblinky generate` reads MAME's `listxml` output and writes two files:
 
@@ -645,7 +645,7 @@ When game colors show as white despite correct `Colors.ini` entries, the most co
 2. **Legacy hex format** — `Colors.ini` entries use `ledcolor1=FF0000` format that LedBlinky cannot read. Run `colors normalize --apply`.
 3. **No `LEDBlinkyControls.xml` per-game entry** — LedBlinky uses its DEFAULT control group and may ignore `Colors.ini` overrides for that game.
 4. **`Use Color File` disabled** — LedBlinky Settings UI has a toggle; if off, `Colors.ini` is never consulted.
-5. **P2/P3/P4+ buttons show wrong color** — `Colors.ini` has P1 entries but is missing additional-player entries, or existing P2+ entries have stale colors. Run `spindoctor ledblinky colors sync-players --apply` to add missing entries; add `--override` to also replace existing ones. See *`controls.ini` and `colors.ini` — generation* above.
+5. **P2/P3/P4+ buttons show wrong color** — `Colors.ini` has P1 entries but is missing additional-player entries, or existing P2+ entries have stale colors. Run `spindoctor ledblinky colors sync-players --apply` to add missing entries; add `--override` to also replace existing ones. See *`controls.ini` and `Colors.ini` — generation* above.
 
 ```bat
 spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, listxml for ROM "005"
