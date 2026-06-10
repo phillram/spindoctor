@@ -84,23 +84,23 @@ Below the path fields, a **Scraper credentials** section stores your ScreenScrap
 
 Click **Save configuration** to validate and write everything to `config.json` in one step. CLI equivalent: `spindoctor config init`.
 
-### Audit & Doctor
+### Diagnostics
 
-The cabinet's "is everything OK?" diagnostic surface. Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks. None of these write to disk.
+The cabinet's "is everything OK?" diagnostic surface. Combines the full audit / doctor checks with the one-click read-only inspectors — nothing on this tab writes to disk.
 
-A **Preflight check…** button (added in 2.0) chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone.
+**Audit & Doctor section:** Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks.
+
+A **Preflight check…** button chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone.
 
 Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output). Both *Audit selected system* and *Audit all systems* use the same options.
 
 **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
-CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`.
-
-### Diagnose
-
-One-click read-only inspectors that don't change anything on disk: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
+**Diagnose section:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
 
 Plus a **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
+
+CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Metadata & Media
 
@@ -114,7 +114,7 @@ A **Full metadata refresh** button at the bottom chains all three fetch/update s
 
 **Run generate-config** (bottom of the `update-db` section) calls `spindoctor generate-config --apply` (when Apply is ticked) to regenerate RocketLauncher's per-system settings INIs and the HyperSpin Main Menu. This writes `<RocketLauncher>\Settings\<SystemName>.ini` directly into the configured `rocketlauncher_dir` — no manual copying needed. **Run this after every ROM migration** (Migrate tab → Run migration) so RocketLauncher's `Rom_Path` entries reflect the new drive. CLI equivalent: `spindoctor generate-config --apply`.
 
-### Curate
+### Maintenance
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
 
@@ -126,27 +126,15 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 **Metadata-match cache controls**: **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
 
-### Wheels
+### Systems
 
-Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels in sequence, showing "Step N/3: &lt;wheel&gt;…" in the status bar.
-
-Below: a HyperSpin integration explainer (Most Played auto-registers in the Main Menu, Favorites and Recently Played do not, none auto-fire on cabinet startup) plus two helpers: **Add wheels to Main Menu** (chains `mainmenu add Favorites/Recently Played/Most Played --apply`) and **Install Tools-menu helpers** (a shortcut into the Tools tab's `install-tools` action).
-
-A **Favorites** sub-section adds **Add / Remove / List** buttons that drive `fav add / remove / list` directly on the cabinet's favorites file. Remove asks for confirmation before unfavoriting.
-
-CLI equivalents: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
-
-### Main Menu
-
-Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
+**Main Menu section:** Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
 
 Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
 
 If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
 
-### Systems
-
-Add a system or re-review titles for an existing PC system. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
+**System management section:** Add a system or re-review titles for an existing PC system. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
 
 **Re-review titles for a PC system** wraps `spindoctor pc-rename <system>` (single system dropdown — no Old/New fields; the command re-runs the per-game title picker for an existing PC system so you can fix derived titles or pick up newly-dropped installs). Earlier 2.0 builds shipped a misleading two-field form that wasn't actually wired to the CLI; that's been corrected.
 
@@ -242,7 +230,13 @@ Per-component checkboxes (default: all seven — roms, databases, media, emulato
 
 ### Tools
 
-Three sections that cover the HyperSpin-integration surface:
+**Custom wheels section:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels in sequence, showing "Step N/3: &lt;wheel&gt;…" in the status bar.
+
+Below: a HyperSpin integration explainer (Most Played auto-registers in the Main Menu, Favorites and Recently Played do not, none auto-fire on cabinet startup) plus two helpers: **Add wheels to Main Menu** (chains `mainmenu add Favorites/Recently Played/Most Played --apply`) and **Install Tools-menu helpers** (shortcut to the install-tools section below).
+
+A **Favorites** sub-section adds **Add / Remove / List** buttons that drive `fav add / remove / list` directly on the cabinet's favorites file. Remove asks for confirmation before unfavoriting. CLI equivalents: `spindoctor fav rebuild --apply` / `spindoctor recent rebuild --apply` / `spindoctor stats-report build-wheel --apply`.
+
+**HyperSpin integration section:** Three sections that cover the HyperSpin-integration surface:
 
 1. **Install for HyperHQ → Tools menu** — writes the four `Refresh *.bat` helpers into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu.
 2. **Install into an existing wheel system** — adds the four helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel where the "games" are maintenance tasks), with per-game PCLauncher INIs alongside the bats. CLI equivalent: `spindoctor install-tools --add-to-system <NAME>`.
