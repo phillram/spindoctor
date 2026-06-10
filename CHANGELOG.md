@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ledblinky patch-settings` — `--fe-lwa` / `--game-lwa` values no longer include a spurious `lwa\` prefix** — the animation file picker (`list_lwa_files`) was returning paths relative to `ledblinky_dir` (e.g. `lwa\Slow Fade.lwax`), but LedBlinky itself always prepends `lwa\` when resolving `FELWAFile` and `GamePlayLWAFile` in `Settings.ini`, producing a double-prefix path (`lwa\lwa\Slow Fade.lwax`) and a "Missing FE Active animation file" error at runtime. The picker now returns paths relative to the `lwa\` subdirectory (e.g. `Slow Fade.lwax`), matching what LedBlinky expects.
+
 ---
 
 ## [2.4.21] - 2026-06-07
