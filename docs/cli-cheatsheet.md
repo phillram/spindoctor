@@ -4,7 +4,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 
 > **Looking for every flag?** This page is the fast index. The full reference — every command, every flag, every edge case — lives at [Command reference](commands.md). The deep cross-links below jump straight to the relevant section there.
 
-> **Don't want to type any of this?** The GUI's [Custom Command tab](gui.md#tab-tour) has all of these in a curated dropdown (~70 presets). Pick, edit the `<PLACEHOLDER>` tokens, click Run.
+> **Don't want to type any of this?** The GUI's [Custom Command tab](gui.md#tab-tour) has all of these in a curated dropdown (~246 presets). Pick, edit the `<PLACEHOLDER>` tokens, click Run.
 
 > **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. See [Recovery from mistakes](workflows.md#recovery-from-mistakes).
 
@@ -167,6 +167,17 @@ spindoctor cleanup run --apply
 ```
 
 Reference: [Command reference → cleanup](commands.md#cleanup).
+
+### `pc-rename` — re-curate PC game titles after adding new games
+
+```bat
+spindoctor pc-rename "PC Games"                 :: interactive review of new/changed titles
+spindoctor pc-rename "PC Games" --apply         :: commit after review
+spindoctor pc-rename "PC Games" --no-interactive :: auto-accept all (GUI / scripted contexts)
+spindoctor pc-rename "PC Games" --no-interactive --apply
+```
+
+Reference: [Command reference → pc-rename](commands.md#pc-rename).
 
 ### `ignore` / `match` — taming the matcher
 
@@ -571,6 +582,10 @@ spindoctor config set screenscraper_devpassword <your-devpassword>
 spindoctor config system list
 spindoctor config system set "Sony Playstation 7" --screenscraper-id 999 --rom-extensions ps7,iso --layout per-game-folder --emulator RPCS7
 spindoctor config system clear "Sony Playstation 7"
+
+:: Test credentials without saving — useful before committing new values
+spindoctor config verify-credentials
+spindoctor config verify-credentials --ss-user alice --ss-pass secret
 ```
 
 Reference: [Configuration](configuration.md).
@@ -581,7 +596,7 @@ Reference: [Configuration](configuration.md).
 
 - **Always preview first.** Run the command without `--apply` to see what would happen, then re-run with `--apply` to commit. The dry-run output is the exact plan that will be executed.
 - **`--undo` exists for almost everything destructive.** Look for "writes a manifest under `~/.spindoctor/<category>/`" in [Command reference](commands.md); those commands all accept `--undo latest --apply` to roll back. The GUI's *File → View logs & manifests…* window has a one-click Undo for any selected run.
-- **GUI parity.** Anything on this page works identically from the GUI's [Custom Command tab](gui.md#tab-tour); the dropdown lists ~70 of the canonical invocations above. Pick → edit `<PLACEHOLDER>` tokens → Run.
+- **GUI parity.** Anything on this page works identically from the GUI's [Custom Command tab](gui.md#tab-tour); the dropdown lists ~246 of the canonical invocations above. Pick → edit `<PLACEHOLDER>` tokens → Run.
 - **Output formats.** Most read-only commands accept `--report <path>` or `--format csv|json` so you can dump results to a spreadsheet or pipe to another tool.
 - **Long runs are interruptible.** Hitting `Ctrl+C` mid-`backup` / `migrate` / `curate` is safe — the partial manifest survives and the run is replayable / undoable. See [Workflows → Interrupting a long run](workflows.md#recovery-from-mistakes).
 - **403 from ScreenScraper or TheGamesDB?** The verify dialog now includes the upstream error body, and every request is logged (with secrets redacted) to `~/.spindoctor/scraper.log`. See [Troubleshooting → 403 from ScreenScraper or TheGamesDB](troubleshooting.md#403-from-screenscraper-or-thegamesdb).

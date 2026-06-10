@@ -2974,8 +2974,12 @@ def sync_player_colors(
             upper = full_key.upper()
             already_present = upper in existing_upper
             if already_present and not override:
-                continue  # never overwrite unless explicitly requested
+                # Key already present and caller did not request an override —
+                # skip silently; this is the normal path for idempotent runs.
+                continue
             # e.g. "P3_BUTTON1" → suffix "BUTTON1"
+            # needed_keys are built from _CONTROLS_PLAYER_KEY_RE which always
+            # emits "P<n>_<KEY>", so the underscore is guaranteed to be present.
             suffix = upper[upper.index("_") + 1:]
             color = p1_colors.get(suffix)
             if color is None:

@@ -337,8 +337,9 @@ def apply_backup(
             completed.append(item)
             if progress_cb:
                 progress_cb(item, "done")
-    except KeyboardInterrupt:
-        # Ctrl+C mid-copy leaves the in-flight component half-written.
+    except BaseException:
+        # Ctrl+C, OSError (full disk, permissions), or any other failure
+        # mid-copy leaves the in-flight component half-written.
         # Sweep it so the backup root only contains whole components.
         if current_dest is not None:
             try:

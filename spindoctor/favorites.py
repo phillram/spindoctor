@@ -770,7 +770,14 @@ def _read_text_robust(path: Path) -> str:
             return path.read_text(encoding=enc)
         except (UnicodeDecodeError, UnicodeError):
             continue
-    # Last resort: read as raw bytes and ignore errors
+    # Last resort: raw bytes with replacement — data may be mangled
+    warnings.warn(
+        f"Could not decode {path} with any known encoding; "
+        "falling back to UTF-8 with replacement characters. "
+        "The file may have been saved in an unsupported code page.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
     return path.read_bytes().decode("utf-8", errors="replace")
 
 

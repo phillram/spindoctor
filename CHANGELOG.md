@@ -6,7 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`backup` — partial cleanup now applies to all mid-copy failures, not just Ctrl+C** — the in-flight component sweep and partial-manifest write on interrupted backups previously only ran on `KeyboardInterrupt`. Other failures mid-copy (e.g. full disk, permission error) would leave a half-written component behind with no manifest. Broadened the handler to `BaseException` so cleanup and partial-manifest persistence run for any failure.
+- **`favorites.py` — encoding fallback now emits a `RuntimeWarning`** — `_read_text_robust()` silently mangled data when all four encoding probes failed and it fell through to UTF-8 byte replacement. It now warns with the file path and a description so encoding issues are visible in logs.
+- **`database.py` — atomic write cleanup correctly tracks fd/tmp state** — after `os.close(fd)` the fd variable is reset to `-1` and after `os.replace()` the tmp variable is set to `None`, so the exception cleanup path cannot double-close the descriptor or attempt to unlink an already-renamed temp file.
+- **`mainmenu.py` — `index_of()` `KeyError` raises stripped system name** — previously the error was raised with the original (possibly whitespace-padded) input; it now strips whitespace to match what the lookup actually compared.
+
+### Changed
+
+- **`ledblinky.py` — clarified `sync-players` skip-comment in `sync_player_colors`** — added an inline comment explaining that the `continue` on an already-present key is the intended idempotent path, and a note confirming the underscore in the key suffix is always present by regex construction.
+
 ### Added
+
+- **`docs/commands.md` — `pc-rename` now has its own dedicated section** — the command was previously documented only as a companion note inside the `add-pc-system` section. It now has a standalone `### pc-rename` entry under Library generation covering dry-run vs `--apply`, `--no-interactive`, and `--undo`.
+- **`docs/commands.md` — new `## Config` section documenting all `config` subcommands** — `config init`, `config set`, `config show`, and `config verify-credentials` (with all credential override flags and JSON output mode) are now documented with examples. Previously `verify-credentials` had no dedicated reference entry.
+- **`docs/cli-cheatsheet.md` — `pc-rename` and `config verify-credentials` added** — `pc-rename` added to Edit & curate section; `verify-credentials` added to the Config section with credential-override examples.
+- **`README.md` — GUI section updated for current tab structure** — "15 dedicated tabs" corrected to 12; tab list updated to use current names (Diagnostics, Maintenance, Tools, Systems) replacing the old separate Audit & Doctor / Diagnose / Curate / Wheels / Main Menu entries; Custom Command dropdown count corrected from ~70 to ~246.
+- **`docs/gui.md` — tab tour restructured to match current GUI** — "Audit & Doctor" and "Diagnose" sections merged into a single "Diagnostics" section; "Curate" renamed to "Maintenance"; standalone "Wheels" and "Main Menu" sections removed and their content integrated into the "Tools" and "Systems" sections respectively.
+- **`docs/cli-cheatsheet.md` — Custom Command preset count corrected** — two references to "~70 presets" updated to "~246 presets" to match the 2.4.22 expansion.
+- **`docs/configuration.md` — GUI preferences section updated** — `gui_window_maximized` (bool) added; `gui_last_active_tab` and `gui_curate_regions` descriptions updated to use current tab names (Maintenance instead of Curate).
 
 - **`ledblinky patch-settings --ss-lwa` — new option to set the screen saver animation** — `Settings.ini` has two separate FE animation keys: `FELWAFile` (active browsing) and `FEScreenSaverLWAFile` (screen saver). Only `FELWAFile` was previously patchable via SpinDoctor. The new `--ss-lwa` option patches `FEScreenSaverLWAFile` in the same pass. Pass a `.lwa` filename to set the animation, `""` to silence it, or omit to leave unchanged. Both the CLI and GUI one-time setup (Step 2 — Settings.ini) have been updated with the new field. GUI label for the existing FE field updated from "FE idle animation" to "FE active animation" to match LedBlinky's own terminology.
 - **GUI — Settings.ini animation comboboxes now pre-populate from current Settings.ini values** — previously all three animation dropdowns (FE active, screen saver, in-game) always opened showing default placeholder values (`<Random>` / blank) regardless of what was actually set in `Settings.ini`. They now read the current values from `Settings.ini` on load and on every **Refresh list** click, so the GUI accurately reflects the current configuration. New `read_ledblinky_settings_keys` function added to `ledblinky.py`.
