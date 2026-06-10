@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ledblinky patch-settings --verbose` — output no longer repeats per key** — the verbose block was inside the `for change in result.changes:` loop, causing it to print the full summary once per patched key instead of once total. Moved outside the loop.
+
 ### Added
 
 - **`ledblinky colors sync-players` — new command to mirror P1 colors to all additional players** — `ledblinky generate` writes `Colors.ini` sections with P1 keys only. When a game has multiple players (P2, P3, P4, …), those buttons had no color entry and fell back to the XML default color rather than the game-specific palette. The new `sync-players` command closes that gap for **any number of players**: for every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it reads `controls.ini` to discover all P{n≥2} keys, then adds any missing entries to `Colors.ini` by mirroring the matching P1 color (e.g. `P3_BUTTON1` gets the same color as `P1_BUTTON1`). Keys already present in `Colors.ini` are never overwritten unless `--override` is passed. Run after `generate` and `colors normalize`: `spindoctor ledblinky colors sync-players --apply`.

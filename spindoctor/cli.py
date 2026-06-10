@@ -6474,21 +6474,19 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose
             "  [green]✓ No changes needed — already at the requested values.[/green]"
         )
     else:
+        verb = (
+            "[yellow]would change[/yellow]"
+            if result.dry_run
+            else "[green]changed[/green]"
+        )
         for change in result.changes:
-            verb = (
-                "[yellow]would change[/yellow]"
-                if result.dry_run
-                else "[green]changed[/green]"
-            )
             console.print(f"  {verb}: {change}")
-            if verbose:
-                console.print(f"[dim][verbose] Settings.ini: {result.settings_path}[/dim]")
-                if result.changes:
-                    console.print(f"[dim][verbose] keys patched ({len(result.changes)}):[/dim]")
-                    for change in result.changes:
-                        console.print(f"[dim]  {change}[/dim]")
-                else:
-                    console.print("[dim][verbose] all keys already at target values[/dim]")
+
+        if verbose:
+            console.print(f"\n[dim][verbose] Settings.ini: {result.settings_path}[/dim]")
+            console.print(f"[dim][verbose] keys patched ({len(result.changes)}):[/dim]")
+            for change in result.changes:
+                console.print(f"[dim]  {change}[/dim]")
 
         if not result.dry_run and result.backup_path:
             console.print(f"\n[dim]Backup saved: {result.backup_path}[/dim]")
