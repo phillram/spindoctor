@@ -777,6 +777,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky fill-defaults --system <SYSTEM> --apply",
     "ledblinky fix",
     "ledblinky fix --apply",
+    "ledblinky setup",
+    "ledblinky setup --apply",
+    "ledblinky setup --apply --verbose",
+    "ledblinky setup --overwrite --apply",
     "ledblinky generate",
     "ledblinky generate --apply",
     "ledblinky generate --overwrite --apply",
@@ -9572,44 +9576,59 @@ class _SpinDoctorGUI:
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        # ── Step 1 — MAME: Generate, Normalize & Sync Players ────────────────
+        # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
-            frame, text="Step 1 — MAME: Generate, Normalize & Sync Players",
+            frame, text="Step 3 — MAME: Generate, Normalize & Sync Players",
         )
-        gen_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
+        gen_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         gen_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
             gen_frame,
-            text=("These three steps build and refine MAME-sourced LED data. "
-                  "1a: Generate reads mame -listxml to write controls.ini and colors.ini "
-                  "for every MAME ROM on your cabinet. "
-                  "1b: Normalize is only needed for a Colors.ini in legacy hex format "
-                  "(ledcolor1=FF0000) — not required after a fresh Generate. "
-                  "1c: Sync player colors mirrors P1 colors to P2/P3/P4+ buttons "
-                  "based on controls.ini, for multi-player games."),
+            text=("These three steps build MAME-sourced LED data using mame -listxml. "
+                  "Click Run Full MAME Setup to run 3a + 3c in one go, or use the "
+                  "individual buttons below. "
+                  "3b (Normalize) is only needed for a legacy Colors.ini in hex format "
+                  "(ledcolor1=FF0000) — skip it after a fresh Generate. "
+                  "Added new MAME ROMs? Re-run Full Setup — existing entries are "
+                  "preserved unless Overwrite is ticked."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            gen_frame, text="Overwrite existing entries — 1a Generate (--overwrite)",
+            gen_frame, text="Overwrite existing entries — 3a Generate only (--overwrite)",
             variable=self._led_overwrite_var,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
-        gen_btn_row = self.ttk.Frame(gen_frame)
-        gen_btn_row.grid(row=2, column=0, columnspan=4, sticky="w",
-                         padx=6, pady=(6, 4))
+        # Chain button — runs 3a + 3c via ledblinky setup
+        gen_chain_row = self.ttk.Frame(gen_frame)
+        gen_chain_row.grid(row=2, column=0, columnspan=4, sticky="w",
+                           padx=6, pady=(6, 2))
         self.ttk.Button(
-            gen_btn_row, text="1a. Generate (controls + colors)",
+            gen_chain_row, text="▶  Run Full MAME Setup (3a + 3c)",
+            command=self._run_led_setup,
+        ).pack(side="left")
+        self.ttk.Label(
+            gen_chain_row,
+            text="  — generate + sync player colors in one click",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
+        # Individual step buttons
+        gen_btn_row = self.ttk.Frame(gen_frame)
+        gen_btn_row.grid(row=3, column=0, columnspan=4, sticky="w",
+                         padx=6, pady=(2, 4))
+        self.ttk.Button(
+            gen_btn_row, text="3a. Generate (controls + colors)",
             command=self._run_led_generate,
         ).pack(side="left")
         self.ttk.Button(
-            gen_btn_row, text="1b. Normalize Colors.ini",
+            gen_btn_row, text="3b. Normalize Colors.ini",
             command=self._run_color_normalize,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
-            gen_btn_row, text="1c. Sync player colors",
+            gen_btn_row, text="3c. Sync player colors",
             command=self._run_led_sync_players,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
@@ -9617,19 +9636,39 @@ class _SpinDoctorGUI:
             command=self._run_led_audit,
         ).pack(side="left", padx=(8, 0))
 
+        # Inspect ROM row
+        gen_inspect_row = self.ttk.Frame(gen_frame)
+        gen_inspect_row.grid(row=4, column=0, columnspan=4, sticky="w",
+                             padx=6, pady=(2, 4))
+        self.ttk.Label(gen_inspect_row, text="Inspect ROM:").pack(side="left")
+        self._led_inspect_rom_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gen_inspect_row, textvariable=self._led_inspect_rom_var, width=20,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            gen_inspect_row, text="Inspect",
+            command=self._run_led_inspect_rom,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Label(
+            gen_inspect_row,
+            text="  — diagnose why a specific ROM's LEDs may not be working",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
         self.ttk.Label(
             gen_frame,
-            text=("Normal workflow: run 1a, then 1c. Run 1b only if your Colors.ini "
-                  "pre-dates SpinDoctor 2.4.21 and still uses the old hex key format. "
+            text=("All writes auto-backup before modifying files. "
+                  "3b (Normalize) is for legacy files only — skip if you started "
+                  "fresh with SpinDoctor 2.4.21+. "
                   "Audit MAME coverage shows which ROMs have / lack control data."),
             wraplength=820, justify="left", foreground=_FG_DIM,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
 
         # ── Fill Defaults ────────────────────────────────────────────────────
         fd_frame = self.ttk.LabelFrame(
-            frame, text="Step 2 — Fill Default Colors (any console)",
+            frame, text="Step 4 — Fill Default Colors (any console)",
         )
-        fd_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9756,8 +9795,8 @@ class _SpinDoctorGUI:
         ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 3 — Randomize Entry Colors ─────────────────────────────────
-        rz_frame = self.ttk.LabelFrame(frame, text="Step 3 — Randomize Entry Colors")
-        rz_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        rz_frame = self.ttk.LabelFrame(frame, text="Step 5 — Randomize Entry Colors")
+        rz_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9792,15 +9831,16 @@ class _SpinDoctorGUI:
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 4 — Admin Button Colors ─────────────────────────────────────
-        ab_frame = self.ttk.LabelFrame(frame, text="Step 4 — Admin Button Colors")
-        ab_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        ab_frame = self.ttk.LabelFrame(frame, text="Step 6 — Admin Button Colors")
+        ab_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
             text=("Set fixed colors for your cabinet-level (admin) buttons across "
                   "ALL Colors.ini ROM sections — e.g. Select=Green, Exit=Red. "
                   "Colors are written to the player slot you choose (P3 for a 2-player "
-                  "cabinet). Run after Randomize so admin colors override game colors."),
+                  "cabinet). Run after Step 5 (Randomize) — Randomize overwrites all "
+                  "button colors, so admin colors must be set last."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 4))
 
@@ -9857,8 +9897,8 @@ class _SpinDoctorGUI:
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
-        br2_frame = self.ttk.LabelFrame(frame, text="Step 5 — Brightness")
-        br2_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
+        br2_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br2_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9893,8 +9933,8 @@ class _SpinDoctorGUI:
         # ── Step 6 — Settings.ini Patch ───────────────────────────────────────
         _led_cfg = load_config()
 
-        sp_frame = self.ttk.LabelFrame(frame, text="Step 6 — Settings.ini Patch")
-        sp_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Settings.ini (one-time setup)")
+        sp_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9952,9 +9992,9 @@ class _SpinDoctorGUI:
 
         # ── Overlay Hooks (one-time fix) ──────────────────────────────────────
         oh_frame = self.ttk.LabelFrame(
-            frame, text="Overlay Hook Fix (one-time setup)",
+            frame, text="Step 1 — Overlay Hook Fix (one-time setup)",
         )
-        oh_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        oh_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
         oh_frame.columnconfigure(0, weight=1)
 
         self.ttk.Label(
@@ -9984,7 +10024,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(
-            frame, text="Color Definitions — Color-RGB.ini (advanced)",
+            frame, text="Step 8 — Color Definitions (Color-RGB.ini)",
         )
         cd_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
@@ -10076,7 +10116,7 @@ class _SpinDoctorGUI:
         # ── Backup / Restore ─────────────────────────────────────────────────
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
-        br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
+        br_frame = self.ttk.LabelFrame(frame, text="Step 9 — Backup / Restore")
         br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
@@ -10124,6 +10164,25 @@ class _SpinDoctorGUI:
 
         frame.columnconfigure(1, weight=1)
         return frame
+
+    def _run_led_setup(self) -> None:
+        """Run ledblinky setup (3a generate + 3c sync-players) in one step."""
+        args = ["ledblinky", "setup"]
+        if self._led_overwrite_var.get():
+            args.append("--overwrite")
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_inspect_rom(self) -> None:
+        """Run ledblinky inspect-rom to diagnose a specific ROM."""
+        rom = self._led_inspect_rom_var.get().strip()
+        if not rom:
+            self._flash_validation("Enter a ROM name to inspect.")
+            return
+        self._run_cli("spindoctor", ["ledblinky", "inspect-rom", rom])
 
     def _run_led_generate(self) -> None:
         args = ["ledblinky", "generate", "--system", "MAME"]
