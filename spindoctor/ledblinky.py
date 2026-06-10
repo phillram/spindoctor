@@ -2784,6 +2784,8 @@ class SyncPlayersResult:
     roms_skipped_no_controls: int = 0
     #: ROMs that already had all player keys present (nothing to add).
     roms_skipped_complete: int = 0
+    #: Total existing ``P{n}_KEY`` lines replaced when ``override=True``.
+    keys_overwritten: int = 0
     #: Per-ROM breakdown: list of (rom_name, [added_key_strings])
     details: "list[tuple[str, list[str]]]" = field(default_factory=list)
 
@@ -2793,37 +2795,41 @@ def sync_player_colors(
     dry_run: bool = True,
     backup: bool = True,
     verbose: bool = False,
+    override: bool = False,
 ) -> SyncPlayersResult:
-    """Mirror P1 colors to P2+ players based on what ``controls.ini`` declares.
+    """Mirror P1 colors to all additional players based on ``controls.ini``.
 
     ``ledblinky generate`` writes ``Colors.ini`` sections that only include P1
     keys (``P1_BUTTON1``, ``P1_JOYSTICK``, ``P1_START``, ``P1_COIN``).  When
-    ``controls.ini`` lists buttons for a second (or third …) player, those
-    players have no color entries and LedBlinky lights their buttons using the
-    XML fallback color rather than the game-specific palette chosen in
+    ``controls.ini`` lists buttons for additional players (P2, P3, P4, …),
+    those players have no color entries and LedBlinky lights their buttons using
+    the XML fallback color rather than the game-specific palette chosen in
     ``Colors.ini``.
 
-    This function closes that gap:
+    This function closes that gap for **any number of players**:
 
     * For every ROM that has both a ``Colors.ini`` section and a
       ``controls.ini`` section, it inspects ``controls.ini`` to find all
-      ``P{n}_KEY`` entries where ``n >= 2``.
+      ``P{n}_KEY`` entries where ``n >= 2`` (P2, P3, P4, …).
     * Any such key that is **absent** from the ``Colors.ini`` section is added
-      with the same color as the matching ``P1_KEY`` (e.g. ``P2_BUTTON1`` gets
+      with the same color as the matching ``P1_KEY`` (e.g. ``P3_BUTTON1`` gets
       the same color as ``P1_BUTTON1``).
     * If ``P1_KEY`` itself is absent from ``Colors.ini`` (nothing to mirror
       from), that key is skipped — no defaults are invented.
-    * Keys already present in ``Colors.ini`` for that ROM are never overwritten.
+    * Keys already present in ``Colors.ini`` for that ROM are **never**
+      overwritten unless ``override=True``.
+    * When ``override=True``, existing ``P{n≥2}`` entries are replaced with the
+      current P1-mirrored color.  P1 keys are never affected.
     * ROMs with no ``controls.ini`` entry are left untouched.
 
     Run after ``ledblinky generate`` (and ``colors normalize`` if the output
-    was in legacy hex format) to ensure multi-player games light all player
-    buttons correctly.
+    was in legacy hex format) to ensure all player buttons light correctly.
 
     Examples::
 
         spindoctor ledblinky colors sync-players            # preview
         spindoctor ledblinky colors sync-players --apply    # commit
+        spindoctor ledblinky colors sync-players --apply --override  # replace existing P2+ entries
     """
     result = SyncPlayersResult(dry_run=dry_run)
 
@@ -2900,37 +2906,62 @@ def sync_player_colors(
                 suffix = key[3:].upper()  # e.g. "BUTTON1"
                 p1_colors[suffix] = color
 
-        # Determine which keys to add.
-        to_add: list[str] = []
+        # Determine which keys to add (and which existing lines to replace
+        # when override=True).
+        existing_upper = {k.upper() for k in existing_colors}
+        to_write: list[str] = []      # all lines to append (new + replacements)
+        to_replace: set[str] = set()  # uppercase key names whose old lines to drop
+        new_count = 0                 # genuinely new keys (not previously present)
+        override_count = 0            # existing keys being replaced
+
         for full_key in sorted(needed_keys):
             upper = full_key.upper()
-            if upper in {k.upper() for k in existing_colors}:
-                continue  # already present — skip
-            # e.g. "P2_BUTTON1" → suffix "BUTTON1"
+            already_present = upper in existing_upper
+            if already_present and not override:
+                continue  # never overwrite unless explicitly requested
+            # e.g. "P3_BUTTON1" → suffix "BUTTON1"
             suffix = upper[upper.index("_") + 1:]
             color = p1_colors.get(suffix)
             if color is None:
                 continue  # P1 key absent — nothing to mirror from
-            to_add.append(f"{full_key}={color}\n")
+            if already_present:
+                to_replace.add(upper)
+                override_count += 1
+            else:
+                new_count += 1
+            to_write.append(f"{full_key}={color}\n")
 
-        if not to_add:
+        if not to_write:
             parts.extend(body_lines)
             result.roms_skipped_complete += 1
             continue
 
-        # Insert additions before any trailing blank lines.
+        # Insert additions (and replacements) before any trailing blank lines.
         non_trailing = list(body_lines)
         trailing: list[str] = []
         while non_trailing and non_trailing[-1].strip() == "":
             trailing.insert(0, non_trailing.pop())
 
+        # Strip old lines for keys being overridden.
+        if to_replace:
+            filtered: list[str] = []
+            for line in non_trailing:
+                m = _PLAYER_KEY_RE.match(line.strip())
+                if m:
+                    existing_upper_key = f"P{m.group(1)}_{m.group(2).upper()}"
+                    if existing_upper_key.upper() in to_replace:
+                        continue  # drop — replacement written below
+                filtered.append(line)
+            non_trailing = filtered
+
         parts.extend(non_trailing)
-        parts.extend(to_add)
+        parts.extend(to_write)
         parts.extend(trailing)
 
         result.roms_updated += 1
-        result.keys_added += len(to_add)
-        result.details.append((section_name, [line.rstrip("\n") for line in to_add]))
+        result.keys_added += new_count
+        result.keys_overwritten += override_count
+        result.details.append((section_name, [line.rstrip("\n") for line in to_write]))
 
     if not dry_run and result.roms_updated > 0:
         if backup:
