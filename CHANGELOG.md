@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI — tab order resequenced to match new-user journey** — tabs now appear in this order: Setup → Systems → Diagnostics → Metadata & Media → Maintenance → Tools → LEDBlinky → Lightgun → Backup & Restore → Migrate → Custom Command → Logs. Systems (formerly tab 6) is now tab 2 so cabinet owners configure their library before running diagnostics. Logs (formerly tab 11) is now the last tab. Custom Command (formerly last) is now tab 11. The `Ctrl+1–9` shortcuts still jump to tab N by visible position.
+- **GUI — all action tabs now use numbered Step sections** — Diagnostics (3 steps), Systems (4 steps), Metadata & Media (5 steps + 2 unnumbered advanced sections), Maintenance (Step 1), Lightgun (2 steps), Backup & Restore (3 steps), Migrate (4 steps). Tools tab split into Step 1 — Refresh custom wheels, Step 2 — Register in HyperSpin main menu, Step 3 — Manage favorites (formerly all packed into one "Custom wheels" LabelFrame). LEDBlinky already had Steps 1–9 from the previous release.
+- **GUI — Metadata & Media — "Full metadata refresh" chain button promoted to Step 1** — the one-click fetch-meta → fetch-media → update-db chain was previously a bare separator + button buried after Sync database to ROMs. It is now a prominent "Step 1 — Full metadata refresh" LabelFrame at the top of the tab with a description of what it does, so the common "refresh everything" workflow is the first thing a user sees.
+- **GUI — Backup & Restore — target folder + components merged into Step 1** — the shared target folder and component checkboxes were previously floating bare rows above the LabelFrames. They are now inside a "Step 1 — Target folder & components" LabelFrame. "List backups" is now a button inside Step 2 (Create backup) rather than its own thin LabelFrame.
+- **GUI — Migrate — target root + components + options merged into Step 3** — previously three separate LabelFrames (Target root bare row, Components, Options). Now a single "Step 3 — Migration settings" LabelFrame containing all three, numbered Step 3 to place it after the "Step 2 — Backup before migrating" safety step.
+- **GUI — Tools — "Install wheel helpers" renamed to "Install .bat helpers (optional)"** — clearer label indicating the section is optional and installs .bat files specifically.
+- **`docs/gui.md` — tab tour rewritten to match new tab order and step numbering** — all 12 tab sections appear in the new order; per-tab descriptions updated to reference numbered steps; "Custom Command" moved before "Logs"; tab tour intro paragraph updated.
+
 ### Fixed
 
 - **`backup` — partial cleanup now applies to all mid-copy failures, not just Ctrl+C** — the in-flight component sweep and partial-manifest write on interrupted backups previously only ran on `KeyboardInterrupt`. Other failures mid-copy (e.g. full disk, permission error) would leave a half-written component behind with no manifest. Broadened the handler to `BaseException` so cleanup and partial-manifest persistence run for any failure.

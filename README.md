@@ -80,22 +80,22 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~246 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`.
+12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~246 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
 
 ### Tabs
 
 - **Setup** — paths + scraper credentials (ScreenScraper user/dev + TheGamesDB) and a **Test credentials** button that pings both providers and reports pass/fail.
-- **Diagnostics** — system-by-system audit, the global `doctor` health check, `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `verify` against a DAT, global search.
-- **Metadata & Media** — `fetch-meta`, `fetch-media` with media-type checkboxes, `media-scan`, `update-db`, `generate-config`; *Full metadata refresh* chains all three.
-- **Maintenance** — region/revision thinning with an interactive `☑/☐` per-row preview, per-category cleanup checkboxes, ignore lifecycle with click-to-un-ignore viewer.
-- **Tools** — wheel rebuilds (Favorites / Recently Played / Most Played), HyperSpin Tools-menu helpers, and the Windows auto-refresh-on-log-on hook.
-- **Systems** — `add-system`, `add-pc-system`, `pc-rename`, per-system overrides form, and the interactive Main Menu Treeview (reorder / show-hide / sort systems).
+- **Systems** — Steps 1–4: interactive Main Menu Treeview (reorder / show-hide / sort), `add-system` / `add-pc-system`, rename or clone a game, organize a system (sort wheels + restructure). Plus `pc-rename`, per-system overrides form, and inspect.
+- **Diagnostics** — Steps 1–3: system audit + doctor + preflight, library-wide scans (dupes / misplaced / orphans / lint / report), search & verify (global search, DAT verify, inspect).
+- **Metadata & Media** — Steps 1–5: Full metadata refresh chain (Step 1), `fetch-meta`, `fetch-media`, `media-scan`, `update-db` + `generate-config`. Plus batch-edit and media-add.
+- **Maintenance** — Step 1: region/revision thinning with interactive `☑/☐` per-row preview. Plus cache cleanup, ignore lifecycle, match-cache controls.
+- **Tools** — Steps 1–3: refresh custom wheels, register in HyperSpin main menu, manage favorites. Plus optional .bat helpers, auto-refresh-on-log-on, and scrub/restore.
 - **LEDBlinky** — nine-step workflow: overlay-hook fix, Settings.ini, MAME generate + sync, fill defaults, randomize, admin buttons, brightness, color definitions, backup.
-- **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
-- **Backup & Restore** — *Scan* populates the restore dropdown from your configured backup folder.
-- **Migrate** — multi-select systems filter, undo manifest dropdown pre-populated from `~/.spindoctor/migrations/`.
-- **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
+- **Lightgun** — Steps 1–2: Sinden + DemulShooter detection and per-system wiring.
+- **Backup & Restore** — Steps 1–3: target folder + components, create backup, restore (with *Scan* to populate the dropdown).
+- **Migrate** — Steps 1–4: view config, pre-migration backup, migration settings (target + components + options), undo.
 - **Custom Command** — type-or-pick CLI invocations; ~246 presets across 19 named sections cover the full CLI surface.
+- **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
 
 For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
 
