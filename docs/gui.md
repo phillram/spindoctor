@@ -74,7 +74,9 @@ The doctor pass runs on a worker thread on launch (doesn't delay first paint) an
 
 ## Tab tour
 
-Tabs appear in workflow order: setup first, then read-only diagnostics, then curation / wheel composition, then per-system overrides and peripheral tabs, then infrastructure (Backup → Tools → Migrate) trailing into Logs / Custom Command.
+Tabs appear in new-user journey order: configure paths first (Setup), then build out systems (Systems), then diagnose health (Diagnostics), then enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Tools), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migrate), and finally power-user escapes (Custom Command) and the session log (Logs) at the very end.
+
+Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
 
 ### Setup
 
@@ -84,11 +86,33 @@ Below the path fields, a **Scraper credentials** section stores your ScreenScrap
 
 Click **Save configuration** to validate and write everything to `config.json` in one step. CLI equivalent: `spindoctor config init`.
 
+### Systems
+
+Manage the systems that HyperSpin exposes. Four numbered steps cover the common setup journey; the remaining sections are optional.
+
+**Step 1 — Main menu carousel:** Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
+
+Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
+
+If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
+
+**Step 2 — Add a new system:** **Run add-system** (or **Run add-pc-system** for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
+
+**Step 3 — Rename or clone a game:** Rename moves the ROM, database entry, and every media file in one shot (and writes an undo manifest). Clone duplicates them under a new name. Both are dry-run until you tick Apply. CLI: `spindoctor rename / clone`.
+
+**Step 4 — Organize a system (sort wheels + optional restructure):** Drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the tab-level Apply toggle, plus a separate **Undo latest restructure** button for the `--undo` flow.
+
+**Re-review titles for a PC system** (unnumbered — for PC systems only): wraps `spindoctor pc-rename <system>` (single system dropdown — no Old/New fields; the command re-runs the per-game title picker for an existing PC system so you can fix derived titles or pick up newly-dropped installs).
+
+**Per-system overrides** (advanced): surfaces `config system set` with a system dropdown and form fields for ScreenScraper ID, TheGamesDB ID, ROM extensions (comma-separated, leading dot optional), layout (`per-game-folder` / `multi-disc-m3u` / `flat`), and emulator name. **Load current values** prefills the form from the saved override; **Save override** calls the CLI with only the flags the user actually filled in. Designed for niche systems (homebrew consoles, PC libraries, custom MAME variants) that stock SpinDoctor doesn't know.
+
+**Inspect** buttons run `spindoctor systems` and `config system list`. Read-only.
+
 ### Diagnostics
 
-The cabinet's "is everything OK?" diagnostic surface. Combines the full audit / doctor checks with the one-click read-only inspectors — nothing on this tab writes to disk.
+The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Three numbered steps cover the main diagnostic workflow.
 
-**Audit & Doctor section:** Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks.
+**Step 1 — System audit:** Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks.
 
 A **Preflight check…** button chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone.
 
@@ -96,53 +120,62 @@ Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit
 
 **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
-**Diagnose section:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
+**Step 2 — Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
 
-Plus a **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
+**Step 3 — Search & verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
 
 CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Metadata & Media
 
-Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus an Apply toggle.
+Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus an Apply toggle. Five numbered steps read top to bottom; **Step 1** covers the common "do everything in one click" workflow.
 
-Four sections wrap `fetch-meta` (with `--auto-best` / `--all-games` / `--no-cache`, plus a **Source** dropdown picking `screenscraper` / `thegamesdb` / config default, and a **Threshold** entry that overrides the project-default fuzzy-match floor — client-side validated 0.0–1.0), `fetch-media` (media-type checkboxes — wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background, plus `--overwrite`), `media-scan` (source-folder picker + copy/move/link action), and `update-db` (with `--remove-orphans` / `--strip-variant-tags`).
+**Step 1 — Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system. Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
 
-**Multi-system fetch-meta** (added in 2.0): the **Pick subset…** button opens a modal multi-select Listbox of every configured system. Ticking subsystems opens a multi-select picker; the **Run on subset…** button chains `fetch-meta --system X` once per picked system (with a confirmation dialog showing system count + dry-run / apply mode), aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
+**Step 2 — Fetch metadata:** Wraps `fetch-meta` with `--auto-best` / `--all-games` / `--no-cache`, a **Source** dropdown (`screenscraper` / `thegamesdb` / config default), and a **Threshold** entry (client-side validated 0.0–1.0).
 
-A **Full metadata refresh** button at the bottom chains all three fetch/update steps in sequence with a determinate "Step N/3" progress bar. A separate **Add one local media file** form (system + game + media-type dropdowns + file picker) drives `media-add` with optional **Move** and **Overwrite if target exists** flags.
+**Multi-system fetch-meta** (added in 2.0): the **Pick subset…** button opens a modal multi-select Listbox. The **Run on subset…** button chains `fetch-meta --system X` once per picked system, aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
 
-**Run generate-config** (bottom of the `update-db` section) calls `spindoctor generate-config --apply` (when Apply is ticked) to regenerate RocketLauncher's per-system settings INIs and the HyperSpin Main Menu. This writes `<RocketLauncher>\Settings\<SystemName>.ini` directly into the configured `rocketlauncher_dir` — no manual copying needed. **Run this after every ROM migration** (Migrate tab → Run migration) so RocketLauncher's `Rom_Path` entries reflect the new drive. CLI equivalent: `spindoctor generate-config --apply`.
+**Step 3 — Fetch media:** Media-type checkboxes (wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background), plus `--overwrite`.
+
+**Step 4 — Scan local media folder:** Source-folder picker + copy/move/link action. CLI: `spindoctor media-scan`.
+
+**Step 5 — Sync database to ROMs:** `update-db` with `--remove-orphans` / `--strip-variant-tags`. **Run generate-config** (alongside) regenerates RocketLauncher's per-system settings INIs — **run this after every ROM migration** so RocketLauncher's `Rom_Path` entries reflect the new drive. CLI: `spindoctor update-db`, `spindoctor generate-config --apply`.
+
+**Batch edit metadata** (advanced, unnumbered): One filter clause + one set clause + optional CSV report path. Drives `spindoctor batch-edit`.
+
+**Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags.
 
 ### Maintenance
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
 
-**Curate region/revision variants** wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes and the Apply toggle persist across launches via the `gui_curate_regions` config key (Apply is deliberately NOT persisted — destructive opt-ins always re-arm). The **Preview (interactive)…** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog that re-prints the target system, the regions kept, and the revision preference, and explicitly notes there is no undo for delete mode and points at archive mode as the reversible alternative.
+**Step 1 — Curate region/revision variants:** Wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes persist across launches via the `gui_curate_regions` config key. The **Preview (interactive)…** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog.
 
-**Cache cleanup** shows 13 per-category checkboxes — the 9 safe caches pre-checked; the 4 unsafe categories (migration / restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) unchecked with a warning. **Audit caches** shows disk usage before you commit.
+**Cache cleanup:** 13 per-category checkboxes — the 9 safe caches pre-checked; the 4 unsafe categories (migration / restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) unchecked with a warning. **Audit caches** shows disk usage before you commit.
 
-**Ignore list** wires up `ignore add / remove / list` with system dropdown + game-name fields, plus a **View / un-ignore…** button.
+**Ignore list:** Wires up `ignore add / remove / list` with system dropdown + game-name fields, plus a **View / un-ignore…** button.
 
-**Metadata-match cache controls**: **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
+**Metadata-match cache:** **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
 
-### Systems
+### Tools
 
-**Main Menu section:** Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
+Three numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 
-Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
+**Step 1 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels, showing "Step N/3: &lt;wheel&gt;…" in the status bar. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
-If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
+**Step 2 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). **Sync favorites from HyperSpin** imports HyperSpin's F-key favorites into SpinDoctor's store — run this before Step 1 if you use F-key favorites.
 
-**System management section:** Add a system or re-review titles for an existing PC system. **Add a new system** runs `add-system` (or `add-pc-system` for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
+**Step 3 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 1 (Favorites checked) afterwards to push changes into HyperSpin.
 
-**Re-review titles for a PC system** wraps `spindoctor pc-rename <system>` (single system dropdown — no Old/New fields; the command re-runs the per-game title picker for an existing PC system so you can fix derived titles or pick up newly-dropped installs). Earlier 2.0 builds shipped a misleading two-field form that wasn't actually wired to the CLI; that's been corrected.
+**Install .bat helpers (optional):** Two sub-sections:
 
-**Per-system overrides** (added in 2.0): surfaces `config system set` with a system dropdown and form fields for ScreenScraper ID, TheGamesDB ID, ROM extensions (comma-separated, leading dot optional), layout (`per-game-folder` / `multi-disc-m3u` / `flat`), and emulator name. **Load current values** prefills the form from the saved override; **Save override** calls the CLI with only the flags the user actually filled in. Designed for niche systems (homebrew consoles, PC libraries, custom MAME variants) that stock SpinDoctor doesn't know.
+1. **Install for HyperHQ → Tools menu** — writes `Refresh Favorites.bat`, `Refresh Recently Played.bat`, `Refresh Most Played.bat`, and `Refresh All.bat` into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu.
+2. **Install into an existing wheel system** — adds the helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel), with per-game PCLauncher INIs alongside the bats. CLI: `spindoctor install-tools --add-to-system <NAME>`.
 
-**Organize a system** drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the tab's existing Apply toggle, plus a separate **Undo latest restructure** button for the `--undo` flow.
+**Auto-refresh on cabinet startup** (Windows-only): **Schedule auto-refresh** registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). **Remove scheduled task** and **Check task status** round out the lifecycle.
 
-Inspect buttons run `spindoctor systems` and `config system list`. Dry-run by default.
+**Reset wheel data (scrub):** Permanently delete favorites and/or play statistics to start fresh. Backup folder field creates a restorable snapshot before scrubbing. Statistics.ini files cannot be regenerated — always back up first. **Restore** button recovers from a previous scrub backup.
 
 ### LEDBlinky
 
@@ -222,33 +255,41 @@ Quick backup and restore scoped to LEDBlinky files. Both folder fields default t
 
 ### Lightgun
 
-**Detect** installed Sinden / DemulShooter gear (with optional `--apply` to persist the discovered systems into config), **Audit** per-system wiring, and **Configure** one system's RocketLauncher INI with optional `-target` / extra-args overrides. CLI equivalent: `spindoctor lightgun detect / audit / configure`.
+Two numbered steps cover the lightgun setup workflow.
+
+**Step 1 — Detect & audit:** **Detect installed gear** reads existing RocketLauncher INIs and seeds SpinDoctor config with discovered DemulShooter targets (optional `--apply` to persist). **Audit wiring** shows per-system hook status. CLI: `spindoctor lightgun detect / audit`.
+
+**Step 2 — Configure one system:** Pick a system, optionally choose a DemulShooter `-target` value (auto-detected from system name if left blank), and add optional extra args. **Configure system** writes the Pre/Post launch hooks. CLI: `spindoctor lightgun configure --system <NAME>`.
 
 ### Backup & Restore
 
-Per-component checkboxes (default: all seven — roms, databases, media, emulators, rocketlauncher, ledblinky, settings), shared target-folder picker for create/list, separate backup-folder picker for info/restore, optional label, dry-run by default. Restore-time toggles for `--use-current-paths` (drive letters changed since backup) and `--overwrite`. The **Scan** button populates the restore dropdown from your configured backup folder. CLI equivalent: `spindoctor backup create / list / info / restore`.
+Three numbered steps walk through the full backup / restore workflow.
 
-### Tools
+**Step 1 — Target folder & components:** Set the destination folder and tick the components to include (default: all seven — roms, databases, media, emulators, rocketlauncher, ledblinky, settings). **Config snapshot** preset selects settings + databases only for a lightweight backup; **Everything** ticks all.
 
-**Custom wheels section:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels in sequence, showing "Step N/3: &lt;wheel&gt;…" in the status bar.
+**Step 2 — Create backup:** Optional label, then **Create backup**. **List backups under target** lists existing snapshots under the same folder. CLI: `spindoctor backup create / list`.
 
-Below: a HyperSpin integration explainer (Most Played auto-registers in the Main Menu, Favorites and Recently Played do not, none auto-fire on cabinet startup) plus two helpers: **Add wheels to Main Menu** (chains `mainmenu add Favorites/Recently Played/Most Played --apply`) and **Install Tools-menu helpers** (shortcut to the install-tools section below).
-
-A **Favorites** sub-section adds **Add / Remove / List** buttons that drive `fav add / remove / list` directly on the cabinet's favorites file. Remove asks for confirmation before unfavoriting. CLI equivalents: `spindoctor fav rebuild --apply` / `spindoctor recent rebuild --apply` / `spindoctor stats-report build-wheel --apply`.
-
-**HyperSpin integration section:** Three sections that cover the HyperSpin-integration surface:
-
-1. **Install for HyperHQ → Tools menu** — writes the four `Refresh *.bat` helpers into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in HyperHQ → Tools to expose them inside HyperSpin's in-cabinet Tools menu.
-2. **Install into an existing wheel system** — adds the four helpers as `<game>` entries inside an existing HyperSpin wheel (e.g. a `Toolkit` wheel where the "games" are maintenance tasks), with per-game PCLauncher INIs alongside the bats. CLI equivalent: `spindoctor install-tools --add-to-system <NAME>`.
-3. **Auto-refresh on cabinet startup** (Windows-only) — Schedule auto-refresh registers a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min). Remove and Check round out the lifecycle.
+**Step 3 — Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse…** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
 
 ### Migrate
 
-Per-component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), target-root picker, a scrollable multi-select Listbox pre-populated from detected systems for partial-roms migrations (nothing selected = migrate all), toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate **Undo** panel whose manifest dropdown is pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top) and a Refresh button. Dry-run by default. CLI equivalent: `spindoctor migrate`.
+Four numbered steps walk through the full migration workflow.
 
-**After migrating the `roms` component**, go to the **Metadata & Media tab**, tick Apply, and click **Run generate-config**. This rewrites RocketLauncher's per-system `Settings\<SystemName>.ini` files with the new `Rom_Path`. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
+**Step 1 — Current configuration:** **Show current paths** and **Run doctor** let you verify what's configured before moving anything.
 
-Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path. Cancel and nothing runs.
+**Step 2 — Backup before migrating:** Create a snapshot of your current setup. Strongly recommended — if anything goes wrong you can restore from it.
+
+**Step 3 — Migration settings:** Target root picker, component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), an optional systems-filter Listbox for partial-roms migrations (nothing selected = migrate all), and option toggles: `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`. Click **Run migration** to execute. Dry-run by default. CLI: `spindoctor migrate`.
+
+**Step 4 — Undo a previous migration:** Manifest dropdown pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top). **Refresh** reloads. **List manifests** and **Undo** complete the lifecycle.
+
+**After migrating the `roms` component**, go to the **Metadata & Media tab**, tick Apply, and click **Run generate-config** (Step 5). This rewrites RocketLauncher's per-system `Settings\<SystemName>.ini` files with the new `Rom_Path`. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
+
+Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path.
+
+### Custom Command
+
+Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 ### Logs
 
@@ -257,10 +298,6 @@ Persistent timeline of every command run since the GUI was launched, newest firs
 The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests…**.
 
 A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the Logs tab first.
-
-### Custom Command
-
-Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~246 canonical commands organised into 19 named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 ## Menubar
 

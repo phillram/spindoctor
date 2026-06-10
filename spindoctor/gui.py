@@ -2187,29 +2187,32 @@ class _SpinDoctorGUI:
         # Tab order is workflow-oriented for a new cabinet owner:
         # Setup once, then daily-driver tabs (read-only Diagnostics
         # first so the user can confirm "is the cab healthy?" before
-        # touching anything), then curation surfaces, then wheel /
-        # front-end composition via Tools and Systems, then peripheral
-        # tabs (LEDBlinky / Lightgun), then infrastructure (Backup →
-        # Migrate) trailing into Logs / Custom Command at the end.
+        # Tab order follows the new-user journey: configure paths first
+        # (Setup), then build out systems (Systems), then diagnose health
+        # (Diagnostics), then enrich metadata (Metadata & Media), curate
+        # (Maintenance), manage cross-system wheels (Tools), then
+        # peripheral hardware (LEDBlinky / Lightgun), then infrastructure
+        # (Backup → Migrate), and finally power-user escapes
+        # (Custom Command) and the session log (Logs) at the very end.
         # 12 tabs total (down from 15) — Audit & Doctor + Diagnose →
         # Diagnostics; Curate → Maintenance; Wheels merged into Tools;
         # Main Menu merged into Systems.
         self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
+        self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
         self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
         self._add_scrollable_tab(nb, self._build_tools_tab,        "Tools")
-        self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
         self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migrate")
+        self._add_scrollable_tab(nb, self._build_custom_tab,       "Custom Command")
         # Logs tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
         nb.add(self._build_logs_tab(nb), text="Logs")
         self._tab_base_names.append("Logs")
-        self._add_scrollable_tab(nb, self._build_custom_tab,       "Custom Command")
         main_paned.add(nb, weight=4)
         main_paned.add(out_frame, weight=1)
 
@@ -5333,8 +5336,8 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
-        # ── System audit ──────────────────────────────────────────────────────
-        audit_lf = self.ttk.LabelFrame(frame, text="System audit")
+        # ── Step 1 — System audit ─────────────────────────────────────────────
+        audit_lf = self.ttk.LabelFrame(frame, text="Step 1 — System audit")
         audit_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(audit_lf, text="System").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
@@ -5413,8 +5416,8 @@ class _SpinDoctorGUI:
             variable=self._audit_detailed_var,
         ).pack(side="left", padx=10)
 
-        # ── Library-wide scans ────────────────────────────────────────────────
-        scans_lf = self.ttk.LabelFrame(frame, text="Library-wide scans")
+        # ── Step 2 — Library-wide scans ──────────────────────────────────────
+        scans_lf = self.ttk.LabelFrame(frame, text="Step 2 — Library-wide scans")
         scans_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
@@ -5453,8 +5456,8 @@ class _SpinDoctorGUI:
                 command=lambda a=args: self._run_cli("spindoctor", a, on_complete=_scan_done),
             ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
 
-        # ── Search & verify ───────────────────────────────────────────────────
-        sv_lf = self.ttk.LabelFrame(frame, text="Search & verify")
+        # ── Step 3 — Search & verify ─────────────────────────────────────────
+        sv_lf = self.ttk.LabelFrame(frame, text="Step 3 — Search & verify")
         sv_lf.pack(fill="x", pady=(0, 8))
 
         # Global search
@@ -5719,40 +5722,43 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
-        # ── Target folder (shared by Create / List) ──────────────────────────
-        self.ttk.Label(frame, text="Target folder").grid(
-            row=1, column=0, sticky="w", pady=2,
+        # ── Step 1 — Target folder & components ─────────────────────────────
+        cfg_frame = self.ttk.LabelFrame(
+            frame, text="Step 1 — Target folder & components",
+        )
+        cfg_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
+        cfg_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(cfg_frame, text="Target folder").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
         )
         _backup_cfg = load_config()
         _backup_dir_default = getattr(_backup_cfg, "backup_dir", "") or ""
         self._backup_target_var = self.tk.StringVar(value=_backup_dir_default)
-        self.ttk.Entry(frame, textvariable=self._backup_target_var, width=60).grid(
-            row=1, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+        self.ttk.Entry(cfg_frame, textvariable=self._backup_target_var, width=60).grid(
+            row=0, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
         self.ttk.Button(
-            frame, text="Browse…",
+            cfg_frame, text="Browse…",
             command=lambda: self._browse_backup_dir(self._backup_target_var,
                                                    "Pick backup target folder"),
-        ).grid(row=1, column=3, sticky="w", pady=2)
+        ).grid(row=0, column=3, sticky="w", pady=2)
 
-        # ── Components (shared by Create / Restore) ──────────────────────────
-        comp_frame = self.ttk.LabelFrame(frame, text="Components")
-        comp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
-        # Default to "everything" so a click-and-go user gets a full backup.
-        # Cabinet owners who want a partial backup can untick.
+        # Components — default to "everything" so a click-and-go user gets
+        # a full backup. Cabinet owners who want a partial backup can untick.
         self._backup_component_vars: dict[str, "self.tk.BooleanVar"] = {}
         for i, (key, desc) in enumerate(_BACKUP_COMPONENTS):
             var = self.tk.BooleanVar(value=True)
             self._backup_component_vars[key] = var
             self.ttk.Checkbutton(
-                comp_frame, text=f"{key}  —  {desc}", variable=var,
-            ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
+                cfg_frame, text=f"{key}  —  {desc}", variable=var,
+            ).grid(row=i + 1, column=0, columnspan=4, sticky="w", padx=6, pady=1)
 
         # Preset shortcut buttons — quick selections for common use cases.
-        # Placed below the checkboxes so they're clearly "select for me" helpers.
-        preset_row = self.ttk.Frame(comp_frame)
+        preset_row = self.ttk.Frame(cfg_frame)
         preset_row.grid(
-            row=len(_BACKUP_COMPONENTS), column=0, sticky="w", padx=6, pady=(6, 4),
+            row=len(_BACKUP_COMPONENTS) + 1, column=0, columnspan=4,
+            sticky="w", padx=6, pady=(6, 4),
         )
         self.ttk.Label(preset_row, text="Presets:").pack(side="left", padx=(0, 6))
 
@@ -5786,9 +5792,9 @@ class _SpinDoctorGUI:
             self.tk,
         )
 
-        # ── Create section ───────────────────────────────────────────────────
-        create_frame = self.ttk.LabelFrame(frame, text="Create backup")
-        create_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        # ── Step 2 — Create backup ────────────────────────────────────────────
+        create_frame = self.ttk.LabelFrame(frame, text="Step 2 — Create backup")
+        create_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         create_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(create_frame, text="Label (optional)").grid(
@@ -5799,22 +5805,21 @@ class _SpinDoctorGUI:
             row=0, column=1, sticky="w", padx=6, pady=2,
         )
 
+        bk_btn_row = self.ttk.Frame(create_frame)
+        bk_btn_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            create_frame, text="Create backup",
+            bk_btn_row, text="Create backup",
             command=self._run_backup_create,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
-
-        # ── List section ─────────────────────────────────────────────────────
-        list_frame = self.ttk.LabelFrame(frame, text="List backups")
-        list_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        ).pack(side="left")
         self.ttk.Button(
-            list_frame, text="List backups under target",
+            bk_btn_row, text="List backups under target",
             command=self._run_backup_list,
-        ).grid(row=0, column=0, sticky="w", padx=6, pady=4)
+        ).pack(side="left", padx=(10, 0))
 
-        # ── Restore section ──────────────────────────────────────────────────
-        restore_frame = self.ttk.LabelFrame(frame, text="Restore from a backup")
-        restore_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        # ── (removed standalone List section — now a button inside Step 2) ──
+        # ── Step 3 — Restore from a backup ───────────────────────────────────
+        restore_frame = self.ttk.LabelFrame(frame, text="Step 3 — Restore from a backup")
+        restore_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         restore_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(restore_frame, text="Backup folder").grid(
@@ -6186,8 +6191,8 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
-        # ── Current configuration ─────────────────────────────────────────────
-        cur_cfg_frame = self.ttk.LabelFrame(frame, text="Current configuration")
+        # ── Step 1 — Current configuration ───────────────────────────────────
+        cur_cfg_frame = self.ttk.LabelFrame(frame, text="Step 1 — Current configuration")
         cur_cfg_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 8))
         self.ttk.Label(
             cur_cfg_frame,
@@ -6205,8 +6210,8 @@ class _SpinDoctorGUI:
             command=lambda: self._run_cli("spindoctor", ["doctor"]),
         ).pack(side="left", padx=6)
 
-        # ── Backup before migrating ───────────────────────────────────────────
-        pre_bkp_frame = self.ttk.LabelFrame(frame, text="Backup before migrating")
+        # ── Step 2 — Backup before migrating ─────────────────────────────────
+        pre_bkp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Backup before migrating")
         pre_bkp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
         pre_bkp_frame.columnconfigure(1, weight=1)
         self.ttk.Label(
@@ -6246,44 +6251,51 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
 
-        # ── Target root ──────────────────────────────────────────────────────
-        self.ttk.Label(frame, text="Target root").grid(
-            row=3, column=0, sticky="w", pady=2,
+        # ── Step 3 — Migration settings (target, components, options) ────────
+        mig_frame = self.ttk.LabelFrame(
+            frame, text="Step 3 — Migration settings",
+        )
+        mig_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(0, 8))
+        mig_frame.columnconfigure(1, weight=1)
+
+        # Target root
+        self.ttk.Label(mig_frame, text="Target root").grid(
+            row=0, column=0, sticky="w", padx=6, pady=2,
         )
         self._migrate_target_var = self.tk.StringVar()
-        self.ttk.Entry(frame, textvariable=self._migrate_target_var, width=60).grid(
-            row=3, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
+        self.ttk.Entry(mig_frame, textvariable=self._migrate_target_var, width=60).grid(
+            row=0, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
         self.ttk.Button(
-            frame, text="Browse…",
+            mig_frame, text="Browse…",
             command=lambda: self._browse_backup_dir(
                 self._migrate_target_var, "Pick migration target root",
             ),
-        ).grid(row=3, column=3, sticky="w", pady=2)
+        ).grid(row=0, column=3, sticky="w", pady=2)
 
-        # ── Components ───────────────────────────────────────────────────────
-        comp_frame = self.ttk.LabelFrame(frame, text="Components")
-        comp_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        # Components
+        self.ttk.Label(mig_frame, text="Components:").grid(
+            row=1, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 0),
+        )
         self._migrate_component_vars: dict = {}
         for i, (key, desc) in enumerate(_MIGRATE_COMPONENTS):
             var = self.tk.BooleanVar(value=True)
             self._migrate_component_vars[key] = var
             self.ttk.Checkbutton(
-                comp_frame, text=f"{key}  —  {desc}", variable=var,
-            ).grid(row=i, column=0, sticky="w", padx=6, pady=1)
+                mig_frame, text=f"{key}  —  {desc}", variable=var,
+            ).grid(row=i + 2, column=0, columnspan=4, sticky="w", padx=6, pady=1)
 
-        # ── Options ──────────────────────────────────────────────────────────
-        opt_frame = self.ttk.LabelFrame(frame, text="Options")
-        opt_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
-        opt_frame.columnconfigure(1, weight=1)
+        _comp_row_end = 2 + len(_MIGRATE_COMPONENTS)
 
+        # Systems filter
         self.ttk.Label(
-            opt_frame,
+            mig_frame,
             text="Systems filter (optional — only applies to roms component):",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 0))
-        migrate_list_frame = self.ttk.Frame(opt_frame)
+        ).grid(row=_comp_row_end, column=0, columnspan=4, sticky="w", padx=6, pady=(8, 0))
+        migrate_list_frame = self.ttk.Frame(mig_frame)
         migrate_list_frame.grid(
-            row=1, column=0, columnspan=2, sticky="ew", padx=6, pady=(2, 0),
+            row=_comp_row_end + 1, column=0, columnspan=4,
+            sticky="ew", padx=6, pady=(2, 0),
         )
         migrate_list_frame.columnconfigure(0, weight=1)
         self._migrate_systems_lb = self.tk.Listbox(
@@ -6299,9 +6311,10 @@ class _SpinDoctorGUI:
         self._migrate_systems_lb.configure(yscrollcommand=migrate_lb_vsb.set)
         self._migrate_systems_lb.grid(row=0, column=0, sticky="ew")
         migrate_lb_vsb.grid(row=0, column=1, sticky="ns")
-        migrate_lb_btns = self.ttk.Frame(opt_frame)
+        migrate_lb_btns = self.ttk.Frame(mig_frame)
         migrate_lb_btns.grid(
-            row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 4),
+            row=_comp_row_end + 2, column=0, columnspan=4,
+            sticky="w", padx=6, pady=(2, 4),
         )
         self.ttk.Button(
             migrate_lb_btns, text="Select all",
@@ -6317,34 +6330,40 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left", padx=4)
 
+        # Options
+        self.ttk.Label(mig_frame, text="Options:").grid(
+            row=_comp_row_end + 3, column=0, columnspan=4,
+            sticky="w", padx=6, pady=(8, 0),
+        )
         self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            opt_frame, text="Copy instead of move (--keep-source)",
+            mig_frame, text="Copy instead of move (--keep-source)",
             variable=self._migrate_keep_source_var,
-        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=_comp_row_end + 4, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_verify_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            opt_frame,
+            mig_frame,
             text="SHA1-verify after copy (--verify; only with Copy)",
             variable=self._migrate_verify_var,
-        ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=_comp_row_end + 5, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_no_update_config_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            opt_frame,
+            mig_frame,
             text="Don't rewrite config.json with new paths "
                  "(--no-update-config)",
             variable=self._migrate_no_update_config_var,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        ).grid(row=_comp_row_end + 6, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
         _mig_preserve = self.ttk.Checkbutton(
-            opt_frame,
+            mig_frame,
             text="Keep original folder names (--preserve-names)",
             variable=self._migrate_preserve_names_var,
         )
-        _mig_preserve.grid(row=6, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        _mig_preserve.grid(row=_comp_row_end + 7, column=0, columnspan=4,
+                           sticky="w", padx=6, pady=2)
         _attach_tooltip(
             _mig_preserve,
             "Default off: the migrated layout uses canonical folder "
@@ -6357,12 +6376,13 @@ class _SpinDoctorGUI:
         )
 
         self.ttk.Button(
-            opt_frame, text="Run migration", command=self._run_migrate,
-        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
+            mig_frame, text="Run migration", command=self._run_migrate,
+        ).grid(row=_comp_row_end + 8, column=0, columnspan=4,
+               sticky="w", padx=6, pady=(4, 6))
 
-        # ── Undo / list manifests ────────────────────────────────────────────
-        undo_frame = self.ttk.LabelFrame(frame, text="Undo a previous migration")
-        undo_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        # ── Step 4 — Undo a previous migration ───────────────────────────────
+        undo_frame = self.ttk.LabelFrame(frame, text="Step 4 — Undo a previous migration")
+        undo_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         undo_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(undo_frame, text="Manifest").grid(
@@ -7286,8 +7306,33 @@ class _SpinDoctorGUI:
             sys_row, textvariable=self._meta_subset_label_var,
             foreground=_FG_DIM,
         ).pack(side="left")
-        # ── fetch-meta ───────────────────────────────────────────────────────
-        meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
+        # ── Step 1 — Full metadata refresh ───────────────────────────────────
+        full_frame = self.ttk.LabelFrame(
+            frame, text="Step 1 — Full metadata refresh",
+        )
+        full_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            full_frame,
+            text=("One-click chain: fetch-meta → fetch-media → update-db in "
+                  "sequence for the selected system. Stops on first error. "
+                  "Use the individual steps below to run or troubleshoot each "
+                  "phase separately."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        full_chain_row = self.ttk.Frame(full_frame)
+        full_chain_row.pack(anchor="w", padx=6, pady=(2, 6))
+        self.ttk.Button(
+            full_chain_row, text="▶  Full metadata refresh",
+            command=self._run_full_metadata_refresh,
+        ).pack(side="left")
+        self.ttk.Label(
+            full_chain_row,
+            text="  — fetch-meta + fetch-media + update-db in one click",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
+        # ── Step 2 — Fetch metadata ──────────────────────────────────────────
+        meta_frame = self.ttk.LabelFrame(frame, text="Step 2 — Fetch metadata")
         meta_frame.pack(fill="x", pady=(4, 4))
         # Defaults to True: the GUI cannot drive an interactive `input()`
         # prompt, so the alternative used to be a frozen subprocess. The
@@ -7399,7 +7444,7 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
 
         # ── fetch-media ──────────────────────────────────────────────────────
-        media_frame = self.ttk.LabelFrame(frame, text="Fetch media")
+        media_frame = self.ttk.LabelFrame(frame, text="Step 3 — Fetch media")
         media_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             media_frame,
@@ -7431,7 +7476,7 @@ class _SpinDoctorGUI:
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
         # ── media-scan ───────────────────────────────────────────────────────
-        scan_frame = self.ttk.LabelFrame(frame, text="Scan local media folder")
+        scan_frame = self.ttk.LabelFrame(frame, text="Step 4 — Scan local media folder")
         scan_frame.pack(fill="x", pady=(4, 4))
         scan_row = self.ttk.Frame(scan_frame)
         scan_row.pack(fill="x", padx=6, pady=2)
@@ -7459,7 +7504,7 @@ class _SpinDoctorGUI:
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
         # ── update-db ────────────────────────────────────────────────────────
-        db_frame = self.ttk.LabelFrame(frame, text="Sync database to ROMs")
+        db_frame = self.ttk.LabelFrame(frame, text="Step 5 — Sync database to ROMs")
         db_frame.pack(fill="x", pady=(4, 4))
         self._meta_remove_orphans_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -7490,21 +7535,6 @@ class _SpinDoctorGUI:
             btn_row, text="Restore RL INI backup…",
             command=self._meta_restore_rl_ini_from_backup,
         ).pack(side="left", padx=6)
-
-        # ── Full refresh shortcut ─────────────────────────────────────────────
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=(10, 6))
-        full_row = self.ttk.Frame(frame)
-        full_row.pack(anchor="w", pady=(0, 4))
-        self.ttk.Button(
-            full_row, text="Full metadata refresh",
-            command=self._run_full_metadata_refresh,
-        ).pack(side="left")
-        self.ttk.Label(
-            full_row,
-            text="  Runs fetch-meta → fetch-media → update-db in sequence. "
-                 "Stops on first error.",
-            foreground=_FG_DIM,
-        ).pack(side="left")
 
         # ── batch-edit ───────────────────────────────────────────────────────
         # Minimal exposure of the batch-edit CLI command — one filter,
@@ -8093,8 +8123,8 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
-        # ── curate ───────────────────────────────────────────────────────────
-        cur_frame = self.ttk.LabelFrame(frame, text="Curate region/revision variants")
+        # ── Step 1 — Curate region/revision variants ─────────────────────────
+        cur_frame = self.ttk.LabelFrame(frame, text="Step 1 — Curate region/revision variants")
         cur_frame.pack(fill="x", pady=(4, 4))
 
         cur_top = self.ttk.Frame(cur_frame)
@@ -8971,14 +9001,14 @@ class _SpinDoctorGUI:
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        # ── Main menu carousel (formerly Main Menu tab) ───────────────────────
+        # ── Step 1 — Main menu carousel (formerly Main Menu tab) ────────────
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
         # the same module the CLI uses. The GUI never parses or writes
         # the XML itself; that would be a parallel implementation and
         # is exactly what caused the previous Main Menu corruption bug.
         self._mm_data: list[dict] = []  # [{system, enabled}]
 
-        mm_lf = self.ttk.LabelFrame(frame, text="Main menu carousel")
+        mm_lf = self.ttk.LabelFrame(frame, text="Step 1 — Main menu carousel")
         mm_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
@@ -9094,8 +9124,8 @@ class _SpinDoctorGUI:
         # 1–3 seconds on slow drives.
         self.root.after_idle(self._mm_refresh)
 
-        # ── add-system ────────────────────────────────────────────────────────
-        add_frame = self.ttk.LabelFrame(frame, text="Add a new system")
+        # ── Step 2 — Add a new system ────────────────────────────────────────
+        add_frame = self.ttk.LabelFrame(frame, text="Step 2 — Add a new system")
         add_frame.pack(fill="x", pady=(4, 4))
         add_row = self.ttk.Frame(add_frame)
         add_row.pack(fill="x", padx=6, pady=2)
@@ -9171,7 +9201,7 @@ class _SpinDoctorGUI:
         # keep a Speed Hack alongside the clean dump"). Previously only
         # reachable via Custom Command, which made these high-value ops
         # feel like power-user-only territory.
-        rc_frame = self.ttk.LabelFrame(frame, text="Rename or clone a game")
+        rc_frame = self.ttk.LabelFrame(frame, text="Step 3 — Rename or clone a game")
         rc_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             rc_frame,
@@ -9221,7 +9251,7 @@ class _SpinDoctorGUI:
         # ROM restructuring with an undo manifest. Restructure honours
         # the tab-level Apply checkbox.
         org_frame = self.ttk.LabelFrame(
-            frame, text="Organize a system (sort wheels + optional restructure)",
+            frame, text="Step 4 — Organize a system (sort wheels + optional restructure)",
         )
         org_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
@@ -10569,8 +10599,8 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
 
-        # ── Detect / Audit ───────────────────────────────────────────────────
-        det_frame = self.ttk.LabelFrame(frame, text="Detect & audit")
+        # ── Step 1 — Detect & audit ──────────────────────────────────────────
+        det_frame = self.ttk.LabelFrame(frame, text="Step 1 — Detect & audit")
         det_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
 
         btn_row = self.ttk.Frame(det_frame)
@@ -10586,9 +10616,9 @@ class _SpinDoctorGUI:
             ),
         ).pack(side="left", padx=6)
 
-        # ── Configure one system ─────────────────────────────────────────────
+        # ── Step 2 — Configure one system ───────────────────────────────────
         cfg_frame = self.ttk.LabelFrame(
-            frame, text="Configure one system",
+            frame, text="Step 2 — Configure one system",
         )
         cfg_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         cfg_frame.columnconfigure(1, weight=1)
@@ -10671,19 +10701,23 @@ class _SpinDoctorGUI:
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        # ── Custom wheels (formerly Wheels tab) ───────────────────────────────
-        wheels_lf = self.ttk.LabelFrame(frame, text="Custom wheels")
-        wheels_lf.pack(fill="x", pady=(0, 8))
+        # ── Step 1 — Refresh custom wheels ───────────────────────────────────
+        rebuild_lf = self.ttk.LabelFrame(
+            frame, text="Step 1 — Refresh custom wheels",
+        )
+        rebuild_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
-            wheels_lf,
-            text=("Rebuild the cross-system wheels HyperSpin shows on the "
-                  "main menu. Each click runs the corresponding standalone "
-                  "binary with --apply, the same way the .bat shortcuts do."),
+            rebuild_lf,
+            text=("Build (or rebuild) the game databases and PCLauncher INIs "
+                  "for each cross-system wheel. Run this after adding new "
+                  "ROMs or changing your favorites. None of the wheels "
+                  "auto-update on cabinet startup — see 'Install .bat helpers' "
+                  "below to set that up."),
             wraplength=860, justify="left",
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
-        wheels_checks = self.ttk.Frame(wheels_lf)
+        wheels_checks = self.ttk.Frame(rebuild_lf)
         wheels_checks.pack(anchor="w", padx=6, pady=(0, 4))
         self._wheel_fav_var    = self.tk.BooleanVar(value=True)
         self._wheel_recent_var = self.tk.BooleanVar(value=True)
@@ -10698,44 +10732,35 @@ class _SpinDoctorGUI:
             ).pack(anchor="w", pady=2)
 
         self.ttk.Button(
-            wheels_lf, text="Refresh selected", width=28,
+            rebuild_lf, text="Refresh selected", width=28,
             command=self._refresh_all_wheels,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
-
-        # HyperSpin integration helpers
-        self.ttk.Separator(wheels_lf, orient="horizontal").pack(fill="x", padx=6, pady=6)
-        self.ttk.Label(
-            wheels_lf, text="HyperSpin integration",
-            font=("TkDefaultFont", 10, "bold"),
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-        self.ttk.Label(
-            wheels_lf,
-            text=(
-                "• Step 1 — Refresh: builds game databases + PCLauncher INIs "
-                "for the selected wheels.\n"
-                "• Step 2 — Add to Main Menu: registers the synthetic systems "
-                "in HyperSpin's main carousel (Favorites and Recently Played "
-                "are not auto-registered; Most Played is).\n"
-                "• For Favorites: click 'Sync favorites from HyperSpin' first "
-                "if you use HyperSpin's F-key favorites — this imports them "
-                "into SpinDoctor's store before the rebuild reads them.\n"
-                "• None of these auto-fire on cabinet startup. Use the "
-                "'Install wheel helpers' section below to install .bat helpers, "
-                "or schedule the rebuild commands via Windows Task Scheduler "
-                "(trigger: 'At log on') for hands-off updates."
-            ),
-            wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(0, 6))
 
-        btn_row = self.ttk.Frame(wheels_lf)
-        btn_row.pack(anchor="w", padx=6, pady=(2, 4))
+        # ── Step 2 — Register in HyperSpin main menu ─────────────────────────
+        register_lf = self.ttk.LabelFrame(
+            frame, text="Step 2 — Register in HyperSpin main menu",
+        )
+        register_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            register_lf,
+            text=("Add the wheel systems to HyperSpin's main carousel. "
+                  "Favorites and Recently Played are not auto-registered; "
+                  "Most Played is. Run 'Sync favorites from HyperSpin' first "
+                  "if you use HyperSpin's F-key favorites — this imports them "
+                  "into SpinDoctor's store before the rebuild reads them."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        reg_btn_row = self.ttk.Frame(register_lf)
+        reg_btn_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            btn_row, text="Add wheels to Main Menu", width=28,
+            reg_btn_row, text="Add wheels to Main Menu", width=28,
             command=self._register_wheels_in_main_menu,
         ).pack(side="left")
 
         sync_btn = self.ttk.Button(
-            btn_row, text="Sync favorites from HyperSpin", width=28,
+            reg_btn_row, text="Sync favorites from HyperSpin", width=28,
             command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
         )
         sync_btn.pack(side="left", padx=6)
@@ -10747,22 +10772,21 @@ class _SpinDoctorGUI:
             self.tk,
         )
 
-        # Manage individual favorites
-        self.ttk.Separator(wheels_lf, orient="horizontal").pack(fill="x", padx=6, pady=6)
-        self.ttk.Label(
-            wheels_lf, text="Manage individual favorites",
-            font=("TkDefaultFont", 10, "bold"),
-        ).pack(anchor="w", padx=6, pady=(0, 4))
-        self.ttk.Label(
-            wheels_lf,
-            text=("Add or remove single games in the cross-system "
-                  "Favorites wheel. Run 'Refresh selected' (with "
-                  "Favorites checked) afterwards to push the change "
-                  "into HyperSpin."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+        # ── Step 3 — Manage favorites ─────────────────────────────────────────
+        fav_lf = self.ttk.LabelFrame(
+            frame, text="Step 3 — Manage favorites",
+        )
+        fav_lf.pack(fill="x", pady=(0, 8))
 
-        fav_row = self.ttk.Frame(wheels_lf)
+        self.ttk.Label(
+            fav_lf,
+            text=("Add or remove single games in the cross-system Favorites "
+                  "wheel. Run Step 1 (with Favorites checked) afterwards to "
+                  "push the change into HyperSpin."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 4))
+
+        fav_row = self.ttk.Frame(fav_lf)
         fav_row.pack(fill="x", padx=6, pady=(2, 6))
         self.ttk.Label(fav_row, text="System").pack(side="left")
         self._fav_system_var = self.tk.StringVar()
@@ -10788,8 +10812,8 @@ class _SpinDoctorGUI:
             fav_row, text="List", command=self._fav_list,
         ).pack(side="left")
 
-        # ── Install wheel helpers (formerly Tools tab) ─────────────────────────
-        helpers_lf = self.ttk.LabelFrame(frame, text="Install wheel helpers")
+        # ── Install .bat helpers (optional) ──────────────────────────────────
+        helpers_lf = self.ttk.LabelFrame(frame, text="Install .bat helpers (optional)")
         helpers_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
