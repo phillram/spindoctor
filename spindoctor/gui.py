@@ -763,6 +763,9 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky colors randomize",
     "ledblinky colors randomize --apply",
     "ledblinky colors randomize --seed <N> --apply",
+    "ledblinky colors sync-players",
+    "ledblinky colors sync-players --apply",
+    "ledblinky colors sync-players --apply --verbose",
     "ledblinky fill-defaults",
     "ledblinky fill-defaults --admin-buttons 6 --admin-color <COLOR> --apply",
     "ledblinky fill-defaults --apply",
@@ -9612,14 +9615,22 @@ class _SpinDoctorGUI:
             command=self._run_color_normalize,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
+            gen_btn_row, text="1c. Sync player colors",
+            command=self._run_led_sync_players,
+        ).pack(side="left", padx=(8, 0))
+        self.ttk.Button(
             gen_btn_row, text="Audit coverage",
             command=self._run_led_audit,
         ).pack(side="left", padx=(8, 0))
 
         self.ttk.Label(
             gen_frame,
-            text=("After generating, run Normalize to convert ledcolor1=/joystick= "
-                  "hex keys to P1_BUTTON1=/P1_JOYSTICK= named format. "
+            text=("After generating, run Normalize then Sync player colors. "
+                  "Normalize converts ledcolor1=/joystick= hex keys to the "
+                  "P1_BUTTON1=/P1_JOYSTICK= named format. "
+                  "Sync player colors adds missing P2+/P3+ entries to Colors.ini "
+                  "by mirroring the matching P1 color for each button listed in "
+                  "controls.ini — so multi-player games light all players correctly. "
                   "Audit coverage shows which ROMs have / lack control data."),
             wraplength=820, justify="left", foreground=_FG_DIM,
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
@@ -10355,6 +10366,15 @@ class _SpinDoctorGUI:
             "spindoctor", args,
             on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
         )
+
+    def _run_led_sync_players(self) -> None:
+        """Run ``ledblinky colors sync-players`` to mirror P1 colors to P2+."""
+        args = ["ledblinky", "colors", "sync-players"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
 
     def _run_fill_defaults(self) -> None:
         """Run ``ledblinky fill-defaults`` to add default entries for unmapped ROMs."""

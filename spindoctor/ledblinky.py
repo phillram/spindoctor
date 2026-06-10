@@ -2757,3 +2757,184 @@ def randomize_entry_colors(
         colors_ini_path.write_text("".join(parts), encoding="utf-8")
 
     return result
+
+
+# ─── Colors.ini multi-player key sync ─────────────────────────────────────────
+
+
+#: Matches P{n}_BUTTON{i} / P{n}_JOYSTICK / P{n}_START / P{n}_COIN in controls.ini
+_CONTROLS_PLAYER_KEY_RE = re.compile(
+    r"^P(\d+)_(BUTTON\d+|JOYSTICK|START|COIN)\s*=",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class SyncPlayersResult:
+    """Result of :func:`sync_player_colors`."""
+
+    dry_run: bool = True
+    colors_ini_path: Optional[Path] = None
+    backup_path: Optional[Path] = None
+    #: Number of ROM sections that had at least one key added.
+    roms_updated: int = 0
+    #: Total new ``P{n}_KEY=COLOR`` lines written across all ROMs.
+    keys_added: int = 0
+    #: ROMs in Colors.ini that have no controls.ini entry (skipped).
+    roms_skipped_no_controls: int = 0
+    #: ROMs that already had all player keys present (nothing to add).
+    roms_skipped_complete: int = 0
+    #: Per-ROM breakdown: list of (rom_name, [added_key_strings])
+    details: "list[tuple[str, list[str]]]" = field(default_factory=list)
+
+
+def sync_player_colors(
+    config: "Config",
+    dry_run: bool = True,
+    backup: bool = True,
+    verbose: bool = False,
+) -> SyncPlayersResult:
+    """Mirror P1 colors to P2+ players based on what ``controls.ini`` declares.
+
+    ``ledblinky generate`` writes ``Colors.ini`` sections that only include P1
+    keys (``P1_BUTTON1``, ``P1_JOYSTICK``, ``P1_START``, ``P1_COIN``).  When
+    ``controls.ini`` lists buttons for a second (or third …) player, those
+    players have no color entries and LedBlinky lights their buttons using the
+    XML fallback color rather than the game-specific palette chosen in
+    ``Colors.ini``.
+
+    This function closes that gap:
+
+    * For every ROM that has both a ``Colors.ini`` section and a
+      ``controls.ini`` section, it inspects ``controls.ini`` to find all
+      ``P{n}_KEY`` entries where ``n >= 2``.
+    * Any such key that is **absent** from the ``Colors.ini`` section is added
+      with the same color as the matching ``P1_KEY`` (e.g. ``P2_BUTTON1`` gets
+      the same color as ``P1_BUTTON1``).
+    * If ``P1_KEY`` itself is absent from ``Colors.ini`` (nothing to mirror
+      from), that key is skipped — no defaults are invented.
+    * Keys already present in ``Colors.ini`` for that ROM are never overwritten.
+    * ROMs with no ``controls.ini`` entry are left untouched.
+
+    Run after ``ledblinky generate`` (and ``colors normalize`` if the output
+    was in legacy hex format) to ensure multi-player games light all player
+    buttons correctly.
+
+    Examples::
+
+        spindoctor ledblinky colors sync-players            # preview
+        spindoctor ledblinky colors sync-players --apply    # commit
+    """
+    result = SyncPlayersResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    base = Path(config.ledblinky_dir)
+    controls_ini_path = base / "controls.ini"
+    colors_ini_path = base / "colors.ini"
+    result.colors_ini_path = colors_ini_path
+
+    if not controls_ini_path.exists():
+        raise FileNotFoundError(
+            f"controls.ini not found at {controls_ini_path}. "
+            "Run: spindoctor ledblinky generate --apply"
+        )
+    if not colors_ini_path.exists():
+        raise FileNotFoundError(
+            f"colors.ini not found at {colors_ini_path}. "
+            "Run: spindoctor ledblinky generate --apply"
+        )
+
+    # Parse controls.ini: for each ROM, collect the set of P{n}_KEY names
+    # where n >= 2 (these are the keys we may need to add to Colors.ini).
+    controls_sections = parse_existing_controls_ini(controls_ini_path)
+    # Build: { rom_lower: { "P2_BUTTON1", "P2_JOYSTICK", ... } }
+    controls_multi: dict[str, set[str]] = {}
+    for rom, section in controls_sections.items():
+        multi_keys: set[str] = set()
+        for line in section.lines:
+            m = _CONTROLS_PLAYER_KEY_RE.match(line.strip())
+            if m and int(m.group(1)) >= 2:
+                multi_keys.add(f"P{m.group(1)}_{m.group(2).upper()}")
+        if multi_keys:
+            controls_multi[rom.lower()] = multi_keys
+
+    # Rewrite Colors.ini in-place, section by section.
+    colors_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    sections = _split_ini_by_sections(colors_text)
+    parts: list[str] = []
+
+    for section_name, header_line, body_lines in sections:
+        if section_name is None:
+            parts.extend(body_lines)
+            continue
+
+        assert header_line is not None
+        parts.append(header_line)
+
+        rom_lower = section_name.lower()
+        if rom_lower not in controls_multi:
+            # No multi-player controls.ini entry for this ROM — leave as-is.
+            parts.extend(body_lines)
+            result.roms_skipped_no_controls += 1
+            continue
+
+        needed_keys = controls_multi[rom_lower]  # e.g. {"P2_BUTTON1", "P2_JOYSTICK"}
+
+        # Parse existing Colors.ini body: build { "P1_BUTTON1": "Red", ... }
+        existing_colors: dict[str, str] = {}
+        for line in body_lines:
+            m = _PLAYER_KEY_RE.match(line.strip())
+            if m:
+                key = f"P{m.group(1)}_{m.group(2).upper()}"
+                existing_colors[key] = m.group(3)
+
+        # Build P1 lookup: strip player prefix → { "BUTTON1": "Red", ... }
+        p1_colors: dict[str, str] = {}
+        for key, color in existing_colors.items():
+            if key.upper().startswith("P1_"):
+                suffix = key[3:].upper()  # e.g. "BUTTON1"
+                p1_colors[suffix] = color
+
+        # Determine which keys to add.
+        to_add: list[str] = []
+        for full_key in sorted(needed_keys):
+            upper = full_key.upper()
+            if upper in {k.upper() for k in existing_colors}:
+                continue  # already present — skip
+            # e.g. "P2_BUTTON1" → suffix "BUTTON1"
+            suffix = upper[upper.index("_") + 1:]
+            color = p1_colors.get(suffix)
+            if color is None:
+                continue  # P1 key absent — nothing to mirror from
+            to_add.append(f"{full_key}={color}\n")
+
+        if not to_add:
+            parts.extend(body_lines)
+            result.roms_skipped_complete += 1
+            continue
+
+        # Insert additions before any trailing blank lines.
+        non_trailing = list(body_lines)
+        trailing: list[str] = []
+        while non_trailing and non_trailing[-1].strip() == "":
+            trailing.insert(0, non_trailing.pop())
+
+        parts.extend(non_trailing)
+        parts.extend(to_add)
+        parts.extend(trailing)
+
+        result.roms_updated += 1
+        result.keys_added += len(to_add)
+        result.details.append((section_name, [line.rstrip("\n") for line in to_add]))
+
+    if not dry_run and result.roms_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text("".join(parts), encoding="utf-8")
+
+    return result
