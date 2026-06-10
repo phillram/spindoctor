@@ -1010,6 +1010,10 @@ databases
 ## LEDBlinky
 
 ```bat
+spindoctor ledblinky setup                 :: dry-run: preview generate + sync-players for MAME in one step
+spindoctor ledblinky setup --apply         :: commit both steps
+spindoctor ledblinky setup --apply --verbose :: also show per-step detail
+spindoctor ledblinky setup --overwrite --apply :: regenerate all entries, including existing ones
 spindoctor ledblinky generate              :: dry-run preview
 spindoctor ledblinky generate --apply      :: commit controls.ini / colors.ini (native P1_BUTTON1= format)
 spindoctor ledblinky generate --apply --verbose  :: also print file paths + format used
@@ -1029,6 +1033,24 @@ spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
 spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
 ```
+
+### `ledblinky setup`
+
+One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
+
+```bat
+spindoctor ledblinky setup                 :: dry-run: preview both steps
+spindoctor ledblinky setup --apply         :: commit generate + sync-players
+spindoctor ledblinky setup --apply --verbose
+spindoctor ledblinky setup --overwrite --apply  :: replace existing entries (required after upgrading from <=2.4.21)
+```
+
+| Flag | Effect |
+|------|--------|
+| `--overwrite` | Passed through to `generate` — replaces entries that already exist in `controls.ini` / `colors.ini` |
+| `--apply` | Commit both steps; omit for a dry-run preview |
+| `--no-backup` | Skip the timestamped `.bak` backup written before each file is modified |
+| `--verbose` | Print per-step detail: file paths for generate, per-ROM key counts for sync-players |
 
 `generate` builds `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
 

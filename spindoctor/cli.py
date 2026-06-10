@@ -5821,6 +5821,135 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
             console.print(f"[dim][verbose] colors format: {fmt}[/dim]")
 
 
+@ledblinky_group.command("setup")
+@click.option("--overwrite", is_flag=True,
+              help="Overwrite existing entries (default: preserve community-maintained ones).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", is_flag=True,
+              help="Print per-ROM detail from each step.")
+def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
+    """Run the full MAME LED setup in one step: generate + sync-players.
+
+    Chains two operations in order:
+
+    \b
+      1. ledblinky generate --system MAME [--overwrite]
+      2. ledblinky colors sync-players
+
+    Equivalent to running those two commands in sequence with the same flags.
+    Existing Colors.ini entries are preserved unless --overwrite is passed.
+    Run after installing SpinDoctor, and again whenever new MAME ROMs are added.
+
+    \b
+    Examples:
+      spindoctor ledblinky setup                    :: preview
+      spindoctor ledblinky setup --apply            :: commit both steps
+      spindoctor ledblinky setup --apply --verbose
+      spindoctor ledblinky setup --overwrite --apply
+    """
+    from .audit import scan_roms
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    if not config.mame_executable:
+        err_console.print(
+            "[red]mame_executable is not configured.[/red]  "
+            "Run: spindoctor config set mame_executable /path/to/mame"
+        )
+        sys.exit(1)
+
+    # ── 1/2: Generate ─────────────────────────────────────────────────────────
+    console.rule("[bold blue]1/2  Generate (MAME)[/bold blue]")
+
+    roms = scan_roms("MAME", Path(config.roms_dir))
+    if not roms:
+        console.print(
+            f"[yellow]No ROMs found for MAME in "
+            f"[cyan]{Path(config.roms_dir) / 'MAME'}[/cyan].[/yellow]  "
+            "Drop ROM files there and re-run."
+        )
+        return
+
+    try:
+        gen_result = lb.generate_for_roms(
+            config,
+            rom_names=sorted(roms.keys()),
+            output_dir=None,
+            overwrite_existing=overwrite,
+            dry_run=not apply_changes,
+        )
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    for w in gen_result.warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
+    label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
+    console.print(f"{label} controls.ini → {gen_result.controls_path}")
+    console.print(f"{label} colors.ini   → {gen_result.colors_path}")
+    console.print(
+        f"  Synthesised: [cyan]{gen_result.controls_synthesised}[/cyan] controls, "
+        f"[cyan]{gen_result.colors_synthesised}[/cyan] colors  "
+        f"([dim]kept existing: {gen_result.controls_existing_kept} / "
+        f"{gen_result.colors_existing_kept}[/dim])"
+    )
+    if verbose:
+        console.print(f"[dim][verbose] controls → {gen_result.controls_path}[/dim]")
+        console.print(f"[dim][verbose] colors   → {gen_result.colors_path}[/dim]")
+
+    # ── 2/2: Sync player colors ────────────────────────────────────────────────
+    console.rule("[bold blue]2/2  Sync player colors[/bold blue]")
+
+    try:
+        sync_result = lb.sync_player_colors(
+            config,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    verb = "would update" if sync_result.dry_run else "updated"
+    keys_detail = f"[cyan]{sync_result.keys_added}[/cyan] added"
+    if sync_result.keys_overwritten:
+        keys_detail += f", [yellow]{sync_result.keys_overwritten}[/yellow] replaced"
+    console.print(
+        f"  ROMs {verb:16s}: [green]{sync_result.roms_updated}[/green]"
+        f"  ({keys_detail})"
+    )
+    console.print(
+        f"  ROMs skipped (already complete) : [dim]{sync_result.roms_skipped_complete}[/dim]"
+    )
+    console.print(
+        f"  ROMs skipped (no controls.ini)  : [dim]{sync_result.roms_skipped_no_controls}[/dim]"
+    )
+
+    if verbose and sync_result.details:
+        _SAMPLE = 50
+        shown = sync_result.details[:_SAMPLE]
+        console.print(
+            f"\n[dim][verbose] first {len(shown)} updated ROMs "
+            f"(of {sync_result.roms_updated}):[/dim]"
+        )
+        for rom_name, keys in shown:
+            console.print(f"[dim]  {rom_name:<30s}  added: {', '.join(keys)}[/dim]")
+        if len(sync_result.details) > _SAMPLE:
+            console.print(f"[dim]  … {len(sync_result.details) - _SAMPLE} more[/dim]")
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit both steps.[/yellow]"
+        )
+    elif sync_result.backup_path:
+        console.print(f"\n[dim]Backup: {sync_result.backup_path}[/dim]")
+
+
 @ledblinky_group.command("inspect-rom")
 @click.argument("rom_name")
 def ledblinky_inspect_rom(rom_name):

@@ -433,28 +433,38 @@ Reference: [Command reference → theme-pack-create](commands.md#theme-pack-crea
 ## LEDBlinky
 
 ```bat
-:: ── Step 1: Generate MAME control + color data ───────────────────────────────
+:: ── Quick start: Full MAME setup in one step ─────────────────────────────────
+:: Chains generate + sync-players. Run once after initial setup, then again
+:: whenever you add new MAME ROMs.
+spindoctor ledblinky setup                                                :: dry-run preview
+spindoctor ledblinky setup --apply                                        :: commit generate + sync-players
+spindoctor ledblinky setup --apply --verbose                              :: also show per-step detail
+spindoctor ledblinky setup --overwrite --apply                            :: replace all existing entries too
+
+:: ── Step 3a: Generate MAME control + color data (individual step) ─────────────
 :: Since 2.4.22: controls.ini uses LedBlinky runtime keys (P1_BUTTON1=1).
 :: Since 2.4.21: colors.ini uses native named format (P1_BUTTON1=Red).
 spindoctor ledblinky generate                                             :: dry-run preview
 spindoctor ledblinky generate --apply                                     :: commit
 spindoctor ledblinky generate --overwrite --apply                         :: replace existing entries (required after upgrading from <=2.4.21)
 
-:: 1b: Only needed if you have an older Colors.ini in legacy ledcolor= format.
-::     Converts ledcolor1=FF0000 → P1_BUTTON1=Red so LedBlinky can read it.
+:: ── Step 3b: Normalize (individual step) ────────────────────────────────────
+:: Only needed if you have an older Colors.ini in legacy ledcolor= format.
+:: Converts ledcolor1=FF0000 → P1_BUTTON1=Red so LedBlinky can read it.
 spindoctor ledblinky colors normalize                                     :: preview
 spindoctor ledblinky colors normalize --apply                             :: commit
 spindoctor ledblinky colors normalize --apply --verbose                   :: also show per-section key mapping
 
-:: 1c: Mirror P1 colors to ALL additional players (P2, P3, P4, …) based on controls.ini.
-::     generate only writes P1 keys; sync-players adds P2_BUTTON1=Red, P3_BUTTON1=Red, etc.
-::     Only adds keys listed in controls.ini — never overwrites existing keys without --override.
+:: ── Step 3c: Sync player colors (individual step) ────────────────────────────
+:: Mirror P1 colors to ALL additional players (P2, P3, P4, …) based on controls.ini.
+:: generate only writes P1 keys; sync-players adds P2_BUTTON1=Red, P3_BUTTON1=Red, etc.
+:: Only adds keys listed in controls.ini — never overwrites existing keys without --override.
 spindoctor ledblinky colors sync-players                                  :: preview
 spindoctor ledblinky colors sync-players --apply                          :: commit
 spindoctor ledblinky colors sync-players --apply --verbose                :: show each key added per ROM
 spindoctor ledblinky colors sync-players --apply --override               :: also replace existing P2+ entries
 
-:: ── Step 2: Fill gaps for non-MAME ROMs ─────────────────────────────────────
+:: ── Step 4: Fill gaps for non-MAME ROMs ─────────────────────────────────────
 spindoctor ledblinky fill-defaults --apply                                                  :: all systems incl. Favorites
 spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply                         :: 2-player, 8 buttons each
 spindoctor ledblinky fill-defaults --players 2 --admin-buttons 6 --admin-color Green --apply :: + 6 admin buttons in Green
@@ -464,21 +474,21 @@ spindoctor ledblinky fill-defaults --color White --override-uniform --apply     
 spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-keys --apply   :: override values only, don't add new keys
 spindoctor ledblinky fill-defaults --apply --verbose                                        :: list each ROM added/overridden/skipped
 
-:: ── Step 3: Randomize — unique color per game ────────────────────────────────
+:: ── Step 5: Randomize — unique color per game ────────────────────────────────
 :: Only existing P*_BUTTON*/JOYSTICK/COIN/START keys are updated — dark buttons stay dark.
-:: Requires normalized format (Step 1b). If many sections are skipped, run normalize first.
+:: Requires normalized format (Step 3b). If many sections are skipped, run normalize first.
 spindoctor ledblinky colors randomize                                     :: preview (dry-run)
 spindoctor ledblinky colors randomize --apply                             :: commit fresh shuffle
 spindoctor ledblinky colors randomize --seed 42 --apply                   :: reproducible run
 spindoctor ledblinky colors randomize --apply --verbose                   :: show per-game colors assigned
 
-:: ── Step 4: Admin/cabinet button overrides ───────────────────────────────────
+:: ── Step 6: Admin/cabinet button overrides ───────────────────────────────────
 spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yellow" --apply   :: per-button
 spindoctor ledblinky admin-buttons set --color Green --count 6 --apply                         :: uniform
 spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" :: preview
 :: (default player=3 for 2-player cabinet; use --player 2 for 1-player cabinet)
 
-:: ── Step 5: Brightness ────────────────────────────────────────────────────────
+:: ── Step 7: Brightness ────────────────────────────────────────────────────────
 :: 100% = every color at maximum brightness; dim colors are boosted up
 :: 50% = half brightness; 10% = night mode; 0% = all off
 spindoctor ledblinky colors brightness --scale 100 --apply               :: maximum brightness
@@ -486,14 +496,14 @@ spindoctor ledblinky colors brightness --scale 50  --apply               :: half
 spindoctor ledblinky colors brightness --scale 10  --apply               :: night mode
 spindoctor ledblinky colors brightness --scale 75  --verbose             :: preview 75% with per-color before/after
 
-:: ── Step 6: Settings.ini — animation behavior ────────────────────────────────
+:: ── Step 2: Settings.ini — animation behavior (one-time setup) ───────────────
 spindoctor ledblinky patch-settings --apply                                  :: silence in-game unused-button flash (dark/off)
 spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply      :: play animation on unused buttons instead
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply        :: swap idle animation too
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                      :: static colors while browsing
 spindoctor ledblinky patch-settings --apply --verbose                        :: show each key changed with old→new value
 
-:: ── Overlay Hook Fix (one-time setup) ───────────────────────────────────────
+:: ── Step 1: Overlay Hook Fix (one-time setup) ────────────────────────────────
 :: Fixes HyperSpin Search/Genre/Favorites overlay hang caused by LEDBlinky hooks.
 :: Always writes in-place to ledblinky_dir / hyperspin_dir.
 spindoctor ledblinky check                                                :: scan only (read-only)
