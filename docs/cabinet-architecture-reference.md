@@ -405,10 +405,30 @@ which controls active-browsing music at the top-level system wheel.
 | File | Purpose |
 |------|---------|
 | `C:\LEDBlinky\Settings.ini` | Main application settings — animation modes, emulator config paths, speech, audio |
-| `C:\LEDBlinky\Controls.ini` | Per-ROM button assignments (what buttons a game uses) |
+| `C:\LEDBlinky\controls.ini` | Per-ROM button assignments (what buttons a game uses) |
 | `C:\LEDBlinky\Colors.ini` | Per-ROM LED colors for each assigned button |
 | `C:\LEDBlinky\LEDBlinkyControls.xml` | Per-emulator / per-ROM XML control map used by LedBlinky at runtime |
+| `C:\LEDBlinky\Color-RGB.ini` | Master named color dictionary (R,G,B intensity 0-48) |
 | `C:\LEDBlinky\*.lwa` | Animation files — played for idle / attract / in-game states |
+
+### Filename casing — critical on Linux, invisible on Windows
+
+LedBlinky is a Windows application and its filenames use mixed case. Windows filesystems are case-insensitive so `Colors.ini` and `colors.ini` resolve to the same file. Linux filesystems (including CI runners) are case-sensitive — a single wrong character silently breaks every path lookup with no error message other than "file not found."
+
+**Authoritative filename spelling:**
+
+| Constant in `ledblinky.py` | Exact filename | Notes |
+|----------------------------|----------------|-------|
+| `COLORS_INI_NAME` | `Colors.ini` | capital **C** |
+| `CONTROLS_INI_NAME` | `controls.ini` | all lowercase |
+| `CONTROLS_XML_NAME` | `LEDBlinkyControls.xml` | all-caps **LED** |
+| `COLOR_RGB_NAME` | `Color-RGB.ini` | mixed case, hyphen |
+| _(inline)_ | `Settings.ini` | capital **S** |
+| _(inline)_ | `LEDBlinkyLog.txt` | all-caps **LED** |
+
+**Rule for contributors:** never write a LedBlinky filename as a bare string literal anywhere in `spindoctor/ledblinky.py`. Use the named constants above. The test `test_filename_constants_exact_casing` and `test_no_bare_colors_ini_string_in_module` in `tests/test_ledblinky.py` will fail in CI if a constant is changed or a bare string literal is introduced.
+
+> **History:** `Colors.ini` was accidentally written as `colors.ini` (lowercase) in four separate path constructions across `generate_for_roms`, `sync_player_colors`, and two helper functions. This was undetectable on any developer's Windows machine and only surfaced when CI ran on Linux (PR #248). The named-constant pattern was already used for `CONTROLS_XML_NAME` and `COLOR_RGB_NAME` but had not been applied to the two most-commonly referenced files. Fixed in the same PR by adding `COLORS_INI_NAME` and `CONTROLS_INI_NAME` and replacing all inline strings.
 
 ### `Color-RGB.ini` — master color dictionary
 
@@ -559,7 +579,36 @@ LedBlinky resolves the control profile for a launched ROM in this order:
 
 `controls.ini` entries (when present and correctly formatted) define **which control names** appear in the control list. The XML then provides input codes and `alwaysActive` settings for those names.  If `controls.ini` has an entry for a ROM, it overrides the XML's control list — so a broken `controls.ini` entry will suppress the ROM-specific XML entry entirely.
 
-### `controls.ini` and `colors.ini` — generation
+### `controls.ini` and `Colors.ini` — generation
+
+`spindoctor ledblinky generate` reads MAME's `listxml` output and writes two files:
+
+**`controls.ini`** — lists which controls each ROM uses. Each ROM section contains keys like `P1_BUTTON1=1`, `P1_JOYSTICK=1`, `P2_BUTTON1=1`, `P2_JOYSTICK=1`, etc. Multi-player ROMs get entries for every player that appears in MAME's input list. SpinDoctor pre-2.4.22 incorrectly wrote metadata keys (`P1_NUMBUTTONS`, `P1_CONTROLS`) instead of per-control keys; regenerate with `--overwrite --apply` if your controls.ini has that format.
+
+**`Colors.ini`** — maps each control key to a color name from `Color-RGB.ini`. **`generate` only writes Player 1 keys** (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). Player 2 and higher keys are left out of `Colors.ini` even when `controls.ini` correctly lists them. This means P2+ buttons illuminate with LedBlinky's XML fallback color (usually white) rather than the intended game color.
+
+**`colors sync-players`** fills the P2+ gap as a post-generation step. It cross-references `controls.ini` (which has correct multi-player keys) against `Colors.ini` and, for every ROM where additional-player keys appear in `controls.ini` but are absent from `Colors.ini`, it inserts the missing keys mirroring the matching P1 color. Works for **any number of players** — P2, P3, P4, and beyond:
+
+```
+controls.ini: [4player]  P2_BUTTON1=1  P3_BUTTON1=1  P4_BUTTON1=1
+Colors.ini:   [4player]  P1_BUTTON1=Red
+              →  adds P2_BUTTON1=Red  P3_BUTTON1=Red  P4_BUTTON1=Red
+```
+
+Rules enforced by `sync-players`:
+- Only adds keys explicitly listed in `controls.ini` — never invents controls.
+- Never overwrites an existing `P{n≥2}` color entry unless `--override` is passed.
+- With `--override`, existing P2+ entries are replaced with the current P1-mirrored color. P1 keys are never modified.
+- Skips a key if the matching P1 color is absent in `Colors.ini` (no fallback invented).
+- Single-player ROMs (no P2+ keys in `controls.ini`) are silently skipped.
+
+```bat
+spindoctor ledblinky generate --apply                                  :: write controls.ini + Colors.ini (P1 only)
+spindoctor ledblinky colors sync-players                               :: preview additions
+spindoctor ledblinky colors sync-players --apply                       :: write P2/P3/P4+ color entries
+spindoctor ledblinky colors sync-players --apply --verbose             :: show every key added per ROM
+spindoctor ledblinky colors sync-players --apply --override            :: replace existing P2+ entries too
+```
 
 ### `Settings.ini` — idle animation and in-game behavior
 
@@ -606,6 +655,8 @@ When player buttons do not light up (even when pressed) while Coin/Start buttons
 
 4. **Input code mismatch** — Physical buttons send `JOYCODE_1_BUTTON1` but the XML only maps `KEYCODE_A`. LedBlinky never detects the press. Setting `alwaysActive="1"` bypasses input detection entirely and is the preferred approach for always-on arcade buttons.
 
+5. **P2/P3/P4+ buttons light wrong color (white/fallback) while P1 is correct** — `Colors.ini` is missing additional-player entries. `ledblinky generate` only writes P1 keys; multi-player games need a second step. Run `spindoctor ledblinky colors sync-players --apply` to mirror P1 colors to all additional-player keys listed in `controls.ini` (supports any number of players). If P2+ entries already exist but show wrong colors, add `--override` to replace them.
+
 ### Diagnosing colors not applying at runtime
 
 When game colors show as white despite correct `Colors.ini` entries, the most common causes are:
@@ -614,6 +665,7 @@ When game colors show as white despite correct `Colors.ini` entries, the most co
 2. **Legacy hex format** — `Colors.ini` entries use `ledcolor1=FF0000` format that LedBlinky cannot read. Run `colors normalize --apply`.
 3. **No `LEDBlinkyControls.xml` per-game entry** — LedBlinky uses its DEFAULT control group and may ignore `Colors.ini` overrides for that game.
 4. **`Use Color File` disabled** — LedBlinky Settings UI has a toggle; if off, `Colors.ini` is never consulted.
+5. **P2/P3/P4+ buttons show wrong color** — `Colors.ini` has P1 entries but is missing additional-player entries, or existing P2+ entries have stale colors. Run `spindoctor ledblinky colors sync-players --apply` to add missing entries; add `--override` to also replace existing ones. See *`controls.ini` and `Colors.ini` — generation* above.
 
 ```bat
 spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, listxml for ROM "005"

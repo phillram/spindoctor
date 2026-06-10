@@ -5,12 +5,17 @@ import textwrap
 
 from spindoctor import ledblinky
 from spindoctor.ledblinky import (
+    COLOR_RGB_NAME,
+    COLORS_INI_NAME,
+    CONTROLS_INI_NAME,
+    CONTROLS_XML_NAME,
     ColorEntry,
     _normalize_scale_entry,
     _patch_admin_buttons_in_text,
     emit_ini,
     parse_ini_sections,
     parse_listxml,
+    sync_player_colors,
     synth_colors_section,
     synth_controls_section,
 )
@@ -989,3 +994,267 @@ def test_randomize_entry_colors_never_assigns_black(tmp_path):
     text = colors_ini.read_text(encoding="utf-8")
     assert "=Off" not in text
     assert "=Red" in text  # Red must have been chosen for all games
+
+
+# ── sync_player_colors ────────────────────────────────────────────────────────
+
+def _write_sync_fixtures(tmp_path, controls_text: str, colors_text: str):
+    """Write controls.ini and colors.ini to tmp_path and return a minimal config."""
+    import types
+    (tmp_path / "controls.ini").write_text(controls_text, encoding="utf-8")
+    (tmp_path / "Colors.ini").write_text(colors_text, encoding="utf-8")
+    return types.SimpleNamespace(
+        ledblinky_dir=str(tmp_path),
+        backup_dir="",
+        backup_before_modify=False,
+    )
+
+
+def test_sync_players_adds_missing_p2_keys(tmp_path):
+    """P2 keys present in controls.ini but absent from Colors.ini are added."""
+    controls = (
+        "[005]\n"
+        "numPlayers=2\n"
+        "alternating=0\n"
+        "P1_BUTTON1=1\nP1_JOYSTICK=1\nP1_START=1\nP1_COIN=1\n"
+        "P2_BUTTON1=1\nP2_JOYSTICK=1\nP2_START=1\nP2_COIN=1\n"
+    )
+    colors = (
+        "[005]\n"
+        "P1_BUTTON1=Red\nP1_JOYSTICK=White\nP1_START=White\nP1_COIN=Orange\n"
+    )
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 1
+    assert result.keys_added == 4  # P2_BUTTON1, P2_JOYSTICK, P2_START, P2_COIN
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Red" in text
+    assert "P2_JOYSTICK=White" in text
+    assert "P2_START=White" in text
+    assert "P2_COIN=Orange" in text
+    # P1 keys must still be present and unchanged
+    assert "P1_BUTTON1=Red" in text
+
+
+def test_sync_players_mirrors_p1_color_per_key(tmp_path):
+    """Each P2 key gets the same color as the matching P1 key, not a uniform color."""
+    controls = (
+        "[mygame]\n"
+        "P1_BUTTON1=1\nP1_BUTTON2=1\nP2_BUTTON1=1\nP2_BUTTON2=1\n"
+    )
+    colors = (
+        "[mygame]\n"
+        "P1_BUTTON1=Red\nP1_BUTTON2=Blue\n"
+    )
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    sync_player_colors(cfg, dry_run=False, backup=False)
+
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Red" in text
+    assert "P2_BUTTON2=Blue" in text
+
+
+def test_sync_players_does_not_overwrite_existing_p2_keys(tmp_path):
+    """Keys already present in Colors.ini for P2 are left untouched."""
+    controls = (
+        "[mygame]\n"
+        "P1_BUTTON1=1\nP2_BUTTON1=1\n"
+    )
+    colors = (
+        "[mygame]\n"
+        "P1_BUTTON1=Red\nP2_BUTTON1=Green\n"
+    )
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 0
+    assert result.keys_added == 0
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Green" in text  # original value preserved
+
+
+def test_sync_players_skips_key_when_p1_color_absent(tmp_path):
+    """If P1_KEY is not in Colors.ini, no Pn_KEY is added (nothing to mirror)."""
+    controls = (
+        "[mygame]\n"
+        "P1_JOYSTICK=1\nP2_JOYSTICK=1\n"
+    )
+    # Colors.ini only has a button entry — no P1_JOYSTICK to mirror from
+    colors = (
+        "[mygame]\n"
+        "P1_BUTTON1=Red\n"
+    )
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 0
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_JOYSTICK" not in text
+
+
+def test_sync_players_skips_roms_without_controls_ini_entry(tmp_path):
+    """ROMs that have no controls.ini entry are counted as skipped."""
+    controls = "[othergame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Red\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 0
+    assert result.roms_skipped_no_controls == 1
+
+
+def test_sync_players_dry_run_does_not_write(tmp_path):
+    """Dry-run must not modify Colors.ini."""
+    controls = "[005]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[005]\nP1_BUTTON1=Red\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    original = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+
+    result = sync_player_colors(cfg, dry_run=True, backup=False)
+
+    assert result.dry_run is True
+    assert result.roms_updated == 1  # would update
+    assert (tmp_path / "Colors.ini").read_text(encoding="utf-8") == original
+
+
+def test_sync_players_multiple_roms(tmp_path):
+    """All ROMs with missing player keys are updated in one pass."""
+    controls = (
+        "[005]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+        "[1942]\nP1_BUTTON1=1\nP1_BUTTON2=1\nP2_BUTTON1=1\nP2_BUTTON2=1\n"
+        "[pacman]\nP1_JOYSTICK=1\n"  # single-player — no P2 keys
+    )
+    colors = (
+        "[005]\nP1_BUTTON1=Red\n"
+        "[1942]\nP1_BUTTON1=Blue\nP1_BUTTON2=Yellow\n"
+        "[pacman]\nP1_JOYSTICK=White\n"
+    )
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 2
+    assert result.keys_added == 3  # 1 for 005, 2 for 1942
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Red" in text    # 005
+    assert "P2_BUTTON1=Blue" in text   # 1942
+    assert "P2_BUTTON2=Yellow" in text  # 1942
+    # pacman: single-player — no P2 keys in controls.ini so counted as no-controls-entry
+    assert result.roms_skipped_no_controls >= 1
+
+
+def test_sync_players_case_insensitive_rom_matching(tmp_path):
+    """ROM name matching between controls.ini and Colors.ini is case-insensitive."""
+    controls = "[MyCabinetGame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mycabinetgame]\nP1_BUTTON1=Purple\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 1
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Purple" in text
+
+
+def test_sync_players_p3_p4_support(tmp_path):
+    """P3 and P4 keys in controls.ini are mirrored just like P2 keys."""
+    controls = (
+        "[4player]\n"
+        "numPlayers=4\n"
+        "P1_BUTTON1=1\nP1_JOYSTICK=1\n"
+        "P2_BUTTON1=1\nP2_JOYSTICK=1\n"
+        "P3_BUTTON1=1\nP3_JOYSTICK=1\n"
+        "P4_BUTTON1=1\nP4_JOYSTICK=1\n"
+    )
+    colors = "[4player]\nP1_BUTTON1=Red\nP1_JOYSTICK=White\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False)
+
+    assert result.roms_updated == 1
+    assert result.keys_added == 6  # P2/P3/P4 × BUTTON1+JOYSTICK
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    for player in ("P2", "P3", "P4"):
+        assert f"{player}_BUTTON1=Red" in text
+        assert f"{player}_JOYSTICK=White" in text
+    # P1 keys untouched
+    assert "P1_BUTTON1=Red" in text
+
+
+def test_sync_players_override_replaces_existing_keys(tmp_path):
+    """With override=True, existing P2+ entries are replaced with P1-mirrored color."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Red\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False, override=True)
+
+    assert result.roms_updated == 1
+    assert result.keys_added == 0
+    assert result.keys_overwritten == 1
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Red" in text   # replaced with P1 color
+    assert "P2_BUTTON1=Green" not in text
+
+
+def test_sync_players_override_does_not_affect_p1(tmp_path):
+    """override=True never modifies P1 entries — only P2+ are touched."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Blue\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    sync_player_colors(cfg, dry_run=False, backup=False, override=True)
+
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P1_BUTTON1=Blue" in text  # P1 unchanged
+
+
+def test_sync_players_override_false_preserves_existing(tmp_path):
+    """Without --override, existing P2+ keys are never replaced (default behaviour)."""
+    controls = "[mygame]\nP1_BUTTON1=1\nP2_BUTTON1=1\n"
+    colors = "[mygame]\nP1_BUTTON1=Red\nP2_BUTTON1=Green\n"
+    cfg = _write_sync_fixtures(tmp_path, controls, colors)
+
+    result = sync_player_colors(cfg, dry_run=False, backup=False, override=False)
+
+    assert result.roms_updated == 0
+    assert result.keys_overwritten == 0
+    text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
+    assert "P2_BUTTON1=Green" in text  # original value preserved
+
+
+# ─── filename constant casing regression tests ────────────────────────────────
+# LedBlinky is a Windows application whose filenames have specific mixed-case
+# spellings.  Linux CI uses a case-sensitive filesystem, so even one wrong
+# character silently breaks every path lookup (e.g. "colors.ini" vs
+# "Colors.ini" are different files on Linux).  These tests lock the exact
+# casing of every filename constant so a future typo fails immediately in CI
+# rather than only on the user's Windows cabinet.
+
+def test_filename_constants_exact_casing():
+    """Filename constants must match LedBlinky's own mixed-case spelling exactly."""
+    assert COLORS_INI_NAME   == "Colors.ini",           "Must be capital-C 'Colors.ini'"
+    assert CONTROLS_INI_NAME == "controls.ini",          "Must be all-lowercase 'controls.ini'"
+    assert CONTROLS_XML_NAME == "LEDBlinkyControls.xml", "Must be 'LEDBlinkyControls.xml'"
+    assert COLOR_RGB_NAME    == "Color-RGB.ini",         "Must be 'Color-RGB.ini'"
+
+
+def test_no_bare_colors_ini_string_in_module():
+    """The module source must not contain the bare string literal 'colors.ini'
+    (lowercase) — all path constructions must go through COLORS_INI_NAME.
+    The constant definition itself and comments are exempted.
+    """
+    import inspect
+    src = inspect.getsource(ledblinky)
+    # Strip comment lines and the constant definition line so we only catch
+    # accidental bare-string path usages.
+    offending = [
+        line for line in src.splitlines()
+        if '"colors.ini"' in line.lower() and '"colors.ini"' in line
+        and not line.strip().startswith("#")
+        and "COLORS_INI_NAME" not in line
+    ]
+    assert offending == [], (
+        "Found bare 'colors.ini' string literal(s) in ledblinky.py — "
+        "use COLORS_INI_NAME instead:\n" + "\n".join(offending)
+    )
