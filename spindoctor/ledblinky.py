@@ -455,7 +455,7 @@ def generate_for_roms(
 
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
     src_controls = (src_base / "controls.ini") if src_base else None
-    src_colors = (src_base / "colors.ini") if src_base else None
+    src_colors = (src_base / "Colors.ini") if src_base else None
 
     existing_controls = (
         parse_existing_controls_ini(src_controls, warnings=result.warnings) if src_controls else {}
@@ -517,7 +517,7 @@ def generate_for_roms(
             result.colors_synthesised += 1
 
     controls_path = base / "controls.ini"
-    colors_path = base / "colors.ini"
+    colors_path = base / "Colors.ini"
 
     if dry_run:
         result.controls_path = controls_path
@@ -737,7 +737,7 @@ def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow
         if src_base else {}
     )
     existing_colors = (
-        parse_existing_colors_ini(src_base / "colors.ini")
+        parse_existing_colors_ini(src_base / "Colors.ini")
         if src_base else {}
     )
     listxml = load_listxml_for_system(config, "MAME")
@@ -2841,7 +2841,7 @@ def sync_player_colors(
 
     base = Path(config.ledblinky_dir)
     controls_ini_path = base / "controls.ini"
-    colors_ini_path = base / "colors.ini"
+    colors_ini_path = base / "Colors.ini"
     result.colors_ini_path = colors_ini_path
 
     if not controls_ini_path.exists():
