@@ -91,7 +91,7 @@ Three integration patterns, in roughly increasing order of "how invisible to the
 
 A periodic sweep that touches everything: integrity, curation, playtime, and a fresh visual snapshot.
 
-> **GUI alternative:** the **Diagnose** tab in `spindoctor-gui` surfaces every read-only check in this section as a one-click button — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `preview`, `stats`, plus a Global Search box and a Verify-against-DAT mini-form. Snapshot first via the **Backup & Restore** tab.
+> **GUI alternative:** the **Diagnostics** tab in `spindoctor-gui` surfaces every read-only check in this section as a one-click button — `find-dupes`, `find-misplaced`, `find-orphan-media`, `check-discs`, `lint`, `report`, `preview`, `stats`, plus a Global Search box and a Verify-against-DAT mini-form. Snapshot first via the **Backup & Restore** tab.
 
 ```bat
 :: 1. Snapshot first so anything below is reversible.
@@ -192,7 +192,7 @@ Easiest case. Drive plugs in at the same letters on the new PC.
 
 1. Install SpinDoctor on the new PC — either `pip install -e .[all]` from a checkout, or extract the [Windows binaries zip](windows-binaries.md) if you'd rather skip Python entirely.
 2. Run the configuration wizard: `spindoctor-gui` → Setup tab → Save (or `spindoctor config init` from `cmd.exe`). Point at the existing folders on the moved drive.
-3. `spindoctor doctor` (or the Audit & Doctor tab in the GUI) to verify.
+3. `spindoctor doctor` (or the **Diagnostics** tab in the GUI) to verify.
 
 No data move needed.
 
@@ -365,7 +365,7 @@ Files move back, config snapshot restores. For `--keep-source` migrations, undo 
 
 ## ROM integrity sweep
 
-> **GUI alternative:** the **Diagnose** tab has a Verify-against-DAT mini-form (System + DAT-path picker + Verify button) and a Global Search box for finding a title across every database without typing the command.
+> **GUI alternative:** the **Diagnostics** tab has a Verify-against-DAT mini-form (System + DAT-path picker + Verify button) and a Global Search box for finding a title across every database without typing the command.
 
 ```bat
 spindoctor verify --system NES --dat "C:\Dats\Nintendo - NES - No-Intro.dat"
@@ -378,7 +378,7 @@ Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good
 
 ## Adding a Favorite
 
-> **GUI alternative:** the **Wheels** tab has Refresh / Add-to-Main-Menu / Install-Tools-helpers buttons. The `fav add / remove / list` lifecycle still goes through the CLI (or the Custom Command tab's preset dropdown) since the favourites are pulled from RocketLauncher's tracking, not entered by hand from the GUI.
+> **GUI alternative:** the **Tools** tab (Steps 1–3) covers the full favorites lifecycle: **Step 1** refreshes the Favorites wheel, **Step 2** registers it in the Main Menu, **Step 3** (Manage favorites) has inline Add / Remove / List buttons. Install-Tools helpers and auto-refresh scheduling are in the same tab. CLI remains the fastest path for scripted or batch adds.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"

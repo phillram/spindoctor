@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI — Migrate — target root + components + options merged into Step 3** — previously three separate LabelFrames (Target root bare row, Components, Options). Now a single "Step 3 — Migration settings" LabelFrame containing all three, numbered Step 3 to place it after the "Step 2 — Backup before migrating" safety step.
 - **GUI — Tools — "Install wheel helpers" renamed to "Install .bat helpers (optional)"** — clearer label indicating the section is optional and installs .bat files specifically.
 - **`docs/gui.md` — tab tour rewritten to match new tab order and step numbering** — all 12 tab sections appear in the new order; per-tab descriptions updated to reference numbered steps; "Custom Command" moved before "Logs"; tab tour intro paragraph updated.
+- **`docs/workflows.md` — stale tab names corrected** — "Diagnose tab" → "Diagnostics tab" (three occurrences); "Wheels tab" → "Tools tab" with updated description reflecting that `fav add / remove / list` is now accessible directly from the Tools tab (Step 3).
+- **`docs/standalone-tools.md` — "Wheels tab" reference corrected to "Tools tab"** — also updated to mention "Step 1 — Refresh custom wheels" for clarity.
+- **`docs/troubleshooting.md` — "Main Menu tab" heading corrected to "Systems tab"** — the Main Menu treeview lives inside the Systems tab.
 
 ### Fixed
 
