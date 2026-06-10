@@ -1065,6 +1065,7 @@ When `output_dir` is configured, the full report is also saved to `<output_dir>/
 | Symptom | Likely cause | Fix |
 |---------|-------------|-----|
 | Player buttons never light, not even on press; Coin/Start work | `controls.ini` has old SpinDoctor format (`P1_NUMBUTTONS`) — LedBlinky treats those as control names, suppressing real button names | Run `ledblinky generate --overwrite --apply` |
+| P1 buttons correct color, P2+ buttons wrong color (XML fallback) | `Colors.ini` has P1 entries but is missing P2+ entries — `generate` only writes P1 keys | Run `ledblinky colors sync-players --apply` |
 | All buttons white, coin dark | LedBlinky using DEFAULT XML control group | Check XML for per-ROM entry under correct emulator section; verify RL sends correct ROM name |
 | Colors.ini has entry but ignored | `ledcolor=` hex format (not readable by LedBlinky) | Run `colors normalize --apply` |
 | Wrong colors applied | ROM name mismatch (RL sends display name, not filename) | Check `LEDBlinkyLog.txt` for received name |
@@ -1108,7 +1109,7 @@ A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `
 
 `Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
 
-`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section.
+`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section. `colors sync-players` adds missing P2+/P3+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`.
 
 ```bat
 spindoctor ledblinky colors list                                                 :: show all definitions
@@ -1296,6 +1297,48 @@ spindoctor ledblinky colors randomize --seed 42 --apply
 | `--verbose` | off | Print the Colors.ini path, palette size, and sections updated |
 
 A timestamped `.bak` backup of `Colors.ini` is written (to the configured backup folder, or next to the source file) before any change, unless `--no-backup` is passed.
+
+#### `ledblinky colors sync-players`
+
+Mirror P1 colors to P2+ players based on what `controls.ini` declares.
+
+`ledblinky generate` writes `Colors.ini` sections with P1 keys only (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). For multi-player games, the P2+ buttons have no entry and fall back to the XML default color instead of the game-specific palette. `sync-players` closes that gap.
+
+**Rules:**
+
+- For every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it checks `controls.ini` for P{n≥2} keys.
+- Any missing `P{n}_KEY` in `Colors.ini` is added by mirroring the matching P1 color (e.g. `P2_BUTTON1` gets the same color as `P1_BUTTON1`).
+- **Only adds keys listed in `controls.ini`** — no buttons are invented.
+- **Never overwrites existing keys** — only absent keys are filled.
+- If `P1_KEY` itself is absent from `Colors.ini`, that key is skipped (nothing to mirror from).
+- ROMs with no `controls.ini` entry are left untouched.
+
+```bat
+:: Preview which ROMs would gain new player keys (dry-run)
+spindoctor ledblinky colors sync-players
+
+:: Commit
+spindoctor ledblinky colors sync-players --apply
+
+:: Commit and print each key added per ROM
+spindoctor ledblinky colors sync-players --apply --verbose
+```
+
+**Options:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--apply` | dry-run | Commit writes |
+| `--no-backup` | off | Skip the `.bak` backup before writing |
+| `--verbose` | off | Print each key added per ROM |
+
+**Typical workflow** (run in order after a fresh generate):
+
+```bat
+spindoctor ledblinky generate --apply
+spindoctor ledblinky colors normalize --apply
+spindoctor ledblinky colors sync-players --apply
+```
 
 #### `ledblinky admin-buttons set`
 

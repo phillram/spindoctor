@@ -6515,9 +6515,10 @@ def ledblinky_colors_group():
 
     \b
     Subcommands:
-      list       Show all color definitions
-      edit       Rename / recolor a color and propagate the change
-      normalize  Convert hex-format Colors.ini entries to named P1_BUTTON format
+      list          Show all color definitions
+      edit          Rename / recolor a color and propagate the change
+      normalize     Convert hex-format Colors.ini entries to named P1_BUTTON format
+      sync-players  Mirror P1 colors to P2+ based on controls.ini button layout
     """
 
 
@@ -6966,6 +6967,84 @@ def ledblinky_colors_randomize(seed, apply_changes, no_backup, verbose):
                 console.print(
                     f"[dim]  … {len(result.updated_details) - _VERBOSE_SAMPLE} more[/dim]"
                 )
+
+
+@ledblinky_colors_group.command("sync-players")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", is_flag=True,
+              help="Print every key added per ROM.")
+def ledblinky_colors_sync_players(apply_changes, no_backup, verbose):
+    """Mirror P1 colors to P2+ players based on controls.ini.
+
+    ``ledblinky generate`` writes Colors.ini sections with P1 keys only.
+    When a game has two (or more) players, the P2+ buttons have no color
+    entry and fall back to the XML default color instead of the per-game
+    palette you configured.
+
+    This command closes that gap: for every ROM that has both a Colors.ini
+    section and a controls.ini entry, it adds any missing P{n}_KEY entries
+    (where n >= 2) by mirroring the matching P1 color.
+
+    \b
+    Rules:
+      - Only adds keys that are listed in controls.ini (no invented buttons).
+      - Only mirrors from P1 — if P1_KEY is absent, that key is skipped.
+      - Never overwrites existing Colors.ini keys.
+      - ROMs with no controls.ini entry are left unchanged.
+
+    \b
+    Examples:
+      spindoctor ledblinky colors sync-players            :: preview
+      spindoctor ledblinky colors sync-players --apply    :: commit
+      spindoctor ledblinky colors sync-players --apply --verbose
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    try:
+        result = lb.sync_player_colors(
+            config,
+            dry_run=not apply_changes,
+            backup=not no_backup,
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    console.print(
+        f"\n[blue bold]Colors.ini[/blue bold]  {result.colors_ini_path}"
+    )
+    verb = "would update" if result.dry_run else "updated"
+    console.print(f"  ROMs {verb:16s}: [green]{result.roms_updated}[/green]"
+                  f"  ([cyan]{result.keys_added}[/cyan] keys added)")
+    console.print(
+        f"  ROMs skipped (already complete) : [dim]{result.roms_skipped_complete}[/dim]"
+    )
+    console.print(
+        f"  ROMs skipped (no controls.ini)  : [dim]{result.roms_skipped_no_controls}[/dim]"
+    )
+
+    if verbose and result.details:
+        _SAMPLE = 50
+        shown = result.details[:_SAMPLE]
+        console.print(
+            f"\n[dim][verbose] first {len(shown)} updated ROMs "
+            f"(of {result.roms_updated}):[/dim]"
+        )
+        for rom_name, keys in shown:
+            console.print(f"[dim]  {rom_name:<30s}  added: {', '.join(keys)}[/dim]")
+        if len(result.details) > _SAMPLE:
+            console.print(f"[dim]  … {len(result.details) - _SAMPLE} more[/dim]")
+
+    if result.dry_run and result.roms_updated:
+        console.print(
+            "\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]"
+        )
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 @ledblinky_group.command("fill-defaults")

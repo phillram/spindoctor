@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky colors sync-players` — new command to mirror P1 colors to P2+ players** — `ledblinky generate` writes `Colors.ini` sections with P1 keys only (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). When a game has two or more players, the P2+ buttons had no color entry and fell back to the XML default color rather than the game-specific palette. The new `sync-players` command closes that gap: for every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it reads `controls.ini` to discover which P{n≥2} keys exist, then adds any missing entries to `Colors.ini` by mirroring the matching P1 color (e.g. `P2_BUTTON1` gets the same color as `P1_BUTTON1`). Keys already present in `Colors.ini` are never overwritten. Run after `generate` and `colors normalize`: `spindoctor ledblinky colors sync-players --apply`.
+- **GUI — "1c. Sync player colors" button in LEDBlinky Step 1** — added alongside the existing Generate and Normalize buttons; runs `ledblinky colors sync-players` with the global Apply and Verbose flags.
+
 ---
 
 ## [2.4.22] - 2026-06-09

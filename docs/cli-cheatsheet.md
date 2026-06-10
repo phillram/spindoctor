@@ -446,6 +446,13 @@ spindoctor ledblinky colors normalize                                     :: pre
 spindoctor ledblinky colors normalize --apply                             :: commit
 spindoctor ledblinky colors normalize --apply --verbose                   :: also show per-section key mapping
 
+:: 1c: Mirror P1 colors to P2+ based on controls.ini (multi-player games).
+::     generate only writes P1 keys; sync-players adds P2_BUTTON1=Red etc.
+::     Only adds keys listed in controls.ini — never overwrites existing keys.
+spindoctor ledblinky colors sync-players                                  :: preview
+spindoctor ledblinky colors sync-players --apply                          :: commit
+spindoctor ledblinky colors sync-players --apply --verbose                :: show each key added per ROM
+
 :: ── Step 2: Fill gaps for non-MAME ROMs ─────────────────────────────────────
 spindoctor ledblinky fill-defaults --apply                                                  :: all systems incl. Favorites
 spindoctor ledblinky fill-defaults --players 2 --buttons 8 --apply                         :: 2-player, 8 buttons each

@@ -561,6 +561,33 @@ LedBlinky resolves the control profile for a launched ROM in this order:
 
 ### `controls.ini` and `colors.ini` — generation
 
+`spindoctor ledblinky generate` reads MAME's `listxml` output and writes two files:
+
+**`controls.ini`** — lists which controls each ROM uses. Each ROM section contains keys like `P1_BUTTON1=1`, `P1_JOYSTICK=1`, `P2_BUTTON1=1`, `P2_JOYSTICK=1`, etc. Multi-player ROMs get entries for every player that appears in MAME's input list. SpinDoctor pre-2.4.22 incorrectly wrote metadata keys (`P1_NUMBUTTONS`, `P1_CONTROLS`) instead of per-control keys; regenerate with `--overwrite --apply` if your controls.ini has that format.
+
+**`Colors.ini`** — maps each control key to a color name from `Color-RGB.ini`. **`generate` only writes Player 1 keys** (`P1_BUTTON1`, `P1_JOYSTICK`, `P1_START`, `P1_COIN`). Player 2 and higher keys are left out of `Colors.ini` even when `controls.ini` correctly lists them. This means P2+ buttons illuminate with LedBlinky's XML fallback color (usually white) rather than the intended game color.
+
+**`colors sync-players`** fills the P2+ gap as a post-generation step. It cross-references `controls.ini` (which has correct multi-player keys) against `Colors.ini` and, for every ROM where P2+ keys appear in `controls.ini` but are absent from `Colors.ini`, it inserts the missing keys mirroring the matching P1 color:
+
+```
+controls.ini: [005]  P2_BUTTON1=1  P2_JOYSTICK=1
+Colors.ini:   [005]  P1_BUTTON1=Red  P1_JOYSTICK=Blue
+              →  adds P2_BUTTON1=Red  P2_JOYSTICK=Blue
+```
+
+Rules enforced by `sync-players`:
+- Only adds keys explicitly listed in `controls.ini` — never invents controls.
+- Never overwrites an existing `P2+` color entry in `Colors.ini`.
+- Skips a key if the matching P1 color is absent in `Colors.ini` (no fallback invented).
+- Single-player ROMs (no P2+ keys in `controls.ini`) are silently skipped.
+
+```bat
+spindoctor ledblinky generate --apply                           :: write controls.ini + Colors.ini (P1 only)
+spindoctor ledblinky colors sync-players                        :: preview P2+ additions
+spindoctor ledblinky colors sync-players --apply                :: write P2+ color entries
+spindoctor ledblinky colors sync-players --apply --verbose      :: show every key added per ROM
+```
+
 ### `Settings.ini` — idle animation and in-game behavior
 
 Two keys control behaviors that aren't obvious in LedBlinky's configuration UI:
@@ -606,6 +633,8 @@ When player buttons do not light up (even when pressed) while Coin/Start buttons
 
 4. **Input code mismatch** — Physical buttons send `JOYCODE_1_BUTTON1` but the XML only maps `KEYCODE_A`. LedBlinky never detects the press. Setting `alwaysActive="1"` bypasses input detection entirely and is the preferred approach for always-on arcade buttons.
 
+5. **P2+ buttons light wrong color (white/fallback) while P1 is correct** — `Colors.ini` is missing Player 2+ entries. `ledblinky generate` only writes P1 keys; multi-player games need a second step. Run `spindoctor ledblinky colors sync-players --apply` to mirror P1 colors to all P2+ keys listed in `controls.ini`.
+
 ### Diagnosing colors not applying at runtime
 
 When game colors show as white despite correct `Colors.ini` entries, the most common causes are:
@@ -614,6 +643,7 @@ When game colors show as white despite correct `Colors.ini` entries, the most co
 2. **Legacy hex format** — `Colors.ini` entries use `ledcolor1=FF0000` format that LedBlinky cannot read. Run `colors normalize --apply`.
 3. **No `LEDBlinkyControls.xml` per-game entry** — LedBlinky uses its DEFAULT control group and may ignore `Colors.ini` overrides for that game.
 4. **`Use Color File` disabled** — LedBlinky Settings UI has a toggle; if off, `Colors.ini` is never consulted.
+5. **P2+ buttons show wrong color** — `Colors.ini` has P1 entries but no P2+ entries. Run `spindoctor ledblinky colors sync-players --apply`. See *`controls.ini` and `colors.ini` — generation* above.
 
 ```bat
 spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, listxml for ROM "005"
