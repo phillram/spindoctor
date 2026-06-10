@@ -434,10 +434,11 @@ Reference: [Command reference → theme-pack-create](commands.md#theme-pack-crea
 
 ```bat
 :: ── Step 1: Generate MAME control + color data ───────────────────────────────
-:: Generate writes native P1_BUTTON1= format that LedBlinky can actually read.
+:: Since 2.4.22: controls.ini uses LedBlinky runtime keys (P1_BUTTON1=1).
+:: Since 2.4.21: colors.ini uses native named format (P1_BUTTON1=Red).
 spindoctor ledblinky generate                                             :: dry-run preview
 spindoctor ledblinky generate --apply                                     :: commit
-spindoctor ledblinky generate --overwrite --apply                         :: replace community entries too
+spindoctor ledblinky generate --overwrite --apply                         :: replace existing entries (required after upgrading from <=2.4.21)
 
 :: 1b: Only needed if you have an older Colors.ini in legacy ledcolor= format.
 ::     Converts ledcolor1=FF0000 → P1_BUTTON1=Red so LedBlinky can read it.
