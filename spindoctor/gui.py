@@ -624,11 +624,51 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "mainmenu add <SYSTEM> --apply",
     "mainmenu remove <SYSTEM> --apply",
     "mainmenu edit",
-    # LEDBlinky
+    # LEDBlinky — Step 1: Generate MAME control + color data
     "ledblinky generate",
-    "ledblinky audit",
+    "ledblinky generate --apply",
+    "ledblinky generate --overwrite --apply",
+    "ledblinky generate --system MAME --apply",
+    # LEDBlinky — Step 1b: Normalize legacy Colors.ini (only needed for pre-2.4.21 files)
+    "ledblinky colors normalize",
+    "ledblinky colors normalize --apply",
+    "ledblinky colors normalize --apply --verbose",
+    # LEDBlinky — Step 2: Fill default colors
+    "ledblinky fill-defaults",
+    "ledblinky fill-defaults --apply",
+    "ledblinky fill-defaults --system <SYSTEM> --apply",
+    "ledblinky fill-defaults --color <COLOR> --buttons 6 --players 2 --apply",
+    "ledblinky fill-defaults --admin-buttons 6 --admin-color <COLOR> --apply",
+    "ledblinky fill-defaults --override-uniform --apply",
+    "ledblinky fill-defaults --override-uniform --no-add-keys --apply",
+    # LEDBlinky — Step 3: Randomize entry colors
+    "ledblinky colors randomize",
+    "ledblinky colors randomize --apply",
+    "ledblinky colors randomize --seed <N> --apply",
+    # LEDBlinky — Step 4: Admin button colors
+    "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
+    # LEDBlinky — Step 5: Brightness
+    "ledblinky colors brightness --scale 100",
+    "ledblinky colors brightness --scale 100 --apply",
+    "ledblinky colors brightness --scale <PCT> --apply",
+    # LEDBlinky — Step 6: Settings.ini animation behavior
+    "ledblinky patch-settings",
+    "ledblinky patch-settings --apply",
+    "ledblinky patch-settings --game-lwa \"<FILE>\" --apply",
+    "ledblinky patch-settings --fe-lwa \"<FILE>\" --apply",
+    "ledblinky patch-settings --fe-lwa \"\" --apply",
+    # LEDBlinky — Color Definitions
+    "ledblinky colors list",
+    "ledblinky colors edit <NAME> --name <NEW_NAME> --apply",
+    "ledblinky colors edit <NAME> --hex <RRGGBB> --apply",
+    # LEDBlinky — Overlay Hook Fix (one-time setup)
     "ledblinky check",
     "ledblinky fix",
+    "ledblinky fix --apply",
+    # LEDBlinky — Audit & Diagnose
+    "ledblinky audit",
+    "ledblinky audit --system MAME",
+    "ledblinky inspect-rom <ROM>",
     # Lightgun
     "lightgun detect",
     "lightgun audit",

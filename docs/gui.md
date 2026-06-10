@@ -258,7 +258,7 @@ A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by
 
 ### Custom Command
 
-Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~70 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
+Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with ~130 canonical commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 ## Menubar
 
