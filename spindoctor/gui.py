@@ -561,128 +561,301 @@ def _is_read_only_invocation(args: tuple) -> bool:
 # string the user would type after `spindoctor` on the command line, in
 # canonical form. Picking one populates the entry field; the user can
 # then edit placeholders (<SYSTEM>, <PATH>, ...) before clicking Run.
-# Order is roughly "discover → audit → curate → fetch → wheels → admin"
-# so the list reads top-to-bottom like a guided tour of the CLI.
+# Sections are separated by "─── Name ───" header strings. Within each
+# section the entries are sorted alphabetically by full command text.
+# Selecting a header auto-advances to the first real command beneath it
+# (handled in _SpinDoctorGUI._on_custom_preset_selected). Running a
+# header is a no-op (guarded in _run_custom).
+_PRESET_SECTION_HEADER_PREFIX = "───"
 _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "--help",
     "--version",
-    # Discovery / health
+    # ── Health & Discovery ────────────────────────────────────────────────────
+    "─── Health & Discovery ───",
     "doctor",
-    "tools-audit",
+    "doctor --apply",
+    "self-doctor",
+    "self-doctor --fix",
     "systems",
-    "report",
-    "preview",
-    # Audit & inspect
-    "audit --all",
-    "audit --system <SYSTEM>",
-    "inspect --system <SYSTEM>",
-    "inspect --system <SYSTEM> --all",
-    "find-dupes --all",
-    "find-dupes --cross-systems",
-    "find-misplaced --all",
-    "find-orphan-media --all",
-    "check-discs --all",
-    "verify --system <SYSTEM> --dat <DAT_PATH>",
-    "lint",
+    "tools-audit",
+    "tools-audit --extra-path <PATH>",
+    "tools-audit --show-unknown",
+    # ── Reports & Stats ───────────────────────────────────────────────────────
+    "─── Reports & Stats ───",
+    "preview --all",
+    "preview --system <SYSTEM>",
+    "preview --system <SYSTEM> --format png",
+    "preview --system <SYSTEM> --open",
+    "report --all",
+    "report --all --format csv",
+    "report --all --no-media",
+    "report --system <SYSTEM>",
     "stats",
-    # Curate & cleanup
-    "curate --all",
-    "curate --all --apply",
-    "cleanup categories",
-    "cleanup audit",
-    "cleanup run --apply",
-    "ignore list",
-    "match list",
-    "match clear --yes",
-    # Metadata & media
-    "fetch-meta --all",
-    "fetch-media --all",
-    "media-scan --all",
-    "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH>",
-    "update-db --system <SYSTEM>",
-    "generate-config",
-    # Wheels (favorites / recent / most-played)
-    "fav list",
-    "fav rebuild --apply",
-    "fav clear",
-    "fav clear --apply",
-    "recent list",
-    "recent rebuild --apply",
-    "recent clear",
-    "recent clear --apply",
+    "stats --all",
+    "stats --system <SYSTEM>",
     "stats-report",
+    "stats-report --by-system",
+    "stats-report --export <PATH>",
+    "stats-report --recent",
+    "stats-report --top 20",
     "stats-report build-wheel --apply",
+    "stats-report build-wheel --limit 30 --apply",
     "stats-report clear-wheel",
     "stats-report clear-wheel --apply",
-    # Main Menu (HyperSpin top-level wheel)
+    # ── Audit & Inspect ───────────────────────────────────────────────────────
+    "─── Audit & Inspect ───",
+    "audit --all",
+    "audit --all --detailed",
+    "audit --all --no-media",
+    "audit --all --report <PATH>",
+    "audit --system <SYSTEM>",
+    "audit --system <SYSTEM> --detailed",
+    "check-discs --all",
+    "check-discs --system <SYSTEM>",
+    "find-dupes --all",
+    "find-dupes --all --by-content",
+    "find-dupes --all --cross-systems",
+    "find-dupes --system <SYSTEM>",
+    "find-misplaced --all",
+    "find-misplaced --all --apply",
+    "find-misplaced --all --verbose --apply",
+    "find-misplaced --system <SYSTEM>",
+    "find-orphan-media --all",
+    "find-orphan-media --all --apply",
+    "find-orphan-media --system <SYSTEM>",
+    "inspect --system <SYSTEM>",
+    "inspect --system <SYSTEM> --all",
+    "inspect --system <SYSTEM> --all --format csv",
+    "inspect --system <SYSTEM> --game <ROM>",
+    "lint",
+    "verify --system <SYSTEM> --dat <DAT_PATH>",
+    "verify --system <SYSTEM> --dat <DAT_PATH> --show-good",
+    # ── Curate & Cleanup ──────────────────────────────────────────────────────
+    "─── Curate & Cleanup ───",
+    "cleanup audit",
+    "cleanup categories",
+    "cleanup run --apply",
+    "curate --all",
+    "curate --all --action delete --apply --yes",
+    "curate --all --apply",
+    "curate --all --apply --yes",
+    "curate --all --regions \"USA,EUR,JPN\" --apply",
+    "curate --system <SYSTEM>",
+    "ignore add <ROM>",
+    "ignore add <ROM> --system <SYSTEM>",
+    "ignore clear --system <SYSTEM> --yes",
+    "ignore clear --yes",
+    "ignore list",
+    "ignore remove <ROM> --system <SYSTEM>",
+    "match clear",
+    "match list",
+    # ── Metadata & Media ──────────────────────────────────────────────────────
+    "─── Metadata & Media ───",
+    "fetch-media --all",
+    "fetch-media --all --apply",
+    "fetch-media --all --source screenscraper --apply",
+    "fetch-media --all --source thegamesdb --apply",
+    "fetch-media --system <SYSTEM> --apply",
+    "fetch-media --system <SYSTEM> --overwrite --apply",
+    "fetch-media --system <SYSTEM> --types video --apply",
+    "fetch-media --system <SYSTEM> --types wheel,background --apply",
+    "fetch-meta --all",
+    "fetch-meta --all --all-games --apply",
+    "fetch-meta --all --apply",
+    "fetch-meta --all --source screenscraper --apply",
+    "fetch-meta --all --source thegamesdb --apply",
+    "fetch-meta --system <SYSTEM> --apply",
+    "fetch-meta --system <SYSTEM> --no-cache --apply",
+    "media-add --system <SYSTEM> --game <ROM> --type video --file <PATH>",
+    "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH>",
+    "media-scan --all",
+    "media-scan --all --action move --apply",
+    "media-scan --all --apply",
+    "media-scan --all --detail",
+    "media-scan --all --overwrite --apply",
+    "media-scan --system <SYSTEM> --apply",
+    # ── Database ──────────────────────────────────────────────────────────────
+    "─── Database ───",
+    "batch-edit --system <SYSTEM>",
+    "batch-edit --system <SYSTEM> --filter \"name=*<QUERY>*\" --set genre=<GENRE> --apply",
+    "batch-edit --system <SYSTEM> --list-manifests",
+    "batch-edit --system <SYSTEM> --set genre=<GENRE> --apply",
+    "batch-edit --system <SYSTEM> --undo <MANIFEST>",
+    "update-db --all",
+    "update-db --all --add-missing --remove-orphans --apply",
+    "update-db --all --apply",
+    "update-db --system <SYSTEM>",
+    "update-db --system <SYSTEM> --add-missing --apply",
+    "update-db --system <SYSTEM> --apply",
+    "update-db --system <SYSTEM> --remove-orphans --apply",
+    # ── Wheels ────────────────────────────────────────────────────────────────
+    "─── Wheels ───",
+    "fav add <SYSTEM> <ROM>",
+    "fav clear",
+    "fav clear --apply",
+    "fav list",
+    "fav rebuild --apply",
+    "fav remove <SYSTEM> <ROM>",
+    "fav sync",
+    "recent clear",
+    "recent clear --apply",
+    "recent list",
+    "recent rebuild --apply",
+    # ── Main Menu ─────────────────────────────────────────────────────────────
+    "─── Main Menu ───",
+    "mainmenu add <SYSTEM> --apply",
+    "mainmenu edit",
+    "mainmenu hide <SYSTEM> --apply",
+    "mainmenu remove <SYSTEM> --apply",
+    "mainmenu reorder <SYSTEM> <POSITION> --apply",
     "mainmenu show",
     "mainmenu sort alpha --apply",
     "mainmenu sort manufacturer --apply",
     "mainmenu sort year --apply",
-    "mainmenu reorder <SYSTEM> <POSITION> --apply",
-    "mainmenu hide <SYSTEM> --apply",
-    "mainmenu add <SYSTEM> --apply",
-    "mainmenu remove <SYSTEM> --apply",
-    "mainmenu edit",
-    # LEDBlinky
-    "ledblinky generate",
+    # ── Generate & Organize ───────────────────────────────────────────────────
+    "─── Generate & Organize ───",
+    "generate-config",
+    "generate-config --all --apply",
+    "generate-config --all --no-main-menu --apply",
+    "generate-config --all --no-rl --apply",
+    "generate-config --system <SYSTEM> --apply",
+    "organize",
+    "organize --all --apply",
+    "organize --overwrite-sort --apply",
+    "organize --restructure --apply",
+    "organize --system <SYSTEM>",
+    "organize --system <SYSTEM> --apply",
+    # ── Add & Bootstrap ───────────────────────────────────────────────────────
+    "─── Add & Bootstrap ───",
+    "add-pc-system <SYSTEM>",
+    "add-pc-system <SYSTEM> --apply",
+    "add-pc-system <SYSTEM> --no-game-media --apply",
+    "add-system <SYSTEM>",
+    "add-system <SYSTEM> --apply",
+    "add-system <SYSTEM> --no-game-media --apply",
+    "pc-rename <SYSTEM>",
+    "pc-rename <SYSTEM> --no-interactive",
+    # ── Rename & Clone ────────────────────────────────────────────────────────
+    "─── Rename & Clone ───",
+    "clone --list-manifests",
+    "clone --system <SYSTEM> --game <ROM> --to <NEW_ROM>",
+    "clone --system <SYSTEM> --game <ROM> --to <NEW_ROM> --apply",
+    "find-global <QUERY>",
+    "find-global <QUERY> --exact",
+    "rename --list-manifests",
+    "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM>",
+    "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM> --apply",
+    # ── LEDBlinky ─────────────────────────────────────────────────────────────
+    "─── LEDBlinky ───",
+    "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
     "ledblinky audit",
+    "ledblinky audit --system MAME",
     "ledblinky check",
+    "ledblinky colors brightness --scale 100",
+    "ledblinky colors brightness --scale 100 --apply",
+    "ledblinky colors brightness --scale <PCT> --apply",
+    "ledblinky colors edit <NAME> --hex <RRGGBB> --apply",
+    "ledblinky colors edit <NAME> --name <NEW_NAME> --apply",
+    "ledblinky colors list",
+    "ledblinky colors normalize",
+    "ledblinky colors normalize --apply",
+    "ledblinky colors normalize --apply --verbose",
+    "ledblinky colors randomize",
+    "ledblinky colors randomize --apply",
+    "ledblinky colors randomize --seed <N> --apply",
+    "ledblinky fill-defaults",
+    "ledblinky fill-defaults --admin-buttons 6 --admin-color <COLOR> --apply",
+    "ledblinky fill-defaults --apply",
+    "ledblinky fill-defaults --color <COLOR> --buttons 6 --players 2 --apply",
+    "ledblinky fill-defaults --override-uniform --apply",
+    "ledblinky fill-defaults --override-uniform --no-add-keys --apply",
+    "ledblinky fill-defaults --system <SYSTEM> --apply",
     "ledblinky fix",
-    # Lightgun
-    "lightgun detect",
+    "ledblinky fix --apply",
+    "ledblinky generate",
+    "ledblinky generate --apply",
+    "ledblinky generate --overwrite --apply",
+    "ledblinky generate --system MAME --apply",
+    "ledblinky inspect-rom <ROM>",
+    "ledblinky patch-settings",
+    "ledblinky patch-settings --apply",
+    "ledblinky patch-settings --fe-lwa \"\" --apply",
+    "ledblinky patch-settings --fe-lwa \"<FILE>\" --apply",
+    "ledblinky patch-settings --game-lwa \"<FILE>\" --apply",
+    # ── Lightgun ──────────────────────────────────────────────────────────────
+    "─── Lightgun ───",
     "lightgun audit",
     "lightgun configure",
-    # Add / rename / batch edit
-    "add-system <SYSTEM>",
-    "add-pc-system <SYSTEM>",
-    "pc-rename <OLD> <NEW>",
-    "rename <SYSTEM> <OLD_ROM> <NEW_ROM> --apply",
-    "clone <SYSTEM> <ROM> <NEW_ROM> --apply",
-    "batch-edit --system <SYSTEM>",
-    "organize --apply",
-    "find-global <QUERY>",
-    # Backup & migration
+    "lightgun configure --system <SYSTEM> --apply",
+    "lightgun detect",
+    # ── Emulator Titles ───────────────────────────────────────────────────────
+    "─── Emulator Titles ───",
+    "emulator-title list",
+    "emulator-title remove <EMULATOR>",
+    "emulator-title set <EMULATOR> <WINDOW_TITLE>",
+    # ── Backup & Migration ────────────────────────────────────────────────────
+    "─── Backup & Migration ───",
     "backup create --target <PATH>",
     "backup create --target <PATH> --apply",
-    "backup list --target <PATH>",
     "backup info --backup <PATH>",
+    "backup list --target <PATH>",
     "backup restore --backup <PATH> --apply",
+    "diff <BACKUP_FOLDER>",
+    "diff <BACKUP_FOLDER> --component databases",
+    "diff <BACKUP_FOLDER> --component media",
+    "diff <BACKUP_FOLDER> --component roms",
+    "migrate --list-manifests",
     "migrate --target <PATH>",
     "migrate --target <PATH> --apply",
-    "migrate --list-manifests",
+    "migrate --target <PATH> --apply --keep-source",
     "migrate --undo latest --apply",
-    # Config
-    "config show",
+    # ── Scrub & Restore ───────────────────────────────────────────────────────
+    "─── Scrub & Restore ───",
+    "scrub --favorites",
+    "scrub --favorites --apply",
+    "scrub --hs-favorites --apply",
+    "scrub --stats",
+    "scrub --stats --apply",
+    "scrub-restore <BACKUP_PATH>",
+    "scrub-restore <BACKUP_PATH> --apply",
+    # ── Themes ────────────────────────────────────────────────────────────────
+    "─── Themes ───",
+    "theme-apply --list-manifests",
+    "theme-apply --undo latest",
+    "theme-apply --undo latest --revert-system <SYSTEM>",
+    "theme-apply <SOURCE_DIR>",
+    "theme-apply <SOURCE_DIR> --apply",
+    "theme-apply <SOURCE_DIR> --systems \"<SYSTEM1,SYSTEM2>\" --apply",
+    "theme-apply <SOURCE_DIR> --target frontend --apply",
+    "theme-pack-create <OUTPUT_DIR>",
+    "theme-pack-create <OUTPUT_DIR> --target frontend",
+    "theme-scan",
+    "theme-scan --keyword xbox",
+    "theme-scan --output <PATH>",
+    "theme-scan --system <SYSTEM>",
+    # ── Tools ─────────────────────────────────────────────────────────────────
+    "─── Tools ───",
+    "install-tools",
+    "install-tools --add-to-system <SYSTEM> --apply",
+    "install-tools --apply",
+    "uninstall-tools --apply",
+    # ── Config ────────────────────────────────────────────────────────────────
+    "─── Config ───",
     "config init",
     "config set <KEY> <VALUE>",
+    "config set hyperspin_dir <PATH>",
+    "config set ledblinky_dir <PATH>",
+    "config set rocketlauncher_dir <PATH>",
     # ScreenScraper per-app developer credentials. The "SpinDoctor" defaults
     # in `Config` are kept for backwards-compat; override these if ScreenScraper
     # has issued you a real registered developer credential or rejects the
     # defaults with HTTP 403. Surfaces only here in the dropdown.
     "config set screenscraper_devid <VALUE>",
     "config set screenscraper_devpassword <VALUE>",
+    "config show",
     "config system list",
     "config system set <SYSTEM> --layout wheel",
-    # Tools
-    "install-tools",
-    # Themes
-    "theme-scan",
-    "theme-scan --keyword xbox",
-    "theme-scan --system <SYSTEM>",
-    "theme-scan --output <PATH>",
-    "theme-apply <SOURCE_DIR>",
-    "theme-apply <SOURCE_DIR> --apply",
-    "theme-apply <SOURCE_DIR> --target frontend --apply",
-    "theme-apply <SOURCE_DIR> --systems \"<SYSTEM1,SYSTEM2>\" --apply",
-    "theme-apply --undo latest",
-    "theme-apply --undo latest --revert-system <SYSTEM>",
-    "theme-apply --list-manifests",
-    "theme-pack-create <OUTPUT_DIR>",
-    "theme-pack-create <OUTPUT_DIR> --target frontend",
-    # Diff
-    "diff <BACKUP_FOLDER>",
-    "diff <BACKUP_FOLDER> --component databases",
+    "config verify-credentials",
 )
 
 
@@ -11064,14 +11237,17 @@ class _SpinDoctorGUI:
         # one widget, which is what cabinet owners actually want here:
         # they don't know the full command surface yet, but once they
         # pick a preset they may need to tweak <SYSTEM> or <PATH>.
-        combo = self.ttk.Combobox(
+        self._custom_combo = self.ttk.Combobox(
             row,
             textvariable=self._custom_var,
             values=list(_CUSTOM_COMMAND_PRESETS),
             state="normal",
         )
-        combo.pack(side="left", fill="x", expand=True, padx=6)
-        combo.bind("<Return>", lambda _e: self._run_custom())
+        self._custom_combo.pack(side="left", fill="x", expand=True, padx=6)
+        self._custom_combo.bind("<Return>", lambda _e: self._run_custom())
+        self._custom_combo.bind(
+            "<<ComboboxSelected>>", self._on_custom_preset_selected
+        )
         self.ttk.Button(row, text="Run", command=self._run_custom).pack(side="left")
 
         hint = self.ttk.Label(
@@ -11085,10 +11261,36 @@ class _SpinDoctorGUI:
 
         return frame
 
+    def _on_custom_preset_selected(self, _event=None) -> None:
+        """Auto-advance past section-header entries in the preset dropdown.
+
+        Header strings start with ``_PRESET_SECTION_HEADER_PREFIX`` (``───``).
+        They're purely visual dividers; selecting one moves the Combobox value
+        forward to the first real command that follows.
+        """
+        val = self._custom_var.get()
+        if not val.startswith(_PRESET_SECTION_HEADER_PREFIX):
+            return
+        values: list[str] = list(self._custom_combo["values"])
+        try:
+            idx = values.index(val)
+        except ValueError:
+            return
+        for candidate in values[idx + 1:]:
+            if not candidate.startswith(_PRESET_SECTION_HEADER_PREFIX):
+                self._custom_var.set(candidate)
+                return
+
     def _run_custom(self) -> None:
         raw = self._custom_var.get().strip()
         if not raw:
             self._flash_validation("Type some arguments first.")
+            return
+        # Section-header entries (e.g. "─── LEDBlinky ───") are visual
+        # dividers, not commands. Guard against accidentally clicking Run
+        # after the Combobox auto-advance didn't fire for some reason.
+        if raw.startswith(_PRESET_SECTION_HEADER_PREFIX):
+            self._flash_validation("That's a section header — pick a command below it.")
             return
         # Catch unfilled `<PLACEHOLDER>` tokens before we shell out — the
         # CLI would just complain about a literal "<SYSTEM>" path which is

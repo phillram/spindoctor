@@ -269,63 +269,67 @@ def load_listxml_for_system(
 def synth_controls_section(info: ControlInfo) -> IniSection:
     """Build a controls.ini section from a ControlInfo.
 
-    Format approximates LEDBlinky's controls.ini convention:
+    Uses LedBlinky's runtime key naming convention so the file is read
+    correctly at game launch.  Each key is a recognised LedBlinky control
+    name; LedBlinky treats any unknown key as a literal control identifier,
+    so using the wrong names (e.g. ``P1_NUMBUTTONS``) would silently break
+    LED mapping for the affected ROM.
+
+    Output format::
+
         [<rom>]
-        description=<MAME description>
         numPlayers=<n>
-        P<i>_NUMBUTTONS=<n>
-        P<i>_CONTROLS=<comma-list>
+        alternating=0
+        P<i>_BUTTON1=1
+        P<i>_BUTTON2=1
+        ...
+        P<i>_JOYSTICK=1   (if the player has a joystick/stick input)
+        P<i>_START=1
+        P<i>_COIN=1
+
+    ``numPlayers`` and ``alternating`` are metadata keys that LedBlinky
+    recognises as such; they are not treated as control names.  Start and
+    Coin entries are always written for every player present.  The key
+    pattern matches ``synth_colors_section`` so that Colors.ini entries
+    and Controls.ini entries refer to the same identifiers.
+
+    Note: ``alternating`` is always written as ``0`` because MAME
+    ``-listxml`` does not expose an alternating flag; this matches the
+    behaviour of LedBlinky's own Controls Editor for MAME games.
     """
+    # JOYSTICK_TYPES covers every MAME control type that maps to P{n}_JOYSTICK
+    # in LedBlinky's naming convention (directional / analog stick inputs).
+    _JOYSTICK_TYPES = frozenset({"joy", "doublejoy", "stick", "positional"})
+
     lines = [
-        f"description={info.description}",
         f"numPlayers={info.num_players}",
         "alternating=0",
     ]
 
-    # Per-player rollup
+    # Per-player rollup: track button count and whether a joystick is present.
     by_player: dict[str, dict] = {}
     for ctrl in info.raw_input:
         pid = ctrl.get("player") or "1"
-        slot = by_player.setdefault(pid, {"buttons": 0, "types": []})
+        slot = by_player.setdefault(pid, {"buttons": 0, "has_joystick": False})
         try:
             slot["buttons"] = max(slot["buttons"], int(ctrl.get("buttons") or "0"))
         except ValueError:
             pass
-        ctype = ctrl.get("type") or ""
-        if ctype and ctype not in slot["types"]:
-            slot["types"].append(ctype)
+        if (ctrl.get("type") or "").lower() in _JOYSTICK_TYPES:
+            slot["has_joystick"] = True
 
     if not by_player and info.has_input:
-        by_player["1"] = {"buttons": info.num_buttons, "types": info.control_types}
+        has_joy = any(ct.lower() in _JOYSTICK_TYPES for ct in info.control_types)
+        by_player["1"] = {"buttons": info.num_buttons, "has_joystick": has_joy}
 
     for pid in sorted(by_player.keys()):
         slot = by_player[pid]
-        ctrl_list = []
-        for ctype in slot["types"]:
-            cu = ctype.upper()
-            if cu == "JOY":
-                ctrl_list.append("JOYSTICK_8WAY")
-            elif cu == "DOUBLEJOY":
-                ctrl_list.append("DOUBLEJOY_8WAY")
-            elif cu == "TRACKBALL":
-                ctrl_list.append("TRACKBALL")
-            elif cu == "PADDLE":
-                ctrl_list.append("PADDLE")
-            elif cu == "DIAL":
-                ctrl_list.append("DIAL")
-            elif cu == "LIGHTGUN":
-                ctrl_list.append("LIGHTGUN")
-            elif cu == "PEDAL":
-                ctrl_list.append("PEDAL")
-            elif cu == "STICK":
-                ctrl_list.append("ANALOG_STICK")
-            elif cu:
-                ctrl_list.append(cu)
         for i in range(1, slot["buttons"] + 1):
-            ctrl_list.append(f"BUTTON{i}")
-        lines.append(f"P{pid}_NUMBUTTONS={slot['buttons']}")
-        if ctrl_list:
-            lines.append(f"P{pid}_CONTROLS={','.join(ctrl_list)}")
+            lines.append(f"P{pid}_BUTTON{i}=1")
+        if slot["has_joystick"]:
+            lines.append(f"P{pid}_JOYSTICK=1")
+        lines.append(f"P{pid}_START=1")
+        lines.append(f"P{pid}_COIN=1")
 
     return IniSection(name=info.rom_name, lines=lines)
 
