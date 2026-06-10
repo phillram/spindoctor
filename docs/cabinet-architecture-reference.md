@@ -574,13 +574,13 @@ Controls what happens to buttons **not used by the current game** while a game i
 `.lwa` animation files are stored under `<ledblinky_dir>\lwa\` and its subdirectories.
 
 **`[FEOptions] FELWAFile=`**
-Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific `.lwa` path (relative to `ledblinky_dir`, e.g. `lwa\Slow Fade.lwa`) for a consistent smooth effect, or empty for static colors.
+Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific animation filename (relative to the `lwa\` subdirectory inside `ledblinky_dir`, e.g. `Slow Fade.lwa` or `subdir\pattern.lwax`) for a consistent smooth effect, or empty for static colors. LedBlinky always prepends `lwa\` when resolving this value, so supplying `lwa\Slow Fade.lwa` would produce a double-prefix error (`lwa\lwa\Slow Fade.lwa`).
 
 SpinDoctor patches both keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change.
 
 ```bat
-spindoctor ledblinky patch-settings --apply                          :: fix in-game unused-button flash
-spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply :: also fix idle animation
+spindoctor ledblinky patch-settings --apply                             :: fix in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply   :: also fix idle animation (filename only, not lwa\ prefix)
 ```
 
 ### `LEDBlinkyControls.xml` and HyperSpin Search compatibility

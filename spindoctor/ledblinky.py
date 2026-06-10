@@ -1124,28 +1124,30 @@ def apply_fix(
 
 
 def list_lwa_files(config: Config) -> list[str]:
-    """Return a sorted list of ``.lwa`` / ``.lwax`` paths relative to ``ledblinky_dir``.
+    """Return a sorted list of ``.lwa`` / ``.lwax`` paths relative to the ``lwa`` subdirectory.
 
     LedBlinky stores animation files in ``<ledblinky_dir>/lwa/`` and its
     subdirectories.  Both the classic ``.lwa`` and the newer ``.lwax`` (extended)
-    formats are included.  The returned paths are relative to ``ledblinky_dir``
-    (e.g. ``lwa\\Slow Fade.lwax``) so they can be written directly into
-    ``Settings.ini`` as LedBlinky expects them.
+    formats are included.  The returned paths are relative to ``lwa/``
+    (e.g. ``Slow Fade.lwax`` or ``subdir\\pattern.lwax``) because LedBlinky
+    always prepends the ``lwa\\`` prefix itself when resolving ``FELWAFile``
+    and ``GamePlayLWAFile`` in ``Settings.ini``.  Returning the full
+    ``lwa\\Slow Fade.lwax`` path would produce a double ``lwa\\lwa\\`` prefix.
 
-    Returns an empty list if ``ledblinky_dir`` is not set or the directory
-    does not exist yet.
+    Returns an empty list if ``ledblinky_dir`` is not set or the ``lwa``
+    subdirectory does not exist yet.
     """
     if not config.ledblinky_dir:
         return []
-    base = Path(config.ledblinky_dir)
-    if not base.is_dir():
+    lwa_dir = Path(config.ledblinky_dir) / "lwa"
+    if not lwa_dir.is_dir():
         return []
     matches = [
         p
-        for p in base.rglob("*")
+        for p in lwa_dir.rglob("*")
         if p.is_file() and p.suffix.lower() in (".lwa", ".lwax")
     ]
-    return sorted(str(p.relative_to(base)) for p in matches)
+    return sorted(str(p.relative_to(lwa_dir)) for p in matches)
 
 
 def _patch_ini_keys(
