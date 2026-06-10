@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **GUI Custom Command presets expanded to ~130 entries** — the LEDBlinky section in the Custom Command dropdown now covers all six workflow steps (generate, normalize, fill-defaults, randomize, admin-buttons, brightness, patch-settings) plus color definitions, audit, and fix commands, with key flag variants for each. Presets match the documented CLI in `commands.md` and `cli-cheatsheet.md`.
+- **GUI Custom Command presets expanded to ~245 entries** — every CLI command now has flag variants in the Custom Command dropdown. New coverage across all command groups: health/discovery (`doctor`, `self-doctor`, `tools-audit`), reports (`stats`, `preview`), audit (`find-dupes --by-content`, `find-misplaced --apply`, per-system variants), curate (`--regions`, `--action delete`), metadata/media (`fetch-meta --all-games`, `--no-cache`, per-source variants; `fetch-media --types`, `--overwrite`; `media-scan --action move`), database (`update-db --add-missing`, `--remove-orphans`; full `batch-edit` suite), wheels (`fav add/remove/sync`; `stats-report` top/export), generate/organize (full flag set), add/bootstrap/rename/clone (dry-run + apply pairs), lightgun (`configure --system`), emulator-title (`list/set/remove`), scrub/restore (`scrub --stats/--favorites`, `scrub-restore`), backup (`migrate --keep-source`), themes (unchanged), tools (`install-tools --apply`, `uninstall-tools`), diff (all four components), config (`hyperspin_dir`, `rocketlauncher_dir`, `ledblinky_dir`, `verify-credentials`). LEDBlinky section unchanged.
 
 ### Fixed
 
