@@ -623,13 +623,18 @@ Controls what happens to buttons **not used by the current game** while a game i
 `.lwa` animation files are stored under `<ledblinky_dir>\lwa\` and its subdirectories.
 
 **`[FEOptions] FELWAFile=`**
-Controls the animation played on buttons while browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific animation filename (relative to the `lwa\` subdirectory inside `ledblinky_dir`, e.g. `Slow Fade.lwa` or `subdir\pattern.lwax`) for a consistent smooth effect, or empty for static colors. LedBlinky always prepends `lwa\` when resolving this value, so supplying `lwa\Slow Fade.lwa` would produce a double-prefix error (`lwa\lwa\Slow Fade.lwa`).
+Controls the animation played on buttons while actively browsing the HyperSpin frontend. `<Random>` picks a different animation file every time. Set to a specific animation filename (relative to the `lwa\` subdirectory inside `ledblinky_dir`, e.g. `Slow Fade.lwa` or `subdir\pattern.lwax`) for a consistent smooth effect, or empty for static colors. LedBlinky always prepends `lwa\` when resolving this value, so supplying `lwa\Slow Fade.lwa` would produce a double-prefix error (`lwa\lwa\Slow Fade.lwa`).
 
-SpinDoctor patches both keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change.
+**`[FEOptions] FEScreenSaverLWAFile=`**
+Controls the animation played during the HyperSpin screen saver. Uses the same filename convention as `FELWAFile` (relative to `lwa\`, no `lwa\` prefix). Set to a `.lwa` / `.lwax` filename for a specific animation, or empty to silence it.
+
+SpinDoctor patches all three keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change.
 
 ```bat
-spindoctor ledblinky patch-settings --apply                             :: fix in-game unused-button flash
-spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply   :: also fix idle animation (filename only, not lwa\ prefix)
+spindoctor ledblinky patch-settings --apply                                                   :: fix in-game unused-button flash
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: set FE active animation
+spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both
 ```
 
 ### `LEDBlinkyControls.xml` and HyperSpin Search compatibility

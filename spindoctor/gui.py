@@ -790,6 +790,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky patch-settings --apply",
     "ledblinky patch-settings --fe-lwa \"\" --apply",
     "ledblinky patch-settings --fe-lwa \"<FILE>\" --apply",
+    "ledblinky patch-settings --ss-lwa \"<FILE>\" --apply",
     "ledblinky patch-settings --game-lwa \"<FILE>\" --apply",
     # ── Lightgun ──────────────────────────────────────────────────────────────
     "─── Lightgun ───",
@@ -9945,7 +9946,7 @@ class _SpinDoctorGUI:
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
 
-        self.ttk.Label(sp_frame, text="FE idle animation").grid(
+        self.ttk.Label(sp_frame, text="FE active animation").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_fe_lwa_var = self.tk.StringVar(value="<Random>")
@@ -9960,19 +9961,35 @@ class _SpinDoctorGUI:
 
         self.ttk.Label(
             sp_frame,
-            text="Leave blank for static colors during idle. "
-                 "Use Refresh list to populate from your LEDBlinky folder.",
+            text="Animation while actively browsing HyperSpin (FELWAFile). "
+                 "Leave blank for static colors. Use Refresh list to populate from your LEDBlinky folder.",
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
-        self.ttk.Label(sp_frame, text="In-game unused buttons").grid(
+        self.ttk.Label(sp_frame, text="Screen saver animation").grid(
             row=3, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._led_ss_lwa_var = self.tk.StringVar(value="<Random>")
+        self._led_ss_lwa_combo = self.ttk.Combobox(
+            sp_frame, textvariable=self._led_ss_lwa_var, width=36,
+        )
+        self._led_ss_lwa_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=2)
+
+        self.ttk.Label(
+            sp_frame,
+            text="Animation during the HyperSpin screen saver (FEScreenSaverLWAFile). "
+                 "Leave blank to silence. Omit (leave as <Random>) to leave unchanged.",
+            wraplength=700, justify="left", foreground=_FG_DIM,
+        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+
+        self.ttk.Label(sp_frame, text="In-game unused buttons").grid(
+            row=5, column=0, sticky="w", padx=6, pady=2,
         )
         self._led_game_lwa_var = self.tk.StringVar(value="")
         self._led_game_lwa_combo = self.ttk.Combobox(
             sp_frame, textvariable=self._led_game_lwa_var, width=36,
         )
-        self._led_game_lwa_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=2)
+        self._led_game_lwa_combo.grid(row=5, column=1, sticky="ew", padx=6, pady=2)
 
         self.ttk.Label(
             sp_frame,
@@ -9980,12 +9997,12 @@ class _SpinDoctorGUI:
                   "Select an animation to play on all unmapped buttons instead — "
                   "applies globally to every game on every system."),
             wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
         self.ttk.Button(
             sp_frame, text="Patch Settings.ini",
             command=self._run_led_patch_settings,
-        ).grid(row=5, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # Populate .lwa list immediately if ledblinky_dir is already set
         self._refresh_led_lwa_list()
@@ -10246,31 +10263,49 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _refresh_led_lwa_list(self) -> None:
-        """Populate the FE-animation and in-game animation comboboxes from ledblinky_dir."""
+        """Populate the FE, screen saver, and in-game animation comboboxes from ledblinky_dir.
+
+        Also reads Settings.ini and pre-selects each combobox to the currently
+        configured value so the GUI reflects what is actually set on disk.
+        """
         try:
             from . import ledblinky as lb
             cfg = load_config()
             lwa_files = lb.list_lwa_files(cfg)
+            current = lb.read_ledblinky_settings_keys(cfg)
         except Exception:
             lwa_files = []
+            current = {}
         # Always include a blank entry (silent / no animation).
         values = [""] + lwa_files
         self._led_fe_lwa_combo["values"] = values
+        if hasattr(self, "_led_ss_lwa_combo"):
+            self._led_ss_lwa_combo["values"] = values
         if hasattr(self, "_led_game_lwa_combo"):
             self._led_game_lwa_combo["values"] = values
+        # Pre-select current values from Settings.ini; fall back to defaults if
+        # the key is missing (ledblinky_dir not set, file absent, etc.).
+        if "FELWAFile" in current:
+            self._led_fe_lwa_var.set(current["FELWAFile"])
+        if "FEScreenSaverLWAFile" in current and hasattr(self, "_led_ss_lwa_var"):
+            self._led_ss_lwa_var.set(current["FEScreenSaverLWAFile"])
+        if "GamePlayLWAFile" in current and hasattr(self, "_led_game_lwa_var"):
+            self._led_game_lwa_var.set(current["GamePlayLWAFile"])
 
     def _run_led_patch_settings(self) -> None:
         fe_lwa = self._led_fe_lwa_var.get().strip()
-        # Treat the legacy "<Random>" sentinel as "leave unchanged" (None)
-        # so an accidental click doesn't write "<Random>" literally.
+        ss_lwa = self._led_ss_lwa_var.get().strip()
+        # Treat "<Random>" sentinel as "leave unchanged" (None) so an accidental
+        # click doesn't write "<Random>" literally into Settings.ini.
         fe_lwa_arg = None if fe_lwa == "<Random>" else fe_lwa
+        ss_lwa_arg = None if ss_lwa == "<Random>" else ss_lwa
 
-        # Blank = silence unused buttons (recommended default).
-        # A specific .lwa path = play that animation on unused buttons.
         game_lwa = self._led_game_lwa_var.get().strip()
         args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
         if fe_lwa_arg is not None:
             args += ["--fe-lwa", fe_lwa_arg]
+        if ss_lwa_arg is not None:
+            args += ["--ss-lwa", ss_lwa_arg]
         if self._global_apply_var.get():
             args.append("--apply")
         if self._global_verbose_var.get():

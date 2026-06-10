@@ -171,10 +171,11 @@ Fixes HyperSpin Search / Genre / Favorites overlay crashes: adds a stub entry to
 
 Configure LEDBlinky's animation behaviour. Run once after installing, then only when you want to change the animation style.
 
-- **FE idle animation** — `FELWAFile`: animation played while browsing HyperSpin. Leave blank for static colors; pick a `.lwa` file for a smooth fade effect.
+- **FE active animation** — `FELWAFile`: animation played while actively browsing HyperSpin. Leave blank for static colors; pick a `.lwa` file for a smooth fade effect. Leave as `<Random>` to keep unchanged.
+- **Screen saver animation** — `FEScreenSaverLWAFile`: animation played during the HyperSpin screen saver. Leave blank to silence; pick a `.lwa` file for a specific animation. Leave as `<Random>` to keep unchanged.
 - **In-game unused buttons** — `GamePlayLWAFile`: leave **blank** to silence unmapped buttons during gameplay (recommended); select an `.lwa` file to animate them instead.
 
-**Refresh list** populates both dropdowns from your LEDBlinky folder. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
+**Refresh list** populates all three dropdowns from your LEDBlinky `lwa\` folder and pre-selects each dropdown to the value currently set in `Settings.ini`. The dropdowns also pre-populate on startup if `ledblinky_dir` is already configured. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
 
 **Step 3 — MAME: Generate, Normalize & Sync Players**
 
