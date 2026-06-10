@@ -168,6 +168,17 @@ spindoctor cleanup run --apply
 
 Reference: [Command reference → cleanup](commands.md#cleanup).
 
+### `pc-rename` — re-curate PC game titles after adding new games
+
+```bat
+spindoctor pc-rename "PC Games"                 :: interactive review of new/changed titles
+spindoctor pc-rename "PC Games" --apply         :: commit after review
+spindoctor pc-rename "PC Games" --no-interactive :: auto-accept all (GUI / scripted contexts)
+spindoctor pc-rename "PC Games" --no-interactive --apply
+```
+
+Reference: [Command reference → pc-rename](commands.md#pc-rename).
+
 ### `ignore` / `match` — taming the matcher
 
 ```bat
@@ -571,6 +582,10 @@ spindoctor config set screenscraper_devpassword <your-devpassword>
 spindoctor config system list
 spindoctor config system set "Sony Playstation 7" --screenscraper-id 999 --rom-extensions ps7,iso --layout per-game-folder --emulator RPCS7
 spindoctor config system clear "Sony Playstation 7"
+
+:: Test credentials without saving — useful before committing new values
+spindoctor config verify-credentials
+spindoctor config verify-credentials --ss-user alice --ss-pass secret
 ```
 
 Reference: [Configuration](configuration.md).

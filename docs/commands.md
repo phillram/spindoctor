@@ -22,6 +22,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [LEDBlinky](#ledblinky)
 - [Light guns](#light-guns) — `lightgun detect`, `lightgun audit`, `lightgun configure`
 - [Maintenance](#maintenance) — `doctor`, `self-doctor`, `tools-audit`, `ignore`, `match`, `cleanup`, `lint`
+- [Config](#config) — `config init`, `config set`, `config show`, `config verify-credentials`
 
 ---
 
@@ -319,14 +320,24 @@ spindoctor add-system "Sega Saturn" --apply     :: commit
 Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs.
 
 ```bat
-spindoctor add-pc-system "PC Games"                                     :: dry-run preview
-spindoctor add-pc-system "PC Games" --apply                             :: commit (interactive title review)
-spindoctor add-pc-system "PC Games" --no-interactive --apply            :: auto-accept every proposed title
-spindoctor pc-rename "PC Games"                                         :: re-review titles after dropping new games in
-spindoctor pc-rename "PC Games" --no-interactive                        :: auto-accept all (non-TTY contexts)
+spindoctor add-pc-system "PC Games"                          :: dry-run preview
+spindoctor add-pc-system "PC Games" --apply                  :: commit (interactive title review)
+spindoctor add-pc-system "PC Games" --no-interactive --apply :: auto-accept every proposed title
 ```
 
-Both commands honour `--no-interactive`: skip the per-game `input()` prompt and auto-accept the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default when adding a PC system, where the interactive review path would otherwise hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
+### `pc-rename`
+
+Re-run the title-curation pass on an existing PC system — useful after dropping new games into the folder without re-running the full `add-pc-system` flow.
+
+```bat
+spindoctor pc-rename "PC Games"                :: review new/changed titles interactively
+spindoctor pc-rename "PC Games" --no-interactive :: auto-accept all proposed titles (non-TTY contexts)
+spindoctor pc-rename "PC Games" --apply          :: commit after interactive review
+```
+
+`--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
+
+Both `add-pc-system` and `pc-rename` write a rename manifest; use `--undo` to revert.
 
 ### `migrate`
 
@@ -1519,6 +1530,35 @@ AST pass over the SpinDoctor source itself — surfaces unused imports, bare `ex
 spindoctor lint
 spindoctor lint --category unused-import,bare-except
 ```
+
+---
+
+## Config
+
+Configuration is managed through `~/.spindoctor/config.json`. See [Configuration reference](configuration.md) for all keys. The `config` subcommand group lets you read and write it from the command line.
+
+### `config init` / `config set` / `config show`
+
+```bat
+spindoctor config init                          :: interactive first-run wizard
+spindoctor config set hyperspin_dir "D:\HyperSpin"
+spindoctor config set screenscraper_user myname
+spindoctor config show                          :: pretty-print the active config
+```
+
+Full key listing and per-system overrides (`config system set / list / clear`) are covered in [Configuration reference](configuration.md).
+
+### `config verify-credentials`
+
+Probes ScreenScraper and TheGamesDB to confirm the stored API credentials are valid. Each provider is contacted once; missing credentials are skipped rather than flagged as failures.
+
+```bat
+spindoctor config verify-credentials                                    :: test what's in config.json
+spindoctor config verify-credentials --ss-user alice --ss-pass secret   :: test without saving
+spindoctor config verify-credentials --json                             :: JSON output (used by GUI Setup tab)
+```
+
+`--ss-user` / `--ss-pass` / `--ss-devid` / `--ss-devpassword` / `--tgdb-key` all override the saved config value for this one probe without persisting the change — useful for testing candidate credentials before committing them with `config set`.
 
 ---
 
