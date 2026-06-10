@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky patch-settings --ss-lwa` — new option to set the screen saver animation** — `Settings.ini` has two separate FE animation keys: `FELWAFile` (active browsing) and `FEScreenSaverLWAFile` (screen saver). Only `FELWAFile` was previously patchable via SpinDoctor. The new `--ss-lwa` option patches `FEScreenSaverLWAFile` in the same pass. Pass a `.lwa` filename to set the animation, `""` to silence it, or omit to leave unchanged. Both the CLI and GUI one-time setup (Step 2 — Settings.ini) have been updated with the new field. GUI label for the existing FE field updated from "FE idle animation" to "FE active animation" to match LedBlinky's own terminology.
+- **GUI — Settings.ini animation comboboxes now pre-populate from current Settings.ini values** — previously all three animation dropdowns (FE active, screen saver, in-game) always opened showing default placeholder values (`<Random>` / blank) regardless of what was actually set in `Settings.ini`. They now read the current values from `Settings.ini` on load and on every **Refresh list** click, so the GUI accurately reflects the current configuration. New `read_ledblinky_settings_keys` function added to `ledblinky.py`.
+
 ---
 
 ## [2.4.23] - 2026-06-09
