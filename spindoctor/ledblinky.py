@@ -454,8 +454,8 @@ def generate_for_roms(
         )
 
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
-    src_controls = (src_base / "controls.ini") if src_base else None
-    src_colors = (src_base / "colors.ini") if src_base else None
+    src_controls = (src_base / CONTROLS_INI_NAME) if src_base else None
+    src_colors = (src_base / COLORS_INI_NAME) if src_base else None
 
     existing_controls = (
         parse_existing_controls_ini(src_controls, warnings=result.warnings) if src_controls else {}
@@ -516,8 +516,8 @@ def generate_for_roms(
             )
             result.colors_synthesised += 1
 
-    controls_path = base / "controls.ini"
-    colors_path = base / "colors.ini"
+    controls_path = base / CONTROLS_INI_NAME
+    colors_path = base / COLORS_INI_NAME
 
     if dry_run:
         result.controls_path = controls_path
@@ -603,7 +603,7 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
     base = Path(config.ledblinky_dir)
 
     # Colors.ini
-    colors_path = base / "Colors.ini"
+    colors_path = base / COLORS_INI_NAME
     result["colors_ini_path"] = colors_path
     if colors_path.exists():
         sections = parse_existing_colors_ini(colors_path)
@@ -629,7 +629,7 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
         result["warnings"].append(f"Colors.ini not found at {colors_path}.")
 
     # controls.ini
-    controls_path = base / "controls.ini"
+    controls_path = base / CONTROLS_INI_NAME
     result["controls_ini_path"] = controls_path
     if controls_path.exists():
         sections = parse_existing_controls_ini(controls_path)
@@ -733,11 +733,11 @@ def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow
     """Return per-ROM coverage info: existing entries vs. -listxml synthesis."""
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
     existing_controls = (
-        parse_existing_controls_ini(src_base / "controls.ini")
+        parse_existing_controls_ini(src_base / CONTROLS_INI_NAME)
         if src_base else {}
     )
     existing_colors = (
-        parse_existing_colors_ini(src_base / "colors.ini")
+        parse_existing_colors_ini(src_base / COLORS_INI_NAME)
         if src_base else {}
     )
     listxml = load_listxml_for_system(config, "MAME")
@@ -777,7 +777,19 @@ LEDBLINKY_HOOK_KEYS = ["Start_Hyperspin_Process", "Exit_Hyperspin_Process"]
 LEDBLINKY_HOOK_MARKER = "LEDBlinky"   # the binary referenced in the hook value
 LEDBLINKY_DISABLE_TAG = "; disabled by spindoctor ledblinky fix"
 
-CONTROLS_XML_NAME = "LEDBlinkyControls.xml"
+# ── LedBlinky filename constants ──────────────────────────────────────────────
+# All LedBlinky filenames are defined here as constants so there is a single
+# source of truth for their exact casing.  LedBlinky is a Windows application
+# and uses mixed-case names; Linux filesystems are case-sensitive, so even a
+# single character difference (e.g. "colors.ini" vs "Colors.ini") silently
+# breaks path lookups on CI and in real Linux deployments.
+#
+# Rule: never write a LedBlinky filename as a bare string literal anywhere in
+# this module.  Always reference the constant.
+CONTROLS_XML_NAME = "LEDBlinkyControls.xml"   # XML control database
+CONTROLS_INI_NAME = "controls.ini"            # per-ROM button layout (lowercase — LedBlinky's own casing)
+COLORS_INI_NAME   = "Colors.ini"              # per-ROM named colors  (capital C — LedBlinky's own casing)
+# COLOR_RGB_NAME is defined further down, near its related functions.
 
 
 # ─── path helpers ─────────────────────────────────────────────────────────────
@@ -1530,7 +1542,7 @@ def apply_color_rename(
     ]
 
     # ── 2. Pre-compute replacements (safe, no writes yet) ────────────────────
-    colors_ini_path = base / "Colors.ini"
+    colors_ini_path = base / COLORS_INI_NAME
     new_colors_ini_text, colors_ini_count = _replace_color_in_colors_ini(
         colors_ini_path, old_name, new_name
     )
@@ -1679,7 +1691,7 @@ def normalize_colors_ini(
         )
     base = Path(config.ledblinky_dir)
 
-    colors_ini_path = base / "Colors.ini"
+    colors_ini_path = base / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2119,7 +2131,7 @@ def fill_default_colors(
             "Run: spindoctor config set databases_dir <path>"
         )
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2529,7 +2541,7 @@ def patch_admin_button_colors(
     if not button_colors:
         raise ValueError("button_colors must not be empty.")
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
     result.colors_ini_path = colors_ini_path
@@ -2672,7 +2684,7 @@ def randomize_entry_colors(
             "Run: spindoctor config set ledblinky_dir <path>"
         )
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2752,6 +2764,218 @@ def randomize_entry_colors(
     result.updated_details = updated_details
 
     if not dry_run and sections_updated > 0:
+        if backup:
+            result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
+        colors_ini_path.write_text("".join(parts), encoding="utf-8")
+
+    return result
+
+
+# ─── Colors.ini multi-player key sync ─────────────────────────────────────────
+
+
+#: Matches P{n}_BUTTON{i} / P{n}_JOYSTICK / P{n}_START / P{n}_COIN in controls.ini
+_CONTROLS_PLAYER_KEY_RE = re.compile(
+    r"^P(\d+)_(BUTTON\d+|JOYSTICK|START|COIN)\s*=",
+    re.IGNORECASE,
+)
+
+
+@dataclass
+class SyncPlayersResult:
+    """Result of :func:`sync_player_colors`."""
+
+    dry_run: bool = True
+    colors_ini_path: Optional[Path] = None
+    backup_path: Optional[Path] = None
+    #: Number of ROM sections that had at least one key added.
+    roms_updated: int = 0
+    #: Total new ``P{n}_KEY=COLOR`` lines written across all ROMs.
+    keys_added: int = 0
+    #: ROMs in Colors.ini that have no controls.ini entry (skipped).
+    roms_skipped_no_controls: int = 0
+    #: ROMs that already had all player keys present (nothing to add).
+    roms_skipped_complete: int = 0
+    #: Total existing ``P{n}_KEY`` lines replaced when ``override=True``.
+    keys_overwritten: int = 0
+    #: Per-ROM breakdown: list of (rom_name, [added_key_strings])
+    details: "list[tuple[str, list[str]]]" = field(default_factory=list)
+
+
+def sync_player_colors(
+    config: "Config",
+    dry_run: bool = True,
+    backup: bool = True,
+    verbose: bool = False,
+    override: bool = False,
+) -> SyncPlayersResult:
+    """Mirror P1 colors to all additional players based on ``controls.ini``.
+
+    ``ledblinky generate`` writes ``Colors.ini`` sections that only include P1
+    keys (``P1_BUTTON1``, ``P1_JOYSTICK``, ``P1_START``, ``P1_COIN``).  When
+    ``controls.ini`` lists buttons for additional players (P2, P3, P4, …),
+    those players have no color entries and LedBlinky lights their buttons using
+    the XML fallback color rather than the game-specific palette chosen in
+    ``Colors.ini``.
+
+    This function closes that gap for **any number of players**:
+
+    * For every ROM that has both a ``Colors.ini`` section and a
+      ``controls.ini`` section, it inspects ``controls.ini`` to find all
+      ``P{n}_KEY`` entries where ``n >= 2`` (P2, P3, P4, …).
+    * Any such key that is **absent** from the ``Colors.ini`` section is added
+      with the same color as the matching ``P1_KEY`` (e.g. ``P3_BUTTON1`` gets
+      the same color as ``P1_BUTTON1``).
+    * If ``P1_KEY`` itself is absent from ``Colors.ini`` (nothing to mirror
+      from), that key is skipped — no defaults are invented.
+    * Keys already present in ``Colors.ini`` for that ROM are **never**
+      overwritten unless ``override=True``.
+    * When ``override=True``, existing ``P{n≥2}`` entries are replaced with the
+      current P1-mirrored color.  P1 keys are never affected.
+    * ROMs with no ``controls.ini`` entry are left untouched.
+
+    Run after ``ledblinky generate`` (and ``colors normalize`` if the output
+    was in legacy hex format) to ensure all player buttons light correctly.
+
+    Examples::
+
+        spindoctor ledblinky colors sync-players            # preview
+        spindoctor ledblinky colors sync-players --apply    # commit
+        spindoctor ledblinky colors sync-players --apply --override  # replace existing P2+ entries
+    """
+    result = SyncPlayersResult(dry_run=dry_run)
+
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. "
+            "Run: spindoctor config set ledblinky_dir <path>"
+        )
+
+    base = Path(config.ledblinky_dir)
+    controls_ini_path = base / CONTROLS_INI_NAME
+    colors_ini_path = base / COLORS_INI_NAME
+    result.colors_ini_path = colors_ini_path
+
+    if not controls_ini_path.exists():
+        raise FileNotFoundError(
+            f"controls.ini not found at {controls_ini_path}. "
+            "Run: spindoctor ledblinky generate --apply"
+        )
+    if not colors_ini_path.exists():
+        raise FileNotFoundError(
+            f"colors.ini not found at {colors_ini_path}. "
+            "Run: spindoctor ledblinky generate --apply"
+        )
+
+    # Parse controls.ini: for each ROM, collect the set of P{n}_KEY names
+    # where n >= 2 (these are the keys we may need to add to Colors.ini).
+    controls_sections = parse_existing_controls_ini(controls_ini_path)
+    # Build: { rom_lower: { "P2_BUTTON1", "P2_JOYSTICK", ... } }
+    controls_multi: dict[str, set[str]] = {}
+    for rom, section in controls_sections.items():
+        multi_keys: set[str] = set()
+        for line in section.lines:
+            m = _CONTROLS_PLAYER_KEY_RE.match(line.strip())
+            if m and int(m.group(1)) >= 2:
+                multi_keys.add(f"P{m.group(1)}_{m.group(2).upper()}")
+        if multi_keys:
+            controls_multi[rom.lower()] = multi_keys
+
+    # Rewrite Colors.ini in-place, section by section.
+    colors_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    sections = _split_ini_by_sections(colors_text)
+    parts: list[str] = []
+
+    for section_name, header_line, body_lines in sections:
+        if section_name is None:
+            parts.extend(body_lines)
+            continue
+
+        assert header_line is not None
+        parts.append(header_line)
+
+        rom_lower = section_name.lower()
+        if rom_lower not in controls_multi:
+            # No multi-player controls.ini entry for this ROM — leave as-is.
+            parts.extend(body_lines)
+            result.roms_skipped_no_controls += 1
+            continue
+
+        needed_keys = controls_multi[rom_lower]  # e.g. {"P2_BUTTON1", "P2_JOYSTICK"}
+
+        # Parse existing Colors.ini body: build { "P1_BUTTON1": "Red", ... }
+        existing_colors: dict[str, str] = {}
+        for line in body_lines:
+            m = _PLAYER_KEY_RE.match(line.strip())
+            if m:
+                key = f"P{m.group(1)}_{m.group(2).upper()}"
+                existing_colors[key] = m.group(3)
+
+        # Build P1 lookup: strip player prefix → { "BUTTON1": "Red", ... }
+        p1_colors: dict[str, str] = {}
+        for key, color in existing_colors.items():
+            if key.upper().startswith("P1_"):
+                suffix = key[3:].upper()  # e.g. "BUTTON1"
+                p1_colors[suffix] = color
+
+        # Determine which keys to add (and which existing lines to replace
+        # when override=True).
+        existing_upper = {k.upper() for k in existing_colors}
+        to_write: list[str] = []      # all lines to append (new + replacements)
+        to_replace: set[str] = set()  # uppercase key names whose old lines to drop
+        new_count = 0                 # genuinely new keys (not previously present)
+        override_count = 0            # existing keys being replaced
+
+        for full_key in sorted(needed_keys):
+            upper = full_key.upper()
+            already_present = upper in existing_upper
+            if already_present and not override:
+                continue  # never overwrite unless explicitly requested
+            # e.g. "P3_BUTTON1" → suffix "BUTTON1"
+            suffix = upper[upper.index("_") + 1:]
+            color = p1_colors.get(suffix)
+            if color is None:
+                continue  # P1 key absent — nothing to mirror from
+            if already_present:
+                to_replace.add(upper)
+                override_count += 1
+            else:
+                new_count += 1
+            to_write.append(f"{full_key}={color}\n")
+
+        if not to_write:
+            parts.extend(body_lines)
+            result.roms_skipped_complete += 1
+            continue
+
+        # Insert additions (and replacements) before any trailing blank lines.
+        non_trailing = list(body_lines)
+        trailing: list[str] = []
+        while non_trailing and non_trailing[-1].strip() == "":
+            trailing.insert(0, non_trailing.pop())
+
+        # Strip old lines for keys being overridden.
+        if to_replace:
+            filtered: list[str] = []
+            for line in non_trailing:
+                m = _PLAYER_KEY_RE.match(line.strip())
+                if m:
+                    existing_upper_key = f"P{m.group(1)}_{m.group(2).upper()}"
+                    if existing_upper_key.upper() in to_replace:
+                        continue  # drop — replacement written below
+                filtered.append(line)
+            non_trailing = filtered
+
+        parts.extend(non_trailing)
+        parts.extend(to_write)
+        parts.extend(trailing)
+
+        result.roms_updated += 1
+        result.keys_added += new_count
+        result.keys_overwritten += override_count
+        result.details.append((section_name, [line.rstrip("\n") for line in to_write]))
+
+    if not dry_run and result.roms_updated > 0:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
         colors_ini_path.write_text("".join(parts), encoding="utf-8")

@@ -763,6 +763,11 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky colors randomize",
     "ledblinky colors randomize --apply",
     "ledblinky colors randomize --seed <N> --apply",
+    "ledblinky colors sync-players",
+    "ledblinky colors sync-players --apply",
+    "ledblinky colors sync-players --apply --verbose",
+    "ledblinky colors sync-players --apply --override",
+    "ledblinky colors sync-players --apply --override --verbose",
     "ledblinky fill-defaults",
     "ledblinky fill-defaults --admin-buttons 6 --admin-color <COLOR> --apply",
     "ledblinky fill-defaults --apply",
@@ -772,6 +777,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky fill-defaults --system <SYSTEM> --apply",
     "ledblinky fix",
     "ledblinky fix --apply",
+    "ledblinky setup",
+    "ledblinky setup --apply",
+    "ledblinky setup --apply --verbose",
+    "ledblinky setup --overwrite --apply",
     "ledblinky generate",
     "ledblinky generate --apply",
     "ledblinky generate --overwrite --apply",
@@ -5620,7 +5629,7 @@ class _SpinDoctorGUI:
             ("_ovr_system_combo",      "_ovr_system_var",      None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
-            ("_led_system_combo",      "_led_system_var",      "MAME"),
+            # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
             ("_systems_old_combo",     "_systems_old_var",     None),
@@ -9567,123 +9576,170 @@ class _SpinDoctorGUI:
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        # ── Step 1 — Generate & Normalize ────────────────────────────────────
+        # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
-            frame, text="Step 1 — Generate & Normalize (MAME data)",
+            frame, text="Step 3 — MAME: Generate, Normalize & Sync Players",
         )
-        gen_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
+        gen_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         gen_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
             gen_frame,
-            text=("Generate reads MAME's -listxml data and writes controls.ini + colors.ini "
-                  "with per-game button assignments. Output uses a hex format "
-                  "(ledcolor1=FF0000) — click Normalize immediately after to convert "
-                  "to P*_BUTTON* named format, which is required before Fill Defaults "
-                  "or Randomize will work on those entries."),
+            text=("These three steps build MAME-sourced LED data using mame -listxml. "
+                  "Click Run Full MAME Setup to run 3a + 3c in one go, or use the "
+                  "individual buttons below. "
+                  "3b (Normalize) is only needed for a legacy Colors.ini in hex format "
+                  "(ledcolor1=FF0000) — skip it after a fresh Generate. "
+                  "Added new MAME ROMs? Re-run Full Setup — existing entries are "
+                  "preserved unless Overwrite is ticked."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
 
-        self.ttk.Label(gen_frame, text="System").grid(
-            row=1, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._led_system_var = self.tk.StringVar(value="MAME")
-        self._led_system_combo = self.ttk.Combobox(
-            gen_frame, textvariable=self._led_system_var,
-            state="readonly", width=24,
-        )
-        self._led_system_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
-
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            gen_frame, text="Overwrite existing entries (--overwrite)",
+            gen_frame, text="Overwrite existing entries — 3a Generate only (--overwrite)",
             variable=self._led_overwrite_var,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
+        # Chain button — runs 3a + 3c via ledblinky setup
+        gen_chain_row = self.ttk.Frame(gen_frame)
+        gen_chain_row.grid(row=2, column=0, columnspan=4, sticky="w",
+                           padx=6, pady=(6, 2))
+        self.ttk.Button(
+            gen_chain_row, text="▶  Run Full MAME Setup (3a + 3c)",
+            command=self._run_led_setup,
+        ).pack(side="left")
+        self.ttk.Label(
+            gen_chain_row,
+            text="  — generate + sync player colors in one click",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
+        # Individual step buttons
         gen_btn_row = self.ttk.Frame(gen_frame)
         gen_btn_row.grid(row=3, column=0, columnspan=4, sticky="w",
-                         padx=6, pady=(6, 4))
+                         padx=6, pady=(2, 4))
         self.ttk.Button(
-            gen_btn_row, text="1a. Generate (controls + colors)",
+            gen_btn_row, text="3a. Generate (controls + colors)",
             command=self._run_led_generate,
         ).pack(side="left")
         self.ttk.Button(
-            gen_btn_row, text="1b. Normalize Colors.ini",
+            gen_btn_row, text="3b. Normalize Colors.ini",
             command=self._run_color_normalize,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
-            gen_btn_row, text="Audit coverage",
+            gen_btn_row, text="3c. Sync player colors",
+            command=self._run_led_sync_players,
+        ).pack(side="left", padx=(8, 0))
+        self.ttk.Button(
+            gen_btn_row, text="Audit MAME coverage",
             command=self._run_led_audit,
         ).pack(side="left", padx=(8, 0))
 
+        # Inspect ROM row
+        gen_inspect_row = self.ttk.Frame(gen_frame)
+        gen_inspect_row.grid(row=4, column=0, columnspan=4, sticky="w",
+                             padx=6, pady=(2, 4))
+        self.ttk.Label(gen_inspect_row, text="Inspect ROM:").pack(side="left")
+        self._led_inspect_rom_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gen_inspect_row, textvariable=self._led_inspect_rom_var, width=20,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            gen_inspect_row, text="Inspect",
+            command=self._run_led_inspect_rom,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Label(
+            gen_inspect_row,
+            text="  — diagnose why a specific ROM's LEDs may not be working",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
         self.ttk.Label(
             gen_frame,
-            text=("After generating, run Normalize to convert ledcolor1=/joystick= "
-                  "hex keys to P1_BUTTON1=/P1_JOYSTICK= named format. "
-                  "Audit coverage shows which ROMs have / lack control data."),
+            text=("All writes auto-backup before modifying files. "
+                  "3b (Normalize) is for legacy files only — skip if you started "
+                  "fresh with SpinDoctor 2.4.21+. "
+                  "Audit MAME coverage shows which ROMs have / lack control data."),
             wraplength=820, justify="left", foreground=_FG_DIM,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
 
         # ── Fill Defaults ────────────────────────────────────────────────────
         fd_frame = self.ttk.LabelFrame(
-            frame, text="Step 2 — Fill Default Colors",
+            frame, text="Step 4 — Fill Default Colors (any console)",
         )
-        fd_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
             fd_frame,
             text=("Add a default Colors.ini entry for every ROM that has no LED "
-                  "mapping yet. Without an entry LedBlinky treats all buttons as "
-                  "inactive (off). After running fill-defaults, unmapped games "
-                  "will glow a steady color instead of going dark."),
+                  "mapping yet — works for MAME, SNES, NES, or any other console. "
+                  "Without an entry LedBlinky treats all buttons as inactive (off). "
+                  "After running fill-defaults, unmapped games will glow a steady "
+                  "color instead of going dark. Leave console blank to cover all "
+                  "systems at once, including Favorites and Recently Played."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
 
-        self.ttk.Label(fd_frame, text="Default color").grid(
+        self.ttk.Label(fd_frame, text="Console").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._fd_system_var = self.tk.StringVar(value="")
+        self._fd_system_combo = self.ttk.Combobox(
+            fd_frame, textvariable=self._fd_system_var, width=24,
+        )
+        self._fd_system_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self.ttk.Label(
+            fd_frame,
+            text="(leave blank = all consoles incl. Favorites / Recently Played)",
+            foreground=_FG_DIM,
+        ).grid(row=1, column=2, sticky="w", padx=(0, 6))
+
+        self.ttk.Label(fd_frame, text="Default color").grid(
+            row=2, column=0, sticky="w", padx=6, pady=2,
         )
         self._fd_color_var = self.tk.StringVar(value="White")
         self._fd_color_combo = self.ttk.Combobox(
             fd_frame, textvariable=self._fd_color_var, width=16, state="readonly",
         )
-        self._fd_color_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+        self._fd_color_combo.grid(row=2, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Button(
             fd_frame, text="Refresh colors",
             command=self._refresh_color_list,
-        ).grid(row=1, column=2, sticky="w", padx=(0, 4), pady=2)
+        ).grid(row=2, column=2, sticky="w", padx=(0, 4), pady=2)
 
         self.ttk.Label(fd_frame, text="Buttons (1-8)").grid(
-            row=2, column=0, sticky="w", padx=6, pady=2,
+            row=3, column=0, sticky="w", padx=6, pady=2,
         )
         self._fd_buttons_var = self.tk.StringVar(value="6")
         self.ttk.Spinbox(
             fd_frame, textvariable=self._fd_buttons_var,
             from_=1, to=8, width=5,
-        ).grid(row=2, column=1, sticky="w", padx=6, pady=2)
+        ).grid(row=3, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Label(
             fd_frame, text="per player", foreground=_FG_DIM,
-        ).grid(row=2, column=2, sticky="w", padx=(0, 6))
+        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
 
         self.ttk.Label(fd_frame, text="Players (1-4)").grid(
-            row=3, column=0, sticky="w", padx=6, pady=2,
+            row=4, column=0, sticky="w", padx=6, pady=2,
         )
         self._fd_players_var = self.tk.StringVar(value="1")
         self.ttk.Spinbox(
             fd_frame, textvariable=self._fd_players_var,
             from_=1, to=4, width=5,
-        ).grid(row=3, column=1, sticky="w", padx=6, pady=2)
+        ).grid(row=4, column=1, sticky="w", padx=6, pady=2)
         self.ttk.Label(
             fd_frame,
             text="P1–P4 blocks, all mirrored to same color",
             foreground=_FG_DIM,
-        ).grid(row=3, column=2, sticky="w", padx=(0, 6))
+        ).grid(row=4, column=2, sticky="w", padx=(0, 6))
 
         self.ttk.Label(fd_frame, text="Admin buttons").grid(
-            row=4, column=0, sticky="w", padx=6, pady=2,
+            row=5, column=0, sticky="w", padx=6, pady=2,
         )
         _fd_admin_inner = self.ttk.Frame(fd_frame)
-        _fd_admin_inner.grid(row=4, column=1, columnspan=2, sticky="w",
+        _fd_admin_inner.grid(row=5, column=1, columnspan=2, sticky="w",
                              padx=6, pady=2)
         self._fd_admin_buttons_var = self.tk.StringVar(value="0")
         self.ttk.Spinbox(
@@ -9704,20 +9760,6 @@ class _SpinDoctorGUI:
             text="  (0 = disabled, uses next player slot P{players+1})",
             foreground=_FG_DIM,
         ).grid(row=0, column=3, sticky="w", padx=(4, 0))
-
-        self.ttk.Label(fd_frame, text="System (optional)").grid(
-            row=5, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._fd_system_var = self.tk.StringVar(value="")
-        self._fd_system_combo = self.ttk.Combobox(
-            fd_frame, textvariable=self._fd_system_var, width=24,
-        )
-        self._fd_system_combo.grid(row=5, column=1, sticky="w", padx=6, pady=2)
-        self.ttk.Label(
-            fd_frame,
-            text="(leave blank = all systems incl. Favorites / Recently Played)",
-            foreground=_FG_DIM,
-        ).grid(row=5, column=2, sticky="w", padx=(0, 6))
 
         # Override options
         _fd_override_inner = self.ttk.Frame(fd_frame)
@@ -9753,8 +9795,8 @@ class _SpinDoctorGUI:
         ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 3 — Randomize Entry Colors ─────────────────────────────────
-        rz_frame = self.ttk.LabelFrame(frame, text="Step 3 — Randomize Entry Colors")
-        rz_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        rz_frame = self.ttk.LabelFrame(frame, text="Step 5 — Randomize Entry Colors")
+        rz_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9789,15 +9831,16 @@ class _SpinDoctorGUI:
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 4 — Admin Button Colors ─────────────────────────────────────
-        ab_frame = self.ttk.LabelFrame(frame, text="Step 4 — Admin Button Colors")
-        ab_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        ab_frame = self.ttk.LabelFrame(frame, text="Step 6 — Admin Button Colors")
+        ab_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
             text=("Set fixed colors for your cabinet-level (admin) buttons across "
                   "ALL Colors.ini ROM sections — e.g. Select=Green, Exit=Red. "
                   "Colors are written to the player slot you choose (P3 for a 2-player "
-                  "cabinet). Run after Randomize so admin colors override game colors."),
+                  "cabinet). Run after Step 5 (Randomize) — Randomize overwrites all "
+                  "button colors, so admin colors must be set last."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 4))
 
@@ -9854,8 +9897,8 @@ class _SpinDoctorGUI:
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
-        br2_frame = self.ttk.LabelFrame(frame, text="Step 5 — Brightness")
-        br2_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
+        br2_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br2_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9890,8 +9933,8 @@ class _SpinDoctorGUI:
         # ── Step 6 — Settings.ini Patch ───────────────────────────────────────
         _led_cfg = load_config()
 
-        sp_frame = self.ttk.LabelFrame(frame, text="Step 6 — Settings.ini Patch")
-        sp_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Settings.ini (one-time setup)")
+        sp_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9949,9 +9992,9 @@ class _SpinDoctorGUI:
 
         # ── Overlay Hooks (one-time fix) ──────────────────────────────────────
         oh_frame = self.ttk.LabelFrame(
-            frame, text="Overlay Hook Fix (one-time setup)",
+            frame, text="Step 1 — Overlay Hook Fix (one-time setup)",
         )
-        oh_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        oh_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
         oh_frame.columnconfigure(0, weight=1)
 
         self.ttk.Label(
@@ -9981,7 +10024,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(
-            frame, text="Color Definitions — Color-RGB.ini (advanced)",
+            frame, text="Step 8 — Color Definitions (Color-RGB.ini)",
         )
         cd_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
@@ -10073,7 +10116,7 @@ class _SpinDoctorGUI:
         # ── Backup / Restore ─────────────────────────────────────────────────
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
-        br_frame = self.ttk.LabelFrame(frame, text="Backup / Restore (LEDBlinky only)")
+        br_frame = self.ttk.LabelFrame(frame, text="Step 9 — Backup / Restore")
         br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
@@ -10122,9 +10165,27 @@ class _SpinDoctorGUI:
         frame.columnconfigure(1, weight=1)
         return frame
 
+    def _run_led_setup(self) -> None:
+        """Run ledblinky setup (3a generate + 3c sync-players) in one step."""
+        args = ["ledblinky", "setup"]
+        if self._led_overwrite_var.get():
+            args.append("--overwrite")
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_inspect_rom(self) -> None:
+        """Run ledblinky inspect-rom to diagnose a specific ROM."""
+        rom = self._led_inspect_rom_var.get().strip()
+        if not rom:
+            self._flash_validation("Enter a ROM name to inspect.")
+            return
+        self._run_cli("spindoctor", ["ledblinky", "inspect-rom", rom])
+
     def _run_led_generate(self) -> None:
-        system = self._led_system_var.get().strip() or "MAME"
-        args = ["ledblinky", "generate", "--system", system]
+        args = ["ledblinky", "generate", "--system", "MAME"]
         if self._led_overwrite_var.get():
             args.append("--overwrite")
         if self._global_apply_var.get():
@@ -10134,9 +10195,8 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_led_audit(self) -> None:
-        system = self._led_system_var.get().strip() or "MAME"
         self._run_cli(
-            "spindoctor", ["ledblinky", "audit", "--system", system],
+            "spindoctor", ["ledblinky", "audit", "--system", "MAME"],
         )
 
     def _run_led_fix(self) -> None:
@@ -10355,6 +10415,15 @@ class _SpinDoctorGUI:
             "spindoctor", args,
             on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
         )
+
+    def _run_led_sync_players(self) -> None:
+        """Mirror P1 colors to all additional players (P2, P3, P4, …) based on controls.ini."""
+        args = ["ledblinky", "colors", "sync-players"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
 
     def _run_fill_defaults(self) -> None:
         """Run ``ledblinky fill-defaults`` to add default entries for unmapped ROMs."""

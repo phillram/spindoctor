@@ -6,6 +6,23 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ledblinky patch-settings --verbose` — output no longer repeats per key** — the verbose block was inside the `for change in result.changes:` loop, causing it to print the full summary once per patched key instead of once total. Moved outside the loop.
+- **`Colors.ini` casing standardised throughout codebase** — `generate_for_roms`, `sync_player_colors`, and two helper functions were opening `"colors.ini"` (lowercase) while every other function and all tests used `"Colors.ini"` (capital C — LedBlinky's own filename). On Windows the case-insensitive filesystem hid the mismatch; on Linux CI it produced `FileNotFoundError` in every `sync_player_colors` test. Fixed by introducing named constants `COLORS_INI_NAME = "Colors.ini"` and `CONTROLS_INI_NAME = "controls.ini"` in `ledblinky.py` (matching the existing `CONTROLS_XML_NAME` and `COLOR_RGB_NAME` pattern) and replacing all inline string literals with those constants. `health.py` also updated to use the constants. Two regression tests added: `test_filename_constants_exact_casing` asserts the exact spelling of all four filename constants; `test_no_bare_colors_ini_string_in_module` scans the module source to reject any future bare `"colors.ini"` string literal. Architecture reference updated with a dedicated "Filename casing" section documenting the rule and its history.
+
+### Added
+
+- **`ledblinky colors sync-players` — new command to mirror P1 colors to all additional players** — `ledblinky generate` writes `Colors.ini` sections with P1 keys only. When a game has multiple players (P2, P3, P4, …), those buttons had no color entry and fell back to the XML default color rather than the game-specific palette. The new `sync-players` command closes that gap for **any number of players**: for every ROM that has both a `Colors.ini` section and a `controls.ini` entry, it reads `controls.ini` to discover all P{n≥2} keys, then adds any missing entries to `Colors.ini` by mirroring the matching P1 color (e.g. `P3_BUTTON1` gets the same color as `P1_BUTTON1`). Keys already present in `Colors.ini` are never overwritten unless `--override` is passed. Run after `generate` and `colors normalize`: `spindoctor ledblinky colors sync-players --apply`.
+- **`ledblinky colors sync-players --override`** — new flag that replaces existing P2/P3/P4+ color entries with the current P1-mirrored color. Without this flag, existing entries are always preserved. P1 keys are never affected regardless of `--override`.
+- **`ledblinky setup` — new one-step MAME setup command** — chains `generate` (writes `controls.ini` + `Colors.ini` from MAME listxml) then `sync-players` (mirrors P1 colors to P2/P3/P4+ for all multi-player ROMs) in a single invocation. Run once after initial setup and again whenever you add new MAME ROMs. Accepts `--overwrite`, `--apply`, `--no-backup`, and `--verbose`.
+- **GUI — LEDBlinky tab fully renumbered and reordered into a 9-step user journey** — sections are now labeled Step 1 through Step 9 in the recommended workflow order: **Step 1 — Overlay Hook Fix** (one-time) → **Step 2 — Settings.ini** (one-time) → **Step 3 — MAME: Generate, Normalize & Sync Players** → **Step 4 — Fill Default Colors** (any console) → **Step 5 — Randomize Entry Colors** → **Step 6 — Admin Button Colors** → **Step 7 — Brightness** → **Step 8 — Color Definitions** → **Step 9 — Backup / Restore**. One-time setup steps are promoted to the top so first-time users see them before any color-data steps.
+- **GUI — "Run Full MAME Setup (3a + 3c)" chain button in Step 3** — single-click button that runs `ledblinky setup` (generate + sync-players) with the current Apply and Verbose flags. Eliminates the need to click Generate, Normalize (if needed), and Sync Players individually for a fresh MAME import.
+- **GUI — Inspect ROM inline field in Step 3** — text field + Inspect button in the MAME section; enter a ROM name and click Inspect to run `ledblinky inspect-rom <ROM>` directly from the tab without switching to the Custom Command tab.
+- **GUI — Step 6 (Admin Button Colors) dependency note** — the section description now reminds users to run Admin Colors after Step 5 (Randomize), since Randomize overwrites all button colors including admin buttons.
+- **GUI — "1c. Sync player colors" button in LEDBlinky Step 3** — added alongside the existing Generate and Normalize buttons; runs `ledblinky colors sync-players` with the global Apply and Verbose flags. To use `--override`, use the Custom Command preset `ledblinky colors sync-players --apply --override`.
+- **GUI — LEDBlinky tab Step 3 / Step 4 restructured for clarity** — Step 3 is now explicitly "MAME: Generate, Normalize & Sync Players" with the system selector removed (these three commands are all MAME-only and do not need a per-system choice). Step 4 is now "Fill Default Colors (any console)" with the Console selector promoted to the top of the form so it reads as the scope control. The hint text in Step 3 correctly notes that 3b (Normalize) is for legacy Colors.ini files only and is not required after a fresh Generate.
+
 ---
 
 ## [2.4.22] - 2026-06-09
@@ -991,7 +1008,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - **Custom Command** tab now ships an editable Combobox seeded with ~70 curated commands grouped by family (discovery, audit, curate, fetch, wheels, main menu, LEDBlinky, lightgun, backup, migrate, config). Default stays `--help`; unfilled `<PLACEHOLDER>` tokens get caught before launch.
   - **Migrate** tab wraps `spindoctor migrate` end-to-end: per-component checkboxes, target-root picker, optional system filter for partial roms migrations, toggles for `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`, and a separate Undo panel that pre-fills `latest` and exposes `--list-manifests`.
   - **Main Menu** tab wraps `spindoctor mainmenu`: Show / Sort (alpha · manufacturer · year) / Move up / Move down / Reorder / Hide / Show / Add / Remove with a single Apply checkbox shared by every action.
-  - **LEDBlinky** tab wraps `spindoctor ledblinky`: per-system Generate (controls.ini + colors.ini), Audit coverage, Check existing INIs, and Fix INI issues — with an Overwrite toggle for community-maintained entries and dry-run by default.
+  - **LEDBlinky** tab wraps `spindoctor ledblinky`: per-system Generate (controls.ini + Colors.ini), Audit coverage, Check existing INIs, and Fix INI issues — with an Overwrite toggle for community-maintained entries and dry-run by default.
   - **Lightgun** tab wraps `spindoctor lightgun`: Detect installed Sinden / DemulShooter gear, Audit per-system wiring, and Configure one system's RL INI with optional `-target` / extra-args overrides.
   - **Diagnose** tab surfaces the read-only inspectors as one-click buttons (find-dupes, find-misplaced, find-orphan-media, check-discs, lint, report, preview, stats) plus a Global Search box and a Verify-against-DAT mini-form.
   - **Tools** tab wraps `spindoctor install-tools` so the HyperSpin Tools-menu .bat helpers (Refresh Favorites / Recently Played / Most Played / Both) install with one click.
@@ -1120,7 +1137,7 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 
 ### Added — LEDBlinky
 
-- `ledblinky generate` / `audit` — generate `controls.ini` and `colors.ini` from MAME `-listxml`, preserving any community-maintained entries.
+- `ledblinky generate` / `audit` — generate `controls.ini` and `Colors.ini` from MAME `-listxml`, preserving any community-maintained entries.
 - `ledblinky check` / `fix` — diagnose and patch the well-known issue where HyperSpin's Search overlay crashes when LEDBlinky is installed. Fully reversible.
 
 ### Added — Light guns
