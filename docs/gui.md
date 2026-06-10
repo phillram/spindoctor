@@ -181,7 +181,7 @@ Configure LEDBlinky's animation behaviour. Run once after installing, then only 
 These steps build MAME-sourced LED data using `mame -listxml`. Use **▶ Run Full MAME Setup (3a + 3c)** for a single-click workflow, or run individual steps below. Re-run after adding new MAME ROMs — existing entries are preserved unless Overwrite is ticked.
 
 - **▶ Run Full MAME Setup (3a + 3c)** — chains Generate + Sync player colors in one step. CLI: `spindoctor ledblinky setup --apply`.
-- **3a. Generate (controls + colors)** — reads MAME's `-listxml` to write `controls.ini` + `colors.ini` for every MAME ROM. Dry-run by default; tick **Overwrite existing entries — 3a Generate** to replace existing entries. Since 2.4.21, output uses native `P1_BUTTON1=` format (not legacy hex). CLI: `spindoctor ledblinky generate`.
+- **3a. Generate (controls + colors)** — reads MAME's `-listxml` to write `controls.ini` + `Colors.ini` for every MAME ROM. Dry-run by default; tick **Overwrite existing entries — 3a Generate** to replace existing entries. Since 2.4.21, output uses native `P1_BUTTON1=` format (not legacy hex). CLI: `spindoctor ledblinky generate`.
 - **3b. Normalize Colors.ini** — only needed for a legacy Colors.ini in hex format (`ledcolor1=FF0000`). Not required after a fresh Generate. CLI: `spindoctor ledblinky colors normalize`.
 - **3c. Sync player colors** — adds missing P2/P3/P4+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`. Never overwrites existing entries (use `--override` via Custom Command to replace them). CLI: `spindoctor ledblinky colors sync-players`.
 - **Audit MAME coverage** — shows which MAME ROMs have and lack control data. CLI: `spindoctor ledblinky audit`.
