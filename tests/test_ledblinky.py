@@ -5,6 +5,10 @@ import textwrap
 
 from spindoctor import ledblinky
 from spindoctor.ledblinky import (
+    COLOR_RGB_NAME,
+    COLORS_INI_NAME,
+    CONTROLS_INI_NAME,
+    CONTROLS_XML_NAME,
     ColorEntry,
     _normalize_scale_entry,
     _patch_admin_buttons_in_text,
@@ -1217,3 +1221,40 @@ def test_sync_players_override_false_preserves_existing(tmp_path):
     assert result.keys_overwritten == 0
     text = (tmp_path / "Colors.ini").read_text(encoding="utf-8")
     assert "P2_BUTTON1=Green" in text  # original value preserved
+
+
+# ─── filename constant casing regression tests ────────────────────────────────
+# LedBlinky is a Windows application whose filenames have specific mixed-case
+# spellings.  Linux CI uses a case-sensitive filesystem, so even one wrong
+# character silently breaks every path lookup (e.g. "colors.ini" vs
+# "Colors.ini" are different files on Linux).  These tests lock the exact
+# casing of every filename constant so a future typo fails immediately in CI
+# rather than only on the user's Windows cabinet.
+
+def test_filename_constants_exact_casing():
+    """Filename constants must match LedBlinky's own mixed-case spelling exactly."""
+    assert COLORS_INI_NAME   == "Colors.ini",           "Must be capital-C 'Colors.ini'"
+    assert CONTROLS_INI_NAME == "controls.ini",          "Must be all-lowercase 'controls.ini'"
+    assert CONTROLS_XML_NAME == "LEDBlinkyControls.xml", "Must be 'LEDBlinkyControls.xml'"
+    assert COLOR_RGB_NAME    == "Color-RGB.ini",         "Must be 'Color-RGB.ini'"
+
+
+def test_no_bare_colors_ini_string_in_module():
+    """The module source must not contain the bare string literal 'colors.ini'
+    (lowercase) — all path constructions must go through COLORS_INI_NAME.
+    The constant definition itself and comments are exempted.
+    """
+    import inspect
+    src = inspect.getsource(ledblinky)
+    # Strip comment lines and the constant definition line so we only catch
+    # accidental bare-string path usages.
+    offending = [
+        line for line in src.splitlines()
+        if '"colors.ini"' in line.lower() and '"colors.ini"' in line
+        and not line.strip().startswith("#")
+        and "COLORS_INI_NAME" not in line
+    ]
+    assert offending == [], (
+        "Found bare 'colors.ini' string literal(s) in ledblinky.py — "
+        "use COLORS_INI_NAME instead:\n" + "\n".join(offending)
+    )

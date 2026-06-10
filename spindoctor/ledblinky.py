@@ -454,8 +454,8 @@ def generate_for_roms(
         )
 
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
-    src_controls = (src_base / "controls.ini") if src_base else None
-    src_colors = (src_base / "Colors.ini") if src_base else None
+    src_controls = (src_base / CONTROLS_INI_NAME) if src_base else None
+    src_colors = (src_base / COLORS_INI_NAME) if src_base else None
 
     existing_controls = (
         parse_existing_controls_ini(src_controls, warnings=result.warnings) if src_controls else {}
@@ -516,8 +516,8 @@ def generate_for_roms(
             )
             result.colors_synthesised += 1
 
-    controls_path = base / "controls.ini"
-    colors_path = base / "Colors.ini"
+    controls_path = base / CONTROLS_INI_NAME
+    colors_path = base / COLORS_INI_NAME
 
     if dry_run:
         result.controls_path = controls_path
@@ -603,7 +603,7 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
     base = Path(config.ledblinky_dir)
 
     # Colors.ini
-    colors_path = base / "Colors.ini"
+    colors_path = base / COLORS_INI_NAME
     result["colors_ini_path"] = colors_path
     if colors_path.exists():
         sections = parse_existing_colors_ini(colors_path)
@@ -629,7 +629,7 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
         result["warnings"].append(f"Colors.ini not found at {colors_path}.")
 
     # controls.ini
-    controls_path = base / "controls.ini"
+    controls_path = base / CONTROLS_INI_NAME
     result["controls_ini_path"] = controls_path
     if controls_path.exists():
         sections = parse_existing_controls_ini(controls_path)
@@ -733,11 +733,11 @@ def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow
     """Return per-ROM coverage info: existing entries vs. -listxml synthesis."""
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
     existing_controls = (
-        parse_existing_controls_ini(src_base / "controls.ini")
+        parse_existing_controls_ini(src_base / CONTROLS_INI_NAME)
         if src_base else {}
     )
     existing_colors = (
-        parse_existing_colors_ini(src_base / "Colors.ini")
+        parse_existing_colors_ini(src_base / COLORS_INI_NAME)
         if src_base else {}
     )
     listxml = load_listxml_for_system(config, "MAME")
@@ -777,7 +777,19 @@ LEDBLINKY_HOOK_KEYS = ["Start_Hyperspin_Process", "Exit_Hyperspin_Process"]
 LEDBLINKY_HOOK_MARKER = "LEDBlinky"   # the binary referenced in the hook value
 LEDBLINKY_DISABLE_TAG = "; disabled by spindoctor ledblinky fix"
 
-CONTROLS_XML_NAME = "LEDBlinkyControls.xml"
+# ── LedBlinky filename constants ──────────────────────────────────────────────
+# All LedBlinky filenames are defined here as constants so there is a single
+# source of truth for their exact casing.  LedBlinky is a Windows application
+# and uses mixed-case names; Linux filesystems are case-sensitive, so even a
+# single character difference (e.g. "colors.ini" vs "Colors.ini") silently
+# breaks path lookups on CI and in real Linux deployments.
+#
+# Rule: never write a LedBlinky filename as a bare string literal anywhere in
+# this module.  Always reference the constant.
+CONTROLS_XML_NAME = "LEDBlinkyControls.xml"   # XML control database
+CONTROLS_INI_NAME = "controls.ini"            # per-ROM button layout (lowercase — LedBlinky's own casing)
+COLORS_INI_NAME   = "Colors.ini"              # per-ROM named colors  (capital C — LedBlinky's own casing)
+# COLOR_RGB_NAME is defined further down, near its related functions.
 
 
 # ─── path helpers ─────────────────────────────────────────────────────────────
@@ -1530,7 +1542,7 @@ def apply_color_rename(
     ]
 
     # ── 2. Pre-compute replacements (safe, no writes yet) ────────────────────
-    colors_ini_path = base / "Colors.ini"
+    colors_ini_path = base / COLORS_INI_NAME
     new_colors_ini_text, colors_ini_count = _replace_color_in_colors_ini(
         colors_ini_path, old_name, new_name
     )
@@ -1679,7 +1691,7 @@ def normalize_colors_ini(
         )
     base = Path(config.ledblinky_dir)
 
-    colors_ini_path = base / "Colors.ini"
+    colors_ini_path = base / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2119,7 +2131,7 @@ def fill_default_colors(
             "Run: spindoctor config set databases_dir <path>"
         )
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2529,7 +2541,7 @@ def patch_admin_button_colors(
     if not button_colors:
         raise ValueError("button_colors must not be empty.")
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
     result.colors_ini_path = colors_ini_path
@@ -2672,7 +2684,7 @@ def randomize_entry_colors(
             "Run: spindoctor config set ledblinky_dir <path>"
         )
 
-    colors_ini_path = Path(config.ledblinky_dir) / "Colors.ini"
+    colors_ini_path = Path(config.ledblinky_dir) / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
     if not colors_ini_path.exists():
         raise ValueError(f"Colors.ini not found at {colors_ini_path}")
@@ -2840,8 +2852,8 @@ def sync_player_colors(
         )
 
     base = Path(config.ledblinky_dir)
-    controls_ini_path = base / "controls.ini"
-    colors_ini_path = base / "Colors.ini"
+    controls_ini_path = base / CONTROLS_INI_NAME
+    colors_ini_path = base / COLORS_INI_NAME
     result.colors_ini_path = colors_ini_path
 
     if not controls_ini_path.exists():
