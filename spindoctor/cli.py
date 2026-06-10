@@ -5729,7 +5729,7 @@ def ledblinky_group():
       audit          Audit ROM → Colors.ini coverage
       check          Check LEDBlinky compatibility with HyperSpin
       fix            Fix LEDBlinky compatibility issues
-      patch-settings Patch Settings.ini to suppress unused-button flash
+      patch-settings Patch Settings.ini animations and suppress unused-button flash
       fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
       admin-buttons  Set per-button admin/cabinet colors across all ROM sections
       colors         Manage named color definitions (list / edit / normalize)
@@ -6537,9 +6537,15 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
 @ledblinky_group.command("patch-settings")
 @click.option(
     "--fe-lwa", default=None,
-    help="LWA animation filename for the frontend idle state (FELWAFile in "
+    help="LWA animation filename for the frontend active state (FELWAFile in "
          "[FEOptions]).  E.g. 'Slow Fade.lwa'.  Pass empty string to stop "
          "all animation and show static colors.  Omit to leave unchanged.",
+)
+@click.option(
+    "--ss-lwa", default=None,
+    help="LWA animation filename for the screen saver (FEScreenSaverLWAFile in "
+         "[FEOptions]).  E.g. 'Slow Fade.lwa'.  Pass empty string to silence "
+         "the screen saver animation.  Omit to leave unchanged.",
 )
 @click.option(
     "--game-lwa", default="",
@@ -6552,19 +6558,23 @@ def ledblinky_fix(apply_changes, output_dir, no_backup, menus):
 @click.option("--no-backup", is_flag=True,
               help="Skip the .bak backup when writing in-place.")
 @click.option("--verbose", is_flag=True, help="Print the settings file path being patched.")
-def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose):
-    """Patch Settings.ini to fix idle animation and silence unused buttons.
+def ledblinky_patch_settings(fe_lwa, ss_lwa, game_lwa, apply_changes, no_backup, verbose):
+    """Patch Settings.ini to fix animations and silence unused buttons.
 
     \b
-    Patches two keys in Settings.ini by default:
+    Patches keys in Settings.ini:
 
       GamePlayLWAFile (in [GameOptions])
         Animation on unassigned buttons DURING gameplay.
         Default: "" (empty) — unused buttons go dark instead of flashing.
 
       FELWAFile (in [FEOptions])
-        Animation while browsing HyperSpin (omit flag to leave unchanged).
+        Animation while actively browsing HyperSpin (omit to leave unchanged).
         Pass a .lwa filename for a smooth fade, or "" for static colors.
+
+      FEScreenSaverLWAFile (in [FEOptions])
+        Animation played during the HyperSpin screen saver (omit to leave unchanged).
+        Pass a .lwa filename or "" to silence.
 
     \b
     Examples:
@@ -6572,6 +6582,8 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose
       spindoctor ledblinky patch-settings --apply       # fix in-game flash
       spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply
       spindoctor ledblinky patch-settings --fe-lwa "" --apply  # static FE
+      spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply
+      spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply
     """
     from . import ledblinky as lb
 
@@ -6588,6 +6600,7 @@ def ledblinky_patch_settings(fe_lwa, game_lwa, apply_changes, no_backup, verbose
         result = lb.patch_ledblinky_settings(
             config,
             fe_lwa_file=fe_lwa,
+            ss_lwa_file=ss_lwa,
             game_play_lwa_file=game_lwa,
             dry_run=not apply_changes,
             backup=not no_backup,

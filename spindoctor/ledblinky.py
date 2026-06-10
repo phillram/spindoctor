@@ -1230,6 +1230,7 @@ class SettingsPatchResult:
 def patch_ledblinky_settings(
     config: Config,
     fe_lwa_file: Optional[str] = None,
+    ss_lwa_file: Optional[str] = None,
     game_play_lwa_file: str = "",
     dry_run: bool = True,
     backup: bool = True,
@@ -1240,9 +1241,14 @@ def patch_ledblinky_settings(
     ----------
     fe_lwa_file:
         Animation file (basename only, e.g. ``"Slow Fade.lwa"``) to set as the
-        frontend idle animation (``FELWAFile`` in ``[FEOptions]``).
+        frontend active animation (``FELWAFile`` in ``[FEOptions]``).
         Pass ``None`` to leave the key unchanged.
         Pass ``""`` to silence all animation (static colors while browsing).
+    ss_lwa_file:
+        Animation file to set as the screen saver animation
+        (``FEScreenSaverLWAFile`` in ``[FEOptions]``).
+        Pass ``None`` to leave the key unchanged.
+        Pass ``""`` to silence the screen saver animation.
     game_play_lwa_file:
         Animation file for buttons *not* used by the current game during
         gameplay (``GamePlayLWAFile`` in ``[GameOptions]``).
@@ -1271,7 +1277,7 @@ def patch_ledblinky_settings(
 
     text = settings_path.read_text(encoding="utf-8", errors="replace")
 
-    # Build patch map — only include FELWAFile if caller explicitly passed a value.
+    # Build patch map — only include FE/SS keys if caller explicitly passed a value.
     patches: dict[str, dict[str, str]] = {
         "GameOptions": {
             "GamePlayLWAFile": game_play_lwa_file,
@@ -1279,6 +1285,8 @@ def patch_ledblinky_settings(
     }
     if fe_lwa_file is not None:
         patches.setdefault("FEOptions", {})["FELWAFile"] = fe_lwa_file
+    if ss_lwa_file is not None:
+        patches.setdefault("FEOptions", {})["FEScreenSaverLWAFile"] = ss_lwa_file
 
     new_text, changes = _patch_ini_keys(text, patches)
     result.changes = changes
@@ -1287,6 +1295,42 @@ def patch_ledblinky_settings(
         if backup:
             result.backup_path = _backup(settings_path, _config_backup_dir(config))
         settings_path.write_text(new_text, encoding="utf-8")
+
+    return result
+
+
+def read_ledblinky_settings_keys(config: Config) -> "dict[str, str]":
+    """Read current values of the patchable animation keys from ``Settings.ini``.
+
+    Returns a dict keyed by INI key name
+    (e.g. ``{"FELWAFile": "Slow Fade.lwa", "FEScreenSaverLWAFile": "Slow Fade.lwa"}``).
+    Keys absent from the file are absent from the result.
+    Returns an empty dict if ``ledblinky_dir`` is not configured or
+    ``Settings.ini`` is absent.
+    """
+    if not config.ledblinky_dir:
+        return {}
+    settings_path = Path(config.ledblinky_dir) / "Settings.ini"
+    if not settings_path.exists():
+        return {}
+
+    targets: dict[str, set[str]] = {
+        "FEOptions": {"FELWAFile", "FEScreenSaverLWAFile"},
+        "GameOptions": {"GamePlayLWAFile"},
+    }
+    result: dict[str, str] = {}
+    current_section: Optional[str] = None
+
+    for line in settings_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            continue
+        if current_section and current_section in targets:
+            for key in targets[current_section]:
+                if re.match(rf"^{re.escape(key)}\s*=", stripped):
+                    result[key] = stripped.split("=", 1)[1]
+                    break
 
     return result
 

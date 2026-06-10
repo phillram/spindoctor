@@ -497,11 +497,13 @@ spindoctor ledblinky colors brightness --scale 10  --apply               :: nigh
 spindoctor ledblinky colors brightness --scale 75  --verbose             :: preview 75% with per-color before/after
 
 :: ── Step 2: Settings.ini — animation behavior (one-time setup) ───────────────
-spindoctor ledblinky patch-settings --apply                                  :: silence in-game unused-button flash (dark/off)
-spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply      :: play animation on unused buttons instead
-spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply        :: swap idle animation too
-spindoctor ledblinky patch-settings --fe-lwa "" --apply                      :: static colors while browsing
-spindoctor ledblinky patch-settings --apply --verbose                        :: show each key changed with old→new value
+spindoctor ledblinky patch-settings --apply                                                   :: silence in-game unused-button flash (dark/off)
+spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply                       :: play animation on unused buttons instead
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: set FE active animation
+spindoctor ledblinky patch-settings --fe-lwa "" --apply                                       :: static colors while browsing
+spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
+spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both FE active and screen saver animations
+spindoctor ledblinky patch-settings --apply --verbose                                         :: show each key changed with old→new value
 
 :: ── Step 1: Overlay Hook Fix (one-time setup) ────────────────────────────────
 :: Fixes HyperSpin Search/Genre/Favorites overlay hang caused by LEDBlinky hooks.
