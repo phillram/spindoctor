@@ -104,6 +104,16 @@ def test_filename_missing_does_not_crash():
     assert "the target file" in msg or "permission" in msg.lower()
 
 
+def test_full_path_shown_not_just_basename():
+    """Error messages must include the full path so the user can locate
+    the file — basename-only was useless when databases span many
+    system subfolders (e.g. 'A Visual Commpendium.xml' with no folder)."""
+    full = r"D:\Arcade\Databases\Nintendo 64\A Visual Commpendium.xml"
+    e = _make(code=errno.EACCES, filename=full)
+    msg = humanize_oserror(e, action="restore from the backup")
+    assert full in msg, f"Expected full path in message, got: {msg!r}"
+
+
 def test_does_not_raise_on_garbage_exc():
     """Resilience: even a hand-constructed OSError with no useful
     attributes must not raise from the humanizer."""
