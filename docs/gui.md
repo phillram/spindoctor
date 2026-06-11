@@ -120,11 +120,13 @@ Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit
 
 **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
-**Step 2 — Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
+**Step 2 — Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Check archive extensions**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
+
+**Check archive extensions** peeks inside every `.zip`/`.7z`/`.rar` archive in each configured ROM folder and compares the inner file extensions against the `Rom_Extension=` list in `Global Emulators.ini` (falling back to SpinDoctor's built-in emulator-extension map when the RL config is unavailable). Archives whose inner extension is not in the configured list are flagged — this is the most common reason RocketLauncher reports *"No valid roms found in the archive"* at launch time.
 
 **Step 3 — Search & verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
 
-CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
+CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Metadata & Media
 

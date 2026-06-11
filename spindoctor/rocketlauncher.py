@@ -61,7 +61,11 @@ EMULATOR_MAP: dict[str, str] = {
     "playstation 2": "PCSX2",
     "dreamcast": "Demul",
     "gamecube": "Dolphin",
+    "nintendo gamecube": "Dolphin",
     "wii": "Dolphin",
+    "nintendo wii": "Dolphin",
+    "wiiware": "Dolphin",
+    "nintendo wiiware": "Dolphin",
     "atari 2600": "RetroArch",
     "atari 7800": "RetroArch",
     "atari lynx": "RetroArch",
@@ -107,7 +111,7 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
     "RetroArch": "zip|7z|nes|sfc|smc|md|bin|gba|gb|gbc|n64|z64",
     "Project64": "z64|n64|v64|zip",
     "PCSX2": "iso|bin|img",
-    "Dolphin": "iso|gcm|wbfs|rvz",
+    "Dolphin": "iso|gcm|gcz|wbfs|ciso|rvz",
     "Demul": "chd|cdi|gdi|cue",
     "PCLauncher": "exe|lnk|url|bat",
 }
@@ -1358,5 +1362,49 @@ def generate_pclauncher_inis(
         ini_path.write_text(_pclauncher_ini_text(exe_path), encoding="utf-8")
         written.append(ini_path)
     return module_dir, written, skipped
+
+
+# ─── ROM extension helpers ────────────────────────────────────────────────────
+
+def read_rl_rom_extensions(
+    system_name: str,
+    rocketlauncher_dir: Optional[Path],
+) -> Optional[set[str]]:
+    """Return the configured ``Rom_Extension`` set for *system_name* from RL settings.
+
+    Resolution order:
+    1. Read the default emulator for the system from ``Settings/<system>/Emulators.ini``
+       (folder layout) or ``Settings/<system>.ini`` (flat layout).
+    2. Look up that emulator's ``Rom_Extension`` value in ``Global Emulators.ini``.
+    3. Fall back to :data:`EMULATOR_EXTENSIONS` keyed by the guessed emulator name.
+
+    Returns ``None`` when *rocketlauncher_dir* is not provided, the files cannot be
+    read, or no extension list can be resolved.
+    """
+    if not rocketlauncher_dir:
+        return None
+
+    import configparser
+
+    emulator = _read_system_default_emulator(system_name, rocketlauncher_dir)
+    if not emulator:
+        emulator = guess_emulator(system_name)
+
+    global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
+    if global_ini.exists() and emulator:
+        try:
+            cp = configparser.RawConfigParser()
+            cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
+            if cp.has_section(emulator):
+                ext_str = cp.get(emulator, "Rom_Extension", fallback="").strip()
+                if ext_str:
+                    return {e.lower() for e in ext_str.split("|") if e.strip()}
+        except Exception:
+            pass
+
+    if emulator and emulator in EMULATOR_EXTENSIONS:
+        return {e.lower() for e in EMULATOR_EXTENSIONS[emulator].split("|") if e.strip()}
+
+    return None
 
 
