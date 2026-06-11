@@ -1378,6 +1378,77 @@ def generate_pclauncher_inis(
     return module_dir, written, skipped
 
 
+# ─── Toolkit module-INI helper ────────────────────────────────────────────────
+
+#: Stems of every tool entry that install-tools can write.  Kept here so
+#: write_toolkit_module_ini can strip stale SpinDoctor sections without
+#: importing from cli.py (which would create a circular dependency).
+_TOOLKIT_TOOL_NAMES: frozenset = frozenset({
+    "Refresh Favorites",
+    "Refresh Recently Played",
+    "Refresh Most Played",
+    "Refresh Both",
+    "Refresh All",
+})
+
+
+def write_toolkit_module_ini(
+    system_name: str,
+    tool_entries: "list[tuple[str, Path]]",
+    rocketlauncher_dir: Path,
+) -> Path:
+    """Write or update the PCLauncher module INI for a Toolkit-style wheel.
+
+    PCLauncher.ahk reads ``Modules/PCLauncher/<system>.ini`` and looks up
+    ``[<game_name>]`` sections to find ``Application=``, ``FadeTitle=``, etc.
+    Without an entry here PCLauncher errors: "You have not set up <game> in
+    RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle,
+    and/or SteamID to watch for."
+
+    *tool_entries* is a list of ``(tool_name, bat_path)`` pairs.  Each bat
+    is launched directly — no recursive RocketLauncher call — so no
+    ``FadeTitle`` or ``AppWaitExe`` is needed; PCLauncher will track the
+    ``cmd.exe`` PID of the running batch.
+
+    When the file already exists, existing non-SpinDoctor sections are
+    preserved.  SpinDoctor-managed sections (from :data:`_TOOLKIT_TOOL_NAMES`)
+    are replaced with the freshly generated ones.
+    """
+    module_ini = rocketlauncher_dir / "Modules" / "PCLauncher" / f"{system_name}.ini"
+
+    # Build the replacement section text for each SpinDoctor tool.
+    new_section_lines: list[str] = []
+    for tool_name, bat_path in tool_entries:
+        new_section_lines.append(f"[{tool_name}]")
+        new_section_lines.append(f"Application={bat_path}")
+        new_section_lines.append(f"WorkingFolder={bat_path.parent}")
+        new_section_lines.append("")
+    new_sections = "\n".join(new_section_lines)
+
+    if module_ini.exists():
+        # Preserve non-SpinDoctor sections; replace SpinDoctor ones.
+        existing = module_ini.read_text(encoding="utf-8", errors="replace")
+        preserved_lines: list[str] = []
+        in_sd_section = False
+        for line in existing.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                section_name = stripped[1:-1]
+                in_sd_section = section_name in _TOOLKIT_TOOL_NAMES
+            if not in_sd_section:
+                preserved_lines.append(line)
+        base = "".join(preserved_lines)
+        if base and not base.endswith("\n"):
+            base += "\n"
+        content = base + new_sections
+    else:
+        module_ini.parent.mkdir(parents=True, exist_ok=True)
+        content = new_sections
+
+    module_ini.write_text(content, encoding="utf-8")
+    return module_ini
+
+
 # ─── ROM extension helpers ────────────────────────────────────────────────────
 
 def read_rl_rom_extensions(
