@@ -283,9 +283,12 @@ def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
     fresh template when ``False`` is returned.
     """
     content = ini_path.read_text(encoding="utf-8", errors="replace")
+    # Use a callable replacement to avoid re.subn interpreting backslashes in
+    # Windows paths (e.g. C:\Users\...) as regex backreferences (\U, \N, etc.).
+    replacement = f"Rom_Path={new_rom_path}"
     new_content, count = re.subn(
         r"(?im)^rom_path=.*$",
-        f"Rom_Path={new_rom_path}",
+        lambda m: replacement,
         content,
     )
     if count:
