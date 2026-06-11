@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.24] - 2026-06-10
+
 ### Changed
 
 - **GUI — tab order resequenced to match new-user journey** — tabs now appear in this order: Setup → Systems → Diagnostics → Metadata & Media → Maintenance → Tools → LEDBlinky → Lightgun → Backup & Restore → Migrate → Custom Command → Logs. Systems (formerly tab 6) is now tab 2 so cabinet owners configure their library before running diagnostics. Logs (formerly tab 11) is now the last tab. Custom Command (formerly last) is now tab 11. The `Ctrl+1–9` shortcuts still jump to tab N by visible position.
@@ -1226,7 +1230,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.23...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.24...HEAD
+[2.4.24]: https://github.com/phillram/spindoctor/compare/v2.4.23...v2.4.24
 [2.4.23]: https://github.com/phillram/spindoctor/compare/v2.4.22...v2.4.23
 [2.4.22]: https://github.com/phillram/spindoctor/compare/v2.4.21...v2.4.22
 [2.4.21]: https://github.com/phillram/spindoctor/compare/v2.4.20...v2.4.21
