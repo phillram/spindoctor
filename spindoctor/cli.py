@@ -3589,13 +3589,28 @@ def install_tools(output_dir, add_to_system):
         + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
 
+    # Write the PCLauncher module INI (Modules/PCLauncher/<system>.ini).
+    # PCLauncher.ahk reads *this* file to look up [<game>] sections containing
+    # Application=, FadeTitle=, etc.  Without it PCLauncher errors:
+    # "You have not set up <game> in RocketLauncherUI yet, so PCLauncher does
+    # not know what exe, FadeTitle, and/or SteamID to watch for."
+    # The per-game placeholder .ini files in the Rom_Path are only used by
+    # RocketLauncher for ROM discovery; they are not read by PCLauncher.ahk.
+    rl_dir = Path(config.rocketlauncher_dir)
+    from .rocketlauncher import write_toolkit_module_ini
+    tool_entries = [(bat_path.stem, bat_path) for bat_path in written_bats]
+    module_ini = write_toolkit_module_ini(add_to_system, tool_entries, rl_dir)
+    console.print(
+        f"[green]+[/green] wrote PCLauncher module INI → "
+        f"[cyan]{module_ini}[/cyan]"
+    )
+
     # Write the RocketLauncher system INI only when the system has not been
     # configured already.  For existing systems (e.g. a user-maintained
     # Toolkit wheel), the Emulators.ini is already correct — overwriting it
     # replaces the user's [ROMS] section / Rom_Path / custom emulators with
     # SpinDoctor's synthetic defaults, which breaks all non-SpinDoctor entries
     # and causes "No Default_Emulator found" or "wrong extension" errors.
-    rl_dir = Path(config.rocketlauncher_dir)
     emulators_ini = rl_dir / "Settings" / add_to_system / "Emulators.ini"
     flat_ini = rl_dir / "Settings" / f"{add_to_system}.ini"
     if emulators_ini.exists() or flat_ini.exists():
@@ -3671,6 +3686,9 @@ def uninstall_tools(add_to_system, apply_changes):
         Emulators.ini if it exists, otherwise Modules/PCLauncher/<SYSTEM>).
         Also checks the legacy Modules/PCLauncher/<SYSTEM> path so files
         written by older versions of install-tools are cleaned up too.
+      • Removes SpinDoctor-written sections from the PCLauncher module INI
+        (Modules/PCLauncher/<SYSTEM>.ini).  Non-SpinDoctor sections are
+        preserved.  If no sections remain the file is deleted entirely.
       • Deletes the matching <game> entries from the system's database
         XML (<hyperspin_dir>/Databases/<SYSTEM>/<SYSTEM>.xml).
       Only files / entries that exist are touched; missing ones are silently
@@ -3737,6 +3755,42 @@ def uninstall_tools(add_to_system, apply_changes):
                 f"[yellow]No SpinDoctor helper files found under[/yellow] "
                 f"{dirs_str} — nothing to delete."
             )
+
+        # ── Clean up PCLauncher module INI sections ───────────────────────────
+        from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+        module_ini = rl_dir / "Modules" / "PCLauncher" / f"{add_to_system}.ini"
+        if module_ini.exists():
+            existing = module_ini.read_text(encoding="utf-8", errors="replace")
+            preserved_lines: list[str] = []
+            in_sd_section = False
+            found_sd_sections = False
+            for line in existing.splitlines(keepends=True):
+                stripped = line.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    section_name = stripped[1:-1]
+                    in_sd_section = section_name in _TOOLKIT_TOOL_NAMES
+                    if in_sd_section:
+                        found_sd_sections = True
+                if not in_sd_section:
+                    preserved_lines.append(line)
+            if found_sd_sections:
+                console.print(
+                    f"[{'green' if apply_changes else 'yellow'}]"
+                    f"{'–' if apply_changes else '?'}[/{'green' if apply_changes else 'yellow'}] "
+                    f"{verb} SpinDoctor sections from PCLauncher module INI "
+                    f"[cyan]{module_ini}[/cyan]"
+                )
+                if apply_changes:
+                    content = "".join(preserved_lines).rstrip("\n")
+                    if content:
+                        module_ini.write_text(content + "\n", encoding="utf-8")
+                    else:
+                        module_ini.unlink()
+            else:
+                console.print(
+                    f"[dim]No SpinDoctor sections found in[/dim] "
+                    f"[cyan]{module_ini}[/cyan] — nothing to remove from module INI."
+                )
 
         # ── Collect DB entries; remove only when --apply ──────────────────────
         db_path = (config.databases_dir / add_to_system / f"{add_to_system}.xml")
