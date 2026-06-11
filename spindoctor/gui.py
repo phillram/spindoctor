@@ -5018,19 +5018,15 @@ class _SpinDoctorGUI:
             )
             return
         total = len(steps)
-        self._chain_start(total)
 
         def run_next(remaining: list[tuple[str, str, list[str]]], rc: int) -> None:
             if rc != 0:
-                self._chain_end()
                 self._append_output(f"\nStopped — previous step exited with code {rc}.\n")
                 return
             if not remaining:
-                self._chain_end()
                 self._append_output("\nWheel refresh complete.\n")
                 return
             step_num = total - len(remaining) + 1
-            self._chain_advance(step_num)
             name, binary, args = remaining[0]
             self._set_status(f"Step {step_num}/{total}: {name}…")
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
