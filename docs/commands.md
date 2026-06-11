@@ -247,7 +247,9 @@ spindoctor generate-config --no-rl --apply                :: only regenerate the
 spindoctor generate-config --db-stubs --apply             :: also create empty DB stubs
 ```
 
-Emulators are guessed from the system name (MAME → MAME, SNES → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INIs to override.
+**What changes for existing systems:** only `Rom_Path=` is updated in-place. `Default_Emulator`, `Emu_Path`, `Module`, `Pause_Save_State_Keys`, and every other key are preserved exactly as set by HyperHQ / RLUI. This means cabinets with non-standard emulators (SSF for Sega Saturn, Mednafen for TurboGrafx-16, NullDC/Demul for Dreamcast, ZiNc, etc.) are unaffected — only the ROM path changes.
+
+**What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INI or use `spindoctor config system set "<System>" --emulator <Name>` to override before running `generate-config`.
 
 ### `mainmenu`
 

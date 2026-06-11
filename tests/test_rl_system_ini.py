@@ -4,6 +4,15 @@ Three layout scenarios:
   folder — Settings/<system>/Emulators.ini already exists (HyperHQ layout).
   flat   — Settings/<system>.ini already exists (older RL layout).
   new    — neither file exists (first-time generate-config run).
+
+In-place update contract (existing files):
+  Only Rom_Path= is changed.  Default_Emulator, Emu_Path, Module, and every
+  other key are preserved exactly as set by HyperHQ / RLUI.  This was the
+  root cause of the post-migration "Could not find an Emu_path" breakage:
+  the old code replaced the file wholesale, overwriting Default_Emulator with
+  SpinDoctor's guessed value (RetroArch for any system not in EMULATOR_MAP)
+  and adding a bare [<Emulator>] section without Emu_Path, which blocked
+  RocketLauncher's fallback lookup to Global Emulators.ini.
 """
 from __future__ import annotations
 
@@ -70,12 +79,12 @@ def test_detect_folder_wins_when_both_exist(tmp_path):
     assert detect_rl_layout(settings, "MAME") == "folder"
 
 
-# ─── generate_rl_system_ini — folder layout ──────────────────────────────────
+# ─── generate_rl_system_ini — folder layout, existing file ───────────────────
 
 
 def test_folder_layout_updates_emulators_ini(tmp_path):
-    """When Settings/MAME/Emulators.ini already exists, it is updated in-place
-    and the flat Settings/MAME.ini is NOT created."""
+    """When Settings/MAME/Emulators.ini already exists, only Rom_Path is
+    updated and the flat Settings/MAME.ini is NOT created."""
     cfg, rl = _make_config(tmp_path)
     emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
     emu_ini.parent.mkdir(parents=True)
@@ -97,11 +106,12 @@ def test_folder_layout_updates_emulators_ini(tmp_path):
 
 
 def test_folder_layout_uses_roms_section_not_settings(tmp_path):
-    """Folder-layout Emulators.ini must use [ROMS], not [Settings]."""
+    """Folder-layout Emulators.ini must use [ROMS], not [Settings].
+    (Tested via the fresh-template path when the file is empty/has no Rom_Path.)"""
     cfg, rl = _make_config(tmp_path)
     emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
     emu_ini.parent.mkdir(parents=True)
-    emu_ini.write_text("", encoding="utf-8")
+    emu_ini.write_text("", encoding="utf-8")  # no Rom_Path= → fresh template
 
     generate_rl_system_ini("MAME", cfg)
 
@@ -110,12 +120,125 @@ def test_folder_layout_uses_roms_section_not_settings(tmp_path):
     assert "[Settings]" not in body
 
 
-# ─── generate_rl_system_ini — flat layout ────────────────────────────────────
+def test_folder_layout_preserves_default_emulator(tmp_path):
+    """generate_rl_system_ini must NOT overwrite Default_Emulator in an
+    existing Emulators.ini.
+
+    This is the primary root cause of the post-migration breakage: systems
+    whose emulator SpinDoctor doesn't recognise (e.g. SSF for Sega Saturn,
+    Mednafen for TurboGrafx-16, NullDC for Dreamcast) had Default_Emulator
+    overwritten with the fallback 'RetroArch'.  RocketLauncher then searched
+    for RetroArch's Emu_Path, found a bare [RetroArch] section added by
+    SpinDoctor (no Emu_Path), stopped its lookup chain, and reported:
+    'Could not find an Emu_path for RetroArch'."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "Sega Saturn" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=SSF\nRom_Path=D:\\old\\Sega Saturn\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sega Saturn", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    # SSF must be preserved — NOT replaced with RetroArch (the fallback guess).
+    assert "Default_Emulator=SSF" in body
+    assert "Default_Emulator=RetroArch" not in body
+    # No [RetroArch] section should be injected.
+    assert "[RetroArch]" not in body
+    # Rom_Path must be updated.
+    new_rom_path = str(Path(cfg.roms_dir) / "Sega Saturn")
+    assert f"Rom_Path={new_rom_path}" in body
+
+
+def test_folder_layout_preserves_emu_path(tmp_path):
+    """Emu_Path in an existing [Emulator] section is preserved by the in-place
+    update (the line is not touched because only Rom_Path= lines change)."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\n"
+        "Default_Emulator=MAME\n"
+        "Rom_Path=D:\\old\\MAME\n"
+        "\n"
+        "[MAME]\n"
+        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame64.exe\n"
+        "Rom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame64.exe" in body
+    assert "Default_Emulator=MAME" in body
+    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
+    assert f"Rom_Path={new_rom_path}" in body
+
+
+def test_folder_layout_preserves_module_and_pause_keys(tmp_path):
+    """Module= and Pause_*_Keys= from the original file are untouched."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\n"
+        "Default_Emulator=MAME\n"
+        "Rom_Path=D:\\old\\MAME\n"
+        "\n"
+        "[MAME]\n"
+        "Emu_Path=..\\.\\Emulators\\MAME\\mame64.exe\n"
+        "Rom_Extension=zip|7z|txt\n"
+        "Module=MAME.ahk\n"
+        "Pause_Save_State_Keys={Shift down}{F7 down}{Shift up}{F7 up}\n"
+        "Pause_Load_State_Keys={F7 down}{F7 up}\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert "Module=MAME.ahk" in body
+    assert "Pause_Save_State_Keys=" in body
+    assert "Pause_Load_State_Keys=" in body
+    assert "Rom_Extension=zip|7z|txt" in body
+
+
+def test_no_extra_emulator_section_added_to_minimal_existing_file(tmp_path):
+    """When an existing file has no [MAME] section (the normal cabinet format),
+    generate_rl_system_ini must not inject one.
+
+    The real cabinet per-system Emulators.ini files contain ONLY:
+      [ROMS]
+      Default_Emulator=<emulator>
+      Rom_Path=<path>
+    Adding a bare [<Emulator>] section without Emu_Path causes RocketLauncher
+    to stop its lookup chain at the per-system file and fail with
+    'Could not find an Emu_path' instead of falling back to Global Emulators.ini."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=MAME\nRom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    # Only [ROMS] section — no [MAME] section should be added.
+    assert "[MAME]" not in body
+    assert "Emu_Path=" not in body
+
+
+# ─── generate_rl_system_ini — flat layout, existing file ─────────────────────
 
 
 def test_flat_layout_updates_flat_ini(tmp_path):
-    """When Settings/MAME.ini already exists, it is updated and the folder-
-    layout file is NOT created."""
+    """When Settings/MAME.ini already exists, only Rom_Path is updated and the
+    folder-layout file is NOT created."""
     cfg, rl = _make_config(tmp_path)
     flat_ini = rl / "Settings" / "MAME.ini"
     flat_ini.write_text("[Settings]\nDefault_Emulator=MAME\nRom_Path=D:\\old\n",
@@ -131,6 +254,45 @@ def test_flat_layout_updates_flat_ini(tmp_path):
     assert f"Rom_Path={new_rom_path}" in body
     # Folder-layout file must NOT be created.
     assert not (rl / "Settings" / "MAME" / "Emulators.ini").exists()
+
+
+def test_flat_layout_preserves_default_emulator(tmp_path):
+    """Default_Emulator is preserved for flat-layout files too."""
+    cfg, rl = _make_config(tmp_path)
+    flat_ini = rl / "Settings" / "Sega Saturn.ini"
+    flat_ini.write_text(
+        "[Settings]\nDefault_Emulator=SSF\nRom_Path=D:\\old\\Sega Saturn\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sega Saturn", cfg)
+
+    body = flat_ini.read_text(encoding="utf-8")
+    assert "Default_Emulator=SSF" in body
+    assert "Default_Emulator=RetroArch" not in body
+
+
+def test_flat_layout_preserves_emu_path(tmp_path):
+    """Emu_Path is preserved in flat-layout files by the in-place update."""
+    cfg, rl = _make_config(tmp_path)
+    flat_ini = rl / "Settings" / "MAME.ini"
+    flat_ini.write_text(
+        "[Settings]\n"
+        "Default_Emulator=MAME\n"
+        "Rom_Path=D:\\old\\MAME\n"
+        "\n"
+        "[MAME]\n"
+        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame64.exe\n"
+        "Rom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = flat_ini.read_text(encoding="utf-8")
+    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame64.exe" in body
+    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
+    assert f"Rom_Path={new_rom_path}" in body
 
 
 # ─── generate_rl_system_ini — new system ─────────────────────────────────────
@@ -164,79 +326,3 @@ def test_new_system_both_files_have_correct_rom_path(tmp_path):
         rl / "Settings" / "MAME.ini",
     ]:
         assert f"Rom_Path={expected}" in p.read_text(encoding="utf-8")
-
-
-# ─── Emu_Path preservation ────────────────────────────────────────────────────
-
-
-def test_folder_layout_preserves_emu_path(tmp_path):
-    """generate_rl_system_ini must keep an existing Emu_Path in the
-    [Emulator] section of the folder-layout Emulators.ini.
-
-    Root cause of the post-migration launch failure: the original file (written
-    by HyperHQ / RLUI) contained Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe.
-    Before this fix, generate_rl_system_ini wiped the entire file, dropping
-    Emu_Path, and RL then emitted 'Could not find an Emu_path for MAME'."""
-    cfg, rl = _make_config(tmp_path)
-    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
-    emu_ini.parent.mkdir(parents=True)
-    emu_ini.write_text(
-        "[ROMS]\n"
-        "Default_Emulator=MAME\n"
-        "Rom_Path=D:\\old\\MAME\n"
-        "\n"
-        "[MAME]\n"
-        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe\n"
-        "Rom_Path=D:\\old\\MAME\n",
-        encoding="utf-8",
-    )
-
-    generate_rl_system_ini("MAME", cfg)
-
-    body = emu_ini.read_text(encoding="utf-8")
-    # Rom_Path updated to the new value.
-    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
-    assert f"Rom_Path={new_rom_path}" in body
-    # Emu_Path must be preserved verbatim.
-    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe" in body
-
-
-def test_flat_layout_preserves_emu_path(tmp_path):
-    """Same preservation requirement for the flat-layout Settings/<system>.ini."""
-    cfg, rl = _make_config(tmp_path)
-    flat_ini = rl / "Settings" / "MAME.ini"
-    flat_ini.write_text(
-        "[Settings]\n"
-        "Default_Emulator=MAME\n"
-        "Rom_Path=D:\\old\\MAME\n"
-        "\n"
-        "[MAME]\n"
-        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe\n"
-        "Rom_Path=D:\\old\\MAME\n",
-        encoding="utf-8",
-    )
-
-    generate_rl_system_ini("MAME", cfg)
-
-    body = flat_ini.read_text(encoding="utf-8")
-    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
-    assert f"Rom_Path={new_rom_path}" in body
-    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe" in body
-
-
-def test_no_emu_path_entry_when_none_existed(tmp_path):
-    """When the existing file has no Emu_Path, the rewritten file must also
-    omit it — no empty or placeholder Emu_Path= line is inserted."""
-    cfg, rl = _make_config(tmp_path)
-    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
-    emu_ini.parent.mkdir(parents=True)
-    emu_ini.write_text(
-        "[ROMS]\nDefault_Emulator=MAME\nRom_Path=D:\\old\\MAME\n"
-        "\n[MAME]\nRom_Path=D:\\old\\MAME\n",
-        encoding="utf-8",
-    )
-
-    generate_rl_system_ini("MAME", cfg)
-
-    body = emu_ini.read_text(encoding="utf-8")
-    assert "Emu_Path=" not in body

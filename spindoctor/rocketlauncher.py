@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import configparser
+import re
 import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -251,6 +252,9 @@ def _read_existing_emu_path(ini_path: Path, emulator: str) -> Optional[str]:
     Reads the ``[<emulator>]`` section and looks for ``Emu_Path`` (case-insensitive
     via configparser).  Returns ``None`` when the file is absent, unparseable, or
     has no ``Emu_Path`` entry for that emulator.
+
+    Used by synthetic-wheel builders that need to resolve the emulator exe name
+    from a per-system INI before generating PCLauncher entries.
     """
     if not ini_path.exists():
         return None
@@ -266,6 +270,29 @@ def _read_existing_emu_path(ini_path: Path, emulator: str) -> Optional[str]:
     return None
 
 
+def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
+    """Replace every ``Rom_Path=`` line in *ini_path* with *new_rom_path*.
+
+    The key match is case-insensitive (``rom_path=``, ``ROM_PATH=``, etc. all
+    match) and the replacement is written with canonical capitalisation
+    ``Rom_Path=``.  All other lines — ``Default_Emulator``, ``Emu_Path``,
+    ``Module``, ``Pause_Save_State_Keys``, etc. — are preserved exactly.
+
+    Returns ``True`` if at least one replacement was made, ``False`` if no
+    ``Rom_Path=`` line was found.  The caller should fall back to writing a
+    fresh template when ``False`` is returned.
+    """
+    content = ini_path.read_text(encoding="utf-8", errors="replace")
+    new_content, count = re.subn(
+        r"(?im)^rom_path=.*$",
+        f"Rom_Path={new_rom_path}",
+        content,
+    )
+    if count:
+        ini_path.write_text(new_content, encoding="utf-8")
+    return count > 0
+
+
 def generate_rl_system_ini(
     system_name: str,
     config: Config,
@@ -273,14 +300,23 @@ def generate_rl_system_ini(
 ) -> list[Path]:
     """Write RocketLauncher per-system settings INI file(s).
 
-    Detects which layout the system already uses and writes accordingly:
+    **For existing files** only ``Rom_Path=`` is updated in-place.  Every other
+    key — ``Default_Emulator``, ``Emu_Path``, ``Module``,
+    ``Pause_Save_State_Keys``, ``Rom_Extension``, and any other emulator section
+    — is preserved exactly as written by HyperHQ / RLUI.
 
-    - **folder layout** (``Settings/<system>/Emulators.ini`` exists) →
-      updates that file using the ``[ROMS]`` section convention.
-    - **flat layout** (``Settings/<system>.ini`` exists) →
-      updates that file using the ``[Settings]`` section convention.
-    - **new system** (neither file exists) → writes *both* files so the
-      cabinet works regardless of which layout RocketLauncher uses.
+    This is intentional: ``generate-config`` is a *ROM-path updater*, not a
+    full emulator reconfiguration tool.  Overwriting ``Default_Emulator`` with
+    SpinDoctor's best-guess emulator name breaks systems that use emulators not
+    in SpinDoctor's built-in map (e.g. SSF for Sega Saturn, Mednafen for
+    TurboGrafx-16).  Adding a bare ``[<Emulator>]`` section without ``Emu_Path``
+    causes RocketLauncher to stop its emulator-path lookup at the per-system
+    file and report "Could not find an Emu_path" instead of falling back to
+    ``Global Emulators.ini`` where the path is defined.
+
+    **For new systems** (neither file exists) both folder-layout and flat-layout
+    files are written from the template so the cabinet works regardless of which
+    layout RocketLauncher prefers.
 
     Returns the list of paths written (one or two items).
     """
@@ -302,44 +338,38 @@ def generate_rl_system_ini(
     written: list[Path] = []
 
     if layout in ("folder", "new"):
-        # Folder layout: Settings/<system>/Emulators.ini  [ROMS] section
         folder_dir = settings_dir / system_name
         folder_dir.mkdir(parents=True, exist_ok=True)
         emu_ini = folder_dir / "Emulators.ini"
-        # Preserve any Emu_Path the user configured via HyperHQ / RLUI.
-        # generate_rl_system_ini only updates Rom_Path; the emulator executable
-        # location is irrelevant to ROM migration and must not be wiped.
-        existing_emu_path = _read_existing_emu_path(emu_ini, emulator)
-        emu_section: list[str] = [f"[{emulator}]", f"Rom_Path={rom_path}"]
-        if existing_emu_path:
-            emu_section.insert(1, f"Emu_Path={existing_emu_path}")
-        emu_ini.write_text("\n".join([
-            "[ROMS]",
-            f"Default_Emulator={emulator}",
-            f"Rom_Path={rom_path}",
-            f"Rom_Extension={extensions}",
-            "",
-            *emu_section,
-            "",
-        ]), encoding="utf-8")
+        # Existing file: only update Rom_Path=; leave Default_Emulator, Emu_Path,
+        # Module, and all other keys untouched.  Fall back to fresh template only
+        # when the file has no Rom_Path= line (empty or corrupt).
+        if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
+            emu_ini.write_text("\n".join([
+                "[ROMS]",
+                f"Default_Emulator={emulator}",
+                f"Rom_Path={rom_path}",
+                f"Rom_Extension={extensions}",
+                "",
+                f"[{emulator}]",
+                f"Rom_Path={rom_path}",
+                "",
+            ]), encoding="utf-8")
         written.append(emu_ini)
 
     if layout in ("flat", "new"):
-        # Flat layout: Settings/<system>.ini  [Settings] section
         flat_ini = settings_dir / f"{system_name}.ini"
-        existing_emu_path_flat = _read_existing_emu_path(flat_ini, emulator)
-        emu_section_flat: list[str] = [f"[{emulator}]", f"Rom_Path={rom_path}"]
-        if existing_emu_path_flat:
-            emu_section_flat.insert(1, f"Emu_Path={existing_emu_path_flat}")
-        flat_ini.write_text("\n".join([
-            "[Settings]",
-            f"Default_Emulator={emulator}",
-            f"Rom_Path={rom_path}",
-            f"Rom_Extension={extensions}",
-            "",
-            *emu_section_flat,
-            "",
-        ]), encoding="utf-8")
+        if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
+            flat_ini.write_text("\n".join([
+                "[Settings]",
+                f"Default_Emulator={emulator}",
+                f"Rom_Path={rom_path}",
+                f"Rom_Extension={extensions}",
+                "",
+                f"[{emulator}]",
+                f"Rom_Path={rom_path}",
+                "",
+            ]), encoding="utf-8")
         written.append(flat_ini)
 
     return written
