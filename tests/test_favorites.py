@@ -453,14 +453,15 @@ def test_rebuild_writes_emulators_ini_in_system_folder(isolated_config, tmp_path
     # to find the per-game INIs.
     pcl_dir = str(rl / "Modules" / "PCLauncher" / "Favorites")
     assert pcl_dir in body
-    # The folder-layout Emulators.ini must NOT have a [PCLauncher] section.
-    # When that section is present, RocketLauncher's own IniWrite fills it
-    # with blank values — including Rom_Extension= — and then reads the
-    # blank extension on the next launch, falling back to the global list
+    # The folder-layout Emulators.ini must include a [PCLauncher] section
+    # with Rom_Extension=ini.  RL v1.2 reads Rom_Extension from the emulator
+    # section ([PCLauncher]) first; when that section is absent from the system
+    # file RL falls back to Global Emulators.ini's [PCLauncher] which may not
+    # carry Rom_Extension=ini, causing RL to use its default extension list
     # (zip|rar|7z|…) and failing with "Cannot find Rom <name> with any
-    # provided Rom_Extension: zip|rar|7z|…".  Only [ROMS] is needed here;
-    # the working HyperHQ-generated Emulators.ini contains nothing else.
-    assert "[PCLauncher]" not in body
+    # provided Rom_Extension: zip|rar|7z|…".
+    assert "[PCLauncher]" in body
+    assert body.count("Rom_Extension=ini") >= 2  # once in [ROMS], once in [PCLauncher]
 
 
 def test_rebuild_flat_settings_ini_pclauncher_section_has_rom_extension(

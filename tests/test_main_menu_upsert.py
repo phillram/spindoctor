@@ -61,6 +61,35 @@ def test_generate_drops_removed_systems(config):
     assert _systems_in(path) == ["MAME", "SNES"]
 
 
+def test_generate_preserves_synthetic_wheels(config):
+    """generate-config must never remove synthetic wheel entries.
+
+    Favorites, Recently Played, and Most Played are excluded from the
+    systems list passed to generate_hs_main_menu (they are in
+    SKIP_GENERATE_CONFIG).  Without explicit preservation they would be
+    silently dropped from Main Menu.xml on every generate-config run.
+    """
+    # Simulate a working setup: all three synthetic wheels on the menu.
+    generate_hs_main_menu(["MAME", "SNES"], config)
+    from spindoctor.mainmenu import add_system, load_main_menu, save_main_menu
+    menu = load_main_menu(config)
+    add_system(menu, "Favorites")
+    add_system(menu, "Recently Played")
+    add_system(menu, "Most Played")
+    save_main_menu(menu, config)
+
+    # Simulate generate-config being run: systems list does NOT include
+    # the synthetic wheels (they are in SKIP_GENERATE_CONFIG).
+    path = generate_hs_main_menu(["MAME", "SNES"], config)
+    systems = _systems_in(path)
+    assert "Favorites" in systems, "generate-config must not drop Favorites"
+    assert "Recently Played" in systems, "generate-config must not drop Recently Played"
+    assert "Most Played" in systems, "generate-config must not drop Most Played"
+    # Real arcade systems are still present.
+    assert "MAME" in systems
+    assert "SNES" in systems
+
+
 def test_generated_main_menu_uses_native_minimal_format(config):
     """``generate_hs_main_menu`` must emit HyperSpin's native minimal format:
     bare ``<game name="..."/>`` entries, no XML declaration, no <header>,

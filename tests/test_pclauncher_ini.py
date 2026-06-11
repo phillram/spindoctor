@@ -26,9 +26,9 @@ from spindoctor.rocketlauncher import (
 
 def test_pclauncher_in_emulator_dicts():
     assert EMULATOR_EXECUTABLES["PCLauncher"] == "PCLauncher.exe"
-    assert "exe" in EMULATOR_EXTENSIONS["PCLauncher"]
-    assert "lnk" in EMULATOR_EXTENSIONS["PCLauncher"]
-    assert "url" in EMULATOR_EXTENSIONS["PCLauncher"]
+    # PCLauncher "ROMs" are always per-game INI files — the application
+    # executable lives inside the INI, not used directly as a ROM file.
+    assert EMULATOR_EXTENSIONS["PCLauncher"] == "ini"
 
 
 @pytest.mark.parametrize("name", [
@@ -50,7 +50,10 @@ def test_global_emulators_ini_includes_pclauncher_block(tmp_path):
     text = p.read_text(encoding="utf-8")
     assert "[PCLauncher]" in text
     assert "PCLauncher.exe" in text
-    assert "exe|lnk|url|bat" in text
+    # PCLauncher ROMs are per-game INI files; Rom_Extension must be "ini"
+    # so RL finds the placeholder .ini files for all PCLauncher systems
+    # (synthetic wheels and PC Games alike).
+    assert "Rom_Extension=ini" in text
 
 
 def test_generate_pclauncher_inis_writes_per_game_files(tmp_path):

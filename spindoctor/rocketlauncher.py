@@ -113,7 +113,12 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
     "PCSX2": "iso|bin|img",
     "Dolphin": "iso|gcm|gcz|wbfs|ciso|rvz",
     "Demul": "chd|cdi|gdi|cue",
-    "PCLauncher": "exe|lnk|url|bat",
+    # PCLauncher "ROMs" are always per-game INI files stored under
+    # Modules/PCLauncher/<system>/<game>.ini — true for both synthetic
+    # wheels (Favorites, Recently Played, Most Played) and real
+    # PC/Windows/Steam systems.  The actual application (.exe/.lnk/etc.)
+    # is referenced inside the INI, not used directly as the ROM file.
+    "PCLauncher": "ini",
 }
 
 # Correction table for emulator window titles used as PCLauncher's ``FadeTitle=`` key.
@@ -394,29 +399,24 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     1. ``Settings/<system>.ini`` (flat layout) — RL reads ``Default_Emulator``
        from the ``[Settings]`` section here.
     2. ``Settings/<system>/Emulators.ini`` (folder layout) — RL reads
-       ``Default_Emulator`` and ``Rom_Extension`` from the ``[ROMS]`` section.
+       ``Default_Emulator`` from the ``[ROMS]`` section and ``Rom_Extension``
+       from the ``[PCLauncher]`` emulator section.
 
     **Rom_Extension must appear in every section RL may consult:**
 
-    When RL finds a ``[PCLauncher]`` section (in either file layout) it reads
-    ``Rom_Extension`` from *that* section first.  If the key is absent RL falls
-    back to the global extension list (``zip|rar|7z|lha|…``) and ignores the
-    value set in ``[Settings]`` or ``[ROMS]``, producing::
+    RL v1.2 reads ``Rom_Extension`` from the emulator section (``[PCLauncher]``)
+    first.  When no ``[PCLauncher]`` section exists in the system file, RL falls
+    back to the ``[PCLauncher]`` section in ``Global Emulators.ini``.  If that
+    global section also lacks ``Rom_Extension=ini``, RL uses its built-in default
+    extension list (``zip|rar|7z|lha|…``) and cannot find the placeholder INIs::
 
         Cannot find Rom 1942 in any Rom_Paths provided:
             "…\\Modules\\PCLauncher\\Favorites"
         with any provided Rom_Extension: "zip|rar|7z|lha|lzh|gzip|tar|"
 
-    Therefore:
-
-    * The **flat-layout** ``Settings/<system>.ini`` carries ``Rom_Extension=ini``
-      in *both* ``[Settings]`` and ``[PCLauncher]``.
-    * The **folder-layout** ``Settings/<system>/Emulators.ini`` has **no**
-      ``[PCLauncher]`` section at all.  Without that section RL reads
-      ``Rom_Extension`` from ``[ROMS]`` and correctly finds ``ini``.  A
-      ``[PCLauncher]`` block in the folder-layout file would be filled in
-      by RL's own ``IniWrite`` on first launch, adding blank ``Rom_Extension=``
-      which then overrides the ``[ROMS]`` value.
+    Therefore both files explicitly carry ``[PCLauncher]`` with
+    ``Rom_Extension=ini`` so RL reads the correct value from the system file
+    regardless of what the cabinet's ``Global Emulators.ini`` contains.
     """
     settings_dir = rocketlauncher_dir / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
@@ -430,11 +430,6 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
         f"Rom_Path={pclauncher_dir}",
         "Rom_Extension=ini",
         "",
-        # [PCLauncher] must also carry Rom_Extension=ini.  When RL finds a
-        # [PCLauncher] section it reads Rom_Extension from there first; if
-        # the key is absent RL falls back to the global extensions list
-        # (zip|rar|7z|...) and ignores the [Settings] value — producing
-        # "Cannot find Rom X with any provided Rom_Extension: zip|rar|7z|..."
         "[PCLauncher]",
         f"Rom_Path={pclauncher_dir}",
         "Rom_Extension=ini",
@@ -443,13 +438,20 @@ def generate_synthetic_system_ini(system_name: str, rocketlauncher_dir: Path) ->
     ini_path.write_text("\n".join(flat_lines), encoding="utf-8")
 
     # ── 2. Folder layout: Settings/<system>/Emulators.ini ────────────────────
-    # [ROMS] section ONLY — no [PCLauncher] block.  See docstring for why.
+    # [ROMS] carries Default_Emulator and Rom_Path.
+    # [PCLauncher] carries Rom_Extension=ini explicitly so RL reads it from
+    # the system file rather than falling back to Global Emulators.ini whose
+    # [PCLauncher] section may omit Rom_Extension or set it to a non-ini value.
     system_folder = settings_dir / system_name
     system_folder.mkdir(parents=True, exist_ok=True)
     emulators_ini = system_folder / "Emulators.ini"
     emulator_lines = [
         "[ROMS]",
         "Default_Emulator=PCLauncher",
+        f"Rom_Path={pclauncher_dir}",
+        "Rom_Extension=ini",
+        "",
+        "[PCLauncher]",
         f"Rom_Path={pclauncher_dir}",
         "Rom_Extension=ini",
         "",
@@ -910,13 +912,25 @@ def generate_hs_main_menu(
       they appear in *systems*, which is typically alphabetical)
     - entries no longer in *systems* are dropped
 
+    Synthetic wheels (Favorites, Recently Played, Most Played) that are
+    already in the XML are always preserved, even though they are not
+    included in the *systems* list passed by generate-config (those
+    systems are managed by fav/recent/stats rebuild, not by generate-config).
+    Without this, generate-config would silently remove them on every run.
+
     When the file doesn't exist yet the order of *systems* is used as-is.
     """
     target = _main_menu_path(config, output_base)
     systems_set = set(systems)
 
+    # Synthetic wheels are excluded from generate-config's systems list
+    # (SKIP_GENERATE_CONFIG) but must not be dropped from Main Menu.xml.
+    # "Main Menu" is in SKIP_GENERATE_CONFIG but is never an entry in its
+    # own XML, so we exclude it from the preserve set.
+    _preserve = SKIP_GENERATE_CONFIG - {"Main Menu"}
+
     existing = _read_main_menu_systems(target)
-    ordered: list[str] = [s for s in existing if s in systems_set]
+    ordered: list[str] = [s for s in existing if s in systems_set or s in _preserve]
     already_listed = set(ordered)
     for s in systems:
         if s not in already_listed:
