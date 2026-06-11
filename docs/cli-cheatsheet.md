@@ -359,6 +359,7 @@ Reference: [Standalone tools](standalone-tools.md), [fav](commands.md#fav), [rec
 spindoctor install-tools                               :: write to default HyperLaunch Tools dir
 spindoctor install-tools --output-dir D:\Tools
 spindoctor install-tools --add-to-system Toolkit       :: add as games in a Toolkit wheel
+:: ↑ also writes Modules\PCLauncher\Toolkit.ini (required for PCLauncher to launch)
 
 :: Remove them again
 spindoctor uninstall-tools                             :: dry-run preview

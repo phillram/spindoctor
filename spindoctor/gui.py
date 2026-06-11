@@ -4727,18 +4727,29 @@ class _SpinDoctorGUI:
         # immediately instead of staying on "(edited — not yet saved)".
         self._reseed_cred_hints_after_save()
         ok, errors = cfg.is_valid()
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str=f"setup save-configuration → {CONFIG_FILE}",
+            dry_run=False,
+        )
+        record.append(f"$ setup save-configuration\n  saved: {CONFIG_FILE}\n")
         self._append_output(f"Saved {CONFIG_FILE}\n")
         if ok:
+            record.append("Config validates OK.\n")
             self._append_output("Config validates. Try the Wheels or Audit tabs next.\n")
             self._flash_status("Configuration saved.")
         else:
             for err in errors:
+                record.append(f"  ! {err}\n")
                 self._append_output(f"  ! {err}\n")
             self.messagebox.showwarning(
                 "Saved with warnings",
                 "Configuration saved, but some required paths still need attention:\n\n"
                 + "\n".join(errors),
             )
+        record.exit_code = 0 if ok else 1
+        self._run_history.append(record)
+        self._refresh_logs_tab()
         # System dropdown depends on roms_dir/hyperspin_dir; refresh it.
         self._refresh_systems()
         # Health badges may have just changed (e.g. user set the
@@ -6832,6 +6843,15 @@ class _SpinDoctorGUI:
         data_snapshot = [dict(entry) for entry in self._mm_data]
         self._set_status(f"Saving {xml_path.name}…")
 
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str=f"mainmenu save-order → {xml_path.name}",
+            dry_run=False,
+        )
+        record.append(f"$ mainmenu save-order\n  target: {xml_path}\n")
+        self._run_history.append(record)
+        self._refresh_logs_tab()
+
         def _worker():
             try:
                 from . import mainmenu as _mm_mod
@@ -6859,23 +6879,29 @@ class _SpinDoctorGUI:
                 # frequent cause is HyperSpin holding Main Menu.xml open.
                 from ._errors import humanize_oserror
                 self.root.after(
-                    0, self._mm_save_failed,
+                    0, self._mm_save_failed, record,
                     humanize_oserror(exc, action="save Main Menu.xml"),
                 )
                 return
             except Exception as exc:  # noqa: BLE001 - report to UI thread
-                self.root.after(0, self._mm_save_failed, str(exc))
+                self.root.after(0, self._mm_save_failed, record, str(exc))
                 return
-            self.root.after(0, self._mm_save_succeeded, saved_path)
+            self.root.after(0, self._mm_save_succeeded, record, saved_path)
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _mm_save_succeeded(self, xml_path) -> None:
+    def _mm_save_succeeded(self, record: "_RunRecord", xml_path) -> None:
+        record.append(f"Main Menu order saved to {xml_path}\n")
+        record.exit_code = 0
         self._append_output(f"Main Menu order saved to {xml_path}\n")
         self._flash_status(f"Saved {xml_path.name}.")
+        self._refresh_logs_tab()
 
-    def _mm_save_failed(self, msg: str) -> None:
+    def _mm_save_failed(self, record: "_RunRecord", msg: str) -> None:
+        record.append(f"ERROR: {msg}\n")
+        record.exit_code = 1
         self._set_status("Save failed.")
+        self._refresh_logs_tab()
         self.messagebox.showerror("Save failed", msg)
 
     def _restore_sidecar(
