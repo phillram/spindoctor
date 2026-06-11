@@ -2705,6 +2705,15 @@ class _SpinDoctorGUI:
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write(text)
             self._set_status(f"Saved log to {path}")
+            export_record = _RunRecord(
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                argv_str=f"logs export → {Path(path).name}",
+                dry_run=False,
+            )
+            export_record.append(f"$ logs export\n  saved: {path}\n")
+            export_record.exit_code = 0
+            self._run_history.append(export_record)
+            self._refresh_logs_tab()
         except OSError as exc:
             self.messagebox.showerror("Save failed", str(exc))
 
