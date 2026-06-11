@@ -251,6 +251,8 @@ spindoctor generate-config --db-stubs --apply             :: also create empty D
 
 **What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INI or use `spindoctor config system set "<System>" --emulator <Name>` to override before running `generate-config`.
 
+**Synthetic wheels are never touched by generate-config.** Favorites, Recently Played, and Most Played are excluded from both the RocketLauncher INI writes and the `Main Menu.xml` sync. Their settings are managed by `fav rebuild`, `recent rebuild`, and `stats build-wheel`. Any synthetic wheels already present in `Main Menu.xml` are preserved (not dropped) when generate-config regenerates the file.
+
 ### `mainmenu`
 
 Inspect and edit the HyperSpin Main Menu — the top-level wheel of systems. `generate-config` writes this file; `mainmenu` lets you review the order, hide stale systems, and add forgotten ones.
@@ -280,6 +282,7 @@ spindoctor mainmenu hide "Atari Jaguar" --apply
 spindoctor mainmenu show "Atari Jaguar" --apply       :: un-hide
 
 spindoctor mainmenu add "Sega Saturn" --apply
+spindoctor mainmenu add "Favorites" --apply   :: also regenerates RL settings + media
 spindoctor mainmenu remove "Atari Jaguar" --apply
 
 spindoctor mainmenu sort alpha --apply

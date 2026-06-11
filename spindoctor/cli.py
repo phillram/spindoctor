@@ -5546,23 +5546,40 @@ def mainmenu_add(system, apply, output_dir):
 
     For the three synthetic wheels (Favorites, Most Played, Recently Played)
     this also installs all bundled media assets (wheel logo, background image,
-    attract-mode music and video) to ``Media\\Main Menu\\``.  Unlike
+    attract-mode music and video) to ``Media\\Main Menu\\`` and regenerates the
+    RocketLauncher system settings files (``Settings/<system>.ini`` and
+    ``Settings/<system>/Emulators.ini``) with ``Rom_Extension=ini`` so that
+    RocketLauncher can find the PCLauncher placeholder ``.ini`` files.  Unlike
     ``rebuild --apply`` which skips files that already exist, ``mainmenu add``
     always writes the bundled assets so the wheel gets a fresh copy of every
     media file — use this when you want to reset or first-install the media.
     """
     from .mainmenu import add_system
-    from .rocketlauncher import install_bundled_system_assets
+    from .rocketlauncher import SKIP_GENERATE_CONFIG, generate_synthetic_system_ini, install_bundled_system_assets
     config = _cfg()
     _check_config(config)
     menu = _load_menu_or_exit(config)
     added = add_system(menu, system)
     if not added:
         console.print(f"[yellow]already on the menu:[/yellow] {system}")
-        # Still install/refresh media even if already on the menu, since the
-        # user may be calling this specifically to reset the media files.
+        # Still install/refresh media and settings even if already on the menu,
+        # since the user may be calling this to reset settings or media files.
 
     _apply_or_preview(f"add: {system}", menu, config, output_dir, apply)
+
+    # ── RL system settings for synthetic wheels ───────────────────────────────
+    # Regenerate Settings/<system>.ini and Settings/<system>/Emulators.ini so
+    # Rom_Extension=ini is always set in the [PCLauncher] emulator section.
+    # RL reads Rom_Extension from the emulator section first; without it RL
+    # falls back to Global Emulators.ini which may not carry Rom_Extension=ini,
+    # causing "Cannot find Rom … with any provided Rom_Extension: zip|rar|7z|…"
+    _synthetic_names = SKIP_GENERATE_CONFIG - {"Main Menu"}
+    if system in _synthetic_names and config.rocketlauncher_dir and apply:
+        rl_dir = Path(config.rocketlauncher_dir)
+        sys_ini = generate_synthetic_system_ini(system, rl_dir)
+        folder_ini = rl_dir / "Settings" / system / "Emulators.ini"
+        console.print(f"  [green]✓[/green] RL settings: {sys_ini}")
+        console.print(f"  [green]✓[/green] RL settings: {folder_ini}")
 
     # ── Bundled media for synthetic wheels ────────────────────────────────────
     # Only the three registered synthetic systems have bundled assets; for all

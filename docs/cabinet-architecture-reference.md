@@ -141,13 +141,17 @@ recognise, it leaves `Default_Emulator` unchanged (see note below).
 > *"Could not find an Emu_path for RetroArch"* for every game on every console.
 
 The folder-layout `Emulators.ini` for synthetic wheels (Favorites, Recently Played,
-Most Played) looks different — SpinDoctor writes these in full:
+Most Played) looks like — SpinDoctor writes these in full:
 
 ```ini
 [ROMS]
 Default_Emulator=PCLauncher
-Rom_Extension=ini
 Rom_Path=D:\Arcade\RocketLauncher\Modules\PCLauncher\Favorites
+Rom_Extension=ini
+
+[PCLauncher]
+Rom_Path=D:\Arcade\RocketLauncher\Modules\PCLauncher\Favorites
+Rom_Extension=ini
 ```
 
 The flat-layout `Settings/Favorites.ini` looks like:
@@ -162,9 +166,13 @@ Rom_Path=D:\Arcade\RocketLauncher\Modules\PCLauncher\Favorites
 Rom_Extension=ini
 ```
 
-> **Critical:** `[PCLauncher]` in the flat file MUST have `Rom_Extension=ini`. RL reads
-> `Rom_Extension` from `[PCLauncher]` first and ignores the `[Settings]` value when that
-> section is present.
+> **Critical:** Both files MUST have `[PCLauncher]` with `Rom_Extension=ini`. RL v1.2
+> reads `Rom_Extension` from the emulator section (`[PCLauncher]`) first. When no
+> `[PCLauncher]` section exists in the system file, RL falls back to `Global Emulators.ini`'s
+> `[PCLauncher]` which may omit `Rom_Extension=ini`. Without it RL uses its built-in
+> default extension list (`zip|rar|7z|lha|…`) and cannot find the placeholder `.ini` files,
+> producing: *"Cannot find Rom \<game\> In any Rom_Paths provided … with any provided
+> Rom_Extension: zip|rar|7z|lha|lzh|gzip|tar|"*.
 
 ---
 
@@ -228,15 +236,26 @@ Key points:
 
 ### `[PCLauncher]` — Rom_Extension requirement
 
-The `[PCLauncher]` section **must** have `Rom_Extension=ini` set (or empty string as
-shown above — RL then uses whatever the per-system INI specifies). Without the correct
-extension, RL falls back to the global extension list (`zip|rar|7z|...`) and can't find
-the per-game `.ini` ROM files.
+The `[PCLauncher]` section **must** have `Rom_Extension=ini`. PCLauncher "ROMs" are
+always per-game INI files stored in `Modules\PCLauncher\<system>\<game>.ini`; the actual
+application executable (`.exe`, `.lnk`, etc.) is referenced inside the INI. This applies
+to both synthetic wheels (Favorites, Recently Played, Most Played) and real PC/Windows/Steam
+systems.
+
+When `Rom_Extension` is missing or set to a non-ini value, RL falls back to its built-in
+default extension list (`zip|rar|7z|lha|lzh|gzip|tar|`) and cannot find the placeholder
+`.ini` files.
+
+SpinDoctor's `generate-config` (and `mainmenu add` for synthetic wheels) writes
+`[PCLauncher]` with `Rom_Extension=ini` directly in the **per-system settings files** so
+that RL reads the correct extension from the system file rather than falling back to
+`Global Emulators.ini`.
 
 > **SpinDoctor does not modify an existing `Global Emulators.ini`.** It only creates the
 > file if none exists, covering the common emulators in its built-in map. The cabinet's
 > full `Global Emulators.ini` (with 40+ hand-configured emulators) was set up manually
-> and is never overwritten by SpinDoctor.
+> and is never overwritten by SpinDoctor. When SpinDoctor creates a new Global Emulators.ini,
+> it writes `Rom_Extension=ini` for the `[PCLauncher]` section.
 
 ---
 

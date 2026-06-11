@@ -15,6 +15,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **`rocketlauncher.py` — Dolphin `EMULATOR_EXTENSIONS` expanded** — added `gcz` and `ciso` to the built-in Dolphin extension list (was `iso|gcm|wbfs|rvz`; now `iso|gcm|gcz|wbfs|ciso|rvz`).
 - **`docs/cabinet-architecture-reference.md` — Dolphin version and ROM format notes added** — new section covering: version history table (Ishiiruka 2017 → 5.0-16101, last Win7 build with RVZ support), portable-mode directory layout, ROM format table with RVZ compatibility notes, upgrade procedure (replace exe, preserve `User\` settings folder), and second-instance emulator setup in `Global Emulators.ini`.
 
+### Fixed
+
+- **`generate-config` — synthetic wheels (Favorites, Recently Played, Most Played) are no longer removed from `Main Menu.xml` on every run** — `generate_hs_main_menu` builds the ordered system list from `existing ∩ systems_set`, and those three wheel names are excluded from `systems_set` by `SKIP_GENERATE_CONFIG`. This caused them to be silently dropped every time generate-config ran. The fix preserves any existing Main Menu.xml entry whose name is in `SKIP_GENERATE_CONFIG − {"Main Menu"}` (i.e. the three synthetic wheel names) even when they are absent from the `systems` list.
+
+- **Synthetic wheels — `[PCLauncher]` section with `Rom_Extension=ini` now written to the folder-layout `Settings/<system>/Emulators.ini`** — RocketLauncher v1.2 reads `Rom_Extension` from the emulator section (`[PCLauncher]`) first; when that section is absent from the system file RL falls back to `Global Emulators.ini`'s `[PCLauncher]` which may not carry `Rom_Extension=ini`. The fallback then uses RL's built-in default extension list (`zip|rar|7z|lha|lzh|gzip|tar|`) and fails with *"Cannot find Rom \<game\> In any Rom_Paths provided … with any provided Rom_Extension: zip|rar|7z|…"*. Fix: `generate_synthetic_system_ini` now writes `[PCLauncher]` with `Rom_Extension=ini` in both the flat-layout and folder-layout files so RL always finds the correct extension directly in the system file, regardless of `Global Emulators.ini` content.
+
+- **`mainmenu add` — now regenerates RL system settings when adding a synthetic wheel** — the GUI "Register in Main Menu" button calls `mainmenu add Favorites/Recently Played/Most Played --apply`. Previously this only added the entry to `Main Menu.xml` and installed bundled media; if the `Settings/<system>/Emulators.ini` was missing or stale the wheel would appear in HyperSpin but games would fail to launch with the wrong-extension error above. `mainmenu add` now also calls `generate_synthetic_system_ini` for synthetic wheel systems so the RL settings are always correct after clicking the button.
+
+- **`EMULATOR_EXTENSIONS["PCLauncher"]` corrected to `"ini"`** — the extension was previously set to `"exe|lnk|url|bat"` (the application file types that live _inside_ a per-game INI). PCLauncher "ROMs" are always `.ini` files stored in `Modules/PCLauncher/<system>/`; the executable is referenced inside the INI, not used directly as a ROM file. The corrected value means `generate_global_emulators_ini` now writes `Rom_Extension=ini` for the `[PCLauncher]` section in new or overwritten `Global Emulators.ini` files.
+
 ---
 
 ## [2.4.24] - 2026-06-10

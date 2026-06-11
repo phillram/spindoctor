@@ -166,7 +166,7 @@ Three numbered steps cover building and wiring up the custom wheels; the remaini
 
 **Step 1 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels, showing "Step N/3: &lt;wheel&gt;…" in the status bar. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
-**Step 2 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). **Sync favorites from HyperSpin** imports HyperSpin's F-key favorites into SpinDoctor's store — run this before Step 1 if you use F-key favorites.
+**Step 2 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration). **Sync favorites from HyperSpin** imports HyperSpin's F-key favorites into SpinDoctor's store — run this before Step 1 if you use F-key favorites.
 
 **Step 3 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 1 (Favorites checked) afterwards to push changes into HyperSpin.
 
