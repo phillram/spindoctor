@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`check-archive-ext` command** — new read-only diagnostic that peeks inside `.zip`, `.7z`, and `.rar` archives across all configured ROM directories and reports any archive whose inner file extension is not listed in the RocketLauncher `Rom_Extension=` configuration for that system's emulator. Cross-references `Global Emulators.ini` first, falls back to SpinDoctor's built-in emulator-extension map. Addresses the *"No valid roms found in the archive"* RocketLauncher error at diagnosis time rather than launch time. Run `spindoctor check-archive-ext --system <NAME>` or `--all`.
+- **GUI — Diagnostics — "Check archive extensions" button added to Step 2** — one-click equivalent of `check-archive-ext --all`; output and status routing follow the standard library-wide scan pattern.
+- **`rocketlauncher.py` — `read_rl_rom_extensions()` function** — reads the configured `Rom_Extension` set for a given system from `Global Emulators.ini` (or per-system `Emulators.ini`), with fallback to `EMULATOR_EXTENSIONS`. Used by `check-archive-ext`.
+- **`rocketlauncher.py` — Nintendo-prefixed system name entries added to `EMULATOR_MAP`** — `"nintendo gamecube"`, `"nintendo wii"`, `"nintendo wiiware"` now resolve correctly alongside the existing short-form entries. Fixes `guess_emulator()` misses when HyperSpin system names carry the full manufacturer prefix.
+- **`rocketlauncher.py` — Dolphin `EMULATOR_EXTENSIONS` expanded** — added `gcz` and `ciso` to the built-in Dolphin extension list (was `iso|gcm|wbfs|rvz`; now `iso|gcm|gcz|wbfs|ciso|rvz`).
+- **`docs/cabinet-architecture-reference.md` — Dolphin version and ROM format notes added** — new section covering: version history table (Ishiiruka 2017 → 5.0-16101, last Win7 build with RVZ support), portable-mode directory layout, ROM format table with RVZ compatibility notes, upgrade procedure (replace exe, preserve `User\` settings folder), and second-instance emulator setup in `Global Emulators.ini`.
+
 ---
 
 ## [2.4.24] - 2026-06-10

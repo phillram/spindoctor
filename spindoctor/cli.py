@@ -1672,6 +1672,98 @@ def check_discs_cmd(system, all_systems):
         console.print(f"\n[yellow]{total_issues}[/yellow] disc issue(s) total.")
 
 
+@cli.command("check-archive-ext")
+@click.option("--system", "-s", default=None,
+              help="Scan a single system by name.")
+@click.option("--all", "all_systems", is_flag=True,
+              help="Scan every configured system.")
+def check_archive_ext(system, all_systems):
+    """Scan ROM archives and report inner files whose extensions are not in the RocketLauncher config.
+
+    \b
+    For each .zip / .7z / .rar in the system ROM directory, peeks inside and
+    compares the inner file extensions against the Rom_Extension list configured
+    in Global Emulators.ini (or the built-in defaults when RL config is absent).
+
+    A mismatch means RocketLauncher will extract the archive but then fail with
+    "No valid roms found in the archive" because the extracted file's extension
+    is not recognised — the same error produced by .rvz files on an older Dolphin.
+
+    \b
+    Common causes:
+      • RVZ (Dolphin compressed format) — requires Dolphin 5.0-12188+
+      • NKit (.nkit.iso) — rename to .iso or convert
+      • CHD — verify the correct emulator module supports CHD for that system
+
+    Read-only — never modifies any file.
+    """
+    from .archive_scan import scan_system_archive_extensions
+    from .rocketlauncher import read_rl_rom_extensions
+
+    config = _cfg()
+    _check_config(config)
+    systems = _resolve_systems(config, system, all_systems)
+
+    rl_dir = Path(config.rocketlauncher_dir) if getattr(config, "rocketlauncher_dir", None) else None
+
+    total_mismatches = 0
+    total_archives = 0
+
+    for sys_name in systems:
+        rom_dir = Path(config.roms_dir) / sys_name
+        configured_exts = read_rl_rom_extensions(sys_name, rl_dir)
+        result = scan_system_archive_extensions(sys_name, rom_dir, configured_exts)
+        total_archives += result.archives_scanned
+
+        if result.archives_scanned == 0:
+            continue
+
+        if not result.has_mismatches and not result.scan_errors:
+            console.print(
+                f"[green]✓[/green] {sys_name}: "
+                f"{result.archives_scanned} archive(s) — all inner extensions recognised"
+            )
+            continue
+
+        console.print(Panel(f" {sys_name} ", style="bold blue"))
+
+        if configured_exts is not None:
+            console.print(
+                f"  [dim]Configured extensions:[/dim] "
+                f"[cyan]{' | '.join(sorted(configured_exts))}[/cyan]"
+            )
+        else:
+            console.print(
+                "  [yellow]RocketLauncher config not found — "
+                "listing all inner extensions for review[/yellow]"
+            )
+
+        for m in result.mismatches:
+            inner_str = ", ".join(f".{e}" for e in m.inner_extensions)
+            unknown_str = "[red]" + ", ".join(f".{e}" for e in m.unknown_extensions) + "[/red]"
+            console.print(
+                f"  [yellow]·[/yellow] [cyan]{m.archive_name}[/cyan]\n"
+                f"      inner: {inner_str}\n"
+                f"      unrecognised: {unknown_str}"
+            )
+            total_mismatches += len(m.unknown_extensions)
+
+        for err in result.scan_errors:
+            console.print(f"  [red]![/red] Could not read archive: [dim]{err}[/dim]")
+
+    console.print()
+    if total_mismatches == 0:
+        console.print(f"[green]Clean — {total_archives} archive(s) checked, no extension mismatches.[/green]")
+    else:
+        console.print(
+            f"[yellow]{total_mismatches}[/yellow] unrecognised extension(s) across "
+            f"{total_archives} archive(s).\n"
+            f"Add missing extensions to [cyan]Global Emulators.ini[/cyan] under the "
+            f"relevant emulator's [cyan]Rom_Extension=[/cyan] key, or convert the ROMs "
+            f"to a supported format."
+        )
+
+
 @cli.command("verify")
 @click.option("--system", "-s", required=True, help="System to verify.")
 @click.option("--dat", "dat_path", type=click.Path(exists=True), required=True,

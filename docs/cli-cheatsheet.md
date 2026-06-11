@@ -104,6 +104,20 @@ spindoctor check-discs --system "Sony Playstation"
 
 Reference: [Command reference → check-discs](commands.md#check-discs).
 
+### `check-archive-ext` — detect ROM format mismatches before launch
+
+Peeks inside `.zip` / `.7z` / `.rar` archives and reports inner file extensions that are
+not in the emulator's configured `Rom_Extension=` list. Catches `.rvz`, `.nkit.iso`, and
+other non-standard formats that cause RocketLauncher's *"No valid roms found in the
+archive"* error.
+
+```bat
+spindoctor check-archive-ext --system "Nintendo Gamecube"
+spindoctor check-archive-ext --all
+```
+
+Reference: [Command reference → check-archive-ext](commands.md#check-archive-ext).
+
 ### `inspect` — per-file deep-dive for one game
 
 ```bat
