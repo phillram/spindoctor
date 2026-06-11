@@ -5825,7 +5825,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(restore_frame, text="Backup folder").grid(
             row=0, column=0, sticky="w", padx=6, pady=2,
         )
-        self._backup_restore_path_var = self.tk.StringVar(value=_backup_dir_default)
+        self._backup_restore_path_var = self.tk.StringVar(value="")
         self._backup_restore_combo = self.ttk.Combobox(
             restore_frame, textvariable=self._backup_restore_path_var, width=48,
         )
@@ -6002,6 +6002,7 @@ class _SpinDoctorGUI:
                 argv,
                 check=True, capture_output=True, text=True,
                 timeout=30,
+                creationflags=_CREATE_NO_WINDOW,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             self.messagebox.showerror(
@@ -6242,14 +6243,6 @@ class _SpinDoctorGUI:
             pre_bkp_frame, text="Create backup now",
             command=self._run_pre_migrate_backup,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 4))
-        self.ttk.Label(
-            pre_bkp_frame,
-            text=(
-                "After migrating, run generate-config (Metadata & Media tab) "
-                "to update RocketLauncher's per-system INIs."
-            ),
-            foreground=_FG_DIM,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 6))
 
         # ── Step 3 — Migration settings (target, components, options) ────────
         mig_frame = self.ttk.LabelFrame(
@@ -6414,6 +6407,31 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             btn_row, text="Undo", command=self._run_migrate_undo,
         ).pack(side="left", padx=6)
+
+        # ── Step 5 — Update RocketLauncher after migration ───────────────────
+        post_frame = self.ttk.LabelFrame(
+            frame, text="Step 5 — Update RocketLauncher after migration",
+        )
+        post_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        self.ttk.Label(
+            post_frame,
+            text=(
+                "After migrating your ROM drive, run generate-config to update "
+                "RocketLauncher's per-system INIs with the new Rom_Path. "
+                "Only Rom_Path= is changed — your emulator assignments "
+                "(Default_Emulator, Emu_Path, Module, etc.) are preserved."
+            ),
+            wraplength=800, justify="left",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 4))
+        self.ttk.Button(
+            post_frame, text="Run generate-config",
+            command=self._run_generate_config,
+        ).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 6))
+        self.ttk.Label(
+            post_frame,
+            text="Tip: tick Apply (top toolbar) to write the updated INIs.",
+            foreground=_FG_DIM,
+        ).grid(row=1, column=1, sticky="w", padx=6, pady=(0, 6))
 
         frame.columnconfigure(1, weight=1)
         return frame
@@ -6884,6 +6902,7 @@ class _SpinDoctorGUI:
                 argv,
                 check=True, capture_output=True, text=True,
                 timeout=30,
+                creationflags=_CREATE_NO_WINDOW,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             self.messagebox.showerror(
