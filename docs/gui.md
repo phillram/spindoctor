@@ -273,7 +273,7 @@ Three numbered steps walk through the full backup / restore workflow.
 
 ### Migrate
 
-Four numbered steps walk through the full migration workflow.
+Five numbered steps walk through the full migration workflow.
 
 **Step 1 — Current configuration:** **Show current paths** and **Run doctor** let you verify what's configured before moving anything.
 
@@ -283,7 +283,7 @@ Four numbered steps walk through the full migration workflow.
 
 **Step 4 — Undo a previous migration:** Manifest dropdown pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top). **Refresh** reloads. **List manifests** and **Undo** complete the lifecycle.
 
-**After migrating the `roms` component**, go to the **Metadata & Media tab**, tick Apply, and click **Run generate-config** (Step 5). This rewrites RocketLauncher's per-system `Settings\<SystemName>.ini` files with the new `Rom_Path`. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
+**Step 5 — Update RocketLauncher after migration:** Click **Run generate-config** (respects the global Apply toggle) to rewrite `Rom_Path=` in every per-system `Settings\<SystemName>\Emulators.ini`. Only `Rom_Path` changes — `Default_Emulator`, `Emu_Path`, `Module`, and all other emulator settings are left exactly as configured. Without this step RocketLauncher can't find your games at the new location and HyperSpin displays empty wheels. See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive).
 
 Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path.
 
