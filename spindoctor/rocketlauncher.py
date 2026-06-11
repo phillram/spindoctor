@@ -1,6 +1,7 @@
 """RocketLauncher system INI and HyperSpin Main Menu XML generation."""
 from __future__ import annotations
 
+import configparser
 import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -204,9 +205,8 @@ def generate_global_emulators_ini(
         emu_dir = emulators_root / emu
         lines.extend([
             f"[{emu}]",
-            f"Emulator_Path={emu_dir}",
-            f"Emulator_Application_Path={emu_dir / exe}",
-            f"Emulator_Extension={ext}",
+            f"Emu_Path={emu_dir / exe}",
+            f"Rom_Extension={ext}",
             "",
         ])
 
@@ -243,6 +243,27 @@ def detect_rl_layout(settings_dir: Path, system_name: str) -> str:
     if (settings_dir / f"{system_name}.ini").exists():
         return "flat"
     return "new"
+
+
+def _read_existing_emu_path(ini_path: Path, emulator: str) -> Optional[str]:
+    """Return the Emu_Path value for *emulator* from an existing INI file.
+
+    Reads the ``[<emulator>]`` section and looks for ``Emu_Path`` (case-insensitive
+    via configparser).  Returns ``None`` when the file is absent, unparseable, or
+    has no ``Emu_Path`` entry for that emulator.
+    """
+    if not ini_path.exists():
+        return None
+    try:
+        cp = configparser.ConfigParser()
+        cp.read(str(ini_path), encoding="utf-8")
+        # configparser lower-cases option names by default; we look for "emu_path"
+        for section in (emulator, emulator.upper()):
+            if cp.has_section(section) and cp.has_option(section, "emu_path"):
+                return cp.get(section, "emu_path")
+    except Exception:  # pragma: no cover — corrupt INI edge case
+        pass
+    return None
 
 
 def generate_rl_system_ini(
@@ -285,14 +306,20 @@ def generate_rl_system_ini(
         folder_dir = settings_dir / system_name
         folder_dir.mkdir(parents=True, exist_ok=True)
         emu_ini = folder_dir / "Emulators.ini"
+        # Preserve any Emu_Path the user configured via HyperHQ / RLUI.
+        # generate_rl_system_ini only updates Rom_Path; the emulator executable
+        # location is irrelevant to ROM migration and must not be wiped.
+        existing_emu_path = _read_existing_emu_path(emu_ini, emulator)
+        emu_section: list[str] = [f"[{emulator}]", f"Rom_Path={rom_path}"]
+        if existing_emu_path:
+            emu_section.insert(1, f"Emu_Path={existing_emu_path}")
         emu_ini.write_text("\n".join([
             "[ROMS]",
             f"Default_Emulator={emulator}",
             f"Rom_Path={rom_path}",
             f"Rom_Extension={extensions}",
             "",
-            f"[{emulator}]",
-            f"Rom_Path={rom_path}",
+            *emu_section,
             "",
         ]), encoding="utf-8")
         written.append(emu_ini)
@@ -300,14 +327,17 @@ def generate_rl_system_ini(
     if layout in ("flat", "new"):
         # Flat layout: Settings/<system>.ini  [Settings] section
         flat_ini = settings_dir / f"{system_name}.ini"
+        existing_emu_path_flat = _read_existing_emu_path(flat_ini, emulator)
+        emu_section_flat: list[str] = [f"[{emulator}]", f"Rom_Path={rom_path}"]
+        if existing_emu_path_flat:
+            emu_section_flat.insert(1, f"Emu_Path={existing_emu_path_flat}")
         flat_ini.write_text("\n".join([
             "[Settings]",
             f"Default_Emulator={emulator}",
             f"Rom_Path={rom_path}",
             f"Rom_Extension={extensions}",
             "",
-            f"[{emulator}]",
-            f"Rom_Path={rom_path}",
+            *emu_section_flat,
             "",
         ]), encoding="utf-8")
         written.append(flat_ini)
