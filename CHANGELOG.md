@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI — Logs tab `# Dry-run:` header now shows `N/A` for read-only commands** — previously every read-only command (e.g. `audit --all`, `doctor`, `tools-audit`) showed `# Dry-run: False`, which appeared to say "this wrote to disk." The field now shows `N/A` for commands where the dry-run concept does not apply (genuinely read-only or write-always-no-`--apply`), `Yes` for dry-run previews, and `No` for actual writes. The same fix applies to the "Save selected output…" export header.
+- **GUI — `stats-report build-wheel` / `stats-report clear-wheel` now correctly classified as dry-run-capable** — both subcommands support `--apply` and are dry-run by default, but the `stats-report` single-token entry in `_READ_ONLY_COMMANDS` caused them to be marked as N/A instead of showing the `=== DRY RUN ===` banner and `DRY-RUN` Logs tag when run without `--apply`. A new `_WRITE_SUBCOMMAND_PAIRS` set is checked before the single-token lookup so the subcommand-level rule wins.
+- **GUI — removed invalid `--apply` from `install-tools` Custom Command presets** — `install-tools` has no `--apply` flag; the preset entries `install-tools --apply` and `install-tools --add-to-system <SYSTEM> --apply` would have failed at runtime with an unknown-option error. Corrected to `install-tools` and `install-tools --add-to-system <SYSTEM>`.
+- **GUI — `check-archive-ext` added to `_READ_ONLY_COMMANDS`** — the new read-only diagnostic was missing from the set, so running it via Custom Command would have incorrectly shown the `=== DRY RUN ===` banner.
+
 ### Added
 
 - **`install-tools` — now writes the PCLauncher module INI** — `install-tools --add-to-system <SYSTEM>` now writes (or updates) `Modules/PCLauncher/<SYSTEM>.ini` with `[<tool_name>]` sections containing `Application=<bat_path>` and `WorkingFolder=`. Without this file PCLauncher.ahk had no game configuration to read and errored immediately with *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* The per-game placeholder `.ini` files in the `Rom_Path` are only used by RocketLauncher for ROM discovery; PCLauncher.ahk reads game settings exclusively from the module INI. Existing non-SpinDoctor sections in the module INI are preserved; SpinDoctor tool sections are replaced on re-run.
