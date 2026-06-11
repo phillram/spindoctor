@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import errno
 import os
-from pathlib import Path
 from typing import Optional
 
 
@@ -52,7 +51,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
     # RocketLauncher / a text editor). Most frequent failure mode on cabs.
     if winerror == 32:
         return (
-            f"{prefix}{_basename(filename) or 'the target file'} is "
+            f"{prefix}{filename or 'the target file'} is "
             "currently in use by another program. The most common cause "
             "on a cabinet is HyperSpin or RocketLauncher being open — "
             "close them and try again."
@@ -64,7 +63,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
     if winerror == 5 or code == errno.EACCES:
         return (
             f"{prefix}permission denied on "
-            f"{_basename(filename) or 'the target file'}. Common causes: "
+            f"{filename or 'the target file'}. Common causes: "
             "(1) the file is open in HyperSpin / RocketLauncher — close "
             "them, (2) the file has Windows' read-only attribute set — "
             "right-click → Properties and untick Read-only, "
@@ -76,7 +75,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
     if code == errno.EPERM:
         return (
             f"{prefix}operation not permitted on "
-            f"{_basename(filename) or 'the target file'}. The file may "
+            f"{filename or 'the target file'}. The file may "
             "have an immutable / locked attribute (chflags / chattr) or "
             "be inside a sandbox SpinDoctor can't write to."
         )
@@ -97,7 +96,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
 
     if code == errno.ENOENT:
         return (
-            f"{prefix}can't find {_basename(filename) or 'the path'}. "
+            f"{prefix}can't find {filename or 'the path'}. "
             "It may have been moved or deleted since SpinDoctor last "
             "saw it — check it still exists, or update the relevant "
             "field on the Setup tab."
@@ -107,7 +106,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
 
     if code == errno.EISDIR:
         return (
-            f"{prefix}{_basename(filename) or 'the target'} is a "
+            f"{prefix}{filename or 'the target'} is a "
             "directory, but SpinDoctor expected a file. Check the path "
             "in your config — you probably want to point one level "
             "deeper into the folder."
@@ -116,7 +115,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
     if code == errno.ENOTDIR:
         return (
             f"{prefix}part of the path "
-            f"({_basename(filename) or 'the target'}) is a file, not a "
+            f"({filename or 'the target'}) is a file, not a "
             "directory. Likely an old path in config.json that now "
             "points at a renamed file."
         )
@@ -125,7 +124,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
 
     if code == errno.EEXIST:
         return (
-            f"{prefix}{_basename(filename) or 'the target'} already "
+            f"{prefix}{filename or 'the target'} already "
             "exists. Pass --overwrite (CLI) or tick the Overwrite "
             "checkbox (GUI) if you actually want to replace it."
         )
@@ -134,7 +133,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
 
     if code == errno.EXDEV:
         return (
-            f"{prefix}can't move {_basename(filename) or 'the file'} "
+            f"{prefix}can't move {filename or 'the file'} "
             "across drives with a rename — SpinDoctor must copy it "
             "first. This is usually transparent; if you're seeing it, "
             "the destination drive may be a network share or removable "
@@ -146,7 +145,7 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
     if code == errno.EROFS:
         return (
             f"{prefix}the target filesystem is read-only "
-            f"(path: {_basename(filename) or 'the target'}). If this is "
+            f"(path: {filename or 'the target'}). If this is "
             "an external drive, check its read-only switch; if it's a "
             "mount, remount with write permission."
         )
@@ -172,16 +171,6 @@ def humanize_oserror(exc: OSError, *, action: str = "") -> str:
 
 
 # ─── helpers ─────────────────────────────────────────────────────────────────
-
-
-def _basename(path: str) -> str:
-    """Return the last segment of *path*, or empty if not parseable."""
-    if not path:
-        return ""
-    try:
-        return Path(path).name or path
-    except Exception:  # noqa: BLE001 - never raise from a humanizer
-        return path
 
 
 def _drive_hint(path: str) -> Optional[str]:
