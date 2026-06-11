@@ -164,3 +164,79 @@ def test_new_system_both_files_have_correct_rom_path(tmp_path):
         rl / "Settings" / "MAME.ini",
     ]:
         assert f"Rom_Path={expected}" in p.read_text(encoding="utf-8")
+
+
+# ─── Emu_Path preservation ────────────────────────────────────────────────────
+
+
+def test_folder_layout_preserves_emu_path(tmp_path):
+    """generate_rl_system_ini must keep an existing Emu_Path in the
+    [Emulator] section of the folder-layout Emulators.ini.
+
+    Root cause of the post-migration launch failure: the original file (written
+    by HyperHQ / RLUI) contained Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe.
+    Before this fix, generate_rl_system_ini wiped the entire file, dropping
+    Emu_Path, and RL then emitted 'Could not find an Emu_path for MAME'."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\n"
+        "Default_Emulator=MAME\n"
+        "Rom_Path=D:\\old\\MAME\n"
+        "\n"
+        "[MAME]\n"
+        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe\n"
+        "Rom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    # Rom_Path updated to the new value.
+    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
+    assert f"Rom_Path={new_rom_path}" in body
+    # Emu_Path must be preserved verbatim.
+    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe" in body
+
+
+def test_flat_layout_preserves_emu_path(tmp_path):
+    """Same preservation requirement for the flat-layout Settings/<system>.ini."""
+    cfg, rl = _make_config(tmp_path)
+    flat_ini = rl / "Settings" / "MAME.ini"
+    flat_ini.write_text(
+        "[Settings]\n"
+        "Default_Emulator=MAME\n"
+        "Rom_Path=D:\\old\\MAME\n"
+        "\n"
+        "[MAME]\n"
+        "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe\n"
+        "Rom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = flat_ini.read_text(encoding="utf-8")
+    new_rom_path = str(Path(cfg.roms_dir) / "MAME")
+    assert f"Rom_Path={new_rom_path}" in body
+    assert "Emu_Path=D:\\Arcade\\Emulators\\MAME\\mame.exe" in body
+
+
+def test_no_emu_path_entry_when_none_existed(tmp_path):
+    """When the existing file has no Emu_Path, the rewritten file must also
+    omit it — no empty or placeholder Emu_Path= line is inserted."""
+    cfg, rl = _make_config(tmp_path)
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=MAME\nRom_Path=D:\\old\\MAME\n"
+        "\n[MAME]\nRom_Path=D:\\old\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert "Emu_Path=" not in body
