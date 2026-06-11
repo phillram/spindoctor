@@ -6,6 +6,21 @@
 
 ---
 
+## Platform
+
+| Property | Value |
+|----------|-------|
+| OS | **Windows 7** |
+| HyperSpin runtime | Adobe AIR (H.264 Main Profile ≤ Level 4.0 only — see video section) |
+| Python target | Must work on Windows 7; use `pathlib.Path` for all path construction |
+| Regex replacements | Always use `lambda m: replacement` in `re.sub`/`re.subn` when the replacement string may contain a Windows path — backslash sequences like `\U`, `\N`, `\A` are misread as regex backreferences and raise `re.error` |
+
+Both the **CLI and the GUI** must function correctly on Windows 7. Windows-specific bugs
+(path separator handling, regex escape processing, Tk widget compatibility) are invisible on
+macOS development but break the cabinet.
+
+---
+
 ## Directory Layout
 
 ```
