@@ -164,7 +164,7 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 Three numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 
-**Step 1 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels, showing "Step N/3: &lt;wheel&gt;…" in the status bar. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
+**Step 1 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;…" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
 **Step 2 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). **Sync favorites from HyperSpin** imports HyperSpin's F-key favorites into SpinDoctor's store — run this before Step 1 if you use F-key favorites.
 
@@ -356,7 +356,7 @@ $ spindoctor curate --all
 
 The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
 
-Chained workflows (Refresh all wheels, Register wheels in Main Menu, Full metadata refresh, Preflight check) show a **determinate** progress bar anchored to step/total; single-command runs use the indeterminate spinner.
+Long-running single commands and chained wheel rebuilds use a **pulsing (indeterminate)** progress bar; multi-step chains that have a known step count (Full metadata refresh, Preflight check) additionally advance a **determinate** fill between steps.
 
 ### Quiet success, audible validation
 
