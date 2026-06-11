@@ -240,6 +240,99 @@ the per-game `.ini` ROM files.
 
 ---
 
+## Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes
+
+### Emulator version on this cabinet
+
+| Slot | Version | Path | Supports RVZ |
+|------|---------|------|--------------|
+| Active | **Dolphin 5.0-16101** | `D:\Arcade\Emulators\Dolphin Ishiiruka\Dolphin.exe` | Yes |
+| Original | Dolphin Ishiiruka (2017) | replaced by above | No |
+
+The original Dolphin Ishiiruka build (dated 2017) was replaced with Dolphin 5.0-16101.
+This is the **last Dolphin dev build that runs on Windows 7** — Windows 7 support was
+removed from Dolphin in July 2023. RVZ support was added in Dolphin 5.0-12188 (December 2020),
+so any build in the range 5.0-12188 through ~5.0-17000 supports both RVZ and Windows 7.
+
+The emulator folder name (`Dolphin Ishiiruka`) was kept intentionally so that
+`Global Emulators.ini` needs no changes — it still points to the same path.
+The `User\` subfolder (portable mode) carries over all GCPad/Wiimote profiles and
+Dolphin.ini settings automatically.
+
+### Dolphin portable mode
+
+Dolphin stores its settings under `User\Config\Dolphin.ini` relative to the emulator
+folder when a `portable.txt` file is present. This cabinet uses portable mode:
+
+```
+D:\Arcade\Emulators\Dolphin Ishiiruka\
+├── Dolphin.exe          ← the emulator (currently 5.0-16101)
+├── portable.txt         ← triggers portable mode
+└── User\
+    └── Config\
+        ├── Dolphin.ini  ← main settings (Fullscreen, HideCursor, etc.)
+        ├── GCPadNew.ini ← GameCube controller mappings
+        └── WiimoteNew.ini ← Wiimote mappings
+```
+
+RocketLauncher's Dolphin module reads `Dolphin.ini` from this path and updates
+`Fullscreen`, `RenderToMain`, `HideCursor`, `ConfirmStop`, and `UsePanicHandlers`
+before each launch.
+
+### ROM formats
+
+| Extension | Format | Notes |
+|-----------|--------|-------|
+| `.iso` | Raw disc image | Universal; largest file size |
+| `.gcm` | GameCube disc image | Identical to ISO, different extension |
+| `.gcz` | Dolphin GCZ compression | Smaller than ISO; supported since early Dolphin |
+| `.ciso` | Compact ISO | Wii-only compression format |
+| `.wbfs` | Wii Backup FS | Wii-only; can be a full partition image |
+| `.rvz` | RVZ compression | Requires Dolphin **5.0-12188+**; NOT supported by Dolphin Ishiiruka (2017) or older |
+
+**RVZ is the modern compressed format** produced by tools like Dolphin's own conversion
+and Dolphin Tool. It's smaller than GCZ and lossless. If ROMs come as `.rvz` inside a
+`.zip` archive and RocketLauncher reports *"No valid roms found in the archive"*, the
+cause is a mismatch between the inner extension and `Rom_Extension=` in Global Emulators.ini.
+
+### Upgrading Dolphin or switching versions
+
+To replace the Dolphin executable while keeping all settings and controller profiles:
+
+1. Download the target Dolphin build (`Dolphin-x64.7z` from the Dolphin dev builds archive)
+2. Copy the new `Dolphin.exe` (and supporting DLLs if present) into
+   `D:\Arcade\Emulators\Dolphin Ishiiruka\` — overwrite the old exe only
+3. The `User\` folder and `portable.txt` are untouched; settings carry over automatically
+4. No changes to `Global Emulators.ini` or RocketLauncher settings are needed
+
+To add a **second Dolphin instance** (e.g. keep Ishiiruka for one system, new build for another):
+
+1. Install the new build to a different folder, e.g. `D:\Arcade\Emulators\Dolphin\`
+2. Copy the `User\` folder from `Dolphin Ishiiruka\` to carry over settings and profiles
+3. Add a `[Dolphin]` section to `Global Emulators.ini`:
+   ```ini
+   [Dolphin]
+   Emu_Path=..\Emulators\Dolphin\Dolphin.exe
+   Rom_Extension=iso|gcm|gcz|wbfs|ciso|rvz
+   Module=Dolphin.ahk
+   ```
+4. Create (or update) `Settings\Nintendo Gamecube\Emulators.ini`:
+   ```ini
+   [ROMS]
+   Default_Emulator=Dolphin
+   Rom_Path=J:\Games\Nintendo Gamecube
+   ```
+
+### `check-archive-ext` — catching extension mismatches before launch
+
+Run `spindoctor check-archive-ext --system "Nintendo Gamecube"` (or the **Check archive
+extensions** button in the Diagnostics tab) to scan every `.zip`/`.7z`/`.rar` in the ROM
+directory and report files whose inner extensions are not listed in `Rom_Extension`. This
+catches `.rvz`, `.nkit.iso`, or any other non-standard format before the user tries to
+launch a game and gets the cryptic *"No valid roms found in the archive"* error.
+
+---
+
 ## PCLauncher Architecture — Two-File System
 
 PCLauncher uses **two separate file types** for synthetic wheels. Many people confuse them:

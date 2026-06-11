@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. (`lightgun detect` is read-only without `--apply`; with `--apply` it seeds config.)
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. (`lightgun detect` is read-only without `--apply`; with `--apply` it seeds config.)
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -13,7 +13,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
-- [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `verify`, `stats`, `preview`
+- [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
 - [Resetting cabinet data](#resetting-cabinet-data) — `scrub`
@@ -513,6 +513,28 @@ Validate multi-disc layouts: every `(Disc N)` file has its `(Disc 1..N-1)` sibli
 spindoctor check-discs --system "Sony Playstation"
 spindoctor check-discs --all
 ```
+
+### `check-archive-ext`
+
+Scan ROM archives (`.zip`, `.7z`, `.rar`) and report any inner files whose extensions are
+not listed in the emulator's `Rom_Extension=` setting in `Global Emulators.ini`. Catches
+format mismatches — such as `.rvz` (Dolphin RVZ compression) or `.nkit.iso` files packed
+inside a zip — before the user tries to launch a game and gets *"No valid roms found in
+the archive"* from RocketLauncher.
+
+Extension lookup order: per-system `Emulators.ini` → `Global Emulators.ini` → SpinDoctor's
+built-in defaults. When `rocketlauncher_dir` is not configured, the scan still runs and
+lists all inner extensions for manual review.
+
+Read-only — never modifies any file.
+
+```bat
+spindoctor check-archive-ext --system "Nintendo Gamecube"
+spindoctor check-archive-ext --all
+```
+
+Archive format support for `.7z` and `.rar` requires `pip install spindoctor[archives]`;
+`.zip` works out of the box.
 
 ### `verify`
 
