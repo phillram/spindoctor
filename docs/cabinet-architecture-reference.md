@@ -6,6 +6,21 @@
 
 ---
 
+## Platform
+
+| Property | Value |
+|----------|-------|
+| OS | **Windows 7** |
+| HyperSpin runtime | Adobe AIR (H.264 Main Profile ≤ Level 4.0 only — see video section) |
+| Python target | Must work on Windows 7; use `pathlib.Path` for all path construction |
+| Regex replacements | Always use `lambda m: replacement` in `re.sub`/`re.subn` when the replacement string may contain a Windows path — backslash sequences like `\U`, `\N`, `\A` are misread as regex backreferences and raise `re.error` |
+
+Both the **CLI and the GUI** must function correctly on Windows 7. Windows-specific bugs
+(path separator handling, regex escape processing, Tk widget compatibility) are invisible on
+macOS development but break the cabinet.
+
+---
+
 ## Directory Layout
 
 ```
@@ -86,9 +101,48 @@ RocketLauncher supports two layouts for per-system routing. This cabinet uses th
 | Folder  | `Settings/<System>/Emulators.ini`    | `[ROMS]`| `Default_Emulator=`   |
 | Flat    | `Settings/<System>.ini`              |`[Settings]`| `Default_Emulator=` |
 
-SpinDoctor writes **both** files so the cabinet works regardless of which RL prefers.
+SpinDoctor writes **both** files for new systems so the cabinet works regardless of which
+layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Path=` update
+only — all other keys are preserved.
 
-The folder-layout `Emulators.ini` for synthetic wheels looks like:
+### Per-system Emulators.ini — real format
+
+This is what a real per-system `Emulators.ini` on this cabinet looks like (minimal — no
+`[<Emulator>]` section, no `Emu_Path`):
+
+```ini
+[ROMS]
+Default_Emulator=MAME
+Rom_Path=..\Games\MAME
+```
+
+```ini
+[ROMS]
+Default_Emulator=SSF
+Rom_Path=..\Games\Sega Saturn
+```
+
+The path is relative to the `Settings\` folder, i.e. `..\Games\MAME` resolves to
+`D:\Arcade\RocketLauncher\Games\MAME`. After a ROM drive migration SpinDoctor updates
+it to an absolute path: `Rom_Path=J:\Games\MAME`.
+
+**What `Default_Emulator` maps to** — RocketLauncher reads this value and then looks
+up `[<EmulatorName>]` in `Global Emulators.ini` to find `Emu_Path`. The emulator
+names used on this cabinet include: `MAME`, `RetroArch`, `SSF` (Sega Saturn),
+`Mednafen`, `NullDC` / `Demul` (Dreamcast), `Project64`, `PCSX2`, `ZiNc`, etc.
+SpinDoctor only knows a subset of these. For systems whose emulator it does not
+recognise, it leaves `Default_Emulator` unchanged (see note below).
+
+> **Critical — never overwrite `Default_Emulator`:** Before this was fixed, SpinDoctor
+> replaced the entire per-system file with a template and changed `Default_Emulator` to
+> its fallback guess (`RetroArch`) for any system not in its built-in map.  This caused
+> RocketLauncher to look for `[RetroArch]` in the per-system file, find the bare section
+> SpinDoctor had injected (no `Emu_Path`), stop its lookup chain there, and report
+> *"Could not find an Emu_path for RetroArch"* for every game on every console.
+
+The folder-layout `Emulators.ini` for synthetic wheels (Favorites, Recently Played,
+Most Played) looks different — SpinDoctor writes these in full:
+
 ```ini
 [ROMS]
 Default_Emulator=PCLauncher
@@ -114,22 +168,75 @@ Rom_Extension=ini
 
 ---
 
-## Global Emulators.ini — PCLauncher Entry
+## Global Emulators.ini — Structure and Emulator Lookup Chain
 
-`Settings\Global Emulators.ini` registers every emulator. The `[PCLauncher]` section
-**must** have `Rom_Extension=ini` set. Without it, RL falls back to the global extension
-list (`zip|rar|7z|...`) and can't find the per-game `.ini` ROM files.
+`Settings\Global Emulators.ini` is the master emulator registry. Every emulator on the
+cabinet has a section here. RocketLauncher's lookup chain when launching a game:
+
+1. Read `Default_Emulator=` from the per-system `Settings\<System>\Emulators.ini` `[ROMS]` section
+2. Look for `[<EmulatorName>]` in the per-system file — if `Emu_Path=` is found, use it
+3. Fall back to `[<EmulatorName>]` in `Settings\Global Emulators.ini` — read `Emu_Path=` from there
+
+Because the per-system files on this cabinet have NO `[<Emulator>]` section, RL always
+falls back to step 3 for `Emu_Path`. **This is why adding a bare `[<Emulator>]` section
+without `Emu_Path=` to a per-system file breaks launches** — RL finds the section in step 2,
+reads no `Emu_Path`, stops, and reports *"Could not find an Emu_path"* instead of
+continuing to step 3 where the path is actually defined.
+
+### Per-emulator section format
+
+Each emulator section in `Global Emulators.ini` uses these keys:
 
 ```ini
+[MAME]
+Emu_Path=..\Emulators\MAME\mame64.exe
+Rom_Extension=zip|7z|txt
+Module=MAME.ahk
+Pause_Save_State_Keys=...
+Pause_Load_State_Keys=...
+
+[RetroArch]
+Emu_Path=..\Emulators\RetroArch\retroarch.exe
+Rom_Extension=rar|7z|zip|sfc|gba|...
+Module=RetroArch.ahk
+Pause_Save_State_Keys=...
+Pause_Load_State_Keys=...
+
+[SSF]
+Emu_Path=..\Emulators\SSF\SSF.exe
+Rom_Extension=7z|zip|cue|ccd|iso|mds|mdf|rar
+Module=SSF.ahk
+Pause_Save_State_Keys=
+Pause_Load_State_Keys=
+
 [PCLauncher]
-Emu_Path=..\Emulators\PCLauncher\PCLauncher.exe
 Module=PCLauncher.ahk
-Rom_Extension=ini
+Emu_Path=..\Emulators\PCLauncher\PCLauncher.exe
+Pause_Save_State_Keys=
+Pause_Load_State_Keys=
+Rom_Extension=
 ```
 
-> **This is a manual cabinet setting.** SpinDoctor does not modify `Global Emulators.ini`.
-> It was the root cause of "Cannot find Rom X with any provided Rom_Extension: zip|rar|7z|…"
-> errors seen on this cabinet.
+Key points:
+- `Emu_Path=` is **relative to the `Settings\` folder** (i.e. `..\Emulators\...` resolves
+  to `D:\Arcade\RocketLauncher\Emulators\...`). Some entries under `Games\` use
+  `..\Games\<name>\<exe>` for emulators installed alongside their ROMs (e.g. AAE, Daphne).
+- `Emu_Path=` is the key RocketLauncher reads. SpinDoctor's `generate-config` uses
+  `Emu_Path=` when creating a new `Global Emulators.ini` from scratch.
+- This cabinet has 40+ emulator sections including many variant instances
+  (`MAME (Gun Games)`, `RetroArch (MultiPlayer)`, `Demul58`, etc.).
+
+### `[PCLauncher]` — Rom_Extension requirement
+
+The `[PCLauncher]` section **must** have `Rom_Extension=ini` set (or empty string as
+shown above — RL then uses whatever the per-system INI specifies). Without the correct
+extension, RL falls back to the global extension list (`zip|rar|7z|...`) and can't find
+the per-game `.ini` ROM files.
+
+> **SpinDoctor does not modify an existing `Global Emulators.ini`.** It only creates the
+> file if none exists, covering the common emulators in its built-in map. The cabinet's
+> full `Global Emulators.ini` (with 40+ hand-configured emulators) was set up manually
+> and is never overwritten by SpinDoctor.
 
 ---
 
