@@ -265,6 +265,8 @@ Reference: [Command reference → update-db](commands.md#update-db).
 spindoctor generate-config --apply
 ```
 
+Synthetic wheels (Favorites, Recently Played, Most Played) are never touched by generate-config — their settings are managed by `fav rebuild` / `recent rebuild` / `stats build-wheel`. Any synthetic wheels already in `Main Menu.xml` are preserved across generate-config runs.
+
 Reference: [Command reference → generate-config](commands.md#generate-config).
 
 ---
