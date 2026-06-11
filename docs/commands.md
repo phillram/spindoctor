@@ -669,8 +669,9 @@ Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Mos
 
 `--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
 
-1. Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\<NAME>\`.
-2. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
+1. Writes the `.bat` helpers and per-game placeholder INIs to the system's `Rom_Path` (reads from the existing `Settings\<NAME>\Emulators.ini`) — or `Modules\PCLauncher\<NAME>\` for new systems.
+2. Writes or updates `Modules\PCLauncher\<NAME>.ini` (the PCLauncher module INI) with `[<tool name>]` sections containing `Application=<bat>` and `WorkingFolder=`. **This file is required** — PCLauncher.ahk reads game settings from it; without it every launch shows *"You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for."* Existing user-configured sections in this file are preserved.
+3. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
 
 Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
 
@@ -693,7 +694,8 @@ spindoctor uninstall-tools --add-to-system Toolkit --apply
 When `--add-to-system <SYSTEM>` is given:
 
 1. Removes the `.bat` and `.ini` files from the PCLauncher directory used for that system (reads the first `Rom_Path` from `Settings/<SYSTEM>/Emulators.ini`, falls back to `Modules/PCLauncher/<SYSTEM>`; also checks the legacy path so files written by older versions are cleaned up).
-2. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
+2. Removes the SpinDoctor-written `[Refresh …]` sections from the PCLauncher module INI (`Modules/PCLauncher/<SYSTEM>.ini`). Non-SpinDoctor sections are left in place. If the file becomes empty after removal it is deleted.
+3. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
 

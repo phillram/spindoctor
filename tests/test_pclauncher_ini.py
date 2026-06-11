@@ -17,6 +17,7 @@ from spindoctor.rocketlauncher import (
     generate_pclauncher_inis,
     guess_emulator,
     write_pclauncher_system_ini,
+    write_toolkit_module_ini,
     _read_system_default_emulator,
     _read_emulator_exe,
     _read_pclauncher_game_exe,
@@ -634,6 +635,70 @@ def test_get_fade_title_user_config_adds_unknown_emulator(tmp_path):
     _write_emulators_ini(rl / "Settings" / "Sega Model 2" / "Emulators.ini", "Model 2")
     title = _get_fade_title("Sega Model 2", rl, extra={"Model 2": "Sega Model 2"})
     assert title == "Sega Model 2"
+
+
+# ─── write_toolkit_module_ini ─────────────────────────────────────────────────
+
+def test_write_toolkit_module_ini_creates_fresh(tmp_path):
+    """Creates Modules/PCLauncher/<system>.ini with Application= for each tool."""
+    rl = tmp_path / "rl"
+    bat_dir = tmp_path / "Toolkit"
+    bat_dir.mkdir()
+    entries = [
+        ("Refresh Recently Played", bat_dir / "Refresh Recently Played.bat"),
+        ("Refresh Favorites", bat_dir / "Refresh Favorites.bat"),
+    ]
+    module_ini = write_toolkit_module_ini("Toolkit", entries, rl)
+
+    assert module_ini == rl / "Modules" / "PCLauncher" / "Toolkit.ini"
+    body = module_ini.read_text(encoding="utf-8")
+    assert "[Refresh Recently Played]" in body
+    assert str(bat_dir / "Refresh Recently Played.bat") in body
+    assert "[Refresh Favorites]" in body
+    assert "WorkingFolder=" in body
+
+
+def test_write_toolkit_module_ini_preserves_non_sd_sections(tmp_path):
+    """Existing non-SpinDoctor sections are kept when the file is updated."""
+    rl = tmp_path / "rl"
+    module_dir = rl / "Modules" / "PCLauncher"
+    module_dir.mkdir(parents=True)
+    existing = module_dir / "Toolkit.ini"
+    existing.write_text(
+        "[TeamViewer]\nApplication=C:\\TeamViewer\\TeamViewer.exe\n\n",
+        encoding="utf-8",
+    )
+    bat_dir = tmp_path / "Toolkit"
+    bat_dir.mkdir()
+    entries = [("Refresh Recently Played", bat_dir / "Refresh Recently Played.bat")]
+    write_toolkit_module_ini("Toolkit", entries, rl)
+
+    body = existing.read_text(encoding="utf-8")
+    assert "[TeamViewer]" in body
+    assert "TeamViewer.exe" in body
+    assert "[Refresh Recently Played]" in body
+
+
+def test_write_toolkit_module_ini_replaces_stale_sd_sections(tmp_path):
+    """SpinDoctor sections are replaced, not duplicated, on re-run."""
+    rl = tmp_path / "rl"
+    module_dir = rl / "Modules" / "PCLauncher"
+    module_dir.mkdir(parents=True)
+    existing = module_dir / "Toolkit.ini"
+    existing.write_text(
+        "[Refresh Recently Played]\nApplication=C:\\old\\Refresh Recently Played.bat\n\n",
+        encoding="utf-8",
+    )
+    bat_dir = tmp_path / "new_path"
+    bat_dir.mkdir()
+    entries = [("Refresh Recently Played", bat_dir / "Refresh Recently Played.bat")]
+    write_toolkit_module_ini("Toolkit", entries, rl)
+
+    body = existing.read_text(encoding="utf-8")
+    # New path present, old literal path gone, only one section
+    assert str(bat_dir) in body
+    assert "C:\\old\\" not in body
+    assert body.count("[Refresh Recently Played]") == 1
 
 
 def test_write_pclauncher_system_ini_respects_extra_window_titles(tmp_path):

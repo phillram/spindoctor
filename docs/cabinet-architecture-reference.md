@@ -587,6 +587,27 @@ SpinDoctor detects this by reading the existing `Emulators.ini` before writing t
 so executables land in the correct directory (`D:\Arcade\Utilities\Toolkit`) rather than
 the default `Modules\PCLauncher\Toolkit`.
 
+### Module INI requirement
+
+`install-tools --add-to-system Toolkit` also writes (or updates) the **PCLauncher module INI** at
+`Modules\PCLauncher\Toolkit.ini`. Without this file, PCLauncher.ahk has no `Application=` value
+to read and fails immediately with:
+
+> *You have not set up \<tool\> in RocketLauncherUI yet, so PCLauncher does not know what exe,
+> FadeTitle, and/or SteamID to watch for.*
+
+The generated sections look like:
+
+```ini
+[Refresh Recently Played]
+Application=D:\Arcade\Utilities\Toolkit\Refresh Recently Played.bat
+WorkingFolder=D:\Arcade\Utilities\Toolkit
+```
+
+PCLauncher.ahk reads this, launches the `.bat`, and waits for the `cmd.exe` process to exit
+via PID detection (no `FadeTitle` or `AppWaitExe` needed for batch files). Existing
+non-SpinDoctor sections in `Toolkit.ini` are preserved when the command is re-run.
+
 ---
 
 ## Media Layout
