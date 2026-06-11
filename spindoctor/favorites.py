@@ -463,7 +463,15 @@ def rebuild(
         )
         return summary
 
+    n = len(target_names)
+    print(
+        f"[{store.target_system}] building wheel — "
+        f"{n} entr{'y' if n == 1 else 'ies'}…",
+        flush=True,
+    )
+
     # ── 1. Database XML ──────────────────────────────────────────────────────
+    print(f"[{store.target_system}] writing database…", flush=True)
     db_path = config.databases_dir / store.target_system / f"{store.target_system}.xml"
     db = HyperspinDatabase(store.target_system, db_path)
     db.load()
@@ -494,9 +502,15 @@ def rebuild(
         )
         db.upsert_game(merged)
     summary.db_path = db.save(backup=False)
+    print(
+        f"[{store.target_system}] database done — {n} game(s), "
+        f"{summary.pruned} pruned.",
+        flush=True,
+    )
 
     # ── 2. Media mirror ──────────────────────────────────────────────────────
     if not skip_media:
+        print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
         # Drop any orphan media for entries that were pruned or renamed
         seen_targets = set(target_names.values())
         for media_path in (config.media_dir / store.target_system).rglob("*"):
@@ -518,10 +532,12 @@ def rebuild(
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
             summary.media_errors.extend(result["errors"])
+        print(f"[{store.target_system}] media done.", flush=True)
 
     # ── 3. Per-game PCLauncher INIs ──────────────────────────────────────────
     if not skip_launchers and config.rocketlauncher_dir:
         rl_dir = Path(config.rocketlauncher_dir)
+        print(f"[{store.target_system}] writing {n} PCLauncher INI(s)…", flush=True)
         # Wipe stale INIs (renamed/removed favorites)
         existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / store.target_system
         if existing_ini_dir.exists():
@@ -554,6 +570,7 @@ def rebuild(
             extra_window_titles=config.emulator_window_titles or None,
         )
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
+        print(f"[{store.target_system}] PCLauncher INIs done.", flush=True)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────
     # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
@@ -566,6 +583,7 @@ def rebuild(
     # Install all package-bundled assets for this synthetic system.
     # Each asset is only written when absent — user files are never clobbered.
     summary.bundled_assets = install_bundled_system_assets(hs_dir, store.target_system)
+    print(f"[{store.target_system}] wheel build complete.", flush=True)
 
     return summary
 
