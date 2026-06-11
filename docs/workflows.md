@@ -277,15 +277,17 @@ If you moved your games folder yourself — dragged it in Explorer, used robocop
 :: 1. Tell SpinDoctor where the games now live.
 spindoctor config set roms_dir J:\Games
 
-:: 2. Rewrite RocketLauncher's per-system INIs to match.
+:: 2. Update Rom_Path in RocketLauncher's per-system INIs.
 spindoctor generate-config --apply
 ```
 
-GUI path: **Setup tab** → update the "ROMs directory" field and click Save. Then **Metadata & Media tab** → tick Apply → click **Run generate-config**.
+GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → tick Apply → click **Run generate-config**.
 
-`generate-config --apply` writes `<RocketLauncher>\Settings\<SystemName>.ini` for every system configured in SpinDoctor with the updated `Rom_Path`. HyperSpin and RocketLauncher can find your games immediately after.
+`generate-config --apply` updates `Rom_Path=` in every `<RocketLauncher>\Settings\<SystemName>\Emulators.ini`. It performs a surgical in-place update: only `Rom_Path=` changes. `Default_Emulator`, `Emu_Path`, `Module`, pause/save-state keys, and any other emulator settings are preserved exactly as you configured them in HyperHQ / RLUI.
 
-> **No undo for generate-config?** `generate-config` rewrites plain text INI files. It does not create `.bak` sidecar files. If you need to roll back: re-run `generate-config --apply` after correcting `roms_dir`, or restore your RocketLauncher `Settings\` folder from a `spindoctor backup`.
+> **Emulators don't need to move.** `generate-config` only updates where your ROMs live. Emulator paths (`Emu_Path=`) in your `Global Emulators.ini` are separate and are never touched. If your emulators are still on D:\ and only your ROMs moved to J:\, no emulator configuration changes are needed.
+
+> **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup…** button in the GUI (Step 4: Metadata & Media → next to Run generate-config), or re-run `generate-config --apply` after correcting `roms_dir`.
 
 ### Things `migrate` does *not* move
 
