@@ -5435,6 +5435,7 @@ class _SpinDoctorGUI:
             ("Find misplaced ROMs",        ["find-misplaced", "--all"]),
             ("Find orphan media",          ["find-orphan-media", "--all"]),
             ("Check disc-set consistency", ["check-discs", "--all"]),
+            ("Check archive extensions",   ["check-archive-ext", "--all"]),
             ("Lint config + databases",    ["lint"]),
             ("Generate report",            ["report"]),
             ("Preview HyperSpin XML",      ["preview"]),
