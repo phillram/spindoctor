@@ -325,8 +325,10 @@ spindoctor fav list
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
 spindoctor fav remove "Super Nintendo" "Chrono Trigger"
 spindoctor fav sync                                    :: pull HyperSpin per-system F-key favorites
+spindoctor fav sync --verbose                          :: show each console as it is scanned
 spindoctor fav rebuild                                 :: dry-run preview
 spindoctor fav rebuild --apply
+spindoctor fav rebuild --apply --verbose               :: live per-console scan + each media file mirrored
 spindoctor fav rebuild --media-mode copy --apply       :: FAT32 thumb drives (no hardlinks)
 spindoctor fav clear                                   :: dry-run preview
 spindoctor fav clear --apply                           :: empty store + remove Favorites wheel from disk
@@ -335,6 +337,7 @@ spindoctor fav clear --apply                           :: empty store + remove F
 spindoctor recent list
 spindoctor recent rebuild                              :: dry-run preview
 spindoctor recent rebuild --apply
+spindoctor recent rebuild --apply --verbose            :: print each media file mirrored
 spindoctor recent rebuild --limit 10 --apply
 spindoctor recent clear                                :: dry-run preview
 spindoctor recent clear --apply                        :: remove Recently Played wheel from disk
@@ -342,6 +345,7 @@ spindoctor recent clear --apply                        :: remove Recently Played
 :: Most Played
 spindoctor stats-report build-wheel --limit 25         :: dry-run preview
 spindoctor stats-report build-wheel --limit 25 --apply
+spindoctor stats-report build-wheel --limit 25 --apply --verbose  :: print each media file mirrored
 spindoctor stats-report clear-wheel                    :: dry-run preview
 spindoctor stats-report clear-wheel --apply            :: remove Most Played wheel from disk
 
