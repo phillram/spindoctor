@@ -5,13 +5,11 @@ import configparser
 import re
 import shutil
 import xml.etree.ElementTree as ET
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ._compat import et_indent
 from .config import Config, get_rom_extensions, get_system_overrides
-from .database import _set_text as _set
 from .mainmenu import _main_menu_path
 
 
@@ -253,30 +251,6 @@ def detect_rl_layout(settings_dir: Path, system_name: str) -> str:
     if (settings_dir / f"{system_name}.ini").exists():
         return "flat"
     return "new"
-
-
-def _read_existing_emu_path(ini_path: Path, emulator: str) -> Optional[str]:
-    """Return the Emu_Path value for *emulator* from an existing INI file.
-
-    Reads the ``[<emulator>]`` section and looks for ``Emu_Path`` (case-insensitive
-    via configparser).  Returns ``None`` when the file is absent, unparseable, or
-    has no ``Emu_Path`` entry for that emulator.
-
-    Used by synthetic-wheel builders that need to resolve the emulator exe name
-    from a per-system INI before generating PCLauncher entries.
-    """
-    if not ini_path.exists():
-        return None
-    try:
-        cp = configparser.ConfigParser()
-        cp.read(str(ini_path), encoding="utf-8")
-        # configparser lower-cases option names by default; we look for "emu_path"
-        for section in (emulator, emulator.upper()):
-            if cp.has_section(section) and cp.has_option(section, "emu_path"):
-                return cp.get(section, "emu_path")
-    except Exception:  # pragma: no cover — corrupt INI edge case
-        pass
-    return None
 
 
 def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
@@ -1020,25 +994,6 @@ def pclauncher_settings_text(executable, parameters: str = "") -> str:
     )
 
 
-def pclauncher_exe_info_text(
-    applicationpath, parameters: str = "", rompath: str = "",
-) -> str:
-    """Render an ``[exe info]``-style PCLauncher INI body.
-
-    PCLauncher accepts two INI dialects: the standard ``[Settings]`` form
-    (see ``pclauncher_settings_text``) and ``[exe info]``, which requires
-    ``fadetitle`` or a monitored exe. Kept for callers that explicitly
-    need ``[exe info]`` semantics (e.g. direct emulator launch without
-    RocketLauncher in the chain).
-    """
-    return (
-        "[exe info]\n"
-        f"applicationpath={applicationpath}\n"
-        f"rompath={rompath}\n"
-        f"parameters={parameters}\n"
-    )
-
-
 def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) -> str:
     """Return the Default_Emulator name configured for *source_system* in RL's settings.
 
@@ -1046,7 +1001,6 @@ def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) 
     then flat layout (``Settings/<system>.ini`` → ``[Settings]``).
     Returns an empty string if neither file exists or the key is not set.
     """
-    import configparser
 
     settings_dir = rocketlauncher_dir / "Settings"
 
@@ -1086,7 +1040,6 @@ def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
 
     Returns an empty string if the emulator is completely unknown.
     """
-    import configparser
 
     global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
     if global_ini.exists():
@@ -1123,7 +1076,6 @@ def _read_pclauncher_game_exe(
     Returns an empty string if the INI is absent, unreadable, or the path is
     not a plain executable.
     """
-    import configparser
     from pathlib import PureWindowsPath
 
     game_ini = (
@@ -1469,7 +1421,6 @@ def read_rl_rom_extensions(
     if not rocketlauncher_dir:
         return None
 
-    import configparser
 
     emulator = _read_system_default_emulator(system_name, rocketlauncher_dir)
     if not emulator:
