@@ -41,11 +41,13 @@ Cross-system Favorites wheel manager.
 spindoctor-fav add SYSTEM ROM_NAME [--display-name NAME]
 spindoctor-fav remove SYSTEM ROM_NAME
 spindoctor-fav list
-spindoctor-fav sync
-spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}] [--apply]
+spindoctor-fav sync [--verbose]
+spindoctor-fav rebuild [--media-mode {link,symlink,copy,auto,none}] [--apply] [--verbose]
 ```
 
 `list` and `rebuild` order entries alphabetically by display title (case-insensitive). `rebuild` is idempotent — safe on every boot.
+
+`sync` (also run at the start of `rebuild`) crawls every console for favorites from three sources — a `favorite="1"` attribute in the system XML, a `<System>_Favorites.ini`, or a `favorites.txt` — and only parses a console's database when one of those is present, so favorite-free consoles cost almost nothing. In a terminal it shows a live `scanning <System> (i/N)…` counter; `--verbose` adds per-console detail.
 
 ```bat
 spindoctor-fav add "Super Nintendo" "Chrono Trigger"

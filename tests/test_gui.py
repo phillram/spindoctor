@@ -634,8 +634,8 @@ def test_gui_constructs_against_real_tk():
         # the rationale behind the sequencing.
         assert app._tab_base_names == [
             "Setup",
-            "Systems",
             "Diagnostics",
+            "Systems",
             "Metadata & Media",
             "Maintenance",
             "Tools",

@@ -138,3 +138,58 @@ def test_archive_packed_media_is_copied(tmp_path):
     for name in archive_names:
         dest = media / "Favorites" / "Video" / name
         assert dest.exists(), f"{name} was not copied to the Favorites media folder."
+
+
+def test_titles_directory_is_mirrored(tmp_path):
+    """plan_mirror must copy Images/Titles/ files to the synthetic wheel.
+
+    HyperSpin themes display title-screen captures from Images/Titles/.
+    This directory was absent from MEDIA_FILE_SUBDIRS — games in synthetic
+    wheels showed a blank title-image slot even when the source system had
+    the file.
+    """
+    media = tmp_path / "Media"
+    titles_dir = media / "MAME" / "Images" / "Titles"
+    titles_dir.mkdir(parents=True)
+    (titles_dir / "1942.png").write_bytes(b"title-screen-bytes")
+
+    plan = plan_mirror(media, "MAME", "Favorites", "1942")
+    planned = {a.src.name for a in plan.actions if not a.is_dir}
+
+    assert "1942.png" in planned, (
+        "Images/Titles/1942.png must be included in the media mirror plan — "
+        "title-screen captures were not being copied to synthetic wheels."
+    )
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    dest = media / "Favorites" / "Images" / "Titles" / "1942.png"
+    assert dest.exists(), "1942.png was not copied to Favorites/Images/Titles/"
+
+
+def test_wmv_and_mpeg_videos_are_mirrored(tmp_path):
+    """plan_mirror must copy .wmv and .mpeg/.mpg video files.
+
+    .wmv is the native Windows Media Video format, very common in older
+    HyperSpin media packs (especially on Windows 7 cabinets).  .mpeg/.mpg
+    appear in legacy packs.  These were absent from _FILE_EXTS and were
+    silently skipped during synthetic-wheel media mirroring.
+    """
+    media = tmp_path / "Media"
+    video_dir = media / "MAME" / "Video"
+    video_dir.mkdir(parents=True)
+    for name in ("1942.wmv", "1942.mpeg", "1942.mpg"):
+        (video_dir / name).write_bytes(b"fake-video-bytes")
+
+    plan = plan_mirror(media, "MAME", "Favorites", "1942")
+    planned = {a.src.name for a in plan.actions if not a.is_dir}
+
+    for name in ("1942.wmv", "1942.mpeg", "1942.mpg"):
+        assert name in planned, (
+            f"{name} must be included in the media mirror plan — "
+            "Windows video formats were being silently skipped."
+        )
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    for name in ("1942.wmv", "1942.mpeg", "1942.mpg"):
+        dest = media / "Favorites" / "Video" / name
+        assert dest.exists(), f"{name} was not copied to Favorites/Video/"

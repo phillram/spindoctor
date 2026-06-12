@@ -197,6 +197,10 @@ def clear_favorites(
 def sync_native(
     store: FavoriteStore,
     config: Config,
+    *,
+    progress_cb: "Optional[Any]" = None,
+    log_cb: "Optional[Any]" = None,
+    verbose: bool = False,
 ) -> tuple[int, list[str], list[str]]:
     """Merge HyperSpin's per-system Favorites lists into the cross-system store.
 
@@ -210,10 +214,24 @@ def sync_native(
        written by other RocketLauncher builds (one ROM per line, no headers).
        The search is case-insensitive so ``Favorites.txt`` also matches.
 
+    *progress_cb*, when supplied, is called as ``progress_cb(index, total,
+    system_name)`` before each system is scanned (1-based *index*) so a
+    caller can render a live counter.  *log_cb*, when supplied, receives a
+    string for each per-system detail line; detail lines are only produced
+    when *verbose* is true.
+
+    The XML database is **not** parsed unless a fast text scan first finds a
+    ``favorite="1"`` marker, and the database is loaded at all only when a
+    favorites file (XML / ini / txt) is actually present for the system — so
+    consoles with no favorites cost a few ``stat`` calls instead of a full
+    XML parse.
+
     Returns ``(added_count, warnings, notes)`` where *warnings* lists any
     systems whose databases could not be loaded, and *notes* provides
     diagnostic info about where files were found (or not).
     """
+    import re as _re
+
     added = 0
     warnings: list[str] = []
     notes: list[str] = []
@@ -227,27 +245,71 @@ def sync_native(
 
     from .config import get_systems
     systems = [s for s in get_systems(config) if s != store.target_system]
+    total = len(systems)
     ini_found: list[str] = []       # systems with <System>_Favorites.ini
     txt_found: list[str] = []       # systems with favorites.txt
     xml_favorites_found = 0
+    _FAV_RE = _re.compile(r'favorite\s*=\s*["\']1["\']')
 
-    for sys_name in systems:
+    def _emit(msg: str) -> None:
+        if verbose and log_cb is not None:
+            log_cb(msg)
+
+    for index, sys_name in enumerate(systems, 1):
+        if progress_cb is not None:
+            progress_cb(index, total, sys_name)
+
+        sys_dir = db_root / sys_name
+        ini = sys_dir / f"{sys_name}_Favorites.ini"
+        has_ini = ini.exists()
+        txt_path = _find_favorites_txt(sys_dir)
+        has_txt = txt_path is not None
+
+        # Fast text pre-scan: skip the (expensive) XML parse unless the raw
+        # file actually contains a favorite="1" marker.
+        xml = sys_dir / f"{sys_name}.xml"
+        xml_has_fav = False
+        if xml.is_file():
+            try:
+                raw = xml.read_text(encoding="utf-8", errors="replace")
+                xml_has_fav = bool(_FAV_RE.search(raw))
+            except OSError as exc:
+                warnings.append(
+                    f"sync: could not read {xml.name}: {type(exc).__name__}: {exc}"
+                )
+
+        if not (xml_has_fav or has_ini or has_txt):
+            _emit(f"  {sys_name}: no favorites")
+            continue
+
+        # A favorites source exists — now (and only now) parse the database,
+        # which is needed both for XML favorite flags and for display-name
+        # lookups when expanding ini/txt ROM lists.
         try:
-            db = load_database(sys_name, db_root)
+            db = _safe_load(sys_name, config)
         except (ValueError, OSError) as exc:
             warnings.append(f"sync: skipped {sys_name} — {type(exc).__name__}: {exc}")
             continue
+        if db is None:
+            warnings.append(f"sync: skipped {sys_name} — database could not be loaded")
+            continue
+
+        sys_added = 0
 
         # ── 1. XML database favorite="1" attributes ───────────────────────────
-        for game in db.games().values():
-            if getattr(game, "favorite", "") == "1":
-                if add(store, sys_name, game.name, game.description):
-                    added += 1
-                    xml_favorites_found += 1
+        if xml_has_fav:
+            for game in db.games().values():
+                # HyperSpin stores the flag as a ``favorite="1"`` attribute,
+                # which the loader keeps in ``extra_attrs`` (not a modelled
+                # field), so read it from there.
+                if game.extra_attrs.get("favorite", "") == "1":
+                    if add(store, sys_name, game.name, game.description):
+                        added += 1
+                        sys_added += 1
+                        xml_favorites_found += 1
 
         # ── 2. <System>_Favorites.ini ─────────────────────────────────────────
-        ini = db_root / sys_name / f"{sys_name}_Favorites.ini"
-        if ini.exists():
+        if has_ini:
             ini_found.append(sys_name)
             try:
                 text = _read_text_robust(ini)
@@ -265,6 +327,7 @@ def sync_native(
                 display = source.description if source else rom
                 if add(store, sys_name, rom, display):
                     added += 1
+                    sys_added += 1
                 ini_roms.append(rom)
             if not ini_roms:
                 warnings.append(
@@ -274,8 +337,7 @@ def sync_native(
                 )
 
         # ── 3. favorites.txt (case-insensitive) ───────────────────────────────
-        txt_path = _find_favorites_txt(db_root / sys_name)
-        if txt_path is not None:
+        if has_txt:
             txt_found.append(sys_name)
             try:
                 text = _read_text_robust(txt_path)
@@ -292,11 +354,14 @@ def sync_native(
                     display = source.description if source else rom
                     if add(store, sys_name, rom, display):
                         added += 1
+                        sys_added += 1
             else:
                 warnings.append(
                     f"sync: {sys_name}/{txt_path.name} exists but contained "
                     f"0 parseable ROM names — file may be empty."
                 )
+
+        _emit(f"  {sys_name}: +{sys_added} new favorite(s)")
 
     # ── Diagnostic notes ──────────────────────────────────────────────────────
     if xml_favorites_found:
@@ -484,9 +549,12 @@ def rebuild(
     # prior positions, defeating the alphabetical sort.
     db.reset_games()
 
+    # Memoise source DBs so each source system is parsed once, not once
+    # per favorite drawn from it.
+    src_cache: dict[str, Optional[HyperspinDatabase]] = {}
     for entry in sorted_entries:
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
-        source_db = _safe_load(entry.system, config)
+        source_db = _safe_load(entry.system, config, src_cache)
         source_game = source_db.get(entry.rom_name) if source_db else None
         base_desc = entry.display_name or (source_game.description if source_game else entry.rom_name)
         merged = GameEntry(
@@ -513,12 +581,14 @@ def rebuild(
         print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
         # Drop any orphan media for entries that were pruned or renamed
         seen_targets = set(target_names.values())
-        for media_path in (config.media_dir / store.target_system).rglob("*"):
-            if media_path.is_file() and media_path.stem not in seen_targets:
-                try:
-                    media_path.unlink()
-                except OSError as e:
-                    summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        _target_media = config.media_dir / store.target_system
+        if _target_media.is_dir():
+            for media_path in _target_media.rglob("*"):
+                if media_path.is_file() and media_path.stem not in seen_targets:
+                    try:
+                        media_path.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
 
         for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
@@ -799,9 +869,23 @@ def _read_text_robust(path: Path) -> str:
     return path.read_bytes().decode("utf-8", errors="replace")
 
 
-def _safe_load(system_name: str, config: Config) -> Optional[HyperspinDatabase]:
+def _safe_load(
+    system_name: str,
+    config: Config,
+    cache: "Optional[dict[str, Optional[HyperspinDatabase]]]" = None,
+) -> Optional[HyperspinDatabase]:
+    """Load a source system's database, optionally memoising the result.
+
+    When *cache* is supplied, each system's parsed database (or the
+    ``None`` sentinel recorded for an unreadable one) is reused on
+    subsequent calls.  Synthetic-wheel rebuilds pull many favorites from
+    the same source system, so without the cache the source XML would be
+    re-parsed once per entry — the dominant cost for a large wheel.
+    """
+    if cache is not None and system_name in cache:
+        return cache[system_name]
     try:
-        return load_database(system_name, config.databases_dir)
+        db = load_database(system_name, config.databases_dir)
     except (ValueError, OSError) as exc:
         warnings.warn(
             f"Couldn't load database for '{system_name}': {exc}. "
@@ -809,7 +893,10 @@ def _safe_load(system_name: str, config: Config) -> Optional[HyperspinDatabase]:
             RuntimeWarning,
             stacklevel=2,
         )
-        return None
+        db = None
+    if cache is not None:
+        cache[system_name] = db
+    return db
 
 
 # ─── standalone CLI (python -m spindoctor.favorites …) ───────────────────────
@@ -831,7 +918,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p_rem.add_argument("rom_name")
 
     sub.add_parser("list", help="List current favorites")
-    sub.add_parser("sync", help="Merge per-system HyperSpin favorites into the store")
+    p_sync = sub.add_parser("sync", help="Merge per-system HyperSpin favorites into the store")
+    p_sync.add_argument("--verbose", action="store_true",
+                        help="Print per-console scan detail.")
 
     p_reb = sub.add_parser("rebuild",
                            help="Regenerate the Favorites system + media + launchers")
@@ -855,7 +944,41 @@ def _build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def _stdout_sync_progress() -> tuple[Any, Any]:
+    """Build ``(progress_cb, log_cb)`` that render the sync crawl on stdout.
+
+    The progress callback overwrites a single counter line in place when
+    stdout is a TTY (so the crawl doesn't flood the scrollback); when piped
+    it stays silent and leaves the per-console detail (``log_cb``, verbose
+    only) to carry the output.
+    """
+    is_tty = sys.stdout.isatty()
+    state = {"width": 0}
+
+    def progress_cb(index: int, total: int, system: str) -> None:
+        if not is_tty:
+            return
+        msg = f"  scanning {system} ({index}/{total})…"
+        pad = max(0, state["width"] - len(msg))
+        state["width"] = len(msg)
+        sys.stdout.write("\r" + msg + " " * pad)
+        sys.stdout.flush()
+        if index == total:
+            sys.stdout.write("\r" + " " * (len(msg) + pad) + "\r")
+            sys.stdout.flush()
+
+    def log_cb(msg: str) -> None:
+        if is_tty and state["width"]:
+            sys.stdout.write("\r" + " " * state["width"] + "\r")
+            state["width"] = 0
+        print(msg)
+
+    return progress_cb, log_cb
+
+
 def main(argv: Optional[list[str]] = None) -> int:
+    from ._compat import enable_windows_utf8_console
+    enable_windows_utf8_console()
     args = _build_parser().parse_args(argv)
     config = load_config()
     store = load_store()
@@ -895,7 +1018,11 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 0
 
     if args.cmd == "sync":
-        n, sync_warns, sync_notes = sync_native(store, config)
+        _prog, _log = _stdout_sync_progress()
+        n, sync_warns, sync_notes = sync_native(
+            store, config, progress_cb=_prog, log_cb=_log,
+            verbose=getattr(args, "verbose", False),
+        )
         save_store(store, tmp_dir=_tmp_dir)
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
@@ -921,7 +1048,11 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "PCLauncher INIs will be written.",
                 file=sys.stderr,
             )
-        synced, sync_warns, sync_notes = sync_native(store, config)
+        _prog, _log = _stdout_sync_progress()
+        synced, sync_warns, sync_notes = sync_native(
+            store, config, progress_cb=_prog, log_cb=_log,
+            verbose=getattr(args, "verbose", False),
+        )
         for w in sync_warns:
             print(f"WARNING: {w}", file=sys.stderr)
         if synced > 0:

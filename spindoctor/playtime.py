@@ -656,6 +656,8 @@ def _print_summary(stats: list[PlayStat], top_n: int = 10) -> None:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    from ._compat import enable_windows_utf8_console
+    enable_windows_utf8_console()
     args = _build_parser().parse_args(argv)
     config = load_config()
 
