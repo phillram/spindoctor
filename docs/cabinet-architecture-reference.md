@@ -570,6 +570,23 @@ SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played
 This ensures that playing "Strider" from Favorites never adds it to Recently Played or
 Most Played via the synthetic wheel path — only real arcade wheel plays count.
 
+### Stale stats entries from failed launches (cascading failure)
+
+**RL#2 writes stats on every exit, including failed launches.** If the PCLauncher INI
+has the wrong `-r` value for a game (e.g. `Kirby's Adventure` instead of
+`Kirby's Adventure (USA)`), RL#2 will fail to find the ROM — but before exiting it still
+writes a stats record to the source system's `Statistics.ini` under the wrong name. The
+next `recent rebuild` or `stats build-wheel` reads that stale entry and writes the same
+wrong `-r` value back into the PCLauncher INI, making the problem permanent.
+
+**SpinDoctor breaks this cycle** by validating every stats entry against the source
+system's HyperSpin database XML before writing any launcher. If `rom_name` from stats
+does not appear as a `name` attribute in the database, the entry is logged and skipped.
+Entries from systems whose database cannot be read are preserved (safe fallback).
+
+This validation happens inside `_build_synthetic_wheel` (shared by Recently Played,
+Most Played, and Favorites), before `_resolve_target_names` or any file write.
+
 ---
 
 ## Toolkit System
