@@ -242,7 +242,8 @@ Reference: [Command reference → fetch-media](commands.md#fetch-media).
 ### `media-add` / `media-scan` — manual + drift detection
 
 ```bat
-spindoctor media-add --system MAME --game 1942 --type wheel --file D:\1942-wheel.png
+spindoctor media-add --system MAME --game 1942 --type wheel --file D:\1942-wheel.png          :: dry-run preview
+spindoctor media-add --system MAME --game 1942 --type wheel --file D:\1942-wheel.png --apply   :: commit
 spindoctor media-scan --all
 spindoctor media-scan --system MAME --report D:\media-status.csv
 ```

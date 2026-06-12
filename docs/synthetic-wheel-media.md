@@ -226,7 +226,7 @@ are missing.
 
 **Manually (non-navigate sounds):**
 ```bat
-spindoctor media-add "path\to\select.mp3" --system "Favorites" --type sound --game "select" --apply
+spindoctor media-add --system "Favorites" --game "select" --type sound --file "path\to\select.mp3" --apply
 ```
 
 Or copy `.mp3` files directly to `Media\Favorites\Sound\` (or `Most Played`, etc.).

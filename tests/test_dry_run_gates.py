@@ -272,7 +272,6 @@ def _build_fav_wheel(tmp_path: Path, monkeypatch) -> tuple[Path, Path]:
     Returns (hs_dir, fav_json_path) so callers can snapshot both.
     """
     import json
-    import spindoctor.config as _cfg_mod
     import spindoctor.favorites as fav_mod
 
     hs_dir = tmp_path / "hs"
@@ -344,7 +343,6 @@ def test_fav_clear_dry_run_does_not_touch_disk(tmp_path, isolated_config, monkey
 def test_fav_clear_apply_removes_artifacts(tmp_path, isolated_config, monkeypatch):
     """`fav clear --apply` removes wheel artifacts and empties the store."""
     import json
-    import spindoctor.favorites as fav_mod
 
     hs_dir, fav_json = _build_fav_wheel(tmp_path, monkeypatch)
     fav_db_xml = hs_dir / "Databases" / "Favorites" / "Favorites.xml"
@@ -472,3 +470,113 @@ def test_stats_report_clear_wheel_apply_removes_artifacts(tmp_path, isolated_con
     assert result.exit_code == 0, result.output
     assert not mp_db_xml.exists(), "Most Played DB XML should have been removed"
     assert not mp_media_file.exists(), "Most Played media file should have been removed"
+
+
+# ─── media-add ───────────────────────────────────────────────────────────────
+
+
+def _media_add_fixture(tmp_path):
+    cfg = _build_nes_library(tmp_path)
+    src = tmp_path / "incoming" / "mario_trailer.mp4"
+    src.parent.mkdir()
+    src.write_bytes(b"fake mp4 bytes")
+    return cfg, src
+
+
+def test_media_add_dry_run_does_not_touch_disk(tmp_path, isolated_config):
+    cfg, src = _media_add_fixture(tmp_path)
+    hs_dir = Path(cfg.hyperspin_dir)
+    before = _snapshot(hs_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["media-add", "--system", "nes", "--game", "mario",
+         "--type", "video", "--file", str(src)],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Would copy" in result.output
+    assert "--apply" in result.output
+    assert _snapshot(hs_dir) == before
+    assert src.exists(), "dry-run must not move/consume the source file"
+
+
+def test_media_add_apply_copies_file(tmp_path, isolated_config):
+    cfg, src = _media_add_fixture(tmp_path)
+    hs_dir = Path(cfg.hyperspin_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["media-add", "--system", "nes", "--game", "mario",
+         "--type", "video", "--file", str(src), "--apply"],
+    )
+
+    assert result.exit_code == 0, result.output
+    copied = list(hs_dir.rglob("mario.mp4"))
+    assert copied, f"expected mario.mp4 under {hs_dir}, output: {result.output}"
+    assert copied[0].read_bytes() == b"fake mp4 bytes"
+
+
+# ─── pc-rename ───────────────────────────────────────────────────────────────
+
+
+def _pc_system_fixture(tmp_path, monkeypatch):
+    """Synthetic PC Games system with an override entry and one game."""
+    import spindoctor.pc_titles as pc_titles_mod
+    monkeypatch.setattr(
+        pc_titles_mod, "CACHE_DIR", tmp_path / "pc_titles_cache",
+    )
+    roms_dir = tmp_path / "roms"
+    hs_dir = tmp_path / "hs"
+    rl_dir = tmp_path / "rl"
+    pc_dir = roms_dir / "PC Games"
+    pc_dir.mkdir(parents=True)
+    (pc_dir / "Hades.lnk").touch()
+    (hs_dir / "Databases").mkdir(parents=True)
+    (rl_dir / "Modules").mkdir(parents=True)
+    cfg = Config(
+        roms_dir=str(roms_dir),
+        hyperspin_dir=str(hs_dir),
+        rocketlauncher_dir=str(rl_dir),
+        system_overrides={
+            "PC Games": {
+                "rom_extensions": [".exe", ".lnk"],
+                "recursive_scan": True,
+                "title_strategy": "smart",
+                "emulator": "PCLauncher",
+            },
+        },
+    )
+    save_config(cfg)
+    config_mod.reset_override_cache()
+    return cfg, rl_dir
+
+
+def test_pc_rename_dry_run_does_not_write_inis(tmp_path, isolated_config, monkeypatch):
+    cfg, rl_dir = _pc_system_fixture(tmp_path, monkeypatch)
+    before = _snapshot(rl_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["pc-rename", "PC Games", "--no-interactive"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Would write" in result.output
+    assert "--apply" in result.output
+    assert _snapshot(rl_dir) == before
+
+
+def test_pc_rename_apply_writes_inis(tmp_path, isolated_config, monkeypatch):
+    cfg, rl_dir = _pc_system_fixture(tmp_path, monkeypatch)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["pc-rename", "PC Games", "--no-interactive", "--apply"],
+    )
+
+    assert result.exit_code == 0, result.output
+    inis = list((rl_dir / "Modules" / "PCLauncher").rglob("*.ini"))
+    assert inis, f"expected PCLauncher INI(s) under {rl_dir}, output: {result.output}"

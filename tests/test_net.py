@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ssl
 
-import pytest
 
 from spindoctor._net import _TLS12Adapter, make_session
 

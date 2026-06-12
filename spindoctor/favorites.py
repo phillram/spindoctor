@@ -978,7 +978,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             if w.db_removed:
                 print(f"  {verb}: Databases/{target_system}/{target_system}.xml")
             else:
-                print(f"  database: not found (nothing to remove)")
+                print("  database: not found (nothing to remove)")
             print(f"  {verb}: {w.media_files_removed} media file(s) "
                   f"under Media/{target_system}/")
             print(f"  {verb}: {w.ini_files_removed} PCLauncher INI(s)")

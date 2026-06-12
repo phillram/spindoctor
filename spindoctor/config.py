@@ -217,10 +217,6 @@ class Config:
     def media_dir(self) -> Path:
         return Path(self.hyperspin_dir) / "Media"
 
-    def effective_output_dir(self, override: Optional[str] = None) -> Optional[Path]:
-        d = override or self.output_dir
-        return Path(d) if d else None
-
     @property
     def effective_atomic_tmp_dir(self) -> Optional[Path]:
         """Return the configured atomic temp dir, or None if unset.
