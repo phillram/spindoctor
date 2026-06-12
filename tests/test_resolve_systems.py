@@ -48,7 +48,7 @@ def _build_layout(tmp_path: Path, systems: list[str]) -> tuple[Path, Path, Path]
         db_dir = hs / "Databases" / sys_name
         db_dir.mkdir(parents=True, exist_ok=True)
         (db_dir / f"{sys_name}.xml").write_text(
-            f'<menu><game name="game1"><description>Game 1</description></game></menu>',
+            '<menu><game name="game1"><description>Game 1</description></game></menu>',
             encoding="utf-8",
         )
         (roms / sys_name).mkdir(exist_ok=True)
@@ -80,7 +80,6 @@ def test_resolve_systems_explicit_synthetic_exits_nonzero(tmp_path, monkeypatch)
     """Explicitly naming a synthetic wheel with --system exits with code 1."""
     from spindoctor.cli import _resolve_systems
     from spindoctor.config import load_config
-    import sys as _sys
 
     hs, rl, cfg_file = _build_layout(tmp_path, ["MAME"])
     monkeypatch.setattr("spindoctor.config.CONFIG_FILE", cfg_file)

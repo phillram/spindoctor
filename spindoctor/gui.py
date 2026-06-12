@@ -532,20 +532,30 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "audit", "inspect", "find-dupes",
     "check-discs", "check-archive-ext", "verify", "lint", "stats",
     "find-global", "theme-scan", "theme-pack-create", "diff",
-    "install-tools", "stats-report",
+    "install-tools", "stats-report", "self-doctor",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
     "fav list", "recent list",
     "mainmenu show", "mainmenu edit",
-    "ledblinky audit", "ledblinky check",
+    "ledblinky audit", "ledblinky check", "ledblinky inspect-rom",
+    "ledblinky colors list",
     "lightgun audit", "lightgun detect",
     "doctor",
     "config show", "config init", "config set", "config system",
-    "backup list", "backup info",
+    "config verify-credentials",
+    "backup list", "backup info", "backup sidecar list",
     "migrate --list-manifests", "theme-apply --list-manifests",
     # `curate --list-manifests` is a separate flag-only invocation, not
     # a subcommand — match it as the verb+token form.
     "curate --list-manifests",
+    # Write-always commands (no --apply concept — single-record mutations
+    # of SpinDoctor's own store / config). Listing them here suppresses
+    # the DRY RUN banner, which would otherwise lie: these commands write
+    # immediately. The Logs tab shows "# Dry-run: N/A" for them.
+    "fav add", "fav remove", "fav sync",
+    "ignore add", "ignore remove", "ignore clear",
+    "match clear",
+    "emulator-title list", "emulator-title set", "emulator-title remove",
 })
 
 # Two-token subcommand pairs that ARE dry-run-capable (they support --apply)
@@ -566,6 +576,10 @@ def _is_read_only_invocation(args: tuple) -> bool:
     if args[0] in _READ_ONLY_COMMANDS:
         return True
     if len(args) >= 2 and f"{args[0]} {args[1]}" in _READ_ONLY_COMMANDS:
+        return True
+    # Three-token leaf commands (e.g. "backup sidecar list",
+    # "ledblinky colors list") — exact-form entries only.
+    if len(args) >= 3 and f"{args[0]} {args[1]} {args[2]}" in _READ_ONLY_COMMANDS:
         return True
     return False
 
@@ -679,8 +693,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "fetch-meta --all --source thegamesdb --apply",
     "fetch-meta --system <SYSTEM> --apply",
     "fetch-meta --system <SYSTEM> --no-cache --apply",
-    "media-add --system <SYSTEM> --game <ROM> --type video --file <PATH>",
-    "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH>",
+    "media-add --system <SYSTEM> --game <ROM> --type video --file <PATH> --apply",
+    "media-add --system <SYSTEM> --game <ROM> --type wheel --file <PATH> --apply",
     "media-scan --all",
     "media-scan --all --action move --apply",
     "media-scan --all --apply",
@@ -732,12 +746,11 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "generate-config --all --no-main-menu --apply",
     "generate-config --all --no-rl --apply",
     "generate-config --system <SYSTEM> --apply",
-    "organize",
-    "organize --all --apply",
-    "organize --overwrite-sort --apply",
-    "organize --restructure --apply",
-    "organize --system <SYSTEM>",
-    "organize --system <SYSTEM> --apply",
+    "organize <SYSTEM>",
+    "organize <SYSTEM> --apply",
+    "organize <SYSTEM> --overwrite-sort --apply",
+    "organize <SYSTEM> --restructure --apply",
+    "organize <SYSTEM> --restructure --undo",
     # ── Add & Bootstrap ───────────────────────────────────────────────────────
     "─── Add & Bootstrap ───",
     "add-pc-system <SYSTEM>",
@@ -748,6 +761,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "add-system <SYSTEM> --no-game-media --apply",
     "pc-rename <SYSTEM>",
     "pc-rename <SYSTEM> --no-interactive",
+    "pc-rename <SYSTEM> --no-interactive --apply",
     # ── Rename & Clone ────────────────────────────────────────────────────────
     "─── Rename & Clone ───",
     "clone --list-manifests",
@@ -876,7 +890,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "config set screenscraper_devpassword <VALUE>",
     "config show",
     "config system list",
-    "config system set <SYSTEM> --layout wheel",
+    "config system set <SYSTEM> --layout flat",
     "config verify-credentials",
 )
 
@@ -2196,9 +2210,6 @@ class _SpinDoctorGUI:
         # still reach widgets that overflow the window. Each tab
         # builder creates its frame as before; the helper just bolts
         # a vertical scrollbar onto whichever container holds it.
-        # Tab order is workflow-oriented for a new cabinet owner:
-        # Setup once, then daily-driver tabs (read-only Diagnostics
-        # first so the user can confirm "is the cab healthy?" before
         # Tab order follows the new-user journey: configure paths first
         # (Setup), then build out systems (Systems), then diagnose health
         # (Diagnostics), then enrich metadata (Metadata & Media), curate
@@ -7758,6 +7769,8 @@ class _SpinDoctorGUI:
             args.append("--move")
         if self._madd_overwrite_var.get():
             args.append("--overwrite")
+        if self._global_apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     def _run_batch_edit(self) -> None:
@@ -11560,10 +11573,15 @@ class _SpinDoctorGUI:
         # None  = N/A (read-only command — dry-run concept doesn't apply)
         # True  = dry-run preview (has --apply concept, flag not passed)
         # False = actual write (--apply was passed)
-        if _is_read_only_invocation(tuple(args)):
-            is_dry_run: Optional[bool] = None
+        # The --apply check runs first so commands that are read-only
+        # *without* the flag but write *with* it (doctor --apply,
+        # lightgun detect --apply) are still recorded as actual writes.
+        if "--apply" in args:
+            is_dry_run: Optional[bool] = False
+        elif _is_read_only_invocation(tuple(args)):
+            is_dry_run = None
         else:
-            is_dry_run = "--apply" not in args
+            is_dry_run = True
         argv_str = _format_argv(argv)
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -11605,6 +11623,13 @@ class _SpinDoctorGUI:
         try:
             self._proc = subprocess.Popen(
                 argv,
+                # DEVNULL, not inherit: when the GUI is launched from a
+                # terminal the child would otherwise share that terminal's
+                # stdin, and any prompt (mainmenu edit, config init, an
+                # unexpected picker) would block forever waiting for input
+                # the GUI window can't supply. With /dev/null the prompt
+                # sees EOF and the CLI aborts cleanly instead of hanging.
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 bufsize=1,

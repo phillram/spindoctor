@@ -14,7 +14,6 @@ environments without any display the test self-skips.
 """
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
@@ -1827,3 +1826,110 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
         assert app._nb.index("current") == tools_idx
     finally:
         app.root.destroy()
+
+
+# ─── audit 2026-06-11: preset validity + dry-run classification ───────────────
+
+
+def test_every_custom_command_preset_is_a_valid_cli_invocation():
+    """Each preset must name a real command and use only flags that
+    command accepts (with valid values for Choice options). A preset
+    with a stale flag fails at runtime with an unknown-option error —
+    exactly what happened with `install-tools --apply` once before."""
+    import click
+
+    from spindoctor.cli import cli as cli_root
+
+    problems: list[str] = []
+    for preset in gui._CUSTOM_COMMAND_PRESETS:
+        if preset.startswith(gui._PRESET_SECTION_HEADER_PREFIX):
+            continue
+        if preset in ("--help", "--version"):
+            continue
+        toks = preset.split()
+        cmd, i = cli_root, 0
+        while (
+            i < len(toks)
+            and isinstance(cmd, click.Group)
+            and toks[i] in cmd.commands
+        ):
+            cmd = cmd.commands[toks[i]]
+            i += 1
+        if cmd is cli_root:
+            problems.append(f"unknown command: {preset!r}")
+            continue
+        if isinstance(cmd, click.Group) and not cmd.invoke_without_command:
+            problems.append(f"group without subcommand: {preset!r}")
+            continue
+        opts: dict = {}
+        for p in cmd.params:
+            if isinstance(p, click.Option):
+                for o in list(p.opts) + list(p.secondary_opts):
+                    opts[o] = p
+        j = 0
+        rest = toks[i:]
+        while j < len(rest):
+            tok = rest[j]
+            if tok.startswith("--"):
+                base = tok.split("=")[0]
+                if base not in opts:
+                    problems.append(f"{preset!r}: unknown flag {base}")
+                else:
+                    p = opts[base]
+                    if (
+                        not p.is_flag
+                        and j + 1 < len(rest)
+                        and isinstance(p.type, click.Choice)
+                    ):
+                        val = rest[j + 1].strip('"')
+                        if not val.startswith("<") and val not in p.type.choices:
+                            problems.append(
+                                f"{preset!r}: {val} not in {p.type.choices}"
+                            )
+                        j += 1
+            j += 1
+    assert not problems, "\n".join(problems)
+
+
+def test_write_always_commands_are_classified_not_dry_run():
+    """Write-always commands (no --apply concept) must be in
+    _READ_ONLY_COMMANDS so the GUI doesn't show a DRY RUN banner for
+    a command that writes immediately — the banner would be a lie
+    (the original uninstall-tools bug class)."""
+    for args in (
+        ("fav", "add", "MAME", "pacman"),
+        ("fav", "remove", "MAME", "pacman"),
+        ("fav", "sync"),
+        ("ignore", "add", "MAME", "pacman"),
+        ("ignore", "remove", "MAME", "pacman"),
+        ("ignore", "clear", "--yes"),
+        ("match", "clear", "--yes"),
+        ("emulator-title", "set", "Demul", "title"),
+        ("emulator-title", "remove", "Demul"),
+        ("emulator-title", "list"),
+        ("self-doctor",),
+        ("config", "verify-credentials"),
+    ):
+        assert gui._is_read_only_invocation(args), args
+
+
+def test_three_token_read_only_commands_match():
+    assert gui._is_read_only_invocation(("backup", "sidecar", "list"))
+    assert gui._is_read_only_invocation(("ledblinky", "colors", "list"))
+    # …but their write siblings must NOT match.
+    assert not gui._is_read_only_invocation(
+        ("backup", "sidecar", "restore", "<PATH>")
+    )
+    assert not gui._is_read_only_invocation(
+        ("ledblinky", "colors", "randomize")
+    )
+
+
+def test_gated_commands_not_classified_read_only():
+    """media-add and pc-rename now support --apply (dry-run by default),
+    so they must NOT be in _READ_ONLY_COMMANDS — the DRY RUN banner is
+    correct for them."""
+    assert not gui._is_read_only_invocation(
+        ("media-add", "--system", "nes", "--game", "mario")
+    )
+    assert not gui._is_read_only_invocation(("pc-rename", "PC Games"))

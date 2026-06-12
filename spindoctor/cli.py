@@ -649,7 +649,9 @@ def list_systems():
                    "for every game that needs attention.")
 @click.option("--report", "-r", type=click.Path(), default=None,
               help="Write CSV report to this path.")
-@click.option("--show-matched", is_flag=True)
+@click.option("--show-matched", is_flag=True,
+              help="Also print the count of fully-matched games "
+                   "(default: only problems are shown).")
 def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matched):
     """Audit ROM files against the Hyperspin database and media assets.
 
@@ -4356,7 +4358,9 @@ def match_clear(system: Optional[str]):
 @cli.command("fetch-meta")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--source", default=None,
+              type=click.Choice(["screenscraper", "thegamesdb"]),
+              help="Use only this scraper (default: provider order from config).")
 @click.option("--all-games", "fetch_all", is_flag=True,
               help="Refresh metadata for every game, even complete ones.")
 @click.option("--interactive/--auto-best", "interactive", default=None,
@@ -4547,7 +4551,9 @@ def fetch_meta(system, all_systems, source, fetch_all,
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--types", default=",".join(MEDIA_TYPES),
               help=f"Comma-separated types. Options: {', '.join(MEDIA_TYPES)}")
-@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--source", default=None,
+              type=click.Choice(["screenscraper", "thegamesdb"]),
+              help="Use only this scraper (default: provider order from config).")
 @click.option("--overwrite", is_flag=True)
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple "
@@ -4748,15 +4754,20 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
 @click.option("--move", is_flag=True, help="Move instead of copy.")
 @click.option("--overwrite", is_flag=True)
 @click.option("--output-dir", type=click.Path(), default=None)
-def media_add(system, game, media_type, source_file, move, overwrite, output_dir):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually copy/move the file. Without this flag the "
+                   "command prints what it would do and exits.")
+def media_add(system, game, media_type, source_file, move, overwrite,
+              output_dir, apply_changes):
     """Manually add a local media file for a specific game.
 
     Copies (or moves) the file into the correct HyperSpin Media directory.
+    Dry-run by default — re-run with --apply to commit.
 
     \b
     Example:
       spindoctor media-add --system MAME --game 1942 --type trailer \\
-          --file C:\\Downloads\\1942_trailer.mp4
+          --file C:\\Downloads\\1942_trailer.mp4 --apply
     """
     config = _cfg()
     _check_config(config)
@@ -4764,6 +4775,23 @@ def media_add(system, game, media_type, source_file, move, overwrite, output_dir
     from .media import MediaDownloader
     out_path = Path(output_dir) if output_dir else None
     downloader = MediaDownloader(config, output_dir_override=out_path)
+
+    if not apply_changes:
+        src = Path(source_file)
+        dest = downloader.media_path(system, game, media_type)
+        if src.suffix.lower() != dest.suffix.lower():
+            dest = dest.with_suffix(src.suffix.lower())
+        verb = "move" if move else "copy"
+        if dest.exists() and not overwrite:
+            console.print(
+                f"[yellow]Would skip:[/yellow] {dest} already exists "
+                f"(pass --overwrite to replace)."
+            )
+        else:
+            console.print(f"Would {verb}: {src} → {dest}")
+        console.print("[dim]Dry-run — re-run with --apply to commit.[/dim]")
+        return
+
     result = downloader.add_local_file(
         source_path=Path(source_file),
         game_name=game,
@@ -5008,7 +5036,9 @@ def media_scan_cmd(
 @cli.command("update-db")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
-@click.option("--add-missing", "add_missing", is_flag=True, default=True)
+@click.option("--add-missing/--no-add-missing", "add_missing", default=True,
+              help="Add stub DB entries for ROMs missing from the database "
+                   "(default: on; --no-add-missing to skip).")
 @click.option("--remove-orphans", is_flag=True)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit XML writes (default: dry-run preview).")
@@ -5208,7 +5238,6 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         return bak
 
     if gen_rl:
-        from .rocketlauncher import detect_rl_layout as _detect_rl_layout
         console.print(
             f"\n[blue bold]RocketLauncher system INIs[/blue bold] "
             f"({len(systems)} systems)"
@@ -5340,7 +5369,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             if bak:
                 console.print(f"  [dim]↳ Backed up previous: {bak}[/dim]")
             else:
-                console.print(f"  [dim]↳ New file (no previous version to back up)[/dim]")
+                console.print("  [dim]↳ New file (no previous version to back up)[/dim]")
             console.print(
                 f"  [dim]↳ Lists {len(systems)} system(s): "
                 + ", ".join(systems[:8])
@@ -6158,7 +6187,7 @@ def ledblinky_inspect_rom(rom_name):
         for line in data["colors_entry"]:
             _pr(f"    [dim]{line}[/dim]")
     else:
-        _pr(f"  [red]✗ NOT FOUND[/red] — LEDBlinky will use DEFAULT colors")
+        _pr("  [red]✗ NOT FOUND[/red] — LEDBlinky will use DEFAULT colors")
 
     # controls.ini
     _pr(f"\n[bold]controls.ini[/bold]  {data['controls_ini_path']}")
@@ -6167,14 +6196,14 @@ def ledblinky_inspect_rom(rom_name):
         for line in data["controls_entry"]:
             _pr(f"    [dim]{line}[/dim]")
     else:
-        _pr(f"  [yellow]⚠ NOT FOUND[/yellow] — LEDBlinky won't know which buttons this game uses")
+        _pr("  [yellow]⚠ NOT FOUND[/yellow] — LEDBlinky won't know which buttons this game uses")
 
     # LEDBlinkyControls.xml
     _pr(f"\n[bold]LEDBlinkyControls.xml[/bold]  {data['xml_path']}")
     if data["xml_emulators"]:
         _pr(f"  Emulators in XML: {', '.join(data['xml_emulators'])}")
     if data["xml_rom_entries"]:
-        _pr(f"  [green]✓ ROM entry found:[/green]")
+        _pr("  [green]✓ ROM entry found:[/green]")
         for entry in data["xml_rom_entries"]:
             _pr(f"    tag={entry['tag']}  emulator={entry['emulator']}")
             for k, v in entry["attrs"].items():
@@ -6187,17 +6216,17 @@ def ledblinky_inspect_rom(rom_name):
         )
 
     # MAME listxml
-    _pr(f"\n[bold]MAME listxml[/bold]")
+    _pr("\n[bold]MAME listxml[/bold]")
     if data["listxml"]:
         lx = data["listxml"]
         _pr(f"  [green]✓ Found[/green] — {lx['description']}")
         _pr(f"    Players: {lx['players']}  Buttons: {lx['buttons']}  "
             f"Controls: {', '.join(lx['controls']) or 'none'}")
     else:
-        _pr(f"  [dim]Not found in MAME listxml (MAME not configured or ROM not in DB)[/dim]")
+        _pr("  [dim]Not found in MAME listxml (MAME not configured or ROM not in DB)[/dim]")
 
     # LEDBlinky's own log (written by LEDBlinky, not SpinDoctor)
-    _pr(f"\n[bold]LEDBlinky log[/bold]  (written by LEDBlinky itself — not SpinDoctor)")
+    _pr("\n[bold]LEDBlinky log[/bold]  (written by LEDBlinky itself — not SpinDoctor)")
     _pr(f"  Path: {data['log_path']}")
     if data["log_path"] and Path(str(data["log_path"])).exists():
         _pr(
@@ -6206,13 +6235,13 @@ def ledblinky_inspect_rom(rom_name):
         )
     else:
         _pr(
-            f"  [yellow]⚠ Log not found[/yellow] — enable logging in LEDBlinky Settings "
-            f"to capture game-launch events and verify the ROM name being sent."
+            "  [yellow]⚠ Log not found[/yellow] — enable logging in LEDBlinky Settings "
+            "to capture game-launch events and verify the ROM name being sent."
         )
 
     # Warnings / diagnostics
     if data["warnings"]:
-        _pr(f"\n[bold]Diagnostics[/bold]")
+        _pr("\n[bold]Diagnostics[/bold]")
         for w in data["warnings"]:
             if "NOT FOUND" in w or "NOT found" in w or "not found" in w:
                 _pr(f"  [yellow]⚠[/yellow] {w}")
@@ -6222,7 +6251,7 @@ def ledblinky_inspect_rom(rom_name):
                 _pr(f"  [dim]·[/dim] {w}")
 
     # Summary guidance
-    _pr(f"\n[bold]What to check next[/bold]")
+    _pr("\n[bold]What to check next[/bold]")
     if not data["colors_entry"]:
         _pr(
             "  1. Run [cyan]spindoctor ledblinky colors normalize --apply[/cyan] "
@@ -6322,9 +6351,11 @@ def ledblinky_audit(system):
 @click.option("--all", "all_systems", is_flag=True)
 @click.option("--format", "fmt", default="summary",
               type=click.Choice(["table", "csv", "summary"]))
-@click.option("--output", "-o", type=click.Path(), default=None)
-@click.option("--no-media", is_flag=True)
-@click.option("--no-fuzzy", is_flag=True)
+@click.option("--output", "-o", type=click.Path(), default=None,
+              help="Write the report to this path instead of stdout.")
+@click.option("--no-media", is_flag=True,
+              help="Skip media checks (faster on large libraries).")
+@click.option("--no-fuzzy", is_flag=True, help="Skip fuzzy ROM/DB matching.")
 def report(system, all_systems, fmt, output, no_media, no_fuzzy):
     """Generate a read-only audit report without making any changes."""
     config = _cfg()
@@ -6990,14 +7021,14 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
         console.print(f"  RGB: R={new_r}, G={new_g}, B={new_b}  ({preview})")
 
     console.print(
-        f"\n  Colors.ini: "
+        "\n  Colors.ini: "
         + (f"[green]{result.colors_ini_replacements}[/green]"
            if result.colors_ini_replacements
            else "[dim]0[/dim]")
         + f" reference(s) {verb}"
     )
     console.print(
-        f"  LEDBlinkyControls.xml: "
+        "  LEDBlinkyControls.xml: "
         + (f"[green]{result.controls_xml_replacements}[/green]"
            if result.controls_xml_replacements
            else "[dim]0[/dim]")
@@ -7691,7 +7722,9 @@ SYSTEM_MEDIA_SLOTS = ("wheel", "background", "video")
               help="Skip per-game media fetch for the new system.")
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a slot has multiple candidates.")
-@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--source", default=None,
+              type=click.Choice(["screenscraper", "thegamesdb"]),
+              help="Use only this scraper (default: provider order from config).")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
@@ -7956,7 +7989,9 @@ def _propose_pc_titles(
               help="Overwrite existing PCLauncher INIs (default: keep user edits).")
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple candidates.")
-@click.option("--source", default=None, type=click.Choice(["screenscraper", "thegamesdb"]))
+@click.option("--source", default=None,
+              type=click.Choice(["screenscraper", "thegamesdb"]),
+              help="Use only this scraper (default: provider order from config).")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
@@ -8165,13 +8200,19 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
 @click.option("--no-interactive", is_flag=True,
               help=("Auto-accept the proposed title for every game without "
                     "prompting. Use from non-TTY contexts (GUI, cron, CI)."))
-def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually write the PCLauncher INIs. Without this flag "
+                   "the title review still runs but the INI write is a "
+                   "preview only.")
+def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
+              apply_changes):
     """Re-run the title picker for an existing PC system.
 
     \b
     Use this after dropping new games into <roms_dir>/<SYSTEM>/ or to
     revise a previously-cached title.  Updates ~/.spindoctor/pc_titles_cache/
-    and (optionally) regenerates the per-game PCLauncher INIs.
+    and (optionally) regenerates the per-game PCLauncher INIs.  The INI
+    write is dry-run by default — re-run with --apply to commit.
     """
     config = _cfg()
     _check_config(config)
@@ -8193,6 +8234,13 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive):
     console.print(f"\n[green]+[/green] {len(by_title)} title(s) confirmed.")
 
     if not no_pclauncher and by_title:
+        if not apply_changes:
+            console.print(
+                f"[yellow]Would write {len(by_title)} PCLauncher INI(s) under "
+                f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
+            )
+            console.print("[dim]Dry-run — re-run with --apply to commit.[/dim]")
+            return
         from .rocketlauncher import generate_pclauncher_inis
         try:
             module_dir, written, skipped = generate_pclauncher_inis(
@@ -9595,7 +9643,6 @@ def _do_rename_or_clone(*, clone: bool, system, game, to, display_name,
     if verbose:
         for ch in applied:
             if ch.src and ch.dest:
-                action = "copied" if clone else "moved"
                 console.print(f"[dim]  {ch.kind}: {ch.src} → {ch.dest}[/dim]")
             elif ch.note:
                 console.print(f"[dim]  {ch.kind}: {ch.note}[/dim]")

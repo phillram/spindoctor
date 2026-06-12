@@ -64,6 +64,7 @@ Teach SpinDoctor about a system it doesn't natively know — custom emulators, u
 ```bat
 spindoctor config system set "Sony Playstation 7" ^
     --screenscraper-id 999 ^
+    --thegamesdb-id 4971 ^
     --rom-extensions ps7,iso ^
     --layout per-game-folder ^
     --emulator RPCS7
@@ -75,7 +76,7 @@ spindoctor config system clear "Sony Playstation 7"
 Common reasons to use overrides:
 
 - **`add-system` reports "no ROMs found"** — the file extension isn't in the recognized set. Add it via `--rom-extensions`.
-- **System has its own metadata IDs on ScreenScraper** — set `--screenscraper-id`.
+- **System has its own metadata IDs on ScreenScraper / TheGamesDB** — set `--screenscraper-id` / `--thegamesdb-id`.
 - **Multi-disc consoles where each game is a folder** — `--layout per-game-folder`.
 - **System uses a Sinden lightgun** — set `"lightgun": true` in the override (or run `spindoctor lightgun configure --system <name> --apply`, which sets it automatically). `lightgun audit` reports on every system with this flag.
 

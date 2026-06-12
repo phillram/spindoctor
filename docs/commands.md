@@ -47,6 +47,8 @@ spindoctor audit --system MAME
 spindoctor audit --all --no-media
 spindoctor audit --all --report D:\audit_report.csv
 spindoctor audit --system MAME --detailed   :: append per-file dimensions/sizes
+spindoctor audit --system MAME --no-fuzzy   :: exact-name matching only (faster)
+spindoctor audit --system MAME --show-matched  :: also print the fully-matched count
 ```
 
 ### `inspect`
@@ -69,7 +71,10 @@ spindoctor update-db --system MAME --apply                        :: commit
 spindoctor update-db --all --remove-orphans --apply
 spindoctor update-db --all --remove-orphans --output-dir D:\Output --apply
 spindoctor update-db --system SNES --strip-variant-tags --apply   :: collapse "(Japan)"/"(USA)" displays
+spindoctor update-db --system MAME --no-add-missing --remove-orphans --apply  :: prune only, add nothing
 ```
+
+Adding stub entries for new ROMs is on by default; `--no-add-missing` turns it off when you only want orphan removal.
 
 A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_before_modify`).
 
@@ -87,7 +92,11 @@ spindoctor fetch-meta --all --output-dir D:\Output --apply
 spindoctor fetch-meta --all --auto-best --apply              :: never prompt — pick top result
 spindoctor fetch-meta --all --skip-ambiguous --apply         :: log ambiguous matches, don't prompt or auto-pick
 spindoctor fetch-meta --system SNES --all-games --apply      :: refresh complete entries too
+spindoctor fetch-meta --system NES --source thegamesdb --apply  :: force one scraper
+spindoctor fetch-meta --all --auto-best --threshold 0.9 --apply :: stricter auto-accept cut-off
 ```
+
+`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
@@ -111,7 +120,10 @@ spindoctor fetch-media --all --output-dir D:\Output --apply
 spindoctor fetch-media --system SNES --types trailer --overwrite --apply
 spindoctor fetch-media --system MAME --types theme,fade,sound --apply
 spindoctor fetch-media --all --skip-ambiguous --apply    :: skip multi-candidate slots
+spindoctor fetch-media --system NES --source screenscraper --apply  :: force one scraper
 ```
+
+`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config).
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 
@@ -125,14 +137,18 @@ When a media slot has multiple candidates (different regions / artwork variants)
 
 ### `media-add`
 
-Manually drop a local file into the right HyperSpin media slot.
+Manually drop a local file into the right HyperSpin media slot. Dry-run by default — the preview prints the exact destination path; re-run with `--apply` to commit.
 
 ```bat
 spindoctor media-add --system MAME --game 1942 --type trailer ^
-    --file C:\Downloads\1942_trailer.mp4
+    --file C:\Downloads\1942_trailer.mp4                          :: dry-run preview
+spindoctor media-add --system MAME --game 1942 --type trailer ^
+    --file C:\Downloads\1942_trailer.mp4 --apply                  :: commit
 spindoctor media-add --system SNES --game "Super Mario World" ^
-    --type title --file C:\Art\smw_title.png --move
+    --type title --file C:\Art\smw_title.png --move --apply       :: move instead of copy
 ```
+
+If the target slot is already filled the file is skipped — pass `--overwrite` to replace it. `--output-dir` redirects the write to a staging folder instead of the live Media tree.
 
 ### `media-scan`
 
@@ -156,7 +172,7 @@ spindoctor media-scan --undo
 spindoctor media-scan --list-manifests
 ```
 
-`--apply` defaults to `--action copy`; `--action move` relocates files, `--action link` creates symlinks (falls back to copy on filesystems that reject them). `--overwrite` also imports the `replacement` bucket. Imports write a manifest to `~/.spindoctor/media_imports/` so `--undo` can reverse the most recent one.
+`--apply` defaults to `--action copy`; `--action move` relocates files, `--action link` creates symlinks (falls back to copy on filesystems that reject them). `--overwrite` also imports the `replacement` bucket. `--types wheel,snap` limits the scan to a subset of media types; `--no-recursive` scans only the top level of the source folder. Imports write a manifest to `~/.spindoctor/media_imports/` so `--undo` can reverse the most recent one.
 
 ### `find-global`
 
@@ -177,6 +193,7 @@ Read-only summary or CSV — never modifies anything.
 ```bat
 spindoctor report --all --format summary
 spindoctor report --all --format csv --output D:\weekly.csv
+spindoctor report --system MAME --no-media --no-fuzzy   :: one system, fastest pass
 ```
 
 ---
@@ -244,8 +261,13 @@ spindoctor generate-config                                :: dry-run preview
 spindoctor generate-config --apply                        :: commit
 spindoctor generate-config --output-dir D:\Output --apply
 spindoctor generate-config --no-rl --apply                :: only regenerate the main menu
+spindoctor generate-config --no-main-menu --apply         :: only regenerate the RL INIs
+spindoctor generate-config --system "Sega Saturn" --apply :: one system, not the whole library
 spindoctor generate-config --db-stubs --apply             :: also create empty DB stubs
+spindoctor generate-config --overwrite-global --apply     :: replace an existing Global Emulators.ini
 ```
+
+`Settings/Global Emulators.ini` is written only when missing (`--no-global-emulators` skips it entirely; `--overwrite-global` replaces an existing one — user customisations are otherwise never touched). Default scope is `--all`; pass `--system <NAME>` to restrict the run.
 
 **What changes for existing systems:** only `Rom_Path=` is updated in-place. `Default_Emulator`, `Emu_Path`, `Module`, `Pause_Save_State_Keys`, and every other key are preserved exactly as set by HyperHQ / RLUI. This means cabinets with non-standard emulators (SSF for Sega Saturn, Mednafen for TurboGrafx-16, NullDC/Demul for Dreamcast, ZiNc, etc.) are unaffected — only the ROM path changes.
 
@@ -307,7 +329,12 @@ spindoctor organize "Sony Playstation"                         :: sort wheels on
 spindoctor organize "Sony Playstation 3" --restructure         :: dry-run plan
 spindoctor organize "Sony Playstation 3" --restructure --apply :: execute
 spindoctor organize "Sony Playstation 3" --undo                :: revert last apply
+spindoctor organize "Sega Genesis" --axes genre,year           :: subset of sort axes
+spindoctor organize "Sega Genesis" --overwrite-sort            :: replace existing sort DBs
+spindoctor organize "Sony Playstation 3" --no-sort --restructure --apply  :: restructure only
 ```
+
+Sort axes default to all four (`genre,manufacturer,year,letter`); existing sort-database files are kept unless `--overwrite-sort` is passed. `--no-sort` skips the sort-wheel step entirely.
 
 ### `add-system`
 
@@ -318,7 +345,11 @@ Bootstraps a brand-new console end-to-end: registers it in the Main Menu, create
 ```bat
 spindoctor add-system "Sega Saturn"             :: dry-run preview
 spindoctor add-system "Sega Saturn" --apply     :: commit
+spindoctor add-system "Sega Saturn" --no-menu --no-db --apply  :: media + INI only
+spindoctor add-system "Sega Saturn" --source thegamesdb --apply :: force one scraper
 ```
+
+`--no-menu` skips the Main Menu upsert, `--no-db` skips building the per-system database from ROMs, `--pick-media` prompts interactively when a media slot has multiple candidates, and `--source` restricts scraping to one provider.
 
 ### `add-pc-system`
 
@@ -328,21 +359,26 @@ Same as `add-system` but for PC / Windows / Steam libraries — handles recursiv
 spindoctor add-pc-system "PC Games"                          :: dry-run preview
 spindoctor add-pc-system "PC Games" --apply                  :: commit (interactive title review)
 spindoctor add-pc-system "PC Games" --no-interactive --apply :: auto-accept every proposed title
+spindoctor add-pc-system "PC Games" --no-rename --apply      :: skip the title-review pass entirely
+spindoctor add-pc-system "PC Games" --no-pclauncher --apply  :: skip per-game PCLauncher INIs
 ```
+
+Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-db` (per-system database), `--no-system-media` / `--no-game-media` (media fetches), plus `--no-pclauncher` and `--overwrite-pclauncher` for the INI step, `--pick-media` for interactive media picks, and `--source` to force one scraper.
 
 ### `pc-rename`
 
 Re-run the title-curation pass on an existing PC system — useful after dropping new games into the folder without re-running the full `add-pc-system` flow.
 
 ```bat
-spindoctor pc-rename "PC Games"                :: review new/changed titles interactively
-spindoctor pc-rename "PC Games" --no-interactive :: auto-accept all proposed titles (non-TTY contexts)
-spindoctor pc-rename "PC Games" --apply          :: commit after interactive review
+spindoctor pc-rename "PC Games"                  :: review titles, preview the INI write
+spindoctor pc-rename "PC Games" --apply          :: review titles, write the PCLauncher INIs
+spindoctor pc-rename "PC Games" --no-interactive --apply :: auto-accept all proposed titles (non-TTY contexts)
+spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: replace existing INIs too
 ```
 
-`--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
+The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely; existing INIs are kept unless `--overwrite-pclauncher` is passed.
 
-Both `add-pc-system` and `pc-rename` write a rename manifest; use `--undo` to revert.
+`--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
 
 ### `migrate`
 
@@ -1547,9 +1583,10 @@ spindoctor cleanup run --include metadata-cache --older-than 90 --apply
 spindoctor cleanup run --include db-backups --keep-recent 5 --apply
 
 spindoctor cleanup run --include all --include-unsafe --apply --prune-empty-dirs
+spindoctor cleanup run --include safe --exclude match-cache --apply          :: everything safe except one
 ```
 
-`safe` covers the regenerable caches and audit exports; `db-backups`, `migration-manifests`, and `restructure-manifests` are flagged unsafe — naming them in `--include` is an explicit opt-in. `--prune-empty-dirs` collapses now-empty cache folders. `--yes` skips the final confirmation prompt for scripted runs.
+`safe` covers the regenerable caches and audit exports; `db-backups`, `migration-manifests`, and `restructure-manifests` are flagged unsafe — naming them in `--include` is an explicit opt-in. `--exclude` (repeatable, comma-separated) carves categories out of an `--include` group. `--prune-empty-dirs` collapses now-empty cache folders. `--yes` skips the final confirmation prompt for scripted runs.
 
 ### `lint`
 
@@ -1558,6 +1595,7 @@ AST pass over the SpinDoctor source itself — surfaces unused imports, bare `ex
 ```bat
 spindoctor lint
 spindoctor lint --category unused-import,bare-except
+spindoctor lint --source C:\my-fork\spindoctor      :: lint a different source tree
 ```
 
 ---

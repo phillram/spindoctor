@@ -320,8 +320,7 @@ def test_cleanup_run_verbose_prints_full_paths(tmp_path, monkeypatch):
 
 def test_ledblinky_fill_defaults_verbose_prints_path(tmp_path, monkeypatch):
     """fill-defaults --verbose prints the Colors.ini path in output."""
-    import types
-    home = _reset(monkeypatch, tmp_path)
+    _reset(monkeypatch, tmp_path)
 
     hs = _make_hs(tmp_path)
     roms = tmp_path / "roms"
@@ -368,7 +367,7 @@ def test_ledblinky_fill_defaults_verbose_prints_path(tmp_path, monkeypatch):
 
 def test_ledblinky_colors_brightness_verbose_prints_path(tmp_path, monkeypatch):
     """colors brightness --verbose prints the Color-RGB.ini path."""
-    home = _reset(monkeypatch, tmp_path)
+    _reset(monkeypatch, tmp_path)
 
     hs = _make_hs(tmp_path)
     roms = tmp_path / "roms"
@@ -404,7 +403,7 @@ def test_ledblinky_colors_brightness_verbose_prints_path(tmp_path, monkeypatch):
 
 def test_ledblinky_admin_buttons_set_verbose_prints_path(tmp_path, monkeypatch):
     """admin-buttons set --verbose prints the Colors.ini path."""
-    home = _reset(monkeypatch, tmp_path)
+    _reset(monkeypatch, tmp_path)
 
     hs = _make_hs(tmp_path)
     roms = tmp_path / "roms"
@@ -447,7 +446,7 @@ def test_ledblinky_admin_buttons_set_verbose_prints_path(tmp_path, monkeypatch):
 
 def test_ledblinky_colors_randomize_verbose_prints_path(tmp_path, monkeypatch):
     """colors randomize --verbose prints the Colors.ini path and stats."""
-    home = _reset(monkeypatch, tmp_path)
+    _reset(monkeypatch, tmp_path)
 
     hs = _make_hs(tmp_path)
     roms = tmp_path / "roms"
