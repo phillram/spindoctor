@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI — startup update-check thread no longer raises an unraisable exception on Python 3.12 during test teardown.** The background worker in `_start_update_check` called `self.root.after()` after the Tkinter root was destroyed (a race: monkeypatch reverts before the daemon thread exits, so the real `check_for_update` could return a non-`None` result). The call is now wrapped in `try/except` so a destroyed root is silently ignored. Fixes three `test_gui.py` failures on CI.
+
 ### Performance
 
 - **Favorites sync no longer parses every console's database.** `fav sync` / `fav rebuild` previously full-parsed each system's `<System>.xml` while crawling for favorites — cost scaled with *(consoles × games per console)* even when most consoles had no favorites. The crawl now does a fast text pre-scan for the `favorite="1"` marker and only parses a database when a favorites source (XML flag / `_Favorites.ini` / `favorites.txt`) is actually present, so favorite-free consoles cost a few `stat` calls instead of a full parse.
