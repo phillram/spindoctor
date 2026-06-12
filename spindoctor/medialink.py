@@ -35,6 +35,11 @@ MEDIA_FILE_SUBDIRS = (
     "Images/Artwork1",
     "Images/Artwork2",
     "Images/Artwork3",
+    # Title-screen captures used by many HyperSpin themes for side-panel
+    # artwork.  Absent from the original list — games in synthetic wheels
+    # showed a blank title-image slot even though source systems had them.
+    "Images/Titles",
+    "Images/Letters",
     "Video",
     "Video/Trailers",
     "Sound",
@@ -50,6 +55,10 @@ _FILE_EXTS = {
     # Uncompressed media formats
     ".png", ".jpg", ".jpeg",
     ".mp4", ".avi", ".flv", ".mkv",
+    # .wmv is the native Windows Media Video format and very common in
+    # older HyperSpin video packs, especially on Windows 7 cabinets.
+    # .mpeg / .mpg are the older MPEG-1/2 container also found in legacy packs.
+    ".wmv", ".mpeg", ".mpg",
     ".mp3", ".wav", ".ogg",
     # Archive-packed media.
     # HyperSpin reads .zip natively (video, wheel art, themes, etc.).

@@ -581,12 +581,14 @@ def rebuild(
         print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
         # Drop any orphan media for entries that were pruned or renamed
         seen_targets = set(target_names.values())
-        for media_path in (config.media_dir / store.target_system).rglob("*"):
-            if media_path.is_file() and media_path.stem not in seen_targets:
-                try:
-                    media_path.unlink()
-                except OSError as e:
-                    summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        _target_media = config.media_dir / store.target_system
+        if _target_media.is_dir():
+            for media_path in _target_media.rglob("*"):
+                if media_path.is_file() and media_path.stem not in seen_targets:
+                    try:
+                        media_path.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
 
         for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
