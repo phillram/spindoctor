@@ -12,17 +12,9 @@ from typing import Optional
 # Switch Windows stdio to UTF-8 before Rich's Console is constructed below —
 # otherwise the cp1252 default codepage can't encode the tree glyphs (✓ ⚠ ✗)
 # that `doctor` and other commands print, and the frozen exe crashes mid-render.
-if sys.platform == "win32":
-    try:
-        import ctypes
-        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
-    except (AttributeError, OSError):
-        pass
-    for _stream in (sys.stdout, sys.stderr):
-        try:
-            _stream.reconfigure(encoding="utf-8", errors="replace")
-        except (AttributeError, OSError):
-            pass
+from ._compat import enable_windows_utf8_console  # noqa: E402
+
+enable_windows_utf8_console()
 
 import click
 from rich import box
@@ -1964,19 +1956,57 @@ def fav_list():
     console.print(tbl)
 
 
+def _run_native_sync(store, config, verbose: bool):
+    """Run favorites.sync_native with a live per-console counter.
+
+    In a terminal, renders an in-place ``Scanning <System> (i/N)…`` status
+    line while the crawl runs.  When stdout is a pipe (e.g. the GUI capturing
+    output, or redirection), the live status is skipped entirely — Rich's
+    Live display emits cursor-control codes and carriage-return updates that
+    can leave the GUI's line-buffered reader waiting on a newline that never
+    arrives, the same pipe hazard ``_make_progress`` guards against.  With
+    *verbose*, per-console detail lines (newline-terminated, pipe-safe) are
+    printed regardless.
+    """
+    from .favorites import sync_native
+
+    def log_cb(msg: str) -> None:
+        console.print(f"[dim]{msg}[/dim]")
+
+    log = log_cb if verbose else None
+
+    if not sys.stdout.isatty():
+        # Pipe / redirect: no live status, just the (optional) verbose lines.
+        return sync_native(store, config, log_cb=log, verbose=verbose)
+
+    with console.status("[cyan]Scanning consoles for favorites…[/cyan]") as status:
+        def progress_cb(index: int, total: int, system: str) -> None:
+            status.update(
+                f"[cyan]Scanning[/cyan] {system} [dim]({index}/{total})[/dim]…"
+            )
+        return sync_native(
+            store, config,
+            progress_cb=progress_cb,
+            log_cb=log,
+            verbose=verbose,
+        )
+
+
 @fav_group.command("sync")
-def fav_sync():
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show each console as it is scanned.")
+def fav_sync(verbose):
     """Pull HyperSpin's per-system favorites into the cross-system store.
 
     HyperSpin's built-in F-key writes per-system Favorites lists. This
     command merges them into your cross-system favorites so you can use
     either workflow.
     """
-    from .favorites import load_store, save_store, sync_native
+    from .favorites import load_store, save_store
     config = _cfg()
     _check_config(config)
     store = load_store()
-    n, sync_warns, sync_notes = sync_native(store, config)
+    n, sync_warns, sync_notes = _run_native_sync(store, config, verbose)
     save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
@@ -1999,7 +2029,9 @@ def fav_sync():
               help="How to mirror media into the Favorites system.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit the rebuild (default: dry-run preview).")
-def fav_rebuild(media_mode, apply_changes):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show each console scanned during sync and each media file mirrored.")
+def fav_rebuild(media_mode, apply_changes, verbose):
     """Regenerate the Favorites HyperSpin system + media + launchers.
 
     \b
@@ -2009,13 +2041,13 @@ def fav_rebuild(media_mode, apply_changes):
       2. Mirror media (hardlinks by default; falls back to copy)
       3. Write per-game PCLauncher INIs that route via RocketLauncher
     """
-    from .favorites import load_store, rebuild, save_store, sync_native
+    from .favorites import load_store, rebuild, save_store
     from .medialink import LinkMode
     config = _cfg()
     _check_config(config)
     _warn_rocketlauncher_dir(config)
     store = load_store()
-    synced, sync_warns, sync_notes = sync_native(store, config)
+    synced, sync_warns, sync_notes = _run_native_sync(store, config, verbose)
     for w in sync_warns:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
     if synced > 0:
@@ -2036,7 +2068,7 @@ def fav_rebuild(media_mode, apply_changes):
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
     summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
-                      dry_run=not apply_changes)
+                      dry_run=not apply_changes, verbose=verbose)
     _print_synth_summary("Favorites", summary)
 
 
@@ -2095,7 +2127,9 @@ def recent_group():
               default="auto")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit the rebuild (default: dry-run preview).")
-def recent_rebuild(limit, target_system, media_mode, apply_changes):
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show each media file mirrored.")
+def recent_rebuild(limit, target_system, media_mode, apply_changes, verbose):
     """Rebuild the Recently Played system from RocketLauncher Statistics.ini files.
 
     \b
@@ -2122,6 +2156,7 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes):
         media_mode=mode,
         skip_media=skip_media,
         dry_run=not apply_changes,
+        verbose=verbose,
     )
     _print_synth_summary("Recently Played", summary)
 
@@ -2519,8 +2554,10 @@ def _stats_report_show(system, top_n, by_system, recent_only,
               help="Write to a staging directory instead of hyperspin_dir.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Actually write the wheel (default is dry-run).")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show each media file mirrored.")
 def stats_report_build_wheel(limit, target_system, media_mode,
-                             output_dir, apply_changes):
+                             output_dir, apply_changes, verbose):
     """Build a synthetic 'Most Played' HyperSpin wheel from playtime stats.
 
     \b
@@ -2574,6 +2611,7 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         limit=limit,
         media_mode=mode,
         skip_media=skip_media,
+        verbose=verbose,
     )
     _print_synth_summary("Most Played", summary)
 

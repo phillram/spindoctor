@@ -510,9 +510,12 @@ def _build_synthetic_wheel(
             db.remove_game(name)
             summary.pruned += 1
 
+    # Memoise source DBs so each source system is parsed once, not once
+    # per entry drawn from it.
+    src_cache: dict = {}
     for fe in pseudo_entries:
         target_name = target_names[f"{fe.system}::{fe.rom_name}"]
-        source_db = _safe_load(fe.system, config)
+        source_db = _safe_load(fe.system, config, src_cache)
         source_game = source_db.get(fe.rom_name) if source_db else None
         base_desc = fe.display_name or (source_game.description if source_game else fe.rom_name)
         merged = GameEntry(
@@ -727,6 +730,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[list[str]] = None) -> int:
+    from ._compat import enable_windows_utf8_console
+    enable_windows_utf8_console()
     args = _build_parser().parse_args(argv)
     config = load_config()
 

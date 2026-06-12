@@ -699,3 +699,124 @@ def test_rebuild_pclauncher_system_ini_cross_system(isolated_config, tmp_path, m
     assert '-s "Super Nintendo"' not in psx_block
     assert '-s "Sony Playstation"' in psx_block
     assert '-s "Sony Playstation"' not in snes_block
+
+
+# ─── sync_native: XML favorite="1", pre-skip, progress + verbose ──────────────
+
+def test_sync_native_picks_up_xml_favorite_attribute(isolated_config, tmp_path, monkeypatch):
+    """A <game favorite="1"/> attribute in a system XML is synced."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Mark the SNES Tetris as a favorite via the HyperSpin XML attribute form.
+    snes_xml = hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml"
+    snes_xml.write_text(
+        "<menu>"
+        "<game name=\"Tetris\" favorite=\"1\">"
+        "<description>Tetris</description>"
+        "</game></menu>",
+        encoding="utf-8",
+    )
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert warns == []
+    assert store.find("Super Nintendo", "Tetris") is not None
+    assert n == 1
+
+
+def test_sync_native_skips_xml_parse_when_no_favorites(isolated_config, tmp_path, monkeypatch):
+    """Consoles with no favorites must not trigger a full XML parse."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # No favorites of any kind exist in _build_layout's XMLs.
+    parsed: list[str] = []
+    import spindoctor.favorites as fav_mod
+    real_load = fav_mod.load_database
+
+    def _spy(system_name, databases_dir):
+        parsed.append(system_name)
+        return real_load(system_name, databases_dir)
+
+    monkeypatch.setattr(fav_mod, "load_database", _spy)
+    store = FavoriteStore()
+    n, warns, notes = sync_native(store, cfg)
+    assert n == 0
+    # The fast text pre-scan should have skipped every database parse.
+    assert parsed == []
+
+
+def test_sync_native_progress_and_verbose_callbacks(isolated_config, tmp_path, monkeypatch):
+    """progress_cb fires once per console; verbose detail flows to log_cb."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+    (hs / "Databases" / "Super Nintendo" / "Super Nintendo_Favorites.ini").write_text(
+        "Tetris\n", encoding="utf-8",
+    )
+
+    seen: list[tuple[int, int, str]] = []
+    logs: list[str] = []
+    store = FavoriteStore()
+    n, warns, notes = sync_native(
+        store, cfg,
+        progress_cb=lambda i, total, s: seen.append((i, total, s)),
+        log_cb=logs.append,
+        verbose=True,
+    )
+    assert n == 1
+    # Two source systems → two progress ticks, each numbered against the total.
+    assert [s for _, _, s in seen] == ["Sony Playstation", "Super Nintendo"]
+    assert all(total == 2 for _, total, _ in seen)
+    # Verbose detail mentions the console that contributed a favorite.
+    assert any("Super Nintendo" in line and "+1" in line for line in logs)
+
+
+def test_sync_native_log_cb_silent_without_verbose(isolated_config, tmp_path, monkeypatch):
+    """log_cb is only invoked when verbose=True."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+    logs: list[str] = []
+    sync_native(FavoriteStore(), cfg, log_cb=logs.append, verbose=False)
+    assert logs == []
+
+
+def test_rebuild_caches_source_db_loads(isolated_config, tmp_path, monkeypatch):
+    """Many favorites from one system parse that source DB only once."""
+    roms, hs, rl = _build_layout(tmp_path)
+    monkeypatch.setattr("spindoctor.favorites.FAVORITES_FILE",
+                        isolated_config / "favorites.json")
+    cfg = _cfg(roms, hs, rl)
+
+    # Two SNES games so the rebuild loop visits "Super Nintendo" twice.
+    snes_xml = hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml"
+    snes_xml.write_text(
+        "<menu>"
+        "<game name=\"Tetris\"><description>Tetris</description></game>"
+        "<game name=\"Mario\"><description>Mario</description></game>"
+        "</menu>",
+        encoding="utf-8",
+    )
+
+    loads: list[str] = []
+    import spindoctor.favorites as fav_mod
+    real_load = fav_mod.load_database
+
+    def _spy(system_name, databases_dir):
+        loads.append(system_name)
+        return real_load(system_name, databases_dir)
+
+    monkeypatch.setattr(fav_mod, "load_database", _spy)
+    store = FavoriteStore()
+    add(store, "Super Nintendo", "Tetris")
+    add(store, "Super Nintendo", "Mario")
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
+
+    assert loads.count("Super Nintendo") == 1
