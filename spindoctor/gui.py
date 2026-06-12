@@ -2983,8 +2983,11 @@ class _SpinDoctorGUI:
             except Exception:  # noqa: BLE001 — never let this kill the UI
                 return
             if result is not None:
-                # Hop back to the Tk main loop before touching widgets.
-                self.root.after(0, self._on_update_check_done, result)
+                try:
+                    # Hop back to the Tk main loop before touching widgets.
+                    self.root.after(0, self._on_update_check_done, result)
+                except Exception:  # noqa: BLE001 — root may be destroyed (test teardown)
+                    pass
 
         threading.Thread(target=worker, daemon=True).start()
 
