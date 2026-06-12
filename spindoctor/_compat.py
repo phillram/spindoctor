@@ -13,6 +13,39 @@ import xml.etree.ElementTree as ET
 from typing import Optional, Union
 
 
+class _SafeWriter:
+    """Wraps a text IO stream; silently drops OSError on write/flush.
+
+    Windows 7 + PCLauncher: ``SetConsoleOutputCP(65001)`` can leave the
+    console handle in a state where every subsequent write raises
+    ``PermissionError`` (WinError 31 — ERROR_GEN_FAILURE).  Without this
+    wrapper the standalone wheel tools crash at their very first
+    ``print()`` call.  All other stream attributes are proxied to the
+    underlying stream unchanged.
+    """
+
+    def __init__(self, wrapped: object) -> None:
+        object.__setattr__(self, "_w", wrapped)
+
+    def write(self, s: str) -> int:
+        try:
+            return object.__getattribute__(self, "_w").write(s)  # type: ignore[union-attr]
+        except OSError:
+            return len(s)
+
+    def flush(self) -> None:
+        try:
+            object.__getattribute__(self, "_w").flush()  # type: ignore[union-attr]
+        except OSError:
+            pass
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(object.__getattribute__(self, "_w"), name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        setattr(object.__getattribute__(self, "_w"), name, value)
+
+
 def enable_windows_utf8_console() -> None:
     """Switch the process's stdio to UTF-8 on Windows; no-op elsewhere.
 
@@ -28,6 +61,12 @@ def enable_windows_utf8_console() -> None:
     themselves before printing.  Idempotent and failure-tolerant: a
     redirected pipe, a missing ``kernel32``, or a stream without
     ``reconfigure`` just falls through harmlessly.
+
+    After reconfiguring, each stream is wrapped with :class:`_SafeWriter` so
+    that any subsequent write/flush that still raises ``OSError`` (e.g. the
+    WinError 31 console-handle failure that PCLauncher triggers on Windows 7
+    after a ``SetConsoleOutputCP(65001)`` call) is silently swallowed rather
+    than crashing the process.
     """
     if sys.platform != "win32":
         return
@@ -36,11 +75,15 @@ def enable_windows_utf8_console() -> None:
         ctypes.windll.kernel32.SetConsoleOutputCP(65001)
     except (AttributeError, OSError):
         pass
-    for _stream in (sys.stdout, sys.stderr):
+    for _attr in ("stdout", "stderr"):
+        _stream = getattr(sys, _attr)
+        if isinstance(_stream, _SafeWriter):
+            continue
         try:
             _stream.reconfigure(encoding="utf-8", errors="replace")
         except (AttributeError, OSError):
             pass
+        setattr(sys, _attr, _SafeWriter(_stream))
 
 
 def et_indent(tree: Union[ET.ElementTree, ET.Element], space: str = "  ") -> None:
