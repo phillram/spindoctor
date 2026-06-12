@@ -295,7 +295,7 @@ Anything the dedicated tabs don't cover. The entry field is an editable Combobox
 
 ### Logs
 
-Persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
+Persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
 
 The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests…**.
 
@@ -342,7 +342,15 @@ Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab
 
 ## Dry-run feedback
 
-Every command without `--apply` is a dry-run. The GUI bookends those with explicit banners:
+Commands fall into three categories, which the GUI tracks and displays in the Logs tab:
+
+| Category | `--apply` concept | Logs tab `# Dry-run:` header | Logs tag |
+|---|---|---|---|
+| **Dry-run preview** | Supported; not passed | `Yes` | `DRY-RUN` |
+| **Actual write** | Supported; passed | `No` | `OK` |
+| **Read-only / write-always** | N/A (no `--apply` flag) | `N/A` | `OK` |
+
+For dry-run previews the GUI wraps the output in explicit banners:
 
 ```
 === DRY RUN ===
@@ -355,6 +363,8 @@ $ spindoctor curate --all
 ```
 
 The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
+
+Read-only commands (`audit`, `doctor`, `tools-audit`, `inspect`, `find-dupes`, `stats`, `check-discs`, `check-archive-ext`, `verify`, `lint`, `report`, `preview`, `systems`, `find-global`, `diff`, `backup list/info`, `fav list`, `recent list`, `mainmenu show/edit`, `ledblinky audit/check`, `lightgun audit/detect`, `config show/init/set/system`, `install-tools`) never accept `--apply` and never show the DRY RUN banner — showing it would mislead users into thinking a health check was a preview of something committable.
 
 Long-running single commands and chained wheel rebuilds use a **pulsing (indeterminate)** progress bar; multi-step chains that have a known step count (Full metadata refresh, Preflight check) additionally advance a **determinate** fill between steps.
 
