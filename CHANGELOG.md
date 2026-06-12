@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Standalone wheel tools no longer crash with `PermissionError: [WinError 31]` when launched from HyperSpin's Tools menu on Windows 7.** On Windows 7, calling `SetConsoleOutputCP(65001)` can leave the console handle in a broken state where every subsequent `write()` or `flush()` raises `PermissionError` (ERROR_GEN_FAILURE). `enable_windows_utf8_console()` now wraps `sys.stdout` and `sys.stderr` in a `_SafeWriter` shim that silently swallows `OSError` on those two calls, so the process continues normally. Previously all three Tools-menu helpers (`spindoctor-fav`, `spindoctor-recent`, `spindoctor-stats`) crashed before doing any work, leaving the "Press any key to continue…" prompt in a console window hidden behind HyperSpin. The fix also means the Recently Played wheel now builds correctly — the crash was happening at the very first `print()` inside `_build_synthetic_wheel`, preventing any database write or media copy.
+
 ---
 
 ## [2.4.25] - 2026-06-12
