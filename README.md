@@ -72,7 +72,7 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 
 ## Common starting points
 
-Click **Run first-run wizard…** on the Setup tab for a guided 3-step flow (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results). The wizard is opt-in and re-openable any time from **Help → First-run setup…**.
+Click **Run first-run wizard…** at the top of the Setup tab for a guided 3-step flow (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the results). The wizard is opt-in and re-openable any time from **Help → First-run setup…**.
 
 The **Metadata & Media** tab has a "Pick subset…" button for the common cabinet workflow of "refresh metadata for *these specific* systems" (often after a scraper improves data for a handful of consoles). Ticking subsystems opens a multi-select picker; "Run on subset…" chains `fetch-meta --system X` once per pick, aborting on the first failure so you can fix the cause before continuing.
 
@@ -80,21 +80,21 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~255 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
+Dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships hundreds of canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
 
 ### Tabs
 
-- **Setup** — paths + scraper credentials (ScreenScraper user/dev + TheGamesDB) and a **Test credentials** button that pings both providers and reports pass/fail.
-- **Systems** — Steps 1–4: interactive Main Menu Treeview (reorder / show-hide / sort), `add-system` / `add-pc-system`, rename or clone a game, organize a system (sort wheels + restructure). Plus `pc-rename`, per-system overrides form, and inspect.
-- **Diagnostics** — Steps 1–3: system audit + doctor + preflight, library-wide scans (dupes / misplaced / orphans / lint / report), search & verify (global search, DAT verify, inspect).
-- **Metadata & Media** — Steps 1–5: Full metadata refresh chain (Step 1), `fetch-meta`, `fetch-media`, `media-scan`, `update-db` + `generate-config`. Plus batch-edit and media-add.
-- **Maintenance** — Step 1: region/revision thinning with interactive `☑/☐` per-row preview. Plus cache cleanup, ignore lifecycle, match-cache controls.
-- **Tools** — Steps 1–3: refresh custom wheels, register in HyperSpin main menu, manage favorites. Plus optional .bat helpers, auto-refresh-on-log-on, and scrub/restore.
-- **LEDBlinky** — nine-step workflow: overlay-hook fix, Settings.ini, MAME generate + sync, fill defaults, randomize, admin buttons, brightness, color definitions, backup.
-- **Lightgun** — Steps 1–2: Sinden + DemulShooter detection and per-system wiring.
-- **Backup & Restore** — Steps 1–3: target folder + components, create backup, restore (with *Scan* to populate the dropdown).
-- **Migrate** — Steps 1–4: view config, pre-migration backup, migration settings (target + components + options), undo.
-- **Custom Command** — type-or-pick CLI invocations; ~255 presets across 19 named sections cover the full CLI surface.
+- **Setup** — first-run wizard button up top, then paths grouped into core and optional, scraper credentials (ScreenScraper user/dev + TheGamesDB), and a **Test credentials** button that pings both providers and reports pass/fail.
+- **Diagnostics** — one-click cabinet health check (preflight / doctor / tools audit), per-system audit, library-wide scans (dupes / misplaced / orphans / lint / report), search & verify (global search, DAT verify, inspect). Everything read-only.
+- **Systems** — interactive Main Menu Treeview (reorder / show-hide / sort), `add-system` / `add-pc-system`, rename or clone a game, organize a system (sort wheels + restructure). Plus `pc-rename`, per-system overrides form, and inspect.
+- **Metadata & Media** — full metadata refresh chain in one click, then `fetch-meta`, `fetch-media`, `media-scan`, `update-db` + `generate-config` as individual steps. Plus batch-edit and media-add.
+- **Maintenance** — region/revision thinning with interactive `☑/☐` per-row preview. Plus cache cleanup, ignore lifecycle, match-cache controls.
+- **Tools** — import HyperSpin F-key favorites, refresh custom wheels, register them in HyperSpin's main menu, manage favorites. Plus optional .bat helpers, auto-refresh-on-log-on, and scrub/restore.
+- **LEDBlinky** — step-by-step workflow: overlay-hook fix, Settings.ini, MAME generate + sync, fill defaults, randomize, admin buttons, brightness, color definitions, backup.
+- **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
+- **Backup & Restore** — target folder + components, create backup, restore (with *Scan* to populate the dropdown).
+- **Migrate** — view config, pre-migration backup, migration settings (target + components + options), undo, post-migration `generate-config`.
+- **Custom Command** — type-or-pick CLI invocations; presets organized into named sections cover the full CLI surface.
 - **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
 
 For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
