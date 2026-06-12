@@ -70,13 +70,24 @@ jobs:
 
       # actions/setup-python on Windows does not set TCL_LIBRARY, so Tcl
       # cannot locate init.tcl and tk.Tk() raises TclError at test time.
-      # Derive the path from sys.prefix (the Python install root) and
-      # export it before pytest runs.
+      # The Tcl sub-directory name varies across Python patch releases
+      # (tcl8.6 vs tcl8.6.15), so we glob for whichever init.tcl exists
+      # rather than hardcoding the version suffix.  as_posix() produces
+      # forward slashes; mixed backslash/forward-slash paths trip Tcl.
       - name: Set TCL_LIBRARY (Windows)
         if: runner.os == 'Windows'
-        shell: bash
+        shell: python
         run: |
-          echo "TCL_LIBRARY=$(python -c 'import sys; print(sys.prefix)')/tcl/tcl8.6" >> $GITHUB_ENV
+          import os, pathlib
+          prefix = pathlib.Path(__import__('sys').prefix)
+          for candidate in sorted(prefix.glob("tcl/tcl8*"), reverse=True):
+              if (candidate / "init.tcl").exists():
+                  with open(os.environ["GITHUB_ENV"], "a") as f:
+                      f.write(f"TCL_LIBRARY={candidate.as_posix()}\n")
+                  print(f"TCL_LIBRARY={candidate.as_posix()}")
+                  break
+          else:
+              print("WARNING: init.tcl not found — Tk tests may fail")
 
       # pytest-xdist worker processes on Windows are spawned without a
       # desktop handle, so tk.Tk() raises "no windowstation" inside workers.
