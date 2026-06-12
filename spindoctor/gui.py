@@ -515,20 +515,22 @@ _CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
 #                     it is a health diagnostic, not a preview of writes.
 #                     Showing "DRY RUN" for a health check actively misleads
 #                     the user.  doctor --apply is available via Custom Command
-#                     for those who need it; there it will correctly omit the
-#                     banner because the _is_read_only_invocation call sees
-#                     "doctor" and returns True (Custom Command users writing
-#                     --apply know they're doing a write, banner or not).
+#                     for those who need it; the Logs tab will show "N/A" in
+#                     that case (acceptable — power users know they wrote).
 #   lightgun detect — Same reasoning: detect scans for hardware, it isn't
 #                     a preview of config writes.
 #   mainmenu show   — No-arg form (the only form the GUI generates) is
 #                     genuinely display-only.  The write variant
 #                     "mainmenu show SYSTEM --apply" is Custom-Command-only.
+#
+# NOTE: `stats-report` appears here but its write subcommands
+# (build-wheel, clear-wheel) are listed in _WRITE_SUBCOMMAND_PAIRS below so
+# they are correctly classified as dry-run-capable rather than read-only.
 _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "--help", "--version",
     "tools-audit", "systems", "report", "preview",
     "audit", "inspect", "find-dupes",
-    "check-discs", "verify", "lint", "stats",
+    "check-discs", "check-archive-ext", "verify", "lint", "stats",
     "find-global", "theme-scan", "theme-pack-create", "diff",
     "install-tools", "stats-report",
     "cleanup categories", "cleanup audit",
@@ -546,10 +548,21 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "curate --list-manifests",
 })
 
+# Two-token subcommand pairs that ARE dry-run-capable (they support --apply)
+# even though their parent verb is in _READ_ONLY_COMMANDS.  Checked before
+# the single-token lookup so the more-specific rule wins.
+_WRITE_SUBCOMMAND_PAIRS: frozenset[str] = frozenset({
+    "stats-report build-wheel",
+    "stats-report clear-wheel",
+})
+
 
 def _is_read_only_invocation(args: tuple) -> bool:
     if not args:
         return True
+    # Two-token write subcommands override a read-only parent verb.
+    if len(args) >= 2 and f"{args[0]} {args[1]}" in _WRITE_SUBCOMMAND_PAIRS:
+        return False
     if args[0] in _READ_ONLY_COMMANDS:
         return True
     if len(args) >= 2 and f"{args[0]} {args[1]}" in _READ_ONLY_COMMANDS:
@@ -846,8 +859,7 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
-    "install-tools --add-to-system <SYSTEM> --apply",
-    "install-tools --apply",
+    "install-tools --add-to-system <SYSTEM>",
     "uninstall-tools --apply",
     # ── Config ────────────────────────────────────────────────────────────────
     "─── Config ───",
@@ -2569,10 +2581,12 @@ class _SpinDoctorGUI:
             record = self._run_history[idx]
             viewer.configure(state="normal")
             viewer.delete("1.0", "end")
+            _dr = ("N/A" if record.dry_run is None
+                   else ("Yes" if record.dry_run else "No"))
             header = (
                 f"# Started: {record.started_at}\n"
                 f"# Status:  {record.tag()}\n"
-                f"# Dry-run: {record.dry_run}\n"
+                f"# Dry-run: {_dr}\n"
                 f"# Command: {record.argv_str}\n\n"
             )
             viewer.insert("end", header)
@@ -2680,10 +2694,12 @@ class _SpinDoctorGUI:
         if idx is None or idx >= len(self._run_history):
             return
         record = self._run_history[idx]
+        _dr = ("N/A" if record.dry_run is None
+               else ("Yes" if record.dry_run else "No"))
         text = (
             f"# Started: {record.started_at}\n"
             f"# Status:  {record.tag()}\n"
-            f"# Dry-run: {record.dry_run}\n"
+            f"# Dry-run: {_dr}\n"
             f"# Command: {record.argv_str}\n\n"
             f"{record.joined_output()}"
         )
@@ -11541,9 +11557,13 @@ class _SpinDoctorGUI:
         # accept --apply, so suppress the banner for them — otherwise
         # `spindoctor doctor` shows "DRY RUN COMPLETE — re-run with
         # --apply to commit", which is nonsense for a read-only check.
-        is_dry_run = "--apply" not in args and not _is_read_only_invocation(
-            tuple(args)
-        )
+        # None  = N/A (read-only command — dry-run concept doesn't apply)
+        # True  = dry-run preview (has --apply concept, flag not passed)
+        # False = actual write (--apply was passed)
+        if _is_read_only_invocation(tuple(args)):
+            is_dry_run: Optional[bool] = None
+        else:
+            is_dry_run = "--apply" not in args
         argv_str = _format_argv(argv)
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -12328,16 +12348,15 @@ class _RunRecord:
     useless for "what did I do an hour ago?". The Logs tab solves
     that by keeping a per-run buffer indexed by start time.
 
-    ``dry_run`` is a heuristic: ``True`` when ``--apply`` is missing
-    from the argv. It's not perfect (a few commands don't follow the
-    dry-run-by-default convention), but it lets the Logs tab tag
-    rows so users can tell at a glance whether a row's output was a
-    preview or a real change.
+    ``dry_run`` is a three-value flag:
+    - ``True``  — dry-run preview (command supports --apply, flag not passed)
+    - ``False`` — actual write (--apply was passed)
+    - ``None``  — N/A (read-only command; dry-run concept doesn't apply)
     """
 
     __slots__ = ("started_at", "argv_str", "output", "exit_code", "dry_run")
 
-    def __init__(self, started_at: str, argv_str: str, dry_run: bool) -> None:
+    def __init__(self, started_at: str, argv_str: str, dry_run: Optional[bool]) -> None:
         self.started_at = started_at
         self.argv_str = argv_str
         self.output: list[str] = []
@@ -12359,7 +12378,7 @@ class _RunRecord:
         if self.exit_code is None:
             return "running"
         if self.exit_code == 0:
-            return "DRY-RUN" if self.dry_run else "OK"
+            return "DRY-RUN" if self.dry_run is True else "OK"
         return f"FAIL {self.exit_code}"
 
 
