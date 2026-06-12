@@ -538,12 +538,14 @@ def _build_synthetic_wheel(
     if not skip_media:
         print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
         seen = set(target_names.values())
-        for media_path in (config.media_dir / target_system).rglob("*"):
-            if media_path.is_file() and media_path.stem not in seen:
-                try:
-                    media_path.unlink()
-                except OSError as e:
-                    summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        _target_media = config.media_dir / target_system
+        if _target_media.is_dir():
+            for media_path in _target_media.rglob("*"):
+                if media_path.is_file() and media_path.stem not in seen:
+                    try:
+                        media_path.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
         for idx, fe in enumerate(pseudo_entries, 1):
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             plan = plan_mirror(
