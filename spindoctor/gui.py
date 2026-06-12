@@ -2211,18 +2211,17 @@ class _SpinDoctorGUI:
         # builder creates its frame as before; the helper just bolts
         # a vertical scrollbar onto whichever container holds it.
         # Tab order follows the new-user journey: configure paths first
-        # (Setup), then build out systems (Systems), then diagnose health
-        # (Diagnostics), then enrich metadata (Metadata & Media), curate
-        # (Maintenance), manage cross-system wheels (Tools), then
-        # peripheral hardware (LEDBlinky / Lightgun), then infrastructure
-        # (Backup → Migrate), and finally power-user escapes
-        # (Custom Command) and the session log (Logs) at the very end.
-        # 12 tabs total (down from 15) — Audit & Doctor + Diagnose →
-        # Diagnostics; Curate → Maintenance; Wheels merged into Tools;
-        # Main Menu merged into Systems.
+        # (Setup), then confirm the cabinet is healthy (Diagnostics is
+        # read-only, so it's safe to explore before touching anything),
+        # then build out systems (Systems), enrich metadata
+        # (Metadata & Media), curate (Maintenance), manage cross-system
+        # wheels (Tools), then peripheral hardware (LEDBlinky /
+        # Lightgun), then infrastructure (Backup → Migrate), and finally
+        # power-user escapes (Custom Command) and the session log (Logs)
+        # at the very end.
         self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
-        self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
         self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
+        self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
         self._add_scrollable_tab(nb, self._build_tools_tab,        "Tools")
@@ -4265,7 +4264,25 @@ class _SpinDoctorGUI:
         intro = self.ttk.Label(
             frame, text=intro_text, wraplength=860, justify="left",
         )
-        intro.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        intro.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+
+        # First-run wizard CTA — the friendliest entry point for a brand-
+        # new cabinet owner, so it sits at the very top of the very first
+        # tab rather than buried in the button row at the bottom (where
+        # it previously lived, after Save). Also reachable any time from
+        # Help → First-run setup….
+        wizard_row = self.ttk.Frame(frame)
+        wizard_row.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
+        self.ttk.Label(
+            wizard_row,
+            text="New here? The wizard walks you through the two required "
+                 "paths and runs a health check:",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+        self.ttk.Button(
+            wizard_row, text="Run first-run wizard…",
+            command=self._show_first_run_wizard,
+        ).pack(side="left", padx=(8, 0))
 
         cfg = load_config()
         # Tracks whether any setup field has been edited since last save.
@@ -4274,15 +4291,21 @@ class _SpinDoctorGUI:
         # — switching tabs without clicking Save used to silently lose
         # changes.
         self._setup_dirty = False
-        for i, (key, label, win_default, _allow_blank) in enumerate(_SETUP_FIELDS, start=1):
+
+        # Path rows use a running row counter so the required/optional
+        # group headers can be interleaved without grid arithmetic.
+        row = 2
+
+        def _add_path_row(key, label, win_default):
+            nonlocal row
             existing = getattr(cfg, key, "") or ""
             initial = existing or win_default
             var = self.tk.StringVar(value=initial)
             self._setup_vars[key] = var
             var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
-            self.ttk.Label(frame, text=label).grid(row=i, column=0, sticky="w", pady=2)
+            self.ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=2)
             entry = self.ttk.Entry(frame, textvariable=var, width=60)
-            entry.grid(row=i, column=1, sticky="ew", padx=6, pady=2)
+            entry.grid(row=row, column=1, sticky="ew", padx=6, pady=2)
             # Register the Entry as a drop target if tkinterdnd2 loaded
             # at startup. Dropping a folder from Explorer/Finder fills
             # the path field with the dropped folder's absolute path —
@@ -4290,7 +4313,7 @@ class _SpinDoctorGUI:
             # through five levels, click OK" flow.
             self._register_path_drop_target(entry, var)
             btn_cell = self.ttk.Frame(frame)
-            btn_cell.grid(row=i, column=2, sticky="w", pady=2)
+            btn_cell.grid(row=row, column=2, sticky="w", pady=2)
             self.ttk.Button(
                 btn_cell, text="Browse…",
                 command=lambda v=var, k=key: self._browse_dir(v, k),
@@ -4305,14 +4328,53 @@ class _SpinDoctorGUI:
                 btn_cell, text="Open",
                 command=lambda v=var, k=key: self._open_setup_path(v, k),
             ).pack(side="left", padx=(4, 0))
+            row += 1
+
+        def _add_group_header(text, subtitle=None, separator=False):
+            nonlocal row
+            if separator:
+                self.ttk.Separator(frame, orient="horizontal").grid(
+                    row=row, column=0, columnspan=3, sticky="ew", pady=(10, 4)
+                )
+                row += 1
+            self.ttk.Label(
+                frame, text=text, font=("TkDefaultFont", 9, "bold"),
+            ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
+            row += 1
+            if subtitle:
+                self.ttk.Label(
+                    frame, text=subtitle, foreground=_FG_DIM,
+                    wraplength=780, justify="left",
+                ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+                row += 1
+
+        # The _allow_blank flag in _SETUP_FIELDS doubles as the
+        # required/optional split: blank-not-allowed fields are the core
+        # cabinet paths every feature relies on; the rest only matter to
+        # specific features and stay blank on most cabinets.
+        core_fields = [f for f in _SETUP_FIELDS if not f[3]]
+        optional_fields = [f for f in _SETUP_FIELDS if f[3]]
+
+        _add_group_header("Core paths")
+        for key, label, win_default, _allow_blank in core_fields:
+            _add_path_row(key, label, win_default)
+
+        _add_group_header(
+            "Optional paths",
+            subtitle="Used by specific features (LEDBlinky tab, backups, "
+                     "audit exports). Fine to leave blank until you need them.",
+            separator=True,
+        )
+        for key, label, win_default, _allow_blank in optional_fields:
+            _add_path_row(key, label, win_default)
 
         # ── Scraper credentials ───────────────────────────────────────────────
-        cred_sep_row = len(_SETUP_FIELDS) + 1
+        cred_sep_row = row
         self.ttk.Separator(frame, orient="horizontal").grid(
             row=cred_sep_row, column=0, columnspan=3, sticky="ew", pady=(10, 4)
         )
         self.ttk.Label(
-            frame, text="Scraper credentials",
+            frame, text="Scraper credentials (optional)",
             font=("TkDefaultFont", 9, "bold"),
         ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
         self.ttk.Label(
@@ -4432,14 +4494,8 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
-        # Manual entry point for the first-run wizard. The wizard no
-        # longer auto-fires at launch (it was extra friction on a fresh
-        # cabinet that already wanted the Setup tab) — surface it here
-        # for new users and on the Help menu for re-runs.
-        self.ttk.Button(
-            btn_row, text="Run first-run wizard…",
-            command=self._show_first_run_wizard,
-        ).pack(side="left", padx=6)
+        # (The first-run wizard button lives at the top of this tab —
+        # it's the new-user entry point, so it leads rather than trails.)
         # Folder shortcuts — same actions are also under File menu, but
         # surfacing them here saves a click for the Setup-tab use case
         # ("opened the GUI to fix a bad path, want to peek at the
@@ -4796,183 +4852,6 @@ class _SpinDoctorGUI:
         ).start()
 
     # ── Wheels tab (LEGACY — content merged into _build_tools_tab) ──────────────
-
-    def _build_wheels_tab(self, parent):  # LEGACY — content merged into _build_tools_tab
-        frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
-            frame,
-            text=("Rebuild the cross-system wheels HyperSpin shows on the "
-                  "main menu. Each click runs the corresponding standalone "
-                  "binary with --apply, the same way the .bat shortcuts do."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 12))
-
-        wheels_checks = self.ttk.Frame(frame)
-        wheels_checks.pack(anchor="w", pady=(0, 6))
-        self._wheel_fav_var    = self.tk.BooleanVar(value=True)
-        self._wheel_recent_var = self.tk.BooleanVar(value=True)
-        self._wheel_stats_var  = self.tk.BooleanVar(value=True)
-        for var, label in (
-            (self._wheel_fav_var,    "Favorites"),
-            (self._wheel_recent_var, "Recently Played"),
-            (self._wheel_stats_var,  "Most Played"),
-        ):
-            self.ttk.Checkbutton(
-                wheels_checks, text=label, variable=var,
-            ).pack(anchor="w", pady=2)
-
-        # ── Verbose flag ─────────────────────────────────────────────────────
-        # When checked, passes --verbose to the rebuild commands so each
-        # copied/linked media file is logged as "copy  <src>\n   →  <dest>".
-        btn_row = self.ttk.Frame(frame)
-        btn_row.pack(anchor="w", pady=3)
-        self.ttk.Button(
-            btn_row, text="Refresh selected", width=28,
-            command=self._refresh_all_wheels,
-        ).pack(side="left")
-
-        # ── Clear wheels ──────────────────────────────────────────────────────
-        # Removes the on-disk artifacts for the selected wheels without
-        # touching RocketLauncher's Statistics.ini files or the
-        # favorites.json store (for Favorites, the store is also cleared).
-        # Always shows a confirmation dialog before running with --apply.
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
-        self.ttk.Label(
-            frame, text="Clear wheels",
-            font=("TkDefaultFont", 10, "bold"),
-        ).pack(anchor="w", pady=(2, 4))
-        self.ttk.Label(
-            frame,
-            text=(
-                "Remove the on-disk artifacts (database XML, media files, "
-                "PCLauncher INIs) for the selected wheel(s).\n"
-                "For Favorites, the cross-system store (~/.spindoctor/favorites.json) "
-                "is also cleared.\n"
-                "RocketLauncher Statistics.ini files are never modified — "
-                "Recently Played and Most Played wheels can be rebuilt at any time."
-            ),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", pady=(0, 6))
-        clear_btn_row = self.ttk.Frame(frame)
-        clear_btn_row.pack(anchor="w", pady=(0, 4))
-        preview_btn = self.ttk.Button(
-            clear_btn_row, text="Preview clear (dry run)", width=28,
-            command=self._preview_clear_wheels,
-        )
-        preview_btn.pack(side="left")
-        _attach_tooltip(
-            preview_btn,
-            "Shows what would be removed without deleting anything.",
-            self.tk,
-        )
-        clear_apply_btn = self.ttk.Button(
-            clear_btn_row, text="Clear selected (--apply)", width=28,
-            command=self._clear_wheels_apply,
-        )
-        clear_apply_btn.pack(side="left", padx=6)
-        _attach_tooltip(
-            clear_apply_btn,
-            "Permanently removes wheel artifacts for the selected wheels. "
-            "A confirmation dialog will appear before anything is deleted.",
-            self.tk,
-        )
-
-        # ── HyperSpin integration helpers ────────────────────────────────────
-        # The custom wheels (Favorites / Recently Played / Most Played) write
-        # synthetic HyperSpin systems with media + per-game PCLauncher INIs,
-        # but they don't auto-fire on cabinet startup and only Most Played
-        # auto-registers in the Main Menu. The buttons below close those
-        # gaps so users don't have to drop into cmd.exe to wire them up.
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
-        self.ttk.Label(
-            frame, text="HyperSpin integration",
-            font=("TkDefaultFont", 10, "bold"),
-        ).pack(anchor="w", pady=(2, 4))
-        self.ttk.Label(
-            frame,
-            text=(
-                "• Step 1 — Refresh: builds game databases + PCLauncher INIs "
-                "for the selected wheels.\n"
-                "• Step 2 — Add to Main Menu: registers the synthetic systems "
-                "in HyperSpin's main carousel (Favorites and Recently Played "
-                "are not auto-registered; Most Played is).\n"
-                "• For Favorites: click 'Sync favorites from HyperSpin' first "
-                "if you use HyperSpin's F-key favorites — this imports them "
-                "into SpinDoctor's store before the rebuild reads them.\n"
-                "• None of these auto-fire on cabinet startup. Use the "
-                "Tools tab to install Tools-menu .bat helpers, or schedule "
-                "the rebuild commands via Windows Task Scheduler "
-                "(trigger: 'At log on') for hands-off updates."
-            ),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", pady=(0, 6))
-
-        btn_row = self.ttk.Frame(frame)
-        btn_row.pack(anchor="w", pady=(2, 4))
-        self.ttk.Button(
-            btn_row, text="Add wheels to Main Menu", width=28,
-            command=self._register_wheels_in_main_menu,
-        ).pack(side="left")
-
-        sync_btn = self.ttk.Button(
-            btn_row, text="Sync favorites from HyperSpin", width=28,
-            command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
-        )
-        sync_btn.pack(side="left", padx=6)
-        _attach_tooltip(
-            sync_btn,
-            "Reads HyperSpin's per-system F-key favorites and imports them "
-            "into SpinDoctor's store. Run this before 'Refresh selected' "
-            "if you use HyperSpin's F-key favorites.",
-            self.tk,
-        )
-
-        # ── Manage individual favorites ──────────────────────────────────────
-        # The CLI exposes `fav add/remove/list/sync`; surfacing them here
-        # means users don't have to drop to Custom Command just to flag
-        # one game as a favorite. After any change, `fav rebuild` (above)
-        # actually writes the synthetic HyperSpin system to disk.
-        self.ttk.Separator(frame, orient="horizontal").pack(fill="x", pady=10)
-        self.ttk.Label(
-            frame, text="Manage individual favorites",
-            font=("TkDefaultFont", 10, "bold"),
-        ).pack(anchor="w", pady=(0, 4))
-        self.ttk.Label(
-            frame,
-            text=("Add or remove single games in the cross-system "
-                  "Favorites wheel. Run 'Refresh selected' (with "
-                  "Favorites checked) afterwards to push the change "
-                  "into HyperSpin."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", pady=(0, 4))
-
-        fav_row = self.ttk.Frame(frame)
-        fav_row.pack(fill="x", pady=2)
-        self.ttk.Label(fav_row, text="System").pack(side="left")
-        self._fav_system_var = self.tk.StringVar()
-        self._fav_system_combo = self.ttk.Combobox(
-            fav_row, textvariable=self._fav_system_var,
-            state="readonly", width=22,
-        )
-        self._fav_system_combo.pack(side="left", padx=6)
-        self.ttk.Label(fav_row, text="ROM").pack(side="left", padx=(8, 0))
-        self._fav_rom_var = self.tk.StringVar()
-        _fav_entry = self.ttk.Entry(
-            fav_row, textvariable=self._fav_rom_var,
-        )
-        _fav_entry.pack(side="left", fill="x", expand=True, padx=6)
-        _fav_entry.bind("<Return>", lambda _e: self._fav_add())
-        self.ttk.Button(
-            fav_row, text="Add", command=self._fav_add,
-        ).pack(side="left")
-        self.ttk.Button(
-            fav_row, text="Remove", command=self._fav_remove,
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            fav_row, text="List", command=self._fav_list,
-        ).pack(side="left")
-
-        return frame
 
     def _fav_add(self) -> None:
         sys_ = self._fav_system_var.get().strip()
@@ -5379,8 +5258,39 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
-        # ── Step 1 — System audit ─────────────────────────────────────────────
-        audit_lf = self.ttk.LabelFrame(frame, text="Step 1 — System audit")
+        # ── Step 1 — Cabinet health check ────────────────────────────────────
+        # The one-click "is my cab OK?" surface leads the tab: a brand-new
+        # user lands here straight after Setup, and these three buttons
+        # need no inputs at all. The per-system audit (which needs a
+        # system picked first) follows as Step 2.
+        health_lf = self.ttk.LabelFrame(
+            frame, text="Step 1 — Cabinet health check (no inputs needed)",
+        )
+        health_lf.pack(fill="x", pady=(0, 8))
+        self.ttk.Label(
+            health_lf,
+            text=("Doctor validates config paths and installs; Tools audit "
+                  "inventories third-party cabinet utilities; Preflight "
+                  "chains doctor → tools-audit → audit --all with a "
+                  "verdict at the end — the \"taking the cab to a LAN "
+                  "event tomorrow\" button."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 4))
+        health_row = self.ttk.Frame(health_lf)
+        health_row.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Button(
+            health_row, text="✈  Preflight check…",
+            command=self._run_preflight,
+        ).pack(side="left")
+        self.ttk.Button(health_row, text="Run doctor",
+                        command=lambda: self._run_cli("spindoctor", ["doctor"])
+                        ).pack(side="left", padx=6)
+        self.ttk.Button(health_row, text="Tools audit",
+                        command=lambda: self._run_cli("spindoctor", ["tools-audit"])
+                        ).pack(side="left", padx=6)
+
+        # ── Step 2 — Audit a system ──────────────────────────────────────────
+        audit_lf = self.ttk.LabelFrame(frame, text="Step 2 — Audit a system")
         audit_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(audit_lf, text="System").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
@@ -5401,22 +5311,6 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Audit all systems",
                         command=self._run_audit_all,
                         ).pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Run doctor",
-                        command=lambda: self._run_cli("spindoctor", ["doctor"])
-                        ).pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Tools audit",
-                        command=lambda: self._run_cli("spindoctor", ["tools-audit"])
-                        ).pack(side="left", padx=6)
-
-        preflight_row = self.ttk.Frame(audit_lf)
-        preflight_row.grid(row=1, column=3, sticky="e", padx=6, pady=(4, 2))
-        self.ttk.Separator(preflight_row, orient="vertical").pack(
-            side="left", fill="y", padx=(8, 8),
-        )
-        self.ttk.Button(
-            preflight_row, text="✈  Preflight check…",
-            command=self._run_preflight,
-        ).pack(side="left")
 
         browse_row = self.ttk.Frame(audit_lf)
         browse_row.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 2))
@@ -5459,8 +5353,8 @@ class _SpinDoctorGUI:
             variable=self._audit_detailed_var,
         ).pack(side="left", padx=10)
 
-        # ── Step 2 — Library-wide scans ──────────────────────────────────────
-        scans_lf = self.ttk.LabelFrame(frame, text="Step 2 — Library-wide scans")
+        # ── Step 3 — Library-wide scans ──────────────────────────────────────
+        scans_lf = self.ttk.LabelFrame(frame, text="Step 3 — Library-wide scans")
         scans_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
@@ -5500,8 +5394,8 @@ class _SpinDoctorGUI:
                 command=lambda a=args: self._run_cli("spindoctor", a, on_complete=_scan_done),
             ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
 
-        # ── Step 3 — Search & verify ─────────────────────────────────────────
-        sv_lf = self.ttk.LabelFrame(frame, text="Step 3 — Search & verify")
+        # ── Step 4 — Search & verify ─────────────────────────────────────────
+        sv_lf = self.ttk.LabelFrame(frame, text="Step 4 — Search & verify")
         sv_lf.pack(fill="x", pady=(0, 8))
 
         # Global search
@@ -9245,37 +9139,6 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left", padx=10)
 
-        # ── pc-rename (re-review titles for a PC system) ──────────────────────
-        # The CLI command is misleadingly named — it doesn't rename the
-        # *system*; it re-runs the per-game title picker for an existing
-        # PC system so the user can fix derived titles or pick up newly-
-        # dropped installs. Reflect that in the form: one system dropdown,
-        # no Old/New fields. (Earlier versions had a two-field form that
-        # was actually broken — the CLI takes one positional arg.)
-        rename_frame = self.ttk.LabelFrame(frame, text="Re-review titles for a PC system")
-        rename_frame.pack(fill="x", pady=(4, 4))
-        rn_row = self.ttk.Frame(rename_frame)
-        rn_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(rn_row, text="PC system").pack(side="left")
-        self._systems_old_var = self.tk.StringVar()
-        # Kept for back-compat: _systems_new_var is referenced by an
-        # older code path (and by the system-quick-filter on launch).
-        # It's now ignored by _run_pc_rename.
-        self._systems_new_var = self.tk.StringVar()
-        self._systems_old_combo = self.ttk.Combobox(
-            rn_row, textvariable=self._systems_old_var,
-            state="readonly", width=28,
-        )
-        self._systems_old_combo.pack(side="left", padx=6)
-        self.ttk.Label(
-            rn_row, text="(re-runs the title picker for this PC system)",
-            foreground=_FG_DIM,
-        ).pack(side="left", padx=(8, 0))
-        self.ttk.Button(
-            rename_frame, text="Run pc-rename",
-            command=self._run_pc_rename,
-        ).pack(anchor="w", padx=6, pady=(4, 6))
-
         # ── Rename / Clone a single game ──────────────────────────────────────
         # Common follow-up to an audit ("this ROM is mis-named" / "let me
         # keep a Speed Hack alongside the clean dump"). Previously only
@@ -9374,6 +9237,40 @@ class _SpinDoctorGUI:
             org_btns, text="Undo latest restructure",
             command=self._run_organize_undo,
         ).pack(side="left", padx=6)
+
+        # ── pc-rename (re-review titles for a PC system) ──────────────────────
+        # Unnumbered: it's a PC-systems-only companion to add-pc-system,
+        # not part of the every-cabinet Step 1–4 journey, so it lives
+        # below the numbered steps with the other occasional-use forms.
+        # The CLI command is misleadingly named — it doesn't rename the
+        # *system*; it re-runs the per-game title picker for an existing
+        # PC system so the user can fix derived titles or pick up newly-
+        # dropped installs. Reflect that in the form: one system dropdown,
+        # no Old/New fields. (Earlier versions had a two-field form that
+        # was actually broken — the CLI takes one positional arg.)
+        rename_frame = self.ttk.LabelFrame(frame, text="Re-review titles for a PC system")
+        rename_frame.pack(fill="x", pady=(4, 4))
+        rn_row = self.ttk.Frame(rename_frame)
+        rn_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(rn_row, text="PC system").pack(side="left")
+        self._systems_old_var = self.tk.StringVar()
+        # Kept for back-compat: _systems_new_var is referenced by an
+        # older code path (and by the system-quick-filter on launch).
+        # It's now ignored by _run_pc_rename.
+        self._systems_new_var = self.tk.StringVar()
+        self._systems_old_combo = self.ttk.Combobox(
+            rn_row, textvariable=self._systems_old_var,
+            state="readonly", width=28,
+        )
+        self._systems_old_combo.pack(side="left", padx=6)
+        self.ttk.Label(
+            rn_row, text="(re-runs the title picker for this PC system)",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(8, 0))
+        self.ttk.Button(
+            rename_frame, text="Run pc-rename",
+            command=self._run_pc_rename,
+        ).pack(anchor="w", padx=6, pady=(4, 6))
 
         # ── Per-system overrides ─────────────────────────────────────────────
         # Surfaces `config system set` so users with niche systems
@@ -10781,9 +10678,39 @@ class _SpinDoctorGUI:
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
-        # ── Step 1 — Refresh custom wheels ───────────────────────────────────
+        # ── Step 1 — Import HyperSpin favorites (optional) ───────────────────
+        # fav sync must run BEFORE the wheel rebuild reads the store, so
+        # it leads the tab. It used to live inside the register section
+        # (after the rebuild) while its own tooltip said "run this before
+        # Refresh selected" — the layout contradicted the instructions.
+        sync_lf = self.ttk.LabelFrame(
+            frame, text="Step 1 — Import HyperSpin favorites (optional)",
+        )
+        sync_lf.pack(fill="x", pady=(0, 8))
+        self.ttk.Label(
+            sync_lf,
+            text=("Only needed if you mark favorites with HyperSpin's F-key. "
+                  "Imports those per-system favorites into SpinDoctor's "
+                  "store so the Step 2 rebuild includes them. Skip this if "
+                  "you only manage favorites from this tab."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(4, 4))
+        sync_btn = self.ttk.Button(
+            sync_lf, text="Sync favorites from HyperSpin", width=28,
+            command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
+        )
+        sync_btn.pack(anchor="w", padx=6, pady=(0, 6))
+        _attach_tooltip(
+            sync_btn,
+            "Reads HyperSpin's per-system F-key favorites and imports them "
+            "into SpinDoctor's store. Run this before 'Refresh selected' "
+            "if you use HyperSpin's F-key favorites.",
+            self.tk,
+        )
+
+        # ── Step 2 — Refresh custom wheels ───────────────────────────────────
         rebuild_lf = self.ttk.LabelFrame(
-            frame, text="Step 1 — Refresh custom wheels",
+            frame, text="Step 2 — Refresh custom wheels",
         )
         rebuild_lf.pack(fill="x", pady=(0, 8))
 
@@ -10816,9 +10743,9 @@ class _SpinDoctorGUI:
             command=self._refresh_all_wheels,
         ).pack(anchor="w", padx=6, pady=(0, 6))
 
-        # ── Step 2 — Register in HyperSpin main menu ─────────────────────────
+        # ── Step 3 — Register in HyperSpin main menu ─────────────────────────
         register_lf = self.ttk.LabelFrame(
-            frame, text="Step 2 — Register in HyperSpin main menu",
+            frame, text="Step 3 — Register in HyperSpin main menu",
         )
         register_lf.pack(fill="x", pady=(0, 8))
 
@@ -10826,9 +10753,9 @@ class _SpinDoctorGUI:
             register_lf,
             text=("Add the wheel systems to HyperSpin's main carousel. "
                   "Favorites and Recently Played are not auto-registered; "
-                  "Most Played is. Run 'Sync favorites from HyperSpin' first "
-                  "if you use HyperSpin's F-key favorites — this imports them "
-                  "into SpinDoctor's store before the rebuild reads them."),
+                  "Most Played is. Also a one-click repair: it regenerates "
+                  "the RocketLauncher settings and bundled media for a "
+                  "synthetic wheel that has gone missing."),
             wraplength=860, justify="left",
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
@@ -10839,29 +10766,16 @@ class _SpinDoctorGUI:
             command=self._register_wheels_in_main_menu,
         ).pack(side="left")
 
-        sync_btn = self.ttk.Button(
-            reg_btn_row, text="Sync favorites from HyperSpin", width=28,
-            command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
-        )
-        sync_btn.pack(side="left", padx=6)
-        _attach_tooltip(
-            sync_btn,
-            "Reads HyperSpin's per-system F-key favorites and imports them "
-            "into SpinDoctor's store. Run this before 'Refresh selected' "
-            "if you use HyperSpin's F-key favorites.",
-            self.tk,
-        )
-
-        # ── Step 3 — Manage favorites ─────────────────────────────────────────
+        # ── Step 4 — Manage favorites ─────────────────────────────────────────
         fav_lf = self.ttk.LabelFrame(
-            frame, text="Step 3 — Manage favorites",
+            frame, text="Step 4 — Manage favorites",
         )
         fav_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(
             fav_lf,
             text=("Add or remove single games in the cross-system Favorites "
-                  "wheel. Run Step 1 (with Favorites checked) afterwards to "
+                  "wheel. Run Step 2 (with Favorites checked) afterwards to "
                   "push the change into HyperSpin."),
             wraplength=860, justify="left",
         ).pack(anchor="w", padx=6, pady=(4, 4))

@@ -380,7 +380,7 @@ Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good
 
 ## Adding a Favorite
 
-> **GUI alternative:** the **Tools** tab (Steps 1–3) covers the full favorites lifecycle: **Step 1** refreshes the Favorites wheel, **Step 2** registers it in the Main Menu, **Step 3** (Manage favorites) has inline Add / Remove / List buttons. Install-Tools helpers and auto-refresh scheduling are in the same tab. CLI remains the fastest path for scripted or batch adds.
+> **GUI alternative:** the **Tools** tab covers the full favorites lifecycle: **Step 1** imports HyperSpin F-key favorites (optional), **Step 2** refreshes the Favorites wheel, **Step 3** registers it in the Main Menu, **Step 4** (Manage favorites) has inline Add / Remove / List buttons. Install-Tools helpers and auto-refresh scheduling are in the same tab. CLI remains the fastest path for scripted or batch adds.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
