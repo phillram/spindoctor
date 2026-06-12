@@ -492,6 +492,31 @@ def _build_synthetic_wheel(
     if not config.hyperspin_dir:
         return summary
 
+    # Pre-validate entries against their source HyperSpin databases.
+    # RL#2 writes playtime stats on every exit — including failed launches
+    # from synthetic wheels — recording whatever name PCLauncher passed as
+    # -r back to the *source* system's stats file.  If that name differs
+    # from the canonical database name (e.g. "Kirby's Adventure" in stats
+    # while the DB has "Kirby's Adventure (USA)"), the resulting PCLauncher
+    # INI routes to the wrong ROM and the launch fails perpetually.
+    # Filtering here breaks the cycle; entries with no DB match are logged
+    # and skipped.  If the source DB can't be loaded we keep the entry so
+    # a missing or unreadable database file doesn't silently empty the wheel.
+    src_cache: dict = {}
+    valid_entries: list[FavoriteEntry] = []
+    for fe in pseudo_entries:
+        src_db = _safe_load(fe.system, config, src_cache)
+        if src_db is not None and src_db.get(fe.rom_name) is None:
+            print(
+                f"[{target_system}] WARN: skipping '{fe.rom_name}' ({fe.system})"
+                f" — not found in source HyperSpin database."
+                f" This is a stale stats entry from a failed synthetic-wheel launch.",
+                flush=True,
+            )
+            continue
+        valid_entries.append(fe)
+    pseudo_entries = valid_entries
+
     n = len(pseudo_entries)
     print(f"[{target_system}] building wheel — {n} entr{'y' if n == 1 else 'ies'}…",
           flush=True)
@@ -510,9 +535,8 @@ def _build_synthetic_wheel(
             db.remove_game(name)
             summary.pruned += 1
 
-    # Memoise source DBs so each source system is parsed once, not once
-    # per entry drawn from it.
-    src_cache: dict = {}
+    # src_cache is pre-populated above; continue reusing it so each source
+    # system DB is parsed only once across the full build.
     for fe in pseudo_entries:
         target_name = target_names[f"{fe.system}::{fe.rom_name}"]
         source_db = _safe_load(fe.system, config, src_cache)
