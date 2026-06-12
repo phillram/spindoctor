@@ -8,8 +8,39 @@ on both versions without scattering try/excepts through the codebase.
 from __future__ import annotations
 
 import ast
+import sys
 import xml.etree.ElementTree as ET
 from typing import Optional, Union
+
+
+def enable_windows_utf8_console() -> None:
+    """Switch the process's stdio to UTF-8 on Windows; no-op elsewhere.
+
+    The Win 7 cabinet's default console codepage (cp437 / cp1252) can't
+    encode the glyphs SpinDoctor prints — tree marks (``✓ ⚠ ✗``), em-dashes,
+    ellipses, middle dots — and a frozen PyInstaller exe crashes mid-render
+    when it tries.  Setting the console output codepage to 65001 and
+    reconfiguring the text streams with ``errors="replace"`` fixes that.
+
+    The main CLI has always done this at import time; the standalone wheel
+    tools (``spindoctor-fav`` / ``-recent`` / ``-stats``) are separate frozen
+    binaries that don't import the CLI module, so they must call this
+    themselves before printing.  Idempotent and failure-tolerant: a
+    redirected pipe, a missing ``kernel32``, or a stream without
+    ``reconfigure`` just falls through harmlessly.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    except (AttributeError, OSError):
+        pass
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, OSError):
+            pass
 
 
 def et_indent(tree: Union[ET.ElementTree, ET.Element], space: str = "  ") -> None:

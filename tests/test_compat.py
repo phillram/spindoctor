@@ -92,3 +92,63 @@ def test_ast_unparse_fallback(monkeypatch):
     # Fallback uses ast.dump — output should contain the literal node names.
     assert "Module" in out
     assert "Assign" in out
+
+
+# ─── enable_windows_utf8_console ──────────────────────────────────────────────
+
+
+def test_enable_windows_utf8_console_noop_off_windows(monkeypatch):
+    """Off Windows it must do nothing and never touch the streams."""
+    monkeypatch.setattr(_compat.sys, "platform", "linux")
+    # Should return cleanly without importing ctypes or reconfiguring stdout.
+    _compat.enable_windows_utf8_console()
+
+
+def test_enable_windows_utf8_console_reconfigures_on_windows(monkeypatch):
+    """On Windows it sets the console codepage and reconfigures stdio."""
+    monkeypatch.setattr(_compat.sys, "platform", "win32")
+    calls = {"cp": None, "reconfigured": 0}
+
+    class _FakeKernel:
+        def SetConsoleOutputCP(self, cp):  # noqa: N802 - mirror WinAPI name
+            calls["cp"] = cp
+
+    class _FakeWindll:
+        kernel32 = _FakeKernel()
+
+    import types
+    fake_ctypes = types.ModuleType("ctypes")
+    fake_ctypes.windll = _FakeWindll()
+    monkeypatch.setitem(__import__("sys").modules, "ctypes", fake_ctypes)
+
+    class _FakeStream:
+        def reconfigure(self, **kwargs):
+            assert kwargs == {"encoding": "utf-8", "errors": "replace"}
+            calls["reconfigured"] += 1
+
+    monkeypatch.setattr(_compat.sys, "stdout", _FakeStream())
+    monkeypatch.setattr(_compat.sys, "stderr", _FakeStream())
+
+    _compat.enable_windows_utf8_console()
+    assert calls["cp"] == 65001
+    assert calls["reconfigured"] == 2
+
+
+def test_enable_windows_utf8_console_tolerates_missing_reconfigure(monkeypatch):
+    """A stream without reconfigure (or a kernel32 OSError) must not raise."""
+    monkeypatch.setattr(_compat.sys, "platform", "win32")
+
+    import types
+    fake_ctypes = types.ModuleType("ctypes")
+
+    class _Boom:
+        def SetConsoleOutputCP(self, cp):  # noqa: N802
+            raise OSError("no console")
+
+    fake_ctypes.windll = types.SimpleNamespace(kernel32=_Boom())
+    monkeypatch.setitem(__import__("sys").modules, "ctypes", fake_ctypes)
+
+    # Plain objects: no reconfigure attribute → AttributeError, swallowed.
+    monkeypatch.setattr(_compat.sys, "stdout", object())
+    monkeypatch.setattr(_compat.sys, "stderr", object())
+    _compat.enable_windows_utf8_console()  # must not raise

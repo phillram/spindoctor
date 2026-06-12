@@ -294,11 +294,16 @@ HyperSpin\
         ├── Images\
         │   ├── Wheel\       ← per-game logos
         │   ├── Backgrounds\ ← per-game backgrounds
-        │   └── Artwork1\    ← per-game art
+        │   ├── Artwork1\    ← per-game art (slot 1)
+        │   ├── Artwork2\    ← per-game art (slot 2)
+        │   ├── Artwork3\    ← per-game art (slot 3)
+        │   ├── Titles\      ← title-screen captures (shown in theme side-panels)
+        │   └── Letters\     ← alphabetic scroll-bar letter art
         ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied)
         ├── Sound\
         │   └── navigate.mp3 ← AUTO: cursor-move click sound
-        └── Video\           ← per-game videos
+        └── Video\           ← per-game videos (.mp4 .wmv .mpeg .mpg .flv .avi .mkv …)
+            └── Trailers\    ← per-game trailers
 ```
 
 **AUTO** = installed by `rebuild --apply` from bundled package assets.

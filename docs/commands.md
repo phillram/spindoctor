@@ -640,14 +640,18 @@ spindoctor fav add "Sony Playstation" "Final Fantasy VII" --display-name "FF VII
 spindoctor fav remove "Super Nintendo" "Chrono Trigger"
 spindoctor fav list
 spindoctor fav sync               :: pull HyperSpin's per-system F-key favorites into the store
+spindoctor fav sync --verbose     :: show each console as it is scanned
 spindoctor fav rebuild            :: dry-run preview
 spindoctor fav rebuild --apply    :: regenerate Databases/Favorites/Favorites.xml + media + launchers
+spindoctor fav rebuild --apply --verbose  :: also show each console scanned + each media file mirrored
 spindoctor fav rebuild --media-mode copy --apply   :: force file copies (FAT32 thumb drives)
 spindoctor fav clear              :: dry-run preview of what would be removed
 spindoctor fav clear --apply      :: remove the Favorites wheel and empty the store
 ```
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
+
+**Sync sources & speed** — `fav sync` (run automatically at the start of every `fav rebuild`) imports favorites from three places per console, in order: a `favorite="1"` attribute in the system's database XML, a `<System>_Favorites.ini` (HyperSpin F-key format), and a `favorites.txt` (RocketLauncher format). It does a fast text pre-scan and only parses a console's database when one of those sources is present, so consoles with no favorites add almost nothing to the runtime. While crawling it shows a live `Scanning <System> (i/N)…` counter; `--verbose`/`-v` prints per-console detail and (during rebuild) each media file mirrored.
 
 **Theme fallback** — During the media mirror, if a game has no per-game `<GameName>.zip` in the source system's `Themes\` folder, SpinDoctor checks for `Default.zip` (HyperSpin's console-wide fallback theme) and mirrors it as `<GameName>.zip` in the synthetic wheel. This means games that rely on the console default theme (e.g. most NES games) display the same background and layout in Favorites / Recently Played / Most Played as they do in their native wheel.
 
@@ -673,6 +677,7 @@ Recently Played wheel. Reads RocketLauncher's `Statistics.ini` files (no extra h
 ```bat
 spindoctor recent rebuild                                :: dry-run preview
 spindoctor recent rebuild --apply                        :: top 20 (default)
+spindoctor recent rebuild --apply --verbose              :: also print each media file mirrored
 spindoctor recent rebuild --limit 10 --apply
 spindoctor recent rebuild --target-system "Last Played" --apply
 spindoctor recent list                                   :: print the current top-N
@@ -772,6 +777,7 @@ Generates `Databases/Most Played/Most Played.xml` with the top-N games (sorted b
 ```bat
 spindoctor stats-report build-wheel --limit 25                                 :: dry-run
 spindoctor stats-report build-wheel --limit 25 --apply                         :: commit
+spindoctor stats-report build-wheel --limit 25 --apply --verbose               :: also print each media file mirrored
 spindoctor stats-report build-wheel --target-system "Hall of Fame" --media-mode copy --apply
 ```
 
