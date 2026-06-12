@@ -80,7 +80,7 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~246 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
+12 dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships ~255 canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
 
 ### Tabs
 
@@ -94,7 +94,7 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 - **Lightgun** — Steps 1–2: Sinden + DemulShooter detection and per-system wiring.
 - **Backup & Restore** — Steps 1–3: target folder + components, create backup, restore (with *Scan* to populate the dropdown).
 - **Migrate** — Steps 1–4: view config, pre-migration backup, migration settings (target + components + options), undo.
-- **Custom Command** — type-or-pick CLI invocations; ~246 presets across 19 named sections cover the full CLI surface.
+- **Custom Command** — type-or-pick CLI invocations; ~255 presets across 19 named sections cover the full CLI surface.
 - **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
 
 For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
@@ -117,7 +117,7 @@ spindoctor scrub --backup-dir E:\Backups --apply   :: wipe favorites + stats, ba
 spindoctor scrub-restore E:\Backups\scrub-<timestamp> --apply  :: restore from backup
 ```
 
-Everything above also works from the GUI's Custom Command tab — the dropdown is pre-populated with ~70 of these.
+Everything above also works from the GUI's Custom Command tab — every one of these has a matching entry in its preset dropdown.
 
 ## Reporting issues
 

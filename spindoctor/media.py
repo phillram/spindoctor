@@ -285,36 +285,6 @@ class MediaDownloader:
         }
         return [(game_name, mt, url_map.get(mt, "")) for mt in types]
 
-    def download_from_metadata(
-        self,
-        game_name: str,
-        system_name: str,
-        metadata,
-        media_types: Optional[list[str]] = None,
-        overwrite: bool = False,
-        dry_run: bool = False,
-    ) -> list[DownloadResult]:
-        """Sequential download for one game (kept for backwards-compat)."""
-        results = []
-        for game, media_type, url in self.jobs_for_metadata(
-            game_name, metadata, media_types
-        ):
-            if dry_run:
-                dest = self.media_path(system_name, game, media_type)
-                note = "[dry-run]" if url else "[no URL available]"
-                results.append(DownloadResult(
-                    game_name=game, media_type=media_type,
-                    success=True, path=dest, skipped=True, error=note,
-                ))
-            elif url:
-                results.append(self.download(game, system_name, media_type, url, overwrite))
-            else:
-                results.append(DownloadResult(
-                    game_name=game, media_type=media_type,
-                    success=False, error="No URL from metadata source",
-                ))
-        return results
-
     def download_many(
         self,
         jobs: Iterable[tuple[str, str, str]],

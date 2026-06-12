@@ -1031,10 +1031,10 @@ def apply_fix(
       it instead of writing in-place. Backups are skipped in this mode.
     - When ``dry_run`` is set, return the same shape but write nothing.
     - When ``backup`` is True (default) and writing in-place, save a
-      timestamped ``.YYYYMMDD_HHMMSS.bak`` next to each modified file.
+      timestamped ``.YYYYMMDD_HHMMSS.bak`` for each modified file (under
+      ``config.backup_dir/LEDBlinky/`` when set, else next to the file).
     """
     menus = menus or [SEARCH_MENU_NAMES[0]]
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     results: dict = {
         "dry_run": dry_run,

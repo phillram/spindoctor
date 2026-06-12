@@ -146,7 +146,7 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 **Batch edit metadata** (advanced, unnumbered): One filter clause + one set clause + optional CSV report path. Drives `spindoctor batch-edit`.
 
-**Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags.
+**Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags. Honours the global Apply toggle — unticked shows the would-copy destination as a dry-run preview.
 
 ### Maintenance
 
@@ -364,7 +364,7 @@ $ spindoctor curate --all
 
 The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
 
-Read-only commands (`audit`, `doctor`, `tools-audit`, `inspect`, `find-dupes`, `stats`, `check-discs`, `check-archive-ext`, `verify`, `lint`, `report`, `preview`, `systems`, `find-global`, `diff`, `backup list/info`, `fav list`, `recent list`, `mainmenu show/edit`, `ledblinky audit/check`, `lightgun audit/detect`, `config show/init/set/system`, `install-tools`) never accept `--apply` and never show the DRY RUN banner — showing it would mislead users into thinking a health check was a preview of something committable.
+Read-only and write-always commands (`audit`, `doctor`, `tools-audit`, `inspect`, `find-dupes`, `stats`, `check-discs`, `check-archive-ext`, `verify`, `lint`, `report`, `preview`, `systems`, `find-global`, `diff`, `self-doctor`, `backup list/info`, `backup sidecar list`, `fav list/add/remove/sync`, `recent list`, `ignore add/remove/clear`, `match clear`, `emulator-title list/set/remove`, `mainmenu show/edit`, `ledblinky audit/check/inspect-rom`, `ledblinky colors list`, `lightgun audit`, `config show/init/set/system/verify-credentials`, `install-tools`) never show the DRY RUN banner — for the read-only ones it would mislead users into thinking a health check was a preview of something committable, and for the write-always single-record ones (`fav add`, `ignore add`, …) it would falsely suggest nothing was written. Commands that are read-only *without* `--apply` but write *with* it (`doctor --apply`, `lightgun detect --apply`) are recorded as actual writes whenever `--apply` is present.
 
 Long-running single commands and chained wheel rebuilds use a **pulsing (indeterminate)** progress bar; multi-step chains that have a known step count (Full metadata refresh, Preflight check) additionally advance a **determinate** fill between steps.
 

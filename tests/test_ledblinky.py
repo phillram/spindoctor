@@ -395,7 +395,7 @@ def test_scale_brightness_50_percent(tmp_path, monkeypatch):
 
     cfg = types.SimpleNamespace(ledblinky_dir=str(tmp_path), backup_dir="",
                                 backup_before_modify=False)
-    result = scale_colors_brightness(cfg, scale_pct=50, dry_run=False, backup=False)
+    scale_colors_brightness(cfg, scale_pct=50, dry_run=False, backup=False)
 
     text = color_rgb.read_text(encoding="utf-8")
     assert "White=24,24,24" in text
