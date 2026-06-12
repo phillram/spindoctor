@@ -912,8 +912,8 @@ def test_gui_survives_missing_keysym_in_bind_all():
             # See `_build_layout` for the rationale.
             assert app._tab_base_names == [
                 "Setup",
-                "Systems",
                 "Diagnostics",
+                "Systems",
                 "Metadata & Media",
                 "Maintenance",
                 "Tools",

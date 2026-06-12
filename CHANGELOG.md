@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI — tab strip and per-tab layouts reordered around the new-user journey.**
+  - **Diagnostics now sits second (Setup → Diagnostics → Systems)** — after pointing SpinDoctor at the library, the natural next click is "is everything wired up?", and Diagnostics is entirely read-only so it's safe to explore before touching anything.
+  - **Setup tab:** the **Run first-run wizard…** button moved from the bottom button row (after Save) to the top of the tab — it's the new-user entry point, so it leads rather than trails. Path fields are now grouped under **Core paths** (ROMs / HyperSpin / Emulators / RocketLauncher) and **Optional paths** (feature-specific; fine to leave blank), and the credentials header reads **Scraper credentials (optional)**.
+  - **Diagnostics tab:** new **Step 1 — Cabinet health check** leads with the three zero-input buttons (Preflight check / Run doctor / Tools audit); the per-system audit becomes Step 2; library-wide scans and search & verify renumber to Steps 3–4. Previously Preflight — the headline one-click — was buried mid-section as the sixth button.
+  - **Tools tab:** **Sync favorites from HyperSpin** is promoted to **Step 1 — Import HyperSpin favorites (optional)**. It previously lived inside the register section *after* the wheel rebuild, while its own tooltip said to run it *before* the rebuild — the layout contradicted the instructions. Refresh / Register / Manage favorites renumber to Steps 2–4.
+  - **Systems tab:** the unnumbered "Re-review titles for a PC system" form moved below Step 4 with the other occasional-use forms, so Steps 1–4 read contiguously (this also matches the order gui.md already documented).
+- **GUI — removed the dead legacy `_build_wheels_tab` builder** (~175 lines) — never called since the Wheels tab was merged into Tools; it also re-created the wheel checkbox variables and would have shadowed the live ones if ever invoked.
+
 ### Fixed
 
 - **`media-add` and `pc-rename` are now dry-run by default with `--apply`** — both commands wrote to the cabinet immediately (`media-add` copied/moved into the Media tree; `pc-rename` wrote PCLauncher INIs into `Modules/PCLauncher/`) with no `--apply` gate, violating the project-wide dry-run contract. Worse, the docs already showed `--apply` examples for both, so following the documentation produced an unknown-option error — and the GUI's "Run pc-rename" button with the global Apply toggle ticked failed the same way. Both commands now preview without `--apply` and commit with it; the GUI passes the flag per the global Apply toggle.
