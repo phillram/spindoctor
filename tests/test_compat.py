@@ -152,3 +152,111 @@ def test_enable_windows_utf8_console_tolerates_missing_reconfigure(monkeypatch):
     monkeypatch.setattr(_compat.sys, "stdout", object())
     monkeypatch.setattr(_compat.sys, "stderr", object())
     _compat.enable_windows_utf8_console()  # must not raise
+
+
+def test_enable_windows_utf8_console_wraps_with_safe_writer(monkeypatch):
+    """After the call, sys.stdout/stderr should be _SafeWriter instances."""
+    monkeypatch.setattr(_compat.sys, "platform", "win32")
+
+    import types
+    fake_ctypes = types.ModuleType("ctypes")
+    fake_ctypes.windll = types.SimpleNamespace(
+        kernel32=types.SimpleNamespace(SetConsoleOutputCP=lambda cp: None)
+    )
+    monkeypatch.setitem(__import__("sys").modules, "ctypes", fake_ctypes)
+
+    class _FakeStream:
+        def reconfigure(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(_compat.sys, "stdout", _FakeStream())
+    monkeypatch.setattr(_compat.sys, "stderr", _FakeStream())
+
+    _compat.enable_windows_utf8_console()
+
+    assert isinstance(_compat.sys.stdout, _compat._SafeWriter)
+    assert isinstance(_compat.sys.stderr, _compat._SafeWriter)
+
+
+def test_enable_windows_utf8_console_idempotent(monkeypatch):
+    """Calling twice must not double-wrap the streams."""
+    monkeypatch.setattr(_compat.sys, "platform", "win32")
+
+    import types
+    fake_ctypes = types.ModuleType("ctypes")
+    fake_ctypes.windll = types.SimpleNamespace(
+        kernel32=types.SimpleNamespace(SetConsoleOutputCP=lambda cp: None)
+    )
+    monkeypatch.setitem(__import__("sys").modules, "ctypes", fake_ctypes)
+
+    class _FakeStream:
+        def reconfigure(self, **kwargs):
+            pass
+
+    monkeypatch.setattr(_compat.sys, "stdout", _FakeStream())
+    monkeypatch.setattr(_compat.sys, "stderr", _FakeStream())
+
+    _compat.enable_windows_utf8_console()
+    first = _compat.sys.stdout
+    _compat.enable_windows_utf8_console()
+
+    # Must be the same object — no double-wrap.
+    assert _compat.sys.stdout is first
+    assert not isinstance(first._w, _compat._SafeWriter)
+
+
+# ─── _SafeWriter ──────────────────────────────────────────────────────────────
+
+
+def test_safe_writer_write_swallows_os_error():
+    """write() must return len(s) and not raise when the inner stream fails."""
+    class _Broken:
+        def write(self, s):
+            raise PermissionError("WinError 31")
+        def flush(self):
+            pass
+
+    writer = _compat._SafeWriter(_Broken())
+    result = writer.write("hello")
+    assert result == len("hello")
+
+
+def test_safe_writer_flush_swallows_os_error():
+    """flush() must silently swallow OSError."""
+    class _Broken:
+        def write(self, s):
+            return len(s)
+        def flush(self):
+            raise PermissionError("WinError 31")
+
+    writer = _compat._SafeWriter(_Broken())
+    writer.flush()  # must not raise
+
+
+def test_safe_writer_proxies_attrs():
+    """Attributes not overridden by _SafeWriter are proxied to the inner stream."""
+    class _Stream:
+        encoding = "utf-8"
+        def isatty(self):
+            return True
+
+    writer = _compat._SafeWriter(_Stream())
+    assert writer.encoding == "utf-8"
+    assert writer.isatty() is True
+
+
+def test_safe_writer_successful_write_passes_through():
+    """When the inner stream works normally, write() returns the real count."""
+    buf = []
+
+    class _Good:
+        def write(self, s):
+            buf.append(s)
+            return len(s)
+        def flush(self):
+            pass
+
+    writer = _compat._SafeWriter(_Good())
+    result = writer.write("ok")
+    assert result == 2
+    assert buf == ["ok"]
