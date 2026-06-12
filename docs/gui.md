@@ -37,7 +37,7 @@ The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the thr
 
 ## First-run wizard
 
-The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Setup tab → Run first-run wizard…** button; the same dialog is also available from **Help → First-run setup…** at any time. A three-step modal opens:
+The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Run first-run wizard…** button at the top of the Setup tab; the same dialog is also available from **Help → First-run setup…** at any time. A three-step modal opens:
 
 1. **Welcome** — a one-sentence intro and a "Skip" / "Next" pair.
 2. **Pick paths** — required: `roms_dir` and `hyperspin_dir`. Browse… buttons next to each field; drag-and-drop a folder from Explorer / Finder also fills the field.
@@ -74,17 +74,37 @@ The doctor pass runs on a worker thread on launch (doesn't delay first paint) an
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then build out systems (Systems), then diagnose health (Diagnostics), then enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Tools), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migrate), and finally power-user escapes (Custom Command) and the session log (Logs) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Tools), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migrate), and finally power-user escapes (Custom Command) and the session log (Logs) at the very end.
 
 Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
 
 ### Setup
 
-Every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run). Each row has a **Browse…** button (native folder picker) and an **Open** button (jumps to the path in Explorer / Finder to verify your choice). When `tkinterdnd2` is available (Windows binary install or `pip install spindoctor[gui]` / `[all]`), drag a folder from Explorer / Finder onto any path field to fill it in.
+A **Run first-run wizard…** button sits at the very top — the friendliest entry point for a brand-new cabinet owner (also reachable any time from **Help → First-run setup…**).
+
+Below it, every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run), grouped into **Core paths** (ROMs, HyperSpin, Emulators, RocketLauncher — what every feature relies on) and **Optional paths** (LEDBlinky, MAME executable, output/backup/audit-export/temp dirs — fine to leave blank until a feature needs them). Each row has a **Browse…** button (native folder picker) and an **Open** button (jumps to the path in Explorer / Finder to verify your choice). When `tkinterdnd2` is available (Windows binary install or `pip install spindoctor[gui]` / `[all]`), drag a folder from Explorer / Finder onto any path field to fill it in.
 
 Below the path fields, a **Scraper credentials** section stores your ScreenScraper username, ScreenScraper password, and TheGamesDB API key — password and key fields are masked (`***`) with a Show/Hide eyeball toggle. A **Test credentials** button pings both endpoints and reports ✓ / ✗ inline before you click Save.
 
 Click **Save configuration** to validate and write everything to `config.json` in one step. A Logs tab entry is created recording the saved path, any validation warnings, and an exit code (0 = valid, 1 = warnings). CLI equivalent: `spindoctor config init`.
+
+### Diagnostics
+
+The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Four numbered steps cover the main diagnostic workflow.
+
+**Step 1 — Cabinet health check (no inputs needed):** Three one-click, library-wide checks that need nothing filled in first — the natural next stop straight after Setup. **Preflight check…** chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone. **Run doctor** and **Tools audit** run the individual checks.
+
+**Step 2 — Audit a system:** Pick a system from the dropdown, then **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
+
+**Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
+
+**Step 3 — Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Check archive extensions**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
+
+**Check archive extensions** peeks inside every `.zip`/`.7z`/`.rar` archive in each configured ROM folder and compares the inner file extensions against the `Rom_Extension=` list in `Global Emulators.ini` (falling back to SpinDoctor's built-in emulator-extension map when the RL config is unavailable). Archives whose inner extension is not in the configured list are flagged — this is the most common reason RocketLauncher reports *"No valid roms found in the archive"* at launch time.
+
+**Step 4 — Search & verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
+
+CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Systems
 
@@ -107,26 +127,6 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 **Per-system overrides** (advanced): surfaces `config system set` with a system dropdown and form fields for ScreenScraper ID, TheGamesDB ID, ROM extensions (comma-separated, leading dot optional), layout (`per-game-folder` / `multi-disc-m3u` / `flat`), and emulator name. **Load current values** prefills the form from the saved override; **Save override** calls the CLI with only the flags the user actually filled in. Designed for niche systems (homebrew consoles, PC libraries, custom MAME variants) that stock SpinDoctor doesn't know.
 
 **Inspect** buttons run `spindoctor systems` and `config system list`. Read-only.
-
-### Diagnostics
-
-The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Three numbered steps cover the main diagnostic workflow.
-
-**Step 1 — System audit:** Pick a system from the dropdown to run a per-system audit, or click **Run doctor** / **Tools audit** / **Audit all systems** for library-wide checks.
-
-A **Preflight check…** button chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone.
-
-Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output). Both *Audit selected system* and *Audit all systems* use the same options.
-
-**Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
-
-**Step 2 — Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Check archive extensions**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
-
-**Check archive extensions** peeks inside every `.zip`/`.7z`/`.rar` archive in each configured ROM folder and compares the inner file extensions against the `Rom_Extension=` list in `Global Emulators.ini` (falling back to SpinDoctor's built-in emulator-extension map when the RL config is unavailable). Archives whose inner extension is not in the configured list are flagged — this is the most common reason RocketLauncher reports *"No valid roms found in the archive"* at launch time.
-
-**Step 3 — Search & verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form (system dropdown + optional game name) for the deep-dive companion to audit.
-
-CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Metadata & Media
 
@@ -162,13 +162,15 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 ### Tools
 
-Three numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
+Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 
-**Step 1 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;…" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
+**Step 1 — Import HyperSpin favorites (optional):** **Sync favorites from HyperSpin** imports HyperSpin's per-system F-key favorites into SpinDoctor's store so the Step 2 rebuild includes them. Skip this if you only manage favorites from this tab. (It leads the tab because the import must happen *before* the rebuild reads the store — the previous layout placed it after the rebuild while its own tooltip said to run it first.)
 
-**Step 2 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration). **Sync favorites from HyperSpin** imports HyperSpin's F-key favorites into SpinDoctor's store — run this before Step 1 if you use F-key favorites.
+**Step 2 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;…" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
-**Step 3 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 1 (Favorites checked) afterwards to push changes into HyperSpin.
+**Step 3 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration).
+
+**Step 4 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin.
 
 **Install .bat helpers (optional):** Two sub-sections:
 
