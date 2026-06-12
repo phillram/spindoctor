@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.25] - 2026-06-12
+
 ### Fixed
 
 - **GUI — startup update-check thread no longer raises an unraisable exception on Python 3.12 during test teardown.** The background worker in `_start_update_check` called `self.root.after()` after the Tkinter root was destroyed (a race: monkeypatch reverts before the daemon thread exits, so the real `check_for_update` could return a non-`None` result). The call is now wrapped in `try/except` so a destroyed root is silently ignored. Fixes three `test_gui.py` failures on CI.
@@ -1310,7 +1314,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.24...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.25...HEAD
+[2.4.25]: https://github.com/phillram/spindoctor/compare/v2.4.24...v2.4.25
 [2.4.24]: https://github.com/phillram/spindoctor/compare/v2.4.23...v2.4.24
 [2.4.23]: https://github.com/phillram/spindoctor/compare/v2.4.22...v2.4.23
 [2.4.22]: https://github.com/phillram/spindoctor/compare/v2.4.21...v2.4.22
