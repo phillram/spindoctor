@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.6.0] - 2026-06-13
+
 ### Changed
 
 - **Build: standalone tool EXEs no longer bundle `click`, `rich`, or GUI modules.** `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` use `argparse` directly and have no transitive dependency on `click`, `rich`, `tkinter`, or `PIL`. The build script's hidden-import list now splits `_CORE_CLI` (click + rich) from `_CORE_BASE`, and passes `--exclude-module` for those libraries when building the standalone targets.
@@ -1400,7 +1404,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.0...HEAD
+[2.6.0]: https://github.com/phillram/spindoctor/compare/v2.5.3...v2.6.0
 [2.5.3]: https://github.com/phillram/spindoctor/compare/v2.5.2...v2.5.3
 [2.5.2]: https://github.com/phillram/spindoctor/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/phillram/spindoctor/compare/v2.5.0...v2.5.1
