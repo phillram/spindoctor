@@ -142,16 +142,16 @@ jobs:
         run: python build/build_windows.py
 
       - name: Smoke-test binaries
-        # --onedir build: binaries live in dist\spindoctor\ alongside the
-        # shared Python runtime. spindoctor-gui.exe is --windowed so cmd
-        # can't observe its exit — verify the file exists via bash instead.
+        # --onefile build: each binary is a self-contained exe in dist\.
+        # spindoctor-gui.exe is --windowed so cmd can't observe its exit —
+        # verify the file exists via bash instead.
         shell: cmd
         run: |
-          dist\spindoctor\spindoctor.exe --version
-          dist\spindoctor\spindoctor-fav.exe --help
-          dist\spindoctor\spindoctor-recent.exe --help
-          dist\spindoctor\spindoctor-stats.exe --help
+          dist\spindoctor.exe --version
+          dist\spindoctor-fav.exe --help
+          dist\spindoctor-recent.exe --help
+          dist\spindoctor-stats.exe --help
 
       - name: Smoke-test GUI binary exists
         shell: bash
-        run: test -f dist/spindoctor/spindoctor-gui.exe
+        run: test -f dist/spindoctor-gui.exe

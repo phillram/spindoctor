@@ -57,14 +57,13 @@ jobs:
         run: python build/build_windows.py
 
       - name: Smoke-test every binary
-        # --onedir build: all five EXEs live inside dist/spindoctor/ alongside
-        # the shared Python runtime.
+        # --onefile build: each binary is a self-contained exe in dist\.
         shell: cmd
         run: |
-          dist\spindoctor\spindoctor.exe --version
-          dist\spindoctor\spindoctor-fav.exe --help
-          dist\spindoctor\spindoctor-recent.exe --help
-          dist\spindoctor\spindoctor-stats.exe --help
+          dist\spindoctor.exe --version
+          dist\spindoctor-fav.exe --help
+          dist\spindoctor-recent.exe --help
+          dist\spindoctor-stats.exe --help
 
       # spindoctor-gui.exe is a `--windowed` build (Win32 GUI subsystem),
       # so cmd doesn't wait for it and stdout is detached — `--version`
@@ -75,7 +74,7 @@ jobs:
       - name: Smoke-test GUI module
         shell: bash
         run: |
-          test -f dist/spindoctor/spindoctor-gui.exe
+          test -f dist/spindoctor-gui.exe
           python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
 
       - name: Resolve release tag
@@ -89,13 +88,11 @@ jobs:
           fi
 
       - name: Package as zip
-        # Zip the entire spindoctor/ folder so users extract a
-        # self-contained directory (EXEs + shared runtime) rather than
-        # individual files that won't run without their runtime peers.
+        # Zip just the five flat EXEs from dist/ — each is self-contained.
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" spindoctor
+          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
 
       # Lets users verify their download with `sha256sum -c SHA256SUMS.txt`.
       - name: Generate SHA256 checksums
@@ -140,18 +137,17 @@ jobs:
             echo
             echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2022\`. Runs on Windows 7 SP1 and newer."
             echo
-            echo "Extract the zip — it creates a \`spindoctor\\\` folder containing all five executables and their shared Python runtime. Move or rename the folder wherever you like (e.g. \`C:\spindoctor\\\`), then double-click \`spindoctor-gui.exe\` to launch. No Python install required. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
+            echo "Extract the zip — you get five self-contained \`.exe\` files. Move them to a folder of your choice (e.g. \`C:\spindoctor\\\`), then double-click \`spindoctor-gui.exe\` to launch. No Python install required. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
             echo
             echo "**What's in \`spindoctor-windows-${{ github.ref_name }}.zip\`:**"
             echo
             echo "\`\`\`"
-            echo "spindoctor\\"
+            echo "spindoctor-windows-${{ github.ref_name }}.zip"
             echo "├── spindoctor.exe          ← full CLI"
             echo "├── spindoctor-gui.exe      ← double-clickable GUI launcher"
             echo "├── spindoctor-fav.exe      ← Favorites wheel manager"
             echo "├── spindoctor-recent.exe   ← Recently Played rebuild"
-            echo "├── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
-            echo "└── (shared Python 3.8 runtime — keep the folder together)"
+            echo "└── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
             echo "\`\`\`"
             echo
             echo "**Verify your download:**"
