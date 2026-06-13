@@ -1319,7 +1319,7 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 
 ### Added — Build & release infrastructure
 
-- `build/build_windows.py` — PyInstaller driver producing four single-file `.exe` binaries.
+- `build/build_windows.py` — PyInstaller driver producing five `.exe` binaries in a shared-runtime `--onedir` bundle (`dist/spindoctor-windows/`).
 - `.github/workflows/release.yml` — triggered by `v*` tag push; builds, smoke-tests, zips, and publishes a GitHub Release with the artefacts attached.
 - `.github/workflows/ci.yml` — runs pytest on Linux + Windows (Python 3.8 and 3.12) and a PyInstaller smoke build on every PR.
 
