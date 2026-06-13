@@ -371,11 +371,18 @@ def get_rom_extensions(system_name: str) -> list[str]:
 
 
 def get_systems(config: Config) -> list[str]:
-    systems: set[str] = set()
+    # Use a case-insensitive dict so that a ROMs folder named "PC GAMES" and a
+    # Databases folder named "PC Games" collapse to one entry.  The databases_dir
+    # name takes priority because HyperSpin drives its system names from there.
+    canonical: dict[str, str] = {}
     roms_path = Path(config.roms_dir)
     db_path = Path(config.databases_dir)  # handle both Path and str configs
     if roms_path.exists():
-        systems.update(p.name for p in roms_path.iterdir() if p.is_dir())
+        for p in roms_path.iterdir():
+            if p.is_dir():
+                canonical[p.name.lower()] = p.name
     if db_path.exists():
-        systems.update(p.name for p in db_path.iterdir() if p.is_dir())
-    return sorted(systems)
+        for p in db_path.iterdir():
+            if p.is_dir():
+                canonical[p.name.lower()] = p.name  # databases_dir wins on collision
+    return sorted(canonical.values())

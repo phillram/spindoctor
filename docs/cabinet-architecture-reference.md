@@ -560,8 +560,9 @@ PCLauncher uses **two separate file types** for synthetic wheels. Many people co
 
 ### 1. ROM Placeholder Files — `Modules\PCLauncher\<System>\<game>.ini`
 
-Used **only by RocketLauncher** to enumerate which games exist in the wheel.
-**PCLauncher.ahk never reads these.** Their content does not matter.
+For **synthetic wheels** (Favorites, Recently Played, Most Played): used only by RocketLauncher to enumerate which games exist in the wheel. PCLauncher.ahk reads the system-level INI instead (see section 2). The placeholder content is irrelevant.
+
+For **PC game wheels** (PC Games, Windows, etc.): the per-game INI IS the launch config. PCLauncher.ahk reads it first (before the system-level INI) and uses `[<game_name>]` / `Application=`. See *PCLauncher Architecture — PC Game Wheels* below.
 
 ```ini
 ; This file is a ROM placeholder for RL discovery.
@@ -604,6 +605,65 @@ Key names PCLauncher.ahk recognises: `Application=`, `Parameters=`, `WorkingFold
 > `ApplicationPath=` and will throw "not set up in RocketLauncherUI" if only that key exists.
 
 The system-level INI that SpinDoctor generates includes `FadeTitle=` and `FadeTitleTimeout=` — see the *FadeTitle* section below for why.
+
+---
+
+## PCLauncher Architecture — PC Game Wheels (non-synthetic)
+
+PC game wheels (system name "PC Games", "Windows", etc.) are **different from synthetic wheels**. PCLauncher.ahk uses a three-level INI lookup hierarchy for each game:
+
+```
+1. Per-game INI:    Modules\PCLauncher\<SystemName>\<GameName>.ini   ← checked FIRST
+2. System INI:      Modules\PCLauncher\<SystemName>.ini               ← fallback
+3. Global INI:      Modules\PCLauncher\PCLauncher.ini                 ← last resort
+```
+
+The per-game INI for a PC game **is not a placeholder** — it contains the actual launch config. PCLauncher.ahk reads `Application=` from the `[<GameName>]` section:
+
+```ini
+[Master Key]
+Application=J:\Games\PC Games\Master Key\MasterKey.exe
+WorkingFolder=J:\Games\PC Games\Master Key
+```
+
+SpinDoctor's `pc-rename` command writes per-game INIs in this format. Because per-game INIs are checked before the system-level INI, SpinDoctor's entries shadow any existing `<SystemName>.ini`.
+
+### Stale System-Level INIs (RLUI-created)
+
+Cabinet owners who originally configured PC games in RocketLauncherUI get a single system-level `PC GAMES.ini` with all games in `[game_name]` sections. These often contain **relative paths** such as:
+
+```ini
+[Master Key]
+Application=..\Games\PC Games\Master Key\Master Key.exe
+```
+
+A relative path like `..\Games\...` resolves from the RL base directory (`D:\Arcade\RocketLauncher\`) to `D:\Arcade\Games\...`. After a ROM drive migration (old `D:\Arcade\Games\` → new `J:\Games\`), this path points to the wrong drive and the game fails to launch:
+
+> `Cannot find this Application: D:\Arcade\Games\PC Games\Master Key\Master Key.exe`
+
+**Fix:** Run `spindoctor pc-rename "PC Games" --apply`. SpinDoctor scans the current `roms_dir` for `.exe` and `.lnk` files, writes per-game INIs with absolute current paths, and PCLauncher finds the per-game INIs before the stale system-level one:
+
+```ini
+; Written to Modules\PCLauncher\PC Games\Master Key.ini
+[Master Key]
+Application=J:\Games\PC Games\Master Key\MasterKey.exe
+WorkingFolder=J:\Games\PC Games\Master Key
+```
+
+The old `PC GAMES.ini` is left on disk but no longer consulted for games that have a per-game INI. The system-level filename casing (`PC GAMES.ini` vs `PC Games.ini`) is irrelevant on Windows (case-insensitive filesystem).
+
+### Per-game vs system-level: how they differ from synthetic wheels
+
+| | Synthetic wheel (Favorites) | PC game wheel |
+|---|---|---|
+| Per-game INI content | Placeholder only; PCLauncher.ahk ignores it | Actual launch config; PCLauncher reads it |
+| System-level INI content | All game entries (SpinDoctor writes this) | May be stale/missing; per-game INIs take priority |
+| SpinDoctor writes | System-level `.ini` via `fav rebuild` | Per-game `.ini` per game via `pc-rename` |
+| `Application=` key points to | `RocketLauncherGame.exe` (recursive RL) | The game's actual `.exe` or `.lnk` |
+
+### `read_pclauncher_ini_application_path` — stale detection
+
+SpinDoctor's dry-run mode compares each per-game INI's `Application=` value against the current scanned path. Only INIs in `[<GameName>]` format are recognised; old `[Settings]` / `ApplicationPath=` INIs return empty and are treated as stale, triggering a re-write on the next `--apply` run.
 
 ---
 
