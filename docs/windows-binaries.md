@@ -27,7 +27,7 @@ Each release at [github.com/phillram/spindoctor/releases](https://github.com/phi
 
 ```
 spindoctor-windows-vX.Y.Z.zip
-└── spindoctor-windows\
+└── spindoctor\
     ├── spindoctor.exe          ← full CLI (every command)
     ├── spindoctor-gui.exe      ← double-clickable GUI launcher
     ├── spindoctor-fav.exe      ← Favorites wheel manager
@@ -36,7 +36,7 @@ spindoctor-windows-vX.Y.Z.zip
     └── (shared Python 3.8 runtime — keep the folder together)
 ```
 
-All five binaries share a single Python runtime bundled in the same folder — no installer, no setup wizard, no DLL hell. The shared runtime is roughly 30–50 MB total regardless of how many executables you use. **Keep all files in `spindoctor-windows\` together** — individual EXEs will not run if moved out of the folder without their runtime peers.
+All five binaries share a single Python runtime bundled in the same folder — no installer, no setup wizard, no DLL hell. The shared runtime is roughly 30–50 MB total regardless of how many executables you use. **Keep all files in `spindoctor\` together** — individual EXEs will not run if moved out of the folder without their runtime peers.
 
 Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar. Earlier releases shipped without `--icon` in the PyInstaller invocation and as a result rendered the default Tk feather everywhere Windows shows an icon; that's fixed.
 
@@ -70,7 +70,7 @@ curl -L -o spindoctor-windows.zip ^
 
 There's no installer — just extract and optionally rename.
 
-1. Extract the zip. It creates a `spindoctor-windows\` folder. Move or rename it wherever you want (e.g. `C:\spindoctor\`). You should end up with:
+1. Extract the zip. It creates a `spindoctor\` folder. Move or rename it wherever you want (e.g. `C:\spindoctor\`). You should end up with:
 
    ```
    C:\spindoctor\
@@ -129,7 +129,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 `spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
-The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it in `spindoctor-windows\`. Keep the folder contents together; the GUI does not require `PATH` to be configured.
+The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it in `spindoctor\`. Keep the folder contents together; the GUI does not require `PATH` to be configured.
 
 **For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
@@ -167,7 +167,7 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
 ## Updating
 
 1. Download the new zip from [Releases](https://github.com/phillram/spindoctor/releases/latest).
-2. Replace the entire `spindoctor-windows\` folder (or whatever you renamed it to) with the newly extracted one.
+2. Replace the entire `spindoctor\` folder (or whatever you renamed it to) with the newly extracted one.
 3. Re-run `spindoctor --version` (or relaunch `spindoctor-gui.exe` and check the title bar) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
@@ -186,7 +186,7 @@ If your IT policy blocks unsigned binaries entirely, fall back to a source insta
 
 ### `spindoctor-gui.exe` opens a window but the buttons do nothing
 
-The GUI shells out to `spindoctor.exe` and the standalone wheel binaries sitting next to it. If those moved, got renamed, or were quarantined by antivirus, every button click pops a "Binary not found" error pointing at the missing file. Re-extract the release zip so the full `spindoctor-windows\` folder is intact again.
+The GUI shells out to `spindoctor.exe` and the standalone wheel binaries sitting next to it. If those moved, got renamed, or were quarantined by antivirus, every button click pops a "Binary not found" error pointing at the missing file. Re-extract the release zip so the full `spindoctor\` folder is intact again.
 
 If `spindoctor-gui.exe` itself fails to open at all on Windows 7, you're hitting the same `api-ms-win-core-…` bootloader issue documented below — install Service Pack 1 first.
 
@@ -225,4 +225,4 @@ pip install -r build\requirements-build.txt
 python build\build_windows.py
 ```
 
-Output lands in `dist\spindoctor-windows\`. The full build matrix and CI workflow lives in [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md).
+Output lands in `dist\spindoctor\`. The full build matrix and CI workflow lives in [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md).

@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **Windows release zip is now a shared-runtime folder instead of five separate self-extracting EXEs.** The zip now contains a `spindoctor-windows\` folder; extract it, optionally rename it (e.g. `C:\spindoctor\`), and double-click `spindoctor-gui.exe`. All five executables share a single Python 3.8 runtime bundled in that folder, roughly halving the total download size. Individual EXEs must remain in the folder alongside the shared runtime — do not move them out. The GUI's peer-discovery (`resolve_cli_command`) and the autostart scheduled-task bat files are unaffected; both already used `Path(sys.executable).parent` to locate sibling binaries, which resolves correctly in `--onedir` mode.
+- **Windows release zip is now a shared-runtime folder instead of five separate self-extracting EXEs.** The zip now contains a `spindoctor\` folder; extract it, optionally rename it (e.g. `C:\spindoctor\`), and double-click `spindoctor-gui.exe`. All five executables share a single Python 3.8 runtime bundled in that folder, roughly halving the total download size. Individual EXEs must remain in the folder alongside the shared runtime — do not move them out. The GUI's peer-discovery (`resolve_cli_command`) and the autostart scheduled-task bat files are unaffected; both already used `Path(sys.executable).parent` to locate sibling binaries, which resolves correctly in `--onedir` mode.
 
 ### Fixed
 
@@ -1319,7 +1319,7 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 
 ### Added — Build & release infrastructure
 
-- `build/build_windows.py` — PyInstaller driver producing five `.exe` binaries in a shared-runtime `--onedir` bundle (`dist/spindoctor-windows/`).
+- `build/build_windows.py` — PyInstaller driver producing five `.exe` binaries in a shared-runtime `--onedir` bundle (`dist/spindoctor/`).
 - `.github/workflows/release.yml` — triggered by `v*` tag push; builds, smoke-tests, zips, and publishes a GitHub Release with the artefacts attached.
 - `.github/workflows/ci.yml` — runs pytest on Linux + Windows (Python 3.8 and 3.12) and a PyInstaller smoke build on every PR.
 

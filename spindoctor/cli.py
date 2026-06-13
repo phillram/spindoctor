@@ -3031,7 +3031,7 @@ def _sibling_exe(name: str) -> str:
     """Return a quoted full path to a sibling SpinDoctor binary when frozen.
 
     When running as a PyInstaller-frozen binary all five .exe files live in
-    the shared ``spindoctor-windows\`` folder alongside the Python runtime.  Embedding the full path in
+    the shared ``spindoctor\`` folder alongside the Python runtime.  Embedding the full path in
     generated ``.bat`` files makes them work even when that folder is not on
     ``PATH`` — which is always the case when RocketLauncher / HyperSpin
     launch a bat, or when Windows Task Scheduler fires at log-on.
