@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Toolkit tool runs (Refresh Favorites, Refresh Most Played, etc.) no longer appear in Recently Played or Most Played wheels.** When a user launches a Toolkit tool from within HyperSpin, RocketLauncher records that run in the Toolkit system's statistics file. Previously, `collect_play_records` and `load_all_playtime` included Toolkit stats when building synthetic wheels, so tool runs appeared as "games" and could push real games out of Recently Played entirely. Toolkit is now part of the `_STATS_EXCLUDE` set (alongside the synthetic wheel names) and is excluded from both the per-system stats reader and the `known`-systems filter in every synthetic wheel rebuild.
+
+- **Recently Played wheel no longer appears empty after running Toolkit refresh tools.** The root cause was the above: if a user ran Refresh Favorites / Most Played from HyperSpin several times, the most-recent-20 play records were dominated by Toolkit runs. The DB validation from v2.4.26 then dropped those runs because they fail to match any real-game database, leaving the wheel with zero entries. Excluding Toolkit from stats collection restores real game plays as the top candidates.
+
+- **`install-tools` now removes the stale `Refresh Both.bat` (and its companion `.ini`) left by older versions when re-run.** `Refresh Both` was silently renamed to `Refresh All` in v2.4.26; without active cleanup the old bat remained on disk and appeared as a confusing duplicate entry in the HyperSpin Tools menu alongside `Refresh All`. Running `install-tools` again now removes any stale bat/ini for tools that no longer exist and, when `--add-to-system` is used, also removes the stale `Refresh Both` database entry from the target system's XML so the wheel no longer shows the dead entry.
+
 ---
 
 ## [2.4.26] - 2026-06-12
