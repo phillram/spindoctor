@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI: seven operations ignored the global Apply checkbox and always wrote to disk.** The following buttons/actions now correctly dry-run when Apply is unchecked and write only when it is checked:
+  - **Refresh selected wheels** (`_refresh_all_wheels`) — `spindoctor-fav rebuild`, `spindoctor-recent rebuild`, `spindoctor-stats build-wheel`
+  - **Add wheels to Main Menu** (`_register_wheels_in_main_menu`) — `mainmenu add` for Favorites / Recently Played / Most Played
+  - **Undo this run (migrations)** in File → View logs & manifests — `migrate --undo`
+  - **Pre-migration backup Create button** (`_run_pre_migrate_backup`) — `backup create`
+  - **Restore from sidecar .bak** (`_restore_sidecar`) — `backup sidecar restore`
+  - **Main Menu add / remove** (`_run_mainmenu_action`) — `mainmenu add` / `mainmenu remove` (the GUI comment claiming these had no dry-run path was incorrect; the CLI has supported `_apply_or_preview` for both since they were added)
+  - **Uninstall from wheel** (`_run_uninstall_tools_from_wheel`) — `uninstall-tools`
+
 ---
 
 ## [2.5.2] - 2026-06-13
