@@ -8325,15 +8325,19 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
               help="Actually write the PCLauncher INIs. Without this flag "
                    "the title review still runs but the INI write is a "
                    "preview only.")
+@click.option("--verbose", is_flag=True,
+              help="Print each title, its executable path, and whether the "
+                   "PCLauncher INI is new or already exists.")
 def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
-              apply_changes):
-    """Re-run the title picker for an existing PC system.
+              apply_changes, verbose):
+    """Scan for new/changed games in an existing PC system and refresh PCLauncher INIs.
 
     \b
-    Use this after dropping new games into <roms_dir>/<SYSTEM>/ or to
-    revise a previously-cached title.  Updates ~/.spindoctor/pc_titles_cache/
-    and (optionally) regenerates the per-game PCLauncher INIs.  The INI
-    write is dry-run by default — re-run with --apply to commit.
+    Use this after dropping new .exe/.lnk files into <roms_dir>/<SYSTEM>/.
+    Picks up newly-added installs, updates ~/.spindoctor/pc_titles_cache/,
+    and (optionally) writes per-game PCLauncher INIs for any new entries.
+    Existing INIs are left alone unless --overwrite-pclauncher is passed.
+    The INI write is dry-run by default — re-run with --apply to commit.
     """
     config = _cfg()
     _check_config(config)
@@ -8352,14 +8356,94 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
     for path, title in title_to_path.items():
         by_title.setdefault(title, path)
 
-    console.print(f"\n[green]+[/green] {len(by_title)} title(s) confirmed.")
+    module_dir = (
+        Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher" / system_name
+        if config.rocketlauncher_dir else None
+    )
+
+    # Classify each title: new (no INI), stale (INI exists but points at wrong
+    # path — e.g. after a drive migration or file rename), or current (INI
+    # matches the path SpinDoctor would write).
+    from .rocketlauncher import read_pclauncher_ini_application_path
+    new_titles: list[str] = []
+    stale_titles: list[str] = []
+    current_titles: list[str] = []
+    for title in sorted(by_title):
+        ini = module_dir / f"{title}.ini" if module_dir else None
+        if ini is None or not ini.exists():
+            new_titles.append(title)
+        else:
+            on_disk = read_pclauncher_ini_application_path(ini)
+            expected = str(by_title[title])
+            if on_disk.lower() != expected.lower():
+                stale_titles.append(title)
+            else:
+                current_titles.append(title)
+    new_titles_set = set(new_titles)
+    stale_titles_set = set(stale_titles)
+
+    if verbose and by_title:
+        from rich.table import Table
+        tbl = Table(show_header=True, header_style="bold", box=None)
+        tbl.add_column("Title")
+        tbl.add_column("Executable")
+        tbl.add_column("INI status")
+        for title in sorted(by_title):
+            path = by_title[title]
+            if title in new_titles_set:
+                status = "[green]new[/green]"
+            elif title in stale_titles_set:
+                ini = module_dir / f"{title}.ini"  # type: ignore[operator]
+                on_disk = read_pclauncher_ini_application_path(ini)
+                status = f"[red]stale[/red] [dim](INI has: {on_disk})[/dim]"
+            else:
+                status = "[dim]current[/dim]"
+            tbl.add_row(title, str(path), status)
+        console.print(tbl)
+
+    summary_parts = []
+    if new_titles:
+        summary_parts.append(f"[green]{len(new_titles)} new[/green]")
+    if stale_titles:
+        summary_parts.append(f"[red]{len(stale_titles)} stale[/red]")
+    if current_titles:
+        summary_parts.append(f"[dim]{len(current_titles)} current[/dim]")
+    summary = ", ".join(summary_parts) if summary_parts else "0"
+    console.print(f"\n[green]+[/green] {len(by_title)} title(s) confirmed ({summary}).")
+    if stale_titles:
+        console.print(
+            f"[red]![/red] {len(stale_titles)} INI(s) have a stale path "
+            f"(drive change or file rename). "
+            f"Pass --overwrite-pclauncher to fix them."
+        )
 
     if not no_pclauncher and by_title:
         if not apply_changes:
-            console.print(
-                f"[yellow]Would write {len(by_title)} PCLauncher INI(s) under "
-                f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
-            )
+            # Without --overwrite-pclauncher only new INIs are written;
+            # stale ones are skipped (their existing file is kept as-is).
+            would_write = new_titles if not overwrite_pclauncher else new_titles + stale_titles
+            would_skip = stale_titles if not overwrite_pclauncher else []
+            if would_write:
+                parts = []
+                if new_titles:
+                    parts.append(f"{len(new_titles)} new")
+                if overwrite_pclauncher and stale_titles:
+                    parts.append(f"{len(stale_titles)} stale")
+                console.print(
+                    f"[yellow]Would write {len(would_write)} PCLauncher INI(s) "
+                    f"({', '.join(parts)}) under {module_dir}[/yellow]"
+                )
+            else:
+                console.print(
+                    f"[dim]All INI(s) are {'current' if not stale_titles else 'current or stale'} "
+                    f"— nothing to write.[/dim]"
+                )
+            if would_skip:
+                console.print(
+                    f"[red]![/red] {len(would_skip)} stale INI(s) will be kept as-is. "
+                    f"Tick 'Overwrite existing INIs' (or pass --overwrite-pclauncher) "
+                    f"to fix stale paths."
+                )
             console.print("[dim]Dry-run — re-run with --apply to commit.[/dim]")
             return
         from .rocketlauncher import generate_pclauncher_inis
