@@ -28,7 +28,7 @@ from .favorites import (
     FavoriteEntry, _generate_pclauncher_ini,
     _resolve_target_names, _safe_load,
 )
-from .medialink import LinkMode, apply_plan, plan_mirror
+from .medialink import LinkMode, apply_plan, plan_mirror, _read_hs_video_dir
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
@@ -580,11 +580,22 @@ def _build_synthetic_wheel(
                         media_path.unlink()
                     except OSError as e:
                         summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        # Per-system video directory overrides: HyperSpin subsystems that use MAME
+        # (e.g. "4-Player Games", "Driving Games") redirect their video lookup to
+        # Media/MAME/Video/ via [video defaults] → path= in the system Settings INI.
+        # Cache one lookup per source system to avoid re-reading the same INI.
+        _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
+        _video_cache: dict[str, Optional[Path]] = {}
+
         for idx, fe in enumerate(pseudo_entries, 1):
+            if _hs_settings and fe.system not in _video_cache:
+                _video_cache[fe.system] = _read_hs_video_dir(_hs_settings, fe.system)
+            video_override = _video_cache.get(fe.system) if _hs_settings else None
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             plan = plan_mirror(
                 config.media_dir, fe.system, target_system,
                 fe.rom_name, target_name,
+                video_dir_override=video_override,
             )
             result = apply_plan(plan, mode=media_mode,
                                log_fn=print if verbose else None)

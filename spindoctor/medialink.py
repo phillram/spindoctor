@@ -12,6 +12,7 @@ point at the right source are left alone.
 """
 from __future__ import annotations
 
+import configparser
 import os
 import shutil
 from dataclasses import dataclass, field
@@ -94,18 +95,59 @@ class LinkPlan:
         return [a for a in self.actions if a.skip_reason]
 
 
+def _read_hs_video_dir(settings_dir: Path, system: str) -> Optional[Path]:
+    """Return the ``[video defaults]`` path override from a HyperSpin system INI.
+
+    HyperSpin MAME subsystems ("4-Player Games", "Driving Games", "Gun Games",
+    etc.) often store their video files in ``Media/MAME/Video/`` and redirect
+    HyperSpin's video lookup via the system's Settings INI::
+
+        [video defaults]
+        path=D:\\Arcade\\Media\\MAME\\Video\\
+
+    When the INI exists and the path points at an existing directory, this
+    function returns that directory so :func:`plan_mirror` can look there when
+    the system's own ``Media/<system>/Video/`` folder is absent.
+
+    The settings dir is normally ``<hyperspin_dir>/Settings/``.
+    """
+    ini_path = settings_dir / f"{system}.ini"
+    if not ini_path.is_file():
+        return None
+    parser = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        # utf-8-sig handles the BOM that HyperSpin sometimes writes
+        parser.read(ini_path, encoding="utf-8-sig")
+    except (OSError, configparser.Error):
+        return None
+    raw = parser.get("video defaults", "path", fallback="").strip()
+    if not raw:
+        return None
+    p = Path(raw)
+    return p if p.is_dir() else None
+
+
 def plan_mirror(
     media_root: Path,
     source_system: str,
     target_system: str,
     source_stem: str,
     target_stem: Optional[str] = None,
+    *,
+    video_dir_override: Optional[Path] = None,
 ) -> LinkPlan:
     """Build the action list to mirror one game's media from src→target.
 
     *source_stem* is the basename used by the originating system; if the
     target should use a different name (collision suffixing) pass
     *target_stem*.
+
+    *video_dir_override* — when set and the source system's own ``Video/``
+    subdirectory does not exist, this path is scanned for video files instead.
+    Use :func:`_read_hs_video_dir` to derive the value from the HyperSpin
+    system settings INI (``[video defaults]`` → ``path=``).  This handles
+    MAME subsystems ("4-Player Games", "Driving Games", etc.) that store all
+    their videos under ``Media/MAME/Video/`` rather than a per-system folder.
     """
     target_stem = target_stem or source_stem
     plan = LinkPlan()
@@ -117,6 +159,10 @@ def plan_mirror(
 
     for sub in MEDIA_FILE_SUBDIRS:
         src_dir = src_root / sub
+        # For the Video subdir, fall back to the HyperSpin redirect path when
+        # the source system has no Video directory of its own.
+        if sub == "Video" and video_dir_override and not src_dir.is_dir():
+            src_dir = video_dir_override
         if not src_dir.is_dir():
             continue
         theme_found = False

@@ -29,7 +29,7 @@ from typing import Any, Iterable, Optional
 
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database, resolve_atomic_tmp_dir
-from .medialink import LinkMode, apply_plan, plan_mirror, remove_target
+from .medialink import LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
@@ -590,11 +590,19 @@ def rebuild(
                     except OSError as e:
                         summary.media_errors.append(f"cleanup {media_path.name}: {e}")
 
+        # Per-system video directory overrides (HyperSpin [video defaults] redirect).
+        _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
+        _video_cache: dict[str, Optional[Path]] = {}
+
         for entry in sorted_entries:
+            if _hs_settings and entry.system not in _video_cache:
+                _video_cache[entry.system] = _read_hs_video_dir(_hs_settings, entry.system)
+            video_override = _video_cache.get(entry.system) if _hs_settings else None
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             plan = plan_mirror(
                 config.media_dir, entry.system, store.target_system,
                 entry.rom_name, target_name,
+                video_dir_override=video_override,
             )
             result = apply_plan(plan, mode=media_mode,
                                log_fn=print if verbose else None)
