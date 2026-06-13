@@ -39,6 +39,7 @@ def _write_stats_ini(path, sections):
 def test_parse_time_handles_common_formats():
     assert _parse_time("2026-04-27 18:33:12") == datetime(2026, 4, 27, 18, 33, 12)
     assert _parse_time("2026-04-27T18:33:12") == datetime(2026, 4, 27, 18, 33, 12)
+    assert _parse_time("Friday June 12, 2026 08:18:02 PM") == datetime(2026, 6, 12, 20, 18, 2)
     assert _parse_time("not a timestamp") is None
     assert _parse_time("") is None
 
@@ -54,6 +55,32 @@ def test_read_stats_file_parses_records(tmp_path):
     tetris = next(r for r in records if r.rom_name == "Tetris")
     assert tetris.play_count == 4
     assert tetris.last_played == datetime(2026, 4, 27, 18, 33, 12)
+
+
+def test_read_stats_file_parses_last_time_played_key(tmp_path):
+    """RL writes Last_Time_Played (not Last_Played) in newer versions.
+
+    This was causing 0 parseable records and an empty Recently Played wheel.
+    """
+    ini = tmp_path / "mame.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text(
+        "[acedrvrw]\n"
+        "Last_Time_Played=Friday June 12, 2026 08:18:02 PM\n"
+        "Number_of_Times_Played=3\n"
+        "Total_Time_Played=540\n"
+        "\n"
+        "[25pacman]\n"
+        "Last_Time_Played=Thursday June 11, 2026 07:00:00 PM\n"
+        "Number_of_Times_Played=1\n"
+        "\n",
+        encoding="utf-8",
+    )
+    records = _read_stats_file(ini, "MAME")
+    assert {r.rom_name for r in records} == {"acedrvrw", "25pacman"}
+    ace = next(r for r in records if r.rom_name == "acedrvrw")
+    assert ace.last_played == datetime(2026, 6, 12, 20, 18, 2)
+    assert ace.play_count == 3
 
 
 def test_top_recent_dedupes_and_sorts():
