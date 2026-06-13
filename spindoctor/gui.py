@@ -3227,7 +3227,7 @@ class _SpinDoctorGUI:
     # therefore not in this map.
     _UNDO_RECIPES: dict = {
         "migrations": {
-            "argv": lambda path: ["migrate", "--undo", str(path), "--apply"],
+            "argv": lambda path: ["migrate", "--undo", str(path)],
             "uses_path": True,
         },
         "curation": {
@@ -3489,6 +3489,8 @@ class _SpinDoctorGUI:
         ):
             return
         argv = recipe["argv"](path)
+        if self._global_apply_var.get():
+            argv = argv + ["--apply"]
         self._run_cli("spindoctor", argv)
 
     def _open_selected_manifest_in_explorer(
@@ -4896,12 +4898,12 @@ class _SpinDoctorGUI:
 
     def _register_wheels_in_main_menu(self) -> None:
         # Each `mainmenu add` runs only after the previous one finishes so
-        # the underlying XML write doesn't race with itself. Using `--apply`
-        # here matches the user's intent: they clicked the button.
+        # the underlying XML write doesn't race with itself.
+        apply_flag = ["--apply"] if self._global_apply_var.get() else []
         steps = [
-            ("Favorites",        ["mainmenu", "add", "Favorites", "--apply"]),
-            ("Recently Played",  ["mainmenu", "add", "Recently Played", "--apply"]),
-            ("Most Played",      ["mainmenu", "add", "Most Played", "--apply"]),
+            ("Favorites",        ["mainmenu", "add", "Favorites"]       + apply_flag),
+            ("Recently Played",  ["mainmenu", "add", "Recently Played"] + apply_flag),
+            ("Most Played",      ["mainmenu", "add", "Most Played"]     + apply_flag),
         ]
         total = len(steps)
         self._chain_start(total)
@@ -4929,10 +4931,11 @@ class _SpinDoctorGUI:
 
     def _refresh_all_wheels(self) -> None:
         extra = ["--verbose"] if self._global_verbose_var.get() else []
+        apply_flag = ["--apply"] if self._global_apply_var.get() else []
         all_steps: list[tuple[str, str, list[str]]] = [
-            ("Favorites",        "spindoctor-fav",    ["rebuild", "--apply"] + extra),
-            ("Recently Played",  "spindoctor-recent", ["rebuild", "--apply"] + extra),
-            ("Most Played",      "spindoctor-stats",  ["build-wheel", "--apply"] + extra),
+            ("Favorites",        "spindoctor-fav",    ["rebuild"]     + apply_flag + extra),
+            ("Recently Played",  "spindoctor-recent", ["rebuild"]     + apply_flag + extra),
+            ("Most Played",      "spindoctor-stats",  ["build-wheel"] + apply_flag + extra),
         ]
         check_vars = [self._wheel_fav_var, self._wheel_recent_var, self._wheel_stats_var]
         steps = [
@@ -6470,7 +6473,10 @@ class _SpinDoctorGUI:
                 "Enter or browse to a backup target folder before creating a backup.",
             )
             return
-        self._run_cli("spindoctor", ["backup", "create", "--target", target, "--apply"])
+        args = ["backup", "create", "--target", target]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _refresh_migrate_manifests(self) -> None:
         """Populate the undo Combobox with manifests from the migrations dir."""
@@ -6896,10 +6902,10 @@ class _SpinDoctorGUI:
             f"action is undoable via the same Restore button.",
         ):
             return
-        self._run_cli("spindoctor", [
-            "backup", "sidecar", "restore", str(target),
-            "--from", str(chosen), "--apply",
-        ], on_complete=on_complete)
+        args = ["backup", "sidecar", "restore", str(target), "--from", str(chosen)]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args, on_complete=on_complete)
 
     def _mm_restore_from_backup(self) -> None:
         """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it."""
@@ -7018,21 +7024,18 @@ class _SpinDoctorGUI:
                 "Select a system from the dropdown before clicking Add or Remove.",
             )
             return
-        # Add / Remove rewrite Main Menu.xml on every click — there's no
-        # CLI dry-run path for these two subcommands and a mis-click can
-        # silently corrupt the wheel order. Mirror the Save Order /
-        # Curate delete / Backup Restore safety pattern with an explicit
-        # confirmation prompt.
         verb = "add to" if sub == "add" else "remove from"
         if not self.messagebox.askyesno(
             f"Confirm Main Menu {sub}",
             f"{sub.capitalize()} '{system}' {verb} Main Menu.xml?\n\n"
-            "This writes the file immediately. If "
-            "config.backup_before_modify is enabled (the default), a "
+            "If Apply is checked this writes the file immediately. "
+            "If config.backup_before_modify is enabled (the default), a "
             "timestamped .bak is kept next to the file.",
         ):
             return
-        args = ["mainmenu", sub, system, "--apply"]
+        args = ["mainmenu", sub, system]
+        if self._global_apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     # ── Diagnose tab (LEGACY — superseded by _build_diagnostics_tab) ────────────
@@ -11175,10 +11178,10 @@ class _SpinDoctorGUI:
             "'Install into wheel').",
         ):
             return
-        self._run_cli(
-            "spindoctor",
-            ["uninstall-tools", "--add-to-system", wheel, "--apply"],
-        )
+        args = ["uninstall-tools", "--add-to-system", wheel]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
 
