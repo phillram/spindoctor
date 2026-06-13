@@ -16,7 +16,15 @@ Five self-contained `--onefile` EXEs in `dist/`:
 
 Each binary is a self-extracting archive — no installer, no shared runtime folder, no Python on the target box. Drop any of them wherever you like. `spindoctor-gui.exe` finds its sibling EXEs via `Path(sys.executable).parent`, so keep all five in the same directory for GUI use.
 
-Hidden imports are split per-target so each EXE only bundles what it actually uses. The standalone tools (`fav`/`recent`/`stats`) use `argparse` directly and do not import `click`, `rich`, `tkinter`, or `PIL` anywhere in their transitive dependency graph — those modules are kept in `_CORE_CLI` and are only added as hidden imports for `spindoctor.exe` and `spindoctor-gui.exe`. `_STANDALONE_EXCLUDES` additionally passes `--exclude-module` for those modules so PyInstaller's stdlib sweep cannot pull them in. EXE sizes are still dominated by the Python 3.8 interpreter, the stdlib subset, and `lxml` (libxml2 + libxslt C extensions), all of which are shared fixed costs.
+Hidden imports are split per-target so each EXE only bundles what it actually uses:
+
+- `_CORE_BASE` — shared by all five binaries: the spindoctor package itself and `update_check`.
+- `_CORE_CLI` — `click` and `rich`, used only by the full CLI and GUI binaries.
+- `_CORE_LXML` — `lxml` C extensions, used only by the full CLI and GUI binaries. The standalone tools use `database.py`'s stdlib `xml.etree.ElementTree` fallback when lxml is absent — `lxml` is imported lazily via `_lxml_etree()` and `--exclude-module lxml` (in `_STANDALONE_EXCLUDES`) prevents bundling even though the import statement is visible to static analysis.
+
+`_STANDALONE_EXCLUDES` passes `--exclude-module` for `lxml`, `click`, `rich`, `tkinter`, and `PIL` so PyInstaller's stdlib sweep and any `.pyc` files in the build environment can't pull them back in.
+
+The tradeoff for the standalone tools: XML comment round-tripping is not preserved (lxml preserves comments and attribute order; the stdlib fallback does not). HyperSpin XML files written by the standalone tools are valid and HyperSpin reads them correctly — comments are not present in those files in practice.
 
 ## Windows 7 compatibility
 
