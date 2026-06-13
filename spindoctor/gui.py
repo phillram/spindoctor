@@ -11470,9 +11470,9 @@ class _SpinDoctorGUI:
                 "SpinDoctor CLI not found",
                 f"{exc}\n\n"
                 "Common fixes:\n"
-                "• Frozen / Windows binary install: keep all files in the "
-                "spindoctor\\ folder together — do not move individual EXEs "
-                "out without the shared Python runtime.\n"
+                "• Frozen / Windows binary install: keep all five .exe files "
+                "in the same folder — the GUI finds its peers by looking "
+                "next to itself.\n"
                 "• Source install: re-run `pip install -e .` from the "
                 "repo root so the console scripts get registered.",
             )
