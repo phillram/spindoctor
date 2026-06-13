@@ -88,7 +88,15 @@ def guess_emulator(system_name: str) -> str:
     ovr = get_system_overrides().get(system_name, {})
     if isinstance(ovr.get("emulator"), str) and ovr["emulator"]:
         return ovr["emulator"]
-    return EMULATOR_MAP.get(system_name.lower(), "RetroArch")
+    mapped = EMULATOR_MAP.get(system_name.lower())
+    if mapped:
+        return mapped
+    # System names that contain "MAME" (e.g. "MAME (Vector)", "MAME Atari
+    # Classics") are sub-catalogues of the main MAME library and always use
+    # the MAME emulator.
+    if re.search(r"\bmame\b", system_name, re.IGNORECASE):
+        return "MAME"
+    return "RetroArch"
 
 
 # Default executable names per emulator — used when generating
@@ -253,6 +261,15 @@ def detect_rl_layout(settings_dir: Path, system_name: str) -> str:
     return "new"
 
 
+def _is_absolute_path(p: str) -> bool:
+    """True for POSIX absolute (/foo) and Windows absolute (C:\\foo) paths.
+
+    ``pathlib.Path.is_absolute()`` returns ``False`` for Windows drive-letter
+    paths when running on macOS/Linux, so we check both forms.
+    """
+    return Path(p).is_absolute() or bool(re.match(r"^[A-Za-z]:[/\\]", p))
+
+
 def _read_rom_path_from_ini(ini_path: Path) -> Optional[str]:
     """Return the first ``Rom_Path=`` value found in *ini_path*, or ``None``.
 
@@ -263,6 +280,18 @@ def _read_rom_path_from_ini(ini_path: Path) -> Optional[str]:
         for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
             stripped = line.strip()
             if stripped.lower().startswith("rom_path="):
+                return stripped.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
+def _read_default_emulator_from_ini(ini_path: Path) -> Optional[str]:
+    """Return the Default_Emulator value from *ini_path*, or ``None``."""
+    try:
+        for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("default_emulator="):
                 return stripped.split("=", 1)[1].strip()
     except OSError:
         pass
@@ -342,6 +371,17 @@ def generate_rl_system_ini(
         rom_path = ovr["rom_path"]
     else:
         rom_path = str(Path(config.roms_dir) / system_name)
+        # MAME-variant system names (e.g. "MAME (Vector)", "MAME Atari
+        # Classics") never have their own ROM folder — all ROMs live in the
+        # main MAME folder.  Fall back to roms_dir/MAME when the
+        # system-named folder doesn't exist and a "MAME" folder does.
+        if (
+            re.search(r"\bmame\b", system_name, re.IGNORECASE)
+            and not Path(rom_path).exists()
+        ):
+            mame_path = str(Path(config.roms_dir) / "MAME")
+            if Path(mame_path).exists():
+                rom_path = mame_path
     emulator = guess_emulator(system_name)
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
     layout = detect_rl_layout(settings_dir, system_name)
@@ -362,6 +402,20 @@ def generate_rl_system_ini(
             _current = _read_rom_path_from_ini(emu_ini)
             if _current and Path(_current).is_dir() and not Path(rom_path).exists():
                 _skip_update = True
+            if not _skip_update:
+                _existing_emu = _read_default_emulator_from_ini(emu_ini)
+                if _existing_emu and re.search(r"\bmame\b", _existing_emu, re.IGNORECASE):
+                    if _current and not _is_absolute_path(_current):
+                        # Relative path (e.g. ..\Games\Mame\roms): resolved by
+                        # RocketLauncher relative to the INI — preserve as-is.
+                        _skip_update = True
+                    elif not Path(rom_path).exists():
+                        # MAME-family emulator but computed path doesn't exist
+                        # (e.g. "4-Player Games" whose ROMs live in J:\Games\MAME).
+                        # Fall back to roms_dir/MAME rather than writing a phantom path.
+                        _mame_fallback = str(Path(config.roms_dir) / "MAME")
+                        if Path(_mame_fallback).exists():
+                            rom_path = _mame_fallback
         if not _skip_update:
             if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
                 emu_ini.write_text("\n".join([
@@ -383,6 +437,15 @@ def generate_rl_system_ini(
             _current_flat = _read_rom_path_from_ini(flat_ini)
             if _current_flat and Path(_current_flat).is_dir() and not Path(rom_path).exists():
                 _skip_update_flat = True
+            if not _skip_update_flat:
+                _existing_emu_flat = _read_default_emulator_from_ini(flat_ini)
+                if _existing_emu_flat and re.search(r"\bmame\b", _existing_emu_flat, re.IGNORECASE):
+                    if _current_flat and not _is_absolute_path(_current_flat):
+                        _skip_update_flat = True
+                    elif not Path(rom_path).exists():
+                        _mame_fallback_flat = str(Path(config.roms_dir) / "MAME")
+                        if Path(_mame_fallback_flat).exists():
+                            rom_path = _mame_fallback_flat
         if not _skip_update_flat:
             if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
                 flat_ini.write_text("\n".join([
