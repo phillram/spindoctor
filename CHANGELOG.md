@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`install-tools` now removes the stale `Refresh Both.bat` (and its companion `.ini`) left by older versions when re-run.** `Refresh Both` was silently renamed to `Refresh All` in v2.4.26; without active cleanup the old bat remained on disk and appeared as a confusing duplicate entry in the HyperSpin Tools menu alongside `Refresh All`. Running `install-tools` again now removes any stale bat/ini for tools that no longer exist and, when `--add-to-system` is used, also removes the stale `Refresh Both` database entry from the target system's XML so the wheel no longer shows the dead entry.
 
+- **`generate-config --apply` no longer overwrites a working custom `Rom_Path` with a non-existent per-system folder.** Some MAME variants (`MAME (Vector)`, `MAME (Vertical)`, etc.) share a single ROM directory (e.g. `J:\Games\MAME`) rather than having their own sibling folder (`J:\Games\MAME (Vector)`). Previously, `generate-config` derived `Rom_Path` as `roms_dir\<system_name>` for every system, so running it on a cabinet with MAME variants replaced the working shared path with a non-existent folder, breaking every launch in those systems. The fix adds a preservation guard: if the existing `Emulators.ini` already points at a directory that exists and the computed new path does not, the current value is left untouched. For explicit control, a `rom_path` key in `system_overrides` always takes precedence over the derived path.
+
 ---
 
 ## [2.4.26] - 2026-06-12

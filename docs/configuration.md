@@ -79,6 +79,15 @@ Common reasons to use overrides:
 - **System has its own metadata IDs on ScreenScraper / TheGamesDB** — set `--screenscraper-id` / `--thegamesdb-id`.
 - **Multi-disc consoles where each game is a folder** — `--layout per-game-folder`.
 - **System uses a Sinden lightgun** — set `"lightgun": true` in the override (or run `spindoctor lightgun configure --system <name> --apply`, which sets it automatically). `lightgun audit` reports on every system with this flag.
+- **MAME variants sharing a single ROM folder** — set `rom_path` to the shared directory.  `generate-config` derives `Rom_Path` as `roms_dir\<SystemName>` by default; for systems like `MAME (Vector)` or `MAME (Vertical)` that share `J:\Games\MAME`, the derived path doesn't exist and SpinDoctor's preservation guard kicks in automatically.  Setting `rom_path` explicitly makes the intent permanent and immune to future changes in which folders exist on disk:
+
+  ```toml
+  [system_overrides."MAME (Vector)"]
+  rom_path = 'J:\Games\MAME'
+
+  [system_overrides."MAME (Vertical)"]
+  rom_path = 'J:\Games\MAME'
+  ```
 
 ## `mame_executable` — which one if I have several?
 
