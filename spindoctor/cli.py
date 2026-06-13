@@ -5259,6 +5259,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     from .config import get_system_overrides as _get_sys_overrides
     from .rocketlauncher import (
         SKIP_GENERATE_CONFIG,
+        _read_default_emulator_from_ini,
         generate_global_emulators_ini,
         generate_hs_main_menu,
         generate_rl_system_ini,
@@ -5396,6 +5397,18 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     _ovr_rom if _ovr_rom
                     else (str(Path(config.roms_dir) / sys_name) if config.roms_dir else "")
                 )
+                # Mirror the MAME-variant fallback from generate_rl_system_ini:
+                # if the system name contains "MAME" and its named folder doesn't
+                # exist but roms_dir/MAME does, the real write will use that path.
+                if (
+                    not _ovr_rom
+                    and config.roms_dir
+                    and re.search(r"\bmame\b", sys_name, re.IGNORECASE)
+                    and not Path(new_rom_path).exists()
+                ):
+                    _mame_path = str(Path(config.roms_dir) / "MAME")
+                    if Path(_mame_path).exists():
+                        new_rom_path = _mame_path
                 existing_ini = (
                     _find_existing_ini(rl_base_dry, sys_name)
                     if rl_base_dry else None
@@ -5404,12 +5417,27 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     _read_existing_rom_path(existing_ini)
                     if existing_ini else None
                 )
+                # Check whether the existing file declares a MAME emulator —
+                # generate_rl_system_ini will preserve its path unconditionally.
+                _existing_emu_dry = (
+                    _read_default_emulator_from_ini(existing_ini)
+                    if existing_ini else None
+                )
+                _existing_uses_mame = bool(
+                    _existing_emu_dry
+                    and re.search(r"\bmame\b", _existing_emu_dry, re.IGNORECASE)
+                )
                 if current_rom_path is None:
                     current_str = "[dim](new)[/dim]"
                     status = "[green]new[/green]"
                 elif current_rom_path == new_rom_path:
                     current_str = f"[dim]{current_rom_path}[/dim]"
                     status = "[dim]no change[/dim]"
+                elif not _ovr_rom and not out_base and _existing_uses_mame:
+                    # Existing file has a MAME-family emulator — generate-config
+                    # will preserve the ROM path (absolute or relative) as-is.
+                    current_str = f"[dim]{current_rom_path}[/dim]"
+                    status = "[dim]preserved (MAME emulator)[/dim]"
                 elif (
                     not _ovr_rom
                     and not out_base
@@ -5418,9 +5446,8 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     and not Path(new_rom_path).exists()
                 ):
                     # Guard: current path is a working directory but the
-                    # computed new path doesn't exist (e.g. MAME variant
-                    # sharing J:\Games\MAME).  generate_rl_system_ini will
-                    # preserve the current path — show that here too.
+                    # computed new path doesn't exist — generate_rl_system_ini
+                    # will preserve the current path.
                     current_str = f"[dim]{current_rom_path}[/dim]"
                     status = "[dim]preserved (custom path)[/dim]"
                 else:
