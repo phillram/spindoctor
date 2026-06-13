@@ -12,7 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **Windows release zip now contains five standalone self-contained EXEs instead of five identically-sized archives.** Hidden imports are now split per-target: `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` only bundle what they actually need, making them meaningfully smaller than `spindoctor.exe` and `spindoctor-gui.exe`. Extract the zip, move the EXEs wherever you like, and double-click `spindoctor-gui.exe`. No shared runtime folder required — each binary is self-contained.
+- **Windows release zip reverts to five standalone self-contained EXEs (rolling back the v2.5.0 shared-runtime folder).** The v2.5.0 `--onedir` bundle produced a flat directory of ~60 files rather than the clean nested layout the PR intended: PyInstaller 6.x nests its shared runtime under `_internal/`, but upgrading is blocked by the Windows 7 SP1 cabinet requirement — PyInstaller 6.x's bootloader references `api-ms-win-core-path-l1-1-0.dll`, which doesn't exist on Windows 7 even with SP1. PyInstaller 5.x's bootloader hardcodes `sys._MEIPASS = Path(sys.executable).parent`, so DLLs must land next to the EXEs and cannot be nested. Result: the v2.5.0 zip was an unusable flat mess. Reverted to `--onefile`. Hidden imports are now split per-target so `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` only bundle what they actually need, making them meaningfully smaller than `spindoctor.exe` and `spindoctor-gui.exe`. Each binary is self-contained — extract the zip, move the EXEs wherever you like, double-click `spindoctor-gui.exe`.
 
 ---
 
