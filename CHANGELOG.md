@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.5.2] - 2026-06-13
+
 ### Fixed
 
 - **`generate-config` now handles all MAME-variant systems robustly without requiring per-system overrides.** Three new behaviours extend the existing preservation guard:
@@ -1365,7 +1369,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.2...HEAD
+[2.5.2]: https://github.com/phillram/spindoctor/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/phillram/spindoctor/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/phillram/spindoctor/compare/v2.4.27...v2.5.0
 [2.4.27]: https://github.com/phillram/spindoctor/compare/v2.4.26...v2.4.27
