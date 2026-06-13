@@ -80,7 +80,7 @@ Cabinet owners with niche systems (homebrew consoles, PC libraries, custom MAME 
 
 ## What's in the GUI
 
-Dedicated tabs cover the most-used workflows directly, plus a free-form **Custom Command** tab whose dropdown ships hundreds of canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
+Dedicated tabs cover the most-used workflows directly, plus a free-form **Console** tab whose dropdown ships hundreds of canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI if you'd rather not touch `cmd.exe`. Tabs appear in new-user journey order; most action tabs use numbered **Step N** sections that read top to bottom.
 
 ### Tabs
 
@@ -89,13 +89,13 @@ Dedicated tabs cover the most-used workflows directly, plus a free-form **Custom
 - **Systems** — interactive Main Menu Treeview (reorder / show-hide / sort), `add-system` / `add-pc-system`, rename or clone a game, organize a system (sort wheels + restructure). Plus `pc-rename`, per-system overrides form, and inspect.
 - **Metadata & Media** — full metadata refresh chain in one click, then `fetch-meta`, `fetch-media`, `media-scan`, `update-db` + `generate-config` as individual steps. Plus batch-edit and media-add.
 - **Maintenance** — region/revision thinning with interactive `☑/☐` per-row preview. Plus cache cleanup, ignore lifecycle, match-cache controls.
-- **Tools** — import HyperSpin F-key favorites, refresh custom wheels, register them in HyperSpin's main menu, manage favorites. Plus optional .bat helpers, auto-refresh-on-log-on, and scrub/restore.
+- **Toolkit** — import HyperSpin F-key favorites, refresh custom wheels, register them in HyperSpin's main menu, manage favorites. Plus optional .bat helpers, auto-refresh-on-log-on, and scrub/restore.
 - **LEDBlinky** — step-by-step workflow: overlay-hook fix, Settings.ini, MAME generate + sync, fill defaults, randomize, admin buttons, brightness, color definitions, backup.
 - **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
 - **Backup & Restore** — target folder + components, create backup, restore (with *Scan* to populate the dropdown).
-- **Migrate** — view config, pre-migration backup, migration settings (target + components + options), undo, post-migration `generate-config`.
-- **Custom Command** — type-or-pick CLI invocations; presets organized into named sections cover the full CLI surface.
-- **Logs** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
+- **Migration** — view config, pre-migration backup, migration settings (target + components + options), undo, post-migration `generate-config`.
+- **Console** — type-or-pick CLI invocations; presets organized into named sections cover the full CLI surface.
+- **History** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
 
 For the menubar, keyboard shortcuts, find bar, system quick-filter, dark mode, right-click menus, and other ergonomics, see [docs/gui.md](docs/gui.md). For diagnostics (`~/.spindoctor/scraper.log`, 403 troubleshooting, etc.), see [docs/troubleshooting.md](docs/troubleshooting.md).
 
@@ -117,7 +117,7 @@ spindoctor scrub --backup-dir E:\Backups --apply   :: wipe favorites + stats, ba
 spindoctor scrub-restore E:\Backups\scrub-<timestamp> --apply  :: restore from backup
 ```
 
-Everything above also works from the GUI's Custom Command tab — every one of these has a matching entry in its preset dropdown.
+Everything above also works from the GUI's Console tab — every one of these has a matching entry in its preset dropdown.
 
 ## Reporting issues
 

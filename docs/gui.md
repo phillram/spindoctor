@@ -74,7 +74,7 @@ The doctor pass runs on a worker thread on launch (doesn't delay first paint) an
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Tools), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migrate), and finally power-user escapes (Custom Command) and the session log (Logs) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Toolkit), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
 
 Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
 
@@ -86,7 +86,7 @@ Below it, every path-based config key in a single form, pre-populated with your 
 
 Below the path fields, a **Scraper credentials** section stores your ScreenScraper username, ScreenScraper password, and TheGamesDB API key — password and key fields are masked (`***`) with a Show/Hide eyeball toggle. A **Test credentials** button pings both endpoints and reports ✓ / ✗ inline before you click Save.
 
-Click **Save configuration** to validate and write everything to `config.json` in one step. A Logs tab entry is created recording the saved path, any validation warnings, and an exit code (0 = valid, 1 = warnings). CLI equivalent: `spindoctor config init`.
+Click **Save configuration** to validate and write everything to `config.json` in one step. A History tab entry is created recording the saved path, any validation warnings, and an exit code (0 = valid, 1 = warnings). CLI equivalent: `spindoctor config init`.
 
 ### Diagnostics
 
@@ -112,7 +112,7 @@ Manage the systems that HyperSpin exposes. Four numbered steps cover the common 
 
 **Step 1 — Main menu carousel:** Reorder, show/hide, sort, add, or remove the systems on HyperSpin's top-level wheel (`Main Menu.xml`). The tab renders the current file as a scrollable, selectable table (Treeview) with columns for position, system name, and visibility.
 
-Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`; on completion a Logs tab entry records the target file, the outcome, and an exit code. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
+Select any row, then click **Move Up** / **Move Down** to reposition it or **Toggle Visible** to flip its enabled flag. **Save Order** asks for confirmation before writing the full reordered list back to `Main Menu.xml`; on completion a History tab entry records the target file, the outcome, and an exit code. A **Refresh** button reloads the live file. Sort, Add, and Remove remain as separate controls below the table. CLI equivalent: `spindoctor mainmenu *`.
 
 If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncated mid-write) the tab pops a modal naming the file path and the parse error, and clears the table so you don't see stale rows from the previous successful load. Fix the file and click Refresh to retry.
 
@@ -160,7 +160,7 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 **Metadata-match cache:** **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
 
-### Tools
+### Toolkit
 
 Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 
@@ -275,7 +275,7 @@ Three numbered steps walk through the full backup / restore workflow.
 
 **Step 3 — Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse…** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
 
-### Migrate
+### Migration
 
 Five numbered steps walk through the full migration workflow.
 
@@ -291,19 +291,19 @@ Five numbered steps walk through the full migration workflow.
 
 Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path.
 
-### Custom Command
+### Console
 
 Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
-### Logs
+### History
 
 Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
 
-The Logs tab captures both CLI subprocess invocations *and* in-process GUI operations that write data: Save configuration, Save Main Menu order, Theme-apply Apply, Curate Apply, Ignore viewer Remove, and the three Task Scheduler actions (Schedule / Remove / Check status). Everything that changes state on disk appears here.
+The History tab captures both CLI subprocess invocations *and* in-process GUI operations that write data: Save configuration, Save Main Menu order, Theme-apply Apply, Curate Apply, Ignore viewer Remove, and the three Task Scheduler actions (Schedule / Remove / Check status). Everything that changes state on disk appears here.
 
 The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests…**.
 
-A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the Logs tab first.
+A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
 
 ## Menubar
 
@@ -346,9 +346,9 @@ Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab
 
 ## Dry-run feedback
 
-Commands fall into three categories, which the GUI tracks and displays in the Logs tab:
+Commands fall into three categories, which the GUI tracks and displays in the History tab:
 
-| Category | `--apply` concept | Logs tab `# Dry-run:` header | Logs tag |
+| Category | `--apply` concept | History tab `# Dry-run:` header | Logs tag |
 |---|---|---|---|
 | **Dry-run preview** | Supported; not passed | `Yes` | `DRY-RUN` |
 | **Actual write** | Supported; passed | `No` | `OK` |
@@ -366,7 +366,7 @@ $ spindoctor curate --all
 === DRY RUN COMPLETE (exit 0) — nothing was written. Re-run with --apply to commit. ===
 ```
 
-The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the Logs tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
+The status bar at the bottom switches to `Dry run finished — nothing changed. View results in Output or the History tab.` so the difference between "preview" and "applied" is unmissable. Real applies (with `--apply`) stay quiet so command-specific success messages aren't drowned out.
 
 Read-only and write-always commands (`audit`, `doctor`, `tools-audit`, `inspect`, `find-dupes`, `stats`, `check-discs`, `check-archive-ext`, `verify`, `lint`, `report`, `preview`, `systems`, `find-global`, `diff`, `self-doctor`, `backup list/info`, `backup sidecar list`, `fav list/add/remove/sync`, `recent list`, `ignore add/remove/clear`, `match clear`, `emulator-title list/set/remove`, `mainmenu show/edit`, `ledblinky audit/check/inspect-rom`, `ledblinky colors list`, `lightgun audit`, `config show/init/set/system/verify-credentials`, `install-tools`) never show the DRY RUN banner — for the read-only ones it would mislead users into thinking a health check was a preview of something committable, and for the write-always single-record ones (`fav add`, `ignore add`, …) it would falsely suggest nothing was written. Commands that are read-only *without* `--apply` but write *with* it (`doctor --apply`, `lightgun detect --apply`) are recorded as actual writes whenever `--apply` is present.
 
