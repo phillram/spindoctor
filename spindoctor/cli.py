@@ -2290,7 +2290,7 @@ _ASSET_LABELS: dict[str, str] = {
     "music":          "Music",
     "video":          "Video",
     "theme":          "Theme zip",
-    "navigate_sound": "Navigate sound",
+    "navigate_sound": "Wheel Click sound",
 }
 
 
