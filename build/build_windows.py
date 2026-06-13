@@ -50,6 +50,9 @@ TARGETS = [
 # imported lazily, via plugin discovery, or through C-extension hooks.
 #
 # _CORE_CLI   — modules needed by every CLI/GUI binary (click, rich).
+# _CORE_LXML  — lxml C extensions; needed by CLI/GUI, excluded from
+#               standalone tools (database.py uses the stdlib ET fallback
+#               when lxml is absent — see _lxml_etree() in database.py).
 # _CORE_BASE  — modules needed by ALL five binaries, including the
 #               lightweight standalone tools (fav/recent/stats).
 #
@@ -58,23 +61,34 @@ TARGETS = [
 # as hidden imports for those targets would force PyInstaller to bundle
 # them even though they are never called — so they are kept out of
 # _CORE_BASE and only appear in _CORE_CLI.
+#
+# lxml is imported lazily via _lxml_etree() so PyInstaller's static
+# analysis can still detect the import statement. --exclude-module lxml
+# (added to _STANDALONE_EXCLUDES) overrides that and prevents bundling.
 _CORE_CLI: list[str] = [
     "rich.logging",
     "click",
 ]
 
+_CORE_LXML: list[str] = [
+    "lxml._elementpath",
+    "lxml.etree",
+]
+
 _CORE_BASE: list[str] = [
     "spindoctor",
     "spindoctor.update_check",
-    "lxml._elementpath",
-    "lxml.etree",
 ]
 
 # Modules to explicitly exclude from the lightweight standalone tools.
 # These are not imported anywhere in the fav/recent/stats transitive graph
 # but may be picked up by PyInstaller's stdlib sweep or leftover .pyc files
-# in the build environment.
+# in the build environment.  lxml is excluded here because database.py
+# imports it lazily (PyInstaller still detects the import statement inside
+# _lxml_etree()) — the exclude ensures the standalone EXEs use the stdlib
+# ET fallback path instead.
 _STANDALONE_EXCLUDES: list[str] = [
+    "lxml",
     "click",
     "rich",
     "tkinter",
@@ -84,7 +98,7 @@ _STANDALONE_EXCLUDES: list[str] = [
 ]
 
 HIDDEN_IMPORTS: dict[str, list[str]] = {
-    "spindoctor": _CORE_BASE + _CORE_CLI + [
+    "spindoctor": _CORE_BASE + _CORE_CLI + _CORE_LXML + [
         "spindoctor.cli",
         "spindoctor.favorites",
         "spindoctor.recent",
@@ -98,7 +112,7 @@ HIDDEN_IMPORTS: dict[str, list[str]] = {
         "spindoctor.lightgun",
         "spindoctor.verify",
     ],
-    "spindoctor-gui": _CORE_BASE + _CORE_CLI + [
+    "spindoctor-gui": _CORE_BASE + _CORE_CLI + _CORE_LXML + [
         "spindoctor.cli",
         "spindoctor.favorites",
         "spindoctor.recent",

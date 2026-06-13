@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Build: standalone tool EXEs no longer bundle `click`, `rich`, or GUI modules.** `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` use `argparse` directly and have no transitive dependency on `click`, `rich`, `tkinter`, or `PIL`. The build script's hidden-import list now splits `_CORE_CLI` (click + rich) from `_CORE_BASE`, and passes `--exclude-module` for those libraries when building the standalone targets.
 
+- **Build: standalone tool EXEs no longer bundle `lxml`.** `database.py` now imports `lxml.etree` lazily via `_lxml_etree()` instead of at module level. The standalone tools (`spindoctor-fav`, `spindoctor-recent`, `spindoctor-stats`) use `--exclude-module lxml` and take the stdlib `xml.etree.ElementTree` fallback path, shedding ~7–9 MB of libxml2/libxslt C extensions. The full CLI and GUI continue to use lxml for comment-preserving XML round-trips. HyperSpin XML files written by the standalone tools are valid; comments are not present in those files in practice.
+
 ---
 
 ## [2.5.3] - 2026-06-13
