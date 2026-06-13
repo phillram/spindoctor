@@ -417,3 +417,84 @@ def test_custom_path_guard_skipped_when_computed_path_exists(tmp_path):
     # New path exists → guard does not fire → path is updated.
     assert f"Rom_Path={new_path}" in body
     assert str(old_path) not in body
+
+
+# ─── MAME-variant auto-detection ─────────────────────────────────────────────
+
+
+def test_mame_variant_name_falls_back_to_mame_rom_path(tmp_path):
+    """New Emulators.ini for 'MAME (Vector)' uses roms_dir/MAME when the
+    per-variant folder doesn't exist but roms_dir/MAME does."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)   # only the shared folder exists
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    generate_rl_system_ini("MAME (Vector)", cfg)
+
+    emu_ini = rl / "Settings" / "MAME (Vector)" / "Emulators.ini"
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={roms / 'MAME'}" in body
+    assert str(roms / "MAME (Vector)") not in body
+
+
+def test_mame_emulator_guard_preserves_relative_rom_path(tmp_path):
+    """When an existing Emulators.ini declares a MAME-family emulator and a
+    relative Rom_Path (e.g. ..\\Games\\Mame\\roms written by RLUI), the path
+    is left untouched — relative paths are resolved by RocketLauncher, not us."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "MAME Atari Classics" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    relative_path = r"..\Games\Mame\roms"
+    emu_ini.write_text(
+        f"[ROMS]\nDefault_Emulator=MAME\nRom_Path={relative_path}\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME Atari Classics", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={relative_path}" in body
+
+
+def test_non_mame_named_system_with_mame_emulator_uses_mame_fallback(tmp_path):
+    """Systems like '4-Player Games' that use a MAME-family emulator but have
+    no 'MAME' in their name fall back to roms_dir/MAME when neither their own
+    folder nor the computed path exists."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)   # J:\Games\MAME exists
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "4-Player Games" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=MAME (XBOX 4P DSW)\nRom_Path=J:\\Games\\4-Player Games\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("4-Player Games", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={roms / 'MAME'}" in body
+    assert "J:\\Games\\4-Player Games" not in body
+
+
+def test_guess_emulator_returns_mame_for_mame_variant_names(tmp_path):
+    """guess_emulator() returns 'MAME' for system names containing the word
+    'MAME', without requiring an exact match in EMULATOR_MAP."""
+    from spindoctor.rocketlauncher import guess_emulator
+    assert guess_emulator("MAME (Vector)") == "MAME"
+    assert guess_emulator("MAME Atari Classics") == "MAME"
+    assert guess_emulator("MAME") == "MAME"
+    assert guess_emulator("4-Player Games") == "RetroArch"  # unchanged

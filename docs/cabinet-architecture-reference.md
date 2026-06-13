@@ -106,15 +106,30 @@ layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Pa
 only — all other keys are preserved.
 
 **MAME variant systems share a single ROM folder.** This cabinet has multiple MAME-derived
-systems (`MAME (Vector)`, `MAME (Vertical)`, etc.) that all point at the same
-`J:\Games\MAME` directory rather than each having their own sibling folder.  SpinDoctor's
-`generate-config` derives `Rom_Path` as `roms_dir\<SystemName>` by default; for MAME
-variants this produces a non-existent path (`J:\Games\MAME (Vector)`).  SpinDoctor guards
-against this: if the existing `Emulators.ini` already has a `Rom_Path` that points at a
-real directory **and** the computed new path does not exist, the file is left untouched
-(`preserved (custom path)` in the dry-run table).  For a permanent explicit override, set
-`rom_path` under `system_overrides` in `spindoctor.toml` — that value always wins
-regardless of what folders exist.
+systems (`MAME (Vector)`, `MAME Atari Classics`, `4-Player Games`, etc.) that all share
+`J:\Games\MAME` rather than each having their own sibling folder.  SpinDoctor applies a
+three-tier strategy when running `generate-config` for such systems:
+
+1. **System name contains "MAME" (new file):** `generate-config` derives the initial
+   `Rom_Path` as `roms_dir\MAME` (not `roms_dir\<SystemName>`) when the variant folder
+   doesn't exist but `roms_dir\MAME` does.  The `Default_Emulator` is also inferred as
+   `MAME`.  This handles `MAME (Vector)`, `MAME Atari Classics`, etc. on first run.
+
+2. **Existing file has a MAME-family `Default_Emulator`:**
+   - **Relative `Rom_Path`** (e.g. `..\Games\Mame\roms` as written by RLUI): preserved
+     unconditionally — relative paths are resolved by RocketLauncher relative to the INI
+     file, not by SpinDoctor (`preserved (MAME emulator)` in the dry-run table).
+   - **Absolute `Rom_Path` that doesn't exist** (e.g. `J:\Games\4-Player Games` after a
+     restore from an old backup): replaced with `roms_dir\MAME` if that folder exists.
+     This covers non-MAME-named systems like `4-Player Games` whose emulator is
+     `MAME (XBOX 4P DSW)`.
+
+3. **Existing file has a valid absolute `Rom_Path`:** the original filesystem-existence
+   guard fires when the existing path is a real directory but the computed new path does
+   not exist (`preserved (custom path)` in the dry-run table).
+
+For a permanent explicit override that survives any restore, set `rom_path` under
+`system_overrides` — that value always wins regardless of what folders exist.
 
 > **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
 > `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL
