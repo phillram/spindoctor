@@ -10,6 +10,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`pc-rename` now detects stale PCLauncher INIs** — per-game INIs whose `Application=` no longer matches the live executable path (e.g. after a drive migration or file rename). Stale entries are flagged in `--verbose` output and in the dry-run summary. Pass `--overwrite-pclauncher` to rewrite them. INIs previously written in the old `[Settings]` / `ApplicationPath=` format are also flagged as stale so they are regenerated in the correct format.
 
+- **GUI — four previously CLI-only `--overwrite` flags are now exposed:**
+  - **Metadata & Media → Step 4 (media-scan):** "Overwrite existing files (--overwrite)" checkbox — imports files into already-filled slots and includes the "replacement" bucket.
+  - **Metadata & Media → Step 5 (generate-config):** "Overwrite Global Emulators.ini (--overwrite-global)" checkbox — replaces an existing `Global Emulators.ini` instead of leaving user customisations alone.
+  - **Systems → Sort & Organize (organize):** "Overwrite existing sort files (--overwrite-sort)" checkbox — replaces existing sort-database XMLs instead of skipping them.
+  - **Systems → Add system (add-pc-system):** "Overwrite existing PCLauncher INIs (--overwrite-pclauncher)" checkbox — rewrites stale or wrong-path per-game INIs when re-running `add-pc-system`.
+
 - **GUI — Systems tab: "Add new games / refresh a PC system" section redesigned.** The section was labelled "Re-review titles for a PC system" with a "Run pc-rename" button — neither name indicated it scans for new games. Renamed with a plain-English description. New **Overwrite existing INIs** checkbox exposes `--overwrite-pclauncher` so stale paths (wrong drive, renamed exe) can be fixed without leaving the GUI.
 
 - **`pc-rename --verbose` now shows a per-game table** with Title, Executable path, and INI status (`new` / `stale` / `current`). Stale entries show the wrong path currently in the INI so you can confirm the problem before re-running with `--overwrite-pclauncher`.
