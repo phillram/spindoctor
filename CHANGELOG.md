@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`generate-config` now handles all MAME-variant systems robustly without requiring per-system overrides.** Three new behaviours extend the existing preservation guard:
+  - *System name contains "MAME" (new or missing file):* `Default_Emulator` is inferred as `MAME` and `Rom_Path` falls back to `roms_dir\MAME` instead of the non-existent `roms_dir\<SystemName>` folder (covers `MAME (Vector)`, `MAME Atari Classics`, etc.).
+  - *Existing file declares a MAME-family emulator with a relative `Rom_Path`:* the relative path is resolved from the RL root directory (how RocketLauncher itself resolves it). If the resolved directory exists, the path is preserved. If it no longer exists (e.g. ROMs were moved from D: to J: after the backup was taken), the path is replaced with `roms_dir\MAME`. Dry-run shows `preserved (MAME emulator)` for the preserved case.
+  - *Existing file declares a MAME-family emulator with an absolute `Rom_Path` that no longer exists:* path is replaced with `roms_dir\MAME` (if that folder exists). This fixes the post-restore breakage for non-MAME-named systems like `4-Player Games` whose `Default_Emulator` is `MAME (XBOX 4P DSW)` — their ROMs live in `J:\Games\MAME`, not `J:\Games\4-Player Games`.
+
 ---
 
 ## [2.5.1] - 2026-06-13
