@@ -108,10 +108,11 @@ def _read_stats_file(
     The format used by RocketLauncher::
 
         [GameName]
-        Last_Played=2026-04-27 18:33:12
+        Last_Time_Played=Friday June 12, 2026 08:18:02 PM
         Number_of_Times_Played=12
         Total_Time_Played=...
 
+    Older RL versions write ``Last_Played`` instead of ``Last_Time_Played``.
     System-level keys (no specific game) are ignored.
     """
     parser = configparser.ConfigParser(strict=False, interpolation=None)
@@ -129,7 +130,8 @@ def _read_stats_file(
         if section.lower() in ("settings", "global"):
             continue
         last_raw = (
-            parser.get(section, "Last_Played", fallback="")
+            parser.get(section, "Last_Time_Played", fallback="")
+            or parser.get(section, "Last_Played", fallback="")
             or parser.get(section, "LastPlayed", fallback="")
         )
         ts = _parse_time(last_raw)
