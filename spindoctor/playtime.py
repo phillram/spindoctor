@@ -84,8 +84,10 @@ def _read_playstats_file(
         [GameName]
         Number_of_Times_Played=12
         Total_Time_Played=3601
-        Last_Played=2026-04-27 18:33:12
+        Last_Time_Played=Friday June 12, 2026 08:18:02 PM
         Average_Time_Played=300
+
+    Older RL versions write ``Last_Played`` instead of ``Last_Time_Played``.
     """
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
@@ -105,7 +107,8 @@ def _read_playstats_file(
         total = _coerce_int(parser.get(section, "Total_Time_Played", fallback="0"))
         avg = _coerce_int(parser.get(section, "Average_Time_Played", fallback="0"))
         last_raw = (
-            parser.get(section, "Last_Played", fallback="")
+            parser.get(section, "Last_Time_Played", fallback="")
+            or parser.get(section, "Last_Played", fallback="")
             or parser.get(section, "LastPlayed", fallback="")
         )
         last = _parse_time(last_raw) if last_raw else None

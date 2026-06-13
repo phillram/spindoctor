@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Recently Played wheel returns 0 entries on cabinets running newer RocketLauncher builds.** Newer RL writes `Last_Time_Played` in per-system Statistics.ini files (e.g. `MAME.ini`), but SpinDoctor was only checking the older `Last_Played` / `LastPlayed` key names. Every record was silently skipped → the rebuilt wheel was always empty. Most Played was unaffected because it can rank games by `Number_of_Times_Played` without needing a timestamp. Fixed by trying `Last_Time_Played` first, then falling back to the older key names.
+
 - **GUI: seven operations ignored the global Apply checkbox and always wrote to disk.** The following buttons/actions now correctly dry-run when Apply is unchecked and write only when it is checked:
   - **Refresh selected wheels** (`_refresh_all_wheels`) — `spindoctor-fav rebuild`, `spindoctor-recent rebuild`, `spindoctor-stats build-wheel`
   - **Add wheels to Main Menu** (`_register_wheels_in_main_menu`) — `mainmenu add` for Favorites / Recently Played / Most Played
