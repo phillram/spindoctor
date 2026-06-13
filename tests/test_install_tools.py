@@ -236,6 +236,62 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     assert "Default_Emulator=PCLauncher" in sys_ini.read_text(encoding="utf-8")
 
 
+# ─── stale-file cleanup tests ────────────────────────────────────────────────
+
+
+def test_install_tools_removes_stale_refresh_both_bat(cabinet):
+    """install-tools removes 'Refresh Both.bat' left by an older version."""
+    out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools" / "spindoctor")
+    out_dir.mkdir(parents=True)
+    (out_dir / "Refresh Both.bat").write_text("@echo off\r\n", encoding="utf-8")
+    (out_dir / "Refresh Both.ini").write_text("[Settings]\r\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    assert not (out_dir / "Refresh Both.bat").exists(), (
+        "Refresh Both.bat must be removed by install-tools migration"
+    )
+    assert not (out_dir / "Refresh Both.ini").exists()
+    assert (out_dir / "Refresh All.bat").exists(), "Refresh All.bat must still be written"
+
+
+def test_install_tools_add_to_system_removes_stale_refresh_both_db_entry(cabinet):
+    """install-tools --add-to-system removes the stale 'Refresh Both' DB entry."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+
+    from spindoctor.database import GameEntry
+    db_init = HyperspinDatabase("Toolkit", db_path)
+    db_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<menu></menu>\n',
+        encoding="utf-8",
+    )
+    db_init.load()
+    db_init.upsert_game(GameEntry(
+        name="Refresh Both", description="Refresh Both",
+        manufacturer="SpinDoctor", year="", genre="Tools",
+        players="1", enabled="Yes",
+    ))
+    db_init.save(backup=False)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    db = HyperspinDatabase("Toolkit", db_path)
+    db.load()
+    assert "Refresh Both" not in db.games(), (
+        "'Refresh Both' DB entry must be removed by install-tools migration"
+    )
+    assert "Refresh All" in db.games(), "current 'Refresh All' entry must be present"
+
+
 # ─── uninstall-tools tests ────────────────────────────────────────────────────
 
 

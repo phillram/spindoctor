@@ -3568,6 +3568,28 @@ def install_tools(output_dir, add_to_system):
         f"[cyan]{out}[/cyan]"
     )
 
+    # Remove stale files from tools that have been renamed or removed in
+    # this version.  "Refresh Both" was renamed to "Refresh All" in v2.4.27;
+    # without this cleanup the old bat stays on disk and appears as a
+    # confusing duplicate in the HyperSpin Tools menu.
+    _current_stems = {p.stem for p in written_bats}
+    for _stale_stem in _INSTALL_TOOLS_STEMS:
+        if _stale_stem in _current_stems:
+            continue
+        for _suffix in (".bat", ".ini"):
+            _stale_path = out / f"{_stale_stem}{_suffix}"
+            if _stale_path.is_file():
+                try:
+                    _stale_path.unlink()
+                    console.print(
+                        f"[yellow]-[/yellow] removed stale {_stale_path.name}"
+                    )
+                except OSError as _exc:
+                    err_console.print(
+                        f"[yellow]warning:[/yellow] could not remove "
+                        f"{_stale_path.name}: {_exc}"
+                    )
+
     if not add_to_system:
         console.print(
             "[dim]Add[/dim] [cyan]" + str(out) + "[/cyan] [dim]to "
@@ -3621,6 +3643,17 @@ def install_tools(output_dir, add_to_system):
             _install_tools_pclauncher_ini(bat_path), encoding="utf-8"
         )
 
+    # Remove stale database entries for tools that have been renamed.
+    # "Refresh Both" was renamed to "Refresh All" in v2.4.27; purge the old
+    # entry so it doesn't remain visible in the HyperSpin wheel.
+    removed_db: list[str] = []
+    for _stale_stem in _INSTALL_TOOLS_STEMS:
+        if _stale_stem in _current_stems:
+            continue
+        if _stale_stem in db.games():
+            db.remove_game(_stale_stem)
+            removed_db.append(_stale_stem)
+
     _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
     db.save(backup_dir=_bak_dir, tmp_dir=config.effective_atomic_tmp_dir)
     console.print(
@@ -3628,6 +3661,8 @@ def install_tools(output_dir, add_to_system):
         f"[cyan]{db_path}[/cyan]: "
         + ", ".join(f"[bold]{n}[/bold]" for n in added_entries)
     )
+    for _stale in removed_db:
+        console.print(f"[yellow]-[/yellow] removed stale DB entry [bold]{_stale!r}[/bold]")
 
     # Write the PCLauncher module INI (Modules/PCLauncher/<system>.ini).
     # PCLauncher.ahk reads *this* file to look up [<game>] sections containing
@@ -3682,15 +3717,15 @@ def install_tools(output_dir, add_to_system):
 # ─── uninstall-tools ──────────────────────────────────────────────────────────
 
 #: Stems of every file that install-tools can write, covering both the current
-#: name ("Refresh Both") and the renamed variant ("Refresh All") so that
-#: uninstall-tools cleans up correctly regardless of which install-tools
-#: version wrote the files.
+#: All stems ever written by install-tools (current + legacy) so that both
+#: install-tools (cleans up stale files on re-run) and uninstall-tools (full
+#: removal) cover every variant regardless of which version wrote the files.
 _INSTALL_TOOLS_STEMS: tuple[str, ...] = (
     "Refresh Favorites",
     "Refresh Recently Played",
     "Refresh Most Played",
-    "Refresh Both",   # current name written by install-tools
-    "Refresh All",    # renamed variant (pending rename branch)
+    "Refresh All",    # current name (renamed from "Refresh Both" in v2.4.27)
+    "Refresh Both",   # legacy name — no longer written; kept for cleanup only
 )
 
 
