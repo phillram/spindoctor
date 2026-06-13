@@ -1,13 +1,21 @@
 """Build standalone Windows executables for SpinDoctor.
 
-Produces five one-file binaries that run on Windows 7 SP1 and newer
-when built with Python 3.8 + PyInstaller 5.x:
+Produces a single --onedir bundle with five executables that share one
+Python runtime, placed at:
 
-    dist/spindoctor.exe          ← full CLI (every command)
-    dist/spindoctor-gui.exe      ← Tkinter GUI launcher (--windowed)
-    dist/spindoctor-fav.exe
-    dist/spindoctor-recent.exe
-    dist/spindoctor-stats.exe
+    dist/spindoctor/
+    ├── spindoctor.exe          ← full CLI (every command)
+    ├── spindoctor-gui.exe      ← Tkinter GUI launcher (--windowed)
+    ├── spindoctor-fav.exe
+    ├── spindoctor-recent.exe
+    ├── spindoctor-stats.exe
+    └── <shared Python 3.8 runtime + dependencies>
+
+Five binaries sharing one runtime folder instead of five separate
+self-extracting archives roughly halves the total zip size. The GUI's
+resolve_cli_command finds its peers via Path(sys.executable).parent,
+which in --onedir mode is the shared COLLECT directory — no changes
+required in gui.py.
 
 Usage (locally, on Windows):
 
@@ -16,12 +24,11 @@ Usage (locally, on Windows):
     python build/build_windows.py
 
 The GitHub Actions release workflow runs this on a windows-2022 runner
-(windows-2019 was retired) with Python 3.8.10 + PyInstaller 5.x — the
-combination that produces a bootloader Windows 7 SP1 still loads.
+with Python 3.8.10 + PyInstaller 5.x — the combination that produces a
+bootloader Windows 7 SP1 still loads.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 import sys
@@ -33,10 +40,13 @@ BUILD = ROOT / "build" / "_pyinstaller"
 ICON = ROOT / "spindoctor" / "assets" / "icon.ico"
 ASSETS_DIR = ROOT / "spindoctor" / "assets"
 
-# (entry-point module, console-script name, windowed?)
-# `windowed=True` builds with `--windowed` (no console window on launch) —
-# only used for the Tkinter GUI; the CLIs need `--console` so their stdout
-# pipes work when invoked from cmd.exe or by the GUI's subprocess.Popen.
+# Output directory name inside dist/; users extract the zip and get this folder.
+# The zip is already named spindoctor-windows-vX.Y.Z.zip, so the folder inside
+# needs no further -windows suffix.
+COLLECT_NAME = "spindoctor"
+
+# (entry-point module:attr, exe name, windowed?)
+# windowed=True → --windowed (no console window) — only for the GUI.
 TARGETS = [
     ("spindoctor.cli:cli",            "spindoctor",        False),
     ("spindoctor.gui:main",           "spindoctor-gui",    True),
@@ -45,48 +55,64 @@ TARGETS = [
     ("spindoctor.playtime:main",      "spindoctor-stats",  False),
 ]
 
-# Modules PyInstaller's static analysis can miss because they're imported
-# lazily or via plugin discovery. Listed here so the bundled exe still works.
-HIDDEN_IMPORTS = [
+# Hidden imports that PyInstaller's static analysis misses because they are
+# imported lazily, via plugin discovery, or through C-extension hooks.
+# Split per-target so each binary's PYZ archive only carries what it needs.
+# Shared runtime DLLs (lxml, Pillow, etc.) are deduplicated by COLLECT —
+# they appear once in dist/spindoctor/ regardless of how many
+# Analysis objects declared them.
+_CORE: list[str] = [
     "spindoctor",
-    "spindoctor.cli",
-    "spindoctor.favorites",
-    "spindoctor.recent",
-    "spindoctor.playtime",
-    "spindoctor.gui",
-    "spindoctor.autostart",
     "spindoctor.update_check",
-    "spindoctor.themes",
-    "spindoctor.scraper",
-    "spindoctor.archives",
-    "spindoctor.preview",
-    "spindoctor.tools_audit",
-    "spindoctor.lightgun",
-    "spindoctor.verify",
     "lxml._elementpath",
     "lxml.etree",
     "rich.logging",
     "click",
-    # tkinterdnd2 ships native Tcl shared libraries (tkdnd2.9.x) that
-    # PyInstaller doesn't auto-bundle. The GUI imports the module
-    # conditionally, so a missing module is non-fatal — but the frozen
-    # GUI exe should include it so end-users get the drag-drop
-    # affordance without a separate install step.
-    "tkinterdnd2",
 ]
+
+HIDDEN_IMPORTS: dict[str, list[str]] = {
+    "spindoctor": _CORE + [
+        "spindoctor.cli",
+        "spindoctor.favorites",
+        "spindoctor.recent",
+        "spindoctor.playtime",
+        "spindoctor.autostart",
+        "spindoctor.themes",
+        "spindoctor.scraper",
+        "spindoctor.archives",
+        "spindoctor.preview",
+        "spindoctor.tools_audit",
+        "spindoctor.lightgun",
+        "spindoctor.verify",
+    ],
+    "spindoctor-gui": _CORE + [
+        "spindoctor.cli",
+        "spindoctor.favorites",
+        "spindoctor.recent",
+        "spindoctor.playtime",
+        "spindoctor.gui",
+        "spindoctor.autostart",
+        "spindoctor.themes",
+        "spindoctor.scraper",
+        "spindoctor.archives",
+        "spindoctor.preview",
+        "spindoctor.tools_audit",
+        "spindoctor.lightgun",
+        "spindoctor.verify",
+        "tkinterdnd2",
+    ],
+    "spindoctor-fav":    _CORE + ["spindoctor.favorites"],
+    "spindoctor-recent": _CORE + ["spindoctor.recent"],
+    "spindoctor-stats":  _CORE + ["spindoctor.playtime"],
+}
 
 
 def write_shim(entry: str, name: str) -> Path:
-    """Write a tiny `__main__` style shim that calls the package entry point.
+    """Write a tiny __main__-style shim that calls the package entry point.
 
     The shim filename must NOT collide with any importable top-level package
-    name. The previous version wrote `spindoctor.py` for the main entry point,
-    which PyInstaller registered as the bundle's top-level `spindoctor`
-    module — shadowing the actual `spindoctor/` package and causing
-    `from spindoctor.cli import cli` to resolve to the shim itself, with
-    `ModuleNotFoundError: 'spindoctor' is not a package`. Prefixing with
-    an underscore puts the shim in a distinct namespace; PyInstaller's
-    `--name` argument keeps the produced exe named `spindoctor.exe`.
+    name — prefixing with an underscore puts it in a distinct namespace so
+    PyInstaller's --name argument keeps the exe named correctly.
     """
     module, attr = entry.split(":")
     shim_dir = BUILD / "shims"
@@ -101,39 +127,121 @@ def write_shim(entry: str, name: str) -> Path:
     return shim
 
 
-def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
-    # `--windowed` suppresses the console window on Windows for GUI binaries.
-    # On the CLI binaries `--console` is required so stdout/stderr keep flowing
-    # to the parent cmd window (or to the GUI's subprocess.Popen pipes).
-    mode_flag = "--windowed" if windowed else "--console"
+def write_spec(shims: list[Path], datas: list[tuple[str, str]]) -> Path:
+    """Generate a PyInstaller spec file for the multi-binary --onedir build.
+
+    A single COLLECT step deduplicates the shared Python runtime and all
+    dependency DLLs so they appear once in dist/spindoctor/ regardless
+    of how many EXE targets contributed them.
+    """
+    spec_dir = BUILD / "specs"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+    spec_path = spec_dir / "spindoctor.spec"
+
+    icon_list = repr([str(ICON)]) if ICON.exists() else "[]"
+    pathex_list = repr([str(ROOT)])
+
+    lines: list[str] = [
+        "# -*- mode: python ; coding: utf-8 -*-",
+        "# Auto-generated by build/build_windows.py — do not edit.",
+        "block_cipher = None",
+        "",
+    ]
+
+    # One Analysis + PYZ + EXE per target; COLLECT merges them all.
+    var_names: list[tuple[str, str, bool]] = []
+    for (entry, name, windowed), shim in zip(TARGETS, shims):
+        var = name.replace("-", "_")
+        var_names.append((var, name, windowed))
+        hi = repr(HIDDEN_IMPORTS[name])
+        # Assets are bundled only once (in the main CLI analysis). COLLECT
+        # places them in the shared directory so all five EXEs find them via
+        # sys._MEIPASS at runtime.
+        target_datas = repr(datas) if name == "spindoctor" else repr([])
+        lines += [
+            f"a_{var} = Analysis(",
+            f"    [{repr(str(shim))}],",
+            f"    pathex={pathex_list},",
+            f"    binaries=[],",
+            f"    datas={target_datas},",
+            f"    hiddenimports={hi},",
+            f"    hookspath=[],",
+            f"    hooksconfig={{}},",
+            f"    runtime_hooks=[],",
+            f"    excludes=[],",
+            f"    win_no_prefer_redirects=False,",
+            f"    win_private_assemblies=False,",
+            f"    cipher=block_cipher,",
+            f"    noarchive=False,",
+            f")",
+            "",
+        ]
+
+    for var, name, _ in var_names:
+        lines.append(
+            f"pyz_{var} = PYZ(a_{var}.pure, a_{var}.zipped_data, cipher=block_cipher)"
+        )
+    lines.append("")
+
+    for var, name, windowed in var_names:
+        lines += [
+            f"exe_{var} = EXE(",
+            f"    pyz_{var},",
+            f"    a_{var}.scripts,",
+            f"    [],",
+            f"    exclude_binaries=True,",
+            f"    name={repr(name)},",
+            f"    debug=False,",
+            f"    bootloader_ignore_signals=False,",
+            f"    strip=False,",
+            f"    upx=True,",
+            f"    upx_exclude=[],",
+            f"    runtime_tmpdir=None,",
+            f"    console={'False' if windowed else 'True'},",
+            f"    disable_windowed_traceback=False,",
+            f"    argv_emulation=False,",
+            f"    target_arch=None,",
+            f"    codesign_identity=None,",
+            f"    entitlements_file=None,",
+            f"    icon={icon_list},",
+            f")",
+            "",
+        ]
+
+    collect_items: list[str] = []
+    for var, _, _ in var_names:
+        collect_items += [
+            f"    exe_{var},",
+            f"    a_{var}.binaries,",
+            f"    a_{var}.zipfiles,",
+            f"    a_{var}.datas,",
+        ]
+
+    lines += (
+        ["coll = COLLECT("]
+        + collect_items
+        + [
+            "    strip=False,",
+            "    upx=True,",
+            "    upx_exclude=[],",
+            f"    name={repr(COLLECT_NAME)},",
+            ")",
+            "",
+        ]
+    )
+
+    spec_path.write_text("\n".join(lines), encoding="utf-8")
+    return spec_path
+
+
+def run_pyinstaller(spec_path: Path) -> None:
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--noconfirm", "--clean",
-        "--onefile", mode_flag,
-        "--name", name,
         "--distpath", str(DIST),
         "--workpath", str(BUILD / "work"),
-        "--specpath", str(BUILD / "specs"),
+        str(spec_path),
     ]
-    if ICON.exists():
-        # Embeds the icon into the PE resource table so Explorer / taskbar /
-        # Alt-Tab pick it up. Without this every Windows surface fell back
-        # to the default Tk feather even though the asset shipped in the
-        # repo.
-        cmd += ["--icon", str(ICON)]
-    if ASSETS_DIR.exists():
-        # Bundle only the top-level asset files — NOT subdirectories.
-        # The `archive/` subdirectory holds deprecated originals kept for
-        # reference; it is intentionally excluded from pip installs (the
-        # pyproject.toml glob `assets/*.ext` is non-recursive) and must
-        # also be excluded here so it doesn't bloat every frozen exe by
-        # ~24 MB × 5 = ~120 MB in the release zip.
-        for asset_file in sorted(ASSETS_DIR.iterdir()):
-            if asset_file.is_file():
-                cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
-    for hi in HIDDEN_IMPORTS:
-        cmd += ["--hidden-import", hi]
-    cmd.append(str(shim))
     print("$", " ".join(cmd), flush=True)
     subprocess.check_call(cmd)
 
@@ -145,14 +253,26 @@ def main() -> int:
         shutil.rmtree(BUILD)
     DIST.mkdir(parents=True, exist_ok=True)
 
-    for entry, name, windowed in TARGETS:
-        shim = write_shim(entry, name)
-        run_pyinstaller(shim, name, windowed)
+    # Asset files to bundle — top-level only, no archive/ subdir.
+    datas: list[tuple[str, str]] = []
+    if ASSETS_DIR.exists():
+        for asset_file in sorted(ASSETS_DIR.iterdir()):
+            if asset_file.is_file():
+                datas.append((str(asset_file), "spindoctor/assets"))
 
-    print("\nBuilt:")
-    for _, name, _windowed in TARGETS:
-        exe = DIST / (f"{name}.exe" if sys.platform == "win32" else name)
-        print(f"  {exe}  ({exe.stat().st_size // 1024} KB)")
+    shims = [write_shim(entry, name) for entry, name, _ in TARGETS]
+    spec_path = write_spec(shims, datas)
+    run_pyinstaller(spec_path)
+
+    out_dir = DIST / COLLECT_NAME
+    suffix = ".exe" if sys.platform == "win32" else ""
+    print(f"\nBuilt ({out_dir}):")
+    for _, name, _ in TARGETS:
+        exe = out_dir / f"{name}{suffix}"
+        if exe.exists():
+            print(f"  {exe.name}  ({exe.stat().st_size // 1024:,} KB)")
+    total_bytes = sum(f.stat().st_size for f in out_dir.rglob("*") if f.is_file())
+    print(f"  bundle total: {total_bytes // (1024 * 1024)} MB")
     return 0
 
 

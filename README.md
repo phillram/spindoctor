@@ -28,7 +28,7 @@ Then pick how you want to *use* it:
 ### Five-minute quick start (binaries)
 
 1. Grab `spindoctor-windows-vX.Y.Z.zip` from the [latest release](https://github.com/phillram/spindoctor/releases).
-2. Extract to e.g. `C:\spindoctor\`. Optionally add the folder to `PATH` for CLI use.
+2. Extract the zip. Rename the resulting `spindoctor\` folder if you like (e.g. `C:\spindoctor\`). Optionally add the folder to `PATH` for CLI use.
 3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done.
 
 ### Five-minute quick start (pip)
