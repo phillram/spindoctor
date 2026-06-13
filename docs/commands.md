@@ -376,16 +376,19 @@ Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-d
 
 ### `pc-rename`
 
-Re-run the title-curation pass on an existing PC system — useful after dropping new games into the folder without re-running the full `add-pc-system` flow.
+Scan for new or changed games in an existing PC system and refresh PCLauncher INIs. Use after dropping new `.exe` / `.lnk` files into `<roms_dir>/<system>/` without re-running the full `add-pc-system` flow.
 
 ```bat
-spindoctor pc-rename "PC Games"                  :: review titles, preview the INI write
-spindoctor pc-rename "PC Games" --apply          :: review titles, write the PCLauncher INIs
-spindoctor pc-rename "PC Games" --no-interactive --apply :: auto-accept all proposed titles (non-TTY contexts)
-spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: replace existing INIs too
+spindoctor pc-rename "PC Games"                            :: dry-run: scan and preview
+spindoctor pc-rename "PC Games" --verbose                  :: show per-game title/exe/INI status table
+spindoctor pc-rename "PC Games" --apply                    :: write new PCLauncher INIs
+spindoctor pc-rename "PC Games" --no-interactive --apply   :: auto-accept all titles (non-TTY)
+spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: rewrite ALL INIs (fixes stale paths)
 ```
 
-The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely; existing INIs are kept unless `--overwrite-pclauncher` is passed.
+The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely.
+
+`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`) or after renaming an executable — otherwise the old INI is kept and RocketLauncher will fail to find the file. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path mismatch), or `current` so you can confirm the problem before committing.
 
 `--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
 

@@ -1087,6 +1087,17 @@ def _pclauncher_ini_text(executable) -> str:
     )
 
 
+def read_pclauncher_ini_application_path(ini_path: Path) -> str:
+    """Return the ApplicationPath= value from an existing PCLauncher INI, or ''."""
+    try:
+        for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.lower().startswith("applicationpath="):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return ""
+
+
 def pclauncher_settings_text(executable, parameters: str = "") -> str:
     """Render a ``[Settings]``-format PCLauncher INI that launches *executable*.
 
