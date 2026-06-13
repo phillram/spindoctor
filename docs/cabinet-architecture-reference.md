@@ -23,11 +23,37 @@ macOS development but break the cabinet.
 
 ## Directory Layout
 
+> **Important:** HyperSpin is installed directly at `D:\Arcade\` — there is **no** `D:\Arcade\HyperSpin\` subfolder. `hyperspin_dir` in `config.json` is `D:\Arcade`. `Databases\`, `Media\`, and `Settings\` are all direct children of `D:\Arcade\`.
+
 ```
-D:\Arcade\
-├── RocketLauncher\                   ← RocketLauncher root
+D:\Arcade\                            ← HyperSpin root (= hyperspin_dir in config)
+├── Databases\                        ← HyperSpin game databases
+│   ├── MAME\
+│   │   └── MAME.xml
+│   ├── Favorites\
+│   │   └── Favorites.xml             ← SpinDoctor writes/manages this
+│   └── ...
+├── Media\                            ← HyperSpin media (= hyperspin_dir/Media)
+│   ├── MAME\
+│   │   ├── Images\Wheel\
+│   │   ├── Images\Backgrounds\
+│   │   ├── Themes\               ← themes stored as per-game .zip files
+│   │   ├── Sound\
+│   │   └── Video\
+│   └── Favorites\                ← SpinDoctor mirrors media here during rebuild
+├── Settings\                         ← HyperSpin per-system wheel settings
+│   ├── Main Menu.ini                 ← top-level wheel settings
+│   ├── MAME.ini                      ← MAME wheel settings
+│   ├── Favorites.ini                 ← HyperSpin wheel settings (hyperlaunch=true)
+│   ├── 4-Player Games.ini            ← contains [video defaults] path= redirect (see below)
+│   └── ...                           ← one .ini per HyperSpin system
+├── RocketLauncher\                   ← RocketLauncher root (= rocketlauncher_dir in config)
 │   ├── RocketLauncher.exe
 │   ├── RocketLauncherGame.exe        ← SpinDoctor-created copy; used as RL#2 for synthetic wheels (see below)
+│   ├── Data\
+│   │   └── Statistics\
+│   │       ├── MAME.ini              ← per-system play stats (RL writes these; see Statistics section)
+│   │       └── ...                   ← one .ini per system that has been launched
 │   ├── Modules\
 │   │   └── PCLauncher\
 │   │       ├── PCLauncher.ahk        ← AHK module invoked by RL for all PCLauncher systems
@@ -47,8 +73,6 @@ D:\Arcade\
 │   │       └── ...                   ← one .ini per PCLauncher system
 │   ├── Settings\
 │   │   ├── Global Emulators.ini      ← master emulator registry
-│   │   ├── Global Statistics\
-│   │   │   └── <System>.ini          ← per-system play stats (RL writes these)
 │   │   ├── Favorites\
 │   │   │   ├── Emulators.ini         ← folder-layout: [ROMS] Default_Emulator=PCLauncher
 │   │   │   └── RocketLauncher.ini    ← all keys use_global (inherits from Global)
@@ -61,33 +85,176 @@ D:\Arcade\
 │   │   └── PCLauncher\
 │   │       └── PCLauncher.exe        ← the emulator exe (not the .ahk module)
 │   └── Games\
-│       ├── MAME\                     ← MAME ROMs
-│       ├── Nintendo 64\              ← N64 ROMs
+│       ├── MAME\                     ← MAME ROMs (legacy; ROMs moved to J:\Games\MAME)
+│       ├── Nintendo 64\
 │       └── ...
-├── HyperSpin\
-│   ├── Databases\
-│   │   ├── MAME\
-│   │   │   └── MAME.xml
-│   │   ├── Favorites\
-│   │   │   └── Favorites.xml         ← SpinDoctor writes/manages this
-│   │   └── ...
-│   ├── Media\
-│   │   ├── MAME\
-│   │   │   ├── Images\Wheel\
-│   │   │   ├── Images\Backgrounds\
-│   │   │   ├── Themes\               ← themes stored as per-game .zip files
-│   │   │   ├── Sound\
-│   │   │   └── Video\
-│   │   └── Favorites\                ← SpinDoctor mirrors media here during rebuild
-│   └── Settings\
-│       ├── Favorites.ini             ← HyperSpin wheel settings (hyperlaunch=true)
-│       └── ...
+├── Emulators\                        ← emulators (= emulators_dir in config)
+│   ├── MAME\
+│   │   └── mame64.exe
+│   ├── RetroArch\
+│   ├── Dolphin Ishiiruka\
+│   └── ...
+├── LEDBlinky\                        ← LEDBlinky install (= ledblinky_dir in config)
+│   ├── LEDBlinky.exe
+│   ├── Settings.ini
+│   ├── controls.ini
+│   ├── Colors.ini
+│   ├── LEDBlinkyControls.xml
+│   ├── Color-RGB.ini
+│   └── lwa\
 └── Utilities\
     └── Toolkit\                      ← SpinDoctor tool executables live here
         ├── exit.exe
         ├── soundfix_mame.exe
         └── ...
 ```
+
+### ROM storage
+
+ROMs live on a separate drive: `J:\Games\` (= `roms_dir` in `config.json`). This drive was moved from `D:` at some point; `generate-config` detects this and updates `Rom_Path=` entries accordingly.
+
+```
+J:\Games\
+├── MAME\          ← shared by MAME and all MAME subsystem wheels
+├── Nintendo 64\
+└── ...
+```
+
+---
+
+## SpinDoctor Configuration and Storage
+
+### Configuration file
+
+SpinDoctor stores its configuration in a single JSON file:
+
+```
+C:\Users\<username>\.spindoctor\config.json
+```
+
+(equivalently `%USERPROFILE%\.spindoctor\config.json`)
+
+All paths are absolute. This cabinet's `config.json`:
+
+```json
+{
+  "roms_dir":       "J:\\Games",
+  "hyperspin_dir":  "D:\\Arcade",
+  "emulators_dir":  "D:\\Arcade\\Emulators",
+  "rocketlauncher_dir": "D:\\Arcade\\RocketLauncher",
+  "ledblinky_dir":  "D:\\Arcade\\LEDBlinky",
+  "output_dir":     "J:\\spindoctor\\output",
+  "backup_dir":     "J:\\spindoctor\\backups",
+  "atomic_tmp_dir": "J:\\spindoctor\\temps"
+}
+```
+
+**Derived paths** (not stored in config, always computed at runtime):
+
+| Property | Derived as | Example |
+|----------|-----------|---------|
+| `config.media_dir` | `hyperspin_dir / "Media"` | `D:\Arcade\Media` |
+| `config.databases_dir` | `hyperspin_dir / "Databases"` | `D:\Arcade\Databases` |
+
+### Output directories
+
+SpinDoctor writes all its output files to `output_dir`, never into the HyperSpin or RocketLauncher source trees. Backups go to `backup_dir`. Atomic writes use `atomic_tmp_dir` as a staging area (same drive as the destination to allow atomic rename).
+
+```
+J:\spindoctor\
+├── output\     ← generated XML files, rebuilt databases, etc.
+├── backups\    ← timestamped .bak copies before any destructive change
+│   ├── HyperSpin\
+│   ├── LEDBlinky\
+│   └── RocketLauncher\
+└── temps\      ← staging area for atomic writes (same drive as output)
+```
+
+MAME `listxml` cache (used by `ledblinky generate`) is stored at:
+```
+%USERPROFILE%\.spindoctor\mame_listxml_cache\
+```
+
+---
+
+## HyperSpin Settings INIs and the Video Redirect
+
+### Location
+
+HyperSpin stores per-system wheel settings in:
+
+```
+D:\Arcade\Settings\<System>.ini
+```
+
+(i.e. `hyperspin_dir / "Settings" / f"{system}.ini"`)
+
+Each INI can contain multiple sections controlling the wheel's appearance and launch behaviour. The one SpinDoctor cares about is `[video defaults]`.
+
+### `[video defaults]` — video path redirect
+
+MAME subsystem wheels ("4-Player Games", "Driving Games", "Gun Games", etc.) do not have their own video collection. Instead they share the MAME video folder. HyperSpin is told where to look via the `[video defaults]` section in the system's Settings INI:
+
+```ini
+; D:\Arcade\Settings\4-Player Games.ini
+[video defaults]
+path=D:\Arcade\Media\MAME\Video\
+```
+
+**How SpinDoctor reads this** — `_read_hs_video_dir(settings_dir, system)` in `medialink.py` reads `[video defaults]` → `path=` and returns the path if it exists on disk. `plan_mirror` accepts a `video_dir_override` kwarg: when the source system has no `Video\` directory of its own, the override directory is scanned instead.
+
+This is called in `fav rebuild` (`favorites.py`) and `recent rebuild` / `stats build-wheel` (`recent.py`) with a per-system cache to avoid re-reading the same INI multiple times.
+
+**Without this redirect**, games from MAME subsystem wheels silently skip video during a synthetic wheel rebuild because `Media\4-Player Games\Video\` does not exist. The video file (e.g. `D:\Arcade\Media\MAME\Video\iceclmrdxbox.mp4`) is present but never found.
+
+---
+
+## RocketLauncher Play Statistics
+
+### File location
+
+RL writes per-system play statistics to:
+
+```
+D:\Arcade\RocketLauncher\Data\Statistics\<System>.ini
+```
+
+(i.e. `rocketlauncher_dir / "Data" / "Statistics" / f"{system}.ini"`)
+
+One `.ini` file exists per system that has had at least one game launched.
+
+### File format
+
+Each file contains a top-level aggregate section (`[General]`, `[TopTen_Time_Played]`, etc.) followed by one section per game that has been played:
+
+```ini
+[General]
+...
+
+[005]
+Number_of_Times_Played=1
+Last_Time_Played=Saturday June 13, 2026 07:51:53 AM
+Average_Time_Played=0
+Total_Time_Played=0
+
+[pc_1942]
+Number_of_Times_Played=-1
+Last_Time_Played=Saturday June 13, 2026 07:51:19 AM
+Average_Time_Played=0
+Total_Time_Played=0
+```
+
+**Key names used by SpinDoctor:**
+
+| Key | Used by | Notes |
+|-----|---------|-------|
+| `Last_Time_Played` | Recently Played (`_read_stats_file`) | Date format: `"Saturday June 13, 2026 07:51:53 AM"` |
+| `Number_of_Times_Played` | Most Played (`_read_playstats_file`) | RL starts at `-2` (uninitialized) and counts up; `-1` means played once |
+| `Total_Time_Played` | Most Played | Seconds |
+
+> **Failure mode (pre-v2.5.3):** `_read_stats_file` looked for `Last_Played` / `LastPlayed` — neither key is written by current RocketLauncher builds. The correct key is `Last_Time_Played`. With no valid timestamp, every record was silently skipped, producing a "0 parseable records" result and an empty Recently Played wheel.
+
+The Toolkit system's stats file (`Data\Statistics\Toolkit.ini`) is explicitly excluded from stats collection so that tool runs (Refresh Favorites, Refresh Recently Played, etc.) never appear in the synthetic wheels.
 
 ---
 
@@ -680,6 +847,8 @@ HyperSpin looks for media under `Media\<SystemName>\<SubDir>\<GameName>.<ext>`:
 
 SpinDoctor's media mirror copies all of the above from the source system to the synthetic
 wheel. Both file-form themes (`.zip`) and directory-form themes are handled.
+
+**MAME subsystem video redirect** — MAME subsystem wheels ("4-Player Games", "Driving Games", etc.) have no `Media\<System>\Video\` folder of their own. HyperSpin reads the video redirect from `D:\Arcade\Settings\<System>.ini` under `[video defaults]` → `path=`. SpinDoctor follows this same redirect during `fav rebuild` / `recent rebuild` so subsystem games get their videos copied to the synthetic wheel. See *HyperSpin Settings INIs and the Video Redirect* above.
 
 **`Default.zip` fallback** — When a game has no per-game theme zip in the source system,
 SpinDoctor copies `Default.zip` from that system's `Themes\` folder as `<GameName>.zip`

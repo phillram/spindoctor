@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from spindoctor.medialink import (
-    LinkMode, apply_plan, plan_mirror, remove_target,
+    LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir,
 )
 
 
@@ -193,3 +193,89 @@ def test_wmv_and_mpeg_videos_are_mirrored(tmp_path):
     for name in ("1942.wmv", "1942.mpeg", "1942.mpg"):
         dest = media / "Favorites" / "Video" / name
         assert dest.exists(), f"{name} was not copied to Favorites/Video/"
+
+
+# ─── HyperSpin video redirect (video_dir_override) ───────────────────────────
+
+def test_read_hs_video_dir_returns_path_from_ini(tmp_path):
+    """_read_hs_video_dir reads [video defaults] path= from the system INI."""
+    video_dir = tmp_path / "Media" / "MAME" / "Video"
+    video_dir.mkdir(parents=True)
+    settings_dir = tmp_path / "Settings"
+    settings_dir.mkdir()
+    (settings_dir / "4-Player Games.ini").write_text(
+        "[video defaults]\npath=" + str(video_dir) + "\n",
+        encoding="utf-8",
+    )
+    result = _read_hs_video_dir(settings_dir, "4-Player Games")
+    assert result == video_dir
+
+
+def test_read_hs_video_dir_returns_none_when_path_missing(tmp_path):
+    """Returns None when the redirect target does not exist on disk."""
+    settings_dir = tmp_path / "Settings"
+    settings_dir.mkdir()
+    (settings_dir / "4-Player Games.ini").write_text(
+        "[video defaults]\npath=Z:\\DoesNotExist\\Video\\\n",
+        encoding="utf-8",
+    )
+    assert _read_hs_video_dir(settings_dir, "4-Player Games") is None
+
+
+def test_read_hs_video_dir_returns_none_when_no_ini(tmp_path):
+    """Returns None when the system has no HyperSpin settings INI."""
+    settings_dir = tmp_path / "Settings"
+    settings_dir.mkdir()
+    assert _read_hs_video_dir(settings_dir, "4-Player Games") is None
+
+
+def test_plan_mirror_uses_video_dir_override(tmp_path):
+    """video_dir_override is used when the source system has no Video dir.
+
+    Reproduces the 4-Player Games / MAME-subsystem pattern: the system has
+    wheel art in its own media folder but all videos live in Media/MAME/Video/.
+    """
+    media = tmp_path / "Media"
+    # Source system has wheel art but NO Video directory
+    src = media / "4-Player Games"
+    (src / "Images" / "Wheel").mkdir(parents=True)
+    (src / "Images" / "Wheel" / "iceclmrdxbox.png").write_bytes(b"wheel")
+
+    # Videos live in MAME's folder (HyperSpin redirect target)
+    mame_video = media / "MAME" / "Video"
+    mame_video.mkdir(parents=True)
+    (mame_video / "iceclmrdxbox.mp4").write_bytes(b"video-bytes")
+
+    plan = plan_mirror(
+        media, "4-Player Games", "Favorites", "iceclmrdxbox",
+        video_dir_override=mame_video,
+    )
+    sources = {a.src.name for a in plan.actions if not a.is_dir}
+    assert "iceclmrdxbox.png" in sources, "wheel art must still be mirrored"
+    assert "iceclmrdxbox.mp4" in sources, "video from override dir must be mirrored"
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    assert (media / "Favorites" / "Images" / "Wheel" / "iceclmrdxbox.png").exists()
+    assert (media / "Favorites" / "Video" / "iceclmrdxbox.mp4").exists()
+
+
+def test_plan_mirror_prefers_system_video_over_override(tmp_path):
+    """System-specific Video dir takes priority over video_dir_override."""
+    media = tmp_path / "Media"
+    src = media / "4-Player Games"
+    (src / "Video").mkdir(parents=True)
+    (src / "Video" / "iceclmrdxbox.mp4").write_bytes(b"system-video")
+
+    override_dir = media / "MAME" / "Video"
+    override_dir.mkdir(parents=True)
+    (override_dir / "iceclmrdxbox.mp4").write_bytes(b"mame-video")
+
+    plan = plan_mirror(
+        media, "4-Player Games", "Favorites", "iceclmrdxbox",
+        video_dir_override=override_dir,
+    )
+    video_actions = [a for a in plan.actions if "Video" in str(a.src.parent) and not a.is_dir]
+    assert len(video_actions) == 1
+    assert video_actions[0].src.parent == src / "Video", (
+        "system-specific Video dir must be used, not the override"
+    )
