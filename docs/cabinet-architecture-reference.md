@@ -841,7 +841,7 @@ HyperSpin looks for media under `Media\<SystemName>\<SubDir>\<GameName>.<ext>`:
 | `Images\Titles\`    | Title-screen captures — displayed in theme side-panels when a game is highlighted. |
 | `Images\Letters\`   | Alphabetic scroll-bar letter art           |
 | `Themes\`           | Theme files — stored as **`.zip` files** (e.g. `Themes\1942.zip`), not extracted directories. `Default.zip` is the console-wide fallback theme HyperSpin uses for games without a per-game zip. |
-| `Sound\`            | Navigation sound clips (`navigate.mp3`, `select.mp3`, `back.mp3`, `letter.mp3`). `navigate.mp3` plays on every left/right cursor move. |
+| `Sound\`            | Navigation sound clips (`Wheel Click.mp3`, `select.mp3`, `back.mp3`, `letter.mp3`). `Wheel Click.mp3` plays on every left/right cursor move. |
 | `Video\`            | Video previews (`.mp4`, `.wmv`, `.mpeg`, `.mpg`, `.flv`, `.avi`, `.mkv`, …) |
 | `Video\Trailers\`   | Full trailers                              |
 
@@ -855,8 +855,8 @@ SpinDoctor copies `Default.zip` from that system's `Themes\` folder as `<GameNam
 in the synthetic wheel. This preserves the console-themed background and video layout
 (e.g. the NES theme for Kirby's Adventure) that HyperSpin would show in the native wheel.
 
-**`navigate.mp3` auto-install** — SpinDoctor bundles a navigation click sound and installs
-it as `Media\<SystemName>\Sound\navigate.mp3` for each synthetic wheel during `rebuild --apply`
+**`Wheel Click.mp3` auto-install** — SpinDoctor bundles a navigation click sound and installs
+it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during `rebuild --apply`
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
 

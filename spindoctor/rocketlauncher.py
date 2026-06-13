@@ -654,7 +654,7 @@ _THEME_ASSETS: dict[str, str] = {
 
 # Navigate sound — plays on every left/right cursor move while browsing the
 # game list inside a synthetic wheel.
-# HyperSpin path: Media\<SystemName>\Sound\navigate.mp3
+# HyperSpin path: Media\<SystemName>\Sound\Wheel Click.mp3
 # (per-system Sound folder, not Media\Main Menu\Sound which is for the top-level
 # wheel browsing music — a separate HyperSpin concept).
 _NAVIGATE_SOUND_ASSETS: dict[str, str] = {
@@ -878,7 +878,7 @@ def install_system_navigate_sound(
 
     Destination::
 
-        <hyperspin_dir>/Media/<system_name>/Sound/navigate.mp3
+        <hyperspin_dir>/Media/<system_name>/Sound/Wheel Click.mp3
 
     HyperSpin plays this file on every left/right cursor move while the user
     browses the game list inside the wheel.  Unlike ``install_system_music``
@@ -891,7 +891,7 @@ def install_system_navigate_sound(
     src = _resolve_asset(_NAVIGATE_SOUND_ASSETS, system_name)
     if src is None:
         return None, "no_asset"
-    dest = hyperspin_dir / "Media" / system_name / "Sound" / "navigate.mp3"
+    dest = hyperspin_dir / "Media" / system_name / "Sound" / "Wheel Click.mp3"
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
 
 
