@@ -27,16 +27,14 @@ Each release at [github.com/phillram/spindoctor/releases](https://github.com/phi
 
 ```
 spindoctor-windows-vX.Y.Z.zip
-└── spindoctor\
-    ├── spindoctor.exe          ← full CLI (every command)
-    ├── spindoctor-gui.exe      ← double-clickable GUI launcher
-    ├── spindoctor-fav.exe      ← Favorites wheel manager
-    ├── spindoctor-recent.exe   ← Recently Played rebuild
-    ├── spindoctor-stats.exe    ← playtime reports + Most Played wheel
-    └── (shared Python 3.8 runtime — keep the folder together)
+├── spindoctor.exe          ← full CLI (every command)
+├── spindoctor-gui.exe      ← double-clickable GUI launcher
+├── spindoctor-fav.exe      ← Favorites wheel manager
+├── spindoctor-recent.exe   ← Recently Played rebuild
+└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
-All five binaries share a single Python runtime bundled in the same folder — no installer, no setup wizard, no DLL hell. The shared runtime is roughly 30–50 MB total regardless of how many executables you use. **Keep all files in `spindoctor\` together** — individual EXEs will not run if moved out of the folder without their runtime peers.
+Each binary is a self-contained, self-extracting executable — no installer, no setup wizard, no DLL hell, no shared runtime to keep together. Drop any of them wherever you like and they just run.
 
 Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar. Earlier releases shipped without `--icon` in the PyInstaller invocation and as a result rendered the default Tk feather everywhere Windows shows an icon; that's fixed.
 
@@ -70,7 +68,7 @@ curl -L -o spindoctor-windows.zip ^
 
 There's no installer — just extract and optionally rename.
 
-1. Extract the zip. It creates a `spindoctor\` folder. Move or rename it wherever you want (e.g. `C:\spindoctor\`). You should end up with:
+1. Extract the zip. Move the five `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). You should end up with:
 
    ```
    C:\spindoctor\
@@ -78,11 +76,10 @@ There's no installer — just extract and optionally rename.
    ├── spindoctor-gui.exe
    ├── spindoctor-fav.exe
    ├── spindoctor-recent.exe
-   ├── spindoctor-stats.exe
-   └── (runtime files — python38.dll, *.pyd, etc.)
+   └── spindoctor-stats.exe
    ```
 
-   Keep the folder contents together — `spindoctor-gui.exe` finds its peers by looking in the same directory as itself. Do not move individual EXEs out of the folder.
+   Each binary is self-contained — you can place them individually or together as you prefer. `spindoctor-gui.exe` finds its peer binaries by looking in the same directory as itself, so keeping them in one folder is recommended for GUI use.
 
 2. **Add the folder to `PATH`** (optional, GUI users can skip) so you can run `spindoctor` from anywhere:
 
@@ -129,7 +126,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 `spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
-The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it in `spindoctor\`. Keep the folder contents together; the GUI does not require `PATH` to be configured.
+The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all five EXEs in the same folder; the GUI does not require `PATH` to be configured.
 
 **For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
@@ -167,7 +164,7 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
 ## Updating
 
 1. Download the new zip from [Releases](https://github.com/phillram/spindoctor/releases/latest).
-2. Replace the entire `spindoctor\` folder (or whatever you renamed it to) with the newly extracted one.
+2. Replace the five `.exe` files in your install folder with the newly extracted ones.
 3. Re-run `spindoctor --version` (or relaunch `spindoctor-gui.exe` and check the title bar) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
@@ -186,7 +183,7 @@ If your IT policy blocks unsigned binaries entirely, fall back to a source insta
 
 ### `spindoctor-gui.exe` opens a window but the buttons do nothing
 
-The GUI shells out to `spindoctor.exe` and the standalone wheel binaries sitting next to it. If those moved, got renamed, or were quarantined by antivirus, every button click pops a "Binary not found" error pointing at the missing file. Re-extract the release zip so the full `spindoctor\` folder is intact again.
+The GUI shells out to `spindoctor.exe` and the standalone wheel binaries sitting next to it. If those moved, got renamed, or were quarantined by antivirus, every button click pops a "Binary not found" error pointing at the missing file. Re-download or re-extract the affected EXE from the release zip — each is a self-contained binary.
 
 If `spindoctor-gui.exe` itself fails to open at all on Windows 7, you're hitting the same `api-ms-win-core-…` bootloader issue documented below — install Service Pack 1 first.
 
@@ -225,4 +222,4 @@ pip install -r build\requirements-build.txt
 python build\build_windows.py
 ```
 
-Output lands in `dist\spindoctor\`. The full build matrix and CI workflow lives in [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md).
+Output lands in `dist\`. The full build matrix and CI workflow lives in [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md).
