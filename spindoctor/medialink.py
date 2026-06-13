@@ -160,9 +160,19 @@ def plan_mirror(
     for sub in MEDIA_FILE_SUBDIRS:
         src_dir = src_root / sub
         # For the Video subdir, fall back to the HyperSpin redirect path when
-        # the source system has no Video directory of its own.
-        if sub == "Video" and video_dir_override and not src_dir.is_dir():
-            src_dir = video_dir_override
+        # the source system's Video folder is absent OR exists but contains no
+        # file with the right stem.  HyperSpin (and previous SpinDoctor runs)
+        # often create the directory skeleton without populating it, so checking
+        # is_dir() alone is not sufficient — an empty directory must also
+        # trigger the fallback.
+        if sub == "Video" and video_dir_override:
+            has_own_video = src_dir.is_dir() and any(
+                e.is_file() and e.stem == source_stem
+                and e.suffix.lower() in _FILE_EXTS
+                for e in src_dir.iterdir()
+            )
+            if not has_own_video:
+                src_dir = video_dir_override
         if not src_dir.is_dir():
             continue
         theme_found = False
