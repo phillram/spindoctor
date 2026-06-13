@@ -18,12 +18,25 @@ from typing import Any, Iterator, Optional
 
 from ._compat import et_indent
 
-try:
-    from lxml import etree as LET  # type: ignore
-    _HAS_LXML = True
-except ImportError:  # pragma: no cover - fallback path
-    LET = None  # type: ignore
-    _HAS_LXML = False
+# lxml is imported lazily so PyInstaller can exclude it from the lightweight
+# standalone EXEs (spindoctor-fav, spindoctor-recent, spindoctor-stats) via
+# --exclude-module lxml.  The full CLI and GUI still get lxml bundled because
+# they list lxml.etree as a hidden import.  Without lxml the stdlib ET fallback
+# is used, which loses XML comment round-tripping but is otherwise correct.
+_LXML_NOT_CHECKED = object()
+_LET = _LXML_NOT_CHECKED  # type: ignore
+
+
+def _lxml_etree():
+    """Return the lxml.etree module if available, else None."""
+    global _LET
+    if _LET is _LXML_NOT_CHECKED:
+        try:
+            from lxml import etree  # type: ignore  # noqa: PLC0415
+            _LET = etree
+        except ImportError:
+            _LET = None
+    return _LET
 
 # Order in which fields are emitted for new <game> elements (HyperSpin convention).
 # ``players`` sits next to ``rating`` — both are short, optional descriptors and
@@ -194,6 +207,7 @@ class HyperspinDatabase:
         if not self.xml_path.exists():
             self._loaded = True
             return
+        LET = _lxml_etree()
         try:
             # Open the file ourselves and pass the handle into the
             # parser so the OS lock is released as soon as parsing
@@ -201,7 +215,7 @@ class HyperspinDatabase:
             # open on Windows until the tree is GC'd — which then
             # blocks any concurrent rename / save / migrate touching
             # the same XML.
-            if _HAS_LXML:
+            if LET is not None:
                 # ``remove_blank_text=True`` strips whitespace-only text nodes
                 # at parse time, which is the precondition for lxml's
                 # ``pretty_print=True`` to actually re-indent on write. Without
@@ -240,7 +254,7 @@ class HyperspinDatabase:
         except ET.ParseError as e:
             raise ValueError(f"Failed to parse {self.xml_path}: {e}") from e
         except Exception as e:  # noqa: BLE001 - re-raise non-parse errors
-            if _HAS_LXML and isinstance(e, LET.XMLSyntaxError):
+            if LET is not None and isinstance(e, LET.XMLSyntaxError):
                 raise ValueError(f"Failed to parse {self.xml_path}: {e}") from e
             raise
         self._loaded = True
@@ -398,7 +412,8 @@ class HyperspinDatabase:
         # HyperSpin's native Main Menu.xml has no XML declaration; emitting
         # one is tolerated by some skins but ships strictly without it.
         want_decl = not self._enabled_as_attribute
-        if _HAS_LXML and isinstance(self._tree, LET._ElementTree):
+        LET = _lxml_etree()
+        if LET is not None and isinstance(self._tree, LET._ElementTree):
             xml_bytes = LET.tostring(
                 self._tree,
                 pretty_print=True,
@@ -418,7 +433,8 @@ class HyperspinDatabase:
     def _write_fresh(self, target: Path,
                      tmp_dir: Optional[Path] = None) -> None:
         attr_mode = self._enabled_as_attribute
-        if _HAS_LXML:
+        LET = _lxml_etree()
+        if LET is not None:
             root = LET.Element("menu")
         else:
             _warn_no_lxml_once()
@@ -426,7 +442,7 @@ class HyperspinDatabase:
 
         # Main Menu native format has no <header> block — only per-system DBs do.
         if not attr_mode:
-            hdr = LET.SubElement(root, "header") if _HAS_LXML else ET.SubElement(root, "header")
+            hdr = LET.SubElement(root, "header") if LET is not None else ET.SubElement(root, "header")
             _set_text(hdr, "listname", self.system_name)
             _set_text(hdr, "lastlistupdate", datetime.now().strftime("%Y-%m-%d"))
             _set_text(hdr, "listversion", "2.0")
@@ -442,7 +458,7 @@ class HyperspinDatabase:
             _new_game_element(game, root=root, enabled_as_attribute=attr_mode)
 
         want_decl = not attr_mode
-        if _HAS_LXML:
+        if LET is not None:
             tree = LET.ElementTree(root)
             xml_bytes = LET.tostring(
                 tree,
@@ -495,7 +511,8 @@ def _text(el, tag: str) -> str:
 
 def _set_text(parent, tag: str, text: str):
     """Append a child <tag>text</tag> to ``parent`` and return it."""
-    if _HAS_LXML and hasattr(parent, "nsmap"):
+    LET = _lxml_etree()
+    if LET is not None and hasattr(parent, "nsmap"):
         el = LET.SubElement(parent, tag)
     else:
         el = ET.SubElement(parent, tag)
@@ -674,7 +691,8 @@ def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool =
     For per-system databases (``enabled_as_attribute=False``), produces the
     full HyperHQ schema with ``<description>``, ``<manufacturer>``, etc.
     """
-    if _HAS_LXML and (root is None or hasattr(root, "nsmap")):
+    LET = _lxml_etree()
+    if LET is not None and (root is None or hasattr(root, "nsmap")):
         if root is not None:
             el = LET.SubElement(root, "game")
         else:
