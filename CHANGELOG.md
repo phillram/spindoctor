@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Tools-menu terminal windows now close automatically after a refresh completes.** When launched from HyperSpin's Tools menu via RocketLauncher/PCLauncher, the `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All` bat files would leave a blank cmd window visible on the desktop after HyperSpin was closed. The bat scripts now end with an explicit `exit` command, which forces the cmd.exe process to close even when the launcher opens the bat with a persistent console (as PCLauncher does on Windows 7). Run `install-tools` again to redeploy the updated bat files to the cabinet.
+
 ---
 
 ## [2.4.27] - 2026-06-12
