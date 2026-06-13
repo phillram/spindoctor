@@ -50,6 +50,13 @@ SYNTHETIC_SYSTEM_NAMES: frozenset[str] = frozenset({
     "Recently Played",
     "Most Played",
 })
+
+# Extended exclusion set for collecting play statistics.
+# Adds the Toolkit launcher to SYNTHETIC_SYSTEM_NAMES so that tool runs
+# (Refresh Favorites, Refresh Most Played, etc.) recorded by RocketLauncher
+# when the user launches them from the Toolkit wheel are never treated as
+# real game plays and never appear in Recently Played or Most Played.
+_STATS_EXCLUDE: frozenset[str] = SYNTHETIC_SYSTEM_NAMES | frozenset({"Toolkit"})
 _TIME_FORMATS = (
     "%Y-%m-%d %H:%M:%S",
     "%Y-%m-%dT%H:%M:%S",
@@ -201,7 +208,7 @@ def _read_global_statistics_ini(
 def collect_play_records(
     config: Config,
     *,
-    exclude_systems: "frozenset[str] | set[str] | None" = SYNTHETIC_SYSTEM_NAMES,
+    exclude_systems: "frozenset[str] | set[str] | None" = _STATS_EXCLUDE,
     warnings: "list[str] | None" = None,
     notes: "list[str] | None" = None,
 ) -> list[PlayRecord]:
@@ -217,10 +224,11 @@ def collect_play_records(
     contains only the top-10 lists, but is better than nothing).
 
     *exclude_systems* — system names to skip entirely when reading stats.
-    Defaults to :data:`SYNTHETIC_SYSTEM_NAMES` so that sessions launched
-    *from* a synthetic wheel (Favorites → RL#1 records the play under the
-    synthetic system name) do not pollute the Recently Played / Most Played
-    lists.  Pass ``None`` or an empty set to read all systems.
+    Defaults to :data:`_STATS_EXCLUDE` (= :data:`SYNTHETIC_SYSTEM_NAMES` plus
+    ``"Toolkit"``) so that sessions launched *from* a synthetic wheel or the
+    Toolkit launcher (Refresh Favorites, etc.) do not pollute the Recently
+    Played / Most Played lists.  Pass ``None`` or an empty set to read all
+    systems.
 
     Pass a list to *notes* to receive informational messages describing which
     paths were found and used (useful for CLI / GUI diagnostics).
@@ -671,12 +679,12 @@ def rebuild(
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
     # known-system filter, letting stray stats entries leak into this wheel).
-    known = set(get_systems(config)) - SYNTHETIC_SYSTEM_NAMES - {target_system}
+    known = set(get_systems(config)) - _STATS_EXCLUDE - {target_system}
     read_warnings: list[str] = []
     read_notes: list[str] = []
     raw = collect_play_records(
         config,
-        exclude_systems=SYNTHETIC_SYSTEM_NAMES | {target_system},
+        exclude_systems=_STATS_EXCLUDE | {target_system},
         warnings=read_warnings,
         notes=read_notes,
     )

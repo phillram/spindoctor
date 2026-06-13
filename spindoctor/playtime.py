@@ -30,7 +30,7 @@ from typing import Iterable, Optional
 from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
-from .recent import SYNTHETIC_SYSTEM_NAMES, _build_synthetic_wheel, _parse_time
+from .recent import SYNTHETIC_SYSTEM_NAMES, _STATS_EXCLUDE, _build_synthetic_wheel, _parse_time
 
 
 DEFAULT_PLAYED_SYSTEM = "Most Played"
@@ -221,7 +221,7 @@ def _read_global_statistics_ini(
 def load_all_playtime(
     config: Config,
     *,
-    exclude_systems: "frozenset[str] | set[str] | None" = SYNTHETIC_SYSTEM_NAMES,
+    exclude_systems: "frozenset[str] | set[str] | None" = _STATS_EXCLUDE,
     warnings: "list[str] | None" = None,
     notes: "list[str] | None" = None,
 ) -> list[PlayStat]:
@@ -240,9 +240,9 @@ def load_all_playtime(
     (newest ``last_played`` wins; counts are summed).
 
     *exclude_systems* — system names to skip entirely when reading stats.
-    Defaults to :data:`~spindoctor.recent.SYNTHETIC_SYSTEM_NAMES` so that
-    sessions launched *from* a synthetic wheel (where RL#1 records the play
-    under the synthetic system name) do not pollute the Most Played list.
+    Defaults to :data:`~spindoctor.recent._STATS_EXCLUDE` (synthetic wheel names
+    plus ``"Toolkit"``) so that tool runs (Refresh Favorites, etc.) and sessions
+    launched *from* a synthetic wheel do not pollute the Most Played list.
     Pass ``None`` or an empty set to read all systems.
 
     Pass a list to *notes* to receive informational messages describing which
@@ -535,13 +535,13 @@ def build_most_played_wheel(
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
     # known-system filter, letting stray stats entries leak into this wheel).
-    known = set(get_systems(config)) - SYNTHETIC_SYSTEM_NAMES - {target_system}
+    known = set(get_systems(config)) - _STATS_EXCLUDE - {target_system}
     read_warnings: list[str] = []
     read_notes: list[str] = []
     stats = [
         s for s in load_all_playtime(
             config,
-            exclude_systems=SYNTHETIC_SYSTEM_NAMES | {target_system},
+            exclude_systems=_STATS_EXCLUDE | {target_system},
             warnings=read_warnings,
             notes=read_notes,
         )

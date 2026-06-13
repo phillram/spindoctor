@@ -264,6 +264,27 @@ def test_read_global_statistics_ini_parses_last_played(tmp_path):
 
 # ─── synthetic system exclusion ──────────────────────────────────────────────
 
+def test_collect_play_records_excludes_toolkit_by_default(isolated_config, tmp_path):
+    """Toolkit stats are excluded by default so tool runs never appear in synthetic wheels."""
+    rl = tmp_path / "rl"
+    gs = rl / "Settings" / "Global Statistics"
+    gs.mkdir(parents=True)
+    _write_stats_ini(gs / "MAME.ini", [("zingzip", "2026-04-27 18:33:12", 3)])
+    _write_stats_ini(gs / "Toolkit.ini", [
+        ("Refresh Favorites", "2026-04-28 10:00:00", 5),
+        ("Refresh Most Played", "2026-04-28 10:01:00", 2),
+    ])
+
+    from spindoctor.config import save_config
+    cfg = Config(rocketlauncher_dir=str(rl))
+    save_config(cfg)
+    records = collect_play_records(cfg)
+
+    systems = {r.system for r in records}
+    assert "MAME" in systems
+    assert "Toolkit" not in systems
+
+
 def test_collect_play_records_excludes_synthetic_systems_by_default(isolated_config, tmp_path):
     """Favorites / Recently Played / Most Played stats are excluded by default."""
     rl = tmp_path / "rl"
