@@ -5252,6 +5252,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     config = _cfg()
     _check_config(config)
 
+    from .config import get_system_overrides as _get_sys_overrides
     from .rocketlauncher import (
         SKIP_GENERATE_CONFIG,
         generate_global_emulators_ini,
@@ -5385,8 +5386,11 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                         pass
 
             if not apply_changes:
+                _ovr = _get_sys_overrides().get(sys_name, {})
+                _ovr_rom = _ovr.get("rom_path") if isinstance(_ovr.get("rom_path"), str) else ""
                 new_rom_path = (
-                    str(Path(config.roms_dir) / sys_name) if config.roms_dir else ""
+                    _ovr_rom if _ovr_rom
+                    else (str(Path(config.roms_dir) / sys_name) if config.roms_dir else "")
                 )
                 existing_ini = (
                     _find_existing_ini(rl_base_dry, sys_name)
@@ -5402,6 +5406,19 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                 elif current_rom_path == new_rom_path:
                     current_str = f"[dim]{current_rom_path}[/dim]"
                     status = "[dim]no change[/dim]"
+                elif (
+                    not _ovr_rom
+                    and not out_base
+                    and current_rom_path
+                    and Path(current_rom_path).is_dir()
+                    and not Path(new_rom_path).exists()
+                ):
+                    # Guard: current path is a working directory but the
+                    # computed new path doesn't exist (e.g. MAME variant
+                    # sharing J:\Games\MAME).  generate_rl_system_ini will
+                    # preserve the current path — show that here too.
+                    current_str = f"[dim]{current_rom_path}[/dim]"
+                    status = "[dim]preserved (custom path)[/dim]"
                 else:
                     current_str = f"[yellow]{current_rom_path}[/yellow]"
                     status = "[green]update[/green]"

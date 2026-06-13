@@ -105,6 +105,24 @@ SpinDoctor writes **both** files for new systems so the cabinet works regardless
 layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Path=` update
 only — all other keys are preserved.
 
+**MAME variant systems share a single ROM folder.** This cabinet has multiple MAME-derived
+systems (`MAME (Vector)`, `MAME (Vertical)`, etc.) that all point at the same
+`J:\Games\MAME` directory rather than each having their own sibling folder.  SpinDoctor's
+`generate-config` derives `Rom_Path` as `roms_dir\<SystemName>` by default; for MAME
+variants this produces a non-existent path (`J:\Games\MAME (Vector)`).  SpinDoctor guards
+against this: if the existing `Emulators.ini` already has a `Rom_Path` that points at a
+real directory **and** the computed new path does not exist, the file is left untouched
+(`preserved (custom path)` in the dry-run table).  For a permanent explicit override, set
+`rom_path` under `system_overrides` in `spindoctor.toml` — that value always wins
+regardless of what folders exist.
+
+> **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
+> `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL
+> checks per-system settings **before** `Global Emulators.ini`, inserting that file into
+> the lookup chain caused RL to find the wrong (non-existent) path and refuse to launch any
+> MAME (Vector) ROM.  Pre-generate-config, RL fell through to the global file and used the
+> correct shared path.
+
 ### Per-system Emulators.ini — real format
 
 This is what a real per-system `Emulators.ini` on this cabinet looks like (minimal — no
