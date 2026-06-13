@@ -259,6 +259,36 @@ def test_plan_mirror_uses_video_dir_override(tmp_path):
     assert (media / "Favorites" / "Video" / "iceclmrdxbox.mp4").exists()
 
 
+def test_plan_mirror_uses_override_when_system_video_dir_is_empty(tmp_path):
+    """video_dir_override is used when the system Video dir exists but is empty.
+
+    HyperSpin and previous SpinDoctor runs often create the directory skeleton
+    (Media/<system>/Video/) without populating it.  An empty system Video dir
+    must NOT block the override — only a dir that actually contains the game's
+    video file should take priority.
+    """
+    media = tmp_path / "Media"
+    src = media / "4-Player Games"
+    # System Video dir EXISTS but is empty (no video for this game)
+    (src / "Video").mkdir(parents=True)
+
+    mame_video = media / "MAME" / "Video"
+    mame_video.mkdir(parents=True)
+    (mame_video / "iceclmrdxbox.mp4").write_bytes(b"video-bytes")
+
+    plan = plan_mirror(
+        media, "4-Player Games", "Favorites", "iceclmrdxbox",
+        video_dir_override=mame_video,
+    )
+    sources = {a.src.name for a in plan.actions if not a.is_dir}
+    assert "iceclmrdxbox.mp4" in sources, (
+        "video from override must be used when system Video dir is empty"
+    )
+
+    apply_plan(plan, mode=LinkMode.COPY)
+    assert (media / "Favorites" / "Video" / "iceclmrdxbox.mp4").exists()
+
+
 def test_plan_mirror_prefers_system_video_over_override(tmp_path):
     """System-specific Video dir takes priority over video_dir_override."""
     media = tmp_path / "Media"

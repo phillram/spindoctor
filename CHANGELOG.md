@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Build: standalone tool EXEs no longer bundle `lxml`.** `database.py` now imports `lxml.etree` lazily via `_lxml_etree()` instead of at module level. The standalone tools (`spindoctor-fav`, `spindoctor-recent`, `spindoctor-stats`) use `--exclude-module lxml` and take the stdlib `xml.etree.ElementTree` fallback path, shedding ~7–9 MB of libxml2/libxslt C extensions. The full CLI and GUI continue to use lxml for comment-preserving XML round-trips. HyperSpin XML files written by the standalone tools are valid; comments are not present in those files in practice.
 
+### Fixed
+
+- **MAME subsystem videos still not copied when `Media\<System>\Video\` directory exists but is empty.** The v2.5.3 fix for the HyperSpin `[video defaults]` redirect only activated when the system's `Video\` folder was completely absent. HyperSpin creates the directory skeleton (`Media\4-Player Games\Video\`, etc.) without populating it, so SpinDoctor found the empty folder, skipped the MAME redirect, iterated an empty directory, and produced no copy actions — leaving `iceclmrdxbox.mp4` and similar videos missing from the Favorites wheel. Fixed by checking whether the system's `Video\` folder actually contains a file for the specific game, not just whether the folder exists.
+
 ---
 
 ## [2.5.3] - 2026-06-13
