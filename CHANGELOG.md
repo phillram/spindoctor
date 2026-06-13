@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **`pc-rename` now detects stale PCLauncher INIs** — INIs whose `ApplicationPath=` no longer matches the live executable path (e.g. after a drive migration or file rename). Stale entries are flagged in `--verbose` output and in the dry-run summary. Pass `--overwrite-pclauncher` to rewrite them.
+- **`pc-rename` now detects stale PCLauncher INIs** — per-game INIs whose `Application=` no longer matches the live executable path (e.g. after a drive migration or file rename). Stale entries are flagged in `--verbose` output and in the dry-run summary. Pass `--overwrite-pclauncher` to rewrite them. INIs previously written in the old `[Settings]` / `ApplicationPath=` format are also flagged as stale so they are regenerated in the correct format.
 
 - **GUI — Systems tab: "Add new games / refresh a PC system" section redesigned.** The section was labelled "Re-review titles for a PC system" with a "Run pc-rename" button — neither name indicated it scans for new games. Renamed with a plain-English description. New **Overwrite existing INIs** checkbox exposes `--overwrite-pclauncher` so stale paths (wrong drive, renamed exe) can be fixed without leaving the GUI.
 
@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Fixed
 
 - **`pc-rename` dry-run now reports accurate write counts.** Previously "Would write N PCLauncher INI(s)" counted all titles regardless of whether their INI already existed, overstating what would actually be written. The dry-run now separately counts new, stale, and current entries and reports only the number that would actually change.
+
+- **PC game per-game PCLauncher INIs now use the correct format.** SpinDoctor previously wrote `[Settings]` / `ApplicationPath=` in per-game INIs (`Modules\PCLauncher\<System>\<Game>.ini`). PCLauncher.ahk reads `[<game_name>]` / `Application=` — it does not recognise `ApplicationPath=`, so the stale system-level `<System>.ini` (often left over from RLUI with old relative paths) was being used instead, causing "Cannot find this Application" errors. Per-game INIs now use the correct `[<game_name>]` / `Application=` format that PCLauncher.ahk actually reads. Any existing INIs in the old format are detected as stale and can be rewritten by running `pc-rename --overwrite-pclauncher --apply`.
 
 - **GUI system dropdowns showed case-variant duplicates** (e.g. "PC GAMES" and "PC Games") when the ROMs folder and Databases folder used different capitalisation for the same system name. On Windows, filesystem names are case-insensitive but Python's `set` is not. `get_systems()` now deduplicates case-insensitively and prefers the `databases_dir` spelling (which matches the name HyperSpin uses).
 

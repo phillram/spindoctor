@@ -3095,14 +3095,13 @@ def _install_tools_pclauncher_ini(bat_path: Path) -> str:
     """PCLauncher INI body that runs *bat_path* directly.
 
     The wheel-refresh helpers are plain .bat files that run and exit — they
-    have no persistent window for PCLauncher to monitor.  The [Settings]
-    format (ApplicationPath / StartIn) handles this cleanly without requiring
-    FadeTitle, which the [exe info] format would need and which causes
-    "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch
-    for" when left empty.
+    have no persistent window for PCLauncher to monitor.  These placeholder
+    per-game INIs use the [Settings] / ApplicationPath= format; the actual
+    launch config (with Application= in [game_name] sections) lives in the
+    system-level Toolkit.ini written by write_toolkit_module_ini.
     """
-    from .rocketlauncher import _pclauncher_ini_text
-    return _pclauncher_ini_text(bat_path)
+    from .rocketlauncher import pclauncher_settings_text
+    return pclauncher_settings_text(bat_path)
 
 
 @cli.command("theme-scan")

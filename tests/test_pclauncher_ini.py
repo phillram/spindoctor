@@ -16,6 +16,7 @@ from spindoctor.rocketlauncher import (
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
+    read_pclauncher_ini_application_path,
     write_pclauncher_system_ini,
     write_toolkit_module_ini,
     _read_system_default_emulator,
@@ -77,12 +78,13 @@ def test_generate_pclauncher_inis_writes_per_game_files(tmp_path):
     assert skipped == []
 
     cyber = (module_dir / "Cyberpunk 2077.ini").read_text(encoding="utf-8")
-    assert r"ApplicationPath=C:\Games\Cyberpunk 2077\bin\launcher.exe" in cyber
-    assert r"StartIn=C:\Games\Cyberpunk 2077\bin" in cyber
-    assert "ApplicationParameters=" in cyber
+    assert "[Cyberpunk 2077]" in cyber
+    assert r"Application=C:\Games\Cyberpunk 2077\bin\launcher.exe" in cyber
+    assert r"WorkingFolder=C:\Games\Cyberpunk 2077\bin" in cyber
 
     hades = (module_dir / "Hades.ini").read_text(encoding="utf-8")
-    assert r"ApplicationPath=C:\Games\Hades.lnk" in hades
+    assert "[Hades]" in hades
+    assert r"Application=C:\Games\Hades.lnk" in hades
 
 
 def test_generate_pclauncher_inis_skips_existing_unless_overwrite(tmp_path):
@@ -109,7 +111,7 @@ def test_generate_pclauncher_inis_skips_existing_unless_overwrite(tmp_path):
         "PC Games", titles, cfg, overwrite=True,
     )
     assert len(written3) == 1
-    assert "ApplicationPath" in (module_dir / "Hades.ini").read_text(encoding="utf-8")
+    assert "Application=" in (module_dir / "Hades.ini").read_text(encoding="utf-8")
 
 
 def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
@@ -121,6 +123,53 @@ def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
         generate_pclauncher_inis(
             "PC Games", {"Hades": Path(r"C:\Games\Hades.lnk")}, cfg,
         )
+
+
+# ─── read_pclauncher_ini_application_path ────────────────────────────────────
+
+def test_read_pclauncher_ini_application_path_new_format(tmp_path):
+    """Reads Application= from [game_name] section (new PCLauncher.ahk format)."""
+    ini = tmp_path / "Master Key.ini"
+    ini.write_text(
+        "[Master Key]\nApplication=J:\\Games\\PC Games\\Master Key\\MasterKey.exe\nWorkingFolder=J:\\Games\\PC Games\\Master Key\n",
+        encoding="utf-8",
+    )
+    assert read_pclauncher_ini_application_path(ini) == r"J:\Games\PC Games\Master Key\MasterKey.exe"
+
+
+def test_read_pclauncher_ini_application_path_old_format_returns_empty(tmp_path):
+    """Old [Settings]/ApplicationPath= format returns '' — treated as stale."""
+    ini = tmp_path / "Hades.ini"
+    ini.write_text(
+        "[Settings]\nApplicationPath=C:\\Games\\Hades\\Hades.exe\nStartIn=C:\\Games\\Hades\n",
+        encoding="utf-8",
+    )
+    assert read_pclauncher_ini_application_path(ini) == ""
+
+
+def test_read_pclauncher_ini_application_path_missing_file(tmp_path):
+    """Returns '' when the INI file does not exist."""
+    assert read_pclauncher_ini_application_path(tmp_path / "NoGame.ini") == ""
+
+
+def test_read_pclauncher_ini_application_path_wrong_section_returns_empty(tmp_path):
+    """Returns '' when Application= is in a different section than the filename stem."""
+    ini = tmp_path / "Hades.ini"
+    ini.write_text(
+        "[SomeOtherGame]\nApplication=C:\\Games\\Hades\\Hades.exe\n",
+        encoding="utf-8",
+    )
+    assert read_pclauncher_ini_application_path(ini) == ""
+
+
+def test_read_pclauncher_ini_application_path_case_insensitive_section(tmp_path):
+    """Section name match is case-insensitive."""
+    ini = tmp_path / "Hades.ini"
+    ini.write_text(
+        "[HADES]\nApplication=C:\\Games\\Hades\\Hades.exe\n",
+        encoding="utf-8",
+    )
+    assert read_pclauncher_ini_application_path(ini) == r"C:\Games\Hades\Hades.exe"
 
 
 # ─── _read_system_default_emulator ────────────────────────────────────────────
