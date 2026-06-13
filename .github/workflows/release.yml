@@ -57,23 +57,24 @@ jobs:
         run: python build/build_windows.py
 
       - name: Smoke-test every binary
+        # --onedir build: all five EXEs live inside dist/spindoctor-windows/
         shell: cmd
         run: |
-          dist\spindoctor.exe --version
-          dist\spindoctor-fav.exe --help
-          dist\spindoctor-recent.exe --help
-          dist\spindoctor-stats.exe --help
+          dist\spindoctor-windows\spindoctor.exe --version
+          dist\spindoctor-windows\spindoctor-fav.exe --help
+          dist\spindoctor-windows\spindoctor-recent.exe --help
+          dist\spindoctor-windows\spindoctor-stats.exe --help
 
       # spindoctor-gui.exe is a `--windowed` build (Win32 GUI subsystem),
       # so cmd doesn't wait for it and stdout is detached — `--version`
       # works in code but the shell can't observe its exit. The check
-      # above confirms PyInstaller produced the file; importing the
+      # below confirms PyInstaller produced the file; importing the
       # module here exercises its argument-handling path the same way
       # the frozen binary does at startup.
       - name: Smoke-test GUI module
         shell: bash
         run: |
-          test -f dist/spindoctor-gui.exe
+          test -f dist/spindoctor-windows/spindoctor-gui.exe
           python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
 
       - name: Resolve release tag
@@ -87,10 +88,13 @@ jobs:
           fi
 
       - name: Package as zip
+        # Zip the entire spindoctor-windows/ folder so users extract a
+        # self-contained directory (EXEs + shared runtime) rather than
+        # individual files that won't run without their runtime peers.
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
+          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" spindoctor-windows
 
       # Lets users verify their download with `sha256sum -c SHA256SUMS.txt`.
       - name: Generate SHA256 checksums
@@ -135,15 +139,19 @@ jobs:
             echo
             echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2022\`. Runs on Windows 7 SP1 and newer."
             echo
-            echo "Drop the \`.exe\` files into a folder on \`PATH\` (or call by full path). No Python install required on the cabinet. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
+            echo "Extract the zip — it creates a \`spindoctor-windows\\\` folder containing all five executables and their shared Python runtime. Move or rename the folder wherever you like (e.g. \`C:\spindoctor\\\`), then double-click \`spindoctor-gui.exe\` to launch. No Python install required. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
             echo
             echo "**What's in \`spindoctor-windows-${{ github.ref_name }}.zip\`:**"
             echo
-            echo "- \`spindoctor.exe\` — full CLI"
-            echo "- \`spindoctor-gui.exe\` — double-clickable GUI launcher (no cmd.exe required)"
-            echo "- \`spindoctor-fav.exe\` — Favorites wheel manager"
-            echo "- \`spindoctor-recent.exe\` — Recently Played rebuild"
-            echo "- \`spindoctor-stats.exe\` — playtime reports + Most Played wheel"
+            echo "\`\`\`"
+            echo "spindoctor-windows\\"
+            echo "├── spindoctor.exe          ← full CLI"
+            echo "├── spindoctor-gui.exe      ← double-clickable GUI launcher"
+            echo "├── spindoctor-fav.exe      ← Favorites wheel manager"
+            echo "├── spindoctor-recent.exe   ← Recently Played rebuild"
+            echo "├── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
+            echo "└── (shared Python 3.8 runtime — keep the folder together)"
+            echo "\`\`\`"
             echo
             echo "**Verify your download:**"
             echo
