@@ -274,7 +274,7 @@ spindoctor generate-config --overwrite-global --apply     :: replace an existing
 **Systems that share a ROM folder** (e.g. `MAME (Vector)`, `MAME Atari Classics`, `4-Player Games`) are handled by a cascade of guards:
 
 - **System name contains "MAME" (new or missing file):** SpinDoctor infers `Default_Emulator=MAME` and sets `Rom_Path` to `roms_dir\MAME` (not `roms_dir\<SystemName>`) when the variant folder doesn't exist.
-- **Existing file declares a MAME-family `Default_Emulator` with a relative `Rom_Path`** (e.g. `..\Games\Mame\roms` as written by RLUI): path is preserved unconditionally. Dry-run shows `preserved (MAME emulator)`.
+- **Existing file declares a MAME-family `Default_Emulator` with a relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI): the path is resolved from the RL root directory (how RocketLauncher itself resolves it). If the resolved directory exists the path is preserved (dry-run shows `preserved (MAME emulator)`); if it no longer resolves (e.g. ROMs moved to a different drive since the backup), it is replaced with `roms_dir\MAME`.
 - **Existing file declares a MAME-family `Default_Emulator` with an absolute `Rom_Path` that no longer exists** (e.g. after a restore from an old backup): SpinDoctor replaces it with `roms_dir\MAME` if that folder exists. This covers non-MAME-named systems like `4-Player Games` that use `MAME (XBOX 4P DSW)` as their emulator.
 - **Existing file has a valid absolute `Rom_Path`:** if that path is a real directory but the computed new path does not exist, the file is left untouched. Dry-run shows `preserved (custom path)`.
 
