@@ -440,20 +440,23 @@ def test_mame_variant_name_falls_back_to_mame_rom_path(tmp_path):
     assert str(roms / "MAME (Vector)") not in body
 
 
-def test_mame_emulator_guard_preserves_relative_rom_path(tmp_path):
-    """When an existing Emulators.ini declares a MAME-family emulator and a
-    relative Rom_Path (e.g. ..\\Games\\Mame\\roms written by RLUI), the path
-    is left untouched — relative paths are resolved by RocketLauncher, not us."""
+def test_mame_emulator_guard_preserves_relative_rom_path_when_valid(tmp_path):
+    """When a MAME-family system has a relative Rom_Path that still resolves to
+    a real directory (relative to RL root), the path is left untouched."""
     roms = tmp_path / "roms"
     rl = tmp_path / "rl"
     (roms / "MAME").mkdir(parents=True)
     (rl / "Settings").mkdir(parents=True)
+    # Create the directory the relative path resolves to (../Games/Mame/roms
+    # relative to rl root = tmp_path/Games/Mame/roms).
+    valid_target = tmp_path / "Games" / "Mame" / "roms"
+    valid_target.mkdir(parents=True)
     cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
     save_config(cfg)
 
     emu_ini = rl / "Settings" / "MAME Atari Classics" / "Emulators.ini"
     emu_ini.parent.mkdir(parents=True)
-    relative_path = r"..\Games\Mame\roms"
+    relative_path = "../Games/Mame/roms"
     emu_ini.write_text(
         f"[ROMS]\nDefault_Emulator=MAME\nRom_Path={relative_path}\n",
         encoding="utf-8",
@@ -463,6 +466,32 @@ def test_mame_emulator_guard_preserves_relative_rom_path(tmp_path):
 
     body = emu_ini.read_text(encoding="utf-8")
     assert f"Rom_Path={relative_path}" in body
+
+
+def test_mame_emulator_guard_updates_stale_relative_rom_path(tmp_path):
+    """When a MAME-family system has a relative Rom_Path that no longer resolves
+    (e.g. ROMs were moved from D: to J:), the path is replaced with
+    roms_dir/MAME rather than preserving a broken relative path."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    # The target of the relative path does NOT exist — simulates ROMs moved
+    # to a different drive after the backup was taken.
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "4-Player Games" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=MAME\nRom_Path=..\\Games\\MAME\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("4-Player Games", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={roms / 'MAME'}" in body
 
 
 def test_non_mame_named_system_with_mame_emulator_uses_mame_fallback(tmp_path):

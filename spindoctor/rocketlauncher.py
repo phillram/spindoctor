@@ -406,13 +406,19 @@ def generate_rl_system_ini(
                 _existing_emu = _read_default_emulator_from_ini(emu_ini)
                 if _existing_emu and re.search(r"\bmame\b", _existing_emu, re.IGNORECASE):
                     if _current and not _is_absolute_path(_current):
-                        # Relative path (e.g. ..\Games\Mame\roms): resolved by
-                        # RocketLauncher relative to the INI — preserve as-is.
-                        _skip_update = True
-                    elif not Path(rom_path).exists():
-                        # MAME-family emulator but computed path doesn't exist
-                        # (e.g. "4-Player Games" whose ROMs live in J:\Games\MAME).
-                        # Fall back to roms_dir/MAME rather than writing a phantom path.
+                        # Relative path: resolve from RL root (how RocketLauncher
+                        # resolves it on Windows).  Only preserve if it still points
+                        # at a real directory — a stale relative path (e.g. ROMs
+                        # moved from D: to J:) must be updated, not preserved.
+                        try:
+                            if (rl_base / _current).resolve().is_dir():
+                                _skip_update = True
+                        except (OSError, ValueError):
+                            pass
+                    if not _skip_update and not Path(rom_path).exists():
+                        # Computed path doesn't exist (MAME variant, or non-MAME-
+                        # named system like "4-Player Games").  Fall back to
+                        # roms_dir/MAME rather than writing a phantom path.
                         _mame_fallback = str(Path(config.roms_dir) / "MAME")
                         if Path(_mame_fallback).exists():
                             rom_path = _mame_fallback
@@ -441,8 +447,12 @@ def generate_rl_system_ini(
                 _existing_emu_flat = _read_default_emulator_from_ini(flat_ini)
                 if _existing_emu_flat and re.search(r"\bmame\b", _existing_emu_flat, re.IGNORECASE):
                     if _current_flat and not _is_absolute_path(_current_flat):
-                        _skip_update_flat = True
-                    elif not Path(rom_path).exists():
+                        try:
+                            if (rl_base / _current_flat).resolve().is_dir():
+                                _skip_update_flat = True
+                        except (OSError, ValueError):
+                            pass
+                    if not _skip_update_flat and not Path(rom_path).exists():
                         _mame_fallback_flat = str(Path(config.roms_dir) / "MAME")
                         if Path(_mame_fallback_flat).exists():
                             rom_path = _mame_fallback_flat
