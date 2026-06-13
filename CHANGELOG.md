@@ -8,11 +8,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ---
 
-## [2.5.0] - 2026-06-12
+## [2.5.1] - 2026-06-13
 
 ### Changed
 
 - **Windows release zip now contains five standalone self-contained EXEs instead of five identically-sized archives.** Hidden imports are now split per-target: `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` only bundle what they actually need, making them meaningfully smaller than `spindoctor.exe` and `spindoctor-gui.exe`. Extract the zip, move the EXEs wherever you like, and double-click `spindoctor-gui.exe`. No shared runtime folder required — each binary is self-contained.
+
+---
+
+## [2.5.0] - 2026-06-12
+
+### Changed
+
+- **Windows release zip is now a shared-runtime folder instead of five separate self-extracting EXEs.** The zip now contains a `spindoctor\` folder; extract it, optionally rename it (e.g. `C:\spindoctor\`), and double-click `spindoctor-gui.exe`. All five executables share a single Python 3.8 runtime bundled in that folder, roughly halving the total download size. Individual EXEs must remain in the folder alongside the shared runtime — do not move them out. The GUI's peer-discovery (`resolve_cli_command`) and the autostart scheduled-task bat files are unaffected; both already used `Path(sys.executable).parent` to locate sibling binaries, which resolves correctly in `--onedir` mode.
 
 ### Fixed
 
@@ -1350,7 +1358,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.1...HEAD
+[2.5.1]: https://github.com/phillram/spindoctor/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/phillram/spindoctor/compare/v2.4.27...v2.5.0
 [2.4.27]: https://github.com/phillram/spindoctor/compare/v2.4.26...v2.4.27
 [2.4.26]: https://github.com/phillram/spindoctor/compare/v2.4.25...v2.4.26
