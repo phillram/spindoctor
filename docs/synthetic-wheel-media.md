@@ -40,9 +40,9 @@ Every `rebuild --apply` run installs these files without extra flags:
 | `Favorites.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Most Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Recently Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
-| `navigate.mp3` | `Media\Favorites\Sound\` | Sound played on every left/right cursor move inside the Favorites wheel |
-| `navigate.mp3` | `Media\Most Played\Sound\` | Sound played on every left/right cursor move inside the Most Played wheel |
-| `navigate.mp3` | `Media\Recently Played\Sound\` | Sound played on every left/right cursor move inside the Recently Played wheel |
+| `Wheel Click.mp3` | `Media\Favorites\Sound\` | Sound played on every left/right cursor move inside the Favorites wheel |
+| `Wheel Click.mp3` | `Media\Most Played\Sound\` | Sound played on every left/right cursor move inside the Most Played wheel |
+| `Wheel Click.mp3` | `Media\Recently Played\Sound\` | Sound played on every left/right cursor move inside the Recently Played wheel |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
@@ -55,7 +55,7 @@ Background:     installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgro
 Music:          no bundled asset
 Video:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
 Theme zip:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
-Navigate sound: installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\navigate.mp3
+Wheel Click sound: installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\Wheel Click.mp3
 ```
 
 ---
@@ -212,7 +212,7 @@ select a game while browsing the game list **inside** a synthetic wheel.
 
 | Filename | When it plays |
 |----------|--------------|
-| `navigate.mp3` | Every cursor move left/right |
+| `Wheel Click.mp3` | Every cursor move left/right |
 | `select.mp3` | Game selected (before launch) |
 | `back.mp3` | Wheel closed / back pressed |
 | `letter.mp3` | Jump-to-letter navigation |
@@ -220,11 +220,11 @@ select a game while browsing the game list **inside** a synthetic wheel.
 Not all files are required — HyperSpin falls back to its global sounds for any that
 are missing.
 
-**`navigate.mp3` is bundled** — SpinDoctor installs it automatically during
+**`Wheel Click.mp3` is bundled** — SpinDoctor installs it automatically during
 `rebuild --apply` (skip-if-exists).  The other navigation sounds (`select.mp3`,
 `back.mp3`, `letter.mp3`) are not bundled; add them manually if wanted.
 
-**Manually (non-navigate sounds):**
+**Manually (non-Wheel Click sounds):**
 ```bat
 spindoctor media-add --system "Favorites" --game "select" --type sound --file "path\to\select.mp3" --apply
 ```
@@ -301,7 +301,7 @@ HyperSpin\
         │   └── Letters\     ← alphabetic scroll-bar letter art
         ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied)
         ├── Sound\
-        │   └── navigate.mp3 ← AUTO: cursor-move click sound
+        │   └── Wheel Click.mp3 ← AUTO: cursor-move click sound
         └── Video\           ← per-game videos (.mp4 .wmv .mpeg .mpg .flv .avi .mkv …)
             └── Trailers\    ← per-game trailers
 ```

@@ -664,7 +664,7 @@ spindoctor fav clear --apply      :: remove the Favorites wheel and empty the st
 
 **Theme fallback** — During the media mirror, if a game has no per-game `<GameName>.zip` in the source system's `Themes\` folder, SpinDoctor checks for `Default.zip` (HyperSpin's console-wide fallback theme) and mirrors it as `<GameName>.zip` in the synthetic wheel. This means games that rely on the console default theme (e.g. most NES games) display the same background and layout in Favorites / Recently Played / Most Played as they do in their native wheel.
 
-**Navigate sound** — `rebuild --apply` also installs a bundled `navigate.mp3` to `Media\<SystemName>\Sound\navigate.mp3` for each synthetic wheel (skip-if-exists). HyperSpin plays this on every left/right cursor move while browsing the wheel's game list.
+**Wheel Click sound** — `rebuild --apply` also installs a bundled `Wheel Click.mp3` to `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel (skip-if-exists). HyperSpin plays this on every left/right cursor move while browsing the wheel's game list.
 
 When two source systems both contain a game with the same ROM name (e.g. `Tetris` on SNES and Game Boy), the wheel labels them `Tetris (Super Nintendo)` and `Tetris (Game Boy)` automatically.
 
