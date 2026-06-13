@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.5.3] - 2026-06-13
+
 ### Fixed
 
 - **Recently Played wheel returns 0 entries on cabinets running newer RocketLauncher builds.** Newer RL writes `Last_Time_Played` in per-system Statistics.ini files (e.g. `MAME.ini`), but SpinDoctor was only checking the older `Last_Played` / `LastPlayed` key names. Every record was silently skipped → the rebuilt wheel was always empty. Most Played was unaffected because it can rank games by `Number_of_Times_Played` without needing a timestamp. Fixed by trying `Last_Time_Played` first, then falling back to the older key names.
@@ -1384,7 +1388,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.5.3...HEAD
+[2.5.3]: https://github.com/phillram/spindoctor/compare/v2.5.2...v2.5.3
 [2.5.2]: https://github.com/phillram/spindoctor/compare/v2.5.1...v2.5.2
 [2.5.1]: https://github.com/phillram/spindoctor/compare/v2.5.0...v2.5.1
 [2.5.0]: https://github.com/phillram/spindoctor/compare/v2.4.27...v2.5.0
