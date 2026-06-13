@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.4.26] - 2026-06-12
+
 ### Fixed
 
 - **Recently Played and Most Played wheels no longer produce broken PCLauncher INIs for games with stale statistics entries.** When a game is launched from a synthetic wheel via RL#2 and the launch fails (e.g. wrong ROM name), RL#2 still records playtime stats against the source system under whatever name PCLauncher passed as `-r`. On the next rebuild, SpinDoctor would read that stale entry and write a PCLauncher INI with the wrong `-r` parameter, causing every future launch to fail — a self-reinforcing cycle. `_build_synthetic_wheel` now cross-references each statistics entry against the source system's HyperSpin database XML before writing any launcher. Entries whose `rom_name` does not appear in the database are logged and skipped, so only valid, launchable games are included in the wheel. Entries from systems whose database cannot be read are preserved unchanged (safe default).
@@ -1320,7 +1324,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.25...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.4.26...HEAD
+[2.4.26]: https://github.com/phillram/spindoctor/compare/v2.4.25...v2.4.26
 [2.4.25]: https://github.com/phillram/spindoctor/compare/v2.4.24...v2.4.25
 [2.4.24]: https://github.com/phillram/spindoctor/compare/v2.4.23...v2.4.24
 [2.4.23]: https://github.com/phillram/spindoctor/compare/v2.4.22...v2.4.23
