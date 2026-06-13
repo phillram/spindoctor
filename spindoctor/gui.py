@@ -1574,16 +1574,19 @@ class _SpinDoctorGUI:
                     paned.add(out_frame, weight=1)
                 except self.tk.TclError:
                     pass
-                # Restore the saved sash position on next idle tick so
-                # the geometry has settled by the time we move it.
+                # Restore the saved sash position after a short delay so
+                # Tk has time to lay out the re-added pane before we move
+                # the sash.  after_idle fires too early (before relayout),
+                # so after(100) is used instead.
                 target = getattr(self, "_output_saved_sash", None)
-                if target is not None:
-                    def _restore_sash():
-                        try:
-                            paned.sashpos(0, target)
-                        except self.tk.TclError:
-                            pass
-                    self.root.after_idle(_restore_sash)
+                def _restore_sash():
+                    try:
+                        h = paned.winfo_height()
+                        pos = target if target is not None else max(200, h - 160)
+                        paned.sashpos(0, pos)
+                    except self.tk.TclError:
+                        pass
+                self.root.after(100, _restore_sash)
             else:
                 # Capture the current sash so re-showing puts the output
                 # back at the same height the user dragged it to.
@@ -7490,6 +7493,12 @@ class _SpinDoctorGUI:
             values=["copy", "move", "link"],
             state="readonly", width=8,
         ).pack(side="left", padx=4)
+        self._meta_scan_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            scan_frame,
+            text="Overwrite existing files (--overwrite)",
+            variable=self._meta_scan_overwrite_var,
+        ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
             scan_frame, text="Run media-scan",
             command=self._run_media_scan,
@@ -7508,6 +7517,12 @@ class _SpinDoctorGUI:
             db_frame, text="Strip region/version tags from displays "
                             "(--strip-variant-tags)",
             variable=self._meta_strip_variant_var,
+        ).pack(anchor="w", padx=6, pady=2)
+        self._generate_overwrite_global_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            db_frame,
+            text="Overwrite Global Emulators.ini (--overwrite-global)",
+            variable=self._generate_overwrite_global_var,
         ).pack(anchor="w", padx=6, pady=2)
         btn_row = self.ttk.Frame(db_frame)
         btn_row.pack(anchor="w", padx=6, pady=(4, 6))
@@ -7958,6 +7973,8 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
         args = ["media-scan", source, *sys_args]
+        if self._meta_scan_overwrite_var.get():
+            args.append("--overwrite")
         if self._global_apply_var.get():
             args += ["--apply", "--action", self._meta_scan_action_var.get()]
         self._run_cli("spindoctor", args)
@@ -7977,6 +7994,8 @@ class _SpinDoctorGUI:
 
     def _run_generate_config(self) -> None:
         args = ["generate-config"]
+        if getattr(self, "_generate_overwrite_global_var", None) and self._generate_overwrite_global_var.get():
+            args.append("--overwrite-global")
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -9161,6 +9180,11 @@ class _SpinDoctorGUI:
             flags_row, text="Skip game-level media (--no-game-media)",
             variable=self._systems_no_game_media_var,
         ).pack(side="left", padx=10)
+        self._add_pc_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            flags_row, text="Overwrite existing PCLauncher INIs (--overwrite-pclauncher)",
+            variable=self._add_pc_overwrite_var,
+        ).pack(side="left", padx=10)
 
         add_btns = self.ttk.Frame(add_frame)
         add_btns.pack(anchor="w", padx=6, pady=(4, 6))
@@ -9266,6 +9290,11 @@ class _SpinDoctorGUI:
             org_row, text="Restructure ROMs (--restructure)",
             variable=self._organize_restructure_var,
         ).pack(side="left", padx=10)
+        self._organize_overwrite_sort_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            org_row, text="Overwrite existing sort files (--overwrite-sort)",
+            variable=self._organize_overwrite_sort_var,
+        ).pack(side="left", padx=10)
 
         org_btns = self.ttk.Frame(org_frame)
         org_btns.pack(anchor="w", padx=6, pady=(4, 6))
@@ -9288,8 +9317,18 @@ class _SpinDoctorGUI:
         # dropped installs. Reflect that in the form: one system dropdown,
         # no Old/New fields. (Earlier versions had a two-field form that
         # was actually broken — the CLI takes one positional arg.)
-        rename_frame = self.ttk.LabelFrame(frame, text="Re-review titles for a PC system")
+        rename_frame = self.ttk.LabelFrame(frame, text="Add new games / refresh a PC system")
         rename_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            rename_frame,
+            text=("Scans <roms_dir>/<system>/ for new or changed installs, "
+                  "updates title decisions, and writes PCLauncher INIs for any "
+                  "new entries. Run this after dropping new .exe / .lnk files "
+                  "into the folder. Verbose shows every title, executable path, "
+                  "and whether its INI is new, stale (wrong path — e.g. after "
+                  "a drive migration), or current."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
         rn_row = self.ttk.Frame(rename_frame)
         rn_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(rn_row, text="PC system").pack(side="left")
@@ -9303,12 +9342,16 @@ class _SpinDoctorGUI:
             state="readonly", width=28,
         )
         self._systems_old_combo.pack(side="left", padx=6)
-        self.ttk.Label(
-            rn_row, text="(re-runs the title picker for this PC system)",
-            foreground=_FG_DIM,
-        ).pack(side="left", padx=(8, 0))
+        self._pc_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            rename_frame,
+            text="Overwrite existing INIs — rewrites ALL PCLauncher INIs, "
+                 "including stale ones (wrong drive or renamed exe). "
+                 "Use after a drive migration or file rename.",
+            variable=self._pc_overwrite_var,
+        ).pack(anchor="w", padx=6, pady=(2, 2))
         self.ttk.Button(
-            rename_frame, text="Run pc-rename",
+            rename_frame, text="Scan & refresh games",
             command=self._run_pc_rename,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
@@ -9531,6 +9574,8 @@ class _SpinDoctorGUI:
         args = ["organize", sys_]
         if self._organize_no_sort_var.get():
             args.append("--no-sort")
+        if self._organize_overwrite_sort_var.get():
+            args.append("--overwrite-sort")
         if self._organize_restructure_var.get():
             args.append("--restructure")
             # Restructure honours the same Apply checkbox as add-system /
@@ -9598,6 +9643,8 @@ class _SpinDoctorGUI:
             # proposed title. Users who want to curate titles can run
             # `spindoctor pc-rename <system>` from a terminal.
             args.append("--no-interactive")
+            if getattr(self, "_add_pc_overwrite_var", None) and self._add_pc_overwrite_var.get():
+                args.append("--overwrite-pclauncher")
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -9617,6 +9664,10 @@ class _SpinDoctorGUI:
         args = ["pc-rename", system, "--no-interactive"]
         if self._global_apply_var.get():
             args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        if getattr(self, "_pc_overwrite_var", None) and self._pc_overwrite_var.get():
+            args.append("--overwrite-pclauncher")
         self._run_cli("spindoctor", args)
 
     # ── LEDBlinky tab ─────────────────────────────────────────────────────────

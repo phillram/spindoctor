@@ -6,10 +6,31 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`pc-rename` now detects stale PCLauncher INIs** — per-game INIs whose `Application=` no longer matches the live executable path (e.g. after a drive migration or file rename). Stale entries are flagged in `--verbose` output and in the dry-run summary. Pass `--overwrite-pclauncher` to rewrite them. INIs previously written in the old `[Settings]` / `ApplicationPath=` format are also flagged as stale so they are regenerated in the correct format.
+
+- **GUI — four previously CLI-only `--overwrite` flags are now exposed:**
+  - **Metadata & Media → Step 4 (media-scan):** "Overwrite existing files (--overwrite)" checkbox — imports files into already-filled slots and includes the "replacement" bucket.
+  - **Metadata & Media → Step 5 (generate-config):** "Overwrite Global Emulators.ini (--overwrite-global)" checkbox — replaces an existing `Global Emulators.ini` instead of leaving user customisations alone.
+  - **Systems → Sort & Organize (organize):** "Overwrite existing sort files (--overwrite-sort)" checkbox — replaces existing sort-database XMLs instead of skipping them.
+  - **Systems → Add system (add-pc-system):** "Overwrite existing PCLauncher INIs (--overwrite-pclauncher)" checkbox — rewrites stale or wrong-path per-game INIs when re-running `add-pc-system`.
+
+- **GUI — Systems tab: "Add new games / refresh a PC system" section redesigned.** The section was labelled "Re-review titles for a PC system" with a "Run pc-rename" button — neither name indicated it scans for new games. Renamed with a plain-English description. New **Overwrite existing INIs** checkbox exposes `--overwrite-pclauncher` so stale paths (wrong drive, renamed exe) can be fixed without leaving the GUI.
+
+- **`pc-rename --verbose` now shows a per-game table** with Title, Executable path, and INI status (`new` / `stale` / `current`). Stale entries show the wrong path currently in the INI so you can confirm the problem before re-running with `--overwrite-pclauncher`.
+
 ### Fixed
 
-- **Synthetic-wheel navigate sound now installs as `Wheel Click.mp3`.** The cabinet requires the filename `Wheel Click.mp3` in `Media\<SystemName>\Sound\`; it was previously being written as `navigate.mp3`. No bundled asset change — only the destination filename is corrected.
+- **`pc-rename` dry-run now reports accurate write counts.** Previously "Would write N PCLauncher INI(s)" counted all titles regardless of whether their INI already existed, overstating what would actually be written. The dry-run now separately counts new, stale, and current entries and reports only the number that would actually change.
 
+- **PC game per-game PCLauncher INIs now use the correct format.** SpinDoctor previously wrote `[Settings]` / `ApplicationPath=` in per-game INIs (`Modules\PCLauncher\<System>\<Game>.ini`). PCLauncher.ahk reads `[<game_name>]` / `Application=` — it does not recognise `ApplicationPath=`, so the stale system-level `<System>.ini` (often left over from RLUI with old relative paths) was being used instead, causing "Cannot find this Application" errors. Per-game INIs now use the correct `[<game_name>]` / `Application=` format that PCLauncher.ahk actually reads. Any existing INIs in the old format are detected as stale and can be rewritten by running `pc-rename --overwrite-pclauncher --apply`.
+
+- **GUI system dropdowns showed case-variant duplicates** (e.g. "PC GAMES" and "PC Games") when the ROMs folder and Databases folder used different capitalisation for the same system name. On Windows, filesystem names are case-insensitive but Python's `set` is not. `get_systems()` now deduplicates case-insensitively and prefers the `databases_dir` spelling (which matches the name HyperSpin uses).
+
+- **GUI — Output panel "Show output" restored at minimum height.** `after_idle` fired before Tk had finished laying out the re-added pane, so the sash position wasn't applied and the panel appeared as a tiny draggable sliver. Changed to `after(100)` so layout has settled first. When no prior sash position was saved (first show), the panel now opens at `window_height − 160 px` instead of collapsing.
+
+- **Synthetic-wheel navigate sound now installs as `Wheel Click.mp3`.** The cabinet requires the filename `Wheel Click.mp3` in `Media\<SystemName>\Sound\`; it was previously being written as `navigate.mp3`. No bundled asset change — only the destination filename is corrected.
 ---
 
 ## [2.6.0] - 2026-06-13
