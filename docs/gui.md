@@ -297,7 +297,9 @@ Anything the dedicated tabs don't cover. The entry field is an editable Combobox
 
 ### Logs
 
-Persistent timeline of every command run since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
+Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
+
+The Logs tab captures both CLI subprocess invocations *and* in-process GUI operations that write data: Save configuration, Save Main Menu order, Theme-apply Apply, Curate Apply, Ignore viewer Remove, and the three Task Scheduler actions (Schedule / Remove / Check status). Everything that changes state on disk appears here.
 
 The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests…**.
 

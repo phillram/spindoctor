@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Several GUI actions wrote to the Output panel but never appeared in the Logs tab.** Theme-apply Apply, Curate Apply, Ignore viewer "Remove selected", and all three Task Scheduler actions (Schedule / Remove / Check status) now each create a `_RunRecord` entry so the result is visible in the Logs tab alongside CLI-based runs.
+
 - **MAME subsystem videos still not copied when `Media\<System>\Video\` directory exists but is empty.** The v2.5.3 fix for the HyperSpin `[video defaults]` redirect only activated when the system's `Video\` folder was completely absent. HyperSpin creates the directory skeleton (`Media\4-Player Games\Video\`, etc.) without populating it, so SpinDoctor found the empty folder, skipped the MAME redirect, iterated an empty directory, and produced no copy actions — leaving `iceclmrdxbox.mp4` and similar videos missing from the Favorites wheel. Fixed by checking whether the system's `Video\` folder actually contains a file for the specific game, not just whether the folder exists.
 
 ---
