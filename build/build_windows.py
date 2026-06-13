@@ -3,7 +3,7 @@
 Produces a single --onedir bundle with five executables that share one
 Python runtime, placed at:
 
-    dist/spindoctor-windows/
+    dist/spindoctor/
     ├── spindoctor.exe          ← full CLI (every command)
     ├── spindoctor-gui.exe      ← Tkinter GUI launcher (--windowed)
     ├── spindoctor-fav.exe
@@ -41,7 +41,9 @@ ICON = ROOT / "spindoctor" / "assets" / "icon.ico"
 ASSETS_DIR = ROOT / "spindoctor" / "assets"
 
 # Output directory name inside dist/; users extract the zip and get this folder.
-COLLECT_NAME = "spindoctor-windows"
+# The zip is already named spindoctor-windows-vX.Y.Z.zip, so the folder inside
+# needs no further -windows suffix.
+COLLECT_NAME = "spindoctor"
 
 # (entry-point module:attr, exe name, windowed?)
 # windowed=True → --windowed (no console window) — only for the GUI.
@@ -57,7 +59,7 @@ TARGETS = [
 # imported lazily, via plugin discovery, or through C-extension hooks.
 # Split per-target so each binary's PYZ archive only carries what it needs.
 # Shared runtime DLLs (lxml, Pillow, etc.) are deduplicated by COLLECT —
-# they appear once in dist/spindoctor-windows/ regardless of how many
+# they appear once in dist/spindoctor/ regardless of how many
 # Analysis objects declared them.
 _CORE: list[str] = [
     "spindoctor",
@@ -129,7 +131,7 @@ def write_spec(shims: list[Path], datas: list[tuple[str, str]]) -> Path:
     """Generate a PyInstaller spec file for the multi-binary --onedir build.
 
     A single COLLECT step deduplicates the shared Python runtime and all
-    dependency DLLs so they appear once in dist/spindoctor-windows/ regardless
+    dependency DLLs so they appear once in dist/spindoctor/ regardless
     of how many EXE targets contributed them.
     """
     spec_dir = BUILD / "specs"

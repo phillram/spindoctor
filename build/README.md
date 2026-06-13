@@ -4,7 +4,7 @@ Standalone Windows executables for SpinDoctor — for cabinets that can't (or sh
 
 ## What gets built
 
-A single `--onedir` bundle at `dist/spindoctor-windows/`:
+A single `--onedir` bundle at `dist/spindoctor/`:
 
 | Binary | Purpose |
 |---|---|
@@ -14,7 +14,7 @@ A single `--onedir` bundle at `dist/spindoctor-windows/`:
 | `spindoctor-recent.exe` | Recently Played rebuild |
 | `spindoctor-stats.exe` | Playtime reports + Most Played wheel |
 
-All five share one Python runtime in the same folder — no installer, no Python on the target box. Extract the release zip (which contains the whole `spindoctor-windows\` folder), double-click `spindoctor-gui.exe`, done. `spindoctor-gui.exe` finds its peers via `Path(sys.executable).parent`, which in `--onedir` mode is the shared COLLECT directory.
+All five share one Python runtime in the same folder — no installer, no Python on the target box. Extract the release zip (which contains the whole `spindoctor\` folder), double-click `spindoctor-gui.exe`, done. `spindoctor-gui.exe` finds its peers via `Path(sys.executable).parent`, which in `--onedir` mode is the shared COLLECT directory.
 
 The shared-runtime approach roughly halves the zip size compared to five separate `--onefile` archives.
 
@@ -37,15 +37,15 @@ pip install -r build/requirements-build.txt
 python build/build_windows.py
 ```
 
-Output lands in `dist/spindoctor-windows/`. Cleans `dist/` and `build/_pyinstaller/` first so each run is reproducible.
+Output lands in `dist/spindoctor/`. Cleans `dist/` and `build/_pyinstaller/` first so each run is reproducible.
 
 ## How the build works
 
-`build_windows.py` generates a single PyInstaller `.spec` file at build time (written to `build/_pyinstaller/specs/spindoctor.spec`) and runs PyInstaller on it once. The spec contains five `Analysis` + `EXE` objects and one `COLLECT` that merges all outputs into `dist/spindoctor-windows/`.
+`build_windows.py` generates a single PyInstaller `.spec` file at build time (written to `build/_pyinstaller/specs/spindoctor.spec`) and runs PyInstaller on it once. The spec contains five `Analysis` + `EXE` objects and one `COLLECT` that merges all outputs into `dist/spindoctor/`.
 
 Generating the spec programmatically (rather than committing it) keeps the driver as the single source of truth for entry-points, hidden imports, and asset paths. Adding a new console script is a one-line edit to `TARGETS` in `build_windows.py`.
 
-Hidden imports are split per-target: each EXE's PYZ archive only bundles the modules it actually needs. Native extension DLLs (lxml, Pillow, etc.) that appear in multiple analyses are deduplicated by the COLLECT step — they land once in `dist/spindoctor-windows/` rather than being embedded separately in each binary.
+Hidden imports are split per-target: each EXE's PYZ archive only bundles the modules it actually needs. Native extension DLLs (lxml, Pillow, etc.) that appear in multiple analyses are deduplicated by the COLLECT step — they land once in `dist/spindoctor/` rather than being embedded separately in each binary.
 
 ## Release workflow
 
@@ -55,7 +55,7 @@ Hidden imports are split per-target: each EXE's PYZ archive only bundles the mod
 2. Installs runtime extras + PyInstaller.
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each CLI `.exe` (the GUI exe is `--windowed` so cmd can't observe its exit code; the workflow checks the file exists and exercises `python -m spindoctor.gui --version` against the source instead).
-5. Zips `dist/spindoctor-windows/` as `spindoctor-windows-<tag>.zip` (the folder is the top-level entry inside the zip).
+5. Zips `dist/spindoctor/` as `spindoctor-windows-<tag>.zip` (the folder is the top-level entry inside the zip).
 6. Creates a GitHub Release with the tag and attaches the zip.
 
 ### Cutting a release

@@ -20,7 +20,7 @@ If you're using the prebuilt Windows binaries (no Python install), make sure the
 
 ### `spindoctor-gui` opens but every button errors with "Binary not found"
 
-The GUI shells out to `spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` sitting next to it. If those got moved, renamed, or quarantined by antivirus, every Run click fails. Re-extract the release zip so the full `spindoctor-windows\` folder (EXEs + shared Python runtime) is intact again — individual EXEs cannot be moved out of the folder without their runtime peers.
+The GUI shells out to `spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` sitting next to it. If those got moved, renamed, or quarantined by antivirus, every Run click fails. Re-extract the release zip so the full `spindoctor\` folder (EXEs + shared Python runtime) is intact again — individual EXEs cannot be moved out of the folder without their runtime peers.
 
 For the pip install route, the same error means the underlying console script isn't on `PATH` — re-run `pip install -e .` and confirm the Python `Scripts/` directory is on `PATH`.
 
