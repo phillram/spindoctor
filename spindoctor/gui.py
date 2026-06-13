@@ -4189,6 +4189,7 @@ class _SpinDoctorGUI:
             self._set_status(
                 f"Applying {len(plans_holder)} theme swap(s)…"
             )
+            _apply_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
             def _worker(plans=list(plans_holder)):
                 try:
@@ -4197,14 +4198,22 @@ class _SpinDoctorGUI:
                     return None, exc
 
             def _on_done(result, exc):
+                record = _RunRecord(
+                    started_at=_apply_started,
+                    argv_str="theme-apply apply",
+                    dry_run=False,
+                )
                 try:
                     if exc is not None:
+                        err_text = f"\n[theme-apply] apply FAILED: {type(exc).__name__}: {exc}\n"
+                        record.append(err_text)
+                        record.exit_code = 1
                         self._set_status("Theme apply failed.")
                         self.messagebox.showerror(
                             "Apply failed", f"{type(exc).__name__}: {exc}",
                         )
                         return
-                    self._append_output(
+                    output_text = (
                         f"\n[theme-apply] swapped {result.swapped} file(s)"
                         + (f", skipped {len(result.skipped)}"
                            if result.skipped else "")
@@ -4212,6 +4221,9 @@ class _SpinDoctorGUI:
                            if result.manifest_path else "")
                         + "\n"
                     )
+                    self._append_output(output_text)
+                    record.append(output_text)
+                    record.exit_code = 0
                     self._set_status(
                         f"Theme apply: swapped {result.swapped} file(s)."
                     )
@@ -4226,6 +4238,8 @@ class _SpinDoctorGUI:
                     )
                     win.destroy()
                 finally:
+                    self._run_history.append(record)
+                    self._refresh_logs_tab()
                     # Re-enable so the user can retry (e.g. after fixing a
                     # write-protected source) without reopening the dialog.
                     try:
@@ -8743,11 +8757,21 @@ class _SpinDoctorGUI:
             if result.skipped:
                 msg_parts.append(f"{len(result.skipped)} skipped")
             msg = ", ".join(msg_parts) or "nothing"
-            self._append_output(
-                f"\n[curate preview] {system}: {msg}.\n"
+            output_text = (
+                f"\n[curate] {system}: {msg}.\n"
                 f"  manifest: {manifest}\n" if manifest
-                else f"\n[curate preview] {system}: {msg}.\n"
+                else f"\n[curate] {system}: {msg}.\n"
             )
+            self._append_output(output_text)
+            record = _RunRecord(
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                argv_str=f"curate apply {action} {system}",
+                dry_run=False,
+            )
+            record.append(output_text)
+            record.exit_code = 0
+            self._run_history.append(record)
+            self._refresh_logs_tab()
             self._set_status(f"Curate done: {msg}.")
             self.messagebox.showinfo(
                 "Curate done",
@@ -8947,10 +8971,20 @@ class _SpinDoctorGUI:
                 if cfg.remove_ignore(name, target):
                     removed += 1
             save_config(cfg)
-            self._append_output(
+            output_text = (
                 f"\n[ignore viewer] removed {removed}/{len(names)} entr"
                 f"{'y' if len(names) == 1 else 'ies'} from '{target}'.\n"
             )
+            self._append_output(output_text)
+            record = _RunRecord(
+                started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                argv_str=f"ignore remove {target}",
+                dry_run=False,
+            )
+            record.append(output_text)
+            record.exit_code = 0
+            self._run_history.append(record)
+            self._refresh_logs_tab()
             self._set_status(
                 f"Removed {removed} entr{'y' if removed == 1 else 'ies'} "
                 f"from '{target}'."
@@ -11275,16 +11309,24 @@ class _SpinDoctorGUI:
 
     def _schedule_autorefresh(self) -> None:
         from . import autostart
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        record = _RunRecord(
+            started_at=started_at,
+            argv_str="autorefresh schedule",
+            dry_run=False,
+        )
         try:
             delay = self._parse_delay_minutes()
             if delay == -1:
                 return
             bat_path = self._write_refresh_bat()
             vbs_path = self._write_vbs_shim(bat_path)
-            self._append_output(
+            bat_text = (
                 f"\n[Auto-refresh] wrote launcher bat → {bat_path}\n"
                 f"[Auto-refresh] wrote hidden-run shim → {vbs_path}\n"
             )
+            self._append_output(bat_text)
+            record.append(bat_text)
             result = autostart.create_logon_task(
                 self._autorefresh_command(vbs_path),
                 delay_minutes=delay,
@@ -11301,17 +11343,23 @@ class _SpinDoctorGUI:
                 f"Failed to write the companion script files:\n{exc}",
             )
             return
-        self._append_output(
+        task_text = (
             f"\n[Task Scheduler] created '{result.name}' → "
             f"{result.command}\n{result.output}\n"
             f"Launcher bat: {bat_path}\n"
             f"Hidden-run shim: {vbs_path}\n"
             "Reboot or log out and back in to activate it.\n"
         )
+        self._append_output(task_text)
+        record.append(task_text)
+        record.exit_code = 0
+        self._run_history.append(record)
+        self._refresh_logs_tab()
         self._flash_status(f"Auto-refresh task '{result.name}' registered.")
 
     def _remove_autorefresh(self) -> None:
         from . import autostart
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             if not autostart.task_exists():
                 self.messagebox.showinfo(
@@ -11327,11 +11375,22 @@ class _SpinDoctorGUI:
         except RuntimeError as exc:
             self.messagebox.showerror("Could not remove task", str(exc))
             return
-        self._append_output(f"\n[Task Scheduler] removed task.\n{output}\n")
+        output_text = f"\n[Task Scheduler] removed task.\n{output}\n"
+        self._append_output(output_text)
+        record = _RunRecord(
+            started_at=started_at,
+            argv_str="autorefresh remove",
+            dry_run=False,
+        )
+        record.append(output_text)
+        record.exit_code = 0
+        self._run_history.append(record)
+        self._refresh_logs_tab()
         self._flash_status("Auto-refresh task deleted.")
 
     def _check_autorefresh(self) -> None:
         from . import autostart
+        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             exists = autostart.task_exists()
         except autostart.NotSupportedError as exc:
@@ -11341,7 +11400,17 @@ class _SpinDoctorGUI:
             f"Task '{autostart.DEFAULT_LOGON_TASK}' is "
             f"{'REGISTERED' if exists else 'not registered'}."
         )
-        self._append_output(f"\n[Task Scheduler] {msg}\n")
+        output_text = f"\n[Task Scheduler] {msg}\n"
+        self._append_output(output_text)
+        record = _RunRecord(
+            started_at=started_at,
+            argv_str="autorefresh check-status",
+            dry_run=None,
+        )
+        record.append(output_text)
+        record.exit_code = 0
+        self._run_history.append(record)
+        self._refresh_logs_tab()
         self._flash_status(msg)
 
     # ── Custom command tab ────────────────────────────────────────────────────
