@@ -326,3 +326,94 @@ def test_new_system_both_files_have_correct_rom_path(tmp_path):
         rl / "Settings" / "MAME.ini",
     ]:
         assert f"Rom_Path={expected}" in p.read_text(encoding="utf-8")
+
+
+# ─── generate_rl_system_ini — custom rom_path preservation ───────────────────
+
+
+def test_preserves_valid_custom_rom_path_when_computed_path_absent(tmp_path):
+    """When the existing Emulators.ini points at a directory that exists, but
+    the computed path (roms_dir/system_name) does not exist, the current value
+    is preserved.
+
+    This is the MAME-variant case: 'MAME (Vector)' shares a single ROM
+    folder (e.g. J:\\Games\\MAME) rather than having its own sibling folder
+    (J:\\Games\\MAME (Vector)), which does not exist.  Prior to this fix,
+    generate-config --apply would replace the working path with the
+    non-existent variant folder, breaking every MAME (Vector) launch.
+    """
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    # Only the shared MAME folder exists — MAME (Vector) folder does NOT.
+    (roms / "MAME").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    shared_path = str(roms / "MAME")
+    emu_ini = rl / "Settings" / "MAME (Vector)" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        f"[ROMS]\nDefault_Emulator=MAME (Vector)\nRom_Path={shared_path}\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME (Vector)", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    # The shared MAME path must be preserved untouched.
+    assert f"Rom_Path={shared_path}" in body
+    # The non-existent per-variant path must NOT appear.
+    bad_path = str(roms / "MAME (Vector)")
+    assert bad_path not in body
+
+
+def test_system_override_rom_path_wins_over_derived_path(tmp_path):
+    """A rom_path value in system_overrides takes precedence over the default
+    roms_dir/system_name derivation, allowing MAME variants to be configured
+    with the shared ROM folder once instead of relying on the auto-preserve
+    heuristic."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    override_dir = tmp_path / "shared" / "MAME"
+    override_dir.mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    cfg.system_overrides = {"MAME (Vector)": {"rom_path": str(override_dir)}}
+    save_config(cfg)
+
+    generate_rl_system_ini("MAME (Vector)", cfg)
+
+    emu_ini = rl / "Settings" / "MAME (Vector)" / "Emulators.ini"
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={override_dir}" in body
+    assert str(roms / "MAME (Vector)") not in body
+
+
+def test_custom_path_guard_skipped_when_computed_path_exists(tmp_path):
+    """When the computed path exists (a real migration — ROMs moved to a new
+    drive), the preserve guard does not fire: the path is updated normally."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    # Both the old and new ROM directories exist.
+    old_path = tmp_path / "old_roms" / "MAME"
+    old_path.mkdir(parents=True)
+    (roms / "MAME").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "MAME" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        f"[ROMS]\nDefault_Emulator=MAME\nRom_Path={old_path}\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("MAME", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    new_path = str(roms / "MAME")
+    # New path exists → guard does not fire → path is updated.
+    assert f"Rom_Path={new_path}" in body
+    assert str(old_path) not in body

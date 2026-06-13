@@ -253,6 +253,22 @@ def detect_rl_layout(settings_dir: Path, system_name: str) -> str:
     return "new"
 
 
+def _read_rom_path_from_ini(ini_path: Path) -> Optional[str]:
+    """Return the first ``Rom_Path=`` value found in *ini_path*, or ``None``.
+
+    Used by :func:`generate_rl_system_ini` to check whether the existing
+    file already points at a valid directory before deciding to overwrite.
+    """
+    try:
+        for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
+            stripped = line.strip()
+            if stripped.lower().startswith("rom_path="):
+                return stripped.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
 def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
     """Replace every ``Rom_Path=`` line in *ini_path* with *new_rom_path*.
 
@@ -317,7 +333,15 @@ def generate_rl_system_ini(
     settings_dir = rl_base / "Settings"
     settings_dir.mkdir(parents=True, exist_ok=True)
 
-    rom_path = str(Path(config.roms_dir) / system_name)
+    # Per-system rom_path override wins over the default roms_dir/system_name
+    # derivation.  This is how MAME-variant systems (MAME (Vector), MAME
+    # (Vertical), …) that all share a single ROM folder are configured:
+    #   spindoctor config system-override "MAME (Vector)" rom_path J:\Games\MAME
+    ovr = get_system_overrides().get(system_name, {})
+    if isinstance(ovr.get("rom_path"), str) and ovr["rom_path"]:
+        rom_path = ovr["rom_path"]
+    else:
+        rom_path = str(Path(config.roms_dir) / system_name)
     emulator = guess_emulator(system_name)
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
     layout = detect_rl_layout(settings_dir, system_name)
@@ -327,35 +351,50 @@ def generate_rl_system_ini(
         folder_dir = settings_dir / system_name
         folder_dir.mkdir(parents=True, exist_ok=True)
         emu_ini = folder_dir / "Emulators.ini"
-        # Existing file: only update Rom_Path=; leave Default_Emulator, Emu_Path,
-        # Module, and all other keys untouched.  Fall back to fresh template only
-        # when the file has no Rom_Path= line (empty or corrupt).
-        if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
-            emu_ini.write_text("\n".join([
-                "[ROMS]",
-                f"Default_Emulator={emulator}",
-                f"Rom_Path={rom_path}",
-                f"Rom_Extension={extensions}",
-                "",
-                f"[{emulator}]",
-                f"Rom_Path={rom_path}",
-                "",
-            ]), encoding="utf-8")
+        # Guard: when the existing file already points at a valid directory but
+        # the computed path does not exist, the system has a custom ROM location
+        # (e.g. a MAME variant that shares J:\Games\MAME instead of having its
+        # own J:\Games\MAME (Vector) folder).  Overwriting would break launches.
+        # We only apply this guard when no explicit system_override is set — if
+        # the user configured a rom_path override we always honour it.
+        _skip_update = False
+        if not ovr.get("rom_path") and emu_ini.exists() and not output_base:
+            _current = _read_rom_path_from_ini(emu_ini)
+            if _current and Path(_current).is_dir() and not Path(rom_path).exists():
+                _skip_update = True
+        if not _skip_update:
+            if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
+                emu_ini.write_text("\n".join([
+                    "[ROMS]",
+                    f"Default_Emulator={emulator}",
+                    f"Rom_Path={rom_path}",
+                    f"Rom_Extension={extensions}",
+                    "",
+                    f"[{emulator}]",
+                    f"Rom_Path={rom_path}",
+                    "",
+                ]), encoding="utf-8")
         written.append(emu_ini)
 
     if layout in ("flat", "new"):
         flat_ini = settings_dir / f"{system_name}.ini"
-        if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
-            flat_ini.write_text("\n".join([
-                "[Settings]",
-                f"Default_Emulator={emulator}",
-                f"Rom_Path={rom_path}",
-                f"Rom_Extension={extensions}",
-                "",
-                f"[{emulator}]",
-                f"Rom_Path={rom_path}",
-                "",
-            ]), encoding="utf-8")
+        _skip_update_flat = False
+        if not ovr.get("rom_path") and flat_ini.exists() and not output_base:
+            _current_flat = _read_rom_path_from_ini(flat_ini)
+            if _current_flat and Path(_current_flat).is_dir() and not Path(rom_path).exists():
+                _skip_update_flat = True
+        if not _skip_update_flat:
+            if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
+                flat_ini.write_text("\n".join([
+                    "[Settings]",
+                    f"Default_Emulator={emulator}",
+                    f"Rom_Path={rom_path}",
+                    f"Rom_Extension={extensions}",
+                    "",
+                    f"[{emulator}]",
+                    f"Rom_Path={rom_path}",
+                    "",
+                ]), encoding="utf-8")
         written.append(flat_ini)
 
     return written
