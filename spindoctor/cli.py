@@ -3064,18 +3064,21 @@ def _make_install_tools_bats() -> "dict[str, str]":
             "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
             f"{fav} rebuild --apply\r\n"
             "if errorlevel 1 pause\r\n"
+            "exit\r\n"
         ),
         "Refresh Recently Played.bat": (
             "@echo off\r\n"
             "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
             f"{recent} rebuild --apply\r\n"
             "if errorlevel 1 pause\r\n"
+            "exit\r\n"
         ),
         "Refresh Most Played.bat": (
             "@echo off\r\n"
             "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
             f"{stats} build-wheel --apply\r\n"
             "if errorlevel 1 pause\r\n"
+            "exit\r\n"
         ),
         "Refresh All.bat": (
             "@echo off\r\n"
@@ -3083,6 +3086,7 @@ def _make_install_tools_bats() -> "dict[str, str]":
             f"{recent} rebuild --apply\r\n"
             f"{stats} build-wheel --apply\r\n"
             "if errorlevel 1 pause\r\n"
+            "exit\r\n"
         ),
     }
 
