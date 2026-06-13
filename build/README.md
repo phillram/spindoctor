@@ -16,7 +16,7 @@ Five self-contained `--onefile` EXEs in `dist/`:
 
 Each binary is a self-extracting archive — no installer, no shared runtime folder, no Python on the target box. Drop any of them wherever you like. `spindoctor-gui.exe` finds its sibling EXEs via `Path(sys.executable).parent`, so keep all five in the same directory for GUI use.
 
-Hidden imports are split per-target as a hygiene measure — each EXE's explicit import list covers only what that binary directly needs. However, EXE sizes remain similar across all five because `HIDDEN_IMPORTS` only adds modules that static analysis misses; it cannot exclude modules pulled in transitively through shared spindoctor package imports. Each binary also pays the full Python 3.8 runtime cost. To meaningfully reduce standalone-tool sizes would require `--exclude-module` flags plus auditing that the shared package code doesn't transitively import GUI or CLI modules from `favorites.py`, `recent.py`, and `playtime.py`.
+Hidden imports are split per-target so each EXE only bundles what it actually uses. The standalone tools (`fav`/`recent`/`stats`) use `argparse` directly and do not import `click`, `rich`, `tkinter`, or `PIL` anywhere in their transitive dependency graph — those modules are kept in `_CORE_CLI` and are only added as hidden imports for `spindoctor.exe` and `spindoctor-gui.exe`. `_STANDALONE_EXCLUDES` additionally passes `--exclude-module` for those modules so PyInstaller's stdlib sweep cannot pull them in. EXE sizes are still dominated by the Python 3.8 interpreter, the stdlib subset, and `lxml` (libxml2 + libxslt C extensions), all of which are shared fixed costs.
 
 ## Windows 7 compatibility
 

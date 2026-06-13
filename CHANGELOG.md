@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Build: standalone tool EXEs no longer bundle `click`, `rich`, or GUI modules.** `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` use `argparse` directly and have no transitive dependency on `click`, `rich`, `tkinter`, or `PIL`. The build script's hidden-import list now splits `_CORE_CLI` (click + rich) from `_CORE_BASE`, and passes `--exclude-module` for those libraries when building the standalone targets.
+
 ---
 
 ## [2.5.3] - 2026-06-13

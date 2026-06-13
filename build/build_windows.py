@@ -48,20 +48,43 @@ TARGETS = [
 
 # Hidden imports PyInstaller's static analysis misses because they are
 # imported lazily, via plugin discovery, or through C-extension hooks.
-# Split per-target so each binary only bundles what it actually uses —
-# this keeps the standalone tools (fav/recent/stats) meaningfully smaller
-# than the full CLI and GUI.
-_CORE: list[str] = [
-    "spindoctor",
-    "spindoctor.update_check",
-    "lxml._elementpath",
-    "lxml.etree",
+#
+# _CORE_CLI   — modules needed by every CLI/GUI binary (click, rich).
+# _CORE_BASE  — modules needed by ALL five binaries, including the
+#               lightweight standalone tools (fav/recent/stats).
+#
+# The standalone tools use argparse, not click, and do not import rich
+# anywhere in their transitive dependency graph. Listing click and rich
+# as hidden imports for those targets would force PyInstaller to bundle
+# them even though they are never called — so they are kept out of
+# _CORE_BASE and only appear in _CORE_CLI.
+_CORE_CLI: list[str] = [
     "rich.logging",
     "click",
 ]
 
+_CORE_BASE: list[str] = [
+    "spindoctor",
+    "spindoctor.update_check",
+    "lxml._elementpath",
+    "lxml.etree",
+]
+
+# Modules to explicitly exclude from the lightweight standalone tools.
+# These are not imported anywhere in the fav/recent/stats transitive graph
+# but may be picked up by PyInstaller's stdlib sweep or leftover .pyc files
+# in the build environment.
+_STANDALONE_EXCLUDES: list[str] = [
+    "click",
+    "rich",
+    "tkinter",
+    "_tkinter",
+    "PIL",
+    "tkinterdnd2",
+]
+
 HIDDEN_IMPORTS: dict[str, list[str]] = {
-    "spindoctor": _CORE + [
+    "spindoctor": _CORE_BASE + _CORE_CLI + [
         "spindoctor.cli",
         "spindoctor.favorites",
         "spindoctor.recent",
@@ -75,7 +98,7 @@ HIDDEN_IMPORTS: dict[str, list[str]] = {
         "spindoctor.lightgun",
         "spindoctor.verify",
     ],
-    "spindoctor-gui": _CORE + [
+    "spindoctor-gui": _CORE_BASE + _CORE_CLI + [
         "spindoctor.cli",
         "spindoctor.favorites",
         "spindoctor.recent",
@@ -91,9 +114,9 @@ HIDDEN_IMPORTS: dict[str, list[str]] = {
         "spindoctor.verify",
         "tkinterdnd2",
     ],
-    "spindoctor-fav":    _CORE + ["spindoctor.favorites"],
-    "spindoctor-recent": _CORE + ["spindoctor.recent"],
-    "spindoctor-stats":  _CORE + ["spindoctor.playtime"],
+    "spindoctor-fav":    _CORE_BASE + ["spindoctor.favorites"],
+    "spindoctor-recent": _CORE_BASE + ["spindoctor.recent"],
+    "spindoctor-stats":  _CORE_BASE + ["spindoctor.playtime"],
 }
 
 
@@ -115,6 +138,9 @@ def write_shim(entry: str, name: str) -> Path:
         f"    sys.exit({attr}() or 0)\n"
     )
     return shim
+
+
+_STANDALONE_NAMES = {"spindoctor-fav", "spindoctor-recent", "spindoctor-stats"}
 
 
 def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
@@ -140,6 +166,9 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
                 cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS[name]:
         cmd += ["--hidden-import", hi]
+    if name in _STANDALONE_NAMES:
+        for ex in _STANDALONE_EXCLUDES:
+            cmd += ["--exclude-module", ex]
     cmd.append(str(shim))
     print("$", " ".join(cmd), flush=True)
     subprocess.check_call(cmd)
