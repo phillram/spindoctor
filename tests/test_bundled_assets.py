@@ -15,6 +15,7 @@ from spindoctor.rocketlauncher import (
     install_bundled_system_assets,
     install_system_background,
     install_system_music,
+    install_system_navigate_sound,
     install_system_theme,
     install_system_video,
     install_system_wheel_art,
@@ -192,3 +193,12 @@ def test_video_installs(tmp_path, system_name):
     hs = _hs_dir(tmp_path)
     _, status = install_system_video(hs, system_name)
     assert status == "installed"
+
+
+@pytest.mark.parametrize("system_name", SYNTHETIC)
+def test_navigate_sound_installs_as_wheel_click(tmp_path, system_name):
+    hs = _hs_dir(tmp_path)
+    dest, status = install_system_navigate_sound(hs, system_name)
+    assert status == "installed"
+    assert dest == hs / "Media" / system_name / "Sound" / "Wheel Click.mp3"
+    assert dest.exists()
