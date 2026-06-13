@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Windows release zip is now a shared-runtime folder instead of five separate self-extracting EXEs.** The zip now contains a `spindoctor-windows\` folder; extract it, optionally rename it (e.g. `C:\spindoctor\`), and double-click `spindoctor-gui.exe`. All five executables share a single Python 3.8 runtime bundled in that folder, roughly halving the total download size. Individual EXEs must remain in the folder alongside the shared runtime — do not move them out. The GUI's peer-discovery (`resolve_cli_command`) and the autostart scheduled-task bat files are unaffected; both already used `Path(sys.executable).parent` to locate sibling binaries, which resolves correctly in `--onedir` mode.
+
 ### Fixed
 
 - **Tools-menu terminal windows now close automatically after a refresh completes.** When launched from HyperSpin's Tools menu via RocketLauncher/PCLauncher, the `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All` bat files would leave a blank cmd window visible on the desktop after HyperSpin was closed. The bat scripts now end with an explicit `exit` command, which forces the cmd.exe process to close even when the launcher opens the bat with a persistent console (as PCLauncher does on Windows 7). Run `install-tools` again to redeploy the updated bat files to the cabinet.
