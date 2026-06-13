@@ -1072,27 +1072,40 @@ def generate_system_db_stubs(
 
 # ─── PCLauncher per-game INIs ─────────────────────────────────────────────────
 
-def _pclauncher_ini_text(executable) -> str:
-    """Render the PCLauncher INI body that points at *executable*.
+def _pclauncher_ini_text(game_name: str, executable) -> str:
+    """Render the PCLauncher per-game INI body for *game_name* pointing at *executable*.
 
+    PCLauncher.ahk looks up ``[<game_name>]`` sections and reads ``Application=``.
     *executable* may be any path-like (str, Path, PureWindowsPath).  We
     leave the path string verbatim so Windows-style paths produced from a
     macOS/Linux dev box (or vice-versa) round-trip without mangling.
     """
     return (
-        "[Settings]\n"
-        f"ApplicationPath={executable}\n"
-        "ApplicationParameters=\n"
-        f"StartIn={executable.parent}\n"
+        f"[{game_name}]\n"
+        f"Application={executable}\n"
+        f"WorkingFolder={executable.parent}\n"
     )
 
 
 def read_pclauncher_ini_application_path(ini_path: Path) -> str:
-    """Return the ApplicationPath= value from an existing PCLauncher INI, or ''."""
+    """Return the Application= value from the ``[<game_name>]`` section of a per-game
+    PCLauncher INI, or '' if not found.
+
+    Uses ``ini_path.stem`` as the expected section name (matching what
+    PCLauncher.ahk looks up).  INIs written in the old ``[Settings] /
+    ApplicationPath=`` format return '' so they are treated as stale and
+    regenerated on the next ``--overwrite-pclauncher`` run.
+    """
     try:
+        game_name = ini_path.stem.lower()
+        in_game_section = False
         for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.lower().startswith("applicationpath="):
-                return line.split("=", 1)[1].strip()
+            stripped = line.strip()
+            if stripped.startswith("[") and "]" in stripped:
+                section = stripped[1:stripped.index("]")].lower()
+                in_game_section = (section == game_name)
+            elif in_game_section and stripped.lower().startswith("application="):
+                return stripped.split("=", 1)[1].strip()
     except OSError:
         pass
     return ""
@@ -1448,7 +1461,7 @@ def generate_pclauncher_inis(
         if ini_path.exists() and not overwrite:
             skipped.append(ini_path)
             continue
-        ini_path.write_text(_pclauncher_ini_text(exe_path), encoding="utf-8")
+        ini_path.write_text(_pclauncher_ini_text(title, exe_path), encoding="utf-8")
         written.append(ini_path)
     return module_dir, written, skipped
 
