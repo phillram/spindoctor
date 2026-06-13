@@ -116,9 +116,11 @@ three-tier strategy when running `generate-config` for such systems:
    `MAME`.  This handles `MAME (Vector)`, `MAME Atari Classics`, etc. on first run.
 
 2. **Existing file has a MAME-family `Default_Emulator`:**
-   - **Relative `Rom_Path`** (e.g. `..\Games\Mame\roms` as written by RLUI): preserved
-     unconditionally — relative paths are resolved by RocketLauncher relative to the INI
-     file, not by SpinDoctor (`preserved (MAME emulator)` in the dry-run table).
+   - **Relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI): resolved from the
+     RL root directory (how RocketLauncher itself resolves it on Windows). If the resolved
+     directory exists, the path is preserved (`preserved (MAME emulator)` in the dry-run
+     table). If the directory no longer exists — e.g. ROMs were moved from D: to J: after
+     the backup was taken — the path is replaced with `roms_dir\MAME`.
    - **Absolute `Rom_Path` that doesn't exist** (e.g. `J:\Games\4-Player Games` after a
      restore from an old backup): replaced with `roms_dir\MAME` if that folder exists.
      This covers non-MAME-named systems like `4-Player Games` whose emulator is
