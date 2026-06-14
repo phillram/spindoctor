@@ -1,2 +1,2 @@
-__version__ = "2.6.3"
+__version__ = "2.7.0"
 __app_name__ = "SpinDoctor"

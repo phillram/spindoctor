@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.7.0] - 2026-06-14
+
 ### Fixed
 
 - **`pc-fix-exe` / `pc-rename` no longer pick `chromedriver.exe` or NW.js runtime files as the game executable.** Games packaged with NW.js (e.g. RPGMaker titles with `Game.exe`) bundle `chromedriver.exe` alongside the real launcher. `chromedriver` was not in the exclusion-prefix list, so it sorted before `Game.exe` alphabetically and was incorrectly selected. `chromedriver`, `nwjc`, and `nacl_irt` are now excluded, matching the existing treatment of uninstallers and redistributables.
@@ -1500,7 +1504,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.0...HEAD
+[2.7.0]: https://github.com/phillram/spindoctor/compare/v2.6.3...v2.7.0
 [2.6.3]: https://github.com/phillram/spindoctor/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/phillram/spindoctor/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/phillram/spindoctor/compare/v2.6.0...v2.6.1
