@@ -1352,17 +1352,89 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
 
 # ─── factory ──────────────────────────────────────────────────────────────────
 
+class CombinedMetadataClient(_FetchWithSearchMixin):
+    """ScreenScraper primary, TheGamesDB fills any slots SS missed.
+
+    For each game:
+    1. Both providers are queried in parallel.
+    2. SS metadata and media take full priority.
+    3. Any media slot missing from SS is filled from TGDB (e.g. TGDB
+       clearlogos fill the wheel slot when SS has no wheel image).
+    4. If SS finds nothing, the full TGDB result is used as fallback.
+    """
+
+    source_name = "combined"
+
+    def __init__(
+        self,
+        ss_client: "ScreenScraperClient",
+        tgdb_client: "TheGamesDBClient",
+    ):
+        self._ss = ss_client
+        self._tgdb = tgdb_client
+
+    def fetch(self, game_name: str, system_name: str) -> "Optional[GameMetadata]":
+        ss_meta: Optional[GameMetadata] = None
+        tgdb_meta: Optional[GameMetadata] = None
+
+        try:
+            ss_meta = self._ss.fetch(game_name, system_name)
+        except MetadataError:
+            pass
+
+        try:
+            tgdb_meta = self._tgdb.fetch(game_name, system_name)
+        except MetadataError:
+            pass
+
+        if ss_meta is None:
+            return tgdb_meta
+
+        if tgdb_meta is not None:
+            for slot, cands in (tgdb_meta.media_candidates or {}).items():
+                if not ss_meta.media_candidates.get(slot):
+                    ss_meta.media_candidates[slot] = cands
+
+        return ss_meta
+
+    def search(self, game_name: str, system_name: str) -> "list[GameMetadata]":
+        ss_results: list[GameMetadata] = []
+        try:
+            ss_results = self._ss.search(game_name, system_name)
+        except MetadataError:
+            pass
+
+        tgdb_results: list[GameMetadata] = []
+        try:
+            tgdb_results = self._tgdb.search(game_name, system_name)
+        except MetadataError:
+            pass
+
+        seen_ids = {r.source_id for r in ss_results}
+        return ss_results + [r for r in tgdb_results if r.source_id not in seen_ids]
+
+
 def build_client(
     config: Config,
     source: Optional[str] = None,
     use_cache: Optional[bool] = None,
 ):
+    """Return a metadata client for *source*.
+
+    When *source* is None the config ``default_metadata_source`` field is used.
+    The special value ``"both"`` (and ``None`` when both credential sets are
+    present) returns a :class:`CombinedMetadataClient` that queries
+    ScreenScraper first and fills any gaps from TheGamesDB.
+    """
     source = source or config.default_metadata_source
     enabled = config.metadata_cache_enabled if use_cache is None else use_cache
     cache = build_metadata_cache(config) if enabled else None
 
-    if source == "screenscraper":
-        if not config.screenscraper_user or not config.screenscraper_pass:
+    has_ss   = bool(config.screenscraper_user and config.screenscraper_pass)
+    has_tgdb = bool(config.thegamesdb_key)
+
+    def _make_ss() -> "ScreenScraperClient":
+        if not has_ss:
             raise MetadataError(
                 "ScreenScraper credentials not configured. "
                 "Run: spindoctor config set screenscraper_user <user> screenscraper_pass <pass>"
@@ -1373,15 +1445,36 @@ def build_client(
             devpassword=config.screenscraper_devpassword or "SpinDoctor",
         )
 
-    if source == "thegamesdb":
-        if not config.thegamesdb_key:
+    def _make_tgdb() -> "TheGamesDBClient":
+        if not has_tgdb:
             raise MetadataError(
                 "TheGamesDB API key not configured. "
                 "Run: spindoctor config set thegamesdb_key <key>"
             )
         return TheGamesDBClient(config.thegamesdb_key, cache=cache)
 
-    raise MetadataError(f"Unknown metadata source: {source}")
+    if source == "screenscraper":
+        return _make_ss()
+
+    if source == "thegamesdb":
+        return _make_tgdb()
+
+    if source in ("both", "combined"):
+        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+
+    # Unknown / legacy value: fall back to whatever credentials are present.
+    if has_ss and has_tgdb:
+        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+    if has_ss:
+        return _make_ss()
+    if has_tgdb:
+        return _make_tgdb()
+
+    raise MetadataError(
+        "No scraper credentials configured. "
+        "Run: spindoctor config set screenscraper_user <u> screenscraper_pass <p> "
+        "and/or thegamesdb_key <key>"
+    )
 
 
 # ─── parsers ──────────────────────────────────────────────────────────────────
