@@ -1070,3 +1070,27 @@ def test_generate_pclauncher_inis_exe_path_unchanged(tmp_path):
     assert len(written) == 1
     ini_text = (module_dir / "MyGame.ini").read_text(encoding="utf-8")
     assert "MyGame.exe" in ini_text
+
+
+# ── _EXE_EXCLUSION_PREFIXES — chromedriver / NW.js ──────────────────────────
+
+def test_pick_best_exe_prefers_game_exe_over_chromedriver(tmp_path):
+    """chromedriver.exe (NW.js runtime) must lose to the real game launcher."""
+    game_dir = tmp_path / "Look Outside"
+    game_dir.mkdir()
+    (game_dir / "chromedriver.exe").write_bytes(b"\x00" * 5000)
+    (game_dir / "Game.exe").write_bytes(b"\x00" * 100)
+    result = _pick_best_exe(game_dir, "Look Outside")
+    assert result is not None
+    assert result.name == "Game.exe"
+
+
+def test_list_exe_candidates_chromedriver_sorted_last(tmp_path):
+    """list_exe_candidates puts chromedriver in the excluded (lower-priority) tier."""
+    game_dir = tmp_path / "Look Outside"
+    game_dir.mkdir()
+    (game_dir / "chromedriver.exe").write_bytes(b"\x00" * 100)
+    (game_dir / "Game.exe").write_bytes(b"\x00" * 100)
+    candidates = list_exe_candidates(game_dir, "Look Outside")
+    names = [p.name for p in candidates]
+    assert names.index("Game.exe") < names.index("chromedriver.exe")
