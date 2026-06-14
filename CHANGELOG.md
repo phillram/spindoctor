@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI — Main Menu system reordering improvements.** The Treeview now supports two faster ways to reposition a system without clicking Move Up/Down one step at a time: (1) **Alt+Up / Alt+Down** keyboard shortcuts nudge the selected row up or down; (2) a **"Move to #"** entry field + **Go** button jumps the selected system directly to any position in a single action.
+
 - **GUI — game dropdowns replace free-text entry fields across six locations.** Selecting a system now auto-populates a sorted **Game** dropdown from that system's HyperSpin database XML, with a **↻** refresh button to reload without switching tabs. Affected locations:
   - **Systems → Step 3 — Rename or clone a game** (Game field)
   - **Tools → Step 4 — Manage favorites** (Game field)

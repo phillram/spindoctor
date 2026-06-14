@@ -6529,8 +6529,10 @@ class _SpinDoctorGUI:
             text=("Edit the order and visibility of systems on HyperSpin's "
                   "top-level wheel (Main Menu.xml). Click Refresh to load "
                   "the current order, drag-select a row then use Move Up / "
-                  "Move Down to reposition it, Toggle Visible to "
-                  "hide/unhide, then Save Order to write all changes at once."),
+                  "Move Down (or Alt+Up / Alt+Down) to reposition it one "
+                  "step at a time, or type a position number and press Go to "
+                  "jump directly. Toggle Visible to hide/unhide, then Save "
+                  "Order to write all changes at once."),
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
@@ -6560,6 +6562,8 @@ class _SpinDoctorGUI:
         self._mm_tree.configure(yscrollcommand=vsb.set)
         self._mm_tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
+        self._mm_tree.bind("<Alt-Up>",   lambda e: self._mm_move_up())
+        self._mm_tree.bind("<Alt-Down>", lambda e: self._mm_move_down())
 
         # ── Table action buttons ──────────────────────────────────────────────
         tbl_btn_row = self.ttk.Frame(frame)
@@ -6576,6 +6580,13 @@ class _SpinDoctorGUI:
             tbl_btn_row, text="Move Down",
             command=self._mm_move_down,
         ).pack(side="left", padx=2)
+        self._mm_goto_var = self.tk.StringVar()
+        self.ttk.Label(tbl_btn_row, text="Move to #").pack(side="left", padx=(8, 2))
+        self.ttk.Entry(tbl_btn_row, textvariable=self._mm_goto_var, width=4).pack(side="left")
+        self.ttk.Button(
+            tbl_btn_row, text="Go",
+            command=self._mm_move_to_pos,
+        ).pack(side="left", padx=(2, 0))
         self.ttk.Button(
             tbl_btn_row, text="Toggle Visible",
             command=self._mm_toggle_visible,
@@ -6762,6 +6773,31 @@ class _SpinDoctorGUI:
         new_iid = str(idx + 2)   # item is now at 1-based position idx+2
         self._mm_tree.selection_set(new_iid)
         self._mm_tree.see(new_iid)
+
+    def _mm_move_to_pos(self) -> None:
+        idx = self._mm_selected_index()
+        if idx < 0:
+            self._set_status("Select a row in the table first.")
+            return
+        raw = self._mm_goto_var.get().strip()
+        try:
+            target = int(raw)
+        except ValueError:
+            self._set_status("Enter a valid position number.")
+            return
+        total = len(self._mm_data)
+        if not 1 <= target <= total:
+            self._set_status(f"Position must be between 1 and {total}.")
+            return
+        target_idx = target - 1
+        if target_idx == idx:
+            return
+        item = self._mm_data.pop(idx)
+        self._mm_data.insert(target_idx, item)
+        self._mm_repopulate_tree()
+        iid = str(target)
+        self._mm_tree.selection_set(iid)
+        self._mm_tree.see(iid)
 
     def _mm_toggle_visible(self) -> None:
         idx = self._mm_selected_index()
@@ -9093,8 +9129,10 @@ class _SpinDoctorGUI:
             text=("Edit the order and visibility of systems on HyperSpin's "
                   "top-level wheel (Main Menu.xml). Click Refresh to load "
                   "the current order, drag-select a row then use Move Up / "
-                  "Move Down to reposition it, Toggle Visible to "
-                  "hide/unhide, then Save Order to write all changes at once."),
+                  "Move Down (or Alt+Up / Alt+Down) to reposition it one "
+                  "step at a time, or type a position number and press Go to "
+                  "jump directly. Toggle Visible to hide/unhide, then Save "
+                  "Order to write all changes at once."),
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 8))
 
@@ -9124,6 +9162,8 @@ class _SpinDoctorGUI:
         self._mm_tree.configure(yscrollcommand=vsb.set)
         self._mm_tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
+        self._mm_tree.bind("<Alt-Up>",   lambda e: self._mm_move_up())
+        self._mm_tree.bind("<Alt-Down>", lambda e: self._mm_move_down())
 
         # Table action buttons
         tbl_btn_row = self.ttk.Frame(mm_lf)
@@ -9140,6 +9180,13 @@ class _SpinDoctorGUI:
             tbl_btn_row, text="Move Down",
             command=self._mm_move_down,
         ).pack(side="left", padx=2)
+        self._mm_goto_var = self.tk.StringVar()
+        self.ttk.Label(tbl_btn_row, text="Move to #").pack(side="left", padx=(8, 2))
+        self.ttk.Entry(tbl_btn_row, textvariable=self._mm_goto_var, width=4).pack(side="left")
+        self.ttk.Button(
+            tbl_btn_row, text="Go",
+            command=self._mm_move_to_pos,
+        ).pack(side="left", padx=(2, 0))
         self.ttk.Button(
             tbl_btn_row, text="Toggle Visible",
             command=self._mm_toggle_visible,
