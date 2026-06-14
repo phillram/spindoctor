@@ -81,8 +81,8 @@ If `add-system` reports "no ROMs found", the file extension isn't in SpinDoctor'
 
 Three integration patterns, in roughly increasing order of "how invisible to the cabinet user":
 
-1. **From inside HyperSpin** (HyperHQ → Tools menu, or as games inside an existing wheel) — GUI Tools tab → "Install for HyperHQ → Tools menu" *or* "Install into an existing wheel system" (e.g. a `Toolkit` wheel). CLI equivalents: `spindoctor install-tools` and `spindoctor install-tools --add-to-system Toolkit`. See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
-2. **Auto-refresh on cabinet startup** — GUI Tools tab → "Auto-refresh on cabinet startup" → Schedule auto-refresh (Windows-only — wraps `schtasks.exe`, Schedule / Remove / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
+1. **From inside HyperSpin** (HyperHQ → Tools menu, or as games inside an existing wheel) — GUI Toolkit tab → "Install for HyperHQ → Tools menu" *or* "Install into an existing wheel system" (e.g. a `Toolkit` wheel). CLI equivalents: `spindoctor install-tools` and `spindoctor install-tools --add-to-system Toolkit`. See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+2. **Auto-refresh on cabinet startup** — GUI Toolkit tab → "Auto-refresh on cabinet startup" → Schedule auto-refresh (Windows-only — wraps `schtasks.exe`, Schedule / Remove / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
 3. **Manual `schtasks` (Windows)** if you'd rather skip the GUI — see [Standalone tools → Wiring into Windows startup](standalone-tools.md#wiring-into-windows-startup) for the `schtasks /create` invocation, plus the macOS (`launchd` / `crontab @reboot`) and Linux (`systemd --user` / `crontab`) equivalents.
 
 ---
@@ -184,7 +184,7 @@ The pre-flight plan reports total bytes to copy and free space at the target, an
 
 `migrate` moves the entire library — or specific components — to a new drive in one shot, then updates `config.json` so the next command finds everything. See [Command reference → migrate](commands.md#migrate) for all flags.
 
-> **GUI alternative:** the **Migrate** tab in `spindoctor-gui` wraps every flag and exposes a separate Undo panel that pre-fills `latest` and surfaces `--list-manifests` — useful when you want to roll back a migration without scrolling through `~/.spindoctor/migrations/`.
+> **GUI alternative:** the **Migration** tab in `spindoctor-gui` wraps every flag and exposes a separate Undo panel that pre-fills `latest` and surfaces `--list-manifests` — useful when you want to roll back a migration without scrolling through `~/.spindoctor/migrations/`.
 
 ### Scenario A — same drive moves to a new PC
 
@@ -265,7 +265,7 @@ spindoctor migrate --target J:\ --include roms --apply
 spindoctor generate-config --apply
 ```
 
-GUI path: **Migrate tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Run migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Run generate-config**.
+GUI path: **Migration tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Run migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Run generate-config**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
@@ -293,7 +293,7 @@ GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click 
 
 Be aware before assuming the new drive / PC is fully wired up:
 
-- **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Migrate tab → Step 5 → Run generate-config) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
+- **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Migration tab → Step 5 → Run generate-config) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
 - **Emulator-internal paths.** RetroArch's `retroarch.cfg`, PCSX2's INI, Dolphin's user folder, etc. often hardcode absolute paths to BIOS, save folders, or shaders. SpinDoctor moves the emulator's files but does not rewrite those internal configs. Re-test each emulator and adjust.
 - **BIOS files outside `emulators_dir`.** Only included if they live under `<emulators_dir>` and you `--include emulators`.
 - **Hardcoded paths inside HyperSpin XML.** SpinDoctor preserves `<game>` content verbatim. If a previous tool wrote absolute Windows paths into the XML, those are not rewritten.
@@ -380,7 +380,7 @@ Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good
 
 ## Adding a Favorite
 
-> **GUI alternative:** the **Tools** tab covers the full favorites lifecycle: **Step 1** imports HyperSpin F-key favorites (optional), **Step 2** refreshes the Favorites wheel, **Step 3** registers it in the Main Menu, **Step 4** (Manage favorites) has inline Add / Remove / List buttons. Install-Tools helpers and auto-refresh scheduling are in the same tab. CLI remains the fastest path for scripted or batch adds.
+> **GUI alternative:** the **Toolkit** tab covers the full favorites lifecycle: **Step 1** imports HyperSpin F-key favorites (optional), **Step 2** refreshes the Favorites wheel, **Step 3** registers it in the Main Menu, **Step 4** (Manage favorites) has inline Add / Remove / List buttons. Install-Tools helpers and auto-refresh scheduling are in the same tab. CLI remains the fastest path for scripted or batch adds.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"

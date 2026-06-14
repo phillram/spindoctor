@@ -90,14 +90,14 @@ It records every ScreenScraper and TheGamesDB call SpinDoctor makes — `verify`
 
 Common 403 causes, in order of likelihood:
 
-1. **Wrong user credentials** — re-check `screenscraper_user` / `screenscraper_pass` (or `thegamesdb_key`). The Custom Command tab's `config show` preset prints the current values.
+1. **Wrong user credentials** — re-check `screenscraper_user` / `screenscraper_pass` (or `thegamesdb_key`). The Console tab's `config show` preset prints the current values.
 2. **Rate-limit exhaustion** — ScreenScraper free tier is 500 req/day, TheGamesDB is on a monthly-allowance budget. The body usually names this explicitly.
 3. **ScreenScraper developer-credential rejection** — every ScreenScraper request also sends a per-app `devid`/`devpassword` pair (separate from the user creds). SpinDoctor defaults both to `"SpinDoctor"`; if the log shows the failure mentions `devid` or `developpeur`, override the pair with your own:
    ```bat
    spindoctor config set screenscraper_devid <your-devid>
    spindoctor config set screenscraper_devpassword <your-devpassword>
    ```
-   The same Custom Command tab in the GUI takes these. See [Configuration → `screenscraper_devid` / `screenscraper_devpassword`](configuration.md#most-used-keys).
+   The same Console tab in the GUI takes these. See [Configuration → `screenscraper_devid` / `screenscraper_devpassword`](configuration.md#most-used-keys).
 
 ### Wrong metadata picked during `fetch-meta`
 
@@ -355,7 +355,7 @@ Open the GUI and use **`File → View logs & manifests…`**. The window groups 
 
 `spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
-### Tools tab → Schedule auto-refresh fails with "access denied"
+### Toolkit tab → Schedule auto-refresh fails with "access denied"
 
 `schtasks.exe` writes to a system-wide Task Scheduler store that requires admin rights. Run SpinDoctor as Administrator (right-click `spindoctor-gui.exe` → **Run as administrator**) and click Schedule auto-refresh again. The GUI now translates `schtasks` failures into one-line actionable messages: "access is denied" → run as Administrator; "already exists" → use the Remove button first; "specified task does not exist" → there's no task to remove yet; anything else falls back to the raw `schtasks` output so power users can diagnose obscure error codes.
 

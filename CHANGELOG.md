@@ -31,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI — Output panel "Show output" restored at minimum height.** `after_idle` fired before Tk had finished laying out the re-added pane, so the sash position wasn't applied and the panel appeared as a tiny draggable sliver. Changed to `after(100)` so layout has settled first. When no prior sash position was saved (first show), the panel now opens at `window_height − 160 px` instead of collapsing.
 
 - **Synthetic-wheel navigate sound now installs as `Wheel Click.mp3`.** The cabinet requires the filename `Wheel Click.mp3` in `Media\<SystemName>\Sound\`; it was previously being written as `navigate.mp3`. No bundled asset change — only the destination filename is corrected.
+
+- **GUI — four tabs renamed for clarity:** "Tools" → **Toolkit**, "Migrate" → **Migration**, "Custom Command" → **Console**, "Logs" → **History**. All documentation and in-GUI status messages updated to match.
+
+- **GUI — all tabs now open with a one-line purpose statement.** Systems, Toolkit, and LEDBlinky previously dropped straight into controls; they now show a brief description at the top consistent with the other nine tabs.
 ---
 
 ## [2.6.0] - 2026-06-13

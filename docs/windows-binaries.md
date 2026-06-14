@@ -138,7 +138,7 @@ All moved to the platform-neutral [GUI walkthrough](gui.md). The same window shi
 
 The cabinet end-user shouldn't need to launch the GUI or drop into `cmd.exe` for routine wheel refreshes — SpinDoctor offers three integration patterns:
 
-**1. HyperSpin Tools menu (`install-tools`).** From the GUI's **Tools** tab → "Install for HyperHQ → Tools menu", or from the CLI:
+**1. HyperSpin Tools menu (`install-tools`).** From the GUI's **Toolkit** tab → "Install for HyperHQ → Tools menu", or from the CLI:
 
 ```bat
 spindoctor install-tools
@@ -146,7 +146,7 @@ spindoctor install-tools
 
 Writes four `.bat` shortcuts (Refresh Favorites / Recently Played / Most Played / Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu.
 
-**2. Inside an existing wheel system (`install-tools --add-to-system`).** If you have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. From the GUI's **Tools** tab → "Install into an existing wheel system", or from the CLI:
+**2. Inside an existing wheel system (`install-tools --add-to-system`).** If you have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. From the GUI's **Toolkit** tab → "Install into an existing wheel system", or from the CLI:
 
 ```bat
 spindoctor install-tools --add-to-system Toolkit
@@ -154,7 +154,7 @@ spindoctor install-tools --add-to-system Toolkit
 
 Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
 
-**3. Automatic refresh on cabinet startup.** From the GUI's **Tools** tab → "Auto-refresh on cabinet startup", click *Schedule auto-refresh* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
+**3. Automatic refresh on cabinet startup.** From the GUI's **Toolkit** tab → "Auto-refresh on cabinet startup", click *Schedule auto-refresh* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
