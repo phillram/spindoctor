@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.6.2] - 2026-06-14
+
 ### Added
 
 - **`pc-fix-exe` command + GUI panel — fix a PC game launching the wrong executable.** When a PCLauncher INI has an uninstaller, GOG/Steam cache file, or redistributable set as `Application=` (e.g. `webcache.zip` instead of `ElecHead.exe`), run `spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply` to auto-detect and correct the entry. Auto-detection scans the game folder, filters out common non-game executables (`unins*`, `setup*`, `vcredist*`, `crashpad*`, etc.), and prefers the file whose name matches the game title; largest file wins ties. Use `--exe <path>` to override. The **Systems** tab now has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with system/game dropdowns and a candidate listbox. Also adds `list_exe_candidates()` (public) and `rewrite_pclauncher_application()` helpers in `rocketlauncher.py` so only `Application=` and `WorkingFolder=` are updated — user-set keys like `FadeTitle=` survive untouched.
@@ -1458,7 +1462,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.2...HEAD
+[2.6.2]: https://github.com/phillram/spindoctor/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/phillram/spindoctor/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/phillram/spindoctor/compare/v2.5.3...v2.6.0
 [2.5.3]: https://github.com/phillram/spindoctor/compare/v2.5.2...v2.5.3
