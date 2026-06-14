@@ -396,7 +396,7 @@ spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: rewrite ALL IN
 
 The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely.
 
-`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`) or after renaming an executable — otherwise the old INI is kept and RocketLauncher will fail to find the file. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path mismatch), or `current` so you can confirm the problem before committing.
+`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`), after renaming an executable, or when a game whose dbName contains a colon (e.g. `Submachine: Legacy`) was previously written with a colon-stripped section header — in which case PCLauncher.ahk cannot find the `[Submachine: Legacy]` section and falls through to a stale system-level INI. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path or section mismatch), or `current` so you can confirm the problem before committing.
 
 `--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
 
