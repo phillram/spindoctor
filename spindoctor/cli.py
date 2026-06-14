@@ -8376,7 +8376,11 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
     # that differ only in Windows-invalid characters (e.g. "Submachine Legacy"
     # → "Submachine: Legacy").  PCLauncher looks up the section by the exact
     # dbName, so the INI section header must use the original name with colon.
-    from .rocketlauncher import _win_safe_stem, read_pclauncher_ini_application_path
+    from .rocketlauncher import (
+        _resolve_pclauncher_exe,
+        _win_safe_stem,
+        read_pclauncher_ini_application_path,
+    )
     title_to_section: dict[str, str] = {}
     try:
         _xml_db = load_database(system_name, config.databases_dir)
@@ -8386,6 +8390,16 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
                 title_to_section[_safe] = _dbname
     except Exception:  # noqa: BLE001
         pass  # XML not yet written — section falls back to folder-derived title
+
+    # Resolve the expected Application= for each title.  When the "rom" RL
+    # found by extension-matching is not an .exe (e.g. webcache.zip from a
+    # GOG install), _resolve_pclauncher_exe looks for the real executable in
+    # the same directory.  This keeps stale detection aligned with what
+    # generate_pclauncher_inis will actually write.
+    resolved_exe: dict[str, Path] = {
+        title: _resolve_pclauncher_exe(by_title[title], title)
+        for title in by_title
+    }
 
     # Classify each title: new (no INI), stale (INI exists but points at wrong
     # path — e.g. after a drive migration or file rename), or current (INI
@@ -8401,7 +8415,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
         else:
             section = title_to_section.get(title, title)
             on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
-            expected = str(by_title[title])
+            expected = str(resolved_exe[title])
             if on_disk.lower() != expected.lower():
                 stale_titles.append(title)
             else:
@@ -8416,7 +8430,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
         tbl.add_column("Executable")
         tbl.add_column("INI status")
         for title in sorted(by_title):
-            path = by_title[title]
+            exe = resolved_exe[title]
             if title in new_titles_set:
                 status = "[green]new[/green]"
             elif title in stale_titles_set:
@@ -8427,7 +8441,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
                 status = f"[red]stale[/red] [dim](INI has: {on_disk})[/dim]"
             else:
                 status = "[dim]current[/dim]"
-            tbl.add_row(title, str(path), status)
+            tbl.add_row(title, str(exe), status)
         console.print(tbl)
 
     summary_parts = []
