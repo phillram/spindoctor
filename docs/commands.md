@@ -55,6 +55,8 @@ spindoctor audit --system MAME --show-matched  :: also print the fully-matched c
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
 
+> **GUI alternative:** the **Diagnostics** and **Metadata & Media** tabs both expose an Inspect form. Select a system to auto-populate the ROM dropdown from that system's database; leave blank (first item) to run `--all`. Click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
+
 ```bat
 spindoctor inspect --system MAME --game 1942
 spindoctor inspect --system SNES --no-path                  :: compact view
@@ -138,6 +140,8 @@ When a media slot has multiple candidates (different regions / artwork variants)
 ### `media-add`
 
 Manually drop a local file into the right HyperSpin media slot. Dry-run by default — the preview prints the exact destination path; re-run with `--apply` to commit.
+
+> **GUI alternative:** **Metadata & Media → Add one local media file**. System and game dropdowns auto-populate from the database; click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
 
 ```bat
 spindoctor media-add --system MAME --game 1942 --type trailer ^
@@ -1570,7 +1574,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 ### `ignore`
 
-> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
 
 Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
 
