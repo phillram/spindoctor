@@ -12,11 +12,15 @@ from spindoctor.rocketlauncher import (
     EMULATOR_WINDOW_TITLES,
     _FADE_TITLE_TIMEOUT,
     _get_fade_title,
+    _win_safe_stem,
     ensure_rl_game_exe,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
+    list_exe_candidates,
+    _pick_best_exe,
     read_pclauncher_ini_application_path,
+    rewrite_pclauncher_application,
     write_pclauncher_system_ini,
     write_toolkit_module_ini,
     _read_system_default_emulator,
@@ -125,6 +129,61 @@ def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
         )
 
 
+# ─── _win_safe_stem ───────────────────────────────────────────────────────────
+
+def test_win_safe_stem_strips_colon():
+    assert _win_safe_stem("Submachine: Legacy") == "Submachine Legacy"
+
+
+def test_win_safe_stem_strips_all_forbidden_chars():
+    assert _win_safe_stem('A\\B/C:D*E?F"G<H>I|J') == "ABCDEFGHIJ"
+
+
+def test_win_safe_stem_passthrough_for_safe_title():
+    assert _win_safe_stem("Hades") == "Hades"
+    assert _win_safe_stem("Mega Man X") == "Mega Man X"
+
+
+# ─── generate_pclauncher_inis with title_to_section ──────────────────────────
+
+def test_generate_pclauncher_inis_title_to_section_uses_dbname_in_header(tmp_path):
+    """When title_to_section is provided, section header uses the dbName (colon intact)
+    while the filename uses the Windows-safe stem."""
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    exe = PureWindowsPath(r"J:\Games\PC GAMES\Submachine Legacy\webcache.zip")
+    titles = {"Submachine Legacy": exe}
+    section_map = {"Submachine Legacy": "Submachine: Legacy"}
+
+    module_dir, written, _ = generate_pclauncher_inis(
+        "PC Games", titles, cfg, title_to_section=section_map,
+    )
+
+    ini = module_dir / "Submachine Legacy.ini"
+    assert ini in written
+    content = ini.read_text(encoding="utf-8")
+    assert "[Submachine: Legacy]" in content
+    assert "[Submachine Legacy]" not in content
+    assert r"Application=J:\Games\PC GAMES\Submachine Legacy\webcache.zip" in content
+
+
+def test_generate_pclauncher_inis_no_section_map_uses_title_as_section(tmp_path):
+    """Without title_to_section the section header equals the title (existing behaviour)."""
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    titles = {"Hades": PureWindowsPath(r"C:\Games\Hades\Hades.exe")}
+    module_dir, written, _ = generate_pclauncher_inis("PC Games", titles, cfg)
+
+    content = (module_dir / "Hades.ini").read_text(encoding="utf-8")
+    assert "[Hades]" in content
+
+
 # ─── read_pclauncher_ini_application_path ────────────────────────────────────
 
 def test_read_pclauncher_ini_application_path_new_format(tmp_path):
@@ -170,6 +229,41 @@ def test_read_pclauncher_ini_application_path_case_insensitive_section(tmp_path)
         encoding="utf-8",
     )
     assert read_pclauncher_ini_application_path(ini) == r"C:\Games\Hades\Hades.exe"
+
+
+def test_read_pclauncher_ini_application_path_section_name_override_colon(tmp_path):
+    """section_name override finds a section whose header has a colon not in the filename."""
+    ini = tmp_path / "Submachine Legacy.ini"
+    ini.write_text(
+        "[Submachine: Legacy]\nApplication=J:\\Games\\sub.exe\n",
+        encoding="utf-8",
+    )
+    # Without override: stem is "Submachine Legacy" → no match for "[Submachine: Legacy]"
+    assert read_pclauncher_ini_application_path(ini) == ""
+    # With override using the dbName: finds the section
+    assert read_pclauncher_ini_application_path(
+        ini, section_name="Submachine: Legacy"
+    ) == r"J:\Games\sub.exe"
+
+
+def test_read_pclauncher_ini_application_path_section_name_detects_old_stripped_header(tmp_path):
+    """section_name override returns '' when INI still has the colon-stripped header.
+
+    This is the core stale-detection fix: an INI written by an older SpinDoctor version
+    with [Submachine Legacy] (no colon) looks 'current' without the override but is
+    correctly flagged as missing (stale) when the dbName 'Submachine: Legacy' is used.
+    """
+    ini = tmp_path / "Submachine Legacy.ini"
+    ini.write_text(
+        "[Submachine Legacy]\nApplication=J:\\Games\\sub.exe\n",
+        encoding="utf-8",
+    )
+    # Without override: stem matches → returns the path (false "current")
+    assert read_pclauncher_ini_application_path(ini) == r"J:\Games\sub.exe"
+    # With override (dbName with colon): no match → stale detected
+    assert read_pclauncher_ini_application_path(
+        ini, section_name="Submachine: Legacy"
+    ) == ""
 
 
 # ─── _read_system_default_emulator ────────────────────────────────────────────
@@ -764,3 +858,127 @@ def test_write_pclauncher_system_ini_respects_extra_window_titles(tmp_path):
     body = ini_path.read_text(encoding="utf-8")
     assert "FadeTitle=Sega Model 2" in body
     assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+# ─── list_exe_candidates / _pick_best_exe ────────────────────────────────────
+
+
+def test_list_exe_candidates_prefers_name_match(tmp_path):
+    game_dir = tmp_path / "ElecHead"
+    game_dir.mkdir()
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5_000_000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    result = list_exe_candidates(game_dir, "ElecHead")
+    assert result[0].name == "ElecHead.exe"
+    assert result[-1].name == "unins000.exe"
+
+
+def test_list_exe_candidates_excludes_come_after_recommended(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "game.exe").write_bytes(b"\x00" * 4_000_000)
+    (game_dir / "setup.exe").write_bytes(b"\x00" * 500_000)
+    (game_dir / "vcredist_x64.exe").write_bytes(b"\x00" * 100_000)
+    result = list_exe_candidates(game_dir, "game")
+    names = [p.name for p in result]
+    assert names[0] == "game.exe"
+    assert "setup.exe" in names
+    assert "vcredist_x64.exe" in names
+
+
+def test_list_exe_candidates_empty_dir(tmp_path):
+    game_dir = tmp_path / "Empty"
+    game_dir.mkdir()
+    assert list_exe_candidates(game_dir, "Empty") == []
+
+
+def test_list_exe_candidates_missing_dir(tmp_path):
+    assert list_exe_candidates(tmp_path / "NoSuchDir", "game") == []
+
+
+def test_pick_best_exe_returns_name_match(tmp_path):
+    game_dir = tmp_path / "ElecHead"
+    game_dir.mkdir()
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5_000_000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    assert _pick_best_exe(game_dir, "ElecHead").name == "ElecHead.exe"
+
+
+def test_pick_best_exe_skips_uninstaller_when_only_candidate(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    # Only an uninstaller present → no recommended candidate
+    assert _pick_best_exe(game_dir, "Game") is None
+
+
+def test_pick_best_exe_tiebreaker_largest(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "launcher.exe").write_bytes(b"\x00" * 200_000)
+    (game_dir / "game_main.exe").write_bytes(b"\x00" * 8_000_000)
+    result = _pick_best_exe(game_dir, "Something Else")
+    assert result.name == "game_main.exe"
+
+
+# ─── rewrite_pclauncher_application ──────────────────────────────────────────
+
+
+def test_rewrite_pclauncher_application_updates_paths(tmp_path):
+    ini = tmp_path / "ElecHead.ini"
+    ini.write_text(
+        "[ElecHead]\nApplication=J:\\Games\\ElecHead\\webcache.zip\n"
+        "WorkingFolder=J:\\Games\\ElecHead\n",
+        encoding="utf-8",
+    )
+    new_exe = PureWindowsPath(r"J:\Games\ElecHead\ElecHead.exe")
+    changed = rewrite_pclauncher_application(ini, "ElecHead", new_exe)
+    assert changed
+    body = ini.read_text(encoding="utf-8")
+    assert "Application=J:\\Games\\ElecHead\\ElecHead.exe" in body
+    assert "WorkingFolder=J:\\Games\\ElecHead" in body
+    assert "webcache.zip" not in body
+
+
+def test_rewrite_pclauncher_application_preserves_other_keys(tmp_path):
+    ini = tmp_path / "Game.ini"
+    ini.write_text(
+        "[Game]\nApplication=D:\\old.exe\nFadeTitle=Game Window\nWorkingFolder=D:\\\n",
+        encoding="utf-8",
+    )
+    changed = rewrite_pclauncher_application(
+        ini, "Game", PureWindowsPath(r"J:\Games\Game\game.exe")
+    )
+    assert changed
+    body = ini.read_text(encoding="utf-8")
+    assert "FadeTitle=Game Window" in body
+    assert r"Application=J:\Games\Game\game.exe" in body
+
+
+def test_rewrite_pclauncher_application_noop_when_already_correct(tmp_path):
+    exe = PureWindowsPath(r"J:\Games\ElecHead\ElecHead.exe")
+    ini = tmp_path / "ElecHead.ini"
+    ini.write_text(
+        f"[ElecHead]\nApplication={exe}\nWorkingFolder={exe.parent}\n",
+        encoding="utf-8",
+    )
+    changed = rewrite_pclauncher_application(ini, "ElecHead", exe)
+    assert not changed
+
+
+def test_rewrite_pclauncher_application_noop_on_missing_file(tmp_path):
+    changed = rewrite_pclauncher_application(
+        tmp_path / "missing.ini", "Game", PureWindowsPath(r"J:\game.exe")
+    )
+    assert not changed
+
+
+def test_rewrite_pclauncher_application_section_not_found(tmp_path):
+    ini = tmp_path / "Game.ini"
+    ini.write_text("[OtherGame]\nApplication=D:\\old.exe\n", encoding="utf-8")
+    changed = rewrite_pclauncher_application(
+        ini, "Game", PureWindowsPath(r"J:\Games\Game\game.exe")
+    )
+    # Section not present → no modification
+    assert not changed
+    assert "D:\\old.exe" in ini.read_text(encoding="utf-8")

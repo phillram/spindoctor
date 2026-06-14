@@ -16,6 +16,7 @@ from spindoctor.edit import (
     find_matching_games, list_edit_manifests, list_rename_manifests,
     parse_filter_clause, parse_year_range, plan_batch_edit, plan_rename,
     undo_batch_edit, undo_rename,
+    _rewrite_pclauncher_section,
 )
 
 
@@ -356,3 +357,93 @@ def test_list_rename_manifests_after_apply(isolated_config, tmp_path):
     manifests = list_rename_manifests()
     assert len(manifests) == 1
     assert find_latest_rename_manifest() == manifests[-1]
+
+
+# ─── _rewrite_pclauncher_section ──────────────────────────────────────────────
+
+
+def test_rewrite_pclauncher_section_replaces_header(tmp_path):
+    """Section header is replaced; Application= line is left verbatim."""
+    ini = tmp_path / "Submachine Legacy.ini"
+    ini.write_text(
+        "[Submachine Legacy]\nApplication=J:\\Games\\sub.exe\nWorkingFolder=J:\\Games\n",
+        encoding="utf-8",
+    )
+    _rewrite_pclauncher_section(ini, "Submachine Legacy", "Submachine: Legacy")
+    content = ini.read_text(encoding="utf-8")
+    assert "[Submachine: Legacy]" in content
+    assert "[Submachine Legacy]" not in content
+    assert r"Application=J:\Games\sub.exe" in content
+
+
+def test_rewrite_pclauncher_section_noop_when_header_not_found(tmp_path):
+    """File is left unchanged when the expected old header is absent."""
+    ini = tmp_path / "Game.ini"
+    original = "[DifferentGame]\nApplication=C:\\foo.exe\n"
+    ini.write_text(original, encoding="utf-8")
+    _rewrite_pclauncher_section(ini, "Game", "New Game")
+    assert ini.read_text(encoding="utf-8") == original
+
+
+def test_rewrite_pclauncher_section_noop_on_missing_file(tmp_path):
+    """No error when the INI does not exist."""
+    _rewrite_pclauncher_section(tmp_path / "NoExist.ini", "Old", "New")
+
+
+# ─── plan_rename / apply_rename with PCLauncher INI section rewrite ───────────
+
+
+def _build_pc_cfg(tmp_path: Path):
+    """Minimal PC-system config: one game in the DB + a per-game PCLauncher INI."""
+    roms_dir = tmp_path / "roms"
+    hs_dir = tmp_path / "hs"
+    rl_dir = tmp_path / "rl"
+    db_dir = hs_dir / "Databases" / "PC Games"
+    db_dir.mkdir(parents=True)
+    (roms_dir / "PC Games").mkdir(parents=True)
+
+    db = HyperspinDatabase("PC Games", db_dir / "PC Games.xml")
+    db.upsert_game(GameEntry(name="Submachine Legacy"))
+    db.save()
+
+    ini_dir = rl_dir / "Modules" / "PCLauncher" / "PC Games"
+    ini_dir.mkdir(parents=True)
+    (ini_dir / "Submachine Legacy.ini").write_text(
+        "[Submachine Legacy]\nApplication=J:\\Games\\sub.exe\n",
+        encoding="utf-8",
+    )
+
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    cfg.rocketlauncher_dir = str(rl_dir)
+    import spindoctor.config as _cm
+    _cm.save_config(cfg)
+    return cfg, rl_dir
+
+
+def test_plan_rename_pclauncher_ini_uses_safe_target_filename(isolated_config, tmp_path):
+    """Target INI filename strips Windows-invalid chars; section fields record the full names."""
+    cfg, rl_dir = _build_pc_cfg(tmp_path)
+    plan = plan_rename(cfg, "PC Games", "Submachine Legacy", "Submachine: Legacy")
+    rl_changes = [ch for ch in plan.file_changes if ch.kind == "rl-pclauncher"]
+    assert len(rl_changes) == 1
+    ch = rl_changes[0]
+    # Filename must stay Windows-safe (no colon)
+    assert ch.dest.name == "Submachine Legacy.ini"
+    # Section fields carry the full names (colon preserved)
+    assert ch.ini_old_section == "Submachine Legacy"
+    assert ch.ini_new_section == "Submachine: Legacy"
+
+
+def test_apply_rename_rewrites_pclauncher_section_header(isolated_config, tmp_path):
+    """apply_rename rewrites [old section] → [new section] inside the per-game INI."""
+    cfg, rl_dir = _build_pc_cfg(tmp_path)
+    plan = plan_rename(cfg, "PC Games", "Submachine Legacy", "Submachine: Legacy")
+    apply_rename(plan, cfg)
+
+    ini = rl_dir / "Modules" / "PCLauncher" / "PC Games" / "Submachine Legacy.ini"
+    assert ini.exists()
+    content = ini.read_text(encoding="utf-8")
+    assert "[Submachine: Legacy]" in content
+    assert "[Submachine Legacy]" not in content

@@ -8275,11 +8275,23 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
             )
         else:
-            from .rocketlauncher import generate_pclauncher_inis
+            from .rocketlauncher import _win_safe_stem, generate_pclauncher_inis
+            # Map folder-derived titles to HyperSpin dbNames that may have
+            # Windows-invalid chars (e.g. colons) stripped in the folder name.
+            _add_title_to_section: dict[str, str] = {}
+            try:
+                _add_db = load_database(system_name, config.databases_dir)
+                for _dbname in _add_db.games().keys():
+                    _safe = _win_safe_stem(_dbname)
+                    if _safe in by_title and _safe != _dbname:
+                        _add_title_to_section[_safe] = _dbname
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 module_dir, written, skipped = generate_pclauncher_inis(
                     system_name, by_title, config, out_base,
                     overwrite=overwrite_pclauncher,
+                    title_to_section=_add_title_to_section or None,
                 )
             except ValueError as e:
                 err_console.print(f"  [red]{e}[/red]")
@@ -8360,19 +8372,35 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
         if config.rocketlauncher_dir else None
     )
 
+    # Build a mapping from folder-derived title → HyperSpin dbName for titles
+    # that differ only in Windows-invalid characters (e.g. "Submachine Legacy"
+    # → "Submachine: Legacy").  PCLauncher looks up the section by the exact
+    # dbName, so the INI section header must use the original name with colon.
+    from .rocketlauncher import _win_safe_stem, read_pclauncher_ini_application_path
+    title_to_section: dict[str, str] = {}
+    try:
+        _xml_db = load_database(system_name, config.databases_dir)
+        for _dbname in _xml_db.games().keys():
+            _safe = _win_safe_stem(_dbname)
+            if _safe in by_title and _safe != _dbname:
+                title_to_section[_safe] = _dbname
+    except Exception:  # noqa: BLE001
+        pass  # XML not yet written — section falls back to folder-derived title
+
     # Classify each title: new (no INI), stale (INI exists but points at wrong
     # path — e.g. after a drive migration or file rename), or current (INI
     # matches the path SpinDoctor would write).
-    from .rocketlauncher import read_pclauncher_ini_application_path
     new_titles: list[str] = []
     stale_titles: list[str] = []
     current_titles: list[str] = []
     for title in sorted(by_title):
-        ini = module_dir / f"{title}.ini" if module_dir else None
+        stem = _win_safe_stem(title)
+        ini = module_dir / f"{stem}.ini" if module_dir else None
         if ini is None or not ini.exists():
             new_titles.append(title)
         else:
-            on_disk = read_pclauncher_ini_application_path(ini)
+            section = title_to_section.get(title, title)
+            on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
             expected = str(by_title[title])
             if on_disk.lower() != expected.lower():
                 stale_titles.append(title)
@@ -8392,8 +8420,10 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
             if title in new_titles_set:
                 status = "[green]new[/green]"
             elif title in stale_titles_set:
-                ini = module_dir / f"{title}.ini"  # type: ignore[operator]
-                on_disk = read_pclauncher_ini_application_path(ini)
+                stem = _win_safe_stem(title)
+                ini = module_dir / f"{stem}.ini"  # type: ignore[operator]
+                section = title_to_section.get(title, title)
+                on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
                 status = f"[red]stale[/red] [dim](INI has: {on_disk})[/dim]"
             else:
                 status = "[dim]current[/dim]"
@@ -8450,6 +8480,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
             module_dir, written, skipped = generate_pclauncher_inis(
                 system_name, by_title, config,
                 overwrite=overwrite_pclauncher,
+                title_to_section=title_to_section or None,
             )
         except ValueError as e:
             err_console.print(f"[red]{e}[/red]")
@@ -8460,6 +8491,139 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
                     f"[dim]· kept {len(skipped)} existing INI(s) "
                     f"(pass --overwrite-pclauncher to replace)[/dim]"
                 )
+
+
+# ─── pc-fix-exe ───────────────────────────────────────────────────────────────
+
+@cli.command("pc-fix-exe")
+@click.argument("system_name")
+@click.argument("game")
+@click.option("--exe", "exe_path", default=None, type=click.Path(),
+              help="Path to the executable to set as Application= "
+                   "(auto-detected from the game folder if omitted).")
+@click.option("--list-candidates", is_flag=True,
+              help="Print detected .exe candidates as a JSON array and exit "
+                   "(recommended candidates listed first). Used by the GUI.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the updated INI (default: preview only).")
+def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
+    """Fix the Application= path in a per-game PCLauncher INI.
+
+    Use this when a game launches the wrong executable — e.g. an uninstaller,
+    setup helper, or cache file was picked up instead of the real .exe.
+
+    Without --apply the command shows a preview of the change.
+
+    \b
+    Examples:
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead"           # preview auto-detect
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply   # auto-detect and fix
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead" \\
+          --exe "J:\\\\Games\\\\PC Games\\\\ElecHead\\\\ElecHead.exe" --apply
+    """
+    import json as _json
+    from .rocketlauncher import (
+        _EXE_EXCLUSION_PREFIXES,
+        _pick_best_exe,
+        _pclauncher_ini_text,
+        _win_safe_stem,
+        list_exe_candidates,
+        read_pclauncher_ini_application_path,
+        rewrite_pclauncher_application,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    game_dir = Path(config.roms_dir) / system_name / game
+
+    if list_candidates:
+        paths = [str(p) for p in list_exe_candidates(game_dir, game)]
+        console.print(_json.dumps(paths))
+        return
+
+    # ── determine new exe ─────────────────────────────────────────────────────
+    if exe_path:
+        new_exe = Path(exe_path)
+    else:
+        if not game_dir.is_dir():
+            console.print(
+                f"[red]Game folder not found:[/red] {game_dir}\n"
+                "Use [cyan]--exe[/cyan] to specify the executable path directly, "
+                "or check that roms_dir / system_name / game matches your layout."
+            )
+            raise SystemExit(1)
+        new_exe = _pick_best_exe(game_dir, game)
+        if new_exe is None:
+            console.print(
+                f"[red]No suitable .exe found in:[/red] {game_dir}\n"
+                "Use [cyan]--exe[/cyan] to specify the path directly."
+            )
+            raise SystemExit(1)
+
+    # ── locate INI ────────────────────────────────────────────────────────────
+    rl_base = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    if not rl_base:
+        console.print("[red]rocketlauncher_dir not configured.[/red]")
+        raise SystemExit(1)
+
+    stem = _win_safe_stem(game)
+    ini_path = rl_base / "Modules" / "PCLauncher" / system_name / f"{stem}.ini"
+
+    # Resolve section name — may differ from *game* when the title contains
+    # Windows-invalid characters (e.g. "Submachine: Legacy" → stem "Submachine Legacy").
+    section = game
+    try:
+        db = load_database(system_name, config.databases_dir)
+        if game in db.games():
+            section = game
+        else:
+            for dbname in db.games().keys():
+                if _win_safe_stem(dbname) == stem:
+                    section = dbname
+                    break
+    except Exception:  # noqa: BLE001
+        pass
+
+    # ── preview ───────────────────────────────────────────────────────────────
+    console.print(Panel(
+        f" pc-fix-exe: [cyan]{system_name}[/cyan] / [cyan]{game}[/cyan] ",
+        style="bold magenta",
+    ))
+    if ini_path.exists():
+        try:
+            current = read_pclauncher_ini_application_path(ini_path, section_name=section)
+        except Exception:  # noqa: BLE001
+            current = None
+        if current:
+            console.print(f"  Current  Application= [dim]{current}[/dim]")
+        else:
+            console.print(f"  [yellow]Section [{section}] not found in {ini_path}[/yellow]")
+    else:
+        console.print(f"  [yellow]INI not found — will create:[/yellow] {ini_path}")
+
+    console.print(f"  Proposed Application= [green]{new_exe}[/green]")
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow bold][DRY RUN][/yellow bold] "
+            "Re-run with [cyan]--apply[/cyan] to write changes."
+        )
+        return
+
+    # ── write ─────────────────────────────────────────────────────────────────
+    if not ini_path.exists():
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(_pclauncher_ini_text(section, new_exe), encoding="utf-8")
+        console.print(f"  [green]+[/green] created {ini_path}")
+    else:
+        changed = rewrite_pclauncher_application(ini_path, section, new_exe)
+        if changed:
+            console.print(f"  [green]✓[/green] updated Application= in {ini_path}")
+        else:
+            console.print(
+                f"  [dim]no change needed — Application= is already correct[/dim]"
+            )
 
 
 # ─── organize ─────────────────────────────────────────────────────────────────

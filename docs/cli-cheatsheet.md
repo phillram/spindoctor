@@ -195,6 +195,17 @@ spindoctor pc-rename "PC Games" --no-interactive --apply
 
 Reference: [Command reference → pc-rename](commands.md#pc-rename).
 
+### `pc-fix-exe` — fix a PC game launching the wrong executable
+
+```bat
+spindoctor pc-fix-exe "PC GAMES" "ElecHead"                               :: preview auto-detect
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply                       :: auto-detect and fix
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --exe "J:\Games\...\ElecHead.exe" --apply
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: show .exe candidates
+```
+
+Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
+
 ### `ignore` / `match` — taming the matcher
 
 ```bat

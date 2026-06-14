@@ -12,7 +12,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 
 - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
 - [Editing](#editing) — `batch-edit`, `rename`, `clone`
-- [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `migrate`, `backup`
+- [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
 - [Playtime stats](#playtime-stats) — `stats-report`
@@ -396,9 +396,33 @@ spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: rewrite ALL IN
 
 The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely.
 
-`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`) or after renaming an executable — otherwise the old INI is kept and RocketLauncher will fail to find the file. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path mismatch), or `current` so you can confirm the problem before committing.
+`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`), after renaming an executable, or when a game whose dbName contains a colon (e.g. `Submachine: Legacy`) was previously written with a colon-stripped section header — in which case PCLauncher.ahk cannot find the `[Submachine: Legacy]` section and falls through to a stale system-level INI. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path or section mismatch), or `current` so you can confirm the problem before committing.
 
 `--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
+
+### `pc-fix-exe`
+
+Fix a PC game that launches the wrong executable — for example when the per-game PCLauncher INI has an uninstaller, a GOG/Steam cache file, or a redistributable set as `Application=` instead of the real game binary.
+
+```bat
+spindoctor pc-fix-exe "PC GAMES" "ElecHead"           :: preview auto-detected fix
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply   :: auto-detect and write
+
+:: Override the executable path manually
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" ^
+    --exe "J:\Games\PC Games\ElecHead\ElecHead.exe" --apply
+
+:: List all .exe candidates found in the game folder (recommended first)
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates
+```
+
+Without `--apply` the command shows the current `Application=` and the proposed replacement but writes nothing.
+
+**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins.
+
+If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path.
+
+**GUI alternative:** the **Systems** tab has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with a system/game picker and a candidate list populated from the game folder.
 
 ### `migrate`
 

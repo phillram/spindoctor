@@ -29,6 +29,7 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config
 from .database import GameEntry, load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
+from .rocketlauncher import _win_safe_stem
 
 
 EDIT_DIR = CONFIG_DIR / "edits"
@@ -478,6 +479,8 @@ class FileChange:
     dest: Optional[Path]
     media_type: str = ""
     note: str = ""
+    ini_old_section: str = ""  # rl-pclauncher: section header to replace
+    ini_new_section: str = ""  # rl-pclauncher: replacement section header
 
 
 @dataclass
@@ -524,8 +527,32 @@ def _pclauncher_ini_for(
 ) -> Optional[Path]:
     if not rl_dir:
         return None
-    candidate = rl_dir / "Modules" / "PCLauncher" / system / f"{game_name}.ini"
+    candidate = rl_dir / "Modules" / "PCLauncher" / system / f"{_win_safe_stem(game_name)}.ini"
     return candidate if candidate.exists() else None
+
+
+def _rewrite_pclauncher_section(ini_path: Path, old_section: str, new_section: str) -> None:
+    """Replace the ``[old_section]`` header in *ini_path* with ``[new_section]``.
+
+    Only the exact section header line is touched; all other content is left
+    verbatim.  No-ops if the file does not exist or the header is not found.
+    """
+    if not ini_path.exists():
+        return
+    text = ini_path.read_text(encoding="utf-8", errors="replace")
+    old_header = f"[{old_section}]"
+    new_header = f"[{new_section}]"
+    lines = text.splitlines(keepends=True)
+    rewritten = []
+    replaced = False
+    for line in lines:
+        if not replaced and line.strip() == old_header:
+            rewritten.append(new_header + ("\r\n" if line.endswith("\r\n") else "\n"))
+            replaced = True
+        else:
+            rewritten.append(line)
+    if replaced:
+        ini_path.write_text("".join(rewritten), encoding="utf-8")
 
 
 def plan_rename(
@@ -614,12 +641,15 @@ def plan_rename(
     rl_dir = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
     ini = _pclauncher_ini_for(rl_dir, system, old_name)
     if ini is not None and rl_dir is not None:
-        target = ini.parent / f"{new_name}.ini"
+        safe_new = _win_safe_stem(new_name)
+        target = ini.parent / f"{safe_new}.ini"
         changes.append(FileChange(
             kind="rl-pclauncher",
             src=ini,
             dest=target,
             note="copy" if clone else "move",
+            ini_old_section=old_name,
+            ini_new_section=new_name,
         ))
 
     return RenamePlan(op=op, file_changes=changes)
@@ -649,8 +679,9 @@ def apply_rename(
     manifest_moves: list[dict] = []
 
     # 1) Pre-flight: refuse to overwrite anything.
+    # Allow src == dest (in-place section rewrite for rl-pclauncher changes).
     for ch in plan.file_changes:
-        if ch.dest is not None and ch.dest.exists():
+        if ch.dest is not None and ch.dest != ch.src and ch.dest.exists():
             raise FileExistsError(
                 f"refusing to overwrite existing target: {ch.dest}"
             )
@@ -662,7 +693,10 @@ def apply_rename(
             db_change = ch
             continue
         assert ch.src is not None and ch.dest is not None
-        _move_or_copy(ch.src, ch.dest, clone=clone)
+        if ch.src != ch.dest:
+            _move_or_copy(ch.src, ch.dest, clone=clone)
+        if ch.kind == "rl-pclauncher" and ch.ini_old_section and ch.ini_new_section:
+            _rewrite_pclauncher_section(ch.dest, ch.ini_old_section, ch.ini_new_section)
         applied.append(ch)
         manifest_moves.append({
             "kind": ch.kind,
