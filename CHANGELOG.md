@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`pc-rename` and `add-pc-system` now write the correct `.exe` when the "rom" RL finds is a non-exe file.** RocketLauncher's extension-matching picks up whichever file matches the configured ROM extensions — for GOG games this is often `webcache.zip`, a cache file, or a redistributable archive rather than the actual game executable. SpinDoctor was forwarding this path verbatim to `Application=` in the per-game PCLauncher INI, causing the game to launch the wrong file. Both commands now call `_pick_best_exe` on the game folder whenever the proposed path is not an `.exe`: they filter out uninstallers, setup helpers, and other non-game executables, then prefer the file whose name best matches the game title. Applies to all write paths: initial `add-pc-system`, `pc-rename --apply`, and `pc-rename --overwrite-pclauncher --apply`. The `--verbose` table now also shows the resolved exe (not the raw ROM path) so stale entries are correctly flagged — a game whose INI was already fixed with `pc-fix-exe` no longer appears as "stale" on the next scan.
+
 ---
 
 ## [2.6.2] - 2026-06-14
