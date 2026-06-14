@@ -1959,7 +1959,7 @@ class _SpinDoctorGUI:
     # "unmapped checks don't badge any tab" behaviour).
     _HEALTH_TO_TABS: dict[str, tuple[str, ...]] = {
         "Paths":                  ("Setup",),
-        "External binaries":      ("Tools", "Setup"),
+        "External binaries":      ("Toolkit", "Setup"),
         "HyperSpin databases":    ("Diagnostics",),
         "Match cache":            ("Maintenance",),
         "Global Emulators.ini":   ("Metadata & Media",),
@@ -2218,26 +2218,26 @@ class _SpinDoctorGUI:
         # read-only, so it's safe to explore before touching anything),
         # then build out systems (Systems), enrich metadata
         # (Metadata & Media), curate (Maintenance), manage cross-system
-        # wheels (Tools), then peripheral hardware (LEDBlinky /
-        # Lightgun), then infrastructure (Backup → Migrate), and finally
-        # power-user escapes (Custom Command) and the session log (Logs)
+        # wheels (Toolkit), then peripheral hardware (LEDBlinky /
+        # Lightgun), then infrastructure (Backup → Migration), and finally
+        # power-user escapes (Console) and the session log (History)
         # at the very end.
         self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
         self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
         self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
-        self._add_scrollable_tab(nb, self._build_tools_tab,        "Tools")
+        self._add_scrollable_tab(nb, self._build_tools_tab,        "Toolkit")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
-        self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migrate")
-        self._add_scrollable_tab(nb, self._build_custom_tab,       "Custom Command")
-        # Logs tab is the only one that intentionally fills its own
+        self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migration")
+        self._add_scrollable_tab(nb, self._build_custom_tab,       "Console")
+        # History tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
-        nb.add(self._build_logs_tab(nb), text="Logs")
-        self._tab_base_names.append("Logs")
+        nb.add(self._build_logs_tab(nb), text="History")
+        self._tab_base_names.append("History")
         main_paned.add(nb, weight=4)
         main_paned.add(out_frame, weight=1)
 
@@ -4154,7 +4154,7 @@ class _SpinDoctorGUI:
             self._refresh_logs_tab()
             self._set_status(
                 f"Dry run: {len(plans)} swap(s) planned. "
-                "View details in Output or the Logs tab."
+                "View details in Output or the History tab."
             )
 
         def run_apply() -> None:
@@ -5153,7 +5153,7 @@ class _SpinDoctorGUI:
         self._append_output(
             f"\n=== Preflight complete — {len(failed)} of "
             f"{len(results)} check(s) failed: ===\n{body}\n"
-            "Read the per-step output above (or open the Logs tab) for "
+            "Read the per-step output above (or open the History tab) for "
             "details.\n"
         )
         self._set_status(
@@ -8738,7 +8738,7 @@ class _SpinDoctorGUI:
                 f"Archive {sum(len(g.retire) for g in filtered)} ROM "
                 f"file(s) across {len(filtered)} title(s) under "
                 f"<roms_dir>/{system}/_retired/?\n\n"
-                "Reversible: open the Logs tab → Browse manifests / undo… "
+                "Reversible: open the History tab → Browse manifests / undo… "
                 "and pick the run you want to reverse.",
             ):
                 return
@@ -9033,6 +9033,15 @@ class _SpinDoctorGUI:
 
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Manage HyperSpin's game systems — reorder the main menu "
+                  "wheel, add or remove systems, rename or clone individual "
+                  "games, and organize a system's sort order. Use the "
+                  "numbered Steps in sequence when setting up a new system "
+                  "for the first time, or jump to the step you need."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
 
         # ── Step 1 — Main menu carousel (formerly Main Menu tab) ────────────
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
@@ -9674,12 +9683,22 @@ class _SpinDoctorGUI:
 
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Configure LED button colors for every system in your "
+                  "cabinet via LEDBlinky. Steps 1 and 2 are one-time setup "
+                  "(overlay-hook fix and Settings.ini); Steps 3–9 cover the "
+                  "ongoing workflow: MAME LED data, fill defaults, randomize "
+                  "colors, admin button colors, brightness, color definitions, "
+                  "and backup/restore."),
+            wraplength=860, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
         # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
             frame, text="Step 3 — MAME: Generate, Normalize & Sync Players",
         )
-        gen_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        gen_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         gen_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9767,7 +9786,7 @@ class _SpinDoctorGUI:
         fd_frame = self.ttk.LabelFrame(
             frame, text="Step 4 — Fill Default Colors (any console)",
         )
-        fd_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        fd_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9895,7 +9914,7 @@ class _SpinDoctorGUI:
 
         # ── Step 3 — Randomize Entry Colors ─────────────────────────────────
         rz_frame = self.ttk.LabelFrame(frame, text="Step 5 — Randomize Entry Colors")
-        rz_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        rz_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -9931,7 +9950,7 @@ class _SpinDoctorGUI:
 
         # ── Step 4 — Admin Button Colors ─────────────────────────────────────
         ab_frame = self.ttk.LabelFrame(frame, text="Step 6 — Admin Button Colors")
-        ab_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        ab_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
@@ -9997,7 +10016,7 @@ class _SpinDoctorGUI:
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
-        br2_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br2_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -10033,7 +10052,7 @@ class _SpinDoctorGUI:
         _led_cfg = load_config()
 
         sp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Settings.ini (one-time setup)")
-        sp_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        sp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(
@@ -10109,7 +10128,7 @@ class _SpinDoctorGUI:
         oh_frame = self.ttk.LabelFrame(
             frame, text="Step 1 — Overlay Hook Fix (one-time setup)",
         )
-        oh_frame.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 0))
+        oh_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 0))
         oh_frame.columnconfigure(0, weight=1)
 
         self.ttk.Label(
@@ -10141,7 +10160,7 @@ class _SpinDoctorGUI:
         cd_frame = self.ttk.LabelFrame(
             frame, text="Step 8 — Color Definitions (Color-RGB.ini)",
         )
-        cd_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        cd_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
         self.ttk.Label(
@@ -10232,7 +10251,7 @@ class _SpinDoctorGUI:
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
         br_frame = self.ttk.LabelFrame(frame, text="Step 9 — Backup / Restore")
-        br_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        br_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
         self.ttk.Label(br_frame, text="Backup folder").grid(
@@ -10768,6 +10787,15 @@ class _SpinDoctorGUI:
 
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Build and maintain SpinDoctor's custom wheels: Favorites, "
+                  "Recently Played, and Most Played. Import F-key favorites "
+                  "from HyperSpin, rebuild the wheels, and register them on "
+                  "the main menu. Also installs refresh helpers as HyperSpin "
+                  "Tools-menu entries and schedules auto-refresh on startup."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
 
         # ── Step 1 — Import HyperSpin favorites (optional) ───────────────────
         # fav sync must run BEFORE the wheel rebuild reads the store, so
@@ -11960,7 +11988,7 @@ class _SpinDoctorGUI:
                 if was_dry_run:
                     self._set_status(
                         f"{label} — dry run OK{elapsed_str}. "
-                        "View results in Output or the Logs tab."
+                        "View results in Output or the History tab."
                     )
                 else:
                     self._set_status(f"{label} — OK{elapsed_str}.")
