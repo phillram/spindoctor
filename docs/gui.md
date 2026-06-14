@@ -132,15 +132,15 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 ### Metadata & Media
 
-Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus an Apply toggle. Five numbered steps read top to bottom; **Step 1** covers the common "do everything in one click" workflow.
+Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps.
 
-**Step 1 — Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system. Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
+**Step 1 — Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system (and game, if one is picked). Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
 
-**Step 2 — Fetch metadata:** Wraps `fetch-meta` with `--auto-best` / `--all-games` / `--no-cache`, a **Source** dropdown (`screenscraper` / `thegamesdb` / config default), and a **Threshold** entry (client-side validated 0.0–1.0).
+**Step 2 — Fetch metadata:** Wraps `fetch-meta` with `--auto-best` / `--all-games` / `--no-cache`, a **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default), and a **Threshold** entry (client-side validated 0.0–1.0). "Both (SS primary)" is the recommended default — ScreenScraper is tried first and TheGamesDB fills any gaps.
 
 **Multi-system fetch-meta** (added in 2.0): the **Pick subset…** button opens a modal multi-select Listbox. The **Run on subset…** button chains `fetch-meta --system X` once per picked system, aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
 
-**Step 3 — Fetch media:** Media-type checkboxes (wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background), plus `--overwrite`.
+**Step 3 — Fetch media:** Media-type checkboxes (wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background), plus `--overwrite`. The **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default) controls which provider is queried. With "both", ScreenScraper fills slots first; TheGamesDB fills any that SS missed — including clearlogos (→ wheel) and screenshots (→ snap). Video, title, fade, sound, and theme require ScreenScraper. See [commands.md → fetch-media provider capabilities](commands.md#fetch-media) for the full comparison table. If **Game** is selected in the shared header, only that game's media is touched.
 
 **Step 4 — Scan local media folder:** Source-folder picker + copy/move/link action. CLI: `spindoctor media-scan`.
 

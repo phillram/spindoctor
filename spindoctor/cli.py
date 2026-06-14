@@ -4434,9 +4434,11 @@ def match_clear(system: Optional[str]):
 @cli.command("fetch-meta")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
+@click.option("--game", "-g", default=None,
+              help="Limit to a single game name (exact match, no extension). Requires --system.")
 @click.option("--source", default=None,
-              type=click.Choice(["screenscraper", "thegamesdb"]),
-              help="Use only this scraper (default: provider order from config).")
+              type=click.Choice(["screenscraper", "thegamesdb", "both"]),
+              help="Scraper to use (default: both when credentials exist, else whichever is configured).")
 @click.option("--all-games", "fetch_all", is_flag=True,
               help="Refresh metadata for every game, even complete ones.")
 @click.option("--interactive/--auto-best", "interactive", default=None,
@@ -4454,7 +4456,7 @@ def match_clear(system: Optional[str]):
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit metadata writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
-def fetch_meta(system, all_systems, source, fetch_all,
+def fetch_meta(system, all_systems, game, source, fetch_all,
                interactive, skip_ambiguous, threshold, no_cache, clear_cache,
                apply_changes, output_dir):
     """Fetch and update game metadata in the Hyperspin XML databases.
@@ -4502,6 +4504,10 @@ def fetch_meta(system, all_systems, source, fetch_all,
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
 
+    if game and not system:
+        err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
+        sys.exit(1)
+
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         db = load_database(sys_name, config.databases_dir)
@@ -4512,6 +4518,15 @@ def fetch_meta(system, all_systems, source, fetch_all,
         else:
             targets = [g for g in db.iter_incomplete()
                        if not config.is_ignored(g.name, sys_name)]
+
+        if game:
+            targets = [g for g in targets if g.name == game]
+            if not targets:
+                err_console.print(
+                    f"[red]Game '{game}' not found in {sys_name} database "
+                    f"(or already complete — use --all-games to force).[/red]"
+                )
+                continue
 
         if not targets:
             console.print("  [green]All metadata complete (or all ignored).[/green]")
@@ -4625,11 +4640,13 @@ def fetch_meta(system, all_systems, source, fetch_all,
 @cli.command("fetch-media")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
+@click.option("--game", "-g", default=None,
+              help="Limit to a single game name (exact match, no extension). Requires --system.")
 @click.option("--types", default=",".join(MEDIA_TYPES),
               help=f"Comma-separated types. Options: {', '.join(MEDIA_TYPES)}")
 @click.option("--source", default=None,
-              type=click.Choice(["screenscraper", "thegamesdb"]),
-              help="Use only this scraper (default: provider order from config).")
+              type=click.Choice(["screenscraper", "thegamesdb", "both"]),
+              help="Scraper to use (default: both when credentials exist, else whichever is configured).")
 @click.option("--overwrite", is_flag=True)
 @click.option("--pick-media", "pick_media", is_flag=True,
               help="Interactively preview & pick when a media slot has multiple "
@@ -4641,7 +4658,7 @@ def fetch_meta(system, all_systems, source, fetch_all,
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
-def fetch_media(system, all_systems, types, source, overwrite, pick_media,
+def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 skip_ambiguous, apply_changes, output_dir):
     """Download media assets for games in the database.
 
@@ -4685,6 +4702,10 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
 
+    if game and not system:
+        err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
+        sys.exit(1)
+
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         db = load_database(sys_name, config.databases_dir)
@@ -4695,6 +4716,14 @@ def fetch_media(system, all_systems, types, source, overwrite, pick_media,
         if not games:
             console.print("  [yellow]No games in database (or all ignored).[/yellow]")
             continue
+
+        if game:
+            games = [g for g in games if g.name == game]
+            if not games:
+                err_console.print(
+                    f"[red]Game '{game}' not found in {sys_name} database.[/red]"
+                )
+                continue
 
         if not overwrite:
             media_base = downloader._media_base()

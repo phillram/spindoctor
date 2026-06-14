@@ -14,6 +14,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **"Fix PC game executable" system selector now defaults to the "PC Games" system on startup.** Previously the first system alphabetically was pre-selected. The GUI now checks whether any loaded system name matches `"pc games"` (case-insensitive) and, if so, selects it automatically — so the fix-exe panel is ready to use without needing to change the system picker.
 
+- **`fetch-media` no longer crashes on PC GAMES entries when ScreenScraper returns `dates` as a list.** The ScreenScraper API returns the `dates` field as a list of `{region, text}` objects for some systems (notably PC GAMES) instead of the flat dict `{date_us, date_wor}` seen on other systems. The parser now handles both shapes, so release-year extraction works regardless of which format the API returns.
+
+- **`fetch-media` no longer saves ScreenScraper media files as `.php`.** ScreenScraper serves all media through PHP scripts (`mediaJeu.php`, `mediaVideoJeu.php`) — the downloader was using the URL path's `.php` extension to rename the destination file, so every download landed as `Pikmin.php` instead of `Pikmin.png`. The extension-override logic now only fires when the URL contains a recognised media extension (`.png`, `.jpg`, `.mp4`, etc.); script endpoints like `.php` are ignored and the destination keeps its correct HyperSpin extension.
+
+- **Nintendo DS is now recognised by both scrapers.** `"Nintendo DS"`, `"NDS"`, and `"DS"` are added to `SCREENSCRAPER_SYSTEMS` (ID 15) and `THEGAMESDB_PLATFORMS` (ID 8). Previously DS games were scraped without a platform filter, returning random matches instead of DS-specific results.
+
+### Added
+
+- **Comprehensive platform / system ID maps.** `SCREENSCRAPER_SYSTEMS` now covers all 249 ScreenScraper systems (237 lookup keys including aliases); `THEGAMESDB_PLATFORMS` now covers all 153 TheGamesDB platforms (235 keys). Both were verified against the live APIs on 2026-06-14. Previously each dict had only ~15–30 entries — systems not listed fell back to no platform filter, producing poor search results.
+
+- **ScreenScraper wheel images now prefer US English over Japanese.** When ScreenScraper returns multiple region variants for the same media slot (e.g. a JP and a US wheel image), candidates are sorted by a fixed preference order: `us → wor → eu → fr → de → es → it → au → br → ru → kr → jp`. The first candidate in the sorted list is used for the slot URL and for auto-pick. Previously the API's arbitrary response order was used, which could return a Japanese wheel image for a game with a US version.
+
+- **TheGamesDB now supplies wheel (clearlogo) and snap (screenshot) media.** A second API call to `GET /v1/Games/Images` is made after the main game search and fetches clearlogos, screenshots, and banners that are not returned by the primary boxart endpoint. Clearlogos map to the `wheel` slot and screenshots to the `snap` slot. ScreenScraper results always take priority; TGDB fills only slots that ScreenScraper did not populate. Previously only boxart was fetched from TheGamesDB.
+
+- **GUI Fetch-media Source dropdown.** Step 3 — Fetch media in the Metadata & Media tab now has a **Source** dropdown (`screenscraper` / `thegamesdb` / config default), matching the equivalent control already present on the Fetch-meta step. Selecting a specific provider passes `--source <provider>` to `fetch-media`; "config default" sends no flag and lets the project config decide.
+
+- **ScreenScraper + TheGamesDB combined client — SS primary, TGDB fills gaps.** `CombinedMetadataClient` queries both providers per game: ScreenScraper metadata and media take full priority; any slot that SS leaves empty (e.g. a missing wheel image) is filled from TheGamesDB. If SS finds nothing at all, the full TGDB result is used as fallback. `build_client()` now automatically returns the combined client when both credential sets are configured and no `--source` is forced. Previously running without `--source` only queried ScreenScraper.
+
+- **`fetch-meta` and `fetch-media` now accept `--game` to target a single game.** `--game "Game Name"` (requires `--system`) limits the run to that one entry in the database, skipping all other games. Useful for re-scraping a single problem game or downloading missing media for one title without touching the rest of the system. Also accepted: `--source both` on both commands.
+
+- **GUI Game picker on the Metadata & Media tab.** A **Game** dropdown appears below the System selector. When a system is chosen, the dropdown auto-populates with every game name from that system's database. Leave it blank to process all games (the existing behaviour). When a game is selected, `--game <name>` is passed to both `fetch-meta` and `fetch-media`.
+
 ---
 
 ## [2.6.3] - 2026-06-14

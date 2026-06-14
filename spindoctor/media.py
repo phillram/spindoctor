@@ -166,7 +166,10 @@ class MediaDownloader:
     ) -> DownloadResult:
         parsed = urlparse(url)
         url_ext = Path(parsed.path).suffix.lower()
-        if url_ext and url_ext != dest.suffix:
+        _MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
+                       ".mp4", ".webm", ".avi", ".mkv", ".flv", ".mpg", ".mpeg",
+                       ".zip", ".mp3", ".ogg", ".wav"}
+        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix:
             dest = dest.with_suffix(url_ext)
 
         if dest.exists() and not overwrite:

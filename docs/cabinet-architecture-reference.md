@@ -971,6 +971,110 @@ it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
 
+### Scraper provider comparison
+
+SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They have very different capabilities and coverage — understanding the difference is important for diagnosing gaps.
+
+| Capability | ScreenScraper | TheGamesDB |
+|---|---|---|
+| Metadata (name, year, genre, players) | ✅ | ✅ (genre/developer require `include=genres,developers`) |
+| Wheel art | ✅ (multiple regions, US-first) | ✅ clearlogo via `Games/Images` endpoint → wheel slot |
+| Background image | ✅ | ✗ |
+| Title screenshot | ✅ | ✗ |
+| Snap / in-game screenshot | ✅ | ✅ screenshot via `Games/Images` → snap slot |
+| Fade image | ✅ | ✗ |
+| Video / trailer | ✅ | ✗ |
+| Theme (`.zip`) | ✅ (sparse) | ✗ |
+| Sound | ✅ (sparse) | ✗ |
+| Box art (front/back) | ✅ (as `artwork`) | ✅ (as `artwork`, direct CDN URLs) |
+| Newer indie PC games | ⚠️ stub entries, often no media | ✅ (e.g. Peglin 2022 found with clearlogo + boxart) |
+| Classic/mainstream games | ✅ full coverage | ✅ metadata + clearlogo + boxart |
+| Systems covered | 249 (see `SCREENSCRAPER_SYSTEMS`) | 153 (see `THEGAMESDB_PLATFORMS`) |
+
+**ScreenScraper is the primary provider; TheGamesDB is the complementary fallback.** The default `CombinedMetadataClient` queries both per game: SS metadata and every SS media slot take priority; TGDB fills any slot SS left empty (e.g. wheel clearlogo, snap screenshot). If SS finds nothing at all, the full TGDB result is used. `--source screenscraper|thegamesdb|both` forces a specific behaviour (available in both CLI and GUI). TheGamesDB is especially useful for newer indie PC games that have stub-only entries on ScreenScraper.
+
+#### TheGamesDB image slots
+
+TheGamesDB images are fetched in a separate `GET /v1/Games/Images?games_id=<id>` call after the main search. The `type` field of each image maps to a HyperSpin media slot:
+
+| TGDB `type` | HyperSpin slot | Notes |
+|---|---|---|
+| `clearlogo` | `wheel` | Transparent PNG logo — ideal HyperSpin wheel image |
+| `screenshot` | `snap` | In-game screenshot |
+| `banner` | `background` | Header/banner image |
+| `boxart` | `artwork` | Box front/back |
+
+SpinDoctor only fills a slot from TGDB if ScreenScraper did not already find one, so ScreenScraper always wins when it has coverage.
+
+#### Region preference for media selection
+
+When ScreenScraper returns multiple candidates for the same slot (e.g. wheel images for US, EU, JP), SpinDoctor picks the best region using this priority order (defined in `_REGION_PREFERENCE`):
+
+```
+us → wor → eu → fr → de → es → it → au → br → ru → kr → jp → ss → (unknown)
+```
+
+`us` (USA) is always preferred. `wor` (world) is the next best. JP images are intentionally ranked near the bottom to avoid Japanese-only wheel art appearing on English-language cabinets.
+
+### ScreenScraper API response shape variations
+
+ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object whose fields are not consistently typed — the same field name can be a dict in one system's response and a list of `{region, text}` objects in another. Verified live against GameCube, DS, N64, and PC systems — `dates` is **always a list** in current API responses:
+
+| Field | Observed shape | Notes |
+|-------|---------------|-------|
+| `dates` | list `[{"region": "us", "text": "YYYY-MM-DD"}, …]` | Always a list; never a dict in any system tested |
+| `editeur` | dict `{"text": "Publisher Name"}` | |
+| `joueurs` | dict `{"text": "2"}` or plain string `"2"` | Varies by game entry |
+
+SpinDoctor's `_parse_screenscraper` uses `isinstance()` guards on each of these. When adding new field parsers, always guard against both dict and list forms.
+
+### ScreenScraper media URL format
+
+All ScreenScraper media is served via PHP scripts (`mediaJeu.php`, `mediaVideoJeu.php`). The URL extension is always `.php` regardless of actual content type:
+
+```
+https://neoclone.screenscraper.fr/api2/mediaJeu.php?devid=…&systemeid=13&jeuid=4803&media=wheel(us)
+```
+
+The file content is a real PNG/JPEG/MP4. `MediaDownloader._download_to` must **not** use the URL path suffix (`.php`) to rename the destination — doing so saves `Pikmin.php` instead of `Pikmin.png` and HyperSpin cannot find it. The extension-override logic is restricted to known media extensions (`.png`, `.jpg`, `.mp4`, etc.) to prevent this.
+
+### Platform / system ID maps
+
+SpinDoctor has two lookup dicts in `scraper.py`: `SCREENSCRAPER_SYSTEMS` (237 entries, covering all 249 ScreenScraper systems) and `THEGAMESDB_PLATFORMS` (235 entries, covering all 153 TheGamesDB platforms). These were verified against the live APIs on 2026-06-14.
+
+Common cabinet systems for quick reference:
+
+| System | ScreenScraper ID | TheGamesDB ID |
+|---|---|---|
+| MAME / Arcade | 75 | 23 |
+| NES | 3 | 7 |
+| SNES | 4 | 6 |
+| Nintendo 64 | 14 | 3 |
+| Nintendo GameCube | 13 | 2 |
+| Nintendo Wii | 16 | 9 |
+| Nintendo DS | 15 | 8 |
+| Nintendo 3DS | 17 | 4912 |
+| Game Boy | 9 | 4 |
+| Game Boy Advance | 12 | 5 |
+| Sega Genesis / Mega Drive | 1 | 18 |
+| Sega Saturn | 22 | 17 |
+| Sega Dreamcast | 23 | 16 |
+| PlayStation | 57 | 10 |
+| PlayStation 2 | 58 | 11 |
+| PlayStation 3 | 59 | 12 |
+| PSP | 61 | 13 |
+| Xbox | 32 | 14 |
+| Xbox 360 | 33 | 15 |
+| Neo Geo / Neo Geo MVS | 142 / 68 | 24 |
+| TurboGrafx-16 / PC Engine | 31 | 34 |
+| Atari 2600 | 26 | 22 |
+| PC / Windows (`PC GAMES`) | 138 | 1 |
+| PC / DOS | 135 | 1 |
+| Capcom Play System (CPS1) | 6 | — |
+| Capcom Play System II (CPS2) | 7 | — |
+
+ScreenScraper splits DOS/legacy PC (id=135, key `"pc"`) from PC Windows/exe (id=138, keys `"pc games"`, `"windows"`, `"steam"`). Use `system_overrides.screenscraper_id` in your project config to override any lookup for a specific system.
+
 ---
 
 ## LEDBlinky
