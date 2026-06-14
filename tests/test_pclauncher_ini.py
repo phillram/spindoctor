@@ -17,7 +17,10 @@ from spindoctor.rocketlauncher import (
     generate_global_emulators_ini,
     generate_pclauncher_inis,
     guess_emulator,
+    list_exe_candidates,
+    _pick_best_exe,
     read_pclauncher_ini_application_path,
+    rewrite_pclauncher_application,
     write_pclauncher_system_ini,
     write_toolkit_module_ini,
     _read_system_default_emulator,
@@ -855,3 +858,127 @@ def test_write_pclauncher_system_ini_respects_extra_window_titles(tmp_path):
     body = ini_path.read_text(encoding="utf-8")
     assert "FadeTitle=Sega Model 2" in body
     assert f"FadeTitleTimeout={_FADE_TITLE_TIMEOUT}" in body
+
+
+# ─── list_exe_candidates / _pick_best_exe ────────────────────────────────────
+
+
+def test_list_exe_candidates_prefers_name_match(tmp_path):
+    game_dir = tmp_path / "ElecHead"
+    game_dir.mkdir()
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5_000_000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    result = list_exe_candidates(game_dir, "ElecHead")
+    assert result[0].name == "ElecHead.exe"
+    assert result[-1].name == "unins000.exe"
+
+
+def test_list_exe_candidates_excludes_come_after_recommended(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "game.exe").write_bytes(b"\x00" * 4_000_000)
+    (game_dir / "setup.exe").write_bytes(b"\x00" * 500_000)
+    (game_dir / "vcredist_x64.exe").write_bytes(b"\x00" * 100_000)
+    result = list_exe_candidates(game_dir, "game")
+    names = [p.name for p in result]
+    assert names[0] == "game.exe"
+    assert "setup.exe" in names
+    assert "vcredist_x64.exe" in names
+
+
+def test_list_exe_candidates_empty_dir(tmp_path):
+    game_dir = tmp_path / "Empty"
+    game_dir.mkdir()
+    assert list_exe_candidates(game_dir, "Empty") == []
+
+
+def test_list_exe_candidates_missing_dir(tmp_path):
+    assert list_exe_candidates(tmp_path / "NoSuchDir", "game") == []
+
+
+def test_pick_best_exe_returns_name_match(tmp_path):
+    game_dir = tmp_path / "ElecHead"
+    game_dir.mkdir()
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5_000_000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    assert _pick_best_exe(game_dir, "ElecHead").name == "ElecHead.exe"
+
+
+def test_pick_best_exe_skips_uninstaller_when_only_candidate(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 1_000_000)
+    # Only an uninstaller present → no recommended candidate
+    assert _pick_best_exe(game_dir, "Game") is None
+
+
+def test_pick_best_exe_tiebreaker_largest(tmp_path):
+    game_dir = tmp_path / "Game"
+    game_dir.mkdir()
+    (game_dir / "launcher.exe").write_bytes(b"\x00" * 200_000)
+    (game_dir / "game_main.exe").write_bytes(b"\x00" * 8_000_000)
+    result = _pick_best_exe(game_dir, "Something Else")
+    assert result.name == "game_main.exe"
+
+
+# ─── rewrite_pclauncher_application ──────────────────────────────────────────
+
+
+def test_rewrite_pclauncher_application_updates_paths(tmp_path):
+    ini = tmp_path / "ElecHead.ini"
+    ini.write_text(
+        "[ElecHead]\nApplication=J:\\Games\\ElecHead\\webcache.zip\n"
+        "WorkingFolder=J:\\Games\\ElecHead\n",
+        encoding="utf-8",
+    )
+    new_exe = PureWindowsPath(r"J:\Games\ElecHead\ElecHead.exe")
+    changed = rewrite_pclauncher_application(ini, "ElecHead", new_exe)
+    assert changed
+    body = ini.read_text(encoding="utf-8")
+    assert "Application=J:\\Games\\ElecHead\\ElecHead.exe" in body
+    assert "WorkingFolder=J:\\Games\\ElecHead" in body
+    assert "webcache.zip" not in body
+
+
+def test_rewrite_pclauncher_application_preserves_other_keys(tmp_path):
+    ini = tmp_path / "Game.ini"
+    ini.write_text(
+        "[Game]\nApplication=D:\\old.exe\nFadeTitle=Game Window\nWorkingFolder=D:\\\n",
+        encoding="utf-8",
+    )
+    changed = rewrite_pclauncher_application(
+        ini, "Game", PureWindowsPath(r"J:\Games\Game\game.exe")
+    )
+    assert changed
+    body = ini.read_text(encoding="utf-8")
+    assert "FadeTitle=Game Window" in body
+    assert r"Application=J:\Games\Game\game.exe" in body
+
+
+def test_rewrite_pclauncher_application_noop_when_already_correct(tmp_path):
+    exe = PureWindowsPath(r"J:\Games\ElecHead\ElecHead.exe")
+    ini = tmp_path / "ElecHead.ini"
+    ini.write_text(
+        f"[ElecHead]\nApplication={exe}\nWorkingFolder={exe.parent}\n",
+        encoding="utf-8",
+    )
+    changed = rewrite_pclauncher_application(ini, "ElecHead", exe)
+    assert not changed
+
+
+def test_rewrite_pclauncher_application_noop_on_missing_file(tmp_path):
+    changed = rewrite_pclauncher_application(
+        tmp_path / "missing.ini", "Game", PureWindowsPath(r"J:\game.exe")
+    )
+    assert not changed
+
+
+def test_rewrite_pclauncher_application_section_not_found(tmp_path):
+    ini = tmp_path / "Game.ini"
+    ini.write_text("[OtherGame]\nApplication=D:\\old.exe\n", encoding="utf-8")
+    changed = rewrite_pclauncher_application(
+        ini, "Game", PureWindowsPath(r"J:\Games\Game\game.exe")
+    )
+    # Section not present → no modification
+    assert not changed
+    assert "D:\\old.exe" in ini.read_text(encoding="utf-8")
