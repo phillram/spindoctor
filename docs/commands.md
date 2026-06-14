@@ -388,15 +388,15 @@ Scan for new or changed games in an existing PC system and refresh PCLauncher IN
 
 ```bat
 spindoctor pc-rename "PC Games"                            :: dry-run: scan and preview
-spindoctor pc-rename "PC Games" --verbose                  :: show per-game title/exe/INI status table
+spindoctor pc-rename "PC Games" --verbose                  :: show per-game exe path and INI status
 spindoctor pc-rename "PC Games" --apply                    :: write new PCLauncher INIs
 spindoctor pc-rename "PC Games" --no-interactive --apply   :: auto-accept all titles (non-TTY)
-spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: rewrite ALL INIs (fixes stale paths)
+spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply :: rewrite ALL INIs (fixes stale paths + wrong exes)
 ```
 
 The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_cache/`); the PCLauncher INI write is dry-run by default and committed with `--apply`. `--no-pclauncher` skips the INI step entirely.
 
-`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`), after renaming an executable, or when a game whose dbName contains a colon (e.g. `Submachine: Legacy`) was previously written with a colon-stripped section header — in which case PCLauncher.ahk cannot find the `[Submachine: Legacy]` section and falls through to a stale system-level INI. The dry-run and `--verbose` output both report each INI as `new`, `stale` (path or section mismatch), or `current` so you can confirm the problem before committing.
+`--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`), after renaming an executable, when a game whose dbName contains a colon was previously written with a colon-stripped section header, or when GOG/Steam installs have the wrong `Application=` path (e.g. `webcache.zip` instead of the real `.exe`). Each INI write resolves the actual game executable: if the "rom" RocketLauncher found by extension-matching is not a `.exe` (common for GOG games), SpinDoctor scans the game folder for the best `.exe` and writes that instead. `--verbose` prints each game's resolved executable and INI status (`new` / `stale` / `ok`) on separate lines with full paths — no truncation regardless of terminal width.
 
 `--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
 

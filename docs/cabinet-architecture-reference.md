@@ -662,7 +662,7 @@ Windows filenames cannot contain `: * ? " < > | \ /`. When a game's HyperSpin db
 
 [Submachine: Legacy]
 ; ↑ section header MUST match the HyperSpin dbName exactly, colon included
-Application=J:\Games\PC GAMES\Submachine Legacy\webcache.zip
+Application=J:\Games\PC GAMES\Submachine Legacy\Submachine Legacy.exe
 WorkingFolder=J:\Games\PC GAMES\Submachine Legacy
 ```
 
@@ -671,6 +671,26 @@ If the section header also has the colon stripped (`[Submachine Legacy]`) PCLaun
 **SpinDoctor's handling (v2.6.2+):** `pc-rename` and `add-pc-system` consult the HyperSpin XML to find the canonical dbName for each folder-derived title. When the folder name and dbName differ only in stripped characters (e.g. folder `Submachine Legacy` ↔ dbName `Submachine: Legacy`), the per-game INI is written with the safe filesystem stem as the filename and the original dbName as the section header. The `--verbose` stale-detection path uses the same mapping, so an INI whose section header doesn't match the dbName is correctly reported as **stale** rather than "current".
 
 **Symptom to watch for:** If `pc-rename --verbose` shows a game as "current" but it still launches from the wrong path, the per-game INI may have been written with a mismatched section header by an older version of SpinDoctor (or by hand). Run `pc-rename "PC Games" --apply --overwrite-pclauncher` to rewrite all per-game INIs with correct section headers.
+
+### Non-exe ROM files (GOG `webcache.zip`, multi-part archives, etc.)
+
+RocketLauncher finds a "rom" for each PC game by scanning the game folder for files whose extension matches the system's `romExtensions` setting (typically `zip|rar|7z|…`). For GOG installs this often surfaces `webcache.zip` (a cache file of no use to PCLauncher) or a redistributable archive rather than the real game executable.
+
+**SpinDoctor's handling (v2.6.3+):** When writing or rewriting a per-game PCLauncher INI, `pc-rename` and `add-pc-system` check whether the proposed path ends in `.exe`. If not, they call `_pick_best_exe` on the game folder: scan for `.exe` files, filter out known non-game executables (`unins*`, `setup*`, `vcredist*`, `crashpad*`, etc.), then prefer the file whose name most closely matches the game title (largest file wins ties). The resolved path is used for `Application=` regardless of what the rom scanner found. Stale detection uses the same resolved path, so a game whose INI was already corrected with `pc-fix-exe` shows as `ok`, not `stale`.
+
+Example — ElecHead (GOG install):
+
+```
+J:\Games\PC GAMES\ElecHead\
+  ElecHead.exe      ← 5 MB, name matches title → selected
+  unins000.exe      ← 1.3 MB, excluded (uninstaller prefix)
+  webcache.zip      ← 153 KB, not an exe → triggers resolution
+  ...
+```
+
+SpinDoctor writes `Application=J:\Games\PC GAMES\ElecHead\ElecHead.exe`. The `webcache.zip` is ignored entirely.
+
+Run `pc-rename "PC Games" --no-interactive --verbose --overwrite-pclauncher --apply` after upgrading to v2.6.3 to bulk-fix any games that were written with `webcache.zip` (or similar) as `Application=` by an older version.
 
 ### Per-game vs system-level: how they differ from synthetic wheels
 
@@ -683,7 +703,7 @@ If the section header also has the colon stripped (`[Submachine Legacy]`) PCLaun
 
 ### `read_pclauncher_ini_application_path` — stale detection
 
-SpinDoctor's dry-run mode compares each per-game INI's `Application=` value against the current scanned path. The lookup uses the HyperSpin dbName (colon included) as the expected section name — not the INI filename stem — so a file written with a colon-stripped section header is correctly detected as stale. Old `[Settings]` / `ApplicationPath=` INIs return empty and are also treated as stale, triggering a re-write on the next `--apply` run.
+SpinDoctor's dry-run mode compares each per-game INI's `Application=` value against the resolved executable path (not the raw rom path — see exe resolution above). The lookup uses the HyperSpin dbName (colon included) as the expected section name — not the INI filename stem — so a file written with a colon-stripped section header is correctly detected as stale. Old `[Settings]` / `ApplicationPath=` INIs return empty and are also treated as stale, triggering a re-write on the next `--apply` run.
 
 ---
 
