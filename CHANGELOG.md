@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.6.1] - 2026-06-13
+
 ### Added
 
 - **GUI — Main Menu system reordering improvements.** The Treeview now supports two faster ways to reposition a system without clicking Move Up/Down one step at a time: (1) **Alt+Up / Alt+Down** keyboard shortcuts nudge the selected row up or down; (2) a **"Move to #"** entry field + **Go** button jumps the selected system directly to any position in a single action.
@@ -45,6 +49,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **GUI — four tabs renamed for clarity:** "Tools" → **Toolkit**, "Migrate" → **Migration**, "Custom Command" → **Console**, "Logs" → **History**. All documentation and in-GUI status messages updated to match.
 
 - **GUI — all tabs now open with a one-line purpose statement.** Systems, Toolkit, and LEDBlinky previously dropped straight into controls; they now show a brief description at the top consistent with the other nine tabs.
+
 ---
 
 ## [2.6.0] - 2026-06-13
@@ -1443,7 +1448,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.1...HEAD
+[2.6.1]: https://github.com/phillram/spindoctor/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/phillram/spindoctor/compare/v2.5.3...v2.6.0
 [2.5.3]: https://github.com/phillram/spindoctor/compare/v2.5.2...v2.5.3
 [2.5.2]: https://github.com/phillram/spindoctor/compare/v2.5.1...v2.5.2
