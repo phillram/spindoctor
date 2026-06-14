@@ -235,6 +235,8 @@ spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 The plan refuses to overwrite anything already at the target name. Each apply writes a manifest with each move recorded so undo can reverse it back to the source paths.
 
+> **GUI alternative:** the **Systems** tab → **Step 3 — Rename or clone a game** wraps both commands. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh the list. See [GUI walkthrough](gui.md).
+
 ### `clone`
 
 Duplicate a base ROM as a hack / translation variant. Same pipeline as `rename`, but the ROM and every media file are copied (not moved) and a new `<game>` entry is appended alongside the original. Useful for hacks or fan-translations that share assets with the base game.
@@ -247,6 +249,8 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 ```
 
 Undo deletes only the copies — the original is untouched.
+
+> **GUI alternative:** the **Systems** tab → **Step 3** wraps clone with the same game dropdown populated from the system's database. See [GUI walkthrough](gui.md).
 
 ---
 
@@ -662,6 +666,8 @@ spindoctor fav clear --apply      :: remove the Favorites wheel and empty the st
 ```
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
+
+> **GUI alternative:** the **Tools** tab → **Step 4 — Manage favorites** wraps `fav add / remove / list`. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin. See [GUI walkthrough](gui.md).
 
 **Sync sources & speed** — `fav sync` (run automatically at the start of every `fav rebuild`) imports favorites from three places per console, in order: a `favorite="1"` attribute in the system's database XML, a `<System>_Favorites.ini` (HyperSpin F-key format), and a `favorites.txt` (RocketLauncher format). It does a fast text pre-scan and only parses a console's database when one of those sources is present, so consoles with no favorites add almost nothing to the runtime. While crawling it shows a live `Scanning <System> (i/N)…` counter; `--verbose`/`-v` prints per-console detail and (during rebuild) each media file mirrored.
 
