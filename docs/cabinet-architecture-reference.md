@@ -971,6 +971,18 @@ it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
 
+### ScreenScraper API response shape variations
+
+ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object whose fields are not consistently typed — the same field name can be a dict in one system's response and a list of `{region, text}` objects in another. Known cases:
+
+| Field | Dict shape | List shape | When list is returned |
+|-------|-----------|------------|-----------------------|
+| `dates` | `{"date_us": "YYYY-MM-DD", "date_wor": "…"}` | `[{"region": "us", "text": "YYYY-MM-DD"}, …]` | Observed on PC systems (e.g. "PC GAMES") |
+| `editeur` | `{"text": "Publisher Name"}` | *(not yet observed)* | — |
+| `joueurs` | `{"text": "2"}` | plain string `"2"` | Varies by game entry |
+
+SpinDoctor's `_parse_screenscraper` in `scraper.py` uses `isinstance()` guards on each of these fields rather than assuming a fixed shape. When adding new field parsers, always guard against both dict and list forms.
+
 ---
 
 ## LEDBlinky

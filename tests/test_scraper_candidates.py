@@ -46,6 +46,21 @@ def test_parse_screenscraper_populates_candidates_and_first_url():
     assert meta.media_candidates["artwork"][0].url == "art-1"
 
 
+def test_parse_screenscraper_dates_as_list():
+    """ScreenScraper returns dates as a list for some systems (e.g. PC GAMES)."""
+    jeu = {
+        "id": "99",
+        "noms": [{"langue": "en", "text": "PC Game"}],
+        "dates": [
+            {"region": "us", "text": "2003-10-14"},
+            {"region": "wor", "text": "2003-10-21"},
+        ],
+        "medias": [],
+    }
+    meta = _parse_screenscraper("pc_game", jeu)
+    assert meta.year == "2003"
+
+
 def test_metadata_from_dict_round_trips_candidates():
     payload = {
         "name": "x",

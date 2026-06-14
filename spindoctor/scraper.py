@@ -1014,7 +1014,17 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
     year = ""
     dates = jeu.get("dates", {})
     if dates:
-        year = (dates.get("date_us") or dates.get("date_wor") or "")[:4]
+        if isinstance(dates, dict):
+            year = (dates.get("date_us") or dates.get("date_wor") or "")[:4]
+        elif isinstance(dates, list):
+            # ScreenScraper returns dates as [{region, text}] for some systems
+            date_map = {
+                d.get("region", ""): d.get("text", "")
+                for d in dates
+                if isinstance(d, dict)
+            }
+            year = (date_map.get("us") or date_map.get("wor")
+                    or next(iter(date_map.values()), ""))[:4]
 
     genres = jeu.get("genres", [])
     genre = _lang(genres[0].get("noms", [])) if genres else ""

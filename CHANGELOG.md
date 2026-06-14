@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **"Fix PC game executable" system selector now defaults to the "PC Games" system on startup.** Previously the first system alphabetically was pre-selected. The GUI now checks whether any loaded system name matches `"pc games"` (case-insensitive) and, if so, selects it automatically — so the fix-exe panel is ready to use without needing to change the system picker.
 
+- **`fetch-media` no longer crashes on PC GAMES entries when ScreenScraper returns `dates` as a list.** The ScreenScraper API returns the `dates` field as a list of `{region, text}` objects for some systems (notably PC GAMES) instead of the flat dict `{date_us, date_wor}` seen on other systems. The parser now handles both shapes, so release-year extraction works regardless of which format the API returns.
+
 ---
 
 ## [2.6.3] - 2026-06-14
