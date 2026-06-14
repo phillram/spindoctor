@@ -8469,73 +8469,6 @@ class _SpinDoctorGUI:
             command=self._match_clear,
         ).pack(side="left", padx=6)
 
-        # ── Fix PC game executable ────────────────────────────────────────────
-        fixexe_frame = self.ttk.LabelFrame(frame, text="Fix PC game executable")
-        fixexe_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            fixexe_frame,
-            text=("Fix a PC game that launches the wrong executable (uninstaller, "
-                  "cache file, etc.). Select system and game — the list below shows "
-                  "every .exe found in the game folder, recommended first. Pick the "
-                  "correct one and click Apply to update the PCLauncher INI."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-
-        fixexe_top = self.ttk.Frame(fixexe_frame)
-        fixexe_top.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(fixexe_top, text="System").pack(side="left")
-        self._fixexe_system_var = self.tk.StringVar()
-        self._fixexe_system_combo = self.ttk.Combobox(
-            fixexe_top, textvariable=self._fixexe_system_var,
-            state="readonly", width=24,
-        )
-        self._fixexe_system_combo.pack(side="left", padx=6)
-        self._fixexe_system_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._refresh_fixexe_games(),
-        )
-        self.ttk.Label(fixexe_top, text="Game").pack(side="left", padx=(10, 0))
-        self._fixexe_game_var = self.tk.StringVar()
-        self._fixexe_game_combo = self.ttk.Combobox(
-            fixexe_top, textvariable=self._fixexe_game_var,
-            state="readonly", width=30,
-        )
-        self._fixexe_game_combo.pack(side="left", padx=6)
-        self._fixexe_game_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._fixexe_load_candidates(),
-        )
-        self.ttk.Button(
-            fixexe_top, text="↻", width=3,
-            command=self._fixexe_load_candidates,
-        ).pack(side="left")
-
-        fixexe_list_label = self.ttk.Label(
-            fixexe_frame, text="Executables in game folder (recommended first):",
-        )
-        fixexe_list_label.pack(anchor="w", padx=6, pady=(4, 0))
-        self._fixexe_listbox = self.tk.Listbox(
-            fixexe_frame, height=5, selectmode="single",
-            activestyle="none",
-        )
-        self._fixexe_listbox.pack(fill="x", padx=6, pady=(2, 4))
-        self._fixexe_listbox.bind(
-            "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
-        )
-
-        fixexe_path_row = self.ttk.Frame(fixexe_frame)
-        fixexe_path_row.pack(fill="x", padx=6, pady=(0, 4))
-        self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
-        self._fixexe_path_var = self.tk.StringVar()
-        self.ttk.Entry(
-            fixexe_path_row, textvariable=self._fixexe_path_var, width=60,
-        ).pack(side="left", padx=6, fill="x", expand=True)
-
-        fixexe_btns = self.ttk.Frame(fixexe_frame)
-        fixexe_btns.pack(anchor="w", padx=6, pady=(0, 6))
-        self.ttk.Button(
-            fixexe_btns, text="Apply",
-            command=self._run_fixexe,
-        ).pack(side="left")
-
         return frame
 
     def _refresh_fixexe_games(self) -> None:
@@ -9581,6 +9514,72 @@ class _SpinDoctorGUI:
             rename_frame, text="Scan & refresh games",
             command=self._run_pc_rename,
         ).pack(anchor="w", padx=6, pady=(4, 6))
+
+        # ── Fix PC game executable ────────────────────────────────────────────
+        fixexe_frame = self.ttk.LabelFrame(frame, text="Fix PC game executable")
+        fixexe_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            fixexe_frame,
+            text=("Fix a PC game that launches the wrong executable (uninstaller, "
+                  "cache file, etc.). Select system and game — the list below shows "
+                  "every .exe found in the game folder, recommended first. Pick the "
+                  "correct one and click Apply to update the PCLauncher INI."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        fixexe_top = self.ttk.Frame(fixexe_frame)
+        fixexe_top.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(fixexe_top, text="PC system").pack(side="left")
+        self._fixexe_system_var = self.tk.StringVar()
+        self._fixexe_system_combo = self.ttk.Combobox(
+            fixexe_top, textvariable=self._fixexe_system_var,
+            state="readonly", width=28,
+        )
+        self._fixexe_system_combo.pack(side="left", padx=6)
+        self._fixexe_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_fixexe_games(),
+        )
+        self.ttk.Label(fixexe_top, text="Game").pack(side="left", padx=(10, 0))
+        self._fixexe_game_var = self.tk.StringVar()
+        self._fixexe_game_combo = self.ttk.Combobox(
+            fixexe_top, textvariable=self._fixexe_game_var,
+            state="readonly", width=30,
+        )
+        self._fixexe_game_combo.pack(side="left", padx=6)
+        self._fixexe_game_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._fixexe_load_candidates(),
+        )
+        self.ttk.Button(
+            fixexe_top, text="↻", width=3,
+            command=self._fixexe_load_candidates,
+        ).pack(side="left")
+
+        self.ttk.Label(
+            fixexe_frame, text="Executables in game folder (recommended first):",
+        ).pack(anchor="w", padx=6, pady=(4, 0))
+        self._fixexe_listbox = self.tk.Listbox(
+            fixexe_frame, height=5, selectmode="single",
+            activestyle="none",
+        )
+        self._fixexe_listbox.pack(fill="x", padx=6, pady=(2, 4))
+        self._fixexe_listbox.bind(
+            "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
+        )
+
+        fixexe_path_row = self.ttk.Frame(fixexe_frame)
+        fixexe_path_row.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
+        self._fixexe_path_var = self.tk.StringVar()
+        self.ttk.Entry(
+            fixexe_path_row, textvariable=self._fixexe_path_var, width=60,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+
+        fixexe_btns = self.ttk.Frame(fixexe_frame)
+        fixexe_btns.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Button(
+            fixexe_btns, text="Apply",
+            command=self._run_fixexe,
+        ).pack(side="left")
 
         # ── Per-system overrides ─────────────────────────────────────────────
         # Surfaces `config system set` so users with niche systems
