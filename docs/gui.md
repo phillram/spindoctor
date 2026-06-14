@@ -160,6 +160,8 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 **Metadata-match cache:** **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
 
+**Fix PC game executable:** For PC games that launch the wrong executable (uninstaller, GOG/Steam cache file, redistributable, etc.). Select a system and game — the listbox auto-populates with every `.exe` found in the game folder, recommended candidates (non-uninstaller, name-matched) first. Pick the correct one (or type a custom path in the field below the list), then click **Apply** to update `Application=` and `WorkingFolder=` in the per-game PCLauncher INI. Other user-set keys like `FadeTitle=` are left untouched. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+
 ### Toolkit
 
 Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
