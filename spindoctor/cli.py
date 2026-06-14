@@ -8424,25 +8424,25 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
     stale_titles_set = set(stale_titles)
 
     if verbose and by_title:
-        from rich.table import Table
-        tbl = Table(show_header=True, header_style="bold", box=None)
-        tbl.add_column("Title")
-        tbl.add_column("Executable")
-        tbl.add_column("INI status")
+        # Plain print (no Rich Table) so long paths are never truncated or
+        # wrapped by terminal-width column fitting.
         for title in sorted(by_title):
             exe = resolved_exe[title]
             if title in new_titles_set:
-                status = "[green]new[/green]"
+                console.print(f"  [green]new[/green]  [bold]{title}[/bold]")
+                console.print(f"       {exe}")
             elif title in stale_titles_set:
                 stem = _win_safe_stem(title)
                 ini = module_dir / f"{stem}.ini"  # type: ignore[operator]
                 section = title_to_section.get(title, title)
                 on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
-                status = f"[red]stale[/red] [dim](INI has: {on_disk})[/dim]"
+                console.print(f"  [red]stale[/red]  [bold]{title}[/bold]")
+                console.print(f"       Resolved : {exe}")
+                console.print(f"       INI has  : {on_disk}")
             else:
-                status = "[dim]current[/dim]"
-            tbl.add_row(title, str(exe), status)
-        console.print(tbl)
+                console.print(f"  [dim]ok[/dim]     [bold]{title}[/bold]")
+                console.print(f"         {exe}")
+        console.print()
 
     summary_parts = []
     if new_titles:
