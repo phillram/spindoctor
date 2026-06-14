@@ -418,11 +418,11 @@ spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates
 
 Without `--apply` the command shows the current `Application=` and the proposed replacement but writes nothing.
 
-**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins.
+**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins. The `chromedriver.exe` exclusion handles NW.js / Electron-based games (e.g. RPGMaker titles with `Game.exe`) where the runtime ships alongside the real launcher.
 
 If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path.
 
-**GUI alternative:** the **Systems** tab has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with a system/game picker and a candidate list populated from the game folder.
+**GUI alternative:** the **Systems** tab has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with a system/game picker and a candidate list populated from the game folder. The game dropdown lists all subdirectories found on disk — including games not yet in the HyperSpin XML — and the system picker defaults to "PC Games" on startup.
 
 ### `migrate`
 

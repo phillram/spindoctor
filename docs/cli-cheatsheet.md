@@ -205,8 +205,10 @@ Reference: [Command reference → pc-rename](commands.md#pc-rename).
 spindoctor pc-fix-exe "PC GAMES" "ElecHead"                               :: preview auto-detect
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply                       :: auto-detect and fix
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --exe "J:\Games\...\ElecHead.exe" --apply
-spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: show .exe candidates
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: show .exe candidates (chromedriver etc. ranked last)
 ```
+
+Auto-detection excludes uninstallers, `vcredist*`, `chromedriver.exe` (NW.js/Electron runtime), `nwjc.exe`, etc. For NW.js games such as RPGMaker titles, `Game.exe` is selected over `chromedriver.exe`.
 
 Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
 

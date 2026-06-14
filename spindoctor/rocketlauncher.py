@@ -1083,6 +1083,8 @@ _EXE_EXCLUSION_PREFIXES: tuple[str, ...] = (
     "vc_redist", "vcredist", "dxsetup", "directx",
     "crashpad", "dotnet", "helper", "updater",
     "unitycrashhandler", "cef",
+    # NW.js / Electron runtimes bundle chromedriver alongside the real launcher
+    "chromedriver", "nwjc", "nacl_irt",
 )
 
 

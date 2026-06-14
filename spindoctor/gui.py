@@ -5590,6 +5590,9 @@ class _SpinDoctorGUI:
 
         # Every tab that has a system picker. Attributes may not exist yet
         # on the first call (tabs build lazily), so we guard with getattr.
+        # The fix-exe tab is PC-specific, so pre-select the "PC Games" system
+        # (case-insensitive) when one exists.
+        pc_system = next((s for s in systems if s.lower() == "pc games"), None)
         combos_and_vars = [
             ("_system_combo",          "_system_var",          None),
             ("_mainmenu_system_combo", "_mainmenu_system_var", None),
@@ -5604,7 +5607,7 @@ class _SpinDoctorGUI:
             ("_ovr_system_combo",      "_ovr_system_var",      None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
-            ("_fixexe_system_combo",   "_fixexe_system_var",   None),
+            ("_fixexe_system_combo",   "_fixexe_system_var",   pc_system),
             # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
@@ -8473,7 +8476,27 @@ class _SpinDoctorGUI:
 
     def _refresh_fixexe_games(self) -> None:
         system = self._fixexe_system_var.get().strip()
-        games = self._load_games_for_system(system) if system else []
+        # Scan the ROM directory so games that exist on disk but are not yet
+        # in the HyperSpin XML (e.g. newly installed GOG titles) still appear.
+        games: list[str] = []
+        if system:
+            try:
+                cfg = load_config()
+                system_dir = Path(cfg.roms_dir) / system
+                if not system_dir.exists():
+                    # Try a case-insensitive match in case the ROM folder name
+                    # differs in case from the selected system name.
+                    roms_root = Path(cfg.roms_dir)
+                    system_dir = next(
+                        (p for p in roms_root.iterdir()
+                         if p.is_dir() and p.name.lower() == system.lower()),
+                        system_dir,
+                    )
+                games = sorted(
+                    p.name for p in system_dir.iterdir() if p.is_dir()
+                )
+            except Exception:  # noqa: BLE001
+                games = []
         combo = getattr(self, "_fixexe_game_combo", None)
         if combo is None:
             return
