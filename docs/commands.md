@@ -95,10 +95,12 @@ spindoctor fetch-meta --all --auto-best --apply              :: never prompt —
 spindoctor fetch-meta --all --skip-ambiguous --apply         :: log ambiguous matches, don't prompt or auto-pick
 spindoctor fetch-meta --system SNES --all-games --apply      :: refresh complete entries too
 spindoctor fetch-meta --system NES --source thegamesdb --apply  :: force one scraper
+spindoctor fetch-meta --system NES --source both --apply         :: explicit combined mode
 spindoctor fetch-meta --all --auto-best --threshold 0.9 --apply :: stricter auto-accept cut-off
+spindoctor fetch-meta --system "Sony PlayStation 2" --game "Dark Cloud" --apply  :: single game
 ```
 
-`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
@@ -123,9 +125,12 @@ spindoctor fetch-media --system SNES --types trailer --overwrite --apply
 spindoctor fetch-media --system MAME --types theme,fade,sound --apply
 spindoctor fetch-media --all --skip-ambiguous --apply    :: skip multi-candidate slots
 spindoctor fetch-media --system NES --source screenscraper --apply  :: force one scraper
+spindoctor fetch-media --system NES --source both --apply           :: explicit combined mode
+spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --apply  :: single game
+spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --types video --apply  :: just the video
 ```
 
-`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config).
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`).
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 
@@ -135,7 +140,24 @@ When a media slot has multiple candidates (different regions / artwork variants)
 - `--skip-ambiguous` — log each ambiguous slot as a skip and move on. Required from non-TTY contexts (cron, CI, the GUI). Mirrors `fetch-meta --skip-ambiguous`.
 - *Default (neither flag)* — auto-pick the first candidate. Fast; risks the occasional wrong pick.
 
-`theme`, `fade`, and `sound` come from ScreenScraper only (TheGamesDB has no equivalents) and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
+**Provider capabilities** — what each scraper actually downloads:
+
+| Type | ScreenScraper | TheGamesDB |
+|---|---|---|
+| `wheel` | ✅ (multiple regions, US-first) | ✅ clearlogo via `Games/Images` |
+| `snap` | ✅ | ✅ screenshot via `Games/Images` |
+| `background` | ✅ | ✗ |
+| `artwork` (box art) | ✅ | ✅ (front/back, direct CDN links) |
+| `title` | ✅ | ✗ |
+| `fade` | ✅ | ✗ |
+| `video` / `trailer` | ✅ | ✗ |
+| `theme` / `sound` | ✅ (sparse) | ✗ |
+
+TheGamesDB images come from a separate `GET /v1/Games/Images` call made automatically after the main game search. ScreenScraper slots always take priority; TGDB fills only what ScreenScraper missed.
+
+TheGamesDB only provides boxart (`artwork` slot). For all other types, ScreenScraper is required. TheGamesDB is useful as a fallback for newer indie PC games that have stub or no entries on ScreenScraper (e.g. a 2022 indie title may have full metadata + boxart on TheGamesDB but no wheel or video on ScreenScraper).
+
+`theme`, `fade`, and `sound` come from ScreenScraper only and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
 
 ### `media-add`
 
