@@ -18,6 +18,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`fetch-media` no longer saves ScreenScraper media files as `.php`.** ScreenScraper serves all media through PHP scripts (`mediaJeu.php`, `mediaVideoJeu.php`) — the downloader was using the URL path's `.php` extension to rename the destination file, so every download landed as `Pikmin.php` instead of `Pikmin.png`. The extension-override logic now only fires when the URL contains a recognised media extension (`.png`, `.jpg`, `.mp4`, etc.); script endpoints like `.php` are ignored and the destination keeps its correct HyperSpin extension.
 
+- **Nintendo DS is now recognised by both scrapers.** `"Nintendo DS"`, `"NDS"`, and `"DS"` are added to `SCREENSCRAPER_SYSTEMS` (ID 15) and `THEGAMESDB_PLATFORMS` (ID 8). Previously DS games were scraped without a platform filter, returning random matches instead of DS-specific results.
+
 ---
 
 ## [2.6.3] - 2026-06-14

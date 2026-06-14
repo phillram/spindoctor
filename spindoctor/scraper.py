@@ -169,6 +169,12 @@ SCREENSCRAPER_SYSTEMS: dict[str, int] = {
     # PC / Windows / Steam — ScreenScraper splits "PC" (DOS, 135) from
     # "PC Win" (138).  We default to PC Win for shortcut/exe libraries;
     # users can override either via system_overrides.screenscraper_id.
+    "nds": 15,
+    "nintendo ds": 15,
+    "ds": 15,
+    # PC / Windows / Steam — ScreenScraper splits "PC" (DOS, 135) from
+    # "PC Win" (138).  We default to PC Win for shortcut/exe libraries;
+    # users can override either via system_overrides.screenscraper_id.
     "pc": 135,
     "pc games": 138,
     "windows": 138,
@@ -198,6 +204,9 @@ THEGAMESDB_PLATFORMS: dict[str, int] = {
     "playstation 2": 11,
     "dreamcast": 16,
     "gamecube": 2,
+    "nds": 8,
+    "nintendo ds": 8,
+    "ds": 8,
     "atari 2600": 22,
     "master system": 35,
     "game gear": 20,
