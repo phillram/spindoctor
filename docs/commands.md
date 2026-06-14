@@ -139,14 +139,16 @@ When a media slot has multiple candidates (different regions / artwork variants)
 
 | Type | ScreenScraper | TheGamesDB |
 |---|---|---|
-| `wheel` | ✅ (multiple regions) | ✗ |
+| `wheel` | ✅ (multiple regions, US-first) | ✅ clearlogo via `Games/Images` |
+| `snap` | ✅ | ✅ screenshot via `Games/Images` |
 | `background` | ✅ | ✗ |
 | `artwork` (box art) | ✅ | ✅ (front/back, direct CDN links) |
 | `title` | ✅ | ✗ |
-| `snap` | ✅ | ✗ |
 | `fade` | ✅ | ✗ |
 | `video` / `trailer` | ✅ | ✗ |
 | `theme` / `sound` | ✅ (sparse) | ✗ |
+
+TheGamesDB images come from a separate `GET /v1/Games/Images` call made automatically after the main game search. ScreenScraper slots always take priority; TGDB fills only what ScreenScraper missed.
 
 TheGamesDB only provides boxart (`artwork` slot). For all other types, ScreenScraper is required. TheGamesDB is useful as a fallback for newer indie PC games that have stub or no entries on ScreenScraper (e.g. a 2022 indie title may have full metadata + boxart on TheGamesDB but no wheel or video on ScreenScraper).
 

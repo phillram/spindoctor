@@ -130,93 +130,494 @@ def _failure_with_body(message: str, body: str) -> str:
     return f"{message} (raw: {snippet})" if snippet else message
 
 
+# ScreenScraper system IDs — lowercase HyperSpin name / common alias → SS id.
+# ScreenScraper splits DOS/legacy PC (id=135) from PC Windows/exe (id=138).
+# "pc" defaults to DOS/legacy; "pc games"/"windows"/"steam" default to Win.
+# Full list sourced from ScreenScraper /api2/systemesListe.php (249 systems).
 SCREENSCRAPER_SYSTEMS: dict[str, int] = {
-    "mame": 75,
+    "32x": 19,
+    "3do": 29,
+    "3ds": 17,
+    "acorn archimedes": 84,
+    "acorn electron": 85,
+    "adam": 89,
+    "amiga": 64,
+    "amiga cd32": 130,
+    "amiga cdtv": 129,
+    "amstrad cpc": 65,
+    "apple ii": 86,
+    "apple iigs": 86,
+    "apple mac os": 146,
     "arcade": 75,
-    "nes": 3,
-    "nintendo entertainment system": 3,
-    "snes": 4,
-    "super nintendo": 4,
-    "genesis": 1,
-    "mega drive": 1,
-    "sega genesis": 1,
-    "n64": 14,
-    "nintendo 64": 14,
-    "gba": 12,
-    "game boy advance": 12,
-    "gameboy": 9,
-    "game boy": 9,
-    "game boy color": 10,
-    "gbc": 10,
-    "psx": 57,
-    "playstation": 57,
-    "ps2": 58,
-    "playstation 2": 58,
-    "dreamcast": 23,
-    "gamecube": 13,
+    "arcadia 2001": 94,
+    "archimedes": 84,
+    "astrocade": 44,
     "atari 2600": 26,
+    "atari 5200": 40,
     "atari 7800": 41,
+    "atari 8-bit": 43,
+    "atari 8bit": 43,
+    "atari jaguar": 27,
+    "atari lynx": 28,
+    "atari st": 42,
+    "atomiswave": 53,
+    "bally astrocade": 44,
+    "bandai wonderswan": 45,
+    "bandai wonderswan color": 46,
+    "c64": 66,
+    "capcom play system": 6,
+    "capcom play system 2": 7,
+    "capcom play system 3": 8,
+    "capcom play system ii": 7,
+    "capcom play system iii": 8,
+    "cd-i": 133,
+    "channel f": 80,
+    "coleco adam": 89,
+    "colecovision": 48,
+    "commodore 128": 66,
+    "commodore 16 & plus4": 99,
+    "commodore 64": 66,
+    "commodore amiga": 64,
+    "commodore amiga cd32": 130,
+    "commodore cdtv": 129,
+    "commodore vic-20": 73,
+    "cougar boy": 90,
+    "cpc": 65,
     "cps1": 6,
     "cps2": 7,
-    "neogeo": 142,
-    "neo geo": 142,
-    "master system": 2,
-    "sega master system": 2,
-    "game gear": 21,
-    "turbografx": 31,
-    "turbografx-16": 31,
-    "pc engine": 31,
-    # PC / Windows / Steam — ScreenScraper splits "PC" (DOS, 135) from
-    # "PC Win" (138).  We default to PC Win for shortcut/exe libraries;
-    # users can override either via system_overrides.screenscraper_id.
-    "nds": 15,
-    "nintendo ds": 15,
+    "creatronic mega duck": 90,
+    "daphne": 49,
+    "dreamcast": 23,
     "ds": 15,
-    # PC / Windows / Steam — ScreenScraper splits "PC" (DOS, 135) from
-    # "PC Win" (138).  We default to PC Win for shortcut/exe libraries;
-    # users can override either via system_overrides.screenscraper_id.
+    "electron": 85,
+    "emerson arcadia 2001": 94,
+    "fairchild channel f": 80,
+    "family computer disk system": 106,
+    "final burn alpha": 75,
+    "fm towns": 253,
+    "fujitsu fm towns": 253,
+    "future pinball": 199,
+    "game boy": 9,
+    "game boy advance": 12,
+    "game boy color": 10,
+    "game gear": 21,
+    "game.com": 121,
+    "gameboy": 9,
+    "gamecube": 13,
+    "gamepark 32": 101,
+    "gba": 12,
+    "gbc": 10,
+    "gce vectrex": 102,
+    "genesis": 1,
+    "gp32": 101,
+    "hbmame": 75,
+    "hikaru": 258,
+    "intellivision": 115,
+    "jaguar": 27,
+    "lynx": 28,
+    "mac os": 146,
+    "magnavox odyssey 2": 104,
+    "magnavox odyssey2": 104,
+    "mame": 75,
+    "master system": 2,
+    "mattel intellivision": 115,
+    "mega cd": 20,
+    "mega drive": 1,
+    "mega duck": 90,
+    "mega-cd": 20,
+    "megadrive": 1,
+    "megadrive 32x": 19,
+    "microsoft ms-dos": 135,
+    "microsoft msx": 113,
+    "microsoft msx2": 116,
+    "microsoft windows 3.x": 136,
+    "microsoft xbox": 32,
+    "microsoft xbox 360": 33,
+    "microsoft xbox one": 34,
+    "misfit mame": 75,
+    "model 2": 54,
+    "model 3": 55,
+    "msx": 113,
+    "msx2": 116,
+    "n-gage": 30,
+    "n64": 14,
+    "naomi": 56,
+    "naomi 2": 230,
+    "naomi gd-rom": 227,
+    "nds": 15,
+    "nec pc engine": 31,
+    "nec pc engine-cd": 114,
+    "nec pc-fx": 72,
+    "nec supergrafx": 105,
+    "nec turbografx-16": 31,
+    "nec turbografx-cd": 114,
+    "neo geo": 142,
+    "neo-geo": 142,
+    "neo-geo cd": 70,
+    "neo-geo mvs": 68,
+    "neo-geo pocket": 25,
+    "neo-geo pocket color": 82,
+    "neogeo": 142,
+    "nes": 3,
+    "nintendo 3ds": 17,
+    "nintendo 64": 14,
+    "nintendo 64dd": 122,
+    "nintendo ds": 15,
+    "nintendo entertainment system": 3,
+    "nintendo famicom": 3,
+    "nintendo famicom disk system": 106,
+    "nintendo game boy": 9,
+    "nintendo game boy advance": 12,
+    "nintendo game boy color": 10,
+    "nintendo gamecube": 13,
+    "nintendo satellaview": 107,
+    "nintendo super famicom": 4,
+    "nintendo super game boy": 127,
+    "nintendo switch": 225,
+    "nintendo switch 2": 296,
+    "nintendo virtual boy": 11,
+    "nintendo wii": 16,
+    "nintendo wii u": 18,
+    "nokia n-gage": 30,
+    "openbor": 214,
+    "panasonic 3do": 29,
+    # ScreenScraper 135=PC DOS/legacy, 138=PC Win/exe. "pc" → DOS, rest → Win.
     "pc": 135,
+    "pc dos": 135,
+    "pc engine": 31,
+    "pc engine cd-rom": 114,
+    "pc engine supergrafx": 105,
     "pc games": 138,
-    "windows": 138,
-    "windows games": 138,
+    "pc win3.xx": 136,
+    "pc windows": 138,
+    "pc-fx": 72,
+    "philips cd-i": 133,
+    "philips videopac plus g7400": 104,
+    "pico-8": 234,
+    "pinball fx2": 143,
+    "pinball fx3": 201,
+    "playstation": 57,
+    "playstation 2": 58,
+    "playstation 3": 59,
+    "playstation 5": 284,
+    "plus/4": 99,
+    "ps vita": 62,
+    "ps1": 57,
+    "ps2": 58,
+    "ps3": 59,
+    "psp": 61,
+    "psx": 57,
+    "sammy atomiswave": 53,
+    "satellaview": 107,
+    "saturn": 22,
+    "scummvm": 123,
+    "sega 32x": 19,
+    "sega cd": 20,
+    "sega dreamcast": 23,
+    "sega game gear": 21,
+    "sega genesis": 1,
+    "sega hikaru": 258,
+    "sega master system": 2,
+    "sega model 2": 54,
+    "sega model 3": 55,
+    "sega naomi": 56,
+    "sega naomi 2": 230,
+    "sega naomi gd-rom": 227,
+    "sega pico": 250,
+    "sega saturn": 22,
+    "sega sg-1000": 109,
+    "segacd": 20,
+    "sg-1000": 109,
+    "sharp x68000": 79,
+    "sinclair zx spectrum": 76,
+    "snes": 4,
+    "snk neo geo": 142,
+    "snk neo geo cd": 70,
+    "snk neo geo mvs": 68,
+    "snk neo geo pocket": 25,
+    "snk neo geo pocket color": 82,
+    "sony playstation": 57,
+    "sony playstation 2": 58,
+    "sony playstation 3": 59,
+    "sony playstation 5": 284,
+    "sony ps vita": 62,
+    "sony psp": 61,
     "steam": 138,
     "steam games": 138,
+    "super game boy": 127,
+    "super nintendo": 4,
+    "super nintendo entertainment system": 4,
+    "super nintendo msu-1": 210,
+    "switch": 225,
+    "switch 2": 296,
+    "taito g-net": 299,
+    "tandy trs-80 color computer": 144,
+    "teknoparrot": 269,
+    "thomson mo/to": 141,
+    "tiger game.com": 121,
+    "trs-80 color computer": 144,
+    "turbografx": 31,
+    "turbografx-16": 31,
+    "vectrex": 102,
+    "vic-20": 73,
+    "videopac g7000": 104,
+    "virtual boy": 11,
+    "visual pinball": 198,
+    "watara supervision": 207,
+    "wii": 16,
+    "wii u": 18,
+    "windows": 138,
+    "windows games": 138,
+    "wonderswan": 45,
+    "wonderswan color": 46,
+    "x68000": 79,
+    "xbox": 32,
+    "xbox 360": 33,
+    "xbox one": 34,
+    "zx spectrum": 76,
 }
 
+# TheGamesDB platform IDs — verified against /v1/Platforms endpoint 2026-06-14.
+# Full list (153 platforms); lowercase name / common alias → TGDB platform id.
 THEGAMESDB_PLATFORMS: dict[str, int] = {
-    "mame": 1,
-    "arcade": 1,
-    "nes": 7,
-    "nintendo entertainment system": 7,
-    "snes": 6,
-    "super nintendo": 6,
-    "genesis": 18,
-    "mega drive": 18,
-    "n64": 3,
-    "nintendo 64": 3,
-    "gba": 5,
-    "game boy advance": 5,
-    "gameboy": 4,
-    "game boy": 4,
-    "psx": 10,
-    "playstation": 10,
-    "ps2": 11,
-    "playstation 2": 11,
-    "dreamcast": 16,
-    "gamecube": 2,
-    "nds": 8,
-    "nintendo ds": 8,
-    "ds": 8,
+    "32x": 33,
+    "3do": 25,
+    "3ds": 4912,
+    "acorn archimedes": 4944,
+    "acorn electron": 4954,
+    "action max": 4976,
+    "amiga": 4911,
+    "amiga cd32": 4947,
+    "amiga cdtv": 86,
+    "amstrad cpc": 4914,
+    "amstrad gx4000": 4999,
+    "android": 4916,
+    "apf mp-1000": 4969,
+    "apple ii": 4942,
+    "apple iigs": 4942,
+    "apple pippin": 5001,
+    "arcade": 23,
     "atari 2600": 22,
-    "master system": 35,
+    "atari 5200": 26,
+    "atari 7800": 27,
+    "atari 8-bit": 4943,
+    "atari 800": 4943,
+    "atari 8bit": 4943,
+    "atari jaguar": 28,
+    "atari jaguar cd": 29,
+    "atari lynx": 4924,
+    "atari st": 4937,
+    "atari xe": 30,
+    "bally astrocade": 4968,
+    "bandai tv jack 5000": 4995,
+    "bbc bridge companion": 4997,
+    "bbc micro": 5013,
+    "c64": 40,
+    "casio loopy": 4991,
+    "casio pv-1000": 4964,
+    "cd-i": 4917,
+    "channel f": 4928,
+    "coleco telstar arcade": 4970,
+    "colecovision": 31,
+    "commodore 128": 4946,
+    "commodore 16": 5006,
+    "commodore 64": 40,
+    "commodore cdtv": 86,
+    "commodore pet": 5008,
+    "commodore plus/4": 5007,
+    "commodore vic-20": 4945,
+    "cpc": 4914,
+    "creatronic mega duck": 4948,
+    "dragon 32/64": 4952,
+    "dreamcast": 16,
+    "ds": 8,
+    "emerson arcadia 2001": 4963,
+    "entex adventure vision": 4974,
+    "entex select-a-game": 4973,
+    "epoch cassette vision": 4965,
+    "epoch super cassette vision": 4966,
+    "evercade": 4985,
+    "fairchild channel f": 4928,
+    "famicom": 7,
+    "famicom disk system": 4936,
+    "fds": 4936,
+    "fm towns": 4932,
+    "fm towns marty": 4932,
+    "fujitsu fm towns": 4932,
+    "fujitsu fm-7": 4978,
+    "gakken compact vision": 4962,
+    "gamate": 5004,
+    "game & watch": 4950,
+    "game boy": 4,
+    "game boy advance": 5,
+    "game boy color": 41,
     "game gear": 20,
-    # PC / Windows / Steam — TheGamesDB platform 1 is "PC".
+    "game wave": 5002,
+    "game.com": 4940,
+    "gameboy": 4,
+    "gamecube": 2,
+    "gamepark 32": 5015,
+    "gb": 4,
+    "gba": 5,
+    "gbc": 41,
+    "gce vectrex": 4939,
+    "genesis": 18,
+    "gizmondo": 4992,
+    "gp32": 5015,
+    "handheld electronic games (lcd)": 4951,
+    "hyperscan": 4987,
+    "intellivision": 32,
+    "interton vc 4000": 4994,
+    "ios": 4915,
+    "j2me (java platform, micro edition)": 5018,
+    "lynx": 4924,
+    "mac os": 37,
+    "macos": 37,
+    "magnavox odyssey 1": 4961,
+    "magnavox odyssey 2": 4927,
+    "mame": 23,
+    "master system": 35,
+    "mattel aquarius": 4989,
+    "mega cd": 21,
+    "mega drive": 18,
+    "mega duck": 4948,
+    "megadrive": 18,
+    "microsoft xbox": 14,
+    "microsoft xbox 360": 15,
+    "microsoft xbox one": 4920,
+    "microsoft xbox series x": 4981,
+    "milton bradley microvision": 4972,
+    "msx": 4929,
+    "n-gage": 4938,
+    "n64": 3,
+    "nds": 8,
+    "neo geo": 24,
+    "neo geo cd": 4956,
+    "neo geo pocket": 4922,
+    "neo geo pocket color": 4923,
+    "neo-geo": 24,
+    "neo-geo cd": 4956,
+    "neo-geo pocket": 4922,
+    "neo-geo pocket color": 4923,
+    "neogeo": 24,
+    "nes": 7,
+    "nintendo 3ds": 4912,
+    "nintendo 64": 3,
+    "nintendo ds": 8,
+    "nintendo entertainment system (nes)": 7,
+    "nintendo famicom": 7,
+    "nintendo game boy": 4,
+    "nintendo game boy advance": 5,
+    "nintendo game boy color": 41,
+    "nintendo gamecube": 2,
+    "nintendo super famicom": 6,
+    "nintendo switch": 4971,
+    "nintendo switch 2": 5021,
+    "nintendo virtual boy": 4918,
+    "nintendo wii": 9,
+    "nintendo wii u": 38,
+    "nokia n-gage": 4938,
+    "nuon": 4935,
+    "oculus quest": 4990,
+    "odyssey 2": 4927,
+    "oric-1": 4986,
+    "ouya": 4921,
     "pc": 1,
+    "pc engine": 34,
+    "pc engine cd": 4955,
     "pc games": 1,
-    "windows": 1,
-    "windows games": 1,
+    "pc-88": 4933,
+    "pc-98": 4934,
+    "pc-fx": 4930,
+    "philips cd-i": 4917,
+    "philips tele-spiel es-2201": 4993,
+    "pioneer laseractive": 4975,
+    "playdate": 5016,
+    "playdia": 5000,
+    "playstation": 10,
+    "playstation 2": 11,
+    "playstation 3": 12,
+    "playstation 4": 4919,
+    "playstation 5": 4980,
+    "ps vita": 39,
+    "ps1": 10,
+    "ps2": 11,
+    "ps3": 12,
+    "ps4": 4919,
+    "ps5": 4980,
+    "psp": 13,
+    "psx": 10,
+    "r-zone": 4983,
+    "rca studio ii": 4967,
+    "sam coupé": 4979,
+    "saturn": 17,
+    "sega 32x": 33,
+    "sega cd": 21,
+    "sega dreamcast": 16,
+    "sega game gear": 20,
+    "sega genesis": 18,
+    "sega master system": 35,
+    "sega mega drive": 36,
+    "sega pico": 4958,
+    "sega saturn": 17,
+    "sega sg-1000": 4949,
+    "segacd": 21,
+    "sg-1000": 4949,
+    "sharp x68000": 4931,
+    "sharp x1": 4977,
+    "sinclair zx spectrum": 4913,
+    "sinclair zx80": 5009,
+    "sinclair zx81": 5010,
+    "snes": 6,
+    "sony playstation": 10,
+    "sony playstation 2": 11,
+    "sony playstation 3": 12,
+    "sony playstation 4": 4919,
+    "sony playstation 5": 4980,
+    "sony playstation portable": 13,
+    "sony playstation vita": 39,
+    "stadia": 5011,
     "steam": 1,
     "steam games": 1,
+    "super nintendo": 6,
+    "super nintendo (snes)": 6,
+    "super nintendo entertainment system": 6,
+    "supergrafx": 90,
+    "switch": 4971,
+    "switch 2": 5021,
+    "tandy visual interactive system": 4982,
+    "texas instruments ti-99/4a": 4953,
+    "tg-16": 34,
+    "thomson to7": 5022,
+    "tiger game.com": 4940,
+    "tomy tutor": 4960,
+    "trs-80 color computer": 4941,
+    "turbografx": 34,
+    "turbografx 16": 34,
+    "turbografx cd": 4955,
+    "turbografx-16": 34,
+    "turbografx-cd": 4955,
+    "v.smile": 4988,
+    "vectrex": 4939,
+    "vic-20": 4945,
+    "virtual boy": 4918,
+    "vita": 39,
+    "vtech creativision": 5005,
+    "vtech socrates": 4998,
+    "watara supervision": 4959,
+    "wii": 9,
+    "wii u": 38,
+    "windows": 1,
+    "windows games": 1,
+    "wonderswan": 4925,
+    "wonderswan color": 4926,
+    "x68000": 4931,
+    "xavix port": 4984,
+    "xbox": 14,
+    "xbox 360": 15,
+    "xbox one": 4920,
+    "xbox series x": 4981,
+    "zx spectrum": 4913,
 }
 
 
@@ -647,6 +1048,26 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             return ovr["thegamesdb_id"]
         return THEGAMESDB_PLATFORMS.get(system_name.lower())
 
+    def _fetch_images(self, game_id: str) -> list[dict]:
+        """Fetch all image types for *game_id* via the Games/Images endpoint.
+
+        Returns the raw image list (clearlogos, screenshots, banners, boxart).
+        Never raises — returns [] on any network or parse failure so callers
+        don't need to wrap this in try/except.
+        """
+        url = f"{THEGAMESDB_API}/Games/Images"
+        params = {"apikey": self.api_key, "games_id": game_id}
+        try:
+            resp = self._session.get(url, params=params, timeout=15)
+            _log_http("thegamesdb.images", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("data", {}).get("images", {}).get(str(game_id), []) or []
+        except Exception as e:
+            _log_http("thegamesdb.images", "GET", url, params, None, "", error=e)
+            return []
+
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
         self._limiter.wait()
         params = {
@@ -677,6 +1098,19 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         if not games:
             return None
         meta = _parse_thegamesdb(game_name, games[0], data)
+        game_id = str(games[0].get("id", ""))
+        if game_id:
+            images = self._fetch_images(game_id)
+            extra = _parse_tgdb_images(images)
+            for slot, cands in extra.items():
+                if not meta.media_candidates.get(slot):
+                    meta.media_candidates[slot] = cands
+            if extra.get("wheel") and not meta.wheel_url:
+                meta.wheel_url = extra["wheel"][0].url
+            if extra.get("snap") and not meta.snap_url:
+                meta.snap_url = extra["snap"][0].url
+            if extra.get("background") and not meta.background_url:
+                meta.background_url = extra["background"][0].url
         meta.match_score = similarity(game_name, meta.name)
         return meta
 
@@ -1002,6 +1436,61 @@ def _collect_media_candidates(
     return out
 
 
+# Region preference: us → wor (worldwide) → eu → common Western languages →
+# other regions → jp/kr → unknown.  Applied to ScreenScraper candidates so the
+# first (auto-picked) candidate is the US/English version where available.
+_REGION_PREFERENCE: list[str] = [
+    "us", "wor", "eu", "fr", "de", "es", "it", "au", "br", "ru", "kr", "jp", "ss",
+]
+
+
+def _sort_candidates_by_region(cands: list[MediaCandidate]) -> list[MediaCandidate]:
+    def _rank(c: MediaCandidate) -> int:
+        r = (c.region or "").lower()
+        try:
+            return _REGION_PREFERENCE.index(r)
+        except ValueError:
+            return len(_REGION_PREFERENCE)
+    return sorted(cands, key=_rank)
+
+
+# ── TheGamesDB image helpers ──────────────────────────────────────────────────
+
+_TGDB_CDN = "https://cdn.thegamesdb.net/images/original/"
+
+# Maps TheGamesDB image type → HyperSpin media slot.
+_TGDB_IMAGE_SLOT: dict[str, str] = {
+    "clearlogo":  "wheel",       # transparent logo — ideal wheel art
+    "screenshot": "snap",        # in-game screenshot
+    "banner":     "background",  # horizontal banner art
+    "boxart":     "artwork",     # box art (front/back)
+}
+
+
+def _parse_tgdb_images(images: list[dict], base_url: str = _TGDB_CDN) -> dict[str, list[MediaCandidate]]:
+    """Convert a Games/Images response into a media_candidates dict."""
+    candidates: dict[str, list[MediaCandidate]] = {}
+    for img in images:
+        if not isinstance(img, dict):
+            continue
+        itype = img.get("type", "")
+        slot = _TGDB_IMAGE_SLOT.get(itype)
+        if not slot:
+            continue
+        filename = img.get("filename") or ""
+        if not filename:
+            continue
+        url = base_url + filename
+        side = img.get("side") or ""
+        cand = MediaCandidate(
+            url=url,
+            source_type=itype + (f"-{side}" if side else ""),
+            format=Path(filename).suffix.lstrip("."),
+        )
+        candidates.setdefault(slot, []).append(cand)
+    return candidates
+
+
 def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
     def _lang(items, lang: str = "en") -> str:
         if not items:
@@ -1058,7 +1547,7 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
 
     candidates: dict[str, list[MediaCandidate]] = {}
     for slot, type_keys in SCREENSCRAPER_MEDIA_TYPES.items():
-        cands = _collect_media_candidates(medias, type_keys)
+        cands = _sort_candidates_by_region(_collect_media_candidates(medias, type_keys))
         if cands:
             candidates[slot] = cands
 

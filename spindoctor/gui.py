@@ -7518,6 +7518,15 @@ class _SpinDoctorGUI:
             self.ttk.Checkbutton(
                 types_grid, text=mtype, variable=var,
             ).grid(row=0, column=col, sticky="w", padx=(0, 8))
+        media_opts_row = self.ttk.Frame(media_frame)
+        media_opts_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(media_opts_row, text="Source").pack(side="left")
+        self._media_source_var = self.tk.StringVar(value="config default")
+        self.ttk.Combobox(
+            media_opts_row, textvariable=self._media_source_var,
+            values=["config default", "screenscraper", "thegamesdb"],
+            state="readonly", width=18,
+        ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             media_frame, text="Overwrite existing files (--overwrite)",
@@ -8022,6 +8031,9 @@ class _SpinDoctorGUI:
         )
         if selected_types:
             args += ["--types", selected_types]
+        source = self._media_source_var.get().strip()
+        if source and source != "config default":
+            args += ["--source", source]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
         if self._global_apply_var.get():

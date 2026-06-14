@@ -20,6 +20,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Nintendo DS is now recognised by both scrapers.** `"Nintendo DS"`, `"NDS"`, and `"DS"` are added to `SCREENSCRAPER_SYSTEMS` (ID 15) and `THEGAMESDB_PLATFORMS` (ID 8). Previously DS games were scraped without a platform filter, returning random matches instead of DS-specific results.
 
+### Added
+
+- **Comprehensive platform / system ID maps.** `SCREENSCRAPER_SYSTEMS` now covers all 249 ScreenScraper systems (237 lookup keys including aliases); `THEGAMESDB_PLATFORMS` now covers all 153 TheGamesDB platforms (235 keys). Both were verified against the live APIs on 2026-06-14. Previously each dict had only ~15–30 entries — systems not listed fell back to no platform filter, producing poor search results.
+
+- **ScreenScraper wheel images now prefer US English over Japanese.** When ScreenScraper returns multiple region variants for the same media slot (e.g. a JP and a US wheel image), candidates are sorted by a fixed preference order: `us → wor → eu → fr → de → es → it → au → br → ru → kr → jp`. The first candidate in the sorted list is used for the slot URL and for auto-pick. Previously the API's arbitrary response order was used, which could return a Japanese wheel image for a game with a US version.
+
+- **TheGamesDB now supplies wheel (clearlogo) and snap (screenshot) media.** A second API call to `GET /v1/Games/Images` is made after the main game search and fetches clearlogos, screenshots, and banners that are not returned by the primary boxart endpoint. Clearlogos map to the `wheel` slot and screenshots to the `snap` slot. ScreenScraper results always take priority; TGDB fills only slots that ScreenScraper did not populate. Previously only boxart was fetched from TheGamesDB.
+
+- **GUI Fetch-media Source dropdown.** Step 3 — Fetch media in the Metadata & Media tab now has a **Source** dropdown (`screenscraper` / `thegamesdb` / config default), matching the equivalent control already present on the Fetch-meta step. Selecting a specific provider passes `--source <provider>` to `fetch-media`; "config default" sends no flag and lets the project config decide.
+
 ---
 
 ## [2.6.3] - 2026-06-14
