@@ -12,6 +12,7 @@ from spindoctor.rocketlauncher import (
     EMULATOR_WINDOW_TITLES,
     _FADE_TITLE_TIMEOUT,
     _get_fade_title,
+    _win_safe_stem,
     ensure_rl_game_exe,
     generate_global_emulators_ini,
     generate_pclauncher_inis,
@@ -125,6 +126,61 @@ def test_generate_pclauncher_inis_requires_rocketlauncher_dir(tmp_path):
         )
 
 
+# ─── _win_safe_stem ───────────────────────────────────────────────────────────
+
+def test_win_safe_stem_strips_colon():
+    assert _win_safe_stem("Submachine: Legacy") == "Submachine Legacy"
+
+
+def test_win_safe_stem_strips_all_forbidden_chars():
+    assert _win_safe_stem('A\\B/C:D*E?F"G<H>I|J') == "ABCDEFGHIJ"
+
+
+def test_win_safe_stem_passthrough_for_safe_title():
+    assert _win_safe_stem("Hades") == "Hades"
+    assert _win_safe_stem("Mega Man X") == "Mega Man X"
+
+
+# ─── generate_pclauncher_inis with title_to_section ──────────────────────────
+
+def test_generate_pclauncher_inis_title_to_section_uses_dbname_in_header(tmp_path):
+    """When title_to_section is provided, section header uses the dbName (colon intact)
+    while the filename uses the Windows-safe stem."""
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    exe = PureWindowsPath(r"J:\Games\PC GAMES\Submachine Legacy\webcache.zip")
+    titles = {"Submachine Legacy": exe}
+    section_map = {"Submachine Legacy": "Submachine: Legacy"}
+
+    module_dir, written, _ = generate_pclauncher_inis(
+        "PC Games", titles, cfg, title_to_section=section_map,
+    )
+
+    ini = module_dir / "Submachine Legacy.ini"
+    assert ini in written
+    content = ini.read_text(encoding="utf-8")
+    assert "[Submachine: Legacy]" in content
+    assert "[Submachine Legacy]" not in content
+    assert r"Application=J:\Games\PC GAMES\Submachine Legacy\webcache.zip" in content
+
+
+def test_generate_pclauncher_inis_no_section_map_uses_title_as_section(tmp_path):
+    """Without title_to_section the section header equals the title (existing behaviour)."""
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    titles = {"Hades": PureWindowsPath(r"C:\Games\Hades\Hades.exe")}
+    module_dir, written, _ = generate_pclauncher_inis("PC Games", titles, cfg)
+
+    content = (module_dir / "Hades.ini").read_text(encoding="utf-8")
+    assert "[Hades]" in content
+
+
 # ─── read_pclauncher_ini_application_path ────────────────────────────────────
 
 def test_read_pclauncher_ini_application_path_new_format(tmp_path):
@@ -170,6 +226,41 @@ def test_read_pclauncher_ini_application_path_case_insensitive_section(tmp_path)
         encoding="utf-8",
     )
     assert read_pclauncher_ini_application_path(ini) == r"C:\Games\Hades\Hades.exe"
+
+
+def test_read_pclauncher_ini_application_path_section_name_override_colon(tmp_path):
+    """section_name override finds a section whose header has a colon not in the filename."""
+    ini = tmp_path / "Submachine Legacy.ini"
+    ini.write_text(
+        "[Submachine: Legacy]\nApplication=J:\\Games\\sub.exe\n",
+        encoding="utf-8",
+    )
+    # Without override: stem is "Submachine Legacy" → no match for "[Submachine: Legacy]"
+    assert read_pclauncher_ini_application_path(ini) == ""
+    # With override using the dbName: finds the section
+    assert read_pclauncher_ini_application_path(
+        ini, section_name="Submachine: Legacy"
+    ) == r"J:\Games\sub.exe"
+
+
+def test_read_pclauncher_ini_application_path_section_name_detects_old_stripped_header(tmp_path):
+    """section_name override returns '' when INI still has the colon-stripped header.
+
+    This is the core stale-detection fix: an INI written by an older SpinDoctor version
+    with [Submachine Legacy] (no colon) looks 'current' without the override but is
+    correctly flagged as missing (stale) when the dbName 'Submachine: Legacy' is used.
+    """
+    ini = tmp_path / "Submachine Legacy.ini"
+    ini.write_text(
+        "[Submachine Legacy]\nApplication=J:\\Games\\sub.exe\n",
+        encoding="utf-8",
+    )
+    # Without override: stem matches → returns the path (false "current")
+    assert read_pclauncher_ini_application_path(ini) == r"J:\Games\sub.exe"
+    # With override (dbName with colon): no match → stale detected
+    assert read_pclauncher_ini_application_path(
+        ini, section_name="Submachine: Legacy"
+    ) == ""
 
 
 # ─── _read_system_default_emulator ────────────────────────────────────────────

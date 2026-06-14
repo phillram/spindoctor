@@ -652,6 +652,26 @@ WorkingFolder=J:\Games\PC Games\Master Key
 
 The old `PC GAMES.ini` is left on disk but no longer consulted for games that have a per-game INI. The system-level filename casing (`PC GAMES.ini` vs `PC Games.ini`) is irrelevant on Windows (case-insensitive filesystem).
 
+### Section-Name Mismatch — game titles with colons or other Windows-invalid characters
+
+Windows filenames cannot contain `: * ? " < > | \ /`. When a game's HyperSpin dbName contains a colon (e.g. `Submachine: Legacy`), the INI **filename** must strip it (`Submachine Legacy.ini`) — but the INI **section header** must use the exact dbName that PCLauncher.ahk receives from RocketLauncher:
+
+```ini
+; Filename: Modules\PCLauncher\PC Games\Submachine Legacy.ini
+; (colon stripped — Windows can't store colons in filenames)
+
+[Submachine: Legacy]
+; ↑ section header MUST match the HyperSpin dbName exactly, colon included
+Application=J:\Games\PC GAMES\Submachine Legacy\webcache.zip
+WorkingFolder=J:\Games\PC GAMES\Submachine Legacy
+```
+
+If the section header also has the colon stripped (`[Submachine Legacy]`) PCLauncher.ahk cannot find it and falls through to the system-level `PC GAMES.ini`. If that file has a stale RLUI entry with an old drive letter the game fails to launch with the familiar "Cannot find this Application" error — even though a correctly-pathed per-game INI exists on disk.
+
+**SpinDoctor's handling (v2.6.2+):** `pc-rename` and `add-pc-system` consult the HyperSpin XML to find the canonical dbName for each folder-derived title. When the folder name and dbName differ only in stripped characters (e.g. folder `Submachine Legacy` ↔ dbName `Submachine: Legacy`), the per-game INI is written with the safe filesystem stem as the filename and the original dbName as the section header. The `--verbose` stale-detection path uses the same mapping, so an INI whose section header doesn't match the dbName is correctly reported as **stale** rather than "current".
+
+**Symptom to watch for:** If `pc-rename --verbose` shows a game as "current" but it still launches from the wrong path, the per-game INI may have been written with a mismatched section header by an older version of SpinDoctor (or by hand). Run `pc-rename "PC Games" --apply --overwrite-pclauncher` to rewrite all per-game INIs with correct section headers.
+
 ### Per-game vs system-level: how they differ from synthetic wheels
 
 | | Synthetic wheel (Favorites) | PC game wheel |
@@ -663,7 +683,7 @@ The old `PC GAMES.ini` is left on disk but no longer consulted for games that ha
 
 ### `read_pclauncher_ini_application_path` — stale detection
 
-SpinDoctor's dry-run mode compares each per-game INI's `Application=` value against the current scanned path. Only INIs in `[<GameName>]` format are recognised; old `[Settings]` / `ApplicationPath=` INIs return empty and are treated as stale, triggering a re-write on the next `--apply` run.
+SpinDoctor's dry-run mode compares each per-game INI's `Application=` value against the current scanned path. The lookup uses the HyperSpin dbName (colon included) as the expected section name — not the INI filename stem — so a file written with a colon-stripped section header is correctly detected as stale. Old `[Settings]` / `ApplicationPath=` INIs return empty and are also treated as stale, triggering a re-write on the next `--apply` run.
 
 ---
 

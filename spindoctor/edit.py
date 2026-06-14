@@ -679,8 +679,9 @@ def apply_rename(
     manifest_moves: list[dict] = []
 
     # 1) Pre-flight: refuse to overwrite anything.
+    # Allow src == dest (in-place section rewrite for rl-pclauncher changes).
     for ch in plan.file_changes:
-        if ch.dest is not None and ch.dest.exists():
+        if ch.dest is not None and ch.dest != ch.src and ch.dest.exists():
             raise FileExistsError(
                 f"refusing to overwrite existing target: {ch.dest}"
             )
