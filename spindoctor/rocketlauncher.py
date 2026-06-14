@@ -1157,6 +1157,31 @@ def _pick_best_exe(game_dir: Path, title_hint: str = "") -> Optional[Path]:
     return None
 
 
+def _resolve_pclauncher_exe(rom_path, title: str):
+    """Return the best Application= path for a PC game.
+
+    When *rom_path* is already a ``.exe`` it is returned as-is (preserving
+    whatever path type was passed — ``PureWindowsPath``, ``Path``, or ``str``).
+    Otherwise (e.g. ``webcache.zip`` found by RocketLauncher's extension-
+    matching) the function looks for a real executable in the same directory
+    using :func:`_pick_best_exe`.  Falls back to *rom_path* when no ``.exe``
+    is found (so the INI is at least written with *something*).
+
+    Avoids converting *rom_path* through ``Path()`` when the suffix already
+    matches ``.exe`` — that conversion would mangle Windows-style backslash
+    paths on macOS/Linux.
+    """
+    try:
+        suffix = rom_path.suffix.lower()      # PurePath / Path
+    except AttributeError:
+        import os as _os
+        suffix = _os.path.splitext(str(rom_path))[1].lower()
+    if suffix == ".exe":
+        return rom_path
+    best = _pick_best_exe(Path(rom_path).parent, title)
+    return best if best is not None else rom_path
+
+
 def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) -> bool:
     """Update ``Application=`` and ``WorkingFolder=`` in *section* of *ini_path*.
 
@@ -1590,7 +1615,10 @@ def generate_pclauncher_inis(
         if ini_path.exists() and not overwrite:
             skipped.append(ini_path)
             continue
-        ini_path.write_text(_pclauncher_ini_text(section, exe_path), encoding="utf-8")
+        # If the "rom" RL found is not an exe (e.g. webcache.zip from a GOG
+        # install), resolve the real game executable from the same folder.
+        resolved = _resolve_pclauncher_exe(exe_path, title)
+        ini_path.write_text(_pclauncher_ini_text(section, resolved), encoding="utf-8")
         written.append(ini_path)
     return module_dir, written, skipped
 

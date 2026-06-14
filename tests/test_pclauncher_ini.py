@@ -12,6 +12,7 @@ from spindoctor.rocketlauncher import (
     EMULATOR_WINDOW_TITLES,
     _FADE_TITLE_TIMEOUT,
     _get_fade_title,
+    _resolve_pclauncher_exe,
     _win_safe_stem,
     ensure_rl_game_exe,
     generate_global_emulators_ini,
@@ -982,3 +983,90 @@ def test_rewrite_pclauncher_application_section_not_found(tmp_path):
     # Section not present → no modification
     assert not changed
     assert "D:\\old.exe" in ini.read_text(encoding="utf-8")
+
+
+# ── _resolve_pclauncher_exe ───────────────────────────────────────────────────
+
+def test_resolve_pclauncher_exe_already_exe(tmp_path):
+    exe = tmp_path / "ElecHead.exe"
+    exe.write_bytes(b"\x00" * 100)
+    result = _resolve_pclauncher_exe(exe, "ElecHead")
+    assert result == exe
+
+
+def test_resolve_pclauncher_exe_zip_resolves_to_best_exe(tmp_path):
+    game_dir = tmp_path / "ElecHead"
+    game_dir.mkdir()
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 100)
+    (game_dir / "webcache.zip").write_bytes(b"\x00" * 50)
+    zip_path = game_dir / "webcache.zip"
+    result = _resolve_pclauncher_exe(zip_path, "ElecHead")
+    assert result.name == "ElecHead.exe"
+
+
+def test_resolve_pclauncher_exe_zip_fallback_when_no_exe(tmp_path):
+    game_dir = tmp_path / "MyGame"
+    game_dir.mkdir()
+    (game_dir / "webcache.zip").write_bytes(b"\x00" * 50)
+    zip_path = game_dir / "webcache.zip"
+    result = _resolve_pclauncher_exe(zip_path, "MyGame")
+    assert result == zip_path
+
+
+def test_resolve_pclauncher_exe_zip_only_excluded_falls_back(tmp_path):
+    game_dir = tmp_path / "MyGame"
+    game_dir.mkdir()
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 100)
+    (game_dir / "webcache.zip").write_bytes(b"\x00" * 50)
+    zip_path = game_dir / "webcache.zip"
+    result = _resolve_pclauncher_exe(zip_path, "MyGame")
+    # Only excluded exe found → fall back to the original rom path
+    assert result == zip_path
+
+
+# ── generate_pclauncher_inis exe-resolution ───────────────────────────────────
+
+def test_generate_pclauncher_inis_resolves_zip_to_exe(tmp_path):
+    """generate_pclauncher_inis writes the real .exe even when the rom is a zip."""
+    game_dir = tmp_path / "roms" / "PC GAMES" / "ElecHead"
+    game_dir.mkdir(parents=True)
+    (game_dir / "ElecHead.exe").write_bytes(b"\x00" * 5000)
+    (game_dir / "unins000.exe").write_bytes(b"\x00" * 100)
+    (game_dir / "webcache.zip").write_bytes(b"\x00" * 50)
+
+    config = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+        emulators_dir=str(tmp_path / "emu"),
+    )
+    zip_path = game_dir / "webcache.zip"
+    module_dir, written, skipped = generate_pclauncher_inis(
+        "PC GAMES", {"ElecHead": zip_path}, config
+    )
+    assert len(written) == 1
+    ini_text = (module_dir / "ElecHead.ini").read_text(encoding="utf-8")
+    assert "ElecHead.exe" in ini_text
+    assert "webcache.zip" not in ini_text
+
+
+def test_generate_pclauncher_inis_exe_path_unchanged(tmp_path):
+    """When the rom is already an .exe, generate_pclauncher_inis uses it directly."""
+    game_dir = tmp_path / "roms" / "PC GAMES" / "MyGame"
+    game_dir.mkdir(parents=True)
+    exe = game_dir / "MyGame.exe"
+    exe.write_bytes(b"\x00" * 100)
+
+    config = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+        emulators_dir=str(tmp_path / "emu"),
+    )
+    module_dir, written, skipped = generate_pclauncher_inis(
+        "PC GAMES", {"MyGame": exe}, config
+    )
+    assert len(written) == 1
+    ini_text = (module_dir / "MyGame.ini").read_text(encoding="utf-8")
+    assert "MyGame.exe" in ini_text
