@@ -9707,8 +9707,9 @@ class _SpinDoctorGUI:
         try:
             cfg = load_config()
             db = load_database(system, cfg.databases_dir)
-            return sorted(db.games.keys())
-        except Exception:  # noqa: BLE001
+            return sorted(db.games().keys())
+        except Exception as exc:  # noqa: BLE001
+            log.warning("_load_games_for_system(%r): %s", system, exc)
             return []
 
     def _refresh_rename_games(self) -> None:

@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI — game dropdowns (PR 292) always blank.** `_load_games_for_system` called `db.games.keys()` instead of `db.games().keys()` — `games` is a method, so accessing `.keys()` on the bound-method object raised `AttributeError`, which the bare `except Exception: return []` silently swallowed. All six game selectors (Systems rename/clone, Tools favorites, Diagnostics inspect, Metadata inspect, Metadata media, Maintenance ignore) now populate correctly. Exceptions are also logged at WARNING level to aid future diagnosis.
+
+- **PCLauncher per-game INIs — section name mismatch when game title contains colons (or other Windows-invalid filename characters).** Game names like `Submachine: Legacy` cannot appear verbatim in a Windows filename, so SpinDoctor wrote the INI as `Submachine Legacy.ini` — but also used the same colon-stripped string as the INI section header (`[Submachine Legacy]`). PCLauncher receives the exact HyperSpin dbName (`Submachine: Legacy`, colon intact) from RocketLauncher and looks for that section; not finding it, it fell through to any stale system-level `PC GAMES.ini` entries, producing `Cannot find this Application: D:\…` errors. The INI filename now uses a Windows-safe stem while the section header preserves the original dbName (e.g. filename `Submachine Legacy.ini`, section `[Submachine: Legacy]`). `pc-rename` and `add-pc-system` both consult the HyperSpin XML to discover the correct dbName before writing INIs. The stale-detection path also passes the dbName so a mismatched section is correctly reported as stale rather than "current". The rename/clone command additionally rewrites the section header inside the INI file after moving it, so a rename from `Foo` to `Foo: The Sequel` produces a correct `[Foo: The Sequel]` section.
+
 ---
 
 ## [2.6.1] - 2026-06-13

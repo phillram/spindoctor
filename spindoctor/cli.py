@@ -8275,11 +8275,23 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
             )
         else:
-            from .rocketlauncher import generate_pclauncher_inis
+            from .rocketlauncher import _win_safe_stem, generate_pclauncher_inis
+            # Map folder-derived titles to HyperSpin dbNames that may have
+            # Windows-invalid chars (e.g. colons) stripped in the folder name.
+            _add_title_to_section: dict[str, str] = {}
+            try:
+                _add_db = load_database(system_name, config.databases_dir)
+                for _dbname in _add_db.games().keys():
+                    _safe = _win_safe_stem(_dbname)
+                    if _safe in by_title and _safe != _dbname:
+                        _add_title_to_section[_safe] = _dbname
+            except Exception:  # noqa: BLE001
+                pass
             try:
                 module_dir, written, skipped = generate_pclauncher_inis(
                     system_name, by_title, config, out_base,
                     overwrite=overwrite_pclauncher,
+                    title_to_section=_add_title_to_section or None,
                 )
             except ValueError as e:
                 err_console.print(f"  [red]{e}[/red]")
@@ -8360,19 +8372,35 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
         if config.rocketlauncher_dir else None
     )
 
+    # Build a mapping from folder-derived title → HyperSpin dbName for titles
+    # that differ only in Windows-invalid characters (e.g. "Submachine Legacy"
+    # → "Submachine: Legacy").  PCLauncher looks up the section by the exact
+    # dbName, so the INI section header must use the original name with colon.
+    from .rocketlauncher import _win_safe_stem, read_pclauncher_ini_application_path
+    title_to_section: dict[str, str] = {}
+    try:
+        _xml_db = load_database(system_name, config.databases_dir)
+        for _dbname in _xml_db.games().keys():
+            _safe = _win_safe_stem(_dbname)
+            if _safe in by_title and _safe != _dbname:
+                title_to_section[_safe] = _dbname
+    except Exception:  # noqa: BLE001
+        pass  # XML not yet written — section falls back to folder-derived title
+
     # Classify each title: new (no INI), stale (INI exists but points at wrong
     # path — e.g. after a drive migration or file rename), or current (INI
     # matches the path SpinDoctor would write).
-    from .rocketlauncher import read_pclauncher_ini_application_path
     new_titles: list[str] = []
     stale_titles: list[str] = []
     current_titles: list[str] = []
     for title in sorted(by_title):
-        ini = module_dir / f"{title}.ini" if module_dir else None
+        stem = _win_safe_stem(title)
+        ini = module_dir / f"{stem}.ini" if module_dir else None
         if ini is None or not ini.exists():
             new_titles.append(title)
         else:
-            on_disk = read_pclauncher_ini_application_path(ini)
+            section = title_to_section.get(title, title)
+            on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
             expected = str(by_title[title])
             if on_disk.lower() != expected.lower():
                 stale_titles.append(title)
@@ -8392,8 +8420,10 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
             if title in new_titles_set:
                 status = "[green]new[/green]"
             elif title in stale_titles_set:
-                ini = module_dir / f"{title}.ini"  # type: ignore[operator]
-                on_disk = read_pclauncher_ini_application_path(ini)
+                stem = _win_safe_stem(title)
+                ini = module_dir / f"{stem}.ini"  # type: ignore[operator]
+                section = title_to_section.get(title, title)
+                on_disk = read_pclauncher_ini_application_path(ini, section_name=section)
                 status = f"[red]stale[/red] [dim](INI has: {on_disk})[/dim]"
             else:
                 status = "[dim]current[/dim]"
@@ -8450,6 +8480,7 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
             module_dir, written, skipped = generate_pclauncher_inis(
                 system_name, by_title, config,
                 overwrite=overwrite_pclauncher,
+                title_to_section=title_to_section or None,
             )
         except ValueError as e:
             err_console.print(f"[red]{e}[/red]")
