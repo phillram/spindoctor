@@ -971,17 +971,66 @@ it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
 
+### Scraper provider comparison
+
+SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They have very different capabilities and coverage — understanding the difference is important for diagnosing gaps.
+
+| Capability | ScreenScraper | TheGamesDB |
+|---|---|---|
+| Metadata (name, year, genre, players) | ✅ | ✅ (genre/developer require `include=genres,developers`) |
+| Wheel art | ✅ (multiple regions) | ✗ |
+| Background image | ✅ | ✗ |
+| Title screenshot | ✅ | ✗ |
+| Snap / in-game screenshot | ✅ | ✗ |
+| Fade image | ✅ | ✗ |
+| Video / trailer | ✅ | ✗ |
+| Theme (`.zip`) | ✅ (sparse) | ✗ |
+| Sound | ✅ (sparse) | ✗ |
+| Box art (front/back) | ✅ (as `artwork`) | ✅ (as `artwork`, direct CDN URLs) |
+| Newer indie PC games | ⚠️ stub entries, often no media | ✅ (e.g. Peglin 2022 found with boxart) |
+| Classic/mainstream games | ✅ full coverage | ✅ metadata + boxart |
+
+**TheGamesDB is the better fallback for newer PC/indie games.** For classic consoles ScreenScraper has deeper media coverage. SpinDoctor queries both and merges the best result; `--source screenscraper|thegamesdb` forces a single provider.
+
 ### ScreenScraper API response shape variations
 
-ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object whose fields are not consistently typed — the same field name can be a dict in one system's response and a list of `{region, text}` objects in another. Known cases:
+ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object whose fields are not consistently typed — the same field name can be a dict in one system's response and a list of `{region, text}` objects in another. Verified live against GameCube, DS, N64, and PC systems — `dates` is **always a list** in current API responses:
 
-| Field | Dict shape | List shape | When list is returned |
-|-------|-----------|------------|-----------------------|
-| `dates` | `{"date_us": "YYYY-MM-DD", "date_wor": "…"}` | `[{"region": "us", "text": "YYYY-MM-DD"}, …]` | Observed on PC systems (e.g. "PC GAMES") |
-| `editeur` | `{"text": "Publisher Name"}` | *(not yet observed)* | — |
-| `joueurs` | `{"text": "2"}` | plain string `"2"` | Varies by game entry |
+| Field | Observed shape | Notes |
+|-------|---------------|-------|
+| `dates` | list `[{"region": "us", "text": "YYYY-MM-DD"}, …]` | Always a list; never a dict in any system tested |
+| `editeur` | dict `{"text": "Publisher Name"}` | |
+| `joueurs` | dict `{"text": "2"}` or plain string `"2"` | Varies by game entry |
 
-SpinDoctor's `_parse_screenscraper` in `scraper.py` uses `isinstance()` guards on each of these fields rather than assuming a fixed shape. When adding new field parsers, always guard against both dict and list forms.
+SpinDoctor's `_parse_screenscraper` uses `isinstance()` guards on each of these. When adding new field parsers, always guard against both dict and list forms.
+
+### ScreenScraper media URL format
+
+All ScreenScraper media is served via PHP scripts (`mediaJeu.php`, `mediaVideoJeu.php`). The URL extension is always `.php` regardless of actual content type:
+
+```
+https://neoclone.screenscraper.fr/api2/mediaJeu.php?devid=…&systemeid=13&jeuid=4803&media=wheel(us)
+```
+
+The file content is a real PNG/JPEG/MP4. `MediaDownloader._download_to` must **not** use the URL path suffix (`.php`) to rename the destination — doing so saves `Pikmin.php` instead of `Pikmin.png` and HyperSpin cannot find it. The extension-override logic is restricted to known media extensions (`.png`, `.jpg`, `.mp4`, etc.) to prevent this.
+
+### ScreenScraper system IDs (cabinet-relevant)
+
+| System | ScreenScraper ID | TheGamesDB ID |
+|---|---|---|
+| MAME / Arcade | 75 | 1 |
+| NES | 3 | 7 |
+| SNES | 4 | 6 |
+| Nintendo 64 | 14 | 3 |
+| Nintendo GameCube | 13 | 2 |
+| Nintendo DS | 15 | 8 |
+| Game Boy | 9 | 4 |
+| Game Boy Advance | 12 | 5 |
+| Sega Genesis / Mega Drive | 1 | 18 |
+| PlayStation | 57 | 10 |
+| PlayStation 2 | 58 | 11 |
+| PC / Windows (`PC GAMES`) | 138 | 1 |
+| PC / DOS | 135 | 1 |
 
 ---
 

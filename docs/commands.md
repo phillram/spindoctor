@@ -135,7 +135,22 @@ When a media slot has multiple candidates (different regions / artwork variants)
 - `--skip-ambiguous` — log each ambiguous slot as a skip and move on. Required from non-TTY contexts (cron, CI, the GUI). Mirrors `fetch-meta --skip-ambiguous`.
 - *Default (neither flag)* — auto-pick the first candidate. Fast; risks the occasional wrong pick.
 
-`theme`, `fade`, and `sound` come from ScreenScraper only (TheGamesDB has no equivalents) and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
+**Provider capabilities** — what each scraper actually downloads:
+
+| Type | ScreenScraper | TheGamesDB |
+|---|---|---|
+| `wheel` | ✅ (multiple regions) | ✗ |
+| `background` | ✅ | ✗ |
+| `artwork` (box art) | ✅ | ✅ (front/back, direct CDN links) |
+| `title` | ✅ | ✗ |
+| `snap` | ✅ | ✗ |
+| `fade` | ✅ | ✗ |
+| `video` / `trailer` | ✅ | ✗ |
+| `theme` / `sound` | ✅ (sparse) | ✗ |
+
+TheGamesDB only provides boxart (`artwork` slot). For all other types, ScreenScraper is required. TheGamesDB is useful as a fallback for newer indie PC games that have stub or no entries on ScreenScraper (e.g. a 2022 indie title may have full metadata + boxart on TheGamesDB but no wheel or video on ScreenScraper).
+
+`theme`, `fade`, and `sound` come from ScreenScraper only and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
 
 ### `media-add`
 
