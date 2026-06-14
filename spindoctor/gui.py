@@ -7328,6 +7328,34 @@ class _SpinDoctorGUI:
         self.ttk.Checkbutton(
             sys_row, text="All systems", variable=self._meta_all_var,
         ).pack(side="left", padx=6)
+
+        # Game filter row — leave blank to process all games in the system.
+        # Populated automatically when a system is selected.
+        game_row = self.ttk.Frame(frame)
+        game_row.pack(fill="x", padx=6, pady=(2, 0))
+        self.ttk.Label(game_row, text="Game (optional — blank = all games)").pack(
+            side="left",
+        )
+        self._meta_game_var = self.tk.StringVar()
+        self._meta_game_combo = self.ttk.Combobox(
+            game_row, textvariable=self._meta_game_var,
+            state="normal", width=40,
+        )
+        self._meta_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            game_row, text="✕",
+            command=lambda: self._meta_game_var.set(""),
+            width=2,
+        ).pack(side="left")
+        self.ttk.Label(
+            game_row,
+            text="← clear to process all games",
+            foreground=_FG_DIMMER,
+        ).pack(side="left", padx=4)
+        # Populate game list when the system selection changes.
+        self._meta_system_var.trace_add(
+            "write", lambda *_: self._populate_meta_game_list()
+        )
         # Multi-system selector — for cabinets with 20+ systems where
         # the user wants to refresh metadata for an arbitrary subset
         # (often "the 5 systems whose scraper data just got better"),
@@ -7466,7 +7494,7 @@ class _SpinDoctorGUI:
         self._meta_source_var = self.tk.StringVar(value="config default")
         self.ttk.Combobox(
             meta_opts_row, textvariable=self._meta_source_var,
-            values=["config default", "screenscraper", "thegamesdb"],
+            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self.ttk.Label(meta_opts_row, text="Threshold").pack(
@@ -7524,7 +7552,7 @@ class _SpinDoctorGUI:
         self._media_source_var = self.tk.StringVar(value="config default")
         self.ttk.Combobox(
             media_opts_row, textvariable=self._media_source_var,
-            values=["config default", "screenscraper", "thegamesdb"],
+            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
@@ -7803,6 +7831,20 @@ class _SpinDoctorGUI:
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
+    def _populate_meta_game_list(self) -> None:
+        """Refresh the Game dropdown from the selected system's database."""
+        system = self._meta_system_var.get().strip()
+        if not system:
+            self._meta_game_combo["values"] = []
+            return
+        try:
+            cfg = load_config()
+            db = load_database(system, cfg.databases_dir)
+            names = sorted(db.games().keys())
+            self._meta_game_combo["values"] = names
+        except Exception:  # noqa: BLE001
+            self._meta_game_combo["values"] = []
+
     def _meta_system_args(self) -> Optional[list[str]]:
         """Return the `--system X` or `--all` argv tail, or None on error."""
         if self._meta_all_var.get():
@@ -7816,6 +7858,11 @@ class _SpinDoctorGUI:
             return None
         return ["--system", system]
 
+    def _meta_game_args(self) -> list[str]:
+        """Return `["--game", name]` if a single game is selected, else []."""
+        game = self._meta_game_var.get().strip()
+        return ["--game", game] if game else []
+
     def _build_fetch_meta_args(self, sys_args: list[str]) -> Optional[list[str]]:
         """Compose the full `fetch-meta` argv given a system selector.
 
@@ -7824,7 +7871,7 @@ class _SpinDoctorGUI:
         Returns None if the threshold field fails validation (caller
         renders the error and aborts).
         """
-        args = ["fetch-meta", *sys_args]
+        args = ["fetch-meta", *sys_args, *self._meta_game_args()]
         if self._meta_auto_best_var.get():
             args.append("--auto-best")
         else:
@@ -7837,8 +7884,9 @@ class _SpinDoctorGUI:
         if self._meta_no_cache_var.get():
             args.append("--no-cache")
         source = self._meta_source_var.get().strip()
-        if source and source != "config default":
-            args += ["--source", source]
+        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        if source_cli:
+            args += ["--source", source_cli]
         thresh = self._meta_threshold_var.get().strip()
         if thresh:
             try:
@@ -8025,15 +8073,16 @@ class _SpinDoctorGUI:
         sys_args = self._meta_system_args()
         if sys_args is None:
             return
-        args = ["fetch-media", *sys_args]
+        args = ["fetch-media", *sys_args, *self._meta_game_args()]
         selected_types = ",".join(
             t for t, v in self._meta_type_vars.items() if v.get()
         )
         if selected_types:
             args += ["--types", selected_types]
         source = self._media_source_var.get().strip()
-        if source and source != "config default":
-            args += ["--source", source]
+        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        if source_cli:
+            args += ["--source", source_cli]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
         if self._global_apply_var.get():

@@ -95,10 +95,12 @@ spindoctor fetch-meta --all --auto-best --apply              :: never prompt —
 spindoctor fetch-meta --all --skip-ambiguous --apply         :: log ambiguous matches, don't prompt or auto-pick
 spindoctor fetch-meta --system SNES --all-games --apply      :: refresh complete entries too
 spindoctor fetch-meta --system NES --source thegamesdb --apply  :: force one scraper
+spindoctor fetch-meta --system NES --source both --apply         :: explicit combined mode
 spindoctor fetch-meta --all --auto-best --threshold 0.9 --apply :: stricter auto-accept cut-off
+spindoctor fetch-meta --system "Sony PlayStation 2" --game "Dark Cloud" --apply  :: single game
 ```
 
-`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
@@ -123,9 +125,12 @@ spindoctor fetch-media --system SNES --types trailer --overwrite --apply
 spindoctor fetch-media --system MAME --types theme,fade,sound --apply
 spindoctor fetch-media --all --skip-ambiguous --apply    :: skip multi-candidate slots
 spindoctor fetch-media --system NES --source screenscraper --apply  :: force one scraper
+spindoctor fetch-media --system NES --source both --apply           :: explicit combined mode
+spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --apply  :: single game
+spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --types video --apply  :: just the video
 ```
 
-`--source screenscraper|thegamesdb` restricts the run to a single provider (default: provider order from config).
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`).
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 

@@ -30,6 +30,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **GUI Fetch-media Source dropdown.** Step 3 — Fetch media in the Metadata & Media tab now has a **Source** dropdown (`screenscraper` / `thegamesdb` / config default), matching the equivalent control already present on the Fetch-meta step. Selecting a specific provider passes `--source <provider>` to `fetch-media`; "config default" sends no flag and lets the project config decide.
 
+- **ScreenScraper + TheGamesDB combined client — SS primary, TGDB fills gaps.** `CombinedMetadataClient` queries both providers per game: ScreenScraper metadata and media take full priority; any slot that SS leaves empty (e.g. a missing wheel image) is filled from TheGamesDB. If SS finds nothing at all, the full TGDB result is used as fallback. `build_client()` now automatically returns the combined client when both credential sets are configured and no `--source` is forced. Previously running without `--source` only queried ScreenScraper.
+
+- **`fetch-meta` and `fetch-media` now accept `--game` to target a single game.** `--game "Game Name"` (requires `--system`) limits the run to that one entry in the database, skipping all other games. Useful for re-scraping a single problem game or downloading missing media for one title without touching the rest of the system. Also accepted: `--source both` on both commands.
+
+- **GUI Game picker on the Metadata & Media tab.** A **Game** dropdown appears below the System selector. When a system is chosen, the dropdown auto-populates with every game name from that system's database. Leave it blank to process all games (the existing behaviour). When a game is selected, `--game <name>` is passed to both `fetch-meta` and `fetch-media`.
+
 ---
 
 ## [2.6.3] - 2026-06-14

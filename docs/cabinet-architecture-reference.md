@@ -991,7 +991,7 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 | Classic/mainstream games | ✅ full coverage | ✅ metadata + clearlogo + boxart |
 | Systems covered | 249 (see `SCREENSCRAPER_SYSTEMS`) | 153 (see `THEGAMESDB_PLATFORMS`) |
 
-**TheGamesDB is the better fallback for newer PC/indie games** and provides clearlogos (wheel slot) and screenshots (snap slot) via its separate `Games/Images` endpoint. For classic consoles ScreenScraper has deeper media coverage and more slot types. SpinDoctor queries both and merges the best result; `--source screenscraper|thegamesdb` forces a single provider (available in both CLI and GUI).
+**ScreenScraper is the primary provider; TheGamesDB is the complementary fallback.** The default `CombinedMetadataClient` queries both per game: SS metadata and every SS media slot take priority; TGDB fills any slot SS left empty (e.g. wheel clearlogo, snap screenshot). If SS finds nothing at all, the full TGDB result is used. `--source screenscraper|thegamesdb|both` forces a specific behaviour (available in both CLI and GUI). TheGamesDB is especially useful for newer indie PC games that have stub-only entries on ScreenScraper.
 
 #### TheGamesDB image slots
 
