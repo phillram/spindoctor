@@ -1072,6 +1072,33 @@ def generate_system_db_stubs(
 
 # ─── PCLauncher per-game INIs ─────────────────────────────────────────────────
 
+# Characters Windows forbids in filenames.
+_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+
+# Lowercase stem-prefixes that identify non-game executables (uninstallers,
+# setup helpers, redistributables, etc.).  Used by list_exe_candidates and
+# _pick_best_exe to separate "recommended" launches from noise.
+_EXE_EXCLUSION_PREFIXES: tuple[str, ...] = (
+    "unins", "uninst", "setup", "install",
+    "vc_redist", "vcredist", "dxsetup", "directx",
+    "crashpad", "dotnet", "helper", "updater",
+    "unitycrashhandler", "cef",
+)
+
+
+def _win_safe_stem(title: str) -> str:
+    """Strip Windows-invalid characters from *title* to produce a safe INI stem.
+
+    The result is used as the INI **filename** only.  The INI **section
+    header** (``[<name>]``) must still use the original HyperSpin dbName
+    (which may contain colons) so PCLauncher.ahk can find it.
+    """
+    out = title
+    for ch in _WIN_FILENAME_FORBIDDEN:
+        out = out.replace(ch, "")
+    return out.strip().rstrip(".")
+
+
 def _pclauncher_ini_text(game_name: str, executable) -> str:
     """Render the PCLauncher per-game INI body for *game_name* pointing at *executable*.
 
@@ -1087,17 +1114,106 @@ def _pclauncher_ini_text(game_name: str, executable) -> str:
     )
 
 
-def read_pclauncher_ini_application_path(ini_path: Path) -> str:
+def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
+    """Return all .exe files in *game_dir*, recommended first.
+
+    "Recommended" means the stem does not match any prefix in
+    :data:`_EXE_EXCLUSION_PREFIXES`.  Within each tier, files whose stem
+    most closely matches *title_hint* sort first; otherwise alphabetical.
+    Non-recursive — only the immediate directory is scanned.
+    """
+    if not game_dir.is_dir():
+        return []
+    hint_norm = re.sub(r"[^a-z0-9]", "", title_hint.lower())
+
+    def _sort_key(p: Path) -> tuple:
+        excluded = int(
+            any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES)
+        )
+        stem_norm = re.sub(r"[^a-z0-9]", "", p.stem.lower())
+        if stem_norm == hint_norm:
+            similarity = 0
+        elif hint_norm and (stem_norm in hint_norm or hint_norm in stem_norm):
+            similarity = 1
+        else:
+            similarity = 2
+        return (excluded, similarity, p.name.lower())
+
+    return sorted(
+        (p for p in game_dir.glob("*.exe") if p.is_file()),
+        key=_sort_key,
+    )
+
+
+def _pick_best_exe(game_dir: Path, title_hint: str = "") -> Optional[Path]:
+    """Return the most-likely game executable in *game_dir*, or None.
+
+    Delegates to :func:`list_exe_candidates` and returns the first entry
+    that is *not* in the excluded-prefix set.
+    """
+    for p in list_exe_candidates(game_dir, title_hint):
+        if not any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES):
+            return p
+    return None
+
+
+def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) -> bool:
+    """Update ``Application=`` and ``WorkingFolder=`` in *section* of *ini_path*.
+
+    Only those two keys are modified; all other keys (``FadeTitle=``, etc.)
+    survive verbatim.  Line endings are preserved.  Returns ``True`` when the
+    file was actually changed, ``False`` when it was unchanged or missing.
+    """
+    if not ini_path.exists():
+        return False
+    lines = ini_path.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    in_section = False
+    new_lines: list = []
+    changed = False
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        eol = line[len(stripped):]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped[1:-1].lower() == section.lower()
+        if in_section and re.match(r"(?i)^Application\s*=", stripped):
+            want = f"Application={new_exe}"
+            if stripped != want:
+                new_lines.append(want + eol)
+                changed = True
+                continue
+        if in_section and re.match(r"(?i)^WorkingFolder\s*=", stripped):
+            want = f"WorkingFolder={new_exe.parent}"
+            if stripped != want:
+                new_lines.append(want + eol)
+                changed = True
+                continue
+        new_lines.append(line)
+    if changed:
+        ini_path.write_text("".join(new_lines), encoding="utf-8")
+    return changed
+
+
+def read_pclauncher_ini_application_path(
+    ini_path: Path,
+    section_name: Optional[str] = None,
+) -> str:
     """Return the Application= value from the ``[<game_name>]`` section of a per-game
     PCLauncher INI, or '' if not found.
 
-    Uses ``ini_path.stem`` as the expected section name (matching what
-    PCLauncher.ahk looks up).  INIs written in the old ``[Settings] /
-    ApplicationPath=`` format return '' so they are treated as stale and
-    regenerated on the next ``--overwrite-pclauncher`` run.
+    *section_name* overrides the section to search for.  When omitted the
+    function falls back to ``ini_path.stem`` — which is correct only when
+    the HyperSpin dbName and the INI filename stem are identical.  Pass the
+    actual dbName (which may contain colons) so stale-detection works even
+    when the filename had those characters stripped.
+
+    INIs written in the old ``[Settings] / ApplicationPath=`` format return
+    '' so they are treated as stale and regenerated on the next
+    ``--overwrite-pclauncher`` run.
     """
     try:
-        game_name = ini_path.stem.lower()
+        game_name = (section_name if section_name else ini_path.stem).lower()
         in_game_section = False
         for line in ini_path.read_text(encoding="utf-8", errors="replace").splitlines():
             stripped = line.strip()
@@ -1429,13 +1545,23 @@ def generate_pclauncher_inis(
     config: Config,
     output_base: Optional[Path] = None,
     overwrite: bool = False,
+    title_to_section: Optional[dict] = None,
 ) -> tuple[Path, list[Path], list[Path]]:
     """Write per-game PCLauncher INIs for *system_name*.
 
     Each INI lives at
-    ``<RL>/Modules/PCLauncher/<system>/<title>.ini`` and tells the
+    ``<RL>/Modules/PCLauncher/<system>/<stem>.ini`` and tells the
     PCLauncher AHK module which executable to actually launch when
-    HyperSpin asks RocketLauncher to run *<title>*.
+    HyperSpin asks RocketLauncher to run the game.
+
+    *title_to_section* maps a folder-derived title (which may have had
+    Windows-invalid characters stripped) to the exact HyperSpin dbName that
+    PCLauncher.ahk uses when looking up the ``[<section>]`` header.  When a
+    mapping is provided the INI **filename** uses the Windows-safe stem while
+    the **section header** uses the original dbName (e.g. filename
+    ``Submachine Legacy.ini`` but section ``[Submachine: Legacy]``).  This
+    ensures PCLauncher finds the correct section when the game name contains
+    colons or other characters that are invalid in Windows filenames.
 
     Returns ``(module_dir, written_paths, skipped_paths)``.  Existing INIs
     are left alone unless *overwrite* is set so user edits survive a
@@ -1454,14 +1580,17 @@ def generate_pclauncher_inis(
     module_dir = rl_base / "Modules" / "PCLauncher" / system_name
     module_dir.mkdir(parents=True, exist_ok=True)
 
+    _sec = title_to_section or {}
     written: list[Path] = []
     skipped: list[Path] = []
     for title, exe_path in sorted(title_to_path.items()):
-        ini_path = module_dir / f"{title}.ini"
+        stem = _win_safe_stem(title)
+        ini_path = module_dir / f"{stem}.ini"
+        section = _sec.get(title, title)
         if ini_path.exists() and not overwrite:
             skipped.append(ini_path)
             continue
-        ini_path.write_text(_pclauncher_ini_text(title, exe_path), encoding="utf-8")
+        ini_path.write_text(_pclauncher_ini_text(section, exe_path), encoding="utf-8")
         written.append(ini_path)
     return module_dir, written, skipped
 
