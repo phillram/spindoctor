@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.6.3] - 2026-06-14
+
 ### Fixed
 
 - **`pc-rename` and `add-pc-system` now write the correct `.exe` when the "rom" RL finds is a non-exe file.** RocketLauncher's extension-matching picks up whichever file matches the configured ROM extensions — for GOG games this is often `webcache.zip`, a cache file, or a redistributable archive rather than the actual game executable. SpinDoctor was forwarding this path verbatim to `Application=` in the per-game PCLauncher INI, causing the game to launch the wrong file. Both commands now call `_pick_best_exe` on the game folder whenever the proposed path is not an `.exe`: they filter out uninstallers, setup helpers, and other non-game executables, then prefer the file whose name best matches the game title. Applies to all write paths: initial `add-pc-system`, `pc-rename --apply`, and `pc-rename --overwrite-pclauncher --apply`. The `--verbose` table now also shows the resolved exe (not the raw ROM path) so stale entries are correctly flagged — a game whose INI was already fixed with `pc-fix-exe` no longer appears as "stale" on the next scan.
@@ -1466,7 +1470,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.6.3...HEAD
+[2.6.3]: https://github.com/phillram/spindoctor/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/phillram/spindoctor/compare/v2.6.1...v2.6.2
 [2.6.1]: https://github.com/phillram/spindoctor/compare/v2.6.0...v2.6.1
 [2.6.0]: https://github.com/phillram/spindoctor/compare/v2.5.3...v2.6.0
