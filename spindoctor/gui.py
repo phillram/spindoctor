@@ -41,6 +41,7 @@ from . import __app_name__, __version__
 from .config import (
     CONFIG_DIR, CONFIG_FILE, get_systems, load_config, save_config,
 )
+from .database import load_database
 from ._utils import format_bytes as _format_bytes_util
 
 
@@ -4881,7 +4882,7 @@ class _SpinDoctorGUI:
         if not sys_ or not rom:
             self.messagebox.showwarning(
                 "Missing arguments",
-                "Pick a system and type a ROM name.",
+                "Pick a system and select a game.",
             )
             return
         self._run_cli("spindoctor", ["fav", "add", sys_, rom])
@@ -4892,7 +4893,7 @@ class _SpinDoctorGUI:
         if not sys_ or not rom:
             self.messagebox.showwarning(
                 "Missing arguments",
-                "Pick a system and type a ROM name.",
+                "Pick a system and select a game.",
             )
             return
         # Confirm before removing — matches the pattern used by the
@@ -5497,18 +5498,26 @@ class _SpinDoctorGUI:
             state="readonly", width=24,
         )
         self._inspect_system_combo.pack(side="left", padx=6)
+        self._inspect_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_inspect_games(),
+        )
         self.ttk.Label(inspect_row, text="ROM (optional)").pack(
             side="left", padx=(8, 0),
         )
         self._inspect_rom_var = self.tk.StringVar()
-        _inspect_entry = self.ttk.Entry(
+        self._inspect_rom_combo = self.ttk.Combobox(
             inspect_row, textvariable=self._inspect_rom_var,
+            state="readonly",
         )
-        _inspect_entry.pack(side="left", fill="x", expand=True, padx=6)
-        _inspect_entry.bind("<Return>", lambda _e: self._run_inspect())
+        self._inspect_rom_combo.pack(side="left", fill="x", expand=True, padx=6)
+        self._inspect_rom_combo.bind("<Return>", lambda _e: self._run_inspect())
+        self.ttk.Button(
+            inspect_row, text="↻", width=3,
+            command=self._refresh_inspect_games,
+        ).pack(side="left")
         self.ttk.Button(
             inspect_row, text="Inspect", command=self._run_inspect,
-        ).pack(side="left", padx=6)
+        ).pack(side="left", padx=(6, 0))
 
         return frame
 
@@ -7179,18 +7188,26 @@ class _SpinDoctorGUI:
             state="readonly", width=24,
         )
         self._inspect_system_combo.pack(side="left", padx=6)
+        self._inspect_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_inspect_games(),
+        )
         self.ttk.Label(inspect_row, text="ROM (optional)").pack(
             side="left", padx=(8, 0),
         )
         self._inspect_rom_var = self.tk.StringVar()
-        _inspect_entry = self.ttk.Entry(
+        self._inspect_rom_combo = self.ttk.Combobox(
             inspect_row, textvariable=self._inspect_rom_var,
+            state="readonly",
         )
-        _inspect_entry.pack(side="left", fill="x", expand=True, padx=6)
-        _inspect_entry.bind("<Return>", lambda _e: self._run_inspect())
+        self._inspect_rom_combo.pack(side="left", fill="x", expand=True, padx=6)
+        self._inspect_rom_combo.bind("<Return>", lambda _e: self._run_inspect())
+        self.ttk.Button(
+            inspect_row, text="↻", width=3,
+            command=self._refresh_inspect_games,
+        ).pack(side="left")
         self.ttk.Button(
             inspect_row, text="Inspect", command=self._run_inspect,
-        ).pack(side="left", padx=6)
+        ).pack(side="left", padx=(6, 0))
 
         return frame
 
@@ -7615,11 +7632,20 @@ class _SpinDoctorGUI:
             state="readonly", width=22,
         )
         self._madd_system_combo.pack(side="left", padx=6)
+        self._madd_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_madd_games(),
+        )
         self.ttk.Label(madd_row1, text="Game").pack(side="left", padx=(8, 0))
         self._madd_game_var = self.tk.StringVar()
-        self.ttk.Entry(
-            madd_row1, textvariable=self._madd_game_var, width=20,
-        ).pack(side="left", padx=6)
+        self._madd_game_combo = self.ttk.Combobox(
+            madd_row1, textvariable=self._madd_game_var,
+            state="readonly", width=20,
+        )
+        self._madd_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            madd_row1, text="↻", width=3,
+            command=self._refresh_madd_games,
+        ).pack(side="left")
         self.ttk.Label(madd_row1, text="Type").pack(side="left", padx=(8, 0))
         self._madd_type_var = self.tk.StringVar(value="wheel")
         self.ttk.Combobox(
@@ -7679,7 +7705,7 @@ class _SpinDoctorGUI:
         if not (sys_ and game and path):
             self.messagebox.showwarning(
                 "Missing arguments",
-                "Pick a system, type a game name, and pick a file.",
+                "Pick a system, select a game, and pick a file.",
             )
             return
         if not Path(path).exists():
@@ -8332,11 +8358,20 @@ class _SpinDoctorGUI:
             state="readonly", width=24,
         )
         self._ignore_system_combo.pack(side="left", padx=6)
+        self._ignore_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_ignore_games(),
+        )
         self.ttk.Label(ign_top, text="Game name").pack(side="left", padx=(10, 0))
         self._ignore_game_var = self.tk.StringVar()
-        self.ttk.Entry(
-            ign_top, textvariable=self._ignore_game_var, width=30,
-        ).pack(side="left", padx=6)
+        self._ignore_game_combo = self.ttk.Combobox(
+            ign_top, textvariable=self._ignore_game_var,
+            state="readonly", width=30,
+        )
+        self._ignore_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            ign_top, text="↻", width=3,
+            command=self._refresh_ignore_games,
+        ).pack(side="left")
 
         ign_btns = self.ttk.Frame(ign_frame)
         ign_btns.pack(anchor="w", padx=6, pady=(4, 6))
@@ -8846,7 +8881,7 @@ class _SpinDoctorGUI:
         if not game:
             self.messagebox.showwarning(
                 "Game name required",
-                "Type the game name (e.g. 'Big Bug Adventure') first.",
+                "Select a system first to load the game list, then pick a game.",
             )
             return
         args = ["ignore", sub, game]
@@ -9237,11 +9272,20 @@ class _SpinDoctorGUI:
             state="readonly", width=20,
         )
         self._rename_system_combo.pack(side="left", padx=6)
+        self._rename_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_rename_games(),
+        )
         self.ttk.Label(rc_row, text="Game").pack(side="left", padx=(8, 0))
         self._rename_game_var = self.tk.StringVar()
-        self.ttk.Entry(
-            rc_row, textvariable=self._rename_game_var, width=20,
-        ).pack(side="left", padx=6)
+        self._rename_game_combo = self.ttk.Combobox(
+            rc_row, textvariable=self._rename_game_var,
+            state="readonly", width=30,
+        )
+        self._rename_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            rc_row, text="↻", width=3,
+            command=self._refresh_rename_games,
+        ).pack(side="left")
         self.ttk.Label(rc_row, text="→ New name").pack(side="left", padx=(8, 0))
         self._rename_to_var = self.tk.StringVar()
         self.ttk.Entry(
@@ -9612,6 +9656,50 @@ class _SpinDoctorGUI:
             return
         self._run_cli("spindoctor", ["organize", sys_, "--undo"])
 
+    def _load_games_for_system(self, system: str) -> list:
+        try:
+            cfg = load_config()
+            db = load_database(system, cfg.databases_dir)
+            return sorted(db.games.keys())
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _refresh_rename_games(self) -> None:
+        system = self._rename_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        self._rename_game_combo["values"] = games
+        self._rename_game_var.set(games[0] if games else "")
+
+    def _refresh_fav_games(self) -> None:
+        system = self._fav_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        self._fav_rom_combo["values"] = games
+        self._fav_rom_var.set(games[0] if games else "")
+
+    def _refresh_inspect_games(self) -> None:
+        system = self._inspect_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        combo = getattr(self, "_inspect_rom_combo", None)
+        if combo is None:
+            return
+        combo["values"] = [""] + games
+        self._inspect_rom_var.set("")
+
+    def _refresh_madd_games(self) -> None:
+        system = self._madd_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        self._madd_game_combo["values"] = games
+        self._madd_game_var.set(games[0] if games else "")
+
+    def _refresh_ignore_games(self) -> None:
+        system = self._ignore_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        combo = getattr(self, "_ignore_game_combo", None)
+        if combo is None:
+            return
+        combo["values"] = games
+        self._ignore_game_var.set(games[0] if games else "")
+
     def _run_rename_or_clone(self, verb: str) -> None:
         """Shared dispatcher for the `rename` / `clone` buttons.
 
@@ -9624,7 +9712,7 @@ class _SpinDoctorGUI:
         if not (sys_ and game and to):
             self.messagebox.showwarning(
                 "Missing arguments",
-                "Pick a system and fill in both Game and New name.",
+                "Pick a system, select a game, and fill in New name.",
             )
             return
         args = [verb, "--system", sys_, "--game", game, "--to", to]
@@ -10908,13 +10996,21 @@ class _SpinDoctorGUI:
             state="readonly", width=22,
         )
         self._fav_system_combo.pack(side="left", padx=6)
-        self.ttk.Label(fav_row, text="ROM").pack(side="left", padx=(8, 0))
-        self._fav_rom_var = self.tk.StringVar()
-        _fav_entry = self.ttk.Entry(
-            fav_row, textvariable=self._fav_rom_var,
+        self._fav_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_fav_games(),
         )
-        _fav_entry.pack(side="left", fill="x", expand=True, padx=6)
-        _fav_entry.bind("<Return>", lambda _e: self._fav_add())
+        self.ttk.Label(fav_row, text="Game").pack(side="left", padx=(8, 0))
+        self._fav_rom_var = self.tk.StringVar()
+        self._fav_rom_combo = self.ttk.Combobox(
+            fav_row, textvariable=self._fav_rom_var,
+            state="readonly",
+        )
+        self._fav_rom_combo.pack(side="left", fill="x", expand=True, padx=6)
+        self._fav_rom_combo.bind("<Return>", lambda _e: self._fav_add())
+        self.ttk.Button(
+            fav_row, text="↻", width=3,
+            command=self._refresh_fav_games,
+        ).pack(side="left", padx=(0, 6))
         self.ttk.Button(
             fav_row, text="Add", command=self._fav_add,
         ).pack(side="left")

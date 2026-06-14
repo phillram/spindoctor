@@ -55,6 +55,8 @@ spindoctor audit --system MAME --show-matched  :: also print the fully-matched c
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
 
+> **GUI alternative:** the **Diagnostics** and **Metadata & Media** tabs both expose an Inspect form. Select a system to auto-populate the ROM dropdown from that system's database; leave blank (first item) to run `--all`. Click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
+
 ```bat
 spindoctor inspect --system MAME --game 1942
 spindoctor inspect --system SNES --no-path                  :: compact view
@@ -138,6 +140,8 @@ When a media slot has multiple candidates (different regions / artwork variants)
 ### `media-add`
 
 Manually drop a local file into the right HyperSpin media slot. Dry-run by default — the preview prints the exact destination path; re-run with `--apply` to commit.
+
+> **GUI alternative:** **Metadata & Media → Add one local media file**. System and game dropdowns auto-populate from the database; click **↻** to refresh the game list. See [GUI walkthrough](gui.md).
 
 ```bat
 spindoctor media-add --system MAME --game 1942 --type trailer ^
@@ -235,6 +239,8 @@ spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 The plan refuses to overwrite anything already at the target name. Each apply writes a manifest with each move recorded so undo can reverse it back to the source paths.
 
+> **GUI alternative:** the **Systems** tab → **Step 3 — Rename or clone a game** wraps both commands. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh the list. See [GUI walkthrough](gui.md).
+
 ### `clone`
 
 Duplicate a base ROM as a hack / translation variant. Same pipeline as `rename`, but the ROM and every media file are copied (not moved) and a new `<game>` entry is appended alongside the original. Useful for hacks or fan-translations that share assets with the base game.
@@ -247,6 +253,8 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 ```
 
 Undo deletes only the copies — the original is untouched.
+
+> **GUI alternative:** the **Systems** tab → **Step 3** wraps clone with the same game dropdown populated from the system's database. See [GUI walkthrough](gui.md).
 
 ---
 
@@ -662,6 +670,8 @@ spindoctor fav clear --apply      :: remove the Favorites wheel and empty the st
 ```
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
+
+> **GUI alternative:** the **Tools** tab → **Step 4 — Manage favorites** wraps `fav add / remove / list`. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin. See [GUI walkthrough](gui.md).
 
 **Sync sources & speed** — `fav sync` (run automatically at the start of every `fav rebuild`) imports favorites from three places per console, in order: a `favorite="1"` attribute in the system's database XML, a `<System>_Favorites.ini` (HyperSpin F-key format), and a `favorites.txt` (RocketLauncher format). It does a fast text pre-scan and only parses a console's database when one of those sources is present, so consoles with no favorites add almost nothing to the runtime. While crawling it shows a live `Scanning <System> (i/N)…` counter; `--verbose`/`-v` prints per-console detail and (during rebuild) each media file mirrored.
 
@@ -1564,7 +1574,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 ### `ignore`
 
-> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
 
 Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
 
