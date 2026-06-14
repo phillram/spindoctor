@@ -422,7 +422,7 @@ Without `--apply` the command shows the current `Application=` and the proposed 
 
 If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path.
 
-**GUI alternative:** the **Maintenance** tab has a "Fix PC game executable" panel with a system/game picker and a candidate list populated from the game folder.
+**GUI alternative:** the **Systems** tab has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with a system/game picker and a candidate list populated from the game folder.
 
 ### `migrate`
 
