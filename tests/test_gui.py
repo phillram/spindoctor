@@ -236,7 +236,9 @@ def test_build_fetch_meta_args_round_trip():
         _meta_no_cache_var = _FakeVar(True)
         _meta_source_var = _FakeVar("screenscraper")
         _meta_threshold_var = _FakeVar("0.5")
+        _meta_game_var = _FakeVar("")
         _global_apply_var = _FakeVar(True)   # global apply replaced per-tab _meta_apply_var
+        _meta_game_args = staticmethod(lambda: [])
         messagebox = type("M", (), {
             "showerror": staticmethod(lambda *_a, **_k: None),
         })
@@ -267,7 +269,9 @@ def test_build_fetch_meta_args_rejects_out_of_range_threshold():
         _meta_no_cache_var = _FakeVar(False)
         _meta_source_var = _FakeVar("config default")
         _meta_threshold_var = _FakeVar("1.5")  # out of range
+        _meta_game_var = _FakeVar("")
         _global_apply_var = _FakeVar(False)   # global apply replaced per-tab _meta_apply_var
+        _meta_game_args = staticmethod(lambda: [])
         messagebox = type("M", (), {
             "showerror": staticmethod(
                 lambda *a, **_k: captured.update({"err": a}),
