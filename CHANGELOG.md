@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI — game dropdowns in Systems and Tools tabs.** Selecting a system in **Systems → Step 3 (Rename or clone a game)** or **Tools → Step 4 (Manage favorites)** now auto-populates a **Game** dropdown from that system's HyperSpin database XML, replacing the previous free-text entry. A **↻** refresh button reloads the list without switching tabs.
+
 - **`pc-rename` now detects stale PCLauncher INIs** — per-game INIs whose `Application=` no longer matches the live executable path (e.g. after a drive migration or file rename). Stale entries are flagged in `--verbose` output and in the dry-run summary. Pass `--overwrite-pclauncher` to rewrite them. INIs previously written in the old `[Settings]` / `ApplicationPath=` format are also flagged as stale so they are regenerated in the correct format.
 
 - **GUI — four previously CLI-only `--overwrite` flags are now exposed:**

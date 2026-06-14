@@ -157,6 +157,8 @@ spindoctor clone  --system "Sony Playstation" --game "Resident Evil" --to "Resid
 
 Reference: [rename](commands.md#rename), [clone](commands.md#clone).
 
+> **GUI:** Systems tab → Step 3. Select a system — the game dropdown auto-populates from the database. ↻ refreshes the list.
+
 ### `curate` — region / revision thinning
 
 Picks the canonical ROM per game from a multi-version dump (USA / Europe / Japan / World / rev0 / rev1 / …) and archives or deletes the rest.
@@ -332,7 +334,11 @@ spindoctor fav rebuild --apply --verbose               :: live per-console scan 
 spindoctor fav rebuild --media-mode copy --apply       :: FAT32 thumb drives (no hardlinks)
 spindoctor fav clear                                   :: dry-run preview
 spindoctor fav clear --apply                           :: empty store + remove Favorites wheel from disk
+```
 
+> **GUI:** Tools tab → Step 4 (Manage favorites). Select a system — game dropdown auto-populates from the database. ↻ refreshes the list. Run Step 2 (Favorites checked) to push into HyperSpin.
+
+```bat
 :: Recently Played
 spindoctor recent list
 spindoctor recent rebuild                              :: dry-run preview

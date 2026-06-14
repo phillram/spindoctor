@@ -118,7 +118,7 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 **Step 2 — Add a new system:** **Run add-system** (or **Run add-pc-system** for a PC-games system) on a typed system name with optional `--no-system-media` / `--no-game-media` toggles. For PC systems the GUI automatically appends `--no-interactive` so the title-review step doesn't hang the subprocess on stdin — users who want to curate titles by hand can run `spindoctor pc-rename <system>` from a terminal.
 
-**Step 3 — Rename or clone a game:** Rename moves the ROM, database entry, and every media file in one shot (and writes an undo manifest). Clone duplicates them under a new name. Both are dry-run until you tick Apply. CLI: `spindoctor rename / clone`.
+**Step 3 — Rename or clone a game:** Rename moves the ROM, database entry, and every media file in one shot (and writes an undo manifest). Clone duplicates them under a new name. Both are dry-run until you tick Apply. Select a system to auto-populate the **Game** dropdown from that system's database; click **↻** to refresh the list if you've changed the database since opening the tab. CLI: `spindoctor rename / clone`.
 
 **Step 4 — Organize a system (sort wheels + optional restructure):** Drives `spindoctor organize <SYSTEM>` with checkboxes for `--no-sort` and `--restructure`. Restructure honours the tab-level Apply toggle, plus a separate **Undo latest restructure** button for the `--undo` flow.
 
@@ -170,7 +170,7 @@ Four numbered steps cover building and wiring up the custom wheels; the remainin
 
 **Step 3 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration).
 
-**Step 4 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin.
+**Step 4 — Manage favorites:** **Add / Remove / List** drive `fav add / remove / list` directly. Remove asks for confirmation. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin. Select a system to auto-populate the **Game** dropdown from that system's database; click **↻** to refresh the list after database changes.
 
 **Install .bat helpers (optional):** Two sub-sections:
 
