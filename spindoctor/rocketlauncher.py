@@ -1075,6 +1075,16 @@ def generate_system_db_stubs(
 # Characters Windows forbids in filenames.
 _WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
 
+# Lowercase stem-prefixes that identify non-game executables (uninstallers,
+# setup helpers, redistributables, etc.).  Used by list_exe_candidates and
+# _pick_best_exe to separate "recommended" launches from noise.
+_EXE_EXCLUSION_PREFIXES: tuple[str, ...] = (
+    "unins", "uninst", "setup", "install",
+    "vc_redist", "vcredist", "dxsetup", "directx",
+    "crashpad", "dotnet", "helper", "updater",
+    "unitycrashhandler", "cef",
+)
+
 
 def _win_safe_stem(title: str) -> str:
     """Strip Windows-invalid characters from *title* to produce a safe INI stem.
@@ -1102,6 +1112,87 @@ def _pclauncher_ini_text(game_name: str, executable) -> str:
         f"Application={executable}\n"
         f"WorkingFolder={executable.parent}\n"
     )
+
+
+def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
+    """Return all .exe files in *game_dir*, recommended first.
+
+    "Recommended" means the stem does not match any prefix in
+    :data:`_EXE_EXCLUSION_PREFIXES`.  Within each tier, files whose stem
+    most closely matches *title_hint* sort first; otherwise alphabetical.
+    Non-recursive — only the immediate directory is scanned.
+    """
+    if not game_dir.is_dir():
+        return []
+    hint_norm = re.sub(r"[^a-z0-9]", "", title_hint.lower())
+
+    def _sort_key(p: Path) -> tuple:
+        excluded = int(
+            any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES)
+        )
+        stem_norm = re.sub(r"[^a-z0-9]", "", p.stem.lower())
+        if stem_norm == hint_norm:
+            similarity = 0
+        elif hint_norm and (stem_norm in hint_norm or hint_norm in stem_norm):
+            similarity = 1
+        else:
+            similarity = 2
+        return (excluded, similarity, p.name.lower())
+
+    return sorted(
+        (p for p in game_dir.glob("*.exe") if p.is_file()),
+        key=_sort_key,
+    )
+
+
+def _pick_best_exe(game_dir: Path, title_hint: str = "") -> Optional[Path]:
+    """Return the most-likely game executable in *game_dir*, or None.
+
+    Delegates to :func:`list_exe_candidates` and returns the first entry
+    that is *not* in the excluded-prefix set.
+    """
+    for p in list_exe_candidates(game_dir, title_hint):
+        if not any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES):
+            return p
+    return None
+
+
+def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) -> bool:
+    """Update ``Application=`` and ``WorkingFolder=`` in *section* of *ini_path*.
+
+    Only those two keys are modified; all other keys (``FadeTitle=``, etc.)
+    survive verbatim.  Line endings are preserved.  Returns ``True`` when the
+    file was actually changed, ``False`` when it was unchanged or missing.
+    """
+    if not ini_path.exists():
+        return False
+    lines = ini_path.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    in_section = False
+    new_lines: list = []
+    changed = False
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        eol = line[len(stripped):]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_section = stripped[1:-1].lower() == section.lower()
+        if in_section and re.match(r"(?i)^Application\s*=", stripped):
+            want = f"Application={new_exe}"
+            if stripped != want:
+                new_lines.append(want + eol)
+                changed = True
+                continue
+        if in_section and re.match(r"(?i)^WorkingFolder\s*=", stripped):
+            want = f"WorkingFolder={new_exe.parent}"
+            if stripped != want:
+                new_lines.append(want + eol)
+                changed = True
+                continue
+        new_lines.append(line)
+    if changed:
+        ini_path.write_text("".join(new_lines), encoding="utf-8")
+    return changed
 
 
 def read_pclauncher_ini_application_path(

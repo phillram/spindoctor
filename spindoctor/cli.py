@@ -8493,6 +8493,139 @@ def pc_rename(system_name, no_pclauncher, overwrite_pclauncher, no_interactive,
                 )
 
 
+# ─── pc-fix-exe ───────────────────────────────────────────────────────────────
+
+@cli.command("pc-fix-exe")
+@click.argument("system_name")
+@click.argument("game")
+@click.option("--exe", "exe_path", default=None, type=click.Path(),
+              help="Path to the executable to set as Application= "
+                   "(auto-detected from the game folder if omitted).")
+@click.option("--list-candidates", is_flag=True,
+              help="Print detected .exe candidates as a JSON array and exit "
+                   "(recommended candidates listed first). Used by the GUI.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the updated INI (default: preview only).")
+def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
+    """Fix the Application= path in a per-game PCLauncher INI.
+
+    Use this when a game launches the wrong executable — e.g. an uninstaller,
+    setup helper, or cache file was picked up instead of the real .exe.
+
+    Without --apply the command shows a preview of the change.
+
+    \b
+    Examples:
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead"           # preview auto-detect
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply   # auto-detect and fix
+      spindoctor pc-fix-exe "PC GAMES" "ElecHead" \\
+          --exe "J:\\\\Games\\\\PC Games\\\\ElecHead\\\\ElecHead.exe" --apply
+    """
+    import json as _json
+    from .rocketlauncher import (
+        _EXE_EXCLUSION_PREFIXES,
+        _pick_best_exe,
+        _pclauncher_ini_text,
+        _win_safe_stem,
+        list_exe_candidates,
+        read_pclauncher_ini_application_path,
+        rewrite_pclauncher_application,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    game_dir = Path(config.roms_dir) / system_name / game
+
+    if list_candidates:
+        paths = [str(p) for p in list_exe_candidates(game_dir, game)]
+        console.print(_json.dumps(paths))
+        return
+
+    # ── determine new exe ─────────────────────────────────────────────────────
+    if exe_path:
+        new_exe = Path(exe_path)
+    else:
+        if not game_dir.is_dir():
+            console.print(
+                f"[red]Game folder not found:[/red] {game_dir}\n"
+                "Use [cyan]--exe[/cyan] to specify the executable path directly, "
+                "or check that roms_dir / system_name / game matches your layout."
+            )
+            raise SystemExit(1)
+        new_exe = _pick_best_exe(game_dir, game)
+        if new_exe is None:
+            console.print(
+                f"[red]No suitable .exe found in:[/red] {game_dir}\n"
+                "Use [cyan]--exe[/cyan] to specify the path directly."
+            )
+            raise SystemExit(1)
+
+    # ── locate INI ────────────────────────────────────────────────────────────
+    rl_base = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    if not rl_base:
+        console.print("[red]rocketlauncher_dir not configured.[/red]")
+        raise SystemExit(1)
+
+    stem = _win_safe_stem(game)
+    ini_path = rl_base / "Modules" / "PCLauncher" / system_name / f"{stem}.ini"
+
+    # Resolve section name — may differ from *game* when the title contains
+    # Windows-invalid characters (e.g. "Submachine: Legacy" → stem "Submachine Legacy").
+    section = game
+    try:
+        db = load_database(system_name, config.databases_dir)
+        if game in db.games():
+            section = game
+        else:
+            for dbname in db.games().keys():
+                if _win_safe_stem(dbname) == stem:
+                    section = dbname
+                    break
+    except Exception:  # noqa: BLE001
+        pass
+
+    # ── preview ───────────────────────────────────────────────────────────────
+    console.print(Panel(
+        f" pc-fix-exe: [cyan]{system_name}[/cyan] / [cyan]{game}[/cyan] ",
+        style="bold magenta",
+    ))
+    if ini_path.exists():
+        try:
+            current = read_pclauncher_ini_application_path(ini_path, section_name=section)
+        except Exception:  # noqa: BLE001
+            current = None
+        if current:
+            console.print(f"  Current  Application= [dim]{current}[/dim]")
+        else:
+            console.print(f"  [yellow]Section [{section}] not found in {ini_path}[/yellow]")
+    else:
+        console.print(f"  [yellow]INI not found — will create:[/yellow] {ini_path}")
+
+    console.print(f"  Proposed Application= [green]{new_exe}[/green]")
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow bold][DRY RUN][/yellow bold] "
+            "Re-run with [cyan]--apply[/cyan] to write changes."
+        )
+        return
+
+    # ── write ─────────────────────────────────────────────────────────────────
+    if not ini_path.exists():
+        ini_path.parent.mkdir(parents=True, exist_ok=True)
+        ini_path.write_text(_pclauncher_ini_text(section, new_exe), encoding="utf-8")
+        console.print(f"  [green]+[/green] created {ini_path}")
+    else:
+        changed = rewrite_pclauncher_application(ini_path, section, new_exe)
+        if changed:
+            console.print(f"  [green]✓[/green] updated Application= in {ini_path}")
+        else:
+            console.print(
+                f"  [dim]no change needed — Application= is already correct[/dim]"
+            )
+
+
 # ─── organize ─────────────────────────────────────────────────────────────────
 
 @cli.command("organize")

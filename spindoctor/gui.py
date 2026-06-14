@@ -42,6 +42,7 @@ from .config import (
     CONFIG_DIR, CONFIG_FILE, get_systems, load_config, save_config,
 )
 from .database import load_database
+from .rocketlauncher import list_exe_candidates
 from ._utils import format_bytes as _format_bytes_util
 
 
@@ -5603,6 +5604,7 @@ class _SpinDoctorGUI:
             ("_ovr_system_combo",      "_ovr_system_var",      None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
+            ("_fixexe_system_combo",   "_fixexe_system_var",   None),
             # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
@@ -8467,7 +8469,132 @@ class _SpinDoctorGUI:
             command=self._match_clear,
         ).pack(side="left", padx=6)
 
+        # ── Fix PC game executable ────────────────────────────────────────────
+        fixexe_frame = self.ttk.LabelFrame(frame, text="Fix PC game executable")
+        fixexe_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            fixexe_frame,
+            text=("Fix a PC game that launches the wrong executable (uninstaller, "
+                  "cache file, etc.). Select system and game — the list below shows "
+                  "every .exe found in the game folder, recommended first. Pick the "
+                  "correct one and click Apply to update the PCLauncher INI."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        fixexe_top = self.ttk.Frame(fixexe_frame)
+        fixexe_top.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(fixexe_top, text="System").pack(side="left")
+        self._fixexe_system_var = self.tk.StringVar()
+        self._fixexe_system_combo = self.ttk.Combobox(
+            fixexe_top, textvariable=self._fixexe_system_var,
+            state="readonly", width=24,
+        )
+        self._fixexe_system_combo.pack(side="left", padx=6)
+        self._fixexe_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._refresh_fixexe_games(),
+        )
+        self.ttk.Label(fixexe_top, text="Game").pack(side="left", padx=(10, 0))
+        self._fixexe_game_var = self.tk.StringVar()
+        self._fixexe_game_combo = self.ttk.Combobox(
+            fixexe_top, textvariable=self._fixexe_game_var,
+            state="readonly", width=30,
+        )
+        self._fixexe_game_combo.pack(side="left", padx=6)
+        self._fixexe_game_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._fixexe_load_candidates(),
+        )
+        self.ttk.Button(
+            fixexe_top, text="↻", width=3,
+            command=self._fixexe_load_candidates,
+        ).pack(side="left")
+
+        fixexe_list_label = self.ttk.Label(
+            fixexe_frame, text="Executables in game folder (recommended first):",
+        )
+        fixexe_list_label.pack(anchor="w", padx=6, pady=(4, 0))
+        self._fixexe_listbox = self.tk.Listbox(
+            fixexe_frame, height=5, selectmode="single",
+            activestyle="none",
+        )
+        self._fixexe_listbox.pack(fill="x", padx=6, pady=(2, 4))
+        self._fixexe_listbox.bind(
+            "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
+        )
+
+        fixexe_path_row = self.ttk.Frame(fixexe_frame)
+        fixexe_path_row.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
+        self._fixexe_path_var = self.tk.StringVar()
+        self.ttk.Entry(
+            fixexe_path_row, textvariable=self._fixexe_path_var, width=60,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+
+        fixexe_btns = self.ttk.Frame(fixexe_frame)
+        fixexe_btns.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Button(
+            fixexe_btns, text="Apply",
+            command=self._run_fixexe,
+        ).pack(side="left")
+
         return frame
+
+    def _refresh_fixexe_games(self) -> None:
+        system = self._fixexe_system_var.get().strip()
+        games = self._load_games_for_system(system) if system else []
+        combo = getattr(self, "_fixexe_game_combo", None)
+        if combo is None:
+            return
+        combo["values"] = games
+        self._fixexe_game_var.set(games[0] if games else "")
+        lb = getattr(self, "_fixexe_listbox", None)
+        if lb is not None:
+            lb.delete(0, "end")
+        self._fixexe_path_var.set("")
+
+    def _fixexe_load_candidates(self) -> None:
+        """Populate the exe listbox for the selected game."""
+        system = self._fixexe_system_var.get().strip()
+        game = self._fixexe_game_var.get().strip()
+        lb = getattr(self, "_fixexe_listbox", None)
+        if lb is None:
+            return
+        lb.delete(0, "end")
+        self._fixexe_path_var.set("")
+        if not (system and game):
+            return
+        try:
+            cfg = load_config()
+            game_dir = Path(cfg.roms_dir) / system / game
+            paths = list_exe_candidates(game_dir, game)
+        except Exception:  # noqa: BLE001
+            paths = []
+        for p in paths:
+            lb.insert("end", str(p))
+        if paths:
+            lb.selection_set(0)
+            self._fixexe_path_var.set(str(paths[0]))
+
+    def _fixexe_on_select(self) -> None:
+        lb = getattr(self, "_fixexe_listbox", None)
+        if lb is None:
+            return
+        sel = lb.curselection()
+        if sel:
+            self._fixexe_path_var.set(lb.get(sel[0]))
+
+    def _run_fixexe(self) -> None:
+        system = self._fixexe_system_var.get().strip()
+        game = self._fixexe_game_var.get().strip()
+        exe = self._fixexe_path_var.get().strip()
+        if not (system and game):
+            self.messagebox.showwarning(
+                "Input required", "Select a system and game first.",
+            )
+            return
+        args = ["pc-fix-exe", system, game, "--apply"]
+        if exe:
+            args.extend(["--exe", exe])
+        self._run_cli("spindoctor", args)
 
     def _match_list(self) -> None:
         args = ["match", "list"]

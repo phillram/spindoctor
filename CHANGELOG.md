@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`pc-fix-exe` command + GUI panel — fix a PC game launching the wrong executable.** When a PCLauncher INI has an uninstaller, GOG/Steam cache file, or redistributable set as `Application=` (e.g. `webcache.zip` instead of `ElecHead.exe`), run `spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply` to auto-detect and correct the entry. Auto-detection scans the game folder, filters out common non-game executables (`unins*`, `setup*`, `vcredist*`, `crashpad*`, etc.), and prefers the file whose name matches the game title; largest file wins ties. Use `--exe <path>` to override. The **Maintenance** tab now has a "Fix PC game executable" panel with system/game dropdowns and a candidate listbox. Also adds `list_exe_candidates()` (public) and `rewrite_pclauncher_application()` helpers in `rocketlauncher.py` so only `Application=` and `WorkingFolder=` are updated — user-set keys like `FadeTitle=` survive untouched.
+
 ### Fixed
 
 - **GUI — game dropdowns (PR 292) always blank.** `_load_games_for_system` called `db.games.keys()` instead of `db.games().keys()` — `games` is a method, so accessing `.keys()` on the bound-method object raised `AttributeError`, which the bare `except Exception: return []` silently swallowed. All six game selectors (Systems rename/clone, Tools favorites, Diagnostics inspect, Metadata inspect, Metadata media, Maintenance ignore) now populate correctly. Exceptions are also logged at WARNING level to aid future diagnosis.
