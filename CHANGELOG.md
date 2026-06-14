@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`pc-fix-exe` / `pc-rename` no longer pick `chromedriver.exe` or NW.js runtime files as the game executable.** Games packaged with NW.js (e.g. RPGMaker titles with `Game.exe`) bundle `chromedriver.exe` alongside the real launcher. `chromedriver` was not in the exclusion-prefix list, so it sorted before `Game.exe` alphabetically and was incorrectly selected. `chromedriver`, `nwjc`, and `nacl_irt` are now excluded, matching the existing treatment of uninstallers and redistributables.
+
+- **"Fix PC game executable" panel now lists all game folders, not just games in the HyperSpin XML.** The game dropdown previously read from the HyperSpin database, so games that exist on disk but have not yet been added to the XML (e.g. newly installed GOG titles) did not appear. The dropdown now scans `roms_dir/<system>/` directly, matching the source used by the `pc-rename` CLI command. A case-insensitive folder name fallback is also applied so a "PC GAMES" ROM folder is found correctly when the selected system name is "PC Games".
+
+- **"Fix PC game executable" system selector now defaults to the "PC Games" system on startup.** Previously the first system alphabetically was pre-selected. The GUI now checks whether any loaded system name matches `"pc games"` (case-insensitive) and, if so, selects it automatically — so the fix-exe panel is ready to use without needing to change the system picker.
+
 ---
 
 ## [2.6.3] - 2026-06-14

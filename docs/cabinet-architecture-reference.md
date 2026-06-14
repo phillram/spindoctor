@@ -676,7 +676,9 @@ If the section header also has the colon stripped (`[Submachine Legacy]`) PCLaun
 
 RocketLauncher finds a "rom" for each PC game by scanning the game folder for files whose extension matches the system's `romExtensions` setting (typically `zip|rar|7z|…`). For GOG installs this often surfaces `webcache.zip` (a cache file of no use to PCLauncher) or a redistributable archive rather than the real game executable.
 
-**SpinDoctor's handling (v2.6.3+):** When writing or rewriting a per-game PCLauncher INI, `pc-rename` and `add-pc-system` check whether the proposed path ends in `.exe`. If not, they call `_pick_best_exe` on the game folder: scan for `.exe` files, filter out known non-game executables (`unins*`, `setup*`, `vcredist*`, `crashpad*`, etc.), then prefer the file whose name most closely matches the game title (largest file wins ties). The resolved path is used for `Application=` regardless of what the rom scanner found. Stale detection uses the same resolved path, so a game whose INI was already corrected with `pc-fix-exe` shows as `ok`, not `stale`.
+**SpinDoctor's handling (v2.6.3+):** When writing or rewriting a per-game PCLauncher INI, `pc-rename` and `add-pc-system` check whether the proposed path ends in `.exe`. If not, they call `_pick_best_exe` on the game folder: scan for `.exe` files, filter out known non-game executables (`unins*`, `setup*`, `vcredist*`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.), then prefer the file whose name most closely matches the game title (largest file wins ties). The resolved path is used for `Application=` regardless of what the rom scanner found. Stale detection uses the same resolved path, so a game whose INI was already corrected with `pc-fix-exe` shows as `ok`, not `stale`.
+
+The exclusion list covers NW.js / Electron runtimes (`chromedriver.exe`, `nwjc.exe`, `nacl_irt_*.nexe`). This is required for RPGMaker and NW.js-packaged games where the real launcher is `Game.exe` but the runtime bundles `chromedriver.exe` in the same folder (which sorts before `Game.exe` alphabetically and would otherwise be selected).
 
 Example — ElecHead (GOG install):
 
@@ -685,6 +687,15 @@ J:\Games\PC GAMES\ElecHead\
   ElecHead.exe      ← 5 MB, name matches title → selected
   unins000.exe      ← 1.3 MB, excluded (uninstaller prefix)
   webcache.zip      ← 153 KB, not an exe → triggers resolution
+  ...
+```
+
+Example — Look Outside (NW.js / RPGMaker install):
+
+```
+J:\Games\PC GAMES\Look Outside\
+  Game.exe          ← real game launcher → selected
+  chromedriver.exe  ← NW.js runtime, excluded (chromedriver prefix)
   ...
 ```
 
