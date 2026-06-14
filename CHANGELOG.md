@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`fetch-media` no longer crashes on PC GAMES entries when ScreenScraper returns `dates` as a list.** The ScreenScraper API returns the `dates` field as a list of `{region, text}` objects for some systems (notably PC GAMES) instead of the flat dict `{date_us, date_wor}` seen on other systems. The parser now handles both shapes, so release-year extraction works regardless of which format the API returns.
 
+- **`fetch-media` no longer saves ScreenScraper media files as `.php`.** ScreenScraper serves all media through PHP scripts (`mediaJeu.php`, `mediaVideoJeu.php`) — the downloader was using the URL path's `.php` extension to rename the destination file, so every download landed as `Pikmin.php` instead of `Pikmin.png`. The extension-override logic now only fires when the URL contains a recognised media extension (`.png`, `.jpg`, `.mp4`, etc.); script endpoints like `.php` are ignored and the destination keeps its correct HyperSpin extension.
+
 ---
 
 ## [2.6.3] - 2026-06-14
