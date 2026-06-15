@@ -85,6 +85,47 @@ def _redact_params(params: Optional[dict]) -> dict:
     }
 
 
+def _raise_if_ss_error(data: dict) -> None:
+    """Raise MetadataError if the ScreenScraper JSON body signals an API-level
+    error (quota exceeded, auth failure, server issue).  SS returns HTTP 200
+    even for these conditions; the error is signalled via an ``"erreur"`` key
+    at the top level or inside ``response``."""
+    err = data.get("erreur") or data.get("response", {}).get("erreur")
+    if err:
+        raise MetadataError(f"ScreenScraper API error: {err}")
+
+
+def _raise_if_tgdb_error(data: dict) -> None:
+    """Raise MetadataError if the TheGamesDB JSON body signals an auth or
+    API-level error.  TGDB returns HTTP 200 for auth failures and signals the
+    problem via a top-level ``"code"`` field (401 / 403) rather than an HTTP
+    status code.  Quota exhaustion uses proper HTTP 429 and is already caught
+    by ``raise_for_status()``, so we only need to handle the in-band cases."""
+    code = data.get("code")
+    if code and code not in (200, None):
+        status = data.get("status") or ""
+        raise MetadataError(f"TheGamesDB API error (code {code}): {status}")
+
+
+def _redact_error_str(error: BaseException, params: Optional[dict]) -> str:
+    """Scrub sensitive param values out of an exception string.
+
+    When DNS fails, urllib3 embeds the full URL (including query params) in
+    the MaxRetryError / NameResolutionError message text. ``str(error)``
+    would expose sspassword / devpassword / apikey verbatim even though
+    ``_redact_params`` already cleaned the params dict. This replaces every
+    known-secret literal value with ``***`` before the string hits the log.
+    """
+    text = str(error)
+    if not params:
+        return text
+    for key in _REDACT_KEYS:
+        val = params.get(key)
+        if val and val not in ("", None):
+            text = text.replace(str(val), "***")
+    return text
+
+
 def _body_snippet(body: str, limit: int = 500) -> str:
     """Compact, single-line slice of a response body for log + dialog use."""
     if not body:
@@ -115,7 +156,8 @@ def _log_http(
     redacted = _redact_params(params)
     if error is not None:
         scraper_logger.error("%s %s %s params=%s — %s",
-                             label, method, url, redacted, error)
+                             label, method, url, redacted,
+                             _redact_error_str(error, params))
         return
     size = len(body or "")
     scraper_logger.info("%s %s %s params=%s → HTTP %s (%d bytes)",
@@ -846,10 +888,10 @@ class _FetchWithSearchMixin:
                 self._cache.put(self.source_name, system_name, game_name, results)
             return results
 
-        try:
-            candidates = self.search(game_name, system_name)
-        except MetadataError:
-            candidates = []
+        # Let MetadataError propagate — callers (fetch-meta, fetch-media) catch
+        # it and surface the real error message rather than silently treating
+        # an API failure as "no match".
+        candidates = self.search(game_name, system_name)
 
         # Merge direct result in if it wasn't already found in search results.
         if direct and direct.source_id and not any(
@@ -936,6 +978,8 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"ScreenScraper fetch failed: {e}") from e
 
+        # SS signals quota/auth errors via an "erreur" key at HTTP 200.
+        _raise_if_ss_error(data)
         if "response" not in data or "jeu" not in data.get("response", {}):
             return None
 
@@ -965,6 +1009,7 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"ScreenScraper search failed: {e}") from e
 
+        _raise_if_ss_error(data)
         jeux = data.get("response", {}).get("jeux", []) or []
         results = []
         for jeu in jeux[:max_results]:
@@ -1094,6 +1139,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"TheGamesDB fetch failed: {e}") from e
 
+        _raise_if_tgdb_error(data)
         games = data.get("data", {}).get("games", [])
         if not games:
             return None
@@ -1140,6 +1186,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"TheGamesDB search failed: {e}") from e
 
+        _raise_if_tgdb_error(data)
         games = (data.get("data", {}).get("games", []) or [])[:max_results]
         results = []
         for g in games:
@@ -1369,23 +1416,35 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
         self,
         ss_client: "ScreenScraperClient",
         tgdb_client: "TheGamesDBClient",
+        cache: "Optional[MetadataCache]" = None,
     ):
         self._ss = ss_client
         self._tgdb = tgdb_client
+        self._cache = cache  # enables _FetchWithSearchMixin's cache check
 
     def fetch(self, game_name: str, system_name: str) -> "Optional[GameMetadata]":
         ss_meta: Optional[GameMetadata] = None
+        ss_error: Optional[str] = None
         tgdb_meta: Optional[GameMetadata] = None
+        tgdb_error: Optional[str] = None
 
         try:
             ss_meta = self._ss.fetch(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            ss_error = str(e)
 
         try:
             tgdb_meta = self._tgdb.fetch(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            tgdb_error = str(e)
+
+        if ss_meta is None and tgdb_meta is None and (ss_error or tgdb_error):
+            parts = []
+            if ss_error:
+                parts.append(f"ScreenScraper: {ss_error}")
+            if tgdb_error:
+                parts.append(f"TheGamesDB: {tgdb_error}")
+            raise MetadataError("; ".join(parts))
 
         if ss_meta is None:
             return tgdb_meta
@@ -1398,17 +1457,29 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
         return ss_meta
 
     def search(self, game_name: str, system_name: str) -> "list[GameMetadata]":
+        ss_error: Optional[str] = None
         ss_results: list[GameMetadata] = []
+        ss_error: Optional[str] = None
         try:
             ss_results = self._ss.search(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            ss_error = str(e)
 
+        tgdb_error: Optional[str] = None
         tgdb_results: list[GameMetadata] = []
+        tgdb_error: Optional[str] = None
         try:
             tgdb_results = self._tgdb.search(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            tgdb_error = str(e)
+
+        if not ss_results and not tgdb_results and (ss_error or tgdb_error):
+            parts = []
+            if ss_error:
+                parts.append(f"ScreenScraper: {ss_error}")
+            if tgdb_error:
+                parts.append(f"TheGamesDB: {tgdb_error}")
+            raise MetadataError("; ".join(parts))
 
         seen_ids = {r.source_id for r in ss_results}
         return ss_results + [r for r in tgdb_results if r.source_id not in seen_ids]
@@ -1460,11 +1531,11 @@ def build_client(
         return _make_tgdb()
 
     if source in ("both", "combined"):
-        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+        return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
 
     # Unknown / legacy value: fall back to whatever credentials are present.
     if has_ss and has_tgdb:
-        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+        return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
     if has_ss:
         return _make_ss()
     if has_tgdb:

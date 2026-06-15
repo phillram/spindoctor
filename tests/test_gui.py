@@ -286,6 +286,73 @@ def test_build_fetch_meta_args_rejects_out_of_range_threshold():
     assert "err" in captured
 
 
+def test_full_metadata_refresh_propagates_game_to_fetch_media():
+    """_run_full_metadata_refresh must pass --game to fetch-media as well as
+    fetch-meta. Before the fix, fetch_media_args was built from sys_args only,
+    so selecting a single game in the GUI and clicking Full refresh would scan
+    the entire system on the media step (100 games instead of 1).
+    """
+    class _FakeVar:
+        def __init__(self, v): self._v = v
+        def get(self): return self._v
+
+    launched: list[list[str]] = []
+
+    # All methods are staticmethods because _FakeGUI is passed as `self`
+    # (the class itself, not an instance) following the same pattern used
+    # in test_build_fetch_meta_args_round_trip above.
+    class _FakeGUI:
+        _meta_auto_best_var = _FakeVar(True)
+        _meta_all_games_var = _FakeVar(False)
+        _meta_no_cache_var = _FakeVar(False)
+        _meta_source_var = _FakeVar("screenscraper")
+        _meta_threshold_var = _FakeVar("0.8")
+        _meta_game_var = _FakeVar("Animal Crossing (USA)")
+        _meta_type_vars = {"wheel": _FakeVar(True), "background": _FakeVar(False)}
+        _meta_overwrite_var = _FakeVar(False)
+        _meta_remove_orphans_var = _FakeVar(False)
+        _meta_strip_variant_var = _FakeVar(False)
+        _global_apply_var = _FakeVar(True)
+        _global_verbose_var = _FakeVar(False)
+        messagebox = type("M", (), {
+            "showerror": staticmethod(lambda *_a, **_k: None),
+        })
+
+        _meta_system_args = staticmethod(lambda: ["--system", "Nintendo Gamecube"])
+        _meta_game_args   = staticmethod(lambda: ["--game", "Animal Crossing (USA)"])
+        _chain_start      = staticmethod(lambda total: None)
+        _chain_end        = staticmethod(lambda: None)
+        _chain_advance    = staticmethod(lambda n: None)
+        _set_status       = staticmethod(lambda msg: None)
+        _append_output    = staticmethod(lambda msg: None)
+
+        @staticmethod
+        def _build_fetch_meta_args(sys_args):
+            # Delegate to the real implementation using _FakeGUI as self.
+            return gui._SpinDoctorGUI._build_fetch_meta_args(_FakeGUI, sys_args)
+
+        @staticmethod
+        def _run_cli(prog, args, on_complete=None):
+            launched.append(list(args))
+            if on_complete:
+                on_complete(0)
+
+    gui._SpinDoctorGUI._run_full_metadata_refresh(_FakeGUI)
+
+    # fetch-meta must have --game
+    meta_call = next(a for a in launched if a[0] == "fetch-meta")
+    assert "--game" in meta_call
+    assert "Animal Crossing (USA)" in meta_call
+
+    # fetch-media must also have --game
+    media_call = next(a for a in launched if a[0] == "fetch-media")
+    assert "--game" in media_call, (
+        "fetch-media is missing --game; it would scan the entire system "
+        "instead of the single selected game"
+    )
+    assert "Animal Crossing (USA)" in media_call
+
+
 def test_custom_command_presets_match_actual_cli_syntax():
     """Preset hints must use real flag names — `media-add` was shipped
     with `--source` in earlier presets even though the CLI flag is

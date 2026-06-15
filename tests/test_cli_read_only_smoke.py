@@ -365,3 +365,224 @@ def test_matcher_choose_match_skip_ambiguous_returns_none():
         skip_ambiguous=True,
     )
     assert result is None
+
+
+# ─── fetch-meta --game bypass ─────────────────────────────────────────────────
+
+
+def test_fetch_meta_game_flag_processes_complete_game(tmp_path, isolated_config, monkeypatch):
+    """When --game names a game whose metadata is already complete,
+    fetch-meta must re-fetch it rather than printing 'not found'.
+
+    Before this fix the function filtered via db.iter_incomplete() and then
+    applied the --game filter, so a complete game always fell through to the
+    'not found or already complete' error even though the user explicitly
+    asked for it by name.
+    """
+    import spindoctor.scraper as scraper_mod
+    from spindoctor.scraper import GameMetadata
+
+    roms_dir = tmp_path / "roms"
+    hs_dir = tmp_path / "hs"
+    (roms_dir / "nes").mkdir(parents=True)
+    db_dir = hs_dir / "Databases" / "nes"
+    db_dir.mkdir(parents=True)
+
+    # Game with ALL metadata fields populated — iter_incomplete() skips it.
+    game = GameEntry(
+        name="mario",
+        description="Super Mario Bros",
+        manufacturer="Nintendo",
+        year="1985",
+        genre="Platformer",
+        rating="E",
+    )
+    db = HyperspinDatabase("nes", db_dir / "nes.xml")
+    db.upsert_game(game)
+    db.save()
+
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    cfg.screenscraper_user = "u"
+    cfg.screenscraper_password = "p"
+    save_config(cfg)
+
+    fetched: list[str] = []
+
+    class _FakeClient:
+        source_name = "screenscraper"
+        _cache = None
+
+        def fetch_with_search(self, game_name, system_name, threshold=0.80):
+            fetched.append(game_name)
+            return [GameMetadata(name=game_name, match_score=1.0)]
+
+    monkeypatch.setattr(scraper_mod, "build_client", lambda *_a, **_kw: _FakeClient())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["fetch-meta", "--system", "nes", "--game", "mario", "--skip-ambiguous", "--apply"],
+    )
+
+    assert result.exit_code == 0, result.output
+    # "not found in ... database" would mean the bypass didn't work.
+    assert "not found in" not in result.output.lower()
+    assert "mario" in fetched, "fetch_with_search was never called for mario"
+
+
+# ─── audit CSV download_log columns ──────────────────────────────────────────
+
+
+def test_write_audit_csv_includes_download_log_columns(tmp_path):
+    """When a download_log is supplied, _write_audit_csv appends one
+    ``{slot}_result`` column per media type recording what fetch-media
+    did to each slot (downloaded / existing / no_url / …).
+    """
+    import csv
+
+    from spindoctor.cli import _write_audit_csv
+    from spindoctor.audit import GameAuditEntry, MediaStatus, SystemAuditResult
+    from spindoctor.config import MEDIA_TYPES
+
+    entry = GameAuditEntry(
+        rom_name="mario",
+        in_database=True,
+        rom_exists=True,
+        db_entry=None,
+        media=MediaStatus(),
+    )
+    audit_result = SystemAuditResult(system_name="nes", entries=[entry])
+
+    download_log = {
+        "mario": {
+            "wheel": "downloaded",
+            "background": "existing",
+            "video": "no_url",
+        }
+    }
+
+    out = tmp_path / "audit.csv"
+    _write_audit_csv([audit_result], out, download_log=download_log)
+
+    with open(out, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert "wheel_result" in row
+    assert row["wheel_result"] == "downloaded"
+    assert row["background_result"] == "existing"
+    assert row["video_result"] == "no_url"
+    # Slots not in the log get an empty string.
+    for t in MEDIA_TYPES:
+        assert f"{t}_result" in row
+
+
+def test_raise_if_tgdb_error_raises_on_non_200_code():
+    """_raise_if_tgdb_error must raise MetadataError when the TGDB JSON body
+    contains a non-200 'code' field — TGDB's in-band auth/error signalling."""
+    from spindoctor.scraper import MetadataError, _raise_if_tgdb_error
+
+    try:
+        _raise_if_tgdb_error({"code": 401, "status": "Unauthorized"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "401" in str(e)
+
+    try:
+        _raise_if_tgdb_error({"code": 403, "status": "Forbidden"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "403" in str(e)
+
+
+def test_raise_if_tgdb_error_silent_on_clean_response():
+    """_raise_if_tgdb_error must not raise for normal TGDB responses."""
+    from spindoctor.scraper import _raise_if_tgdb_error
+
+    _raise_if_tgdb_error({})
+    _raise_if_tgdb_error({"code": 200, "data": {"games": []}})
+    _raise_if_tgdb_error({"data": {"games": [{"id": 1}]}})
+
+
+def test_raise_if_ss_error_raises_on_erreur_key():
+    """_raise_if_ss_error must raise MetadataError when the SS response JSON
+    contains an 'erreur' key — the standard SS format for quota/auth errors
+    returned as HTTP 200."""
+    from spindoctor.scraper import MetadataError, _raise_if_ss_error
+
+    try:
+        _raise_if_ss_error({"erreur": "Erreur : Quota journalier atteint"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "Quota" in str(e)
+
+
+def test_raise_if_ss_error_silent_on_clean_response():
+    """_raise_if_ss_error must not raise for a normal (no-error) SS response."""
+    from spindoctor.scraper import _raise_if_ss_error
+
+    # Should not raise for typical clean responses.
+    _raise_if_ss_error({})
+    _raise_if_ss_error({"response": {"jeu": {}}})
+    _raise_if_ss_error({"response": {"jeux": []}})
+
+
+def test_combined_client_raises_when_both_sources_fail():
+    """CombinedMetadataClient.search() must raise MetadataError when both
+    ScreenScraper and TheGamesDB fail, instead of silently returning []."""
+    from spindoctor.scraper import CombinedMetadataClient, MetadataError
+
+    class _AlwaysFail:
+        source_name = "fake"
+        _cache = None
+        def fetch(self, *_a, **_k): raise MetadataError("SS down: 429")
+        def search(self, *_a, **_k): raise MetadataError("TGDB down: 500")
+
+    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysFail())
+    try:
+        client.search("Zelda", "nes")
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "SS down" in str(e) or "TGDB down" in str(e)
+
+
+def test_combined_client_fallback_when_one_source_fails():
+    """CombinedMetadataClient.search() must return the surviving source's results
+    when only one of the two sources fails."""
+    from spindoctor.scraper import CombinedMetadataClient, MetadataError, GameMetadata
+
+    class _AlwaysFail:
+        source_name = "ss"
+        _cache = None
+        def fetch(self, *_a, **_k): raise MetadataError("SS down")
+        def search(self, *_a, **_k): raise MetadataError("SS down")
+
+    class _AlwaysOk:
+        source_name = "tgdb"
+        _cache = None
+        def fetch(self, *_a, **_k): return None
+        def search(self, *_a, **_k):
+            m = GameMetadata(name="Zelda")
+            m.match_score = 1.0
+            return [m]
+
+    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysOk())
+    results = client.search("Zelda", "nes")
+    assert len(results) == 1
+    assert results[0].name == "Zelda"
+
+
+def test_is_fatal_scraper_error_detects_quota_and_server_errors():
+    """_is_fatal_scraper_error must return True for quota/500 patterns and
+    False for genuine 'no match' situations."""
+    from spindoctor.cli import _is_fatal_scraper_error
+
+    assert _is_fatal_scraper_error("ScreenScraper API error: Erreur : Quota journalier atteint")
+    assert _is_fatal_scraper_error("ScreenScraper: ScreenScraper fetch failed: 500 Server Error")
+    assert _is_fatal_scraper_error("ScreenScraper: ScreenScraper search failed: 429 Client Error")
+    assert not _is_fatal_scraper_error("ScreenScraper fetch failed: JSONDecodeError at offset 0")
+    assert not _is_fatal_scraper_error("TheGamesDB: no results returned")

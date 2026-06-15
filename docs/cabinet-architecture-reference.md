@@ -124,6 +124,8 @@ J:\Games\
 
 ## SpinDoctor Configuration and Storage
 
+> For a complete listing of every file SpinDoctor creates and manages — with copy-pastable paths — see **[SpinDoctor Files](spindoctor-files.md)**.
+
 ### Configuration file
 
 SpinDoctor stores its configuration in a single JSON file:
@@ -992,6 +994,8 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 | Systems covered | 249 (see `SCREENSCRAPER_SYSTEMS`) | 153 (see `THEGAMESDB_PLATFORMS`) |
 
 **ScreenScraper is the primary provider; TheGamesDB is the complementary fallback.** The default `CombinedMetadataClient` queries both per game: SS metadata and every SS media slot take priority; TGDB fills any slot SS left empty (e.g. wheel clearlogo, snap screenshot). If SS finds nothing at all, the full TGDB result is used. `--source screenscraper|thegamesdb|both` forces a specific behaviour (available in both CLI and GUI). TheGamesDB is especially useful for newer indie PC games that have stub-only entries on ScreenScraper.
+
+**Network error propagation** — `CombinedMetadataClient` raises `MetadataError` when both sources fail (DNS down, timeouts, connection refused). Before v2.7.1 both failures were silently swallowed and every game was counted as "no match", producing `Failed: 500` with no diagnostic output. The error is now printed per-game, and `fetch-media` aborts the metadata phase after 3 consecutive network failures rather than grinding through all games. All details are also written to `%USERPROFILE%\.spindoctor\scraper.log`.
 
 #### TheGamesDB image slots
 

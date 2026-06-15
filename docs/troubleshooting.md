@@ -74,25 +74,75 @@ See [Configuration → Per-system overrides](configuration.md#per-system-overrid
 
 ## Metadata / scraping
 
+### Reading `scraper.log`
+
+Every ScreenScraper and TheGamesDB HTTP call SpinDoctor makes is logged to:
+
+```
+%USERPROFILE%\.spindoctor\scraper.log
+```
+
+(On macOS/Linux: `~/.spindoctor/scraper.log`. See [SpinDoctor Files](spindoctor-files.md) for the full list of files and their locations.)
+
+The log rotates at 512 KB with two backups (`scraper.log.1`, `scraper.log.2`). Passwords and API keys are always redacted (`***`) — the file is safe to share with maintainers.
+
+Each line is one HTTP call:
+
+```
+2026-05-25 16:45:32 INFO  screenscraper.verify GET https://…/ssuserInfos.php params={…} → HTTP 200 (1254 bytes)
+2026-06-14 17:46:37 ERROR screenscraper.search GET https://…/jeuRecherche.php params={…} → HTTPSConnectionPool…Max retries exceeded…NameResolutionError
+2026-06-14 12:45:16 INFO  screenscraper.fetch  GET https://…/jeuInfos.php  params={…} → HTTP 404 (40 bytes)
+2026-06-14 12:45:17 DEBUG screenscraper.fetch  body: Erreur : Rom/Iso/Dossier non trouvée !
+```
+
+What to look for:
+
+| Log entry | Meaning |
+|-----------|---------|
+| `→ HTTP 200` | Success |
+| `→ HTTP 403` + `Erreur de login` body | Wrong user/password |
+| `→ HTTP 403` + devid mention | Wrong or unregistered `devid`/`devpassword` |
+| `→ HTTP 400` + `Champ systemeid obligatoire` | System not found in SpinDoctor's ID map; open an issue |
+| `→ HTTP 404` + `non trouvée` | Game not found on ScreenScraper for that ROM filename |
+| `→ HTTP 200` (tiny body, ~59 bytes) | Search returned zero results (not an error) |
+| `→ Max retries exceeded … NameResolutionError` | DNS failure — cabinet cannot reach the internet |
+| `→ Read timed out` | ScreenScraper server overloaded; retry later |
+
+### `fetch-media` reports "Failed: 500" with no explanation
+
+**Symptom:** `fetch-media` completes immediately, prints `Downloaded: 0  Skipped: 0  Failed: 500`, and gives no other output. The cabinet's network may have been down at the time.
+
+**Cause:** Both ScreenScraper and TheGamesDB were unreachable (DNS resolution failed). SpinDoctor now surfaces this as a per-game error message and aborts the metadata phase early:
+
+```
+  metadata error: Animal Crossing (USA): ScreenScraper: … Max retries exceeded … NameResolutionError
+  metadata error: Baten Kaitos - Eternal Wings…: ScreenScraper: …
+  metadata error: Chibi-Robo! (USA): …
+  Network unreachable — aborting metadata resolution (97 games counted as failed).
+  Downloaded: 0  Skipped: 0  Failed: 500
+```
+
+**What to check:**
+
+1. Open `scraper.log` (path above). If every `screenscraper.fetch` and `thegamesdb.fetch` line ends with `NameResolutionError` or `getaddrinfo failed`, the cabinet's internet connection was down at that time. Wait for network to recover and re-run.
+
+2. If the log shows `HTTP 403` instead of DNS errors, see [403 from ScreenScraper or TheGamesDB](#403-from-screenscraper-or-thegamesdb) below.
+
+3. If the log shows a mix of successes and DNS errors, the cabinet's connection is intermittent. Reduce `max_concurrent_downloads` to 1 to serialise requests and reduce load on the DNS resolver.
+
 ### ScreenScraper rate-limiting
 
 SpinDoctor caps itself at 1 request/second. The free tier allows 500/day — wait until midnight UTC or upgrade your account.
 
 ### 403 from ScreenScraper or TheGamesDB
 
-The Setup tab's **Test credentials** button verifies both providers. When either returns `HTTP 403`, the failure dialog now includes a trimmed copy of the upstream response body — that's usually where the real reason lives ("Erreur de login : mauvais mot de passe", "Invalid API key", a rate-limit notice). If you need the full request / response (e.g. to share with a maintainer), check the rotating log at:
-
-```
-~/.spindoctor/scraper.log
-```
-
-It records every ScreenScraper and TheGamesDB call SpinDoctor makes — `verify`, `fetch`, and `search` — with the URL, redacted query params (passwords and API keys are stripped), the HTTP status, and the first ~500 chars of any error-status body. The file rotates at 512 KB with two backups, so it stays small.
+The Setup tab's **Test credentials** button verifies both providers. When either returns `HTTP 403`, the failure dialog includes a trimmed copy of the upstream response body — that's usually where the real reason lives ("Erreur de login : mauvais mot de passe", "Invalid API key", a rate-limit notice). Check the full request/response in `scraper.log` if you need more detail.
 
 Common 403 causes, in order of likelihood:
 
 1. **Wrong user credentials** — re-check `screenscraper_user` / `screenscraper_pass` (or `thegamesdb_key`). The Console tab's `config show` preset prints the current values.
 2. **Rate-limit exhaustion** — ScreenScraper free tier is 500 req/day, TheGamesDB is on a monthly-allowance budget. The body usually names this explicitly.
-3. **ScreenScraper developer-credential rejection** — every ScreenScraper request also sends a per-app `devid`/`devpassword` pair (separate from the user creds). SpinDoctor defaults both to `"SpinDoctor"`; if the log shows the failure mentions `devid` or `developpeur`, override the pair with your own:
+3. **ScreenScraper developer-credential rejection** — every ScreenScraper request also sends a per-app `devid`/`devpassword` pair (separate from the user creds). The default `"SpinDoctor"` value is **not** a registered developer account — ScreenScraper rejects it with HTTP 403. Register your own at `https://www.screenscraper.fr/membreinscription.php`, then set the values:
    ```bat
    spindoctor config set screenscraper_devid <your-devid>
    spindoctor config set screenscraper_devpassword <your-devpassword>
