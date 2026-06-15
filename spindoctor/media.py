@@ -1,11 +1,13 @@
 """Media asset downloading and local file management for SpinDoctor."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -74,6 +76,122 @@ def _open_in_default_app(path: Path) -> None:
             subprocess.run(["xdg-open", str(path)], check=False)
     except (OSError, subprocess.SubprocessError) as exc:
         _log.warning("Couldn't open %s in default app: %s", path, exc)
+
+
+_VIDEO_CONTAINER_EXTS: frozenset[str] = frozenset({".mp4", ".mkv", ".avi", ".webm", ".mov"})
+
+
+def _find_ffmpeg(hint: str = "") -> tuple[Optional[str], Optional[str]]:
+    """Return (ffmpeg, ffprobe) paths, or (None, None) if unavailable.
+
+    Search order: user-configured hint → PATH → alongside the SpinDoctor
+    binary (Windows cabinet installs where ffmpeg.exe lives next to the exe).
+    """
+    def _probe_for(ffmpeg_bin: str) -> Optional[str]:
+        probe_name = "ffprobe.exe" if sys.platform == "win32" else "ffprobe"
+        sibling = Path(ffmpeg_bin).parent / probe_name
+        return str(sibling) if sibling.exists() else shutil.which("ffprobe")
+
+    if hint:
+        p = Path(hint)
+        if p.exists():
+            probe = _probe_for(str(p))
+            if probe:
+                return str(p), probe
+
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        probe = _probe_for(ffmpeg)
+        if probe:
+            return ffmpeg, probe
+
+    if sys.platform == "win32":
+        here = Path(sys.executable).parent
+        fb, fp = here / "ffmpeg.exe", here / "ffprobe.exe"
+        if fb.exists() and fp.exists():
+            return str(fb), str(fp)
+
+    return None, None
+
+
+def _audio_needs_reencode(ffprobe: str, path: Path) -> bool:
+    """Return True when the first audio stream is not AAC.
+
+    ScreenScraper's video-normalized files use MP3 audio inside an MP4
+    container with an mp4a tag (mime_codec mp4a.40.34). AVFoundation on macOS
+    and Windows Media Foundation on Windows 7 both expect AAC behind the mp4a
+    tag and silently drop the track. Any non-AAC codec in an MP4 container
+    gets the same treatment, so we flag everything except "aac".
+    """
+    try:
+        result = subprocess.run(
+            [ffprobe, "-v", "quiet", "-print_format", "json",
+             "-show_streams", "-select_streams", "a:0", str(path)],
+            capture_output=True, timeout=15,
+        )
+        if result.returncode != 0:
+            return False
+        streams = json.loads(result.stdout).get("streams", [])
+        if not streams:
+            return False
+        return streams[0].get("codec_name", "").lower() != "aac"
+    except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError, ValueError):
+        return False
+
+
+def _reencode_audio_aac(ffmpeg: str, path: Path) -> bool:
+    """Re-encode the audio track of *path* to AAC in-place, video stream copied.
+
+    Uses a temp file + atomic replace so the original is never clobbered on
+    failure. Returns True on success, False on any error.
+    """
+    tmp = path.with_name(path.stem + "._aactmp" + path.suffix)
+    try:
+        result = subprocess.run(
+            [ffmpeg, "-y", "-i", str(path),
+             "-c:v", "copy", "-c:a", "aac", "-b:a", "128k",
+             str(tmp)],
+            capture_output=True, timeout=120,
+        )
+        if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+            os.replace(tmp, path)
+            return True
+        _log.debug("ffmpeg audio re-encode failed (rc=%d): %s",
+                   result.returncode, result.stderr[-300:] if result.stderr else "")
+        return False
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _log.debug("ffmpeg audio re-encode error: %s", exc)
+        return False
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _maybe_fix_video_audio(path: Path, media_type: str, ffmpeg_hint: str = "") -> None:
+    """Post-process a downloaded video to ensure audio plays on all platforms.
+
+    Called after every successful video/trailer download. No-op when ffmpeg
+    is unavailable or the audio is already AAC.
+    """
+    if media_type not in ("video", "trailer"):
+        return
+    if path.suffix.lower() not in _VIDEO_CONTAINER_EXTS:
+        return
+    ffmpeg, ffprobe = _find_ffmpeg(ffmpeg_hint)
+    if not (ffmpeg and ffprobe):
+        return
+    if not _audio_needs_reencode(ffprobe, path):
+        return
+    if _reencode_audio_aac(ffmpeg, path):
+        _log.info("Re-encoded audio to AAC: %s", path.name)
+    else:
+        _log.warning(
+            "ffmpeg audio re-encode failed for %s — video is downloaded but "
+            "may be silent on macOS / Windows. Install ffmpeg to fix automatically.",
+            path.name,
+        )
 
 
 @dataclass
@@ -232,6 +350,10 @@ class MediaDownloader:
                         f.write(chunk)
 
                 os.replace(part, dest)
+                _maybe_fix_video_audio(
+                    dest, media_type,
+                    getattr(self.config, "ffmpeg_path", ""),
+                )
                 return DownloadResult(
                     game_name=label, media_type=media_type,
                     success=True, path=dest,
