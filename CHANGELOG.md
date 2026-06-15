@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`fetch-media` / `fetch-meta` now surfaces API errors instead of silently reporting "no match".** When both ScreenScraper and TheGamesDB are used (`--source both`) and both return an error (e.g. rate-limit exceeded, bad credentials, network failure), the combined client previously swallowed both errors and returned an empty result — causing every game to appear as "no match" and every slot to be counted as "Failed", with no indication of what went wrong. The combined client now re-raises a `MetadataError` containing both sources' error messages, which is shown in the per-game summary as `metadata error: ScreenScraper: <reason>`. This turns a completely opaque `Failed: 500` into a clear diagnostic.
+
 - **`fetch-meta --game` no longer fails with "not found" when the game already has complete metadata.** Previously `--game` filtered from `db.iter_incomplete()`, so explicitly targeting a game whose metadata was already filled in (e.g. to re-scrape after a bad import) always returned an error. The filter now falls through to the full game list when the named game is absent from the incomplete set, so re-fetching a specific complete game works as expected.
 
 - **`fetch-media` per-game download log — verbose output now shows what actually happened per slot.** Instead of only printing a final `Downloaded: X  Skipped: Y  Failed: Z` summary, `fetch-media` now prints a separator and per-slot status for every game processed:
@@ -18,6 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - `no metadata` / `no match` — scraper lookup failed entirely
 
 - **`fetch-media` now accepts `--verbose` / `-v` for real-time per-game progress.** Without `--verbose`, output is unchanged: a spinner during metadata resolution and a per-game summary block after downloads complete. With `--verbose`: each game name is printed as its metadata is fetched (`Fetching: GameName → resolved`), and each download result is printed the moment it finishes (`downloaded: GameName · wheel  <path>`, `no URL: GameName · video`, etc.), so long runs show activity as it happens rather than all at once at the end. The GUI's global **Verbose** checkbox now wires this flag to both the "Run fetch-media" button and the "Full metadata refresh" chain.
+
+- **GUI source dropdown no longer shows "config default".** The option was identical to "both (SS primary)" for any user with both ScreenScraper and TheGamesDB credentials configured (the normal case). "config default" has been removed and "both (SS primary)" is now the default selection, eliminating the confusion.
 
 - **"Full metadata refresh" now correctly scopes `fetch-media` to the selected game.** When a single game was chosen from the GUI dropdown and "Full metadata refresh" was clicked, `fetch-meta` received `--game GameName` but `fetch-media` did not — it would then scan and attempt media downloads for every game on the system. The chain now passes `--game` to both steps.
 
