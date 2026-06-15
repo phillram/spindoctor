@@ -25,10 +25,10 @@ explorer %USERPROFILE%\.spindoctor
 %USERPROFILE%\.spindoctor\mame_listxml_cache\
 ```
 
-On this cabinet `%USERPROFILE%` resolves to `C:\Users\User`, so the full path is:
+On a typical Windows cabinet, `%USERPROFILE%` expands to `C:\Users\<YourWindowsUsername>`, so the full path looks like:
 
 ```
-C:\Users\User\.spindoctor\
+C:\Users\<YourWindowsUsername>\.spindoctor\
 ```
 
 ### macOS / Linux (developer machine)
@@ -276,7 +276,7 @@ SpinDoctor reads these but will **never write or delete** them:
 ## Full Directory Tree (this cabinet)
 
 ```
-C:\Users\User\.spindoctor\              ← SpinDoctor app data (always here)
+C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always here)
 ├── config.json                         ← main settings
 ├── scraper.log                         ← API request log (current)
 ├── scraper.log.1                       ← API request log (previous rotation)
