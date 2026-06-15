@@ -85,6 +85,16 @@ def _redact_params(params: Optional[dict]) -> dict:
     }
 
 
+def _raise_if_ss_error(data: dict) -> None:
+    """Raise MetadataError if the ScreenScraper JSON body signals an API-level
+    error (quota exceeded, auth failure, server issue).  SS returns HTTP 200
+    even for these conditions; the error is signalled via an ``"erreur"`` key
+    at the top level or inside ``response``."""
+    err = data.get("erreur") or data.get("response", {}).get("erreur")
+    if err:
+        raise MetadataError(f"ScreenScraper API error: {err}")
+
+
 def _body_snippet(body: str, limit: int = 500) -> str:
     """Compact, single-line slice of a response body for log + dialog use."""
     if not body:
@@ -936,6 +946,8 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"ScreenScraper fetch failed: {e}") from e
 
+        # SS signals quota/auth errors via an "erreur" key at HTTP 200.
+        _raise_if_ss_error(data)
         if "response" not in data or "jeu" not in data.get("response", {}):
             return None
 
@@ -965,6 +977,7 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"ScreenScraper search failed: {e}") from e
 
+        _raise_if_ss_error(data)
         jeux = data.get("response", {}).get("jeux", []) or []
         results = []
         for jeu in jeux[:max_results]:
@@ -1369,9 +1382,11 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
         self,
         ss_client: "ScreenScraperClient",
         tgdb_client: "TheGamesDBClient",
+        cache: "Optional[MetadataCache]" = None,
     ):
         self._ss = ss_client
         self._tgdb = tgdb_client
+        self._cache = cache  # enables _FetchWithSearchMixin's cache check
 
     def fetch(self, game_name: str, system_name: str) -> "Optional[GameMetadata]":
         ss_meta: Optional[GameMetadata] = None
@@ -1480,11 +1495,11 @@ def build_client(
         return _make_tgdb()
 
     if source in ("both", "combined"):
-        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+        return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
 
     # Unknown / legacy value: fall back to whatever credentials are present.
     if has_ss and has_tgdb:
-        return CombinedMetadataClient(_make_ss(), _make_tgdb())
+        return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
     if has_ss:
         return _make_ss()
     if has_tgdb:

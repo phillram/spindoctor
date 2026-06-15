@@ -479,3 +479,83 @@ def test_write_audit_csv_includes_download_log_columns(tmp_path):
     # Slots not in the log get an empty string.
     for t in MEDIA_TYPES:
         assert f"{t}_result" in row
+
+
+def test_raise_if_ss_error_raises_on_erreur_key():
+    """_raise_if_ss_error must raise MetadataError when the SS response JSON
+    contains an 'erreur' key — the standard SS format for quota/auth errors
+    returned as HTTP 200."""
+    from spindoctor.scraper import MetadataError, _raise_if_ss_error
+
+    try:
+        _raise_if_ss_error({"erreur": "Erreur : Quota journalier atteint"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "Quota" in str(e)
+
+
+def test_raise_if_ss_error_silent_on_clean_response():
+    """_raise_if_ss_error must not raise for a normal (no-error) SS response."""
+    from spindoctor.scraper import _raise_if_ss_error
+
+    # Should not raise for typical clean responses.
+    _raise_if_ss_error({})
+    _raise_if_ss_error({"response": {"jeu": {}}})
+    _raise_if_ss_error({"response": {"jeux": []}})
+
+
+def test_combined_client_raises_when_both_sources_fail():
+    """CombinedMetadataClient.search() must raise MetadataError when both
+    ScreenScraper and TheGamesDB fail, instead of silently returning []."""
+    from spindoctor.scraper import CombinedMetadataClient, MetadataError
+
+    class _AlwaysFail:
+        source_name = "fake"
+        _cache = None
+        def fetch(self, *_a, **_k): raise MetadataError("SS down: 429")
+        def search(self, *_a, **_k): raise MetadataError("TGDB down: 500")
+
+    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysFail())
+    try:
+        client.search("Zelda", "nes")
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "SS down" in str(e) or "TGDB down" in str(e)
+
+
+def test_combined_client_fallback_when_one_source_fails():
+    """CombinedMetadataClient.search() must return the surviving source's results
+    when only one of the two sources fails."""
+    from spindoctor.scraper import CombinedMetadataClient, MetadataError, GameMetadata
+
+    class _AlwaysFail:
+        source_name = "ss"
+        _cache = None
+        def fetch(self, *_a, **_k): raise MetadataError("SS down")
+        def search(self, *_a, **_k): raise MetadataError("SS down")
+
+    class _AlwaysOk:
+        source_name = "tgdb"
+        _cache = None
+        def fetch(self, *_a, **_k): return None
+        def search(self, *_a, **_k):
+            m = GameMetadata(name="Zelda")
+            m.match_score = 1.0
+            return [m]
+
+    client = CombinedMetadataClient(_AlwaysFail(), _AlwaysOk())
+    results = client.search("Zelda", "nes")
+    assert len(results) == 1
+    assert results[0].name == "Zelda"
+
+
+def test_is_fatal_scraper_error_detects_quota_and_server_errors():
+    """_is_fatal_scraper_error must return True for quota/500 patterns and
+    False for genuine 'no match' situations."""
+    from spindoctor.cli import _is_fatal_scraper_error
+
+    assert _is_fatal_scraper_error("ScreenScraper API error: Erreur : Quota journalier atteint")
+    assert _is_fatal_scraper_error("ScreenScraper: ScreenScraper fetch failed: 500 Server Error")
+    assert _is_fatal_scraper_error("ScreenScraper: ScreenScraper search failed: 429 Client Error")
+    assert not _is_fatal_scraper_error("ScreenScraper fetch failed: JSONDecodeError at offset 0")
+    assert not _is_fatal_scraper_error("TheGamesDB: no results returned")

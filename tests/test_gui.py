@@ -313,6 +313,7 @@ def test_full_metadata_refresh_propagates_game_to_fetch_media():
         _meta_remove_orphans_var = _FakeVar(False)
         _meta_strip_variant_var = _FakeVar(False)
         _global_apply_var = _FakeVar(True)
+        _global_verbose_var = _FakeVar(False)
         messagebox = type("M", (), {
             "showerror": staticmethod(lambda *_a, **_k: None),
         })
