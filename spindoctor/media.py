@@ -169,29 +169,35 @@ def _reencode_audio_aac(ffmpeg: str, path: Path) -> bool:
             pass
 
 
-def _maybe_fix_video_audio(path: Path, media_type: str, ffmpeg_hint: str = "") -> None:
+_FFMPEG_MISSING_WARNING = (
+    "ffmpeg not found — video audio may be silent on macOS and Windows 7. "
+    "Install ffmpeg and place ffmpeg.exe + ffprobe.exe next to spindoctor.exe "
+    "(or set ffmpeg_path in config). See docs/troubleshooting.md."
+)
+
+
+def _maybe_fix_video_audio(path: Path, media_type: str, ffmpeg_hint: str = "") -> Optional[str]:
     """Post-process a downloaded video to ensure audio plays on all platforms.
 
-    Called after every successful video/trailer download. No-op when ffmpeg
-    is unavailable or the audio is already AAC.
+    Called after every successful video/trailer download. Returns a warning
+    string when ffmpeg is unavailable (so callers can surface it to the user),
+    or None when the fix succeeded or was not needed.
     """
     if media_type not in ("video", "trailer"):
-        return
+        return None
     if path.suffix.lower() not in _VIDEO_CONTAINER_EXTS:
-        return
+        return None
     ffmpeg, ffprobe = _find_ffmpeg(ffmpeg_hint)
     if not (ffmpeg and ffprobe):
-        return
+        return _FFMPEG_MISSING_WARNING
     if not _audio_needs_reencode(ffprobe, path):
-        return
+        return None
     if _reencode_audio_aac(ffmpeg, path):
         _log.info("Re-encoded audio to AAC: %s", path.name)
-    else:
-        _log.warning(
-            "ffmpeg audio re-encode failed for %s — video is downloaded but "
-            "may be silent on macOS / Windows. Install ffmpeg to fix automatically.",
-            path.name,
-        )
+        return None
+    warn = f"ffmpeg audio re-encode failed for {path.name} — video may be silent"
+    _log.warning(warn)
+    return warn
 
 
 @dataclass
@@ -202,6 +208,7 @@ class DownloadResult:
     path: Optional[Path] = None
     skipped: bool = False
     error: str = ""
+    warning: str = ""
 
 
 class MediaDownloader:
@@ -350,13 +357,14 @@ class MediaDownloader:
                         f.write(chunk)
 
                 os.replace(part, dest)
-                _maybe_fix_video_audio(
+                audio_warn = _maybe_fix_video_audio(
                     dest, media_type,
                     getattr(self.config, "ffmpeg_path", ""),
                 )
                 return DownloadResult(
                     game_name=label, media_type=media_type,
                     success=True, path=dest,
+                    warning=audio_warn or "",
                 )
             except requests.RequestException as e:
                 last_error = str(e)
