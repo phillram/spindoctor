@@ -132,6 +132,17 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --typ
 
 `--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`).
 
+**Network error handling** — if both ScreenScraper and TheGamesDB are unreachable (DNS failure, timeout, connection refused), the per-game error is now printed to the console and the run aborts after 3 consecutive network failures rather than grinding through the whole list:
+
+```
+  metadata error: Animal Crossing (USA): ScreenScraper: … NameResolutionError; TheGamesDB: …
+  metadata error: Baten Kaitos…: …
+  metadata error: Chibi-Robo!…: …
+  Network unreachable — aborting metadata resolution (97 games counted as failed).
+```
+
+Check `%USERPROFILE%\.spindoctor\scraper.log` for the full error details. See [Troubleshooting → fetch-media reports "Failed: 500"](troubleshooting.md#fetch-media-reports-failed-500-with-no-explanation).
+
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 
 When a media slot has multiple candidates (different regions / artwork variants), three modes are available:
