@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.7.1] - 2026-06-14
+
 ### Fixed
 
 - **`fetch-meta` and `fetch-media` both stop immediately when a fatal scraper error is detected, protecting your API quota.** When a rate-limit (HTTP 429), server error (HTTP 500), or SS quota-exceeded response is received for any game, the metadata-resolution loop aborts at once rather than hammering the API for every remaining game. Remaining games are marked `aborted` in the per-game summary and in the audit CSV `{slot}_result` columns.
@@ -1535,7 +1539,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.1...HEAD
+[2.7.1]: https://github.com/phillram/spindoctor/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/phillram/spindoctor/compare/v2.6.3...v2.7.0
 [2.6.3]: https://github.com/phillram/spindoctor/compare/v2.6.2...v2.6.3
 [2.6.2]: https://github.com/phillram/spindoctor/compare/v2.6.1...v2.6.2
