@@ -95,6 +95,18 @@ def _raise_if_ss_error(data: dict) -> None:
         raise MetadataError(f"ScreenScraper API error: {err}")
 
 
+def _raise_if_tgdb_error(data: dict) -> None:
+    """Raise MetadataError if the TheGamesDB JSON body signals an auth or
+    API-level error.  TGDB returns HTTP 200 for auth failures and signals the
+    problem via a top-level ``"code"`` field (401 / 403) rather than an HTTP
+    status code.  Quota exhaustion uses proper HTTP 429 and is already caught
+    by ``raise_for_status()``, so we only need to handle the in-band cases."""
+    code = data.get("code")
+    if code and code not in (200, None):
+        status = data.get("status") or ""
+        raise MetadataError(f"TheGamesDB API error (code {code}): {status}")
+
+
 def _body_snippet(body: str, limit: int = 500) -> str:
     """Compact, single-line slice of a response body for log + dialog use."""
     if not body:
@@ -1107,6 +1119,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"TheGamesDB fetch failed: {e}") from e
 
+        _raise_if_tgdb_error(data)
         games = data.get("data", {}).get("games", [])
         if not games:
             return None
@@ -1153,6 +1166,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         except (requests.RequestException, ValueError) as e:
             raise MetadataError(f"TheGamesDB search failed: {e}") from e
 
+        _raise_if_tgdb_error(data)
         games = (data.get("data", {}).get("games", []) or [])[:max_results]
         results = []
         for g in games:
