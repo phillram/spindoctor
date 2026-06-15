@@ -42,6 +42,7 @@ spindoctor config set <key> <value>
 | `atomic_tmp_dir` | **Scratch folder for atomic write temp files.** When blank (the default), each `*.tmp` file lands beside the real XML or JSON file it is replacing — which is safe but scatters temp files through the HyperSpin Databases tree. Set this to a dedicated folder (e.g. `D:\SpinDoctorTemp`) to keep all temp files in one predictable place. **Must be on the same drive as `hyperspin_dir`** — SpinDoctor silently falls back to writing next to the target for any file on a different drive. Set via the GUI Setup tab or `spindoctor config set atomic_tmp_dir D:\SpinDoctorTemp`. |
 | `backup_before_modify` | Whether XML writes leave a `.bak` next to the file (default `true`) |
 | `region_preferences` | Default region order for `curate` (default `["USA", "World", "Europe", "Japan"]`) |
+| `ffmpeg_path` | Explicit path to `ffmpeg` / `ffmpeg.exe` for post-download audio re-encoding (auto-detected from `PATH` when blank — see below) |
 | `demulshooter_path` | Explicit path to `DemulShooter.exe` if auto-detection misses it |
 | `demulshooter_extra_args` | Default extra args appended to DemulShooter (default `-noresize`, Sinden-friendly) |
 | `ui_scale` | GUI font/widget scale multiplier (float, `0.6`–`2.0`, default `1.0`). Set from `View → UI scale` or `Ctrl++` / `Ctrl+-` / `Ctrl+0` in the GUI. Cabinet owners on 1280×720 typically want `0.9` to fit more on screen. |
@@ -106,6 +107,23 @@ That dump is the canonical control schema for every machine MAME knows about, an
 The listxml output is cached under the SpinDoctor cache directory keyed by system, and only re-runs when the binary's mtime changes — so you pay the (slow) listxml dump once per MAME upgrade, not per audit. Your per-system MAME folders for driving / gun games / etc. are launched by RocketLauncher as usual; SpinDoctor never touches them.
 
 You can leave `mame_executable` blank if you don't use `ledblinky generate` — `audit` and `doctor` will skip the MAME-controls check and warn instead of failing.
+
+## `ffmpeg_path` — automatic video audio fix
+
+ScreenScraper's standardised (`video-normalized`) video files encode audio as MP3 inside an MP4 container. Both macOS AVFoundation and Windows Media Foundation expect AAC behind an `mp4a` tag and silently drop the track, so the video plays but has no sound.
+
+When `ffmpeg` and `ffprobe` are available, SpinDoctor automatically re-encodes the audio to AAC after every video/trailer download (video stream is copied — no quality loss). No configuration is required if `ffmpeg` is on your `PATH`:
+
+- **macOS** — install with Homebrew: `brew install ffmpeg`
+- **Windows** — download from <https://ffmpeg.org/download.html> and add the `bin\` folder to your `PATH`, or drop `ffmpeg.exe` and `ffprobe.exe` next to the SpinDoctor binary
+
+If `ffmpeg` is installed in a non-standard location, point SpinDoctor at it:
+
+```
+spindoctor config set ffmpeg_path "C:\tools\ffmpeg\bin\ffmpeg.exe"
+```
+
+If neither `ffmpeg` nor `ffprobe` is found the download still succeeds — the audio just won't be fixed automatically.
 
 ## Filesystem considerations
 

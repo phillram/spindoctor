@@ -693,7 +693,7 @@ SCREENSCRAPER_MEDIA_TYPES: dict[str, tuple[str, ...]] = {
     # Prefer the dedicated fanart variant; fall back to mixrbv2 / screenmarquee.
     "fade":       ("fanart", "mixrbv2", "screenmarquee"),
     "video":      ("video-normalized", "video"),
-    "trailer":    ("video-normalized",),
+    "trailer":    ("video-normalized", "video"),
     # ScreenScraper uses ``bgmusic`` for the short audio clip on game select.
     "sound":      ("bgmusic", "themetheme"),
     # HyperSpin per-game theme zip (rare; only ScreenScraper exposes it).
