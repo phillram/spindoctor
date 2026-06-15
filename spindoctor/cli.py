@@ -4974,6 +4974,8 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                                     f"  [green]downloaded:[/green]  {r.game_name} · {r.media_type}"
                                     f"\n               {r.path}"
                                 )
+                                if r.warning:
+                                    prog.console.print(f"  [yellow]  ⚠ {r.warning}[/yellow]")
                             elif "No URL" in (r.error or ""):
                                 prog.console.print(
                                     f"  [yellow]no URL:[/yellow]      {r.game_name} · {r.media_type}"
@@ -5057,6 +5059,8 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         console.print(
                             f"    [green]{mt:<12}[/green]  downloaded    {r.path}"
                         )
+                        if r.warning:
+                            console.print(f"    [yellow]{'':12}  ⚠ {r.warning}[/yellow]")
                         game_log[mt] = "downloaded"
                     elif "No URL" in (r.error or ""):
                         console.print(
