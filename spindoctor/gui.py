@@ -7491,10 +7491,10 @@ class _SpinDoctorGUI:
         meta_opts_row = self.ttk.Frame(meta_frame)
         meta_opts_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(meta_opts_row, text="Source").pack(side="left")
-        self._meta_source_var = self.tk.StringVar(value="config default")
+        self._meta_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             meta_opts_row, textvariable=self._meta_source_var,
-            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
+            values=["both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self.ttk.Label(meta_opts_row, text="Threshold").pack(
@@ -7549,10 +7549,10 @@ class _SpinDoctorGUI:
         media_opts_row = self.ttk.Frame(media_frame)
         media_opts_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(media_opts_row, text="Source").pack(side="left")
-        self._media_source_var = self.tk.StringVar(value="config default")
+        self._media_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             media_opts_row, textvariable=self._media_source_var,
-            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
+            values=["both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
@@ -7884,7 +7884,7 @@ class _SpinDoctorGUI:
         if self._meta_no_cache_var.get():
             args.append("--no-cache")
         source = self._meta_source_var.get().strip()
-        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        source_cli = source.split()[0] if source else ""
         if source_cli:
             args += ["--source", source_cli]
         thresh = self._meta_threshold_var.get().strip()
@@ -8080,7 +8080,7 @@ class _SpinDoctorGUI:
         if selected_types:
             args += ["--types", selected_types]
         source = self._media_source_var.get().strip()
-        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        source_cli = source.split()[0] if source else ""
         if source_cli:
             args += ["--source", source_cli]
         if self._meta_overwrite_var.get():
