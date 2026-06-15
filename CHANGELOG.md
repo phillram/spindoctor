@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - `failed` — download error with the reason
   - `no metadata` / `no match` — scraper lookup failed entirely
 
+- **"Full metadata refresh" now correctly scopes `fetch-media` to the selected game.** When a single game was chosen from the GUI dropdown and "Full metadata refresh" was clicked, `fetch-meta` received `--game GameName` but `fetch-media` did not — it would then scan and attempt media downloads for every game on the system. The chain now passes `--game` to both steps.
+
 - **Audit CSV now includes `{slot}_result` columns after a `fetch-media` run.** The auto-exported CSV gains `wheel_result`, `background_result`, … `theme_result` columns recording the per-slot outcome (`downloaded`, `existing`, `no_url`, `no_metadata`, `no_match`, `failed`) for the current run, so you can filter the spreadsheet to see exactly which games got new media.
 
 ---
