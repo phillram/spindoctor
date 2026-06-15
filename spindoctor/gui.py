@@ -8200,7 +8200,7 @@ class _SpinDoctorGUI:
         if fetch_meta_args is None:
             return
 
-        fetch_media_args = ["fetch-media", *sys_args]
+        fetch_media_args = ["fetch-media", *sys_args, *self._meta_game_args()]
         selected_types = ",".join(
             t for t, v in self._meta_type_vars.items() if v.get()
         )
