@@ -4637,6 +4637,26 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
 
 # ─── fetch-media ──────────────────────────────────────────────────────────────
 
+_NETWORK_ERROR_PATTERNS = (
+    "max retries exceeded",
+    "getaddrinfo",
+    "nameresolutionerror",
+    "timed out",
+    "connection refused",
+    "failed to establish a new connection",
+    "remotedisconnected",
+    "connection reset by peer",
+)
+
+
+def _is_network_error(msg: str) -> bool:
+    """Return True when a MetadataError string indicates a DNS or connection
+    failure — i.e. a problem where retrying more games in the same run will
+    produce identical failures and burn API quota pointlessly."""
+    lower = msg.lower()
+    return any(p in lower for p in _NETWORK_ERROR_PATTERNS)
+
+
 @cli.command("fetch-media")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
@@ -4747,19 +4767,27 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         # downloads sequentially so the picker can prompt interactively.
         pick_jobs: list[tuple[str, str, list]] = []
         total_fail = 0
+        scraper_aborted = False
+        consecutive_net_errors = 0
         with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
             task = prog.add_task("Resolving metadata…", total=len(games))
             for game in games:
+                if scraper_aborted:
+                    total_fail += len(media_types)
+                    prog.advance(task)
+                    continue
                 prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
                 try:
                     meta = client.fetch_with_search(game.name, sys_name)
                     chosen = meta[0] if meta else None
                     if not chosen:
                         total_fail += len(media_types)
+                        consecutive_net_errors = 0
                         prog.advance(task)
                         continue
+                    consecutive_net_errors = 0
                     if pick_media:
                         for mt in media_types:
                             cands = chosen.media_candidates.get(mt, [])
@@ -4778,8 +4806,20 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             )
                         )
                 except MetadataError as e:
-                    console.print(f"  [red]Error [{game.name}]:[/red] {e}")
+                    err_str = str(e)
+                    console.print(f"  [red]metadata error:[/red] {game.name}: {err_str}")
                     total_fail += len(media_types)
+                    if _is_network_error(err_str):
+                        consecutive_net_errors += 1
+                        if consecutive_net_errors >= 3:
+                            remaining = len(games) - games.index(game) - 1
+                            console.print(
+                                f"  [red bold]Network unreachable — aborting metadata "
+                                f"resolution ({remaining} games counted as failed).[/red bold]"
+                            )
+                            scraper_aborted = True
+                    else:
+                        consecutive_net_errors = 0
                 prog.advance(task)
 
         # ── Phase 2: parallel downloads (auto path) + sequential picker ─────
