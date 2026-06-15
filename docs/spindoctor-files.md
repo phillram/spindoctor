@@ -60,18 +60,18 @@ Everything in this directory is created and managed by SpinDoctor. None of these
 
 ```json
 {
-  "roms_dir":              "J:\\Games",
+  "roms_dir":              "D:\\Games",
   "hyperspin_dir":         "D:\\Arcade",
   "emulators_dir":         "D:\\Arcade\\Emulators",
   "rocketlauncher_dir":    "D:\\Arcade\\RocketLauncher",
   "ledblinky_dir":         "D:\\Arcade\\LEDBlinky",
-  "output_dir":            "J:\\spindoctor\\output",
-  "backup_dir":            "J:\\spindoctor\\backups",
-  "atomic_tmp_dir":        "J:\\spindoctor\\temps",
-  "auto_audit_export_dir": "J:\\spindoctor\\audits",
-  "screenscraper_user":    "nobulnela",
+  "output_dir":            "C:\\SpinDoctor\\output",
+  "backup_dir":            "C:\\SpinDoctor\\backups",
+  "atomic_tmp_dir":        "C:\\SpinDoctor\\temps",
+  "auto_audit_export_dir": "C:\\SpinDoctor\\audits",
+  "screenscraper_user":    "...",
   "screenscraper_pass":    "...",
-  "screenscraper_devid":   "nobulnela",
+  "screenscraper_devid":   "...",
   "screenscraper_devpassword": "...",
   "thegamesdb_key":        "...",
   "max_concurrent_downloads": 4,
@@ -103,7 +103,7 @@ Each line is one request:
   → HTTPSConnectionPool(...): Max retries exceeded ... (Caused by NameResolutionError(...))
 
 2026-06-14 12:45:16,968 INFO screenscraper.fetch GET https://www.screenscraper.fr/api2/jeuInfos.php
-  params={'devid': 'nobulnela', 'devpassword': '***', 'ssid': 'nobulnela', ...}
+  params={'devid': '...', 'devpassword': '***', 'ssid': '...', ...}
   → HTTP 404 (40 bytes)
 2026-06-14 12:45:17,015 DEBUG screenscraper.fetch body: Erreur : Rom/Iso/Dossier non trouvée !
 ```
@@ -197,14 +197,14 @@ These are **not** inside `%USERPROFILE%\.spindoctor\`. They live wherever you po
 
 ### `output_dir`
 
-Default: `J:\spindoctor\output\` on this cabinet. Staging directory for files SpinDoctor generates before `--apply` commits them. Most commands write directly to their target (in-place) with atomic rename — `output_dir` is used only by commands that explicitly accept `--output-dir`.
+Example: `C:\SpinDoctor\output\`. Staging directory for files SpinDoctor generates before `--apply` commits them. Most commands write directly to their target (in-place) with atomic rename — `output_dir` is used only by commands that explicitly accept `--output-dir`.
 
 ### `backup_dir`
 
-Default: `J:\spindoctor\backups\` on this cabinet. Root folder for all timestamped backups SpinDoctor writes before any destructive change (database saves, LEDBlinky file edits, etc.).
+Example: `C:\SpinDoctor\backups\`. Root folder for all timestamped backups SpinDoctor writes before any destructive change (database saves, LEDBlinky file edits, etc.).
 
 ```
-J:\spindoctor\backups\
+C:\SpinDoctor\backups\
 ├── HyperSpin\
 │   └── Databases\
 │       └── Nintendo Gamecube\
@@ -222,16 +222,16 @@ If `backup_dir` is not configured, `.bak` files are written **next to the source
 
 ### `atomic_tmp_dir`
 
-Default: `J:\spindoctor\temps\` on this cabinet. Scratch area for the `.tmp` files written during atomic XML/JSON saves. **Must be on the same drive as your HyperSpin directory** — cross-drive atomic rename is not possible on Windows; SpinDoctor silently falls back to `target.parent` if it detects a drive mismatch.
+Example: `C:\SpinDoctor\temps\`. Scratch area for the `.tmp` files written during atomic XML/JSON saves. **Must be on the same drive as your HyperSpin directory** — cross-drive atomic rename is not possible on Windows; SpinDoctor silently falls back to `target.parent` if it detects a drive mismatch.
 
 If not configured, `.tmp` files land next to their targets inside the HyperSpin tree (safe but clutters the folders).
 
 ### `auto_audit_export_dir`
 
-Default: `J:\spindoctor\audits\` on this cabinet (optional; off by default). When set, SpinDoctor automatically exports an audit CSV here after any command that modifies media or databases.
+Example: `C:\SpinDoctor\audits\` (optional; off by default). When set, SpinDoctor automatically exports an audit CSV here after any command that modifies media or databases.
 
 ```
-J:\spindoctor\audits\
+C:\SpinDoctor\audits\
 └── audit_20260614_174958.csv
 ```
 
@@ -290,13 +290,13 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 └── mame_listxml_cache\                 ← MAME listxml cache (auto-invalidated)
     └── MAME.xml
 
-J:\spindoctor\                          ← SpinDoctor output (configured in config.json)
+C:\SpinDoctor\                          ← SpinDoctor output (configured in config.json)
 ├── output\                             ← generated files staging area
 ├── backups\                            ← timestamped .bak files
 │   ├── HyperSpin\
 │   ├── LEDBlinky\
 │   └── RocketLauncher\
-├── temps\                              ← atomic write staging (must be same drive as D:\Arcade)
+├── temps\                              ← atomic write staging (must be same drive as HyperSpin)
 └── audits\                             ← auto-exported audit CSVs
     └── audit_YYYYMMDD_HHMMSS.csv
 

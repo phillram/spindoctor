@@ -81,6 +81,7 @@ class Config:
     mame_executable: str = ""
     demulshooter_path: str = ""           # Override DemulShooter.exe location
     demulshooter_extra_args: str = ""     # Extra CLI args appended to -target
+    ffmpeg_path: str = ""                 # Override ffmpeg binary location (auto-detected from PATH when blank)
 
     # Metadata API credentials
     screenscraper_user: str = ""

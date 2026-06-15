@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Downloaded videos now play with audio on macOS and Windows.** ScreenScraper's standardised (`video-normalized`) files encode audio as MP3 inside an MP4 container using an `mp4a` tag (`mp4a.40.34`). Both macOS AVFoundation (QuickTime, Finder preview) and Windows Media Foundation (used by HyperSpin on Windows 7) expect AAC behind any `mp4a` tag and silently drop an MP3 bitstream, so the file appeared to play but had no sound. SpinDoctor now detects this condition with `ffprobe` after every successful video/trailer download and, if the audio codec is not AAC, re-encodes it to proper AAC in-place with `ffmpeg` (video stream is copied — no re-encode, no quality loss). The fix is automatic when `ffmpeg`/`ffprobe` are on `PATH`; no action required. A new `ffmpeg_path` config key lets cabinet owners point to a non-`PATH` install.
+
+- **`trailer` downloads now fall back to the `video` ScreenScraper type** when no normalised variant exists for a game. Previously only `video-normalized` was tried, so any game whose only ScreenScraper video was the raw `video` type received no trailer file.
+
 ---
 
 ## [2.7.1] - 2026-06-14
