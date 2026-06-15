@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fetch-meta --game` no longer fails with "not found" when the game already has complete metadata.** Previously `--game` filtered from `db.iter_incomplete()`, so explicitly targeting a game whose metadata was already filled in (e.g. to re-scrape after a bad import) always returned an error. The filter now falls through to the full game list when the named game is absent from the incomplete set, so re-fetching a specific complete game works as expected.
+
+- **`fetch-media` per-game download log — verbose output now shows what actually happened per slot.** Instead of only printing a final `Downloaded: X  Skipped: Y  Failed: Z` summary, `fetch-media` now prints a separator and per-slot status for every game processed:
+  - `existing` — file was already present; shows full destination path
+  - `downloaded` — newly fetched; shows full destination path
+  - `no URL` — scraper returned no candidate for this slot (common for video/theme on PC games)
+  - `failed` — download error with the reason
+  - `no metadata` / `no match` — scraper lookup failed entirely
+
+- **Audit CSV now includes `{slot}_result` columns after a `fetch-media` run.** The auto-exported CSV gains `wheel_result`, `background_result`, … `theme_result` columns recording the per-slot outcome (`downloaded`, `existing`, `no_url`, `no_metadata`, `no_match`, `failed`) for the current run, so you can filter the spreadsheet to see exactly which games got new media.
+
 ---
 
 ## [2.7.0] - 2026-06-14
