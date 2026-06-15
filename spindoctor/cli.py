@@ -4696,9 +4696,12 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                     "non-TTY contexts (the GUI, cron, CI)."))
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print a line per game as metadata is resolved and per slot as "
+                   "downloads complete, instead of only the end-of-run summary.")
 @click.option("--output-dir", type=click.Path(), default=None)
 def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
-                skip_ambiguous, apply_changes, output_dir):
+                skip_ambiguous, apply_changes, verbose, output_dir):
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
@@ -4797,15 +4800,24 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                       console=console) as prog:
             task = prog.add_task("Resolving metadata…", total=len(games))
             for game in games:
-                prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
+                if verbose:
+                    prog.console.print(f"  [dim]Fetching:[/dim] {game.name}")
+                else:
+                    prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
                 try:
                     meta = client.fetch_with_search(game.name, sys_name)
                     chosen = meta[0] if meta else None
                     if not chosen:
                         no_match.append(game.name)
+                        if verbose:
+                            prog.console.print(f"    [yellow]→ no match on scraper[/yellow]")
                         total_fail += len(media_types)
                         prog.advance(task)
                         continue
+                    if verbose:
+                        src = getattr(chosen, "source", "")
+                        prog.console.print(f"    [green]→ resolved[/green]" +
+                                           (f" [dim]({src})[/dim]" if src else ""))
                     if pick_media:
                         for mt in media_types:
                             cands = chosen.media_candidates.get(mt, [])
@@ -4824,6 +4836,8 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         )
                 except MetadataError as e:
                     meta_errors[game.name] = str(e)
+                    if verbose:
+                        prog.console.print(f"    [red]→ error: {e}[/red]")
                     total_fail += len(media_types)
                 prog.advance(task)
 
@@ -4877,6 +4891,25 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     def _on_done(r):
                         nonlocal total_ok, total_skip, total_fail
                         all_results.append(r)
+                        if verbose:
+                            if r.skipped:
+                                prog.console.print(
+                                    f"  [dim]existing:[/dim]    {r.game_name} · {r.media_type}"
+                                )
+                            elif r.success:
+                                prog.console.print(
+                                    f"  [green]downloaded:[/green]  {r.game_name} · {r.media_type}"
+                                    f"\n               {r.path}"
+                                )
+                            elif "No URL" in (r.error or ""):
+                                prog.console.print(
+                                    f"  [yellow]no URL:[/yellow]      {r.game_name} · {r.media_type}"
+                                )
+                            else:
+                                prog.console.print(
+                                    f"  [red]failed:[/red]      {r.game_name} · {r.media_type}"
+                                    f"  {r.error}"
+                                )
                         if r.skipped:
                             total_skip += 1
                         elif r.success:

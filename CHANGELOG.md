@@ -17,6 +17,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   - `failed` — download error with the reason
   - `no metadata` / `no match` — scraper lookup failed entirely
 
+- **`fetch-media` now accepts `--verbose` / `-v` for real-time per-game progress.** Without `--verbose`, output is unchanged: a spinner during metadata resolution and a per-game summary block after downloads complete. With `--verbose`: each game name is printed as its metadata is fetched (`Fetching: GameName → resolved`), and each download result is printed the moment it finishes (`downloaded: GameName · wheel  <path>`, `no URL: GameName · video`, etc.), so long runs show activity as it happens rather than all at once at the end. The GUI's global **Verbose** checkbox now wires this flag to both the "Run fetch-media" button and the "Full metadata refresh" chain.
+
 - **"Full metadata refresh" now correctly scopes `fetch-media` to the selected game.** When a single game was chosen from the GUI dropdown and "Full metadata refresh" was clicked, `fetch-meta` received `--game GameName` but `fetch-media` did not — it would then scan and attempt media downloads for every game on the system. The chain now passes `--game` to both steps.
 
 - **Audit CSV now includes `{slot}_result` columns after a `fetch-media` run.** The auto-exported CSV gains `wheel_result`, `background_result`, … `theme_result` columns recording the per-slot outcome (`downloaded`, `existing`, `no_url`, `no_metadata`, `no_match`, `failed`) for the current run, so you can filter the spreadsheet to see exactly which games got new media.

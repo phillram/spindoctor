@@ -8085,6 +8085,8 @@ class _SpinDoctorGUI:
             args += ["--source", source_cli]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -8208,6 +8210,8 @@ class _SpinDoctorGUI:
             fetch_media_args += ["--types", selected_types]
         if self._meta_overwrite_var.get():
             fetch_media_args.append("--overwrite")
+        if self._global_verbose_var.get():
+            fetch_media_args.append("--verbose")
         if self._global_apply_var.get():
             fetch_media_args.append("--apply")
 
