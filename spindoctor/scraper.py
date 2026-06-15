@@ -107,6 +107,25 @@ def _raise_if_tgdb_error(data: dict) -> None:
         raise MetadataError(f"TheGamesDB API error (code {code}): {status}")
 
 
+def _redact_error_str(error: BaseException, params: Optional[dict]) -> str:
+    """Scrub sensitive param values out of an exception string.
+
+    When DNS fails, urllib3 embeds the full URL (including query params) in
+    the MaxRetryError / NameResolutionError message text. ``str(error)``
+    would expose sspassword / devpassword / apikey verbatim even though
+    ``_redact_params`` already cleaned the params dict. This replaces every
+    known-secret literal value with ``***`` before the string hits the log.
+    """
+    text = str(error)
+    if not params:
+        return text
+    for key in _REDACT_KEYS:
+        val = params.get(key)
+        if val and val not in ("", None):
+            text = text.replace(str(val), "***")
+    return text
+
+
 def _body_snippet(body: str, limit: int = 500) -> str:
     """Compact, single-line slice of a response body for log + dialog use."""
     if not body:
@@ -137,7 +156,8 @@ def _log_http(
     redacted = _redact_params(params)
     if error is not None:
         scraper_logger.error("%s %s %s params=%s — %s",
-                             label, method, url, redacted, error)
+                             label, method, url, redacted,
+                             _redact_error_str(error, params))
         return
     size = len(body or "")
     scraper_logger.info("%s %s %s params=%s → HTTP %s (%d bytes)",
