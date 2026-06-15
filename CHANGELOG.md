@@ -6,6 +6,37 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fetch-meta` and `fetch-media` both stop immediately when a fatal scraper error is detected, protecting your API quota.** When a rate-limit (HTTP 429), server error (HTTP 500), or SS quota-exceeded response is received for any game, the metadata-resolution loop aborts at once rather than hammering the API for every remaining game. Remaining games are marked `aborted` in the per-game summary and in the audit CSV `{slot}_result` columns.
+
+- **ScreenScraper and TheGamesDB API errors embedded in HTTP 200 responses are now surfaced.** SS signals quota/auth problems via an `"erreur"` key in a 200 body; TGDB signals auth failures via a `"code": 401/403` field in a 200 body. Both were previously silently treated as "game not found". These are now raised as `MetadataError` so they appear in the per-game summary and trigger the circuit breaker above.
+
+- **`fetch-media` / `fetch-meta` now surfaces API errors instead of silently reporting "no match".** When both ScreenScraper and TheGamesDB are used (`--source both`) and both return an error (e.g. rate-limit exceeded, bad credentials, network failure), the combined client previously swallowed both errors and returned an empty result — causing every game to appear as "no match" and every slot to be counted as "Failed", with no indication of what went wrong. The combined client now re-raises a `MetadataError` containing both sources' error messages, which is shown in the per-game summary as `metadata error: ScreenScraper: <reason>`. This turns a completely opaque `Failed: 500` into a clear diagnostic.
+
+- **`scraper.log` no longer exposes passwords in plaintext on DNS failures.** When a `NameResolutionError` or `MaxRetryError` occurs, urllib3 embeds the full request URL — including all query parameters — in the exception string. `_log_http` was logging `str(error)` verbatim, so `sspassword=<value>` and `devpassword=<value>` / `apikey=<value>` bypassed the `_redact_params()` sanitisation that correctly masked the `params` dict. A new `_redact_error_str()` function strips known secret values from the exception text before it hits the log file.
+
+- **`fetch-media` now aborts early and surfaces the real error when DNS / network is down.** Previously, a DNS failure (`getaddrinfo failed`, `Max retries exceeded`) caused `CombinedMetadataClient.search()` to silently return an empty list for every game, producing "Failed: 500" with no diagnostic output — indistinguishable from 500 "no match" results. Two fixes: (1) `CombinedMetadataClient.search()` now re-raises `MetadataError` when both ScreenScraper and TheGamesDB fail (same pattern already applied to `fetch()`), so the error message reaches the console. (2) A circuit breaker stops Phase 1 metadata resolution after 3 consecutive network failures, prints the reason, and counts remaining games as failed rather than grinding through the whole list — turning a silent 500-failure run into an immediate, actionable error.
+
+- **Metadata cache now works in combined (`--source both`) mode.** `CombinedMetadataClient` previously bypassed the on-disk cache entirely, so every `fetch-media` run made fresh API calls even when `fetch-meta` had already fetched and cached all game metadata. Games cached from a prior `fetch-meta --source both` run are now returned from cache, consuming zero API quota.
+
+- **`fetch-meta --game` no longer fails with "not found" when the game already has complete metadata.** Previously `--game` filtered from `db.iter_incomplete()`, so explicitly targeting a game whose metadata was already filled in (e.g. to re-scrape after a bad import) always returned an error. The filter now falls through to the full game list when the named game is absent from the incomplete set, so re-fetching a specific complete game works as expected.
+
+- **`fetch-media` per-game download log — verbose output now shows what actually happened per slot.** Instead of only printing a final `Downloaded: X  Skipped: Y  Failed: Z` summary, `fetch-media` now prints a separator and per-slot status for every game processed:
+  - `existing` — file was already present; shows full destination path
+  - `downloaded` — newly fetched; shows full destination path
+  - `no URL` — scraper returned no candidate for this slot (common for video/theme on PC games)
+  - `failed` — download error with the reason
+  - `no metadata` / `no match` — scraper lookup failed entirely
+
+- **`fetch-media` now accepts `--verbose` / `-v` for real-time per-game progress.** Without `--verbose`, output is unchanged: a spinner during metadata resolution and a per-game summary block after downloads complete. With `--verbose`: each game name is printed as its metadata is fetched (`Fetching: GameName → resolved`), and each download result is printed the moment it finishes (`downloaded: GameName · wheel  <path>`, `no URL: GameName · video`, etc.), so long runs show activity as it happens rather than all at once at the end. The GUI's global **Verbose** checkbox now wires this flag to both the "Run fetch-media" button and the "Full metadata refresh" chain.
+
+- **GUI source dropdown no longer shows "config default".** The option was identical to "both (SS primary)" for any user with both ScreenScraper and TheGamesDB credentials configured (the normal case). "config default" has been removed and "both (SS primary)" is now the default selection, eliminating the confusion.
+
+- **"Full metadata refresh" now correctly scopes `fetch-media` to the selected game.** When a single game was chosen from the GUI dropdown and "Full metadata refresh" was clicked, `fetch-meta` received `--game GameName` but `fetch-media` did not — it would then scan and attempt media downloads for every game on the system. The chain now passes `--game` to both steps.
+
+- **Audit CSV now includes `{slot}_result` columns after a `fetch-media` run.** The auto-exported CSV gains `wheel_result`, `background_result`, … `theme_result` columns recording the per-slot outcome (`downloaded`, `existing`, `no_url`, `no_metadata`, `no_match`, `failed`) for the current run, so you can filter the spreadsheet to see exactly which games got new media.
+
 ---
 
 ## [2.7.0] - 2026-06-14

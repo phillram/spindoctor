@@ -7491,10 +7491,10 @@ class _SpinDoctorGUI:
         meta_opts_row = self.ttk.Frame(meta_frame)
         meta_opts_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(meta_opts_row, text="Source").pack(side="left")
-        self._meta_source_var = self.tk.StringVar(value="config default")
+        self._meta_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             meta_opts_row, textvariable=self._meta_source_var,
-            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
+            values=["both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self.ttk.Label(meta_opts_row, text="Threshold").pack(
@@ -7549,10 +7549,10 @@ class _SpinDoctorGUI:
         media_opts_row = self.ttk.Frame(media_frame)
         media_opts_row.pack(fill="x", padx=6, pady=2)
         self.ttk.Label(media_opts_row, text="Source").pack(side="left")
-        self._media_source_var = self.tk.StringVar(value="config default")
+        self._media_source_var = self.tk.StringVar(value="both (SS primary)")
         self.ttk.Combobox(
             media_opts_row, textvariable=self._media_source_var,
-            values=["config default", "both (SS primary)", "screenscraper", "thegamesdb"],
+            values=["both (SS primary)", "screenscraper", "thegamesdb"],
             state="readonly", width=18,
         ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
@@ -7884,7 +7884,7 @@ class _SpinDoctorGUI:
         if self._meta_no_cache_var.get():
             args.append("--no-cache")
         source = self._meta_source_var.get().strip()
-        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        source_cli = source.split()[0] if source else ""
         if source_cli:
             args += ["--source", source_cli]
         thresh = self._meta_threshold_var.get().strip()
@@ -8080,11 +8080,13 @@ class _SpinDoctorGUI:
         if selected_types:
             args += ["--types", selected_types]
         source = self._media_source_var.get().strip()
-        source_cli = source.split()[0] if source not in ("", "config default") else ""
+        source_cli = source.split()[0] if source else ""
         if source_cli:
             args += ["--source", source_cli]
         if self._meta_overwrite_var.get():
             args.append("--overwrite")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
@@ -8200,7 +8202,7 @@ class _SpinDoctorGUI:
         if fetch_meta_args is None:
             return
 
-        fetch_media_args = ["fetch-media", *sys_args]
+        fetch_media_args = ["fetch-media", *sys_args, *self._meta_game_args()]
         selected_types = ",".join(
             t for t, v in self._meta_type_vars.items() if v.get()
         )
@@ -8208,6 +8210,8 @@ class _SpinDoctorGUI:
             fetch_media_args += ["--types", selected_types]
         if self._meta_overwrite_var.get():
             fetch_media_args.append("--overwrite")
+        if self._global_verbose_var.get():
+            fetch_media_args.append("--verbose")
         if self._global_apply_var.get():
             fetch_media_args.append("--apply")
 
