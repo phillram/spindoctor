@@ -8,7 +8,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`fetch-media` stops immediately when a fatal scraper error is detected, protecting your API quota.** When a rate-limit (HTTP 429), server error (HTTP 500), or SS quota-exceeded response is received for any game, the metadata-resolution loop aborts at once rather than hammering the API for every remaining game. Remaining games are marked `aborted` in the per-game summary and in the audit CSV `{slot}_result` columns.
+
+- **ScreenScraper quota/auth errors embedded in HTTP 200 responses are now surfaced.** SS signals quota and authentication problems via an `"erreur"` key inside a successful HTTP 200 response — previously this was silently treated as "game not found", hiding the real problem. These are now raised as `MetadataError` so they appear in the per-game summary and trigger the circuit breaker above.
+
 - **`fetch-media` / `fetch-meta` now surfaces API errors instead of silently reporting "no match".** When both ScreenScraper and TheGamesDB are used (`--source both`) and both return an error (e.g. rate-limit exceeded, bad credentials, network failure), the combined client previously swallowed both errors and returned an empty result — causing every game to appear as "no match" and every slot to be counted as "Failed", with no indication of what went wrong. The combined client now re-raises a `MetadataError` containing both sources' error messages, which is shown in the per-game summary as `metadata error: ScreenScraper: <reason>`. This turns a completely opaque `Failed: 500` into a clear diagnostic.
+
+- **Metadata cache now works in combined (`--source both`) mode.** `CombinedMetadataClient` previously bypassed the on-disk cache entirely, so every `fetch-media` run made fresh API calls even when `fetch-meta` had already fetched and cached all game metadata. Games cached from a prior `fetch-meta --source both` run are now returned from cache, consuming zero API quota.
 
 - **`fetch-meta --game` no longer fails with "not found" when the game already has complete metadata.** Previously `--game` filtered from `db.iter_incomplete()`, so explicitly targeting a game whose metadata was already filled in (e.g. to re-scrape after a bad import) always returned an error. The filter now falls through to the full game list when the named game is absent from the incomplete set, so re-fetching a specific complete game works as expected.
 

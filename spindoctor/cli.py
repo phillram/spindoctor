@@ -4676,6 +4676,21 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
 
 # ─── fetch-media ──────────────────────────────────────────────────────────────
 
+_FATAL_SCRAPER_PATTERNS = (
+    "500 server error",
+    "429 client error",
+    "quota",          # SS: "Erreur : Vous avez atteint votre quota journalier"
+    "api error",      # raised by _raise_if_ss_error for any erreur-key response
+)
+
+
+def _is_fatal_scraper_error(msg: str) -> bool:
+    """Return True when a MetadataError indicates a server/quota problem where
+    retrying remaining games would just consume more API quota pointlessly."""
+    lower = msg.lower()
+    return any(p in lower for p in _FATAL_SCRAPER_PATTERNS)
+
+
 @cli.command("fetch-media")
 @click.option("--system", "-s", default=None)
 @click.option("--all", "all_systems", is_flag=True)
@@ -4795,11 +4810,16 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         meta_errors: dict[str, str] = {}   # game_name → error text
         no_match: list[str] = []           # game_name with no scraper match
         total_fail = 0
+        scraper_aborted = False            # set True on fatal API error
         with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
             task = prog.add_task("Resolving metadata…", total=len(games))
             for game in games:
+                if scraper_aborted:
+                    # Remaining games skipped — don't burn more quota.
+                    prog.advance(task)
+                    continue
                 if verbose:
                     prog.console.print(f"  [dim]Fetching:[/dim] {game.name}")
                 else:
@@ -4835,10 +4855,18 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             )
                         )
                 except MetadataError as e:
-                    meta_errors[game.name] = str(e)
+                    err_str = str(e)
+                    meta_errors[game.name] = err_str
                     if verbose:
                         prog.console.print(f"    [red]→ error: {e}[/red]")
                     total_fail += len(media_types)
+                    if _is_fatal_scraper_error(err_str):
+                        prog.console.print(
+                            f"  [red bold]Fatal scraper error — stopping metadata "
+                            f"resolution to protect API quota.[/red bold]\n"
+                            f"  {err_str}"
+                        )
+                        scraper_aborted = True
                 prog.advance(task)
 
         # Build per-game URL lookup for log/dry-run display.
@@ -4959,6 +4987,11 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 if gname in no_match:
                     console.print(f"    [yellow]no match found on scraper[/yellow]")
                     download_log_sys[gname] = {mt: "no_match" for mt in media_types}
+                    continue
+
+                if scraper_aborted and gname not in results_by_game:
+                    console.print(f"    [dim]skipped — scraper aborted[/dim]")
+                    download_log_sys[gname] = {mt: "aborted" for mt in media_types}
                     continue
 
                 game_results = results_by_game.get(gname, {})
