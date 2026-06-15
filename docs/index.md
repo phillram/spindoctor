@@ -37,6 +37,7 @@ Then pick how to launch:
 | Set up Sinden / DemulShooter for lightgun systems | [Light guns](lightgun.md) |
 | Audit other arcade tools installed on the cabinet | [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have) |
 | Diagnose an error | [Troubleshooting](troubleshooting.md) |
+| Find where SpinDoctor stores its files | [SpinDoctor Files](spindoctor-files.md) |
 
 ## What SpinDoctor is, and isn't
 
