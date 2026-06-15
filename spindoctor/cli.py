@@ -4694,12 +4694,31 @@ _FATAL_SCRAPER_PATTERNS = (
     "api error",      # raised by _raise_if_ss_error for any erreur-key response
 )
 
+_NETWORK_ERROR_PATTERNS = (
+    "max retries exceeded",
+    "getaddrinfo",
+    "nameresolutionerror",
+    "timed out",
+    "connection refused",
+    "failed to establish a new connection",
+    "remotedisconnected",
+    "connection reset by peer",
+)
+
 
 def _is_fatal_scraper_error(msg: str) -> bool:
     """Return True when a MetadataError indicates a server/quota problem where
     retrying remaining games would just consume more API quota pointlessly."""
     lower = msg.lower()
     return any(p in lower for p in _FATAL_SCRAPER_PATTERNS)
+
+
+def _is_network_error(msg: str) -> bool:
+    """Return True when a MetadataError string indicates a DNS or connection
+    failure — i.e. a problem where retrying more games in the same run will
+    produce identical failures and burn API quota pointlessly."""
+    lower = msg.lower()
+    return any(p in lower for p in _NETWORK_ERROR_PATTERNS)
 
 
 @cli.command("fetch-media")
@@ -4821,7 +4840,8 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         meta_errors: dict[str, str] = {}   # game_name → error text
         no_match: list[str] = []           # game_name with no scraper match
         total_fail = 0
-        scraper_aborted = False            # set True on fatal API error
+        scraper_aborted = False            # set True on fatal API or network error
+        consecutive_net_errors = 0
         with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
@@ -4829,6 +4849,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
             for game in games:
                 if scraper_aborted:
                     # Remaining games skipped — don't burn more quota.
+                    total_fail += len(media_types)
                     prog.advance(task)
                     continue
                 if verbose:
@@ -4843,12 +4864,14 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         if verbose:
                             prog.console.print(f"    [yellow]→ no match on scraper[/yellow]")
                         total_fail += len(media_types)
+                        consecutive_net_errors = 0
                         prog.advance(task)
                         continue
                     if verbose:
                         src = getattr(chosen, "source", "")
                         prog.console.print(f"    [green]→ resolved[/green]" +
                                            (f" [dim]({src})[/dim]" if src else ""))
+                    consecutive_net_errors = 0
                     if pick_media:
                         for mt in media_types:
                             cands = chosen.media_candidates.get(mt, [])
@@ -4878,6 +4901,17 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             f"  {err_str}"
                         )
                         scraper_aborted = True
+                    elif _is_network_error(err_str):
+                        consecutive_net_errors += 1
+                        if consecutive_net_errors >= 3:
+                            remaining = len(games) - games.index(game) - 1
+                            prog.console.print(
+                                f"  [red bold]Network unreachable — aborting metadata "
+                                f"resolution ({remaining} games counted as failed).[/red bold]"
+                            )
+                            scraper_aborted = True
+                    else:
+                        consecutive_net_errors = 0
                 prog.advance(task)
 
         # Build per-game URL lookup for log/dry-run display.
