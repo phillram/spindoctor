@@ -109,15 +109,25 @@ def _status(value: bool) -> str:
     return "[green]✓[/green]" if value else "[red]✗[/red]"
 
 
-def _auto_export_audit(config: Config, systems: list[str]) -> None:
-    """If auto_audit_export_dir is configured, write an audit CSV there."""
+def _auto_export_audit(
+    config: Config,
+    systems: list[str],
+    download_log: Optional[dict] = None,
+) -> None:
+    """If auto_audit_export_dir is configured, write an audit CSV there.
+
+    ``download_log`` is an optional mapping of
+    ``game_name → {media_type → status_str}`` produced by fetch-media runs.
+    When provided, the CSV gains ``{type}_result`` columns showing what
+    happened to each slot in this run (downloaded / existing / no_url / failed).
+    """
     if not config.auto_audit_export_dir:
         return
     export_dir = Path(config.auto_audit_export_dir)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = export_dir / f"audit_{stamp}.csv"
     results = [audit_system(s, config, check_media_flag=True) for s in systems]
-    _write_audit_csv(results, report_path)
+    _write_audit_csv(results, report_path, download_log=download_log)
     console.print(f"\n[dim]Auto-audit export:[/dim] {report_path}")
 
 
@@ -764,15 +774,29 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
         console.print(f"\n[green]Matched games:[/green] {len(result.matched)}")
 
 
-def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
+def _write_audit_csv(
+    results: list[SystemAuditResult],
+    path: Path,
+    download_log: Optional[dict] = None,
+) -> None:
+    """Write the audit CSV.
+
+    When ``download_log`` is provided (``game_name → {slot → status_str}``),
+    extra ``{slot}_result`` columns are appended showing what fetch-media did
+    to each slot this run: ``downloaded``, ``existing``, ``no_url``,
+    ``no_metadata``, ``no_match``, or ``failed``.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
+        headers = [
             "system", "rom_name", "in_database", "rom_exists", "ignored",
             "fuzzy_match_to", "fuzzy_score",
             "missing_metadata", "missing_media",
-        ] + MEDIA_TYPES)
+        ] + MEDIA_TYPES
+        if download_log is not None:
+            headers += [f"{t}_result" for t in MEDIA_TYPES]
+        writer.writerow(headers)
         fuzzy_by_rom: dict[tuple, tuple] = {}
         for result in results:
             for fm in result.fuzzy_matches:
@@ -780,7 +804,7 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
         for result in results:
             for entry in result.entries:
                 fm_info = fuzzy_by_rom.get((result.system_name, entry.rom_name), ("", ""))
-                writer.writerow([
+                row = [
                     result.system_name,
                     entry.rom_name,
                     entry.in_database,
@@ -790,7 +814,11 @@ def _write_audit_csv(results: list[SystemAuditResult], path: Path) -> None:
                     fm_info[1],
                     ";".join(entry.missing_metadata),
                     ";".join(entry.media.missing()),
-                ] + [str(getattr(entry.media, t, False)) for t in MEDIA_TYPES])
+                ] + [str(getattr(entry.media, t, False)) for t in MEDIA_TYPES]
+                if download_log is not None:
+                    game_log = download_log.get(entry.rom_name, {})
+                    row += [game_log.get(t, "") for t in MEDIA_TYPES]
+                writer.writerow(row)
 
 
 # ─── detailed file display helpers ───────────────────────────────────────────
@@ -4520,13 +4548,24 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                        if not config.is_ignored(g.name, sys_name)]
 
         if game:
-            targets = [g for g in targets if g.name == game]
-            if not targets:
-                err_console.print(
-                    f"[red]Game '{game}' not found in {sys_name} database "
-                    f"(or already complete — use --all-games to force).[/red]"
-                )
-                continue
+            game_targets = [g for g in targets if g.name == game]
+            if not game_targets:
+                # Game may be complete — check full game list and proceed anyway.
+                all_game_objs = [g for g in db.games().values()
+                                 if not config.is_ignored(g.name, sys_name)]
+                found = next((g for g in all_game_objs if g.name == game), None)
+                if found:
+                    console.print(
+                        f"  [dim]{game}[/dim]: metadata already complete — re-fetching."
+                    )
+                    targets = [found]
+                else:
+                    err_console.print(
+                        f"[red]Game '{game}' not found in {sys_name} database.[/red]"
+                    )
+                    continue
+            else:
+                targets = game_targets
 
         if not targets:
             console.print("  [green]All metadata complete (or all ignored).[/green]")
@@ -4706,6 +4745,9 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
         sys.exit(1)
 
+    # Accumulated across all systems; passed to the audit CSV at the end.
+    download_log: dict[str, dict[str, str]] = {}
+
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         db = load_database(sys_name, config.databases_dir)
@@ -4741,11 +4783,14 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
             f"[dim]workers={workers}[/dim]"
         )
 
+        # Per-system download log: game_name → {slot → status_str}
+        download_log_sys: dict[str, dict[str, str]] = {}
+
         # ── Phase 1: gather metadata + flatten download jobs ────────────────
         all_jobs: list[tuple[str, str, str]] = []
-        # When --pick-media is set we keep the candidate list and run
-        # downloads sequentially so the picker can prompt interactively.
         pick_jobs: list[tuple[str, str, list]] = []
+        meta_errors: dict[str, str] = {}   # game_name → error text
+        no_match: list[str] = []           # game_name with no scraper match
         total_fail = 0
         with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
@@ -4757,6 +4802,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     meta = client.fetch_with_search(game.name, sys_name)
                     chosen = meta[0] if meta else None
                     if not chosen:
+                        no_match.append(game.name)
                         total_fail += len(media_types)
                         prog.advance(task)
                         continue
@@ -4766,7 +4812,6 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             if cands:
                                 pick_jobs.append((game.name, mt, cands))
                             else:
-                                # Fall back to the legacy single URL if any
                                 url = downloader.jobs_for_metadata(
                                     game.name, chosen, media_types=[mt],
                                 )[0][2]
@@ -4778,27 +4823,50 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             )
                         )
                 except MetadataError as e:
-                    console.print(f"  [red]Error [{game.name}]:[/red] {e}")
+                    meta_errors[game.name] = str(e)
                     total_fail += len(media_types)
                 prog.advance(task)
 
+        # Build per-game URL lookup for log/dry-run display.
+        jobs_url_map: dict[str, dict[str, str]] = {}
+        for _gn, _mt, _url in all_jobs:
+            jobs_url_map.setdefault(_gn, {})[_mt] = _url
+        for _gn, _mt, _ in pick_jobs:
+            jobs_url_map.setdefault(_gn, {})[_mt] = "(candidates)"
+
+        SEP = "  " + "─" * 68
+
         # ── Phase 2: parallel downloads (auto path) + sequential picker ─────
         total_ok = total_skip = 0
+        all_results: list = []   # DownloadResult objects collected from this run
+
         if not apply_changes:
-            for game_name, mt, url in all_jobs:
-                dest = downloader.media_path(sys_name, game_name, mt)
-                note = "[dry-run]" if url else "[no URL available]"
-                console.print(f"  [dim]+[/dim] {game_name} · {mt}  {note}  → {dest}")
-                if url:
-                    total_ok += 1
-                else:
-                    total_skip += 1
-            for game_name, mt, cands in pick_jobs:
-                dest = downloader.media_path(sys_name, game_name, mt)
-                console.print(
-                    f"  [dim]+[/dim] {game_name} · {mt}  [dry-run · {len(cands)} candidates]  → {dest}"
-                )
-                total_ok += 1
+            for game in games:
+                gname = game.name
+                console.print(SEP)
+                console.print(f"  [bold]{gname}[/bold]")
+                if gname in meta_errors:
+                    console.print(f"    [red]metadata error:[/red] {meta_errors[gname]}")
+                    continue
+                if gname in no_match:
+                    console.print(f"    [yellow]no match found on scraper[/yellow]")
+                    continue
+                for mt in media_types:
+                    dest = downloader.media_path(sys_name, gname, mt)
+                    url = jobs_url_map.get(gname, {}).get(mt, "")
+                    if dest.exists() and not overwrite:
+                        console.print(
+                            f"    [dim]{mt:<12}[/dim]  existing      {dest}"
+                        )
+                    elif url:
+                        console.print(
+                            f"    [cyan]{mt:<12}[/cyan]  would download  {dest}"
+                        )
+                        total_ok += 1
+                    else:
+                        console.print(
+                            f"    [yellow]{mt:<12}[/yellow]  no URL"
+                        )
         else:
             if all_jobs:
                 with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
@@ -4808,6 +4876,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
                     def _on_done(r):
                         nonlocal total_ok, total_skip, total_fail
+                        all_results.append(r)
                         if r.skipped:
                             total_skip += 1
                         elif r.success:
@@ -4831,6 +4900,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     skip_ambiguous=skip_ambiguous,
                     overwrite=overwrite,
                 )
+                all_results.append(r)
                 if r.skipped:
                     total_skip += 1
                 elif r.success:
@@ -4838,13 +4908,68 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 else:
                     total_fail += 1
 
-        console.print(
-            f"  Downloaded: [green]{total_ok}[/green]  "
-            f"Skipped: [dim]{total_skip}[/dim]  "
-            f"Failed: [red]{total_fail}[/red]"
-        )
+            # Group results by game for the per-game summary.
+            results_by_game: dict[str, dict[str, object]] = {}
+            for r in all_results:
+                results_by_game.setdefault(r.game_name, {})[r.media_type] = r
 
-    _auto_export_audit(config, systems)
+            for game in games:
+                gname = game.name
+                console.print(SEP)
+                console.print(f"  [bold]{gname}[/bold]")
+
+                if gname in meta_errors:
+                    console.print(f"    [red]metadata error:[/red] {meta_errors[gname]}")
+                    download_log_sys[gname] = {mt: "no_metadata" for mt in media_types}
+                    continue
+
+                if gname in no_match:
+                    console.print(f"    [yellow]no match found on scraper[/yellow]")
+                    download_log_sys[gname] = {mt: "no_match" for mt in media_types}
+                    continue
+
+                game_results = results_by_game.get(gname, {})
+                game_log: dict[str, str] = {}
+
+                for mt in media_types:
+                    r = game_results.get(mt)
+                    dest = downloader.media_path(sys_name, gname, mt)
+                    if r is None:
+                        console.print(f"    [dim]{mt:<12}[/dim]  —")
+                        game_log[mt] = ""
+                    elif r.skipped:
+                        console.print(
+                            f"    [dim]{mt:<12}[/dim]  existing      {r.path}"
+                        )
+                        game_log[mt] = "existing"
+                    elif r.success:
+                        console.print(
+                            f"    [green]{mt:<12}[/green]  downloaded    {r.path}"
+                        )
+                        game_log[mt] = "downloaded"
+                    elif "No URL" in (r.error or ""):
+                        console.print(
+                            f"    [yellow]{mt:<12}[/yellow]  no URL        (scraper has no {mt} for this game)"
+                        )
+                        game_log[mt] = "no_url"
+                    else:
+                        console.print(
+                            f"    [red]{mt:<12}[/red]  failed        {r.error}"
+                        )
+                        game_log[mt] = "failed"
+
+                download_log_sys[gname] = game_log
+
+        console.print(SEP)
+        console.print(
+            f"\n  Downloaded: [green]{total_ok}[/green]  "
+            f"Skipped (existing): [dim]{total_skip}[/dim]  "
+            f"No URL: [yellow]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' in (r.error or ''))}[/yellow]  "
+            f"Failed: [red]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' not in (r.error or ''))}[/red]"
+        )
+        download_log.update(download_log_sys)
+
+    _auto_export_audit(config, systems, download_log=download_log or None)
 
 
 # ─── media add ────────────────────────────────────────────────────────────────
