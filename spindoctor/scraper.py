@@ -846,10 +846,10 @@ class _FetchWithSearchMixin:
                 self._cache.put(self.source_name, system_name, game_name, results)
             return results
 
-        try:
-            candidates = self.search(game_name, system_name)
-        except MetadataError:
-            candidates = []
+        # Let MetadataError propagate — callers (fetch-meta, fetch-media) catch
+        # it and surface the real error message rather than silently treating
+        # an API failure as "no match".
+        candidates = self.search(game_name, system_name)
 
         # Merge direct result in if it wasn't already found in search results.
         if direct and direct.source_id and not any(
@@ -1375,17 +1375,27 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
 
     def fetch(self, game_name: str, system_name: str) -> "Optional[GameMetadata]":
         ss_meta: Optional[GameMetadata] = None
+        ss_error: Optional[str] = None
         tgdb_meta: Optional[GameMetadata] = None
+        tgdb_error: Optional[str] = None
 
         try:
             ss_meta = self._ss.fetch(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            ss_error = str(e)
 
         try:
             tgdb_meta = self._tgdb.fetch(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            tgdb_error = str(e)
+
+        if ss_meta is None and tgdb_meta is None and (ss_error or tgdb_error):
+            parts = []
+            if ss_error:
+                parts.append(f"ScreenScraper: {ss_error}")
+            if tgdb_error:
+                parts.append(f"TheGamesDB: {tgdb_error}")
+            raise MetadataError("; ".join(parts))
 
         if ss_meta is None:
             return tgdb_meta
@@ -1398,17 +1408,27 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
         return ss_meta
 
     def search(self, game_name: str, system_name: str) -> "list[GameMetadata]":
+        ss_error: Optional[str] = None
         ss_results: list[GameMetadata] = []
         try:
             ss_results = self._ss.search(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            ss_error = str(e)
 
+        tgdb_error: Optional[str] = None
         tgdb_results: list[GameMetadata] = []
         try:
             tgdb_results = self._tgdb.search(game_name, system_name)
-        except MetadataError:
-            pass
+        except MetadataError as e:
+            tgdb_error = str(e)
+
+        if not ss_results and not tgdb_results and (ss_error or tgdb_error):
+            parts = []
+            if ss_error:
+                parts.append(f"ScreenScraper: {ss_error}")
+            if tgdb_error:
+                parts.append(f"TheGamesDB: {tgdb_error}")
+            raise MetadataError("; ".join(parts))
 
         seen_ids = {r.source_id for r in ss_results}
         return ss_results + [r for r in tgdb_results if r.source_id not in seen_ids]
