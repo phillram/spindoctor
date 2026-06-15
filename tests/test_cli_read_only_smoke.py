@@ -365,3 +365,117 @@ def test_matcher_choose_match_skip_ambiguous_returns_none():
         skip_ambiguous=True,
     )
     assert result is None
+
+
+# ─── fetch-meta --game bypass ─────────────────────────────────────────────────
+
+
+def test_fetch_meta_game_flag_processes_complete_game(tmp_path, isolated_config, monkeypatch):
+    """When --game names a game whose metadata is already complete,
+    fetch-meta must re-fetch it rather than printing 'not found'.
+
+    Before this fix the function filtered via db.iter_incomplete() and then
+    applied the --game filter, so a complete game always fell through to the
+    'not found or already complete' error even though the user explicitly
+    asked for it by name.
+    """
+    import spindoctor.scraper as scraper_mod
+    from spindoctor.scraper import GameMetadata
+
+    roms_dir = tmp_path / "roms"
+    hs_dir = tmp_path / "hs"
+    (roms_dir / "nes").mkdir(parents=True)
+    db_dir = hs_dir / "Databases" / "nes"
+    db_dir.mkdir(parents=True)
+
+    # Game with ALL metadata fields populated — iter_incomplete() skips it.
+    game = GameEntry(
+        name="mario",
+        description="Super Mario Bros",
+        manufacturer="Nintendo",
+        year="1985",
+        genre="Platformer",
+        rating="E",
+    )
+    db = HyperspinDatabase("nes", db_dir / "nes.xml")
+    db.upsert_game(game)
+    db.save()
+
+    cfg = Config()
+    cfg.roms_dir = str(roms_dir)
+    cfg.hyperspin_dir = str(hs_dir)
+    cfg.screenscraper_user = "u"
+    cfg.screenscraper_password = "p"
+    save_config(cfg)
+
+    fetched: list[str] = []
+
+    class _FakeClient:
+        source_name = "screenscraper"
+        _cache = None
+
+        def fetch_with_search(self, game_name, system_name, threshold=0.80):
+            fetched.append(game_name)
+            return [GameMetadata(name=game_name, match_score=1.0)]
+
+    monkeypatch.setattr(scraper_mod, "build_client", lambda *_a, **_kw: _FakeClient())
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["fetch-meta", "--system", "nes", "--game", "mario", "--skip-ambiguous", "--apply"],
+    )
+
+    assert result.exit_code == 0, result.output
+    # "not found in ... database" would mean the bypass didn't work.
+    assert "not found in" not in result.output.lower()
+    assert "mario" in fetched, "fetch_with_search was never called for mario"
+
+
+# ─── audit CSV download_log columns ──────────────────────────────────────────
+
+
+def test_write_audit_csv_includes_download_log_columns(tmp_path):
+    """When a download_log is supplied, _write_audit_csv appends one
+    ``{slot}_result`` column per media type recording what fetch-media
+    did to each slot (downloaded / existing / no_url / …).
+    """
+    import csv
+
+    from spindoctor.cli import _write_audit_csv
+    from spindoctor.audit import GameAuditEntry, MediaStatus, SystemAuditResult
+    from spindoctor.config import MEDIA_TYPES
+
+    entry = GameAuditEntry(
+        rom_name="mario",
+        in_database=True,
+        rom_exists=True,
+        db_entry=None,
+        media=MediaStatus(),
+    )
+    audit_result = SystemAuditResult(system_name="nes", entries=[entry])
+
+    download_log = {
+        "mario": {
+            "wheel": "downloaded",
+            "background": "existing",
+            "video": "no_url",
+        }
+    }
+
+    out = tmp_path / "audit.csv"
+    _write_audit_csv([audit_result], out, download_log=download_log)
+
+    with open(out, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert "wheel_result" in row
+    assert row["wheel_result"] == "downloaded"
+    assert row["background_result"] == "existing"
+    assert row["video_result"] == "no_url"
+    # Slots not in the log get an empty string.
+    for t in MEDIA_TYPES:
+        assert f"{t}_result" in row
