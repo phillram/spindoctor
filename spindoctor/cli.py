@@ -4577,11 +4577,15 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         candidates_map: dict[str, list] = {}
         fetch_errors: list[str] = []
 
+        scraper_aborted = False
         with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                       BarColumn(), TextColumn("{task.completed}/{task.total}"),
                       console=console) as prog:
             task = prog.add_task("Searching…", total=len(targets))
             for game in targets:
+                if scraper_aborted:
+                    prog.advance(task)
+                    continue
                 prog.update(task, description=f"[dim]{game.name[:40]}[/dim]")
                 try:
                     cands = client.fetch_with_search(game.name, sys_name,
@@ -4592,7 +4596,14 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                         fetch_errors.append(game.name)
                 except MetadataError as e:
                     fetch_errors.append(game.name)
-                    console.print(f"  [red]Error [{game.name}]:[/red] {e}")
+                    err_str = str(e)
+                    console.print(f"  [red]Error [{game.name}]:[/red] {err_str}")
+                    if _is_fatal_scraper_error(err_str):
+                        console.print(
+                            f"  [red bold]Fatal scraper error — stopping metadata "
+                            f"resolution to protect API quota.[/red bold]"
+                        )
+                        scraper_aborted = True
                 prog.advance(task)
 
         # ── Phase 2: resolve ambiguous matches ────────────────────────────────
