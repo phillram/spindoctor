@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`scraper.log` no longer exposes passwords in plaintext on DNS failures.** When a `NameResolutionError` or `MaxRetryError` occurs, urllib3 embeds the full request URL — including all query parameters — in the exception string. `_log_http` was logging `str(error)` verbatim, so `sspassword=<value>` and `devpassword=<value>` / `apikey=<value>` bypassed the `_redact_params()` sanitisation that correctly masked the `params` dict. A new `_redact_error_str()` function strips known secret values from the exception text before it hits the log file.
+
 - **`fetch-media` now aborts early and surfaces the real error when DNS / network is down.** Previously, a DNS failure (`getaddrinfo failed`, `Max retries exceeded`) caused `CombinedMetadataClient.search()` to silently return an empty list for every game, producing "Failed: 500" with no diagnostic output — indistinguishable from 500 "no match" results. Two fixes: (1) `CombinedMetadataClient.search()` now re-raises `MetadataError` when both ScreenScraper and TheGamesDB fail (same pattern already applied to `fetch()`), so the error message reaches the console. (2) A circuit breaker stops Phase 1 metadata resolution after 3 consecutive network failures, prints the reason, and counts remaining games as failed rather than grinding through the whole list — turning a silent 500-failure run into an immediate, actionable error.
 
 ---
