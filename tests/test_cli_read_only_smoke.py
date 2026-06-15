@@ -481,6 +481,33 @@ def test_write_audit_csv_includes_download_log_columns(tmp_path):
         assert f"{t}_result" in row
 
 
+def test_raise_if_tgdb_error_raises_on_non_200_code():
+    """_raise_if_tgdb_error must raise MetadataError when the TGDB JSON body
+    contains a non-200 'code' field — TGDB's in-band auth/error signalling."""
+    from spindoctor.scraper import MetadataError, _raise_if_tgdb_error
+
+    try:
+        _raise_if_tgdb_error({"code": 401, "status": "Unauthorized"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "401" in str(e)
+
+    try:
+        _raise_if_tgdb_error({"code": 403, "status": "Forbidden"})
+        assert False, "should have raised"
+    except MetadataError as e:
+        assert "403" in str(e)
+
+
+def test_raise_if_tgdb_error_silent_on_clean_response():
+    """_raise_if_tgdb_error must not raise for normal TGDB responses."""
+    from spindoctor.scraper import _raise_if_tgdb_error
+
+    _raise_if_tgdb_error({})
+    _raise_if_tgdb_error({"code": 200, "data": {"games": []}})
+    _raise_if_tgdb_error({"data": {"games": [{"id": 1}]}})
+
+
 def test_raise_if_ss_error_raises_on_erreur_key():
     """_raise_if_ss_error must raise MetadataError when the SS response JSON
     contains an 'erreur' key — the standard SS format for quota/auth errors
