@@ -792,6 +792,13 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
         console.print(f"\n[green]Matched games:[/green] {len(result.matched)}")
 
 
+# download_log status strings that mean "this slot still has no file" —
+# everything fetch-media can stamp on a slot except the two success cases.
+_NO_MEDIA_RESULT_STATUSES = frozenset({
+    "no_url", "no_match", "no_metadata", "failed", "aborted",
+})
+
+
 def _write_audit_csv(
     results: list[SystemAuditResult],
     path: Path,
@@ -848,6 +855,34 @@ def _write_audit_csv(
                     game_before = before_log.get(entry.rom_name, {})
                     row += [game_before.get(t, "") for t in MEDIA_TYPES]
                 writer.writerow(row)
+
+        # Consolidated footer: every game that came up short this run, in
+        # one place, instead of scanning every {slot}_result column on
+        # every row. `_NO_MEDIA_RESULT_STATUSES` is everything that isn't
+        # "we have the file" (downloaded or already-existing). Only
+        # written when there's something to report — an empty footer
+        # section would just be noise (and extra rows DictReader-style
+        # CSV consumers would have to skip even on a clean run).
+        if download_log is not None:
+            footer_rows = []
+            for result in results:
+                for entry in result.entries:
+                    game_log = download_log.get(entry.rom_name, {})
+                    missing_types = [
+                        t for t in MEDIA_TYPES
+                        if game_log.get(t) in _NO_MEDIA_RESULT_STATUSES
+                    ]
+                    if missing_types:
+                        footer_rows.append([
+                            result.system_name, entry.rom_name,
+                            ";".join(missing_types),
+                        ])
+            if footer_rows:
+                writer.writerow([])
+                writer.writerow(["Games with missing media this run"])
+                writer.writerow(["system", "rom_name", "missing_types"])
+                for row in footer_rows:
+                    writer.writerow(row)
 
 
 # ─── detailed file display helpers ───────────────────────────────────────────
@@ -4570,6 +4605,10 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
         err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
         sys.exit(1)
 
+    # Consolidated cross-system summary, printed after the loop below —
+    # game_name → (system_name, reason).
+    all_unresolved: dict[str, tuple[str, str]] = {}
+
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         db = load_database(sys_name, config.databases_dir)
@@ -4697,6 +4736,11 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                 db.update_game(game)
             updated += 1
 
+        for target in targets:
+            if not auto_resolved.get(target.name):
+                reason = "not found" if target.name in fetch_errors else "ambiguous — skipped"
+                all_unresolved[target.name] = (sys_name, reason)
+
         console.print(
             f"  Updated: [green]{updated}[/green]  "
             f"Ambiguous: [yellow]{len(ambiguous)}[/yellow]  "
@@ -4715,6 +4759,15 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                 saved = db.save(backup=config.backup_before_modify,
                                 backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]Saved:[/green] {saved}")
+
+    # Consolidated cross-system summary, mirroring fetch-media's — read
+    # just the last few lines of a long `--all` run instead of scrolling
+    # back through every system's per-game output.
+    if all_unresolved:
+        console.print(f"\n  {'─' * 68}")
+        console.print(f"  [yellow bold]Games with unresolved metadata ({len(all_unresolved)}):[/yellow bold]")
+        for gname, (sys_name, reason) in all_unresolved.items():
+            console.print(f"    [{sys_name}] {gname}: [yellow]{reason}[/yellow]")
 
     _auto_export_audit(config, systems, game_filter=game_filter or None)
 
@@ -5131,6 +5184,24 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
             f"Failed: [red]{sum(1 for r in all_results if not r.success and not r.skipped and 'No URL' not in (r.error or ''))}[/red]"
         )
         download_log.update(download_log_sys)
+
+    # Consolidated cross-system summary — listing every game that still
+    # has missing media at the very end means a long `--all` run can be
+    # checked by reading just the last few lines instead of scrolling
+    # back through the whole per-game output above.
+    missing_by_game: dict[str, list[str]] = {}
+    for gname, game_log in download_log.items():
+        missing = [
+            mt for mt in media_types
+            if game_log.get(mt) in _NO_MEDIA_RESULT_STATUSES
+        ]
+        if missing:
+            missing_by_game[gname] = missing
+    if missing_by_game:
+        console.print(f"\n  {'─' * 68}")
+        console.print(f"  [yellow bold]Games with missing media ({len(missing_by_game)}):[/yellow bold]")
+        for gname, missing in missing_by_game.items():
+            console.print(f"    {gname}: [yellow]{', '.join(missing)}[/yellow]")
 
     _auto_export_audit(
         config, systems,

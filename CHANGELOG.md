@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Auto-exported audit CSVs now show before/after media status.** When `auto_audit_export_dir` is configured, `fetch-media`'s CSV gains a `{slot}_before` column alongside the existing `{slot}` (after-state) and `{slot}_result` (action taken) columns, so a row reads as a full before → action → after story instead of just the post-run snapshot.
 
+- **Consolidated "missing media" / "unresolved metadata" summary at the end of `fetch-media` / `fetch-meta` console output, and a matching footer section at the bottom of the auto-exported audit CSV.** A long `--all` run used to require scrolling back through every system's per-game output (or scanning every row's `{slot}_result` column) to find what still needs attention; both now end with one consolidated list of just the games that came up short.
+
 ### Fixed
 
 - **Metadata & Media tab: selecting a new console no longer leaves the previous console's game selected.** The Game dropdown is now blanked automatically whenever the System dropdown changes, instead of silently carrying over a stale (and potentially same-named-but-unrelated) game selection from the prior console.

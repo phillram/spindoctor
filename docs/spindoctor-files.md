@@ -239,6 +239,19 @@ The CSV contains one row per game per system with columns for ROM presence, data
 
 Running `fetch-meta`/`fetch-media` with `--game NAME` scopes the export to that one game instead of every game on the system — the CSV used to always list the whole console regardless of `--game`.
 
+After a `fetch-media` run, the CSV ends with a consolidated footer section — a blank line, then a `Games with missing media this run` header, then one row per game that still has at least one slot in a non-success state (`no_url`, `no_match`, `no_metadata`, or `failed`) with a semicolon-joined list of which slots:
+
+```
+...
+NES,Mario,True,True,False,,,,,True,True,True,True,True,True,True,True,True,True,downloaded,existing,...
+
+Games with missing media this run
+system,rom_name,missing_types
+NES,Golden Sun - Dark Dawn (USA),wheel;background;video;title;theme;fade
+```
+
+The footer is omitted entirely on a clean run (nothing missing) or when the CSV was written without a `download_log` (e.g. plain `audit --report`).
+
 ---
 
 ## HyperSpin Files SpinDoctor Reads and Writes
