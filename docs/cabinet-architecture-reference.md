@@ -975,6 +975,8 @@ it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during
 (skip-if-exists). This is the per-system Sound folder, distinct from `Media\Main Menu\Sound\`
 which controls active-browsing music at the top-level system wheel.
 
+**Zero-byte detection** — `audit.check_media()` uses `stat().st_size > 0` (not just `exists()`) to check each slot. A 0-byte file — left behind when a download completed with an empty HTTP 200 body or was interrupted just before content arrived — is treated identically to an absent file: it appears in the audit's missing-media list and causes `fetch-media` to re-download the slot on the next run. Without this check, a zero-byte stub would permanently satisfy the presence test and the slot would silently stay broken.
+
 ### Scraper provider comparison
 
 SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They have very different capabilities and coverage — understanding the difference is important for diagnosing gaps.

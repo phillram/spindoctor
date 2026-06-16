@@ -191,7 +191,13 @@ def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStat
 def _exists(directory: Path, stem: str, extensions: set[str]) -> bool:
     if not directory.exists():
         return False
-    return any((directory / f"{stem}{ext}").exists() for ext in extensions)
+    for ext in extensions:
+        try:
+            if (directory / f"{stem}{ext}").stat().st_size > 0:
+                return True
+        except OSError:
+            pass
+    return False
 
 
 def audit_system(
