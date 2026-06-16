@@ -987,6 +987,36 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         meta.match_score = similarity(game_name, meta.name)
         return meta
 
+    def fetch_by_id(self, game_id: str) -> Optional[GameMetadata]:
+        """Look up a specific game by ScreenScraper ID — full detail record.
+
+        Used to backfill media for a ``search()`` hit: ``jeuRecherche.php``
+        (the text-search endpoint) returns a much lighter ``jeu`` payload
+        than ``jeuInfos.php`` and often carries no ``medias`` array at all,
+        so a game can "resolve" via search with every media slot empty even
+        though the game's own ScreenScraper page has plenty of art. Re-fetching
+        by ID hits the same detail endpoint ``fetch()`` uses, which does
+        return the full media gallery. Returns ``None`` on any error — this
+        is a best-effort enrichment, not a required step.
+        """
+        if not game_id:
+            return None
+        self._limiter.wait()
+        params = {**self._base_params(), "gameid": game_id}
+        url = f"{SCREENSCRAPER_API}/jeuInfos.php"
+        try:
+            resp = self._session.get(url, params=params, timeout=15)
+            _log_http("screenscraper.fetch_by_id", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            resp.raise_for_status()
+            data = resp.json()
+            _raise_if_ss_error(data)
+        except Exception:  # noqa: BLE001 — best-effort enrichment only
+            return None
+        if "response" not in data or "jeu" not in data.get("response", {}):
+            return None
+        return _parse_screenscraper(str(game_id), data["response"]["jeu"])
+
     def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:
         """Broad text search — returns up to max_results candidates, scored."""
         system_id = self._system_id(system_name)
@@ -1017,6 +1047,22 @@ class ScreenScraperClient(_FetchWithSearchMixin):
             meta.match_score = similarity(game_name, meta.name)
             results.append(meta)
         results.sort(key=lambda m: m.match_score, reverse=True)
+
+        # The list endpoint's lighter payload means the top (auto-picked)
+        # candidate frequently has zero media even when the game's own
+        # ScreenScraper page has plenty — one extra by-ID lookup backfills
+        # it instead of silently downloading nothing. Only the top result
+        # is enriched (not all `max_results`) to avoid burning quota.
+        if results and not results[0].media_candidates and results[0].source_id:
+            enriched = self.fetch_by_id(results[0].source_id)
+            if enriched and enriched.media_candidates:
+                top = results[0]
+                top.media_candidates = enriched.media_candidates
+                for slot in SCREENSCRAPER_MEDIA_TYPES:
+                    cands = enriched.media_candidates.get(slot)
+                    if cands:
+                        setattr(top, f"{slot}_url", cands[0].url)
+
         return results
 
     def fetch_system_media(self, system_name: str) -> dict[str, list[MediaCandidate]]:
@@ -1117,7 +1163,12 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         self._limiter.wait()
         params = {
             "apikey": self.api_key,
-            "name": game_name,
+            # Normalized the same way `search()` does — TheGamesDB's titles
+            # never carry No-Intro/Redump region tags or romset punctuation
+            # ("Golden Sun - Dark Dawn (USA)" vs. their "Golden Sun: Dark
+            # Dawn"), so sending the raw ROM name here made the direct
+            # lookup miss matches that `search()` found just fine.
+            "name": normalize(game_name),
             "fields": "overview,genres,developers,publishers,rating,players",
             "include": "boxart",
         }

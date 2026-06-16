@@ -235,7 +235,9 @@ C:\SpinDoctor\audits\
 └── audit_20260614_174958.csv
 ```
 
-The CSV contains one row per game per system with columns for ROM presence, database entry, media presence per slot, and (after a `fetch-media` run) a `{slot}_result` column showing what happened to each slot: `downloaded`, `existing`, `no_url`, `no_match`, `no_metadata`, or `failed`.
+The CSV contains one row per game per system with columns for ROM presence, database entry, media presence per slot, and (after a `fetch-media` run) a `{slot}_result` column showing what happened to each slot this run: `downloaded`, `existing`, `no_url`, `no_match`, `no_metadata`, or `failed`, plus a `{slot}_before` column showing whether that slot already had media *before* the run — so a `False`/`downloaded` pair means the run actually filled a gap, while `True`/`existing` means it was already there.
+
+Running `fetch-meta`/`fetch-media` with `--game NAME` scopes the export to that one game instead of every game on the system — the CSV used to always list the whole console regardless of `--game`.
 
 ---
 

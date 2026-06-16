@@ -130,7 +130,7 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --app
 spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --types video --apply  :: just the video
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`).
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console.
 
 **Network error handling** — if both ScreenScraper and TheGamesDB are unreachable (DNS failure, timeout, connection refused), the per-game error is now printed to the console and the run aborts after 3 consecutive network failures rather than grinding through the whole list:
 

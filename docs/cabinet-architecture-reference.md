@@ -1012,6 +1012,10 @@ TheGamesDB images are fetched in a separate `GET /v1/Games/Images?games_id=<id>`
 
 SpinDoctor only fills a slot from TGDB if ScreenScraper did not already find one, so ScreenScraper always wins when it has coverage.
 
+#### TheGamesDB direct lookup must normalize the name like search() does
+
+`TheGamesDBClient.fetch()` (the direct-lookup path tried before falling back to `search()`) and `search()` both hit the same `Games/ByGameName` endpoint, but `fetch()` used to send the raw ROM name while `search()` already normalized it (stripping region tags and romset punctuation). TheGamesDB's own titles never carry No-Intro-style tags, so a name like `Golden Sun - Dark Dawn (USA)` could miss entirely via `fetch()` while `search()` (sent `golden sun dark dawn`) would have matched `Golden Sun: Dark Dawn` just fine — and because `CombinedMetadataClient.fetch()` only calls `fetch()`, never `search()`, `--source both` runs never got the benefit of the better-normalized path. Both now normalize consistently.
+
 #### Region preference for media selection
 
 When ScreenScraper returns multiple candidates for the same slot (e.g. wheel images for US, EU, JP), SpinDoctor picks the best region using this priority order (defined in `_REGION_PREFERENCE`):
@@ -1033,6 +1037,12 @@ ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object
 | `joueurs` | dict `{"text": "2"}` or plain string `"2"` | Varies by game entry |
 
 SpinDoctor's `_parse_screenscraper` uses `isinstance()` guards on each of these. When adding new field parsers, always guard against both dict and list forms.
+
+### ScreenScraper search results can carry no media at all
+
+`jeuRecherche.php` (the text-search endpoint, used whenever the direct `romnom`-based lookup in `jeuInfos.php` doesn't match) returns a much lighter `jeu` payload per result than `jeuInfos.php` does — it can omit the `medias` array entirely even for a game whose own ScreenScraper detail page has a full gallery. Confirmed live on a Nintendo DS title ("Golden Sun - Dark Dawn (USA)") that resolved correctly by name through search but reported `no URL` for every single requested media type.
+
+`ScreenScraperClient.search()` now detects this: if the top-scoring result has no media candidates at all, it issues one follow-up `fetch_by_id()` call (`jeuInfos.php?gameid=<id>`) to backfill the full gallery before returning. Only the top result is enriched — not all `max_results` candidates — to avoid burning API quota on results that won't be used. This is best-effort: if the by-ID lookup also comes back empty, the game genuinely has no media for that source/account combination (e.g. a free ScreenScraper account hitting premium-only assets).
 
 ### ScreenScraper media URL format
 
