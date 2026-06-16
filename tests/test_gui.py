@@ -688,6 +688,41 @@ def test_default_run_log_filename_sanitizes_timestamp_and_extension():
     assert name == "2026-06-16_12-00-00_--all.txt"
 
 
+# ─── _typeahead_find_match (dropdown letter-key jump) ─────────────────────────
+
+def test_typeahead_find_match_jumps_to_first_letter():
+    values = ["Atari", "Genesis", "MAME", "NES", "SNES"]
+    assert gui._typeahead_find_match(values, "g", 0) == 1
+
+
+def test_typeahead_find_match_is_case_insensitive():
+    values = ["Atari", "Genesis", "MAME"]
+    assert gui._typeahead_find_match(values, "G", 0) == 1
+
+
+def test_typeahead_find_match_cycles_to_next_match_on_repeat():
+    """Repeat presses of the same letter should advance past the
+    previous match instead of always landing on the first one."""
+    values = ["Game Boy", "Game Gear", "Genesis"]
+    first = gui._typeahead_find_match(values, "g", 0)
+    assert first == 0
+    second = gui._typeahead_find_match(values, "g", first + 1)
+    assert second == 1
+    # Wraps back around to the first match once the list is exhausted.
+    third = gui._typeahead_find_match(values, "g", second + 1)
+    assert third == 2
+    fourth = gui._typeahead_find_match(values, "g", third + 1)
+    assert fourth == 0
+
+
+def test_typeahead_find_match_no_match_returns_none():
+    assert gui._typeahead_find_match(["Atari", "MAME"], "z", 0) is None
+
+
+def test_typeahead_find_match_empty_values_returns_none():
+    assert gui._typeahead_find_match([], "a", 0) is None
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
@@ -749,6 +784,16 @@ def test_gui_constructs_against_real_tk():
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
         assert app._status_var is not None
+
+        # Letter-key type-ahead must reach every Combobox via the walker
+        # (not a per-call-site attach) — check a couple from different
+        # tabs so a future tab that forgets to opt in still gets it.
+        assert getattr(
+            app._meta_system_combo, "_spindoctor_typeahead_attached", False,
+        )
+        assert getattr(
+            app._meta_game_combo, "_spindoctor_typeahead_attached", False,
+        )
 
         # v1.9: live UI-scale changes must not raise and must round-trip
         # back to the named-font sizes. Pick a non-default scale, then
@@ -1437,6 +1482,47 @@ def test_run_migrate_apply_shows_confirm_dialog_keep_source(monkeypatch):
         assert "Migrate library" in asks[0][0]
         assert "--keep-source" in asks[0][1] or "originals stay" in asks[0][1]
         assert not ran, "user said No — subprocess must not start"
+    finally:
+        app.root.destroy()
+
+
+def test_meta_game_selection_clears_when_system_changes(monkeypatch, tmp_path):
+    """Switching the System dropdown on Metadata & Media must blank the
+    Game field — a stale game name from the previous system is at best
+    meaningless and at worst silently scopes a command to the wrong
+    title if both systems happen to share a game name.
+    """
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cfg = cfg_mod.Config()
+        cfg.hyperspin_dir = str(tmp_path)
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+
+        class _FakeDB:
+            def __init__(self, names):
+                self._names = names
+
+            def games(self):
+                return {n: object() for n in self._names}
+
+        dbs = {
+            "MAME": _FakeDB(["Galaga", "Pac-Man"]),
+            "Sega Naomi": _FakeDB(["Crazy Taxi"]),
+        }
+        monkeypatch.setattr(
+            "spindoctor.gui.load_database",
+            lambda system, _dir: dbs[system],
+        )
+
+        app._meta_system_var.set("MAME")
+        app._meta_game_var.set("Pac-Man")
+        assert app._meta_game_var.get() == "Pac-Man"
+
+        app._meta_system_var.set("Sega Naomi")
+        assert app._meta_game_var.get() == ""
+        assert list(app._meta_game_combo["values"]) == ["Crazy Taxi"]
     finally:
         app.root.destroy()
 
