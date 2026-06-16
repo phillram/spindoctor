@@ -1580,7 +1580,6 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
     def search(self, game_name: str, system_name: str) -> "list[GameMetadata]":
         ss_error: Optional[str] = None
         ss_results: list[GameMetadata] = []
-        ss_error: Optional[str] = None
         try:
             ss_results = self._ss.search(game_name, system_name)
         except MetadataError as e:
@@ -1588,7 +1587,6 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
 
         tgdb_error: Optional[str] = None
         tgdb_results: list[GameMetadata] = []
-        tgdb_error: Optional[str] = None
         try:
             tgdb_results = self._tgdb.search(game_name, system_name)
         except MetadataError as e:

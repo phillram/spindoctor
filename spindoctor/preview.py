@@ -103,8 +103,11 @@ def _first_existing(directory: Path, stem: str, exts: tuple[str, ...]) -> Option
         return None
     for ext in exts:
         candidate = directory / f"{stem}{ext}"
-        if candidate.exists():
-            return candidate
+        try:
+            if candidate.stat().st_size > 0:
+                return candidate
+        except OSError:
+            pass
     return None
 
 
