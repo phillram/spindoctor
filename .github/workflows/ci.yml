@@ -3,8 +3,13 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # No `branches:` filter here — PRs are sometimes stacked on top of
+  # another open PR's branch (base != main) rather than merging through
+  # main one at a time, and a `branches: [main]` filter here means CI
+  # silently never runs for those (confirmed: PRs #310/#311, based on
+  # feature branches, reported zero checks while #309, based on main,
+  # ran fine). Every PR's tests must run regardless of its base branch.
+  pull_request: {}
 
 jobs:
   test:
