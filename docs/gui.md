@@ -152,6 +152,8 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 **Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags. Honours the global Apply toggle — unticked shows the would-copy destination as a dry-run preview. Selecting a system auto-populates the **Game** dropdown from that system's database; click **↻** to refresh.
 
+**Per-game overrides** (advanced, unnumbered): Forces a specific ScreenScraper / TheGamesDB game ID for the System/Game already picked in the shared header above, instead of relying on fuzzy name matching. Find the ID on the scraper's own site (the `gameid=`/`id=` URL parameter on the game's detail page) and paste it into the **ScreenScraper ID** / **TheGamesDB ID** fields — you don't need both. **Load current override** reads back whatever's saved for the selected game; **Save override** / **Clear override** drive `config game-override set / clear`. Once saved, every future fetch-meta/fetch-media run for that exact game uses the forced ID automatically. CLI: `spindoctor config game-override set / list / clear` — see [Configuration → Per-game overrides](configuration.md#per-game-overrides).
+
 ### Maintenance
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.

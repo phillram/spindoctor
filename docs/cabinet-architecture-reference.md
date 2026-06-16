@@ -999,6 +999,14 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 
 **Network error propagation** — `CombinedMetadataClient` raises `MetadataError` when both sources fail (DNS down, timeouts, connection refused). Before v2.7.1 both failures were silently swallowed and every game was counted as "no match", producing `Failed: 500` with no diagnostic output. The error is now printed per-game, and `fetch-media` aborts the metadata phase after 3 consecutive network failures rather than grinding through all games. All details are also written to `%USERPROFILE%\.spindoctor\scraper.log`.
 
+#### Per-game ID overrides bypass name matching entirely
+
+`config.game_overrides` (`{system: {game: {screenscraper_id, thegamesdb_id}}}`, managed via `spindoctor config game-override set/list/clear` or the GUI's Metadata & Media "Per-game overrides" panel) lets a cabinet owner force a specific scraper game ID for one title instead of relying on fuzzy name matching — the deterministic fix for a title that just never matches well by name (a recurring repro case: a non-English-primary ScreenScraper listing whose fuzzy `similarity()` score against the English ROM name never clears the match threshold).
+
+Implementation: `ScreenScraperClient.fetch()` and `TheGamesDBClient.fetch()` both check `get_game_override(system_name, game_name)` *before* doing any name-based lookup. If the relevant ID (`screenscraper_id` / `thegamesdb_id`) is set, they call their own `fetch_by_id()` directly and force `match_score = 1.0` — which makes `fetch_with_search()`'s existing `direct.match_score >= threshold` short-circuit accept it immediately, without ever reaching `search()` or the ambiguous-match picker. Each client only acts on the override key it owns (`screenscraper_id` for `ScreenScraperClient`, `thegamesdb_id` for `TheGamesDBClient`), so `CombinedMetadataClient` needs no override-handling code of its own — it already calls both sub-clients' `fetch()` and merges, and gets the override behavior for free for whichever source(s) the user configured.
+
+Deliberately no fallback on a miss: if the forced ID itself fails to resolve (typo, deleted listing), that source returns `None` for the game rather than silently falling back to name search — an explicit override is a statement "I know the right game," and silently fuzzy-matching past a stale ID would be more confusing than just failing visibly.
+
 #### TheGamesDB image slots
 
 TheGamesDB images are fetched in a separate `GET /v1/Games/Images?games_id=<id>` call after the main search. The `type` field of each image maps to a HyperSpin media slot:

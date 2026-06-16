@@ -7851,6 +7851,57 @@ class _SpinDoctorGUI:
             command=self._run_media_add,
         ).pack(side="left")
 
+        # ── Per-game overrides (advanced) ────────────────────────────────────
+        # Forces a specific ScreenScraper / TheGamesDB game ID for one title
+        # instead of relying on fuzzy name matching — for titles that don't
+        # match well by name (language barrier, alternate punctuation, a
+        # remaster's subtitle, etc.). Acts on the System/Game already picked
+        # in the shared header above rather than duplicating its own pickers.
+        gameovr_frame = self.ttk.LabelFrame(frame, text="Per-game overrides (advanced)")
+        gameovr_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            gameovr_frame,
+            text=("Force the exact scraper game ID for the System / Game "
+                  "selected above, instead of fuzzy name matching. Find the "
+                  "ID on the scraper's own site (e.g. screenscraper.fr/"
+                  "gameinfos.php?gameid=5775 or thegamesdb.net/game.php?"
+                  "id=11251) and paste it here. Every future fetch-meta / "
+                  "fetch-media run for that exact game uses it automatically."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        gameovr_form = self.ttk.Frame(gameovr_frame)
+        gameovr_form.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(gameovr_form, text="ScreenScraper ID (int)").grid(
+            row=0, column=0, sticky="w", padx=(0, 6), pady=2,
+        )
+        self._gameovr_ss_id_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gameovr_form, textvariable=self._gameovr_ss_id_var, width=14,
+        ).grid(row=0, column=1, sticky="w", pady=2)
+        self.ttk.Label(gameovr_form, text="TheGamesDB ID (int)").grid(
+            row=0, column=2, sticky="w", padx=(16, 6), pady=2,
+        )
+        self._gameovr_tgdb_id_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=14,
+        ).grid(row=0, column=3, sticky="w", pady=2)
+
+        gameovr_btns = self.ttk.Frame(gameovr_frame)
+        gameovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            gameovr_btns, text="Load current override",
+            command=self._load_game_override,
+        ).pack(side="left")
+        self.ttk.Button(
+            gameovr_btns, text="Save override",
+            command=self._save_game_override,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            gameovr_btns, text="Clear override",
+            command=self._clear_game_override,
+        ).pack(side="left")
+
         return frame
 
     def _browse_media_file(self) -> None:
@@ -7955,6 +8006,93 @@ class _SpinDoctorGUI:
         """Return `["--game", name]` if a single game is selected, else []."""
         game = self._meta_game_var.get().strip()
         return ["--game", game] if game else []
+
+    def _gameovr_selection(self) -> Optional[tuple[str, str]]:
+        """Return (system, game) from the shared header, or None + a warning.
+
+        Per-game overrides need both — a blank Game means "all games",
+        which doesn't make sense for a single-game ID override.
+        """
+        sys_ = self._meta_system_var.get().strip()
+        game_ = self._meta_game_var.get().strip()
+        if not sys_ or not game_:
+            self.messagebox.showwarning(
+                "System and Game required",
+                "Pick both a System and a Game above first — a per-game "
+                "override needs to know exactly which game.",
+            )
+            return None
+        return sys_, game_
+
+    def _load_game_override(self) -> None:
+        """Populate the override form from the saved override for the
+        System/Game currently selected in the shared header above."""
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        sys_, game_ = selection
+        try:
+            from .config import get_game_override, reset_override_cache
+            reset_override_cache()  # force re-read from disk
+            current = get_game_override(sys_, game_)
+        except Exception as exc:  # noqa: BLE001
+            self.messagebox.showerror("Could not load override", str(exc))
+            return
+        ss = current.get("screenscraper_id")
+        self._gameovr_ss_id_var.set("" if ss is None else str(ss))
+        tg = current.get("thegamesdb_id")
+        self._gameovr_tgdb_id_var.set("" if tg is None else str(tg))
+        if not current:
+            self._set_status(
+                f"No override saved for '{game_}' on {sys_} yet — fill the "
+                "form and click Save."
+            )
+
+    def _save_game_override(self) -> None:
+        """Build a `config game-override set` argv from the form and run it."""
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        sys_, game_ = selection
+        args = ["config", "game-override", "set", sys_, game_]
+        ss = self._gameovr_ss_id_var.get().strip()
+        if ss:
+            try:
+                int(ss)
+            except ValueError:
+                self.messagebox.showerror(
+                    "Invalid ScreenScraper ID", f"Must be an integer; got {ss!r}.",
+                )
+                return
+            args += ["--screenscraper-id", ss]
+        tg = self._gameovr_tgdb_id_var.get().strip()
+        if tg:
+            try:
+                int(tg)
+            except ValueError:
+                self.messagebox.showerror(
+                    "Invalid TheGamesDB ID", f"Must be an integer; got {tg!r}.",
+                )
+                return
+            args += ["--thegamesdb-id", tg]
+        if len(args) == 5:
+            self._flash_validation(
+                "Nothing to save — fill in at least one of ScreenScraper ID "
+                "/ TheGamesDB ID first."
+            )
+            return
+        self._run_cli("spindoctor", args)
+
+    def _clear_game_override(self) -> None:
+        """Build a `config game-override clear` argv from the shared
+        header selection and run it."""
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        sys_, game_ = selection
+        self._run_cli("spindoctor", ["config", "game-override", "clear", sys_, game_])
+        self._gameovr_ss_id_var.set("")
+        self._gameovr_tgdb_id_var.set("")
 
     def _build_fetch_meta_args(self, sys_args: list[str]) -> Optional[list[str]]:
         """Compose the full `fetch-meta` argv given a system selector.

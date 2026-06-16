@@ -15,8 +15,8 @@ import requests
 
 from ._net import make_session, request_get
 from .config import (
-    CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_system_overrides,
-    load_config,
+    CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_game_override,
+    get_system_overrides, load_config,
 )
 from .romutils import normalize, similarity
 
@@ -957,7 +957,24 @@ class ScreenScraperClient(_FetchWithSearchMixin):
         return SCREENSCRAPER_SYSTEMS.get(system_name.lower())
 
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
-        """Direct ROM-name lookup — returns best single match or None."""
+        """Direct ROM-name lookup — returns best single match or None.
+
+        Checks ``config game-override`` first: if this exact (system,
+        game) has a forced ``screenscraper_id``, fetch that ID directly
+        and skip name matching entirely (the override exists precisely
+        because name matching didn't work for this title). Returns
+        whatever ``fetch_by_id`` returns — including ``None`` if the
+        forced ID itself doesn't resolve — rather than falling back to
+        name-based search, since silently fuzzy-matching after an
+        explicit override would defeat the point of setting one.
+        """
+        forced_id = get_game_override(system_name, game_name).get("screenscraper_id")
+        if forced_id:
+            forced = self.fetch_by_id(str(forced_id))
+            if forced:
+                forced.match_score = 1.0
+            return forced
+
         system_id = self._system_id(system_name)
         self._limiter.wait()
         params = {**self._base_params(), "romnom": f"{game_name}.zip"}
@@ -1160,6 +1177,16 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             return []
 
     def fetch(self, game_name: str, system_name: str) -> Optional[GameMetadata]:
+        # Checks config game-override first — see ScreenScraperClient.fetch
+        # for the full rationale (forced ID skips name matching entirely
+        # and never falls back to it, even on a miss).
+        forced_id = get_game_override(system_name, game_name).get("thegamesdb_id")
+        if forced_id:
+            forced = self.fetch_by_id(str(forced_id))
+            if forced:
+                forced.match_score = 1.0
+            return forced
+
         self._limiter.wait()
         params = {
             "apikey": self.api_key,
@@ -1195,20 +1222,63 @@ class TheGamesDBClient(_FetchWithSearchMixin):
         if not games:
             return None
         meta = _parse_thegamesdb(game_name, games[0], data)
-        game_id = str(games[0].get("id", ""))
-        if game_id:
-            images = self._fetch_images(game_id)
-            extra = _parse_tgdb_images(images)
-            for slot, cands in extra.items():
-                if not meta.media_candidates.get(slot):
-                    meta.media_candidates[slot] = cands
-            if extra.get("wheel") and not meta.wheel_url:
-                meta.wheel_url = extra["wheel"][0].url
-            if extra.get("snap") and not meta.snap_url:
-                meta.snap_url = extra["snap"][0].url
-            if extra.get("background") and not meta.background_url:
-                meta.background_url = extra["background"][0].url
+        self._merge_images(meta, games[0])
         meta.match_score = similarity(game_name, meta.name)
+        return meta
+
+    def _merge_images(self, meta: GameMetadata, game: dict) -> None:
+        """Fetch + merge ``Games/Images`` results into *meta* in-place.
+
+        Shared by ``fetch()`` and ``fetch_by_id()`` — both resolve a
+        single TheGamesDB game record and need the same image-gallery
+        backfill (``Games/ByGameName``/``ByGameID`` only embed boxart).
+        """
+        game_id = str(game.get("id", ""))
+        if not game_id:
+            return
+        images = self._fetch_images(game_id)
+        extra = _parse_tgdb_images(images)
+        for slot, cands in extra.items():
+            if not meta.media_candidates.get(slot):
+                meta.media_candidates[slot] = cands
+        if extra.get("wheel") and not meta.wheel_url:
+            meta.wheel_url = extra["wheel"][0].url
+        if extra.get("snap") and not meta.snap_url:
+            meta.snap_url = extra["snap"][0].url
+        if extra.get("background") and not meta.background_url:
+            meta.background_url = extra["background"][0].url
+
+    def fetch_by_id(self, game_id: str) -> Optional[GameMetadata]:
+        """Look up a specific game by TheGamesDB ID — bypasses name matching.
+
+        Mirrors ``ScreenScraperClient.fetch_by_id``; used by the
+        per-game ``thegamesdb_id`` override (see ``config game-override``).
+        Returns ``None`` on any error or empty result — best-effort only.
+        """
+        if not game_id:
+            return None
+        self._limiter.wait()
+        params = {
+            "apikey": self.api_key,
+            "id": game_id,
+            "fields": "overview,genres,developers,publishers,rating,players",
+            "include": "boxart",
+        }
+        url = f"{THEGAMESDB_API}/Games/ByGameID"
+        try:
+            resp = self._session.get(url, params=params, timeout=15)
+            _log_http("thegamesdb.fetch_by_id", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            resp.raise_for_status()
+            data = resp.json()
+            _raise_if_tgdb_error(data)
+        except Exception:  # noqa: BLE001 — best-effort enrichment only
+            return None
+        games = data.get("data", {}).get("games", [])
+        if not games:
+            return None
+        meta = _parse_thegamesdb(str(game_id), games[0], data)
+        self._merge_images(meta, games[0])
         return meta
 
     def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:

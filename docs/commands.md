@@ -112,6 +112,8 @@ When multiple results match the picker prompts you. Three ways to override:
 
 Choices are cached at `~/.spindoctor/match_cache/<system>.json` so re-runs are silent.
 
+If a specific title just never matches well by name (language barrier, a remaster's subtitle, alternate punctuation), skip fuzzy matching entirely for that one game with a [per-game override](configuration.md#per-game-overrides) (`config game-override set`) — find its ID on the scraper's own site and force it.
+
 ### `fetch-media`
 
 Download wheels, backgrounds, snaps, videos, etc. for games in the database.
@@ -131,6 +133,8 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --typ
 ```
 
 `--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console.
+
+A game that resolves but downloads nothing for every type is usually a name-matching problem, not a missing-media problem — see [Troubleshooting](troubleshooting.md#fetch-media-resolves-the-game-but-every-type-reports-no-url-even-with---source-both) and consider a [per-game override](configuration.md#per-game-overrides).
 
 **Network error handling** — if both ScreenScraper and TheGamesDB are unreachable (DNS failure, timeout, connection refused), the per-game error is now printed to the console and the run aborts after 3 consecutive network failures rather than grinding through the whole list:
 
@@ -1708,7 +1712,7 @@ spindoctor config set screenscraper_user myname
 spindoctor config show                          :: pretty-print the active config
 ```
 
-Full key listing and per-system overrides (`config system set / list / clear`) are covered in [Configuration reference](configuration.md).
+Full key listing, per-system overrides (`config system set / list / clear`), and per-game scraper-ID overrides (`config game-override set / list / clear`) are covered in [Configuration reference](configuration.md).
 
 ### `config verify-credentials`
 
