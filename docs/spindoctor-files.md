@@ -235,7 +235,22 @@ C:\SpinDoctor\audits\
 └── audit_20260614_174958.csv
 ```
 
-The CSV contains one row per game per system with columns for ROM presence, database entry, media presence per slot, and (after a `fetch-media` run) a `{slot}_result` column showing what happened to each slot: `downloaded`, `existing`, `no_url`, `no_match`, `no_metadata`, or `failed`.
+The CSV contains one row per game per system with columns for ROM presence, database entry, media presence per slot, and (after a `fetch-media` run) a `{slot}_result` column showing what happened to each slot this run: `downloaded`, `existing`, `no_url`, `no_match`, `no_metadata`, or `failed`, plus a `{slot}_before` column showing whether that slot already had media *before* the run — so a `False`/`downloaded` pair means the run actually filled a gap, while `True`/`existing` means it was already there.
+
+Running `fetch-meta`/`fetch-media` with `--game NAME` scopes the export to that one game instead of every game on the system — the CSV used to always list the whole console regardless of `--game`.
+
+After a `fetch-media` run, the CSV ends with a consolidated footer section — a blank line, then a `Games with missing media this run` header, then one row per game that still has at least one slot in a non-success state (`no_url`, `no_match`, `no_metadata`, or `failed`) with a semicolon-joined list of which slots:
+
+```
+...
+NES,Mario,True,True,False,,,,,True,True,True,True,True,True,True,True,True,True,downloaded,existing,...
+
+Games with missing media this run
+system,rom_name,missing_types
+NES,Golden Sun - Dark Dawn (USA),wheel;background;video;title;theme;fade
+```
+
+The footer is omitted entirely on a clean run (nothing missing) or when the CSV was written without a `download_log` (e.g. plain `audit --report`).
 
 ---
 

@@ -999,6 +999,14 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 
 **Network error propagation** — `CombinedMetadataClient` raises `MetadataError` when both sources fail (DNS down, timeouts, connection refused). Before v2.7.1 both failures were silently swallowed and every game was counted as "no match", producing `Failed: 500` with no diagnostic output. The error is now printed per-game, and `fetch-media` aborts the metadata phase after 3 consecutive network failures rather than grinding through all games. All details are also written to `%USERPROFILE%\.spindoctor\scraper.log`.
 
+#### Per-game ID overrides bypass name matching entirely
+
+`config.game_overrides` (`{system: {game: {screenscraper_id, thegamesdb_id}}}`, managed via `spindoctor config game-override set/list/clear` or the GUI's Metadata & Media "Per-game overrides" panel) lets a cabinet owner force a specific scraper game ID for one title instead of relying on fuzzy name matching — the deterministic fix for a title that just never matches well by name (a recurring repro case: a non-English-primary ScreenScraper listing whose fuzzy `similarity()` score against the English ROM name never clears the match threshold).
+
+Implementation: `ScreenScraperClient.fetch()` and `TheGamesDBClient.fetch()` both check `get_game_override(system_name, game_name)` *before* doing any name-based lookup. If the relevant ID (`screenscraper_id` / `thegamesdb_id`) is set, they call their own `fetch_by_id()` directly and force `match_score = 1.0` — which makes `fetch_with_search()`'s existing `direct.match_score >= threshold` short-circuit accept it immediately, without ever reaching `search()` or the ambiguous-match picker. Each client only acts on the override key it owns (`screenscraper_id` for `ScreenScraperClient`, `thegamesdb_id` for `TheGamesDBClient`), so `CombinedMetadataClient` needs no override-handling code of its own — it already calls both sub-clients' `fetch()` and merges, and gets the override behavior for free for whichever source(s) the user configured.
+
+Deliberately no fallback on a miss: if the forced ID itself fails to resolve (typo, deleted listing), that source returns `None` for the game rather than silently falling back to name search — an explicit override is a statement "I know the right game," and silently fuzzy-matching past a stale ID would be more confusing than just failing visibly.
+
 #### TheGamesDB image slots
 
 TheGamesDB images are fetched in a separate `GET /v1/Games/Images?games_id=<id>` call after the main search. The `type` field of each image maps to a HyperSpin media slot:
@@ -1011,6 +1019,10 @@ TheGamesDB images are fetched in a separate `GET /v1/Games/Images?games_id=<id>`
 | `boxart` | `artwork` | Box front/back |
 
 SpinDoctor only fills a slot from TGDB if ScreenScraper did not already find one, so ScreenScraper always wins when it has coverage.
+
+#### TheGamesDB direct lookup must normalize the name like search() does
+
+`TheGamesDBClient.fetch()` (the direct-lookup path tried before falling back to `search()`) and `search()` both hit the same `Games/ByGameName` endpoint, but `fetch()` used to send the raw ROM name while `search()` already normalized it (stripping region tags and romset punctuation). TheGamesDB's own titles never carry No-Intro-style tags, so a name like `Golden Sun - Dark Dawn (USA)` could miss entirely via `fetch()` while `search()` (sent `golden sun dark dawn`) would have matched `Golden Sun: Dark Dawn` just fine — and because `CombinedMetadataClient.fetch()` only calls `fetch()`, never `search()`, `--source both` runs never got the benefit of the better-normalized path. Both now normalize consistently.
 
 #### Region preference for media selection
 
@@ -1033,6 +1045,12 @@ ScreenScraper's `/jeuInfos.php` endpoint returns game metadata in a `jeu` object
 | `joueurs` | dict `{"text": "2"}` or plain string `"2"` | Varies by game entry |
 
 SpinDoctor's `_parse_screenscraper` uses `isinstance()` guards on each of these. When adding new field parsers, always guard against both dict and list forms.
+
+### ScreenScraper search results can carry no media at all
+
+`jeuRecherche.php` (the text-search endpoint, used whenever the direct `romnom`-based lookup in `jeuInfos.php` doesn't match) returns a much lighter `jeu` payload per result than `jeuInfos.php` does — it can omit the `medias` array entirely even for a game whose own ScreenScraper detail page has a full gallery. Confirmed live on a Nintendo DS title ("Golden Sun - Dark Dawn (USA)") that resolved correctly by name through search but reported `no URL` for every single requested media type.
+
+`ScreenScraperClient.search()` now detects this: if the top-scoring result has no media candidates at all, it issues one follow-up `fetch_by_id()` call (`jeuInfos.php?gameid=<id>`) to backfill the full gallery before returning. Only the top result is enriched — not all `max_results` candidates — to avoid burning API quota on results that won't be used. This is best-effort: if the by-ID lookup also comes back empty, the game genuinely has no media for that source/account combination (e.g. a free ScreenScraper account hitting premium-only assets).
 
 ### ScreenScraper media URL format
 

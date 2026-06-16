@@ -113,6 +113,8 @@ def _auto_export_audit(
     config: Config,
     systems: list[str],
     download_log: Optional[dict] = None,
+    before_log: Optional[dict] = None,
+    game_filter: Optional[str] = None,
 ) -> None:
     """If auto_audit_export_dir is configured, write an audit CSV there.
 
@@ -120,6 +122,15 @@ def _auto_export_audit(
     ``game_name → {media_type → status_str}`` produced by fetch-media runs.
     When provided, the CSV gains ``{type}_result`` columns showing what
     happened to each slot in this run (downloaded / existing / no_url / failed).
+
+    ``before_log`` is the same shape, captured before any downloads ran,
+    and adds ``{type}_before`` columns so the CSV shows both sides of the
+    change instead of just the post-run snapshot.
+
+    ``game_filter``, when given (i.e. the caller ran with ``--game``),
+    limits the audit to that one game instead of every game in
+    ``systems`` — running `fetch-meta`/`fetch-media --game X` shouldn't
+    produce a CSV listing every other untouched game on the console.
     """
     if not config.auto_audit_export_dir:
         return
@@ -127,7 +138,14 @@ def _auto_export_audit(
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = export_dir / f"audit_{stamp}.csv"
     results = [audit_system(s, config, check_media_flag=True) for s in systems]
-    _write_audit_csv(results, report_path, download_log=download_log)
+    if game_filter:
+        for result in results:
+            result.entries = [
+                e for e in result.entries if e.rom_name == game_filter
+            ]
+    _write_audit_csv(
+        results, report_path, download_log=download_log, before_log=before_log,
+    )
     console.print(f"\n[dim]Auto-audit export:[/dim] {report_path}")
 
 
@@ -523,6 +541,111 @@ def config_system_list():
     console.print(tbl)
 
 
+@config_group.group("game-override")
+def config_game_override_group():
+    """Per-(system, game) overrides forcing a specific scraper game ID.
+
+    Use this when a title doesn't match well by name (language barrier,
+    alternate punctuation, a remaster's subtitle, etc.) — find the right
+    game on the scraper's own site, copy its ID from the URL, and set it
+    here once. fetch-meta/fetch-media use the override automatically for
+    that exact (system, game) from then on, bypassing name matching
+    entirely — no need to pass anything extra at fetch time.
+    """
+
+
+@config_game_override_group.command("set")
+@click.argument("system_name")
+@click.argument("game_name")
+@click.option("--screenscraper-id", type=int, default=None,
+              help="ScreenScraper game ID — from screenscraper.fr/gameinfos.php?gameid=<ID>.")
+@click.option("--thegamesdb-id", type=int, default=None,
+              help="TheGamesDB game ID — from thegamesdb.net/game.php?id=<ID>.")
+def config_game_override_set(system_name, game_name, screenscraper_id, thegamesdb_id):
+    """Force a specific scraper game ID for SYSTEM_NAME / GAME_NAME.
+
+    \b
+    Example — a title that doesn't match well by name:
+      spindoctor config game-override set "Nintendo DS" "Golden Sun - Dark Dawn (USA)" \\
+          --screenscraper-id 5775 \\
+          --thegamesdb-id 11251
+    """
+    if screenscraper_id is None and thegamesdb_id is None:
+        err_console.print(
+            "[red]Nothing to set.[/red] Pass at least one of "
+            "--screenscraper-id / --thegamesdb-id."
+        )
+        sys.exit(1)
+    config = _cfg()
+    overrides = dict(config.game_overrides)
+    system_map = dict(overrides.get(system_name, {}))
+    entry = dict(system_map.get(game_name, {}))
+    if screenscraper_id is not None:
+        entry["screenscraper_id"] = screenscraper_id
+    if thegamesdb_id is not None:
+        entry["thegamesdb_id"] = thegamesdb_id
+    system_map[game_name] = entry
+    overrides[system_name] = system_map
+    config.game_overrides = overrides
+    save_config(config)
+    console.print(
+        f"[green]✓[/green] Override saved for [cyan]{system_name}[/cyan] / "
+        f"[cyan]{game_name}[/cyan]:"
+    )
+    for k, v in entry.items():
+        console.print(f"    [dim]{k}:[/dim] {v}")
+
+
+@config_game_override_group.command("clear")
+@click.argument("system_name")
+@click.argument("game_name")
+def config_game_override_clear(system_name, game_name):
+    """Remove the override for SYSTEM_NAME / GAME_NAME (falls back to normal matching)."""
+    config = _cfg()
+    if game_name not in config.game_overrides.get(system_name, {}):
+        console.print(
+            f"[yellow]No override set for '{game_name}' on {system_name}.[/yellow]"
+        )
+        return
+    overrides = dict(config.game_overrides)
+    system_map = dict(overrides[system_name])
+    del system_map[game_name]
+    if system_map:
+        overrides[system_name] = system_map
+    else:
+        del overrides[system_name]
+    config.game_overrides = overrides
+    save_config(config)
+    console.print(
+        f"[green]✓[/green] Cleared override for [cyan]{system_name}[/cyan] / "
+        f"[cyan]{game_name}[/cyan]."
+    )
+
+
+@config_game_override_group.command("list")
+@click.option("--system", default=None, help="Limit to one system.")
+def config_game_override_list(system):
+    """Show all per-game scraper-ID overrides."""
+    config = _cfg()
+    overrides = config.game_overrides
+    if system:
+        overrides = {system: overrides[system]} if system in overrides else {}
+    if not overrides:
+        console.print("[dim]No game overrides configured.[/dim]")
+        return
+    tbl = Table(title="Game Overrides", box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Game", style="cyan")
+    tbl.add_column("Override")
+    tbl.add_column("Value")
+    for sys_name in sorted(overrides):
+        for game_name in sorted(overrides[sys_name]):
+            entry = overrides[sys_name][game_name]
+            for k, v in entry.items():
+                tbl.add_row(sys_name, game_name, k, str(v))
+    console.print(tbl)
+
+
 # ─── emulator-title ───────────────────────────────────────────────────────────
 
 @cli.group("emulator-title")
@@ -774,17 +897,30 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
         console.print(f"\n[green]Matched games:[/green] {len(result.matched)}")
 
 
+# download_log status strings that mean "this slot still has no file" —
+# everything fetch-media can stamp on a slot except the two success cases.
+_NO_MEDIA_RESULT_STATUSES = frozenset({
+    "no_url", "no_match", "no_metadata", "failed", "aborted",
+})
+
+
 def _write_audit_csv(
     results: list[SystemAuditResult],
     path: Path,
     download_log: Optional[dict] = None,
+    before_log: Optional[dict] = None,
 ) -> None:
     """Write the audit CSV.
 
     When ``download_log`` is provided (``game_name → {slot → status_str}``),
     extra ``{slot}_result`` columns are appended showing what fetch-media did
     to each slot this run: ``downloaded``, ``existing``, ``no_url``,
-    ``no_metadata``, ``no_match``, or ``failed``.
+    ``no_metadata``, ``no_match``, or ``failed``. The existing ``{slot}``
+    column already reflects the post-run state (this function runs after
+    any downloads complete), so when ``before_log`` is also provided —
+    the same shape, captured before downloads started — extra
+    ``{slot}_before`` columns are appended so the row shows both sides
+    of the change rather than just the after-state.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -796,6 +932,8 @@ def _write_audit_csv(
         ] + MEDIA_TYPES
         if download_log is not None:
             headers += [f"{t}_result" for t in MEDIA_TYPES]
+        if before_log is not None:
+            headers += [f"{t}_before" for t in MEDIA_TYPES]
         writer.writerow(headers)
         fuzzy_by_rom: dict[tuple, tuple] = {}
         for result in results:
@@ -818,7 +956,38 @@ def _write_audit_csv(
                 if download_log is not None:
                     game_log = download_log.get(entry.rom_name, {})
                     row += [game_log.get(t, "") for t in MEDIA_TYPES]
+                if before_log is not None:
+                    game_before = before_log.get(entry.rom_name, {})
+                    row += [game_before.get(t, "") for t in MEDIA_TYPES]
                 writer.writerow(row)
+
+        # Consolidated footer: every game that came up short this run, in
+        # one place, instead of scanning every {slot}_result column on
+        # every row. `_NO_MEDIA_RESULT_STATUSES` is everything that isn't
+        # "we have the file" (downloaded or already-existing). Only
+        # written when there's something to report — an empty footer
+        # section would just be noise (and extra rows DictReader-style
+        # CSV consumers would have to skip even on a clean run).
+        if download_log is not None:
+            footer_rows = []
+            for result in results:
+                for entry in result.entries:
+                    game_log = download_log.get(entry.rom_name, {})
+                    missing_types = [
+                        t for t in MEDIA_TYPES
+                        if game_log.get(t) in _NO_MEDIA_RESULT_STATUSES
+                    ]
+                    if missing_types:
+                        footer_rows.append([
+                            result.system_name, entry.rom_name,
+                            ";".join(missing_types),
+                        ])
+            if footer_rows:
+                writer.writerow([])
+                writer.writerow(["Games with missing media this run"])
+                writer.writerow(["system", "rom_name", "missing_types"])
+                for row in footer_rows:
+                    writer.writerow(row)
 
 
 # ─── detailed file display helpers ───────────────────────────────────────────
@@ -4498,6 +4667,11 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
     config = _cfg()
     _check_config(config)
 
+    # `game` (the --game filter) gets shadowed below by per-system `for
+    # game in targets:` loops — capture the original value now so the
+    # audit-export scoping at the end of this function still sees it.
+    game_filter = game
+
     from .matcher import choose_match, partition_by_confidence
     from .scraper import MetadataError, build_client, build_metadata_cache
 
@@ -4535,6 +4709,10 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
     if game and not system:
         err_console.print("[red]--game requires --system NAME (one system at a time).[/red]")
         sys.exit(1)
+
+    # Consolidated cross-system summary, printed after the loop below —
+    # game_name → (system_name, reason).
+    all_unresolved: dict[str, tuple[str, str]] = {}
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -4663,6 +4841,11 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                 db.update_game(game)
             updated += 1
 
+        for target in targets:
+            if not auto_resolved.get(target.name):
+                reason = "not found" if target.name in fetch_errors else "ambiguous — skipped"
+                all_unresolved[target.name] = (sys_name, reason)
+
         console.print(
             f"  Updated: [green]{updated}[/green]  "
             f"Ambiguous: [yellow]{len(ambiguous)}[/yellow]  "
@@ -4682,7 +4865,16 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                                 backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]Saved:[/green] {saved}")
 
-    _auto_export_audit(config, systems)
+    # Consolidated cross-system summary, mirroring fetch-media's — read
+    # just the last few lines of a long `--all` run instead of scrolling
+    # back through every system's per-game output.
+    if all_unresolved:
+        console.print(f"\n  {'─' * 68}")
+        console.print(f"  [yellow bold]Games with unresolved metadata ({len(all_unresolved)}):[/yellow bold]")
+        for gname, (sys_name, reason) in all_unresolved.items():
+            console.print(f"    [{sys_name}] {gname}: [yellow]{reason}[/yellow]")
+
+    _auto_export_audit(config, systems, game_filter=game_filter or None)
 
 
 # ─── fetch-media ──────────────────────────────────────────────────────────────
@@ -4762,6 +4954,11 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
+    # `game` (the --game filter) gets shadowed below by per-system `for
+    # game in games:` loops — capture the original value now so the
+    # audit-export scoping at the end of this function still sees it.
+    game_filter = game
+
     from .audit import check_media
     from .media import MediaDownloader
     from .scraper import MetadataError, build_client
@@ -4795,6 +4992,9 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
     # Accumulated across all systems; passed to the audit CSV at the end.
     download_log: dict[str, dict[str, str]] = {}
+    # Same shape, captured before any downloads run, so the audit CSV can
+    # show before/after instead of just the post-run snapshot.
+    before_log: dict[str, dict[str, str]] = {}
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -4815,15 +5015,21 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 )
                 continue
 
+        media_base = downloader._media_base()
+        before_status = {
+            g.name: check_media(g.name, sys_name, media_base) for g in games
+        }
         if not overwrite:
-            media_base = downloader._media_base()
-            games = [
-                g for g in games
-                if check_media(g.name, sys_name, media_base).missing()
-            ]
+            games = [g for g in games if before_status[g.name].missing()]
         if not games:
             console.print("  [green]All media present.[/green]")
             continue
+
+        for g in games:
+            status = before_status[g.name]
+            before_log[g.name] = {
+                mt: str(getattr(status, mt, False)) for mt in media_types
+            }
 
         console.print(
             f"  Processing [cyan]{len(games)}[/cyan] games · "
@@ -5084,7 +5290,30 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         )
         download_log.update(download_log_sys)
 
-    _auto_export_audit(config, systems, download_log=download_log or None)
+    # Consolidated cross-system summary — listing every game that still
+    # has missing media at the very end means a long `--all` run can be
+    # checked by reading just the last few lines instead of scrolling
+    # back through the whole per-game output above.
+    missing_by_game: dict[str, list[str]] = {}
+    for gname, game_log in download_log.items():
+        missing = [
+            mt for mt in media_types
+            if game_log.get(mt) in _NO_MEDIA_RESULT_STATUSES
+        ]
+        if missing:
+            missing_by_game[gname] = missing
+    if missing_by_game:
+        console.print(f"\n  {'─' * 68}")
+        console.print(f"  [yellow bold]Games with missing media ({len(missing_by_game)}):[/yellow bold]")
+        for gname, missing in missing_by_game.items():
+            console.print(f"    {gname}: [yellow]{', '.join(missing)}[/yellow]")
+
+    _auto_export_audit(
+        config, systems,
+        download_log=download_log or None,
+        before_log=before_log or None,
+        game_filter=game_filter or None,
+    )
 
 
 # ─── media add ────────────────────────────────────────────────────────────────
