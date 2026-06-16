@@ -192,6 +192,25 @@ class Config:
     #   }
     system_overrides: dict[str, dict] = field(default_factory=dict)
 
+    # Per-(system, game) overrides that force a specific ScreenScraper /
+    # TheGamesDB game ID instead of relying on fuzzy name matching. Useful
+    # when a title's ROM-set name doesn't match well against the scraper's
+    # own title (language barrier, alternate punctuation, a remaster's
+    # subtitle, etc.) — find the right game on the scraper's own site,
+    # copy its ID, and set it here once. Every future fetch-meta /
+    # fetch-media run for that exact game uses the override automatically,
+    # bypassing search entirely (match_score is forced to 1.0).
+    # Schema:
+    #   {
+    #     "Nintendo DS": {
+    #         "Golden Sun - Dark Dawn (USA)": {
+    #             "screenscraper_id": 5775,   # int — from screenscraper.fr/gameinfos.php?gameid=5775
+    #             "thegamesdb_id": 11251,     # int — from thegamesdb.net/game.php?id=11251
+    #         }
+    #     }
+    #   }
+    game_overrides: dict[str, dict[str, dict]] = field(default_factory=dict)
+
     # Per-emulator window-title fragments used as PCLauncher's FadeTitle= key.
     # Merged with (and takes precedence over) the built-in EMULATOR_WINDOW_TITLES
     # table in rocketlauncher.py.  Add entries here for any emulator whose games
@@ -312,10 +331,27 @@ def get_system_overrides() -> dict[str, dict]:
     return _OVERRIDE_CACHE
 
 
+_GAME_OVERRIDE_CACHE: Optional[dict[str, dict[str, dict]]] = None
+
+
+def get_game_overrides() -> dict[str, dict[str, dict]]:
+    """Return the user-supplied per-(system, game) ID overrides map (cached)."""
+    global _GAME_OVERRIDE_CACHE
+    if _GAME_OVERRIDE_CACHE is None:
+        _GAME_OVERRIDE_CACHE = load_config().game_overrides or {}
+    return _GAME_OVERRIDE_CACHE
+
+
+def get_game_override(system_name: str, game_name: str) -> dict:
+    """Return the override dict for one (system, game) pair, or {}."""
+    return get_game_overrides().get(system_name, {}).get(game_name, {})
+
+
 def reset_override_cache() -> None:
-    """Drop the in-memory override cache so the next lookup re-reads disk."""
-    global _OVERRIDE_CACHE
+    """Drop the in-memory override caches so the next lookup re-reads disk."""
+    global _OVERRIDE_CACHE, _GAME_OVERRIDE_CACHE
     _OVERRIDE_CACHE = None
+    _GAME_OVERRIDE_CACHE = None
 
 
 def load_config() -> Config:

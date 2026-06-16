@@ -470,7 +470,10 @@ def test_write_audit_csv_includes_download_log_columns(tmp_path):
         reader = csv.DictReader(f)
         rows = list(reader)
 
-    assert len(rows) == 1
+    # First row is the one real game; the rows after it are the
+    # consolidated "missing media" footer section — mario's "no_url"
+    # video this run means that footer is non-empty here. See
+    # test_audit_export_scoping.py for dedicated footer coverage.
     row = rows[0]
     assert "wheel_result" in row
     assert row["wheel_result"] == "downloaded"

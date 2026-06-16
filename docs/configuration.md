@@ -90,6 +90,26 @@ Common reasons to use overrides:
   rom_path = 'J:\Games\MAME'
   ```
 
+## Per-game overrides
+
+Force a specific ScreenScraper / TheGamesDB game ID for one title instead of relying on fuzzy name matching — useful when a title's ROM-set name doesn't match well against the scraper's own title (language barrier, alternate punctuation, a remaster's subtitle, etc.):
+
+```bat
+spindoctor config game-override set "Nintendo DS" "Golden Sun - Dark Dawn (USA)" ^
+    --screenscraper-id 5775 ^
+    --thegamesdb-id 11251
+
+spindoctor config game-override list
+spindoctor config game-override list --system "Nintendo DS"
+spindoctor config game-override clear "Nintendo DS" "Golden Sun - Dark Dawn (USA)"
+```
+
+Find the ID on the scraper's own site — it's the `gameid=`/`id=` query parameter on the game's detail page (e.g. `screenscraper.fr/gameinfos.php?gameid=5775`, `thegamesdb.net/game.php?id=11251`). You don't need both — set whichever source(s) you actually use.
+
+Every future `fetch-meta`/`fetch-media` run for that exact (system, game) name uses the override automatically: the matched ID is fetched directly and treated as a 100%-confidence match, bypassing name search (and the ambiguous-match picker) entirely. If the forced ID itself fails to resolve (typo, deleted game, etc.), that source returns nothing for the game rather than silently falling back to name matching — an override means override.
+
+Also exposed in the GUI: Metadata & Media tab → **Per-game overrides (advanced)**, which acts on whichever System/Game is selected in the tab's shared header.
+
 ## `mame_executable` — which one if I have several?
 
 Cabinet builders often keep multiple MAME folders side-by-side (`MAME (driving)`, `MAME (gun games)`, `MAME (sinden)`, …) so RocketLauncher can launch each ROM with the right `mame.ini` / `cfg/` / `ctrlr/` setup. SpinDoctor doesn't care about that — it only invokes MAME for one thing:
