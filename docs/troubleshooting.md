@@ -162,6 +162,19 @@ Cached match decisions live at `~/.spindoctor/match_cache/<system>.json`; cleari
 
 Yes — region/version/revision tags are stripped before searching. Ambiguous matches prompt with a review link to the metadata source. See [ROM variant handling](commands.md#rom-variant-handling).
 
+### `fetch-media` resolves the game but every type reports "no URL", even with `--source both`
+
+```
+→ resolved (screenscraper)
+  no URL:      Some Game (USA) · wheel
+  no URL:      Some Game (USA) · background
+  ...
+```
+
+This means ScreenScraper matched the game by name through its text-search endpoint, which returns a lighter record than the per-game detail page and can omit the media gallery entirely — even though the game's own ScreenScraper page has plenty of art. SpinDoctor automatically re-fetches the matched game by ID to backfill the gallery when this happens; if you're still seeing this on an up-to-date install, it means that backfill also came back empty (the account used genuinely has no media access for that title, e.g. a non-contributor ScreenScraper account hitting premium-only assets).
+
+If `--source both` didn't fill the gap from TheGamesDB either, check whether the game's title differs meaningfully between TheGamesDB and your ROM name (e.g. punctuation: a ROM named `Game - Subtitle (USA)` vs. TheGamesDB's `Game: Subtitle`) — TheGamesDB's name search is normalized (region tags and punctuation stripped) before querying, but it can still miss if the base title itself differs between the ROM set and TheGamesDB's listing.
+
 ## Media / video
 
 ### Video plays but has no sound

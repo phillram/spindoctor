@@ -113,6 +113,8 @@ def _auto_export_audit(
     config: Config,
     systems: list[str],
     download_log: Optional[dict] = None,
+    before_log: Optional[dict] = None,
+    game_filter: Optional[str] = None,
 ) -> None:
     """If auto_audit_export_dir is configured, write an audit CSV there.
 
@@ -120,6 +122,15 @@ def _auto_export_audit(
     ``game_name → {media_type → status_str}`` produced by fetch-media runs.
     When provided, the CSV gains ``{type}_result`` columns showing what
     happened to each slot in this run (downloaded / existing / no_url / failed).
+
+    ``before_log`` is the same shape, captured before any downloads ran,
+    and adds ``{type}_before`` columns so the CSV shows both sides of the
+    change instead of just the post-run snapshot.
+
+    ``game_filter``, when given (i.e. the caller ran with ``--game``),
+    limits the audit to that one game instead of every game in
+    ``systems`` — running `fetch-meta`/`fetch-media --game X` shouldn't
+    produce a CSV listing every other untouched game on the console.
     """
     if not config.auto_audit_export_dir:
         return
@@ -127,7 +138,14 @@ def _auto_export_audit(
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     report_path = export_dir / f"audit_{stamp}.csv"
     results = [audit_system(s, config, check_media_flag=True) for s in systems]
-    _write_audit_csv(results, report_path, download_log=download_log)
+    if game_filter:
+        for result in results:
+            result.entries = [
+                e for e in result.entries if e.rom_name == game_filter
+            ]
+    _write_audit_csv(
+        results, report_path, download_log=download_log, before_log=before_log,
+    )
     console.print(f"\n[dim]Auto-audit export:[/dim] {report_path}")
 
 
@@ -778,13 +796,19 @@ def _write_audit_csv(
     results: list[SystemAuditResult],
     path: Path,
     download_log: Optional[dict] = None,
+    before_log: Optional[dict] = None,
 ) -> None:
     """Write the audit CSV.
 
     When ``download_log`` is provided (``game_name → {slot → status_str}``),
     extra ``{slot}_result`` columns are appended showing what fetch-media did
     to each slot this run: ``downloaded``, ``existing``, ``no_url``,
-    ``no_metadata``, ``no_match``, or ``failed``.
+    ``no_metadata``, ``no_match``, or ``failed``. The existing ``{slot}``
+    column already reflects the post-run state (this function runs after
+    any downloads complete), so when ``before_log`` is also provided —
+    the same shape, captured before downloads started — extra
+    ``{slot}_before`` columns are appended so the row shows both sides
+    of the change rather than just the after-state.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="", encoding="utf-8") as f:
@@ -796,6 +820,8 @@ def _write_audit_csv(
         ] + MEDIA_TYPES
         if download_log is not None:
             headers += [f"{t}_result" for t in MEDIA_TYPES]
+        if before_log is not None:
+            headers += [f"{t}_before" for t in MEDIA_TYPES]
         writer.writerow(headers)
         fuzzy_by_rom: dict[tuple, tuple] = {}
         for result in results:
@@ -818,6 +844,9 @@ def _write_audit_csv(
                 if download_log is not None:
                     game_log = download_log.get(entry.rom_name, {})
                     row += [game_log.get(t, "") for t in MEDIA_TYPES]
+                if before_log is not None:
+                    game_before = before_log.get(entry.rom_name, {})
+                    row += [game_before.get(t, "") for t in MEDIA_TYPES]
                 writer.writerow(row)
 
 
@@ -4498,6 +4527,11 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
     config = _cfg()
     _check_config(config)
 
+    # `game` (the --game filter) gets shadowed below by per-system `for
+    # game in targets:` loops — capture the original value now so the
+    # audit-export scoping at the end of this function still sees it.
+    game_filter = game
+
     from .matcher import choose_match, partition_by_confidence
     from .scraper import MetadataError, build_client, build_metadata_cache
 
@@ -4682,7 +4716,7 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                                 backup_dir=_bak_dir, tmp_dir=_tmp)
             console.print(f"  [green]Saved:[/green] {saved}")
 
-    _auto_export_audit(config, systems)
+    _auto_export_audit(config, systems, game_filter=game_filter or None)
 
 
 # ─── fetch-media ──────────────────────────────────────────────────────────────
@@ -4762,6 +4796,11 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
     _check_config(config)
     systems = _resolve_systems(config, system, all_systems)
 
+    # `game` (the --game filter) gets shadowed below by per-system `for
+    # game in games:` loops — capture the original value now so the
+    # audit-export scoping at the end of this function still sees it.
+    game_filter = game
+
     from .audit import check_media
     from .media import MediaDownloader
     from .scraper import MetadataError, build_client
@@ -4795,6 +4834,9 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
     # Accumulated across all systems; passed to the audit CSV at the end.
     download_log: dict[str, dict[str, str]] = {}
+    # Same shape, captured before any downloads run, so the audit CSV can
+    # show before/after instead of just the post-run snapshot.
+    before_log: dict[str, dict[str, str]] = {}
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
@@ -4815,15 +4857,21 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 )
                 continue
 
+        media_base = downloader._media_base()
+        before_status = {
+            g.name: check_media(g.name, sys_name, media_base) for g in games
+        }
         if not overwrite:
-            media_base = downloader._media_base()
-            games = [
-                g for g in games
-                if check_media(g.name, sys_name, media_base).missing()
-            ]
+            games = [g for g in games if before_status[g.name].missing()]
         if not games:
             console.print("  [green]All media present.[/green]")
             continue
+
+        for g in games:
+            status = before_status[g.name]
+            before_log[g.name] = {
+                mt: str(getattr(status, mt, False)) for mt in media_types
+            }
 
         console.print(
             f"  Processing [cyan]{len(games)}[/cyan] games · "
@@ -5084,7 +5132,12 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         )
         download_log.update(download_log_sys)
 
-    _auto_export_audit(config, systems, download_log=download_log or None)
+    _auto_export_audit(
+        config, systems,
+        download_log=download_log or None,
+        before_log=before_log or None,
+        game_filter=game_filter or None,
+    )
 
 
 # ─── media add ────────────────────────────────────────────────────────────────

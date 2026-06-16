@@ -12,9 +12,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Letter-key type-ahead on every GUI dropdown.** Pressing a letter while a Combobox (System, Game, etc.) has focus jumps straight to the next entry starting with that letter — repeat presses of the same letter cycle through further matches instead of always landing on the first one. This restores the native combobox behaviour that the dark theme's custom styling otherwise loses, and matters most on the Metadata & Media tab's Game dropdown, where a console can list hundreds of titles.
 
+- **Auto-exported audit CSVs now show before/after media status.** When `auto_audit_export_dir` is configured, `fetch-media`'s CSV gains a `{slot}_before` column alongside the existing `{slot}` (after-state) and `{slot}_result` (action taken) columns, so a row reads as a full before → action → after story instead of just the post-run snapshot.
+
 ### Fixed
 
 - **Metadata & Media tab: selecting a new console no longer leaves the previous console's game selected.** The Game dropdown is now blanked automatically whenever the System dropdown changes, instead of silently carrying over a stale (and potentially same-named-but-unrelated) game selection from the prior console.
+
+- **`fetch-meta` / `fetch-media --game NAME` no longer dumps the whole console into the auto-exported audit CSV.** The CSV is now scoped to just the targeted game, matching what the command itself actually touched, instead of always auditing every game on the system.
+
+- **ScreenScraper matches found via text search could come back with zero media for every type, even when the game's own ScreenScraper page has plenty of art.** The search endpoint (`jeuRecherche.php`) returns a lighter record than the per-game detail endpoint and can omit the media gallery entirely. `fetch-media`/`fetch-meta` now re-fetch the matched game by ID to backfill its media when the initial search hit comes back empty — one extra API call, only when needed.
+
+- **`--source both` silently skipped TheGamesDB for ROM names with region tags or romset punctuation** (e.g. `Golden Sun - Dark Dawn (USA)` vs. TheGamesDB's own `Golden Sun: Dark Dawn`). TheGamesDB's direct-lookup path sent the raw ROM name while its search path already normalized it first; both now normalize consistently, so the "both" combined source actually queries TheGamesDB with a name it can match.
 
 ---
 
