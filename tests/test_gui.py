@@ -659,6 +659,35 @@ def test_run_record_joined_output_concatenates_fragments():
     assert rec.joined_output() == "line1\nline2\n"
 
 
+# ─── _format_run_log_text / _default_run_log_filename (Save Log) ─────────────
+
+def test_format_run_log_text_includes_header_and_output():
+    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                         argv_str="spindoctor audit --all", dry_run=True)
+    rec.append("doing the thing\n")
+    rec.exit_code = 0
+    text = gui._format_run_log_text(rec)
+    assert "# Started: 2026-06-16 12:00:00" in text
+    assert "# Status:  DRY-RUN" in text
+    assert "# Dry-run: Yes" in text
+    assert "# Command: spindoctor audit --all" in text
+    assert text.endswith("doing the thing\n")
+
+
+def test_format_run_log_text_dry_run_none_shows_na():
+    """Read-only commands have no dry-run concept — must read N/A, not Yes/No."""
+    rec = gui._RunRecord(started_at="t", argv_str="spindoctor doctor", dry_run=None)
+    rec.exit_code = 0
+    assert "# Dry-run: N/A" in gui._format_run_log_text(rec)
+
+
+def test_default_run_log_filename_sanitizes_timestamp_and_extension():
+    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                         argv_str="spindoctor audit --all", dry_run=True)
+    name = gui._default_run_log_filename(rec)
+    assert name == "2026-06-16_12-00-00_--all.txt"
+
+
 # ─── _format_argv ─────────────────────────────────────────────────────────────
 
 def test_format_argv_quotes_args_with_spaces():
@@ -1825,6 +1854,84 @@ def test_persist_meta_pref_swallows_save_errors(monkeypatch):
         monkeypatch.setattr(gui_mod, "save_config", _boom)
         # Must NOT raise.
         app._persist_meta_pref("gui_meta_auto_best", False)
+    finally:
+        app.root.destroy()
+
+
+# ─── Save Log checkbox (_maybe_save_run_log) ──────────────────────────────────
+
+
+def test_save_log_checkbox_defaults_off(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app._global_savelog_var.get() is False
+    finally:
+        app.root.destroy()
+
+
+def test_maybe_save_run_log_noop_when_unchecked(monkeypatch, tmp_path):
+    """Nothing should be written to disk when Save Log isn't ticked."""
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cfg = cfg_mod.Config()
+        cfg.output_dir = str(tmp_path)
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+
+        rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                             argv_str="spindoctor doctor", dry_run=None)
+        rec.exit_code = 0
+        app._global_savelog_var.set(False)
+        app._maybe_save_run_log(rec)
+        assert list(tmp_path.iterdir()) == []
+    finally:
+        app.root.destroy()
+
+
+def test_maybe_save_run_log_writes_exact_output_when_checked(monkeypatch, tmp_path):
+    """Ticking Save Log must back up the run's full output text into output_dir."""
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cfg = cfg_mod.Config()
+        cfg.output_dir = str(tmp_path)
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+
+        rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                             argv_str="spindoctor doctor", dry_run=None)
+        rec.append("all good\n")
+        rec.exit_code = 0
+        app._global_savelog_var.set(True)
+        app._maybe_save_run_log(rec)
+
+        written = list(tmp_path.glob("*.txt"))
+        assert len(written) == 1
+        text = written[0].read_text(encoding="utf-8")
+        assert "# Command: spindoctor doctor" in text
+        assert text.endswith("all good\n")
+    finally:
+        app.root.destroy()
+
+
+def test_maybe_save_run_log_notes_missing_output_dir(monkeypatch):
+    """With no output_dir configured, the Output panel must explain why
+    nothing was saved instead of writing somewhere unexpected."""
+    from spindoctor import config as cfg_mod
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cfg = cfg_mod.Config()
+        cfg.output_dir = ""
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+
+        rec = gui._RunRecord(started_at="t", argv_str="spindoctor doctor", dry_run=None)
+        rec.exit_code = 0
+        app._global_savelog_var.set(True)
+        app._maybe_save_run_log(rec)
+
+        assert "output_dir is not set" in app._output.get("1.0", "end-1c")
     finally:
         app.root.destroy()
 

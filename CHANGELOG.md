@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **New GUI "Save Log" checkbox in the status bar, next to Apply and Verbose.** When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured Default output directory. Unchecked by default; if `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected.
+
 ---
 
 ## [2.7.2] - 2026-06-14

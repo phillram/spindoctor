@@ -49,16 +49,17 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 A single window with a workflow-ordered tab strip across the top, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom showing the current command and control buttons. Every tab scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
 
-### Global Apply and Verbose checkboxes
+### Global Apply, Verbose, and Save Log checkboxes
 
-The status bar contains two checkboxes that apply to **every command in every tab**:
+The status bar contains three checkboxes that apply to **every command in every tab**:
 
 | Checkbox | Effect |
 |---|---|
 | **Apply** | When checked, commands run with `--apply` and write changes to disk. When unchecked (default), commands run in dry-run mode — output shows what *would* happen, nothing is written. |
 | **Verbose** | When checked, commands run with `--verbose` and print additional detail: file paths being written, per-item counts (added / overridden / skipped), old→new values. When unchecked (default), only the summary line is shown. |
+| **Save Log** | When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured **Default output directory** (Setup tab). Unchecked by default. If `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected. |
 
-These replace the per-section Apply checkboxes that previously lived inside each tab. The single always-visible location makes it impossible to forget which mode you're in before clicking a button.
+Apply and Verbose replace the per-section Apply checkboxes that previously lived inside each tab. The single always-visible location makes it impossible to forget which mode you're in before clicking a button. Save Log is a convenience copy of what the Logs tab already keeps in memory for the session — use it when you want a durable record after the GUI closes (e.g. to attach to a bug report).
 
 ## Per-tab health badges
 
