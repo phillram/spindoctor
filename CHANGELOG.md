@@ -10,6 +10,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **New GUI "Save Log" checkbox in the status bar, next to Apply and Verbose.** When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured Default output directory. Unchecked by default; if `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected.
 
+- **Letter-key type-ahead on every GUI dropdown.** Pressing a letter while a Combobox (System, Game, etc.) has focus jumps straight to the next entry starting with that letter — repeat presses of the same letter cycle through further matches instead of always landing on the first one. This restores the native combobox behaviour that the dark theme's custom styling otherwise loses, and matters most on the Metadata & Media tab's Game dropdown, where a console can list hundreds of titles.
+
+### Fixed
+
+- **Metadata & Media tab: selecting a new console no longer leaves the previous console's game selected.** The Game dropdown is now blanked automatically whenever the System dropdown changes, instead of silently carrying over a stale (and potentially same-named-but-unrelated) game selection from the prior console.
+
 ---
 
 ## [2.7.2] - 2026-06-14

@@ -386,6 +386,87 @@ def _walk_attach_context_menus(root_widget, tk_mod) -> None:
         _walk_attach_context_menus(child, tk_mod)
 
 
+def _typeahead_find_match(
+    values: Sequence[str], ch: str, start: int,
+) -> Optional[int]:
+    """Return the index of the first ``values`` entry starting with ``ch``.
+
+    Searches cyclically beginning at ``start`` (not just index 0) so a
+    repeat press of the same letter can resume after the previous
+    match instead of always landing back on the first one. Comparison
+    is case-insensitive. Returns ``None`` if nothing matches or
+    ``values`` is empty.
+    """
+    if not values:
+        return None
+    ch_lower = ch.lower()
+    for offset in range(len(values)):
+        idx = (start + offset) % len(values)
+        if values[idx].lower().startswith(ch_lower):
+            return idx
+    return None
+
+
+def _attach_combobox_typeahead(combo) -> None:
+    """Bind letter-key type-ahead to a single Combobox.
+
+    Pressing a letter jumps the selection to the next value starting
+    with that letter, cycling to the next match on repeat presses
+    within a second (mirrors the native OS combobox behaviour the
+    dark ttk theme's custom rendering otherwise loses — readonly
+    Comboboxes only cycle on Up/Down without this). Long system/game
+    lists (hundreds of entries) are otherwise a scroll-fest.
+    """
+    if getattr(combo, "_spindoctor_typeahead_attached", False):
+        return
+    state = {"char": None, "index": -1, "at": 0.0}
+
+    def _on_key(event):
+        ch = event.char
+        if not ch or not ch.isalnum():
+            return None
+        try:
+            values = list(combo["values"])
+        except Exception:  # noqa: BLE001
+            return None
+        now = time.monotonic()
+        repeat = ch.lower() == state["char"] and now - state["at"] < 1.0
+        start = state["index"] + 1 if repeat else 0
+        state["char"] = ch.lower()
+        state["at"] = now
+        idx = _typeahead_find_match(values, ch, start)
+        if idx is None:
+            return None
+        state["index"] = idx
+        combo.set(values[idx])
+        combo.event_generate("<<ComboboxSelected>>")
+        return "break"
+
+    combo.bind("<KeyPress>", _on_key, add="+")
+    combo._spindoctor_typeahead_attached = True  # type: ignore[attr-defined]
+
+
+def _walk_attach_combobox_typeahead(root_widget) -> None:
+    """Recursively attach letter-key type-ahead to every Combobox.
+
+    Called once after the whole window is built, same pattern as
+    ``_walk_attach_context_menus``, so every System/Game dropdown
+    across every tab gets it for free — including ones added later.
+    """
+    try:
+        cls = type(root_widget).__name__
+    except Exception:  # noqa: BLE001
+        cls = ""
+    if cls in ("Combobox", "TCombobox"):
+        _attach_combobox_typeahead(root_widget)
+    try:
+        children = root_widget.winfo_children()
+    except Exception:  # noqa: BLE001
+        children = []
+    for child in children:
+        _walk_attach_combobox_typeahead(child)
+
+
 # ─── Tk GUI (lazy imports so the helpers above stay test-importable) ──────────
 
 # Wizard fields used by the Setup tab. Mirrors `_INIT_FIELDS` in cli.py so
@@ -2396,6 +2477,15 @@ class _SpinDoctorGUI:
         # touching every call site.
         try:
             _walk_attach_context_menus(self.root, self.tk)
+        except Exception:  # noqa: BLE001 — never block startup
+            pass
+
+        # Letter-key type-ahead on every dropdown — same walk-once
+        # pattern as the context menus above. Cabinet systems can have
+        # hundreds of games in a single Combobox; this lets a key press
+        # jump straight to it instead of scrolling.
+        try:
+            _walk_attach_combobox_typeahead(self.root)
         except Exception:  # noqa: BLE001 — never block startup
             pass
 
@@ -7828,7 +7918,14 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _populate_meta_game_list(self) -> None:
-        """Refresh the Game dropdown from the selected system's database."""
+        """Refresh the Game dropdown from the selected system's database.
+
+        Always blanks the current Game selection first — a game name
+        from the previous system is meaningless (or, worse, coincides
+        with an unrelated game of the same name) once the System
+        dropdown changes, so it must never carry over.
+        """
+        self._meta_game_var.set("")
         system = self._meta_system_var.get().strip()
         if not system:
             self._meta_game_combo["values"] = []
