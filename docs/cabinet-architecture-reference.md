@@ -164,13 +164,15 @@ SpinDoctor writes all its output files to `output_dir`, never into the HyperSpin
 
 ```
 J:\spindoctor\
-├── output\     ← generated XML files, rebuilt databases, etc.
+├── output\     ← generated XML files, rebuilt databases, run logs (Save Log), etc.
 ├── backups\    ← timestamped .bak copies before any destructive change
 │   ├── HyperSpin\
 │   ├── LEDBlinky\
 │   └── RocketLauncher\
 └── temps\      ← staging area for atomic writes (same drive as output)
 ```
+
+The GUI's status-bar **Save Log** checkbox (off by default) writes a `.txt` backup of each finished command's exact output straight into `output_dir` — same rule as everything else on this page, no separate config key.
 
 MAME `listxml` cache (used by `ledblinky generate`) is stored at:
 ```
