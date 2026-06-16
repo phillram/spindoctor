@@ -162,6 +162,50 @@ Cached match decisions live at `~/.spindoctor/match_cache/<system>.json`; cleari
 
 Yes — region/version/revision tags are stripped before searching. Ambiguous matches prompt with a review link to the metadata source. See [ROM variant handling](commands.md#rom-variant-handling).
 
+## Media / video
+
+### Video plays but has no sound
+
+**Cause:** ScreenScraper's standardised (`video-normalized`) files encode audio as MP3 inside an MP4 container (`mp4a.40.34`). Both macOS AVFoundation (QuickTime, Finder preview) and Windows Media Foundation (used by HyperSpin on Windows 7) expect AAC behind any `mp4a` tag and silently drop an MP3 bitstream — so the video plays but you hear nothing.
+
+SpinDoctor automatically re-encodes the audio to AAC after every video download, but **only when `ffmpeg` and `ffprobe` are installed**. If they are not found the download still succeeds and `fetch-media` prints a yellow warning:
+
+```
+⚠ ffmpeg not found — video audio may be silent on macOS and Windows 7.
+  Install ffmpeg and place ffmpeg.exe + ffprobe.exe next to spindoctor.exe
+  (or set ffmpeg_path in config).
+```
+
+#### Check whether ffmpeg is installed
+
+Open a Command Prompt on the cabinet and run:
+
+```
+ffmpeg -version
+```
+
+- **Version info appears** → ffmpeg is installed. Re-download the video with `--overwrite --apply` and sound should work.
+- **`"ffmpeg" is not recognized`** → ffmpeg is not installed; follow the steps below.
+
+#### Install ffmpeg on the cabinet (Windows 7)
+
+1. On any PC with internet access, go to **<https://www.gyan.dev/ffmpeg/builds/>** and download **`ffmpeg-release-essentials.zip`** (the "release" row, "essentials" build). **Do not download the `full` or `full-shared` builds** — they link against a Windows 10 DLL and will not run on Windows 7.
+2. Extract the zip. Inside the `bin\` folder you will find `ffmpeg.exe` and `ffprobe.exe`.
+3. Copy **both** `ffmpeg.exe` and `ffprobe.exe` into the **same folder as `spindoctor.exe`** on the cabinet. SpinDoctor checks there automatically — no PATH changes needed.
+4. Re-download the silent video:
+   ```
+   spindoctor fetch-media --system <SYSTEM> --game "<GAME>" --types video --overwrite --apply
+   ```
+   The output should show `downloaded` with no warning, and the file will play with sound.
+
+> **If `ffmpeg.exe` crashes immediately on launch:** Windows 7 may be missing the Universal C Runtime (UCRT). Install Microsoft update **KB2999226** (part of the Visual C++ 2015 redistributable), then retry.
+
+#### If ffmpeg is already installed but sound is still missing
+
+The video on the cabinet was downloaded before ffmpeg was installed. Re-download it with `--overwrite --apply` as shown above to replace the silent file.
+
+---
+
 ## Wheels
 
 ### "PCLauncher does not know what exe, FadeTitle, and/or SteamID to watch for" when launching a Toolkit helper
