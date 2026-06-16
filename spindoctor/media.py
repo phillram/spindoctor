@@ -357,6 +357,22 @@ class MediaDownloader:
                         f.write(chunk)
 
                 os.replace(part, dest)
+
+                try:
+                    if dest.stat().st_size == 0:
+                        dest.unlink(missing_ok=True)
+                        last_error = "server returned an empty response (0 bytes)"
+                        if attempt < max_retries:
+                            time.sleep(backoff)
+                            backoff *= 2
+                            continue
+                        return DownloadResult(
+                            game_name=label, media_type=media_type,
+                            success=False, error=last_error,
+                        )
+                except OSError:
+                    pass
+
                 audio_warn = _maybe_fix_video_audio(
                     dest, media_type,
                     getattr(self.config, "ffmpeg_path", ""),

@@ -28,6 +28,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`--source both` silently skipped TheGamesDB for ROM names with region tags or romset punctuation** (e.g. `Golden Sun - Dark Dawn (USA)` vs. TheGamesDB's own `Golden Sun: Dark Dawn`). TheGamesDB's direct-lookup path sent the raw ROM name while its search path already normalized it first; both now normalize consistently, so the "both" combined source actually queries TheGamesDB with a name it can match.
 
+- **`fetch-media` now reports failure (and retries) when the server returns an empty response.** A download that received an HTTP 200 with an empty body previously created a 0-byte file and returned `DownloadResult(success=True)` — the console showed "downloaded ✓" but the file was useless. The downloader now detects a 0-byte result after `os.replace`, removes the empty dest, and retries up to `max_retries` (respecting the existing exponential backoff) before returning a descriptive failure.
+
+- **`media-scan` import and `preview` no longer treat zero-byte files as present.** `media-scan match-to-database` classified a 0-byte target slot as "replacement" (already filled), so `import_media` would skip incoming art for that slot unless `--overwrite` was passed. The `preview` command would resolve the zero-byte path and try to open it in the OS default app. Both now use `stat().st_size > 0` — consistent with `audit`'s presence check — so a zero-byte stub is treated as absent: `media-scan` classifies the slot as "matched" (free to fill), and `preview` falls through to the next extension or reports the slot as missing.
+
+- **Removed duplicate variable declarations in `CombinedMetadataClient.search()`.** `ss_error` and `tgdb_error` were each declared `= None` twice in sequence — a merge artifact. Harmless in practice today, but shadowing the first assignment would become a latent bug if code were ever inserted between the two declarations.
+
 ---
 
 ## [2.7.2] - 2026-06-14

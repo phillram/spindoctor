@@ -147,7 +147,7 @@ A game that resolves but downloads nothing for every type is usually a name-matc
 
 Check `%USERPROFILE%\.spindoctor\scraper.log` for the full error details. See [Troubleshooting → fetch-media reports "Failed: 500"](troubleshooting.md#fetch-media-reports-failed-500-with-no-explanation).
 
-Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
+Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`, and also retries when a server returns an empty body (HTTP 200 with 0 bytes) — the 0-byte file is removed and the slot is re-attempted rather than left as a silent stub.
 
 **Consolidated summary** — after all systems finish, if any game still has a slot with no media, the console output ends with one list of just those games instead of requiring a scroll back through every system's per-game output:
 
@@ -209,8 +209,8 @@ Each file is recognised by folder name (`Wheels`, `Snaps`, `Backgrounds`, `BoxAr
 
 | Bucket | Meaning |
 |---|---|
-| `matched` | Game found in DB, slot is empty (importable). |
-| `replacement` | Game found in DB, slot already filled. |
+| `matched` | Game found in DB, slot is empty or zero-byte (importable). |
+| `replacement` | Game found in DB, slot already filled with a non-empty file. |
 | `unmatched` | No DB match above the fuzzy threshold. |
 | `unknown-type` | Couldn't infer media type (e.g. ambiguous bare image). |
 
@@ -223,7 +223,7 @@ spindoctor media-scan --undo
 spindoctor media-scan --list-manifests
 ```
 
-`--apply` defaults to `--action copy`; `--action move` relocates files, `--action link` creates symlinks (falls back to copy on filesystems that reject them). `--overwrite` also imports the `replacement` bucket. `--types wheel,snap` limits the scan to a subset of media types; `--no-recursive` scans only the top level of the source folder. Imports write a manifest to `~/.spindoctor/media_imports/` so `--undo` can reverse the most recent one.
+`--apply` defaults to `--action copy`; `--action move` relocates files, `--action link` creates symlinks (falls back to copy on filesystems that reject them). `--overwrite` also imports the `replacement` bucket. `--types wheel,snap` limits the scan to a subset of media types; `--no-recursive` scans only the top level of the source folder. Imports write a manifest to `~/.spindoctor/media_imports/` so `--undo` can reverse the most recent one. Zero-byte files in the destination are treated as absent — a 0-byte wheel is classified as `matched` (not `replacement`) and is overwritten during import even without `--overwrite`.
 
 ### `find-global`
 
