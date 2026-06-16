@@ -1866,6 +1866,145 @@ def test_run_pc_rename_validates_system_picked(monkeypatch):
         app.root.destroy()
 
 
+# ─── Per-game overrides (Metadata & Media, advanced) ──────────────────────────
+
+def test_save_game_override_requires_system_and_game(monkeypatch):
+    """Blank Game means 'all games' everywhere else on this tab — for a
+    single-game ID override that's nonsensical, so it must warn instead
+    of shelling out."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+        warned: list[tuple] = []
+        monkeypatch.setattr(
+            app.messagebox, "showwarning",
+            lambda title, msg: warned.append((title, msg)),
+        )
+
+        app._save_game_override()
+
+        assert ran == []
+        assert warned
+    finally:
+        app.root.destroy()
+
+
+def test_save_game_override_builds_expected_argv(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+        app._gameovr_ss_id_var.set("5775")
+        app._gameovr_tgdb_id_var.set("11251")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._save_game_override()
+
+        assert len(ran) == 1
+        argv = ran[0]
+        assert argv[:4] == [
+            "config", "game-override", "set", "Nintendo DS",
+        ]
+        assert argv[4] == "Golden Sun - Dark Dawn (USA)"
+        assert "--screenscraper-id" in argv and "5775" in argv
+        assert "--thegamesdb-id" in argv and "11251" in argv
+    finally:
+        app.root.destroy()
+
+
+def test_save_game_override_flashes_when_both_ids_blank(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+        app._gameovr_ss_id_var.set("")
+        app._gameovr_tgdb_id_var.set("")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+        flashed: list[str] = []
+        monkeypatch.setattr(app, "_flash_validation", lambda msg: flashed.append(msg))
+
+        app._save_game_override()
+
+        assert ran == []
+        assert flashed
+    finally:
+        app.root.destroy()
+
+
+def test_save_game_override_rejects_non_integer_id(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+        app._gameovr_ss_id_var.set("not-a-number")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+        errors: list[tuple] = []
+        monkeypatch.setattr(
+            app.messagebox, "showerror",
+            lambda title, msg: errors.append((title, msg)),
+        )
+
+        app._save_game_override()
+
+        assert ran == []
+        assert errors
+    finally:
+        app.root.destroy()
+
+
+def test_clear_game_override_builds_expected_argv_and_resets_form(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+        app._gameovr_ss_id_var.set("5775")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._clear_game_override()
+
+        assert ran == [[
+            "config", "game-override", "clear", "Nintendo DS",
+            "Golden Sun - Dark Dawn (USA)",
+        ]]
+        assert app._gameovr_ss_id_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_load_game_override_populates_form_from_config(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        from spindoctor import config as cfg_mod
+
+        cfg = cfg_mod.Config()
+        cfg.game_overrides = {
+            "Nintendo DS": {
+                "Golden Sun - Dark Dawn (USA)": {
+                    "screenscraper_id": 5775, "thegamesdb_id": 11251,
+                },
+            },
+        }
+        monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
+        monkeypatch.setattr("spindoctor.config.load_config", lambda: cfg)
+
+        app._meta_system_var.set("Nintendo DS")
+        app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
+
+        app._load_game_override()
+
+        assert app._gameovr_ss_id_var.get() == "5775"
+        assert app._gameovr_tgdb_id_var.get() == "11251"
+    finally:
+        app.root.destroy()
+
+
 # ─── PR D: async startup + persistent non-destructive selections ─────────────
 
 

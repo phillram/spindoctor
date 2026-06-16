@@ -175,6 +175,15 @@ This means ScreenScraper matched the game by name through its text-search endpoi
 
 If `--source both` didn't fill the gap from TheGamesDB either, check whether the game's title differs meaningfully between TheGamesDB and your ROM name (e.g. punctuation: a ROM named `Game - Subtitle (USA)` vs. TheGamesDB's `Game: Subtitle`) — TheGamesDB's name search is normalized (region tags and punctuation stripped) before querying, but it can still miss if the base title itself differs between the ROM set and TheGamesDB's listing.
 
+If neither source ever matches well by name for one specific title (a recurring offender, often due to a language barrier — e.g. the scraper's primary listing is in Japanese/French and the fuzzy match against your English ROM name never clears the confidence threshold), stop relying on name matching for that game entirely: look the game up directly on the scraper's own site, copy the ID from the URL, and set a [per-game override](configuration.md#per-game-overrides):
+
+```bat
+spindoctor config game-override set "Nintendo DS" "Golden Sun - Dark Dawn (USA)" ^
+    --screenscraper-id 5775 --thegamesdb-id 11251
+```
+
+Every future `fetch-meta`/`fetch-media` run for that exact game uses the forced ID directly — also available from the GUI's Metadata & Media tab.
+
 ## Media / video
 
 ### Video plays but has no sound

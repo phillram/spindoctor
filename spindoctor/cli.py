@@ -541,6 +541,111 @@ def config_system_list():
     console.print(tbl)
 
 
+@config_group.group("game-override")
+def config_game_override_group():
+    """Per-(system, game) overrides forcing a specific scraper game ID.
+
+    Use this when a title doesn't match well by name (language barrier,
+    alternate punctuation, a remaster's subtitle, etc.) — find the right
+    game on the scraper's own site, copy its ID from the URL, and set it
+    here once. fetch-meta/fetch-media use the override automatically for
+    that exact (system, game) from then on, bypassing name matching
+    entirely — no need to pass anything extra at fetch time.
+    """
+
+
+@config_game_override_group.command("set")
+@click.argument("system_name")
+@click.argument("game_name")
+@click.option("--screenscraper-id", type=int, default=None,
+              help="ScreenScraper game ID — from screenscraper.fr/gameinfos.php?gameid=<ID>.")
+@click.option("--thegamesdb-id", type=int, default=None,
+              help="TheGamesDB game ID — from thegamesdb.net/game.php?id=<ID>.")
+def config_game_override_set(system_name, game_name, screenscraper_id, thegamesdb_id):
+    """Force a specific scraper game ID for SYSTEM_NAME / GAME_NAME.
+
+    \b
+    Example — a title that doesn't match well by name:
+      spindoctor config game-override set "Nintendo DS" "Golden Sun - Dark Dawn (USA)" \\
+          --screenscraper-id 5775 \\
+          --thegamesdb-id 11251
+    """
+    if screenscraper_id is None and thegamesdb_id is None:
+        err_console.print(
+            "[red]Nothing to set.[/red] Pass at least one of "
+            "--screenscraper-id / --thegamesdb-id."
+        )
+        sys.exit(1)
+    config = _cfg()
+    overrides = dict(config.game_overrides)
+    system_map = dict(overrides.get(system_name, {}))
+    entry = dict(system_map.get(game_name, {}))
+    if screenscraper_id is not None:
+        entry["screenscraper_id"] = screenscraper_id
+    if thegamesdb_id is not None:
+        entry["thegamesdb_id"] = thegamesdb_id
+    system_map[game_name] = entry
+    overrides[system_name] = system_map
+    config.game_overrides = overrides
+    save_config(config)
+    console.print(
+        f"[green]✓[/green] Override saved for [cyan]{system_name}[/cyan] / "
+        f"[cyan]{game_name}[/cyan]:"
+    )
+    for k, v in entry.items():
+        console.print(f"    [dim]{k}:[/dim] {v}")
+
+
+@config_game_override_group.command("clear")
+@click.argument("system_name")
+@click.argument("game_name")
+def config_game_override_clear(system_name, game_name):
+    """Remove the override for SYSTEM_NAME / GAME_NAME (falls back to normal matching)."""
+    config = _cfg()
+    if game_name not in config.game_overrides.get(system_name, {}):
+        console.print(
+            f"[yellow]No override set for '{game_name}' on {system_name}.[/yellow]"
+        )
+        return
+    overrides = dict(config.game_overrides)
+    system_map = dict(overrides[system_name])
+    del system_map[game_name]
+    if system_map:
+        overrides[system_name] = system_map
+    else:
+        del overrides[system_name]
+    config.game_overrides = overrides
+    save_config(config)
+    console.print(
+        f"[green]✓[/green] Cleared override for [cyan]{system_name}[/cyan] / "
+        f"[cyan]{game_name}[/cyan]."
+    )
+
+
+@config_game_override_group.command("list")
+@click.option("--system", default=None, help="Limit to one system.")
+def config_game_override_list(system):
+    """Show all per-game scraper-ID overrides."""
+    config = _cfg()
+    overrides = config.game_overrides
+    if system:
+        overrides = {system: overrides[system]} if system in overrides else {}
+    if not overrides:
+        console.print("[dim]No game overrides configured.[/dim]")
+        return
+    tbl = Table(title="Game Overrides", box=box.ROUNDED)
+    tbl.add_column("System", style="cyan")
+    tbl.add_column("Game", style="cyan")
+    tbl.add_column("Override")
+    tbl.add_column("Value")
+    for sys_name in sorted(overrides):
+        for game_name in sorted(overrides[sys_name]):
+            entry = overrides[sys_name][game_name]
+            for k, v in entry.items():
+                tbl.add_row(sys_name, game_name, k, str(v))
+    console.print(tbl)
+
+
 # ─── emulator-title ───────────────────────────────────────────────────────────
 
 @cli.group("emulator-title")

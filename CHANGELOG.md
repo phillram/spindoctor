@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Consolidated "missing media" / "unresolved metadata" summary at the end of `fetch-media` / `fetch-meta` console output, and a matching footer section at the bottom of the auto-exported audit CSV.** A long `--all` run used to require scrolling back through every system's per-game output (or scanning every row's `{slot}_result` column) to find what still needs attention; both now end with one consolidated list of just the games that came up short.
 
+- **New `config game-override` command (and GUI panel) to force a specific ScreenScraper / TheGamesDB game ID for one title.** For games that just don't match well by name (language barrier, alternate punctuation, a remaster's subtitle), find the right game on the scraper's own site, copy its ID, and set it once with `spindoctor config game-override set <system> <game> --screenscraper-id <id> --thegamesdb-id <id>`. Every future `fetch-meta`/`fetch-media` run for that exact game uses the forced ID automatically, bypassing name matching entirely. Also exposed in the GUI's Metadata & Media tab ("Per-game overrides") and via `config game-override list / clear`.
+
 ### Fixed
 
 - **Metadata & Media tab: selecting a new console no longer leaves the previous console's game selected.** The Game dropdown is now blanked automatically whenever the System dropdown changes, instead of silently carrying over a stale (and potentially same-named-but-unrelated) game selection from the prior console.
