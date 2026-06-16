@@ -3,8 +3,10 @@ name: Security
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # No `branches:` filter — see ci.yml for why: a base-branch filter here
+  # means CI silently never runs for PRs stacked on another open PR
+  # (base != main).
+  pull_request: {}
   schedule:
     # Weekly Monday 06:00 UTC — catches new CVEs against pinned deps even
     # when no PR is open.
