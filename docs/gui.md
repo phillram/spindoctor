@@ -13,6 +13,7 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 - [Keyboard shortcuts](#keyboard-shortcuts)
 - [Find bar](#find-bar)
 - [System quick-filter](#system-quick-filter)
+- [Dropdown letter-key jump](#dropdown-letter-key-jump)
 - [Dry-run feedback](#dry-run-feedback)
 - [Dark mode and right-click menus](#dark-mode-and-right-click-menus)
 - [Stopping a long-running command](#stopping-a-long-running-command)
@@ -133,7 +134,7 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 ### Metadata & Media
 
-Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps.
+Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps. Changing the System dropdown always blanks the Game dropdown — a game from the previous system never carries over.
 
 **Step 1 — Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system (and game, if one is picked). Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
 
@@ -346,6 +347,10 @@ Press `Ctrl+F` (`Cmd+F` on macOS) to open a slim search bar above the Output pan
 ## System quick-filter
 
 Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab notebook. Type to narrow *every* system combobox across every tab to entries containing the typed text (case-insensitive). On a cabinet with 50+ systems, typing "mega" instantly shows only Mega Drive / Mega CD / Sega Mega-Tech everywhere. `Esc` closes the bar and clears the filter; the Clear button does the same without closing.
+
+## Dropdown letter-key jump
+
+Every dropdown in the GUI (system pickers, the Metadata & Media Game dropdown, etc.) supports letter-key type-ahead: with the dropdown focused, pressing a letter jumps straight to the next entry starting with that letter — no need to scroll a list of hundreds of games by hand. Pressing the same letter again moves to the next match instead of looping back to the first one. This is wired up once, globally, so any dropdown added in the future gets it automatically.
 
 ## Dry-run feedback
 
