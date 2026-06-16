@@ -40,7 +40,7 @@ spindoctor systems
 
 ### `audit`
 
-Compare ROM files against the HyperSpin database and media assets. Reports exact + fuzzy matches, ROMs without DB entries, DB entries without ROMs, incomplete metadata, missing media, and ignored counts.
+Compare ROM files against the HyperSpin database and media assets. Reports exact + fuzzy matches, ROMs without DB entries, DB entries without ROMs, incomplete metadata, missing media, and ignored counts. Zero-byte files in the Media tree are treated as missing — a 0-byte wheel or video is flagged the same way as an absent one, so `fetch-media` re-downloads it on the next run.
 
 ```bat
 spindoctor audit --system MAME
@@ -132,7 +132,7 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --app
 spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --types video --apply  :: just the video
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file.
 
 A game that resolves but downloads nothing for every type is usually a name-matching problem, not a missing-media problem — see [Troubleshooting](troubleshooting.md#fetch-media-resolves-the-game-but-every-type-reports-no-url-even-with---source-both) and consider a [per-game override](configuration.md#per-game-overrides).
 

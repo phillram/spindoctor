@@ -28,6 +28,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`--source both` silently skipped TheGamesDB for ROM names with region tags or romset punctuation** (e.g. `Golden Sun - Dark Dawn (USA)` vs. TheGamesDB's own `Golden Sun: Dark Dawn`). TheGamesDB's direct-lookup path sent the raw ROM name while its search path already normalized it first; both now normalize consistently, so the "both" combined source actually queries TheGamesDB with a name it can match.
 
+- **Zero-byte media files are now treated as missing by `audit` and `fetch-media`.** A 0-byte file — left by a failed or empty server response — previously satisfied the presence check, so `audit` reported the slot as covered and `fetch-media` silently skipped it on every subsequent run, never re-downloading. The check now uses `stat().st_size > 0` so a zero-byte file is indistinguishable from a missing one: it appears in the audit's missing-media list and triggers a fresh download on the next `fetch-media` run.
+
 ---
 
 ## [2.7.2] - 2026-06-14

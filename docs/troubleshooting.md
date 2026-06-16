@@ -226,6 +226,14 @@ ffmpeg -version
 
 The video on the cabinet was downloaded before ffmpeg was installed. Re-download it with `--overwrite --apply` as shown above to replace the silent file.
 
+### `audit` reports a slot as present but the file has no content (0 bytes)
+
+A 0-byte stub can land in the Media tree when a download server returns an empty HTTP 200 body, or when a previous download was interrupted before any bytes were written. Prior to v2.7.3 the presence check used `.exists()`, so a zero-byte file would pass and the slot would never be re-downloaded.
+
+Since v2.7.3 `audit.check_media()` uses `stat().st_size > 0` — a zero-byte file is treated identically to an absent one. Running `spindoctor audit` will flag the affected slot, and `fetch-media` will re-download it on the next run without needing `--overwrite`.
+
+If you believe you have zero-byte stubs from an older version, run `audit` and look for slots that are shown as missing even though the file appears to be on disk.
+
 ---
 
 ## Wheels
