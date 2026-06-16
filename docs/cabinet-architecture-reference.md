@@ -1064,6 +1064,8 @@ https://neoclone.screenscraper.fr/api2/mediaJeu.php?devid=…&systemeid=13&jeuid
 
 The file content is a real PNG/JPEG/MP4. `MediaDownloader._download_to` must **not** use the URL path suffix (`.php`) to rename the destination — doing so saves `Pikmin.php` instead of `Pikmin.png` and HyperSpin cannot find it. The extension-override logic is restricted to known media extensions (`.png`, `.jpg`, `.mp4`, etc.) to prevent this.
 
+**Empty-body detection** — After the atomic `os.replace(part, dest)`, `_download_to` checks `dest.stat().st_size > 0`. A server that returns HTTP 200 with an empty body (CDN misconfiguration, transient auth failure surfaced as a 200) would otherwise leave a 0-byte file and return `success=True`. Instead, the empty file is removed and the attempt is counted as a failure — the retry loop re-attempts up to `max_retries` with exponential backoff before surfacing a descriptive error to the caller.
+
 ### Platform / system ID maps
 
 SpinDoctor has two lookup dicts in `scraper.py`: `SCREENSCRAPER_SYSTEMS` (237 entries, covering all 249 ScreenScraper systems) and `THEGAMESDB_PLATFORMS` (235 entries, covering all 153 TheGamesDB platforms). These were verified against the live APIs on 2026-06-14.

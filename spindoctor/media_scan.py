@@ -80,6 +80,14 @@ _THEME_EXTS = {".zip", ".swf"}
 _ALL_KNOWN_EXTS = _IMAGE_EXTS | _VIDEO_EXTS | _SOUND_EXTS | _THEME_EXTS
 
 
+def _nonempty(path: Path) -> bool:
+    """Return True when *path* exists as a file with at least 1 byte of content."""
+    try:
+        return path.stat().st_size > 0
+    except OSError:
+        return False
+
+
 def _detect_type_from_path(path: Path) -> Optional[str]:
     """Walk the path components looking for a folder-name hint.
 
@@ -259,12 +267,13 @@ def match_to_database(
             config, system_name, game_name, f.media_type,
             f.path.suffix, output_dir=output_dir,
         )
+        target_has_content = _nonempty(target)
         sm = ScanMatch(
             local=f, system=system_name,
             game_name=game_name, score=score,
-            target_path=target, target_exists=target.exists(),
+            target_path=target, target_exists=target_has_content,
         )
-        if target.exists():
+        if target_has_content:
             sm.bucket = "replacement"
             report.replacement.append(sm)
         else:
@@ -341,7 +350,7 @@ def import_media(
             result.skipped.append((sm.local.path, "no target path"))
             continue
         target = sm.target_path
-        if target.exists() and not overwrite:
+        if _nonempty(target) and not overwrite:
             result.skipped.append((sm.local.path, f"exists: {target}"))
             continue
         try:
