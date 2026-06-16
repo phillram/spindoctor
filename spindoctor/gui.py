@@ -2297,11 +2297,19 @@ class _SpinDoctorGUI:
         )
         self._output_toggle_btn.pack(side="right", padx=(0, 6))
 
-        # Global Apply / Verbose checkboxes — shared across all tabs.
-        # Packed side="right" AFTER the other right-side buttons so they
-        # appear to the left of Hide/Copy/Clear/Stop in the status bar.
+        # Global Apply / Verbose / Save Log checkboxes — shared across all
+        # tabs. Packed side="right" AFTER the other right-side buttons so
+        # they appear to the left of Hide/Copy/Clear/Stop in the status
+        # bar. Pack order below (Save Log, then Verbose, then Apply) is
+        # deliberate: each side="right" pack lands to the *left* of the
+        # previous one, so packing last-to-first-visually gives the
+        # requested left-to-right reading order of Apply, Verbose, Save Log.
         self._global_apply_var = self.tk.BooleanVar(value=False)
         self._global_verbose_var = self.tk.BooleanVar(value=False)
+        self._global_savelog_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            bar, text="Save Log", variable=self._global_savelog_var,
+        ).pack(side="right", padx=(6, 0))
         self.ttk.Checkbutton(
             bar, text="Verbose", variable=self._global_verbose_var,
         ).pack(side="right", padx=(6, 0))
@@ -2709,21 +2717,9 @@ class _SpinDoctorGUI:
         if idx is None or idx >= len(self._run_history):
             return
         record = self._run_history[idx]
-        _dr = ("N/A" if record.dry_run is None
-               else ("Yes" if record.dry_run else "No"))
-        text = (
-            f"# Started: {record.started_at}\n"
-            f"# Status:  {record.tag()}\n"
-            f"# Dry-run: {_dr}\n"
-            f"# Command: {record.argv_str}\n\n"
-            f"{record.joined_output()}"
-        )
+        text = _format_run_log_text(record)
         from tkinter import filedialog
-        default_name = (
-            record.started_at.replace(":", "-").replace(" ", "_")
-            + "_" + record.argv_str.split()[-1].replace("/", "-").replace("\\", "-")
-            + ".txt"
-        )
+        default_name = _default_run_log_filename(record)
         path = filedialog.asksaveasfilename(
             defaultextension=".txt",
             filetypes=[("Text files", "*.txt"), ("All files", "*.*")],
@@ -12327,6 +12323,7 @@ class _SpinDoctorGUI:
                     )
                     self._append_output(footer)
                     self._current_run.append(footer)
+                self._maybe_save_run_log(self._current_run)
 
             # Compute elapsed wall-clock for the status bar summary.
             # Falls back to '' if _run_cli wasn't called via the normal path
@@ -12408,6 +12405,38 @@ class _SpinDoctorGUI:
                     self._set_busy(False)
                 except Exception:  # noqa: BLE001
                     pass
+
+    def _maybe_save_run_log(self, record: "_RunRecord") -> None:
+        """Back up a finished run's exact output to output_dir as a .txt file.
+
+        Only fires when the "Save Log" checkbox is ticked. The Logs tab
+        already keeps this same content in memory for the session — this
+        is purely a durable copy for cabinet owners who want to keep or
+        share a record after the GUI closes.
+        """
+        if not self._global_savelog_var.get():
+            return
+        cfg = load_config()
+        if not cfg.output_dir:
+            self._append_output(
+                "\n[Save Log] output_dir is not set — configure a "
+                "Default output directory on the Setup tab to enable "
+                "automatic log saving.\n"
+            )
+            return
+        out_dir = Path(cfg.output_dir)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            path = out_dir / _default_run_log_filename(record)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(_format_run_log_text(record))
+            self._append_output(f"\n[Save Log] wrote {path}\n")
+        except OSError as exc:
+            from ._errors import humanize_oserror
+            self._append_output(
+                f"\n[Save Log] failed: "
+                f"{humanize_oserror(exc, action='write log file')}\n"
+            )
 
     def _stop_running(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
@@ -12830,6 +12859,28 @@ class _RunRecord:
         if self.exit_code == 0:
             return "DRY-RUN" if self.dry_run is True else "OK"
         return f"FAIL {self.exit_code}"
+
+
+def _format_run_log_text(record: "_RunRecord") -> str:
+    """Render a run record as the header+output text written to a log file."""
+    _dr = ("N/A" if record.dry_run is None
+           else ("Yes" if record.dry_run else "No"))
+    return (
+        f"# Started: {record.started_at}\n"
+        f"# Status:  {record.tag()}\n"
+        f"# Dry-run: {_dr}\n"
+        f"# Command: {record.argv_str}\n\n"
+        f"{record.joined_output()}"
+    )
+
+
+def _default_run_log_filename(record: "_RunRecord") -> str:
+    """Filesystem-safe default filename for a run record's log file."""
+    return (
+        record.started_at.replace(":", "-").replace(" ", "_")
+        + "_" + record.argv_str.split()[-1].replace("/", "-").replace("\\", "-")
+        + ".txt"
+    )
 
 
 def _format_argv(argv: Sequence[str]) -> str:
