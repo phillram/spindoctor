@@ -189,7 +189,7 @@ ffmpeg -version
 
 #### Install ffmpeg on the cabinet (Windows 7)
 
-1. On any PC with internet access, go to **<https://www.gyan.dev/ffmpeg/builds/>** and download **`ffmpeg-release-essentials.zip`** (the "release" row, "essentials" build — the 32-bit build works on Windows 7).
+1. On any PC with internet access, go to **<https://www.gyan.dev/ffmpeg/builds/>** and download **`ffmpeg-release-essentials.zip`** (the "release" row, "essentials" build). **Do not download the `full` or `full-shared` builds** — they link against a Windows 10 DLL and will not run on Windows 7.
 2. Extract the zip. Inside the `bin\` folder you will find `ffmpeg.exe` and `ffprobe.exe`.
 3. Copy **both** `ffmpeg.exe` and `ffprobe.exe` into the **same folder as `spindoctor.exe`** on the cabinet. SpinDoctor checks there automatically — no PATH changes needed.
 4. Re-download the silent video:
@@ -197,6 +197,8 @@ ffmpeg -version
    spindoctor fetch-media --system <SYSTEM> --game "<GAME>" --types video --overwrite --apply
    ```
    The output should show `downloaded` with no warning, and the file will play with sound.
+
+> **If `ffmpeg.exe` crashes immediately on launch:** Windows 7 may be missing the Universal C Runtime (UCRT). Install Microsoft update **KB2999226** (part of the Visual C++ 2015 redistributable), then retry.
 
 #### If ffmpeg is already installed but sound is still missing
 
