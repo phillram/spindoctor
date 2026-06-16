@@ -145,6 +145,16 @@ Check `%USERPROFILE%\.spindoctor\scraper.log` for the full error details. See [T
 
 Concurrency is controlled by `max_concurrent_downloads`. The downloader retries on HTTP 429/503, honouring `Retry-After`.
 
+**Consolidated summary** — after all systems finish, if any game still has a slot with no media, the console output ends with one list of just those games instead of requiring a scroll back through every system's per-game output:
+
+```
+  ────────────────────────────────────────────────────────────────────
+  Games with missing media (1):
+    Golden Sun - Dark Dawn (USA): wheel, background, video, title, theme, fade
+```
+
+`fetch-meta` prints the equivalent `Games with unresolved metadata (N):` summary for games that were never found or were skipped as ambiguous. Both also gain a matching footer section in the auto-exported audit CSV — see [SpinDoctor Files → `auto_audit_export_dir`](spindoctor-files.md#auto_audit_export_dir).
+
 When a media slot has multiple candidates (different regions / artwork variants), three modes are available:
 
 - `--pick-media` — prompt interactively for each slot. Terminal-only — would hang from a GUI subprocess.

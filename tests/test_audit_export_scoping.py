@@ -145,3 +145,55 @@ def test_write_audit_csv_omits_before_columns_when_not_provided(tmp_path):
         header = next(csv.reader(f))
     assert not any(h.endswith("_before") for h in header)
     assert not any(h.endswith("_result") for h in header)
+
+
+# ─── consolidated "missing media" footer ───────────────────────────────────
+
+def test_write_audit_csv_footer_lists_games_with_missing_media(tmp_path):
+    result = SystemAuditResult(system_name="NES")
+    result.entries = [_entry("Mario"), _entry("Zelda", wheel=True)]
+    path = tmp_path / "audit.csv"
+
+    _write_audit_csv(
+        [result], path,
+        download_log={
+            "Mario": {"wheel": "no_url", "background": "downloaded"},
+            "Zelda": {"wheel": "existing"},
+        },
+    )
+
+    raw_rows = list(csv.reader(open(path, newline="", encoding="utf-8")))
+    footer_start = raw_rows.index(["Games with missing media this run"])
+    assert raw_rows[footer_start + 1] == ["system", "rom_name", "missing_types"]
+    assert raw_rows[footer_start + 2] == ["NES", "Mario", "wheel"]
+    # Zelda has no missing slots this run — must not appear in the footer.
+    assert all(r[:2] != ["NES", "Zelda"] for r in raw_rows[footer_start + 2:])
+
+
+def test_write_audit_csv_omits_footer_when_nothing_is_missing(tmp_path):
+    """A clean run (everything downloaded/existing) must not add an
+    empty, noisy footer section."""
+    result = SystemAuditResult(system_name="NES")
+    result.entries = [_entry("Mario", wheel=True)]
+    path = tmp_path / "audit.csv"
+
+    _write_audit_csv(
+        [result], path,
+        download_log={"Mario": {"wheel": "downloaded"}},
+    )
+
+    raw_rows = list(csv.reader(open(path, newline="", encoding="utf-8")))
+    assert ["Games with missing media this run"] not in raw_rows
+
+
+def test_write_audit_csv_omits_footer_when_no_download_log(tmp_path):
+    """Plain `audit --report` (no download_log at all) gets no footer —
+    there's no "this run" to summarize."""
+    result = SystemAuditResult(system_name="NES")
+    result.entries = [_entry("Mario")]
+    path = tmp_path / "audit.csv"
+
+    _write_audit_csv([result], path)
+
+    raw_rows = list(csv.reader(open(path, newline="", encoding="utf-8")))
+    assert ["Games with missing media this run"] not in raw_rows
