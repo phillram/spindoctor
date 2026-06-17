@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Sort-database bucket files (`organize`) are now written atomically.** `write_sort_databases` previously used a direct `open()` write that left a half-written XML file on disk if the process was interrupted mid-write. It now uses the same temp-file + `os.replace()` atomic pattern as every other database write in SpinDoctor.
+
+- **`fav rebuild` no longer silently deletes media and PCLauncher INIs before writing the new ones.** The previous ordering (delete orphans, then write new files) meant any failure between the two steps left the wheel with less content than before. Writes now happen first; orphan cleanup runs only after all new files are confirmed on disk.
+
+- **`scrub --hs-favorites` now only strips `favorite="1"` from system XML files**, not any `favorite="..."` value. The previous regex was too broad and would have stripped e.g. `favorite="0"` or custom values written by third-party tools. The behavior now matches the documented spec.
+
 - **`fetch-media` now respects `config.match_threshold`** (set via `config set match_threshold`). Previously `fetch-media` always used the hardcoded default of 0.80 regardless of configuration; `fetch-meta` was correctly reading from config. Both commands now use the same threshold.
 
 - **TheGamesDB media fill-in now actually reaches the download queue.** `CombinedMetadataClient` fills TGDB media into `media_candidates` when ScreenScraper has an empty slot, but `fetch-media`'s download job builder reads the scalar `wheel_url` / `background_url` / `snap_url` fields — not `media_candidates`. Those scalars were never updated from the fill, so TGDB's gap-fill produced no downloads. The scalar fields are now synced alongside `media_candidates` when TGDB contributes.
