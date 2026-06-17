@@ -1334,6 +1334,14 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             meta.match_score = similarity(game_name, meta.name)
             results.append(meta)
         results.sort(key=lambda m: m.match_score, reverse=True)
+        # Enrich the top candidate with wheel/snap/background from Games/Images.
+        # fetch() and fetch_by_id() both call _merge_images; search() was missing
+        # this, leaving wheel_url/snap_url/background_url empty on search results.
+        if results:
+            top_id = results[0].source_id
+            top_game = next((g for g in games if str(g.get("id", "")) == top_id), None)
+            if top_game:
+                self._merge_images(results[0], top_game)
         return results
 
 
@@ -1593,6 +1601,11 @@ class CombinedMetadataClient(_FetchWithSearchMixin):
             for slot, cands in (tgdb_meta.media_candidates or {}).items():
                 if not ss_meta.media_candidates.get(slot):
                     ss_meta.media_candidates[slot] = cands
+                    # Also sync the scalar shortcut so jobs_for_metadata()
+                    # (which reads *_url, not media_candidates) sees the fill.
+                    url_attr = f"{slot}_url"
+                    if cands and not getattr(ss_meta, url_attr, ""):
+                        setattr(ss_meta, url_attr, cands[0].url)
 
         return ss_meta
 
@@ -1827,7 +1840,10 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
                     or next(iter(date_map.values()), ""))[:4]
 
     genres = jeu.get("genres", [])
-    genre = _lang(genres[0].get("noms", [])) if genres else ""
+    # The search endpoint (jeuRecherche) can return genre entries as plain
+    # strings rather than the {"id": ..., "noms": [...]} dicts from jeuInfos.
+    _g0 = genres[0] if genres else None
+    genre = _lang(_g0.get("noms", [])) if isinstance(_g0, dict) else ""
 
     rating = ""
     for c in (jeu.get("classifications") or []):
