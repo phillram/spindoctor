@@ -109,3 +109,52 @@ def test_combined_search_raises_only_ss_error_when_only_ss_configured():
     # Error message mentions SS but not TGDB (TGDB had no error, just no results)
     assert "ScreenScraper" in str(exc_info.value)
     assert "TheGamesDB" not in str(exc_info.value)
+
+
+# ── CombinedMetadataClient.fetch() scalar sync ────────────────────────────────
+
+class _SSnoBG:
+    """SS finds the game but has no wheel or background URL."""
+    def fetch(self, game_name, system_name):
+        return GameMetadata(
+            name="Street Fighter II", source="screenscraper", source_id="101",
+            match_score=1.0,
+            snap_url="http://ss/snap.png",   # SS has a snap
+            # wheel_url and background_url intentionally empty
+        )
+
+
+class _TGDBhasBG:
+    """TGDB finds the game and has wheel + background that SS is missing."""
+    def fetch(self, game_name, system_name):
+        from spindoctor.scraper import MediaCandidate
+        meta = GameMetadata(
+            name="Street Fighter II", source="thegamesdb", source_id="202",
+            match_score=1.0,
+        )
+        meta.media_candidates["wheel"] = [
+            MediaCandidate(url="http://tgdb/wheel.png", region="us", source_type="wheel"),
+        ]
+        meta.media_candidates["background"] = [
+            MediaCandidate(url="http://tgdb/bg.png", region="us", source_type="background"),
+        ]
+        return meta
+
+
+def test_combined_fetch_syncs_tgdb_scalar_urls_into_ss_result():
+    """When SS has a game but is missing some media slots, TGDB fill-in must
+    update both media_candidates AND the scalar *_url fields so that
+    jobs_for_metadata() (which reads *_url) picks them up."""
+    client = _make_combined(_SSnoBG(), _TGDBhasBG())
+    result = client.fetch("Street Fighter II", "Arcade")
+    # SS snap should be preserved
+    assert result.snap_url == "http://ss/snap.png"
+    # TGDB wheel/background must appear in both candidates AND scalar fields
+    assert result.media_candidates.get("wheel"), "wheel candidates missing"
+    assert result.wheel_url == "http://tgdb/wheel.png", (
+        "wheel_url not synced from TGDB fill — jobs_for_metadata would miss it"
+    )
+    assert result.media_candidates.get("background"), "background candidates missing"
+    assert result.background_url == "http://tgdb/bg.png", (
+        "background_url not synced from TGDB fill — jobs_for_metadata would miss it"
+    )

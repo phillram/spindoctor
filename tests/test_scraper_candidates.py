@@ -61,6 +61,20 @@ def test_parse_screenscraper_dates_as_list():
     assert meta.year == "2003"
 
 
+def test_parse_screenscraper_genres_as_strings_does_not_crash():
+    """The search endpoint can return genre entries as plain strings instead of
+    {"id": ..., "noms": [...]} dicts.  _parse_screenscraper must not crash."""
+    jeu = {
+        "id": "7",
+        "noms": [{"langue": "en", "text": "Some Game"}],
+        "genres": ["Action", "Platformer"],  # strings, not dicts
+        "medias": [],
+    }
+    meta = _parse_screenscraper("some_game", jeu)
+    assert meta.name == "Some Game"
+    assert meta.genre == ""  # can't extract — safe fallback
+
+
 def test_metadata_from_dict_round_trips_candidates():
     payload = {
         "name": "x",
