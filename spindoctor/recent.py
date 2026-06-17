@@ -118,6 +118,18 @@ def _read_stats_file(
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
         parser.read(path, encoding="utf-8")
+    except UnicodeDecodeError:
+        # RL on Windows may write game names in the system codepage
+        # (e.g. accented letters like ü → 0xfc in cp1252). Retry once.
+        parser = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            parser.read(path, encoding="cp1252")
+        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
+            if warnings is not None:
+                warnings.append(
+                    f"Could not read stats file {path}: {type(exc).__name__}: {exc}"
+                )
+            return []
     except (OSError, configparser.Error) as exc:
         if warnings is not None:
             warnings.append(
@@ -171,6 +183,17 @@ def _read_global_statistics_ini(
     try:
         # utf-8-sig handles the BOM that RocketLauncher sometimes writes
         parser.read(path, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        parser = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            parser.read(path, encoding="cp1252")
+        except (OSError, configparser.Error, UnicodeDecodeError) as exc:
+            if warnings is not None:
+                warnings.append(
+                    f"Could not read Global Statistics file {path}: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+            return []
     except (OSError, configparser.Error) as exc:
         if warnings is not None:
             warnings.append(
