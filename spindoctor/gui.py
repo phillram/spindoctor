@@ -7509,6 +7509,18 @@ class _SpinDoctorGUI:
             gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=14,
         ).grid(row=0, column=3, sticky="w", pady=2)
 
+        # Clear override ID fields when the game selection changes so stale
+        # IDs from a previous game never linger.  System changes also fire
+        # this trace because _populate_meta_game_list calls
+        # _meta_game_var.set(""), which counts as a write.
+        self._meta_game_var.trace_add(
+            "write",
+            lambda *_: (
+                self._gameovr_ss_id_var.set(""),
+                self._gameovr_tgdb_id_var.set(""),
+            ),
+        )
+
         gameovr_btns = self.ttk.Frame(gameovr_frame)
         gameovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
@@ -12283,6 +12295,11 @@ class _SpinDoctorGUI:
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("PYTHONIOENCODING", "utf-8")
+        # Override terminal column width so rich/click don't hard-wrap long
+        # lines (file paths, URLs) at the parent shell's COLUMNS value.
+        # Rich tables are unaffected — they default to expand=False and only
+        # grow to fit their content, not the console width.
+        env["COLUMNS"] = "9999"
 
         try:
             self._proc = subprocess.Popen(
