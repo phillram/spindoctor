@@ -27,7 +27,7 @@ from rich.table import Table
 from . import __app_name__, __version__
 from .audit import SystemAuditResult, audit_system, build_stub_entry
 from .config import (
-    Config, MEDIA_TYPES, get_systems, load_config, save_config,
+    Config, MEDIA_TYPES, get_game_override, get_systems, load_config, save_config,
 )
 from .database import GameEntry, HyperspinDatabase, load_database
 
@@ -5075,8 +5075,19 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                         continue
                     if verbose:
                         src = getattr(chosen, "source", "")
+                        ovr = get_game_override(sys_name, game.name)
+                        ovr_parts = []
+                        if ovr.get("screenscraper_id"):
+                            ovr_parts.append(f"ss={ovr['screenscraper_id']}")
+                        if ovr.get("thegamesdb_id"):
+                            ovr_parts.append(f"tgdb={ovr['thegamesdb_id']}")
+                        ovr_note = (
+                            f"  [magenta]override: {', '.join(ovr_parts)}[/magenta]"
+                            if ovr_parts else ""
+                        )
                         prog.console.print(f"    [green]→ resolved[/green]" +
-                                           (f" [dim]({src})[/dim]" if src else ""))
+                                           (f" [dim]({src})[/dim]" if src else "") +
+                                           ovr_note)
                     consecutive_net_errors = 0
                     if pick_media:
                         for mt in media_types:

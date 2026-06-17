@@ -7415,33 +7415,6 @@ class _SpinDoctorGUI:
             sys_row, text="All systems", variable=self._meta_all_var,
         ).pack(side="left", padx=6)
 
-        # Game filter row — leave blank to process all games in the system.
-        # Populated automatically when a system is selected.
-        game_row = self.ttk.Frame(frame)
-        game_row.pack(fill="x", padx=6, pady=(2, 0))
-        self.ttk.Label(game_row, text="Game (optional — blank = all games)").pack(
-            side="left",
-        )
-        self._meta_game_var = self.tk.StringVar()
-        self._meta_game_combo = self.ttk.Combobox(
-            game_row, textvariable=self._meta_game_var,
-            state="normal", width=40,
-        )
-        self._meta_game_combo.pack(side="left", padx=6)
-        self.ttk.Button(
-            game_row, text="✕",
-            command=lambda: self._meta_game_var.set(""),
-            width=2,
-        ).pack(side="left")
-        self.ttk.Label(
-            game_row,
-            text="← clear to process all games",
-            foreground=_FG_DIMMER,
-        ).pack(side="left", padx=4)
-        # Populate game list when the system selection changes.
-        self._meta_system_var.trace_add(
-            "write", lambda *_: self._populate_meta_game_list()
-        )
         # Multi-system selector — for cabinets with 20+ systems where
         # the user wants to refresh metadata for an arbitrary subset
         # (often "the 5 systems whose scraper data just got better"),
@@ -7473,6 +7446,84 @@ class _SpinDoctorGUI:
             sys_row, textvariable=self._meta_subset_label_var,
             foreground=_FG_DIM,
         ).pack(side="left")
+
+        # ── Per-game & override (Optional) ───────────────────────────────────
+        # Combined game selector + forced scraper IDs, placed before the step
+        # buttons so it's clear this targets every operation below.
+        gameovr_frame = self.ttk.LabelFrame(
+            frame, text="Per-game & override (Optional)",
+        )
+        gameovr_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            gameovr_frame,
+            text=("Select a specific game to target, or leave blank to "
+                  "process all games in the selected system. Optionally "
+                  "force the exact scraper game ID for titles that don't "
+                  "match well by name (language barrier, alternate "
+                  "punctuation, remaster subtitle). Find the ID at "
+                  "screenscraper.fr/gameinfos.php?gameid=XXXX or "
+                  "thegamesdb.net/game.php?id=XXXX."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+
+        # Game row — populated automatically when a system is selected.
+        game_row = self.ttk.Frame(gameovr_frame)
+        game_row.pack(fill="x", padx=6, pady=(2, 0))
+        self.ttk.Label(game_row, text="Game (blank = all games)").pack(side="left")
+        self._meta_game_var = self.tk.StringVar()
+        self._meta_game_combo = self.ttk.Combobox(
+            game_row, textvariable=self._meta_game_var,
+            state="normal", width=40,
+        )
+        self._meta_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            game_row, text="✕",
+            command=lambda: self._meta_game_var.set(""),
+            width=2,
+        ).pack(side="left")
+        self.ttk.Label(
+            game_row,
+            text="← clear to process all games",
+            foreground=_FG_DIMMER,
+        ).pack(side="left", padx=4)
+        # Populate game list when the system selection changes.
+        self._meta_system_var.trace_add(
+            "write", lambda *_: self._populate_meta_game_list()
+        )
+
+        # Override ID fields.
+        gameovr_form = self.ttk.Frame(gameovr_frame)
+        gameovr_form.pack(fill="x", padx=6, pady=(6, 2))
+        self.ttk.Label(gameovr_form, text="ScreenScraper ID (int)").grid(
+            row=0, column=0, sticky="w", padx=(0, 6), pady=2,
+        )
+        self._gameovr_ss_id_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gameovr_form, textvariable=self._gameovr_ss_id_var, width=14,
+        ).grid(row=0, column=1, sticky="w", pady=2)
+        self.ttk.Label(gameovr_form, text="TheGamesDB ID (int)").grid(
+            row=0, column=2, sticky="w", padx=(16, 6), pady=2,
+        )
+        self._gameovr_tgdb_id_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=14,
+        ).grid(row=0, column=3, sticky="w", pady=2)
+
+        gameovr_btns = self.ttk.Frame(gameovr_frame)
+        gameovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            gameovr_btns, text="Load current override",
+            command=self._load_game_override,
+        ).pack(side="left")
+        self.ttk.Button(
+            gameovr_btns, text="Save override",
+            command=self._save_game_override,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            gameovr_btns, text="Clear override",
+            command=self._clear_game_override,
+        ).pack(side="left")
+
         # ── Step 1 — Full metadata refresh ───────────────────────────────────
         full_frame = self.ttk.LabelFrame(
             frame, text="Step 1 — Full metadata refresh",
@@ -7851,57 +7902,6 @@ class _SpinDoctorGUI:
             command=self._run_media_add,
         ).pack(side="left")
 
-        # ── Per-game overrides (advanced) ────────────────────────────────────
-        # Forces a specific ScreenScraper / TheGamesDB game ID for one title
-        # instead of relying on fuzzy name matching — for titles that don't
-        # match well by name (language barrier, alternate punctuation, a
-        # remaster's subtitle, etc.). Acts on the System/Game already picked
-        # in the shared header above rather than duplicating its own pickers.
-        gameovr_frame = self.ttk.LabelFrame(frame, text="Per-game overrides (advanced)")
-        gameovr_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            gameovr_frame,
-            text=("Force the exact scraper game ID for the System / Game "
-                  "selected above, instead of fuzzy name matching. Find the "
-                  "ID on the scraper's own site (e.g. screenscraper.fr/"
-                  "gameinfos.php?gameid=5775 or thegamesdb.net/game.php?"
-                  "id=11251) and paste it here. Every future fetch-meta / "
-                  "fetch-media run for that exact game uses it automatically."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-
-        gameovr_form = self.ttk.Frame(gameovr_frame)
-        gameovr_form.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(gameovr_form, text="ScreenScraper ID (int)").grid(
-            row=0, column=0, sticky="w", padx=(0, 6), pady=2,
-        )
-        self._gameovr_ss_id_var = self.tk.StringVar()
-        self.ttk.Entry(
-            gameovr_form, textvariable=self._gameovr_ss_id_var, width=14,
-        ).grid(row=0, column=1, sticky="w", pady=2)
-        self.ttk.Label(gameovr_form, text="TheGamesDB ID (int)").grid(
-            row=0, column=2, sticky="w", padx=(16, 6), pady=2,
-        )
-        self._gameovr_tgdb_id_var = self.tk.StringVar()
-        self.ttk.Entry(
-            gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=14,
-        ).grid(row=0, column=3, sticky="w", pady=2)
-
-        gameovr_btns = self.ttk.Frame(gameovr_frame)
-        gameovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
-        self.ttk.Button(
-            gameovr_btns, text="Load current override",
-            command=self._load_game_override,
-        ).pack(side="left")
-        self.ttk.Button(
-            gameovr_btns, text="Save override",
-            command=self._save_game_override,
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            gameovr_btns, text="Clear override",
-            command=self._clear_game_override,
-        ).pack(side="left")
-
         return frame
 
     def _browse_media_file(self) -> None:
@@ -8018,15 +8018,16 @@ class _SpinDoctorGUI:
         if not sys_ or not game_:
             self.messagebox.showwarning(
                 "System and Game required",
-                "Pick both a System and a Game above first — a per-game "
-                "override needs to know exactly which game.",
+                "Pick a System above and select a Game in the optional "
+                "override box — a per-game override needs to know exactly "
+                "which game.",
             )
             return None
         return sys_, game_
 
     def _load_game_override(self) -> None:
         """Populate the override form from the saved override for the
-        System/Game currently selected in the shared header above."""
+        System/Game currently selected in the optional override box."""
         selection = self._gameovr_selection()
         if selection is None:
             return
@@ -8084,8 +8085,8 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _clear_game_override(self) -> None:
-        """Build a `config game-override clear` argv from the shared
-        header selection and run it."""
+        """Build a `config game-override clear` argv from the optional
+        override box selection and run it."""
         selection = self._gameovr_selection()
         if selection is None:
             return
