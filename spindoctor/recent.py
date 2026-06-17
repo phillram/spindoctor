@@ -596,13 +596,6 @@ def _build_synthetic_wheel(
         print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
         seen = set(target_names.values())
         _target_media = config.media_dir / target_system
-        if _target_media.is_dir():
-            for media_path in _target_media.rglob("*"):
-                if media_path.is_file() and media_path.stem not in seen:
-                    try:
-                        media_path.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
         # Per-system video directory overrides: HyperSpin subsystems that use MAME
         # (e.g. "4-Player Games", "Driving Games") redirect their video lookup to
         # Media/MAME/Video/ via [video defaults] → path= in the system Settings INI.
@@ -610,6 +603,8 @@ def _build_synthetic_wheel(
         _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
         _video_cache: dict[str, Optional[Path]] = {}
 
+        # Write new media FIRST so a mid-run failure never leaves entries
+        # without media that was deleted before the replacement was written.
         for idx, fe in enumerate(pseudo_entries, 1):
             if _hs_settings and fe.system not in _video_cache:
                 _video_cache[fe.system] = _read_hs_video_dir(_hs_settings, fe.system)
@@ -636,6 +631,15 @@ def _build_synthetic_wheel(
                     f"skipped {summary.media_skipped}",
                     flush=True,
                 )
+
+        # Remove orphan media AFTER writing new files.
+        if _target_media.is_dir():
+            for media_path in _target_media.rglob("*"):
+                if media_path.is_file() and media_path.stem not in seen:
+                    try:
+                        media_path.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
         print(f"[{target_system}] media done.", flush=True)
 
     # ── Phase 3: write PCLauncher INIs ────────────────────────────────────────
@@ -643,13 +647,7 @@ def _build_synthetic_wheel(
         print(f"[{target_system}] writing {n} PCLauncher INI(s)…", flush=True)
         rl_dir = Path(config.rocketlauncher_dir)
         ini_dir = rl_dir / "Modules" / "PCLauncher" / target_system
-        if ini_dir.exists():
-            for ini in ini_dir.iterdir():
-                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
-                    try:
-                        ini.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
+        # Write new INIs FIRST, then remove stale ones.
         for fe in pseudo_entries:
             target_name = target_names[f"{fe.system}::{fe.rom_name}"]
             _generate_pclauncher_ini(
@@ -671,6 +669,14 @@ def _build_synthetic_wheel(
             extra_window_titles=config.emulator_window_titles or None,
         )
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
+        # Remove stale per-game INIs AFTER writing new ones.
+        if ini_dir.exists():
+            for ini in ini_dir.iterdir():
+                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
+                    try:
+                        ini.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
         print(f"[{target_system}] PCLauncher INIs done.", flush=True)
 
     # ── Phase 4: HyperSpin system settings INI ────────────────────────────────

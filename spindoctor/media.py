@@ -329,7 +329,11 @@ class MediaDownloader:
                 resp = self._session.get(url, **kwargs)
 
                 if resp.status_code in (429, 503):
-                    retry_after = float(resp.headers.get("Retry-After", backoff))
+                    _ra = resp.headers.get("Retry-After", "")
+                    try:
+                        retry_after = float(_ra) if _ra else backoff
+                    except ValueError:
+                        retry_after = backoff
                     last_error = f"HTTP {resp.status_code}; retry after {retry_after:.1f}s"
                     resp.close()
                     time.sleep(min(retry_after, 30.0))
@@ -383,6 +387,15 @@ class MediaDownloader:
                     game_name=label, media_type=media_type,
                     success=True, path=dest,
                     warning=audio_warn or "",
+                )
+            except requests.HTTPError as e:
+                # Non-retriable HTTP error (4xx/5xx other than 429/503/416,
+                # which are handled above). A 404 or 500 won't go away on
+                # retry — fail immediately so the caller gets a fast result
+                # instead of waiting through max_retries × backoff.
+                return DownloadResult(
+                    game_name=label, media_type=media_type,
+                    success=False, error=str(e),
                 )
             except requests.RequestException as e:
                 last_error = str(e)

@@ -1,6 +1,8 @@
 """CombinedMetadataClient.search() error propagation and circuit-breaker helpers."""
 from __future__ import annotations
 
+from unittest.mock import MagicMock, patch
+
 import pytest
 
 from spindoctor.scraper import (
@@ -158,3 +160,50 @@ def test_combined_fetch_syncs_tgdb_scalar_urls_into_ss_result():
     assert result.background_url == "http://tgdb/bg.png", (
         "background_url not synced from TGDB fill — jobs_for_metadata would miss it"
     )
+
+
+# ── Override-ID miss warning (was NameError: _log not defined) ────────────────
+
+def test_ss_override_miss_logs_warning_via_scraper_logger(monkeypatch):
+    """When a forced screenscraper_id returns no result, scraper_logger.warning
+    must be called.  Before the fix, _log.warning() raised NameError because
+    the module logger is called scraper_logger, not _log."""
+    import spindoctor.scraper as m
+
+    client = ScreenScraperClient.__new__(ScreenScraperClient)
+    client.username = "u"
+    client.password = "p"
+    client._limiter = MagicMock()
+
+    monkeypatch.setattr(m, "get_game_override", lambda _sys, _game: {"screenscraper_id": "9999"})
+    monkeypatch.setattr(client, "fetch_by_id", lambda _id: None)
+
+    with patch.object(m.scraper_logger, "warning") as mock_warn:
+        result = client.fetch("Pac-Man", "Arcade")
+
+    assert result is None
+    mock_warn.assert_called_once()
+    call_str = str(mock_warn.call_args)
+    assert "9999" in call_str
+    assert "screenscraper.fr" in call_str
+
+
+def test_tgdb_override_miss_logs_warning_via_scraper_logger(monkeypatch):
+    """Same fix for TheGamesDBClient.fetch()."""
+    import spindoctor.scraper as m
+
+    client = TheGamesDBClient.__new__(TheGamesDBClient)
+    client.api_key = "fake-api-key"
+    client._limiter = MagicMock()
+
+    monkeypatch.setattr(m, "get_game_override", lambda _sys, _game: {"thegamesdb_id": "8888"})
+    monkeypatch.setattr(client, "fetch_by_id", lambda _id: None)
+
+    with patch.object(m.scraper_logger, "warning") as mock_warn:
+        result = client.fetch("Pac-Man", "Arcade")
+
+    assert result is None
+    mock_warn.assert_called_once()
+    call_str = str(mock_warn.call_args)
+    assert "8888" in call_str
+    assert "thegamesdb.net" in call_str

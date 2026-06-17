@@ -142,6 +142,38 @@ def test_416_drops_partial_and_restarts(tmp_path, monkeypatch):
     assert not part.exists()
 
 
+def test_http_404_fails_immediately_without_retry(tmp_path, monkeypatch):
+    """Non-retriable HTTP errors (404, 403, 500, etc.) must fail on the first
+    attempt, not be retried max_retries times.  The comment in the download
+    loop says 'Other 4xx/5xx fail fast' — this test pins that contract.
+
+    Previously requests.HTTPError (from raise_for_status) was caught by the
+    broader requests.RequestException handler and retried, wasting seconds per
+    miss on every absent media URL."""
+    import requests as req_lib
+
+    dl = _make_downloader(tmp_path)
+    calls: dict = {"n": 0}
+
+    class _Resp404(_FakeResp):
+        def raise_for_status(self):
+            raise req_lib.HTTPError(response=self)  # type: ignore[arg-type]
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        calls["n"] += 1
+        return _Resp404(b"", status_code=404)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png", max_retries=3)
+
+    assert not r.success
+    assert calls["n"] == 1, (
+        f"expected exactly 1 attempt for a 404, got {calls['n']} — "
+        "HTTPError was being retried as a RequestException"
+    )
+
+
 def test_network_failure_preserves_part_for_next_run(tmp_path, monkeypatch):
     import requests
 
@@ -299,6 +331,35 @@ def test_os_replace_failure_preserves_existing_destination(tmp_path, monkeypatch
     # And the failure surfaces as a non-success DownloadResult — not a
     # silent partial swallow.
     assert r.success is False
+
+
+def test_retry_after_http_date_falls_back_to_backoff(tmp_path, monkeypatch):
+    """A Retry-After header in HTTP-date format ('Wed, 21 Oct 2015 07:28:00 GMT')
+    must not crash with ValueError.  float() on a date string raises ValueError;
+    the fixed code catches it and falls back to the current backoff value."""
+    dl = _make_downloader(tmp_path)
+    calls: dict = {"n": 0}
+    slept: list = []
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FakeResp(
+                b"",
+                status_code=429,
+                headers={"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"},
+            )
+        return _FakeResp(b"real-content", status_code=200)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+    monkeypatch.setattr("spindoctor.media.time.sleep", lambda t: slept.append(t))
+
+    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png", max_retries=3)
+
+    assert r.success, f"expected success; got: {r}"
+    assert calls["n"] == 2
+    # Fell back to backoff (1.0 on first retry), not an HTTP-date string.
+    assert slept and isinstance(slept[0], float) and slept[0] <= 30.0
 
 
 def test_os_replace_failure_when_dest_absent_leaves_no_dest(tmp_path, monkeypatch):
