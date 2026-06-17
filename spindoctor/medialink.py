@@ -118,6 +118,12 @@ def _read_hs_video_dir(settings_dir: Path, system: str) -> Optional[Path]:
     try:
         # utf-8-sig handles the BOM that HyperSpin sometimes writes
         parser.read(ini_path, encoding="utf-8-sig")
+    except UnicodeDecodeError:
+        parser = configparser.ConfigParser(strict=False, interpolation=None)
+        try:
+            parser.read(ini_path, encoding="cp1252")
+        except (OSError, configparser.Error, UnicodeDecodeError):
+            return None
     except (OSError, configparser.Error):
         return None
     raw = parser.get("video defaults", "path", fallback="").strip()

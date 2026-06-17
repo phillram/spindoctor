@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Save Log filenames now include the CLI action name** (`2026-06-16_22-15-35_recent_rebuild.txt`) instead of the last flag (`date_--apply.txt` / `date_--verbose.txt`). The action slug is derived from the binary suffix and positional arguments: `spindoctor-recent rebuild` → `recent_rebuild`, `spindoctor fetch-media` → `fetch-media`, `spindoctor fav rebuild` → `fav_rebuild`.
+
+- **`spindoctor-recent rebuild` / `spindoctor-stats build-wheel` no longer crash with `UnicodeDecodeError` when a RocketLauncher Statistics.ini file contains game names written in the Windows system codepage** (e.g. accented letters like `ü` at byte 0xfc which is invalid UTF-8). Both `recent.py` and `playtime.py` now retry with CP1252 on a decode error. The same fix is applied to the Global Statistics and HyperSpin media-link INI readers in `recent.py`, `playtime.py`, and `medialink.py`.
+
 - **Per-game scraper ID overrides now take effect even when the metadata cache holds a pre-override result.** `fetch_with_search()` previously checked the cache before calling `fetch()` (where the override is applied), so setting an override after a prior run had already cached a "no media" result left the cache returning the stale answer on every subsequent run — the override appeared to do nothing. The cache is now bypassed (both read and write) whenever a per-game override is active for a game, so the forced ID is always tried fresh. Setting an override takes effect on the very next `fetch-meta` / `fetch-media` run without needing to clear the cache manually.
 
 - **`fetch-media --verbose` now shows active override IDs alongside the resolved source** (`override: ss=XXXX, tgdb=XXXX`), making it easy to confirm the forced ID was used rather than a cached or name-matched result.
