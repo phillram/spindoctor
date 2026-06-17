@@ -981,7 +981,7 @@ class ScreenScraperClient(_FetchWithSearchMixin):
             if forced:
                 forced.match_score = 1.0
             else:
-                _log.warning(
+                scraper_logger.warning(
                     "ScreenScraper override ID %s returned no result for "
                     "%s / %s — verify the ID on screenscraper.fr",
                     forced_id, system_name, game_name,
@@ -1199,7 +1199,7 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             if forced:
                 forced.match_score = 1.0
             else:
-                _log.warning(
+                scraper_logger.warning(
                     "TheGamesDB override ID %s returned no result for "
                     "%s / %s — verify the ID on thegamesdb.net",
                     forced_id, system_name, game_name,
@@ -1498,7 +1498,7 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
     _log_http("thegamesdb.verify", "GET", url, params, resp.status_code, body)
 
     if resp.status_code in (401, 403):
-        return False, _failure_with_body("Invalid API key (HTTP 403)", body)
+        return False, _failure_with_body(f"Invalid API key (HTTP {resp.status_code})", body)
     if resp.status_code == 429:
         return False, _failure_with_body(
             "Rate limited (HTTP 429) \u2014 key may be exhausted", body,

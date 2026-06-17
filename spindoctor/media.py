@@ -329,7 +329,11 @@ class MediaDownloader:
                 resp = self._session.get(url, **kwargs)
 
                 if resp.status_code in (429, 503):
-                    retry_after = float(resp.headers.get("Retry-After", backoff))
+                    _ra = resp.headers.get("Retry-After", "")
+                    try:
+                        retry_after = float(_ra) if _ra else backoff
+                    except ValueError:
+                        retry_after = backoff
                     last_error = f"HTTP {resp.status_code}; retry after {retry_after:.1f}s"
                     resp.close()
                     time.sleep(min(retry_after, 30.0))
