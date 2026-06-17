@@ -8,6 +8,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`fetch-media` now respects `config.match_threshold`** (set via `config set match_threshold`). Previously `fetch-media` always used the hardcoded default of 0.80 regardless of configuration; `fetch-meta` was correctly reading from config. Both commands now use the same threshold.
+
+- **TheGamesDB media fill-in now actually reaches the download queue.** `CombinedMetadataClient` fills TGDB media into `media_candidates` when ScreenScraper has an empty slot, but `fetch-media`'s download job builder reads the scalar `wheel_url` / `background_url` / `snap_url` fields — not `media_candidates`. Those scalars were never updated from the fill, so TGDB's gap-fill produced no downloads. The scalar fields are now synced alongside `media_candidates` when TGDB contributes.
+
+- **TheGamesDB search results now include wheel, snap, and background images.** `TheGamesDBClient.search()` was missing the `_merge_images()` call that `fetch()` and `fetch_by_id()` both make to pull wheel/snap/background from the `Games/Images` endpoint. Search-path results (games below the name-match threshold that fell through to fuzzy search) had only boxart populated.
+
+- **`_parse_screenscraper` no longer crashes with `AttributeError` when genre entries are plain strings.** The lighter ScreenScraper search payload can return `genres` as a list of strings rather than `{"id": ..., "noms": [...]}` dicts. Calling `.get()` on a string raised `AttributeError`, crashing the per-game loop. Genre is now safely skipped when the first entry is not a dict.
+
+- **Zero-byte server response can no longer overwrite a valid existing media file.** The empty-body guard previously checked `dest.stat().st_size == 0` *after* `os.replace(part, dest)`, which atomically wiped the destination before the check. The guard now inspects the `.part` file *before* replacing, so a server that returns HTTP 200 with an empty body leaves the existing file untouched and retries.
+
 - **Save Log filenames now include the CLI action name** (`2026-06-16_22-15-35_recent_rebuild.txt`) instead of the last flag (`date_--apply.txt` / `date_--verbose.txt`). The action slug is derived from the binary suffix and positional arguments: `spindoctor-recent rebuild` → `recent_rebuild`, `spindoctor fetch-media` → `fetch-media`, `spindoctor fav rebuild` → `fav_rebuild`.
 
 - **`spindoctor-recent rebuild` / `spindoctor-stats build-wheel` no longer crash with `UnicodeDecodeError` when a RocketLauncher Statistics.ini file contains game names written in the Windows system codepage** (e.g. accented letters like `ü` at byte 0xfc which is invalid UTF-8). Both `recent.py` and `playtime.py` now retry with CP1252 on a decode error. The same fix is applied to the Global Statistics and HyperSpin media-link INI readers in `recent.py`, `playtime.py`, and `medialink.py`.

@@ -5063,7 +5063,8 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 else:
                     prog.update(task, description=f"[dim]meta · {game.name[:35]}[/dim]")
                 try:
-                    meta = client.fetch_with_search(game.name, sys_name)
+                    meta = client.fetch_with_search(game.name, sys_name,
+                                                    threshold=config.match_threshold)
                     chosen = meta[0] if meta else None
                     if not chosen:
                         no_match.append(game.name)
