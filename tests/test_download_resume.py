@@ -142,6 +142,38 @@ def test_416_drops_partial_and_restarts(tmp_path, monkeypatch):
     assert not part.exists()
 
 
+def test_http_404_fails_immediately_without_retry(tmp_path, monkeypatch):
+    """Non-retriable HTTP errors (404, 403, 500, etc.) must fail on the first
+    attempt, not be retried max_retries times.  The comment in the download
+    loop says 'Other 4xx/5xx fail fast' — this test pins that contract.
+
+    Previously requests.HTTPError (from raise_for_status) was caught by the
+    broader requests.RequestException handler and retried, wasting seconds per
+    miss on every absent media URL."""
+    import requests as req_lib
+
+    dl = _make_downloader(tmp_path)
+    calls: dict = {"n": 0}
+
+    class _Resp404(_FakeResp):
+        def raise_for_status(self):
+            raise req_lib.HTTPError(response=self)  # type: ignore[arg-type]
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        calls["n"] += 1
+        return _Resp404(b"", status_code=404)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png", max_retries=3)
+
+    assert not r.success
+    assert calls["n"] == 1, (
+        f"expected exactly 1 attempt for a 404, got {calls['n']} — "
+        "HTTPError was being retried as a RequestException"
+    )
+
+
 def test_network_failure_preserves_part_for_next_run(tmp_path, monkeypatch):
     import requests
 

@@ -388,6 +388,15 @@ class MediaDownloader:
                     success=True, path=dest,
                     warning=audio_warn or "",
                 )
+            except requests.HTTPError as e:
+                # Non-retriable HTTP error (4xx/5xx other than 429/503/416,
+                # which are handled above). A 404 or 500 won't go away on
+                # retry — fail immediately so the caller gets a fast result
+                # instead of waiting through max_retries × backoff.
+                return DownloadResult(
+                    game_name=label, media_type=media_type,
+                    success=False, error=str(e),
+                )
             except requests.RequestException as e:
                 last_error = str(e)
                 if attempt < max_retries:
