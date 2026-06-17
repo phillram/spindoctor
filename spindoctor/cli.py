@@ -9210,6 +9210,7 @@ def organize(system_name, no_sort, axes, overwrite_sort, restructure,
             written = write_sort_databases(
                 system_name, games, config.databases_dir,
                 axes=axis_list, overwrite=overwrite_sort,
+                tmp_dir=config.effective_atomic_tmp_dir,
             )
             for axis, paths in written.items():
                 if paths:

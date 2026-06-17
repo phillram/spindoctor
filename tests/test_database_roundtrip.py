@@ -175,3 +175,55 @@ def test_save_creates_fresh_file_when_no_existing(tmp_path):
     re_db = HyperspinDatabase("NEW", p)
     re_db.load()
     assert "x" in re_db.games()
+
+
+# ─── write_sort_databases atomicity ──────────────────────────────────────────
+
+def test_write_sort_databases_produces_parseable_xml(tmp_path):
+    """write_sort_databases must create valid XML bucket files.  The atomic
+    write path (temp + rename) is exercised implicitly; this confirms the
+    written content is well-formed and the bucket structure is correct."""
+    from spindoctor.database import write_sort_databases
+    import xml.etree.ElementTree as ET
+
+    games = [
+        GameEntry(name="pacman",    description="Pac-Man",    year="1980", manufacturer="Namco",  genre="Maze"),
+        GameEntry(name="galaga",    description="Galaga",     year="1981", manufacturer="Namco",  genre="Shooter"),
+        GameEntry(name="donkeykong",description="Donkey Kong",year="1981", manufacturer="Nintendo",genre="Platform"),
+    ]
+    written = write_sort_databases("Arcade", games, tmp_path)
+
+    # At least some axes produced files
+    assert any(paths for paths in written.values()), "no files written"
+
+    # Every written file must be parseable XML with a <menu> root
+    for paths in written.values():
+        for p in paths:
+            tree = ET.parse(str(p))
+            assert tree.getroot().tag == "menu"
+
+    # Year axis: buckets for 1980 and 1981
+    year_dir = tmp_path / "Arcade" / "Year"
+    assert (year_dir / "1980.xml").exists()
+    assert (year_dir / "1981.xml").exists()
+
+    # 1981 bucket must contain both Galaga and Donkey Kong
+    root_1981 = ET.parse(str(year_dir / "1981.xml")).getroot()
+    game_names = {g.get("name") for g in root_1981.findall("game")}
+    assert {"galaga", "donkeykong"} == game_names
+
+
+def test_write_sort_databases_skips_existing_without_overwrite(tmp_path):
+    """Existing bucket files must be preserved when overwrite=False (default)."""
+    from spindoctor.database import write_sort_databases
+
+    games = [GameEntry(name="pacman", description="Pac-Man", year="1980",
+                       manufacturer="Namco", genre="Maze")]
+    write_sort_databases("Arcade", games, tmp_path)
+
+    year_file = tmp_path / "Arcade" / "Year" / "1980.xml"
+    original_mtime = year_file.stat().st_mtime
+
+    # Second write without overwrite — file should be untouched
+    write_sort_databases("Arcade", games, tmp_path)
+    assert year_file.stat().st_mtime == original_mtime

@@ -579,17 +579,11 @@ def rebuild(
     # ── 2. Media mirror ──────────────────────────────────────────────────────
     if not skip_media:
         print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
-        # Drop any orphan media for entries that were pruned or renamed
         seen_targets = set(target_names.values())
-        _target_media = config.media_dir / store.target_system
-        if _target_media.is_dir():
-            for media_path in _target_media.rglob("*"):
-                if media_path.is_file() and media_path.stem not in seen_targets:
-                    try:
-                        media_path.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
 
+        # Write new media FIRST so a mid-run failure (disk full, network
+        # disconnect) never leaves entries without media that was deleted
+        # before the replacement could be written.
         # Per-system video directory overrides (HyperSpin [video defaults] redirect).
         _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
         _video_cache: dict[str, Optional[Path]] = {}
@@ -610,22 +604,25 @@ def rebuild(
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
             summary.media_errors.extend(result["errors"])
+
+        # Drop orphan media AFTER writing so a write failure doesn't
+        # permanently delete files that should still exist.
+        _target_media = config.media_dir / store.target_system
+        if _target_media.is_dir():
+            for media_path in _target_media.rglob("*"):
+                if media_path.is_file() and media_path.stem not in seen_targets:
+                    try:
+                        media_path.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+
         print(f"[{store.target_system}] media done.", flush=True)
 
     # ── 3. Per-game PCLauncher INIs ──────────────────────────────────────────
     if not skip_launchers and config.rocketlauncher_dir:
         rl_dir = Path(config.rocketlauncher_dir)
         print(f"[{store.target_system}] writing {n} PCLauncher INI(s)…", flush=True)
-        # Wipe stale INIs (renamed/removed favorites)
-        existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / store.target_system
-        if existing_ini_dir.exists():
-            keep = set(target_names.values())
-            for ini in existing_ini_dir.iterdir():
-                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
-                    try:
-                        ini.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
+        # Write new INIs FIRST (same write-before-delete ordering as media above).
         for entry in sorted_entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             _generate_pclauncher_ini(
@@ -648,6 +645,16 @@ def rebuild(
             extra_window_titles=config.emulator_window_titles or None,
         )
         summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
+        # Remove stale per-game INIs AFTER writing new ones.
+        existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / store.target_system
+        if existing_ini_dir.exists():
+            keep = set(target_names.values())
+            for ini in existing_ini_dir.iterdir():
+                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
+                    try:
+                        ini.unlink()
+                    except OSError as e:
+                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
         print(f"[{store.target_system}] PCLauncher INIs done.", flush=True)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────
@@ -776,8 +783,10 @@ def clear_native_favorites(
             except OSError as exc:
                 summary.errors.append(f"Could not delete {f.name}: {exc}")
 
-        # 3. Strip favorite="..." from XML files in place
-        _FAV_ATTR_RE = _re.compile(r'\s*favorite\s*=\s*"[^"]*"|\s*favorite\s*=\s*\'[^\']*\'')
+        # 3. Strip favorite="1" from XML files in place.
+        # Only match value "1" — stripping other values (favorite="0",
+        # favorite="false") would silently corrupt third-party attributes.
+        _FAV_ATTR_RE = _re.compile(r'\s*favorite\s*=\s*"1"|\s*favorite\s*=\s*\'1\'')
         for xml_path in xml_files:
             try:
                 content = xml_path.read_text(encoding="utf-8", errors="replace")

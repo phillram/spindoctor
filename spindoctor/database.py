@@ -612,6 +612,7 @@ def write_sort_databases(
     *,
     axes: tuple[str, ...] = SORT_AXES,
     overwrite: bool = False,
+    tmp_dir: Optional[Path] = None,
 ) -> dict[str, list[Path]]:
     """Write per-axis HyperSpin sort databases for *system_name*.
 
@@ -621,6 +622,10 @@ def write_sort_databases(
 
     By default existing files are skipped (so user-curated lists survive).
     Pass ``overwrite=True`` to replace them.
+
+    *tmp_dir* is the scratch directory for atomic temp files — pass
+    ``config.effective_atomic_tmp_dir`` so writes land on the same
+    filesystem as the target and ``os.replace`` stays atomic.
 
     Returns a dict {axis: [written_paths]}.
     """
@@ -661,9 +666,14 @@ def write_sort_databases(
 
             tree = ET.ElementTree(root)
             et_indent(tree)
-            with open(out_path, "wb") as f:
-                f.write(b'<?xml version="1.0"?>\n')
-                tree.write(f, encoding="utf-8", xml_declaration=False)
+            _atomic_write_via_tree(
+                out_path,
+                lambda f, _t=tree: (
+                    f.write(b'<?xml version="1.0"?>\n'),
+                    _t.write(f, encoding="utf-8", xml_declaration=False),
+                ),
+                tmp_dir=tmp_dir,
+            )
             written[axis].append(out_path)
 
     return written
