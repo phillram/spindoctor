@@ -356,11 +356,11 @@ class MediaDownloader:
                     for chunk in resp.iter_content(chunk_size=8192):
                         f.write(chunk)
 
-                os.replace(part, dest)
-
+                # Check for empty body BEFORE replacing dest so a server that
+                # returns HTTP 200 with 0 bytes can't overwrite a valid file.
                 try:
-                    if dest.stat().st_size == 0:
-                        dest.unlink(missing_ok=True)
+                    if part.stat().st_size == 0:
+                        part.unlink(missing_ok=True)
                         last_error = "server returned an empty response (0 bytes)"
                         if attempt < max_retries:
                             time.sleep(backoff)
@@ -372,6 +372,8 @@ class MediaDownloader:
                         )
                 except OSError:
                     pass
+
+                os.replace(part, dest)
 
                 audio_warn = _maybe_fix_video_audio(
                     dest, media_type,
