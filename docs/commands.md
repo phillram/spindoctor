@@ -794,9 +794,10 @@ Sorted by `last_played` desc — newest game first, deduped on `(system, rom)`. 
 Writes `.bat` wrappers HyperSpin's Tools menu can invoke directly — so cabinet end-users can refresh wheels from the UI without a console.
 
 ```bat
-spindoctor install-tools                                :: write to RocketLauncher Tools dir (HyperHQ → Tools)
-spindoctor install-tools --output-dir D:\Tools          :: write somewhere else
-spindoctor install-tools --add-to-system Toolkit        :: install as games inside an existing wheel
+spindoctor install-tools                                    :: write to RocketLauncher Tools dir (HyperHQ → Tools)
+spindoctor install-tools --output-dir D:\Tools              :: write somewhere else
+spindoctor install-tools --add-to-system Toolkit            :: dry-run — preview XML entries that would be added
+spindoctor install-tools --add-to-system Toolkit --apply    :: install as games inside an existing wheel
 ```
 
 Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
@@ -808,6 +809,8 @@ Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Mos
 3. Adds matching `<game>` entries to `<HyperSpin>\Databases\<NAME>\<NAME>.xml`, with `genre=Tools` and `manufacturer=SpinDoctor` so they display correctly on the wheel.
 
 Idempotent — re-running upserts the same four entries instead of duplicating them. The target system must already exist and use PCLauncher as its emulator (HyperHQ → Settings → Emulator → PCLauncher). Pair with `spindoctor mainmenu add "<NAME>" --apply` if the wheel isn't on the Main Menu yet.
+
+> **Note:** The `.bat` helpers and PCLauncher INI are written immediately (they are non-HyperSpin files and safe to create); only the step that mutates the HyperSpin database XML requires `--apply`. Without `--apply`, the command prints a dry-run preview of what `<game>` entries would be added and exits cleanly.
 
 The GUI's **Toolkit** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
 
