@@ -426,6 +426,47 @@ def test_rebuild_excludes_favorites_system_via_fallback(isolated_config, tmp_pat
     assert "Favorites" not in db_text
 
 
+def test_rebuild_writes_media_before_deleting_orphans(isolated_config, tmp_path):
+    """Regression: orphan media must be removed AFTER new media is written.
+
+    The previous ordering (delete orphans → write new files) meant a crash
+    between the two steps left the wheel with less media than before.  Run
+    two consecutive rebuilds and confirm the surviving media file is present
+    after the second one (not deleted as a false orphan before being re-written).
+    """
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "MAME").mkdir(parents=True)
+    (hs / "Databases" / "MAME").mkdir(parents=True)
+    (hs / "Databases" / "MAME" / "MAME.xml").write_text(
+        "<menu><game name=\"1942\"><description>1942</description></game></menu>",
+        encoding="utf-8",
+    )
+    wheel_src = hs / "Media" / "MAME" / "Images" / "Wheel"
+    wheel_src.mkdir(parents=True)
+    (wheel_src / "1942.png").write_bytes(b"wheel-data")
+
+    _write_stats_ini(
+        rl / "Settings" / "Global Statistics" / "MAME.ini",
+        [("1942", "2026-05-01 12:00:00", 5)],
+    )
+    cfg = Config(
+        roms_dir=str(roms), hyperspin_dir=str(hs), rocketlauncher_dir=str(rl),
+    )
+    save_config(cfg)
+
+    rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+    dest = hs / "Media" / "Recently Played" / "Images" / "Wheel" / "1942.png"
+    assert dest.exists(), "media not written on first rebuild"
+
+    # Second rebuild — 1942 is still in the stats, so its media must survive.
+    rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert dest.exists(), (
+        "media deleted on second rebuild — orphan cleanup ran before write"
+    )
+
+
 def test_rebuild_uses_description_not_rom_name(isolated_config, tmp_path):
     """Regression: wheel description must come from the DB description field, not the ROM filename."""
     hs = tmp_path / "hs"
