@@ -18,7 +18,9 @@ from spindoctor.cli import cli
 from spindoctor.config import (
     Config, get_game_override, get_game_overrides, save_config,
 )
-from spindoctor.scraper import ScreenScraperClient, TheGamesDBClient
+from spindoctor.scraper import (
+    GameMetadata, MetadataCache, ScreenScraperClient, TheGamesDBClient,
+)
 
 
 @pytest.fixture
@@ -259,3 +261,112 @@ def test_thegamesdb_fetch_uses_override_id_instead_of_name_search(isolated_confi
     meta = client.fetch("Golden Sun - Dark Dawn (USA)", "Nintendo DS")
     assert calls == ["11251"]
     assert meta.match_score == 1.0
+
+
+# ─── fetch_with_search cache bypass when override is active ────────────────
+
+def _stale_cache_result() -> list[GameMetadata]:
+    """A cached 'no media' result that would be returned from before an override
+    was set — source=screenscraper, zero media slots filled."""
+    return [GameMetadata(
+        name="Golden Sun: Dark Dawn",
+        source="screenscraper",
+        source_id="old-cache-id",
+        match_score=0.95,
+    )]
+
+
+def test_fetch_with_search_bypasses_cache_when_override_is_set(
+    isolated_config, tmp_path,
+):
+    """If a per-game override is set after the cache was populated, the cache
+    must be skipped so the forced ID is actually tried on the next run."""
+    cfg = Config()
+    cfg.game_overrides = {
+        "Nintendo DS": {
+            "Golden Sun - Dark Dawn (USA)": {"screenscraper_id": 5775},
+        },
+    }
+    save_config(cfg)
+
+    # Pre-populate the cache with a stale 'no media' result.
+    cache = MetadataCache(root=tmp_path / "cache")
+    cache.put("screenscraper", "Nintendo DS", "Golden Sun - Dark Dawn (USA)",
+              _stale_cache_result())
+
+    client = ScreenScraperClient("user", "pass")
+    client._cache = cache
+
+    override_calls: list[str] = []
+
+    def fake_fetch_by_id(game_id):
+        override_calls.append(game_id)
+        return GameMetadata(name="Golden Sun: Dark Dawn", source_id=game_id,
+                            match_score=1.0)
+
+    client.fetch_by_id = fake_fetch_by_id
+
+    # fetch() / search() must NOT be reached via the cache path — we patch
+    # _session to prove the cache is bypassed, not the API.
+    client._session = types.SimpleNamespace(
+        get=lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("cache must be bypassed; session must not be hit")
+        ),
+    )
+
+    results = client.fetch_with_search("Golden Sun - Dark Dawn (USA)", "Nintendo DS")
+
+    assert override_calls == ["5775"], "forced ID must be tried when override is set"
+    assert results[0].match_score == 1.0
+
+
+def test_fetch_with_search_uses_cache_normally_when_no_override(
+    isolated_config, tmp_path,
+):
+    """Without an override the cache should be used as normal."""
+    cache = MetadataCache(root=tmp_path / "cache")
+    cached = [GameMetadata(name="Some Game", source="screenscraper",
+                           source_id="123", match_score=0.95)]
+    cache.put("screenscraper", "Nintendo DS", "Some Game", cached)
+
+    client = ScreenScraperClient("user", "pass")
+    client._cache = cache
+    client._session = types.SimpleNamespace(
+        get=lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("session must not be hit when cache returns a result")
+        ),
+    )
+
+    results = client.fetch_with_search("Some Game", "Nintendo DS")
+    assert results == cached
+
+
+def test_fetch_with_search_does_not_write_cache_when_override_is_set(
+    isolated_config, tmp_path,
+):
+    """A result obtained via the forced ID path must not be written to cache —
+    the override may change later, and a cached forced-ID result would mask it."""
+    cfg = Config()
+    cfg.game_overrides = {
+        "Nintendo DS": {
+            "Golden Sun - Dark Dawn (USA)": {"screenscraper_id": 5775},
+        },
+    }
+    save_config(cfg)
+
+    cache = MetadataCache(root=tmp_path / "cache")
+    client = ScreenScraperClient("user", "pass")
+    client._cache = cache
+    client.fetch_by_id = lambda _id: GameMetadata(
+        name="Golden Sun: Dark Dawn", source_id=_id, match_score=1.0,
+    )
+    client._session = types.SimpleNamespace(
+        get=lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("session must not be hit")
+        ),
+    )
+
+    client.fetch_with_search("Golden Sun - Dark Dawn (USA)", "Nintendo DS")
+
+    # Cache must still be empty — the forced-ID result must not have been stored.
+    assert cache.get("screenscraper", "Nintendo DS", "Golden Sun - Dark Dawn (USA)") is None
