@@ -872,7 +872,14 @@ class _FetchWithSearchMixin:
         candidates when the name is ambiguous.  Results are cached on disk
         when a ``MetadataCache`` is configured.
         """
-        if self._cache is not None:
+        # Per-game overrides change how this game is resolved (forced scraper
+        # ID).  If the user set one after a previous run had already cached a
+        # result, the cache would return the old answer and the override would
+        # never be reached.  Skip both the cache read and write so the forced
+        # ID is always tried fresh.
+        has_override = bool(get_game_override(system_name, game_name))
+
+        if self._cache is not None and not has_override:
             cached = self._cache.get(self.source_name, system_name, game_name)
             if cached is not None:
                 return cached
@@ -884,7 +891,7 @@ class _FetchWithSearchMixin:
 
         if direct and direct.match_score >= threshold:
             results = [direct]
-            if self._cache is not None:
+            if self._cache is not None and not has_override:
                 self._cache.put(self.source_name, system_name, game_name, results)
             return results
 
@@ -900,7 +907,7 @@ class _FetchWithSearchMixin:
             candidates.append(direct)
             candidates.sort(key=lambda m: m.match_score, reverse=True)
 
-        if self._cache is not None and candidates:
+        if self._cache is not None and not has_override and candidates:
             self._cache.put(self.source_name, system_name, game_name, candidates)
         return candidates
 
@@ -973,6 +980,12 @@ class ScreenScraperClient(_FetchWithSearchMixin):
             forced = self.fetch_by_id(str(forced_id))
             if forced:
                 forced.match_score = 1.0
+            else:
+                _log.warning(
+                    "ScreenScraper override ID %s returned no result for "
+                    "%s / %s — verify the ID on screenscraper.fr",
+                    forced_id, system_name, game_name,
+                )
             return forced
 
         system_id = self._system_id(system_name)
@@ -1185,6 +1198,12 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             forced = self.fetch_by_id(str(forced_id))
             if forced:
                 forced.match_score = 1.0
+            else:
+                _log.warning(
+                    "TheGamesDB override ID %s returned no result for "
+                    "%s / %s — verify the ID on thegamesdb.net",
+                    forced_id, system_name, game_name,
+                )
             return forced
 
         self._limiter.wait()
