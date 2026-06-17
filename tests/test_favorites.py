@@ -7,8 +7,8 @@ import spindoctor.config as config_mod
 from spindoctor.config import Config, save_config
 from spindoctor.favorites import (
     FavoriteStore, _resolve_target_names, FavoriteEntry,
-    add, load_store, rebuild, remove, save_store, sync_native,
-    _read_text_robust, _find_favorites_txt, _parse_favorites_txt,
+    add, clear_native_favorites, load_store, rebuild, remove, save_store,
+    sync_native, _read_text_robust, _find_favorites_txt, _parse_favorites_txt,
 )
 from spindoctor.medialink import LinkMode
 
@@ -285,6 +285,76 @@ def test_parse_favorites_txt_basic():
 def test_parse_favorites_txt_empty():
     assert _parse_favorites_txt("") == []
     assert _parse_favorites_txt("\n\n  \n") == []
+
+
+# ─── clear_native_favorites regex only strips favorite="1" ───────────────────
+
+def test_clear_native_favorites_only_strips_value_one(isolated_config, tmp_path, monkeypatch):
+    """clear_native_favorites must only remove favorite=\"1\" attributes.
+    Attributes with other values (favorite=\"0\", favorite=\"false\") must
+    be left untouched — stripping them would corrupt third-party markup."""
+    import re as _re
+    from spindoctor.favorites import clear_native_favorites
+
+    hs = tmp_path / "hs"
+    xml_dir = hs / "Databases" / "Arcade"
+    xml_dir.mkdir(parents=True)
+    xml_file = xml_dir / "Arcade.xml"
+    xml_file.write_text(
+        '<menu>'
+        '<game name="Pac-Man" favorite="1"><description>Pac-Man</description></game>'
+        '<game name="Galaga" favorite="0"><description>Galaga</description></game>'
+        '<game name="Donkey Kong"><description>Donkey Kong</description></game>'
+        '</menu>',
+        encoding="utf-8",
+    )
+
+    roms = tmp_path / "roms"
+    (roms / "Arcade").mkdir(parents=True)
+    cfg = Config()
+    cfg.roms_dir = str(roms)
+    cfg.hyperspin_dir = str(hs)
+    save_config(cfg)
+
+    summary = clear_native_favorites(cfg, dry_run=False)
+    content = xml_file.read_text(encoding="utf-8")
+
+    # favorite="1" must be stripped
+    assert 'favorite="1"' not in content
+    # favorite="0" must be preserved
+    assert 'favorite="0"' in content
+    # tally should count only the "1" that was actually cleared
+    assert summary.xml_games_cleared == 1
+
+
+# ─── favorites.rebuild() write-before-delete ordering ────────────────────────
+
+def test_rebuild_writes_media_before_deleting_orphans(isolated_config, tmp_path, monkeypatch):
+    """Media files for current entries must be written before orphan cleanup.
+    If an error mid-write would delete an orphan, the entry that needed that
+    file would be left blank.  Verify the write pass runs first so existing
+    valid entries are never accidentally erased."""
+    monkeypatch.setattr(
+        "spindoctor.favorites.FAVORITES_FILE",
+        isolated_config / "favorites.json",
+    )
+
+    roms, hs, rl = _build_layout(tmp_path)
+    cfg = _cfg(roms, hs, rl)
+
+    # One favorite — builds the wheel once
+    store = FavoriteStore(target_system="Favorites")
+    add(store, "Super Nintendo", "Tetris")
+    save_store(store, isolated_config / "favorites.json")
+
+    # First rebuild creates the wheel media
+    summary1 = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    wheel_dir = hs / "Media" / "Favorites" / "Images" / "Wheel"
+    assert any(wheel_dir.iterdir()), "first rebuild should create wheel media"
+
+    # Second rebuild with the same store should NOT delete the just-written file
+    summary2 = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    assert any(wheel_dir.iterdir()), "second rebuild must not delete current entries' media"
 
 
 def test_find_favorites_txt_case_insensitive(tmp_path):
