@@ -3697,7 +3697,10 @@ def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
                    "wheel you can navigate to from the cabinet. The "
                    "system's database XML must already exist; existing "
                    "entries with the same name are overwritten.")
-def install_tools(output_dir, add_to_system):
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit database changes (default: dry-run preview). "
+                   "Required when --add-to-system is set.")
+def install_tools(output_dir, add_to_system, apply_changes):
     """Install HyperSpin Tools menu wrappers for fav/recent rebuilds.
 
     \b
@@ -3814,6 +3817,18 @@ def install_tools(output_dir, add_to_system):
             f"\"{add_to_system}\"[/cyan]) before adding tool entries to it."
         )
         sys.exit(1)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No database changes written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+        console.print(
+            f"Would add {len(written_bats)} entry(ies) to "
+            f"[cyan]{db_path.name}[/cyan]: "
+            + ", ".join(f"[bold]{p.stem}[/bold]" for p in written_bats)
+        )
+        return
 
     db = HyperspinDatabase(add_to_system, db_path)
     db.load()

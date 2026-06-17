@@ -379,12 +379,19 @@ def load_config() -> Config:
 
 
 def save_config(config: Config) -> None:
+    import os
     from ._errors import humanize_oserror
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = CONFIG_FILE.with_suffix(".tmp")
     try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(config.to_dict(), f, indent=2)
+        os.replace(tmp, CONFIG_FILE)
     except OSError as exc:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
         raise OSError(humanize_oserror(exc, action="save config.json")) from exc
     reset_override_cache()
 
