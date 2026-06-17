@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Per-game scraper ID overrides now take effect even when the metadata cache holds a pre-override result.** `fetch_with_search()` previously checked the cache before calling `fetch()` (where the override is applied), so setting an override after a prior run had already cached a "no media" result left the cache returning the stale answer on every subsequent run — the override appeared to do nothing. The cache is now bypassed (both read and write) whenever a per-game override is active for a game, so the forced ID is always tried fresh. Setting an override takes effect on the very next `fetch-meta` / `fetch-media` run without needing to clear the cache manually.
+
+- **`fetch-media --verbose` now shows active override IDs alongside the resolved source** (`override: ss=XXXX, tgdb=XXXX`), making it easy to confirm the forced ID was used rather than a cached or name-matched result.
+
+- **Warning logged to `scraper.log` when a forced override ID returns no result** (typo, deleted listing, quota issue). Previously `fetch_by_id()` returned `None` silently; the new `WARNING` line names the ID and points to the scraper site URL so the owner knows to verify it.
+
+### Changed
+
+- **GUI Metadata & Media tab: game selector and per-game override IDs are now in one combined "(Optional)" box above Step 1.** The "Game (blank = all games)" dropdown has moved out of the bare shared header and into a labelled "Per-game & override (Optional)" frame that sits between the System selector and Step 1, keeping targeting controls visually together. Override IDs remain in the same frame; Load/Save/Clear buttons are unchanged.
+
 ---
 
 ## [2.7.3] - 2026-06-15
