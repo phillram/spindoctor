@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI: Override ID fields (ScreenScraper ID / TheGamesDB ID) now clear automatically when the game or system selection changes.** Previously, IDs entered for one game would linger in the form after navigating to a different game or switching systems, risking saving the wrong override. "Load current override" and manual typing are unaffected.
+
+- **GUI: Saved log `.txt` files no longer contain mid-path line breaks.** The CLI subprocess inherited the parent shell's `COLUMNS` value, causing Rich and Click to hard-wrap long file paths and URLs at that width. The GUI now sets `COLUMNS=9999` before launching the subprocess so output lines are preserved intact. Rich tables are unaffected (they size to their content by default, not the console width).
+
 ---
 
 ## [2.7.4] - 2026-06-15
