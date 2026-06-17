@@ -151,6 +151,16 @@ def test_thegamesdb_rejects_invalid_key_via_http():
     assert "invalid" in msg.lower()
 
 
+def test_thegamesdb_401_reports_correct_status_code():
+    """A 401 Unauthorized response must say '401' in the error — not '403'.
+    Previously the message hardcoded 'HTTP 403' regardless of actual status."""
+    with patch.object(scraper, "request_get", return_value=_FakeResponse(401, {})):
+        ok, msg = scraper.verify_thegamesdb(_GOOD_KEY)
+    assert ok is False
+    assert "401" in msg
+    assert "403" not in msg
+
+
 def test_thegamesdb_rejects_invalid_key_via_payload_code():
     payload = {"code": 403, "status": "Invalid API Key"}
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):

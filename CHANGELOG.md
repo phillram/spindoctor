@@ -8,6 +8,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`spindoctor config game-override` no longer crashes with `NameError` when a forced scraper ID returns no result.** Both the ScreenScraper and TheGamesDB override paths called `_log.warning()`, but the module logger is `scraper_logger`. The NameError meant the expected "verify this ID" warning was never written to `scraper.log` — instead the run crashed silently. Both sites now call `scraper_logger.warning()`.
+
+- **`spindoctor config credentials test` (TGDB) now reports the correct HTTP status code when authentication is rejected.** A 401 Unauthorized response produced the message "Invalid API key (HTTP 403)"; the status code is now included dynamically so 401 and 403 are distinguished.
+
+- **Downloader no longer crashes with `ValueError` on a `Retry-After` header in HTTP-date format.** RFC 7231 allows `Retry-After` to be either a number of seconds or a date string (`Wed, 21 Oct 2015 07:28:00 GMT`). `float()` on a date string raises `ValueError`; the code now catches it and falls back to the current exponential backoff value.
+
 - **Sort-database bucket files (`organize`) are now written atomically.** `write_sort_databases` previously used a direct `open()` write that left a half-written XML file on disk if the process was interrupted mid-write. It now uses the same temp-file + `os.replace()` atomic pattern as every other database write in SpinDoctor.
 
 - **`fav rebuild` no longer silently deletes media and PCLauncher INIs before writing the new ones.** The previous ordering (delete orphans, then write new files) meant any failure between the two steps left the wheel with less content than before. Writes now happen first; orphan cleanup runs only after all new files are confirmed on disk.

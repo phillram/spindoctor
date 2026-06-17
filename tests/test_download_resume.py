@@ -301,6 +301,35 @@ def test_os_replace_failure_preserves_existing_destination(tmp_path, monkeypatch
     assert r.success is False
 
 
+def test_retry_after_http_date_falls_back_to_backoff(tmp_path, monkeypatch):
+    """A Retry-After header in HTTP-date format ('Wed, 21 Oct 2015 07:28:00 GMT')
+    must not crash with ValueError.  float() on a date string raises ValueError;
+    the fixed code catches it and falls back to the current backoff value."""
+    dl = _make_downloader(tmp_path)
+    calls: dict = {"n": 0}
+    slept: list = []
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return _FakeResp(
+                b"",
+                status_code=429,
+                headers={"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"},
+            )
+        return _FakeResp(b"real-content", status_code=200)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+    monkeypatch.setattr("spindoctor.media.time.sleep", lambda t: slept.append(t))
+
+    r = dl.download("1942", "MAME", "wheel", "https://x/1942.png", max_retries=3)
+
+    assert r.success, f"expected success; got: {r}"
+    assert calls["n"] == 2
+    # Fell back to backoff (1.0 on first retry), not an HTTP-date string.
+    assert slept and isinstance(slept[0], float) and slept[0] <= 30.0
+
+
 def test_os_replace_failure_when_dest_absent_leaves_no_dest(tmp_path, monkeypatch):
     """The other half of the atomic-write contract: a failed swap must
     not leave a partially-written file *appearing* at `dest` (which would
