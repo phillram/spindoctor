@@ -502,3 +502,22 @@ def test_build_most_played_excludes_favorites_system_via_fallback(
     db_text = summary.db_path.read_text(encoding="utf-8")
     assert "Nintendo Entertainment System" in db_text
     assert "Favorites" not in db_text
+
+
+# ─── BOM handling in playstats files ─────────────────────────────────────────
+
+
+def test_read_playstats_file_handles_utf8_bom(tmp_path):
+    """Statistics.ini files written by Windows / some RocketLauncher versions
+    include a UTF-8 BOM (\\xef\\xbb\\xbf).  The plain 'utf-8' codec keeps
+    the BOM as \\ufeff in the first section header, so [1942] becomes
+    [\\ufeff1942] — silently discarding that game's stats with no error.
+    'utf-8-sig' strips the BOM so the first section is read correctly."""
+    stats_file = tmp_path / "Statistics.ini"
+    content = "[1942]\nNumber_of_Times_Played=5\nTotal_Time_Played=600\n"
+    stats_file.write_bytes(b"\xef\xbb\xbf" + content.encode("utf-8"))
+
+    results = _read_playstats_file(stats_file, "MAME")
+    assert len(results) == 1, "BOM must not cause the first game to be silently dropped"
+    assert results[0].game == "1942"
+    assert results[0].times_played == 5
