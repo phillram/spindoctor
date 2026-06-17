@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+---
+
+## [2.7.4] - 2026-06-15
+
 ### Fixed
 
 - **`recent rebuild` / `stats build-wheel` no longer risk losing media or PCLauncher INIs on a mid-run failure.** The orphan-cleanup step previously ran *before* new files were written. A crash or disk-full between the two steps left the wheel with less content than before. Both the media phase and the PCLauncher INI phase now write all new files first and remove orphans only after the writes complete — matching the fix applied to `fav rebuild` in the previous release.
@@ -1631,7 +1635,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.4...HEAD
+[2.7.4]: https://github.com/phillram/spindoctor/compare/v2.7.3...v2.7.4
 [2.7.3]: https://github.com/phillram/spindoctor/compare/v2.7.2...v2.7.3
 [2.7.2]: https://github.com/phillram/spindoctor/compare/v2.7.1...v2.7.2
 [2.7.1]: https://github.com/phillram/spindoctor/compare/v2.7.0...v2.7.1
