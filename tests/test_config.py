@@ -301,3 +301,29 @@ def test_gui_geometry_defaults():
     assert cfg.gui_last_active_tab == -1
 
 
+# ─── atomic save_config ───────────────────────────────────────────────────────
+
+
+def test_save_config_crash_leaves_original_intact(isolated_config, monkeypatch):
+    """If os.replace raises mid-write (e.g. disk full), the pre-existing
+    config.json must survive bit-identical — the atomic-write contract.
+
+    Previously save_config used a direct open(..., 'w') so a crash would
+    leave a truncated file; the fix writes to a .tmp then os.replace()."""
+    import os
+
+    config_mod.save_config(Config(roms_dir="/roms", hyperspin_dir="/hs"))
+
+    def boom(src, dst):
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(os, "replace", boom)
+
+    with pytest.raises(OSError):
+        config_mod.save_config(Config(roms_dir="/corrupted", hyperspin_dir="/bad"))
+
+    cfg = config_mod.load_config()
+    assert cfg.roms_dir == "/roms"
+    assert cfg.hyperspin_dir == "/hs"
+
+

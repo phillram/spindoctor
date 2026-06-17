@@ -44,6 +44,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Warning logged to `scraper.log` when a forced override ID returns no result** (typo, deleted listing, quota issue). Previously `fetch_by_id()` returned `None` silently; the new `WARNING` line names the ID and points to the scraper site URL so the owner knows to verify it.
 
+- **`save_config()` now writes `config.json` atomically.** A crash or disk-full error mid-write could leave `config.json` truncated and unreadable. The function now writes to a `.tmp` sidecar and renames it into place with `os.replace()`, matching the atomic-write contract used by every other file SpinDoctor writes.
+
+- **RocketLauncher `Statistics.ini` files with a UTF-8 BOM no longer silently lose the first game.** The plain `"utf-8"` codec keeps the BOM as `﻿` in the first section header, so `[1942]` became `[﻿1942]` — a section the parser couldn't match, silently discarding that game's playtime with no error. The reader now uses `"utf-8-sig"`, which strips the BOM automatically (consistent with how `Global Statistics.ini` was already read). The change also aligns the per-system and global readers so both use the same first-attempt codec.
+
+- **`install-tools --add-to-system` now requires `--apply` before mutating the HyperSpin database XML.** Previously the command wrote game entries into the target system's XML immediately, with no dry-run preview and no confirmation step. Without `--apply`, the command now prints a preview of what would be added and exits cleanly. The `.bat` helper files are still written unconditionally (they are non-HyperSpin files and safe to create); only the XML mutation is gated.
+
 ### Changed
 
 - **GUI Metadata & Media tab: game selector and per-game override IDs are now in one combined "(Optional)" box above Step 1.** The "Game (blank = all games)" dropdown has moved out of the bare shared header and into a labelled "Per-game & override (Optional)" frame that sits between the System selector and Step 1, keeping targeting controls visually together. Override IDs remain in the same frame; Load/Save/Clear buttons are unchanged.

@@ -91,7 +91,7 @@ def _read_playstats_file(
     """
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
-        parser.read(path, encoding="utf-8")
+        parser.read(path, encoding="utf-8-sig")
     except UnicodeDecodeError:
         parser = configparser.ConfigParser(strict=False, interpolation=None)
         try:

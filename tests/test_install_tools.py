@@ -75,7 +75,7 @@ def test_install_tools_add_to_system_creates_db_entries_and_inis(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -178,7 +178,7 @@ def test_install_tools_add_to_system_respects_existing_emulators_ini_rom_path(ca
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -215,7 +215,7 @@ def test_install_tools_add_to_system_overwrites_existing_entries(cabinet):
     runner = CliRunner()
     for _ in range(2):
         result = runner.invoke(
-            cli, ["install-tools", "--add-to-system", "Toolkit"],
+            cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
             catch_exceptions=False,
         )
         assert result.exit_code == 0, result.output
@@ -279,7 +279,7 @@ def test_install_tools_add_to_system_removes_stale_refresh_both_db_entry(cabinet
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -340,7 +340,7 @@ def test_uninstall_tools_add_to_system_removes_bats_inis_and_db_entries(cabinet)
 
     # Install first.
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -455,7 +455,7 @@ def test_uninstall_tools_removes_files_from_existing_rom_path(cabinet):
     runner = CliRunner()
     # Install — files land in utilities_dir.
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -546,7 +546,7 @@ def test_uninstall_tools_add_to_system_is_idempotent(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -604,7 +604,7 @@ def test_uninstall_tools_add_to_system_dry_run_does_not_delete(cabinet):
 
     runner = CliRunner()
     result = runner.invoke(
-        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        cli, ["install-tools", "--add-to-system", "Toolkit", "--apply"],
         catch_exceptions=False,
     )
     assert result.exit_code == 0, result.output
@@ -636,3 +636,30 @@ def test_uninstall_tools_add_to_system_dry_run_does_not_delete(cabinet):
 
     # Output must describe what would happen.
     assert "dry-run" in result.output.lower() or "would remove" in result.output.lower()
+
+
+def test_install_tools_add_to_system_requires_apply_to_mutate_xml(cabinet):
+    """install-tools --add-to-system without --apply must print a DRY RUN
+    preview and leave the target database XML completely unchanged.
+
+    Previously the command mutated the XML immediately with no dry-run
+    gate, violating the HARD BLOCK rule that all XML-mutate commands must
+    be gated behind --apply."""
+    toolkit_dir = cabinet["hs"] / "Databases" / "Toolkit"
+    toolkit_dir.mkdir(parents=True)
+    db_path = toolkit_dir / "Toolkit.xml"
+    db_path.write_text(
+        '<?xml version="1.0"?>\n<menu>\n</menu>\n', encoding="utf-8"
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["install-tools", "--add-to-system", "Toolkit"],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+
+    db = HyperspinDatabase("Toolkit", db_path)
+    db.load()
+    assert db.games() == {}, "database must not be mutated without --apply"
