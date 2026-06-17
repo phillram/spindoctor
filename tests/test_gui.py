@@ -681,11 +681,20 @@ def test_format_run_log_text_dry_run_none_shows_na():
     assert "# Dry-run: N/A" in gui._format_run_log_text(rec)
 
 
-def test_default_run_log_filename_sanitizes_timestamp_and_extension():
+def test_default_run_log_filename_uses_command_slug():
     rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
                          argv_str="spindoctor audit --all", dry_run=True)
+    rec.command_slug = "audit"
     name = gui._default_run_log_filename(rec)
-    assert name == "2026-06-16_12-00-00_--all.txt"
+    assert name == "2026-06-16_12-00-00_audit.txt"
+
+
+def test_default_run_log_filename_falls_back_to_run_when_no_slug():
+    rec = gui._RunRecord(started_at="2026-06-16 12:00:00",
+                         argv_str="spindoctor audit --all", dry_run=True)
+    # command_slug is empty (e.g. synthetic record not created via _run_cli)
+    name = gui._default_run_log_filename(rec)
+    assert name == "2026-06-16_12-00-00_run.txt"
 
 
 # ─── _typeahead_find_match (dropdown letter-key jump) ─────────────────────────

@@ -12245,6 +12245,13 @@ class _SpinDoctorGUI:
             argv_str=argv_str,
             dry_run=is_dry_run,
         )
+        # Build a human-readable slug from the binary tag + positional args
+        # so auto-saved log files get a meaningful name (e.g. "recent_rebuild"
+        # rather than "--apply" or "--verbose").
+        _bin_tag = binary[len("spindoctor-"):] if binary.startswith("spindoctor-") else ""
+        _positional = [a for a in args if not a.startswith("-")]
+        _slug_parts = ([_bin_tag] if _bin_tag else []) + _positional
+        record.command_slug = "_".join(_slug_parts) if _slug_parts else "run"
         # _run_history is a bounded deque(maxlen=200) — append is O(1)
         # and oldest entries are evicted automatically.
         self._run_history.append(record)
@@ -13069,11 +13076,12 @@ class _RunRecord:
     - ``None``  — N/A (read-only command; dry-run concept doesn't apply)
     """
 
-    __slots__ = ("started_at", "argv_str", "output", "exit_code", "dry_run")
+    __slots__ = ("started_at", "argv_str", "command_slug", "output", "exit_code", "dry_run")
 
     def __init__(self, started_at: str, argv_str: str, dry_run: Optional[bool]) -> None:
         self.started_at = started_at
         self.argv_str = argv_str
+        self.command_slug: str = ""
         self.output: list[str] = []
         self.exit_code: Optional[int] = None
         self.dry_run = dry_run
@@ -13112,9 +13120,10 @@ def _format_run_log_text(record: "_RunRecord") -> str:
 
 def _default_run_log_filename(record: "_RunRecord") -> str:
     """Filesystem-safe default filename for a run record's log file."""
+    action = getattr(record, "command_slug", "") or "run"
     return (
         record.started_at.replace(":", "-").replace(" ", "_")
-        + "_" + record.argv_str.split()[-1].replace("/", "-").replace("\\", "-")
+        + "_" + action
         + ".txt"
     )
 
