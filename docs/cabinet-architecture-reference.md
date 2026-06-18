@@ -301,8 +301,16 @@ three-tier strategy when running `generate-config` for such systems:
    guard fires when the existing path is a real directory but the computed new path does
    not exist (`preserved (custom path)` in the dry-run table).
 
-For a permanent explicit override that survives any restore, set `rom_path` under
-`system_overrides` — that value always wins regardless of what folders exist.
+For a permanent explicit override that survives any restore, use `config system set --rom-path`:
+
+```bat
+spindoctor config system set "MAME (Vector)" --rom-path "J:\Games\MAME"
+spindoctor config system set "4-Player Games" --rom-path "J:\Games\MAME"
+```
+
+This writes `rom_path` under `system_overrides` in `config.json`; that value always wins
+regardless of what folders exist on disk.  Use `--emulator` in the same command when the
+system's `Default_Emulator=` also needs to be set for the first time.
 
 > **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
 > `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL

@@ -9953,6 +9953,7 @@ class _SpinDoctorGUI:
         self._ovr_exts_var = self.tk.StringVar()
         self._ovr_layout_var = self.tk.StringVar()
         self._ovr_emulator_var = self.tk.StringVar()
+        self._ovr_rom_path_var = self.tk.StringVar()
 
         rows: list[tuple[str, "tk_mod.StringVar", str]] = [  # noqa: F821
             ("ScreenScraper ID (int)",   self._ovr_ss_id_var,    ""),
@@ -9960,7 +9961,9 @@ class _SpinDoctorGUI:
             ("ROM extensions (csv)",     self._ovr_exts_var,
              "e.g. .ps7,iso  — leading dot optional"),
             ("Emulator",                 self._ovr_emulator_var,
-             "RocketLauncher emulator name (RetroArch, RPCS3, …)"),
+             "RocketLauncher emulator name (RetroArch, Daphne, …)"),
+            ("ROM folder path",          self._ovr_rom_path_var,
+             "Overrides roms_dir\\<System> for generate-config (e.g. J:\\Games\\3DO)"),
         ]
         for r, (label, var, hint) in enumerate(rows):
             self.ttk.Label(ovr_form, text=label).grid(
@@ -10053,6 +10056,7 @@ class _SpinDoctorGUI:
         ))
         self._ovr_layout_var.set(current.get("layout") or "")
         self._ovr_emulator_var.set(current.get("emulator") or "")
+        self._ovr_rom_path_var.set(current.get("rom_path") or "")
         if not current:
             self._set_status(
                 f"No override saved for '{sys_}' yet — fill the form "
@@ -10063,7 +10067,7 @@ class _SpinDoctorGUI:
         for var in (
             self._ovr_ss_id_var, self._ovr_tgdb_id_var,
             self._ovr_exts_var, self._ovr_layout_var,
-            self._ovr_emulator_var,
+            self._ovr_emulator_var, self._ovr_rom_path_var,
         ):
             var.set("")
 
@@ -10113,6 +10117,9 @@ class _SpinDoctorGUI:
         emu = self._ovr_emulator_var.get().strip()
         if emu:
             args += ["--emulator", emu]
+        rom_path = self._ovr_rom_path_var.get().strip()
+        if rom_path:
+            args += ["--rom-path", rom_path]
         # No field provided beyond the system name? Bail with a hint.
         if len(args) == 4:
             self._flash_validation(

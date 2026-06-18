@@ -333,9 +333,15 @@ spindoctor generate-config --overwrite-global --apply     :: replace an existing
 - **Existing file declares a MAME-family `Default_Emulator` with an absolute `Rom_Path` that no longer exists** (e.g. after a restore from an old backup): SpinDoctor replaces it with `roms_dir\MAME` if that folder exists. This covers non-MAME-named systems like `4-Player Games` that use `MAME (XBOX 4P DSW)` as their emulator.
 - **Existing file has a valid absolute `Rom_Path`:** if that path is a real directory but the computed new path does not exist, the file is left untouched. Dry-run shows `preserved (custom path)`.
 
-For an explicit permanent override that survives any restore, set `rom_path` in `system_overrides` — see [Configuration → system_overrides](configuration.md#system_overrides).
+For an explicit permanent override that survives any restore, use `config system set --rom-path` or `--emulator` — see [Configuration → system_overrides](configuration.md#per-system-overrides).
 
-**What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, etc.). Edit the generated INI or use `spindoctor config system set "<System>" --emulator <Name>` to override before running `generate-config`.
+**What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, Daphne-based → Daphne, Taito Type X → PCLauncher, etc.). Use `config system set --emulator` to override for any system not in the built-in map, and `--rom-path` when the ROM folder name doesn't match the system name:
+
+```bat
+spindoctor config system set "Panasonic 3DO" --emulator RetroArch --rom-path "J:\Games\3DO"
+spindoctor config system set "Daphne"        --emulator Daphne    --rom-path "J:\Games\Daphne"
+spindoctor generate-config --system "Panasonic 3DO" --apply
+```
 
 **Synthetic wheels are never touched by generate-config.** Favorites, Recently Played, and Most Played are excluded from both the RocketLauncher INI writes and the `Main Menu.xml` sync. Their settings are managed by `fav rebuild`, `recent rebuild`, and `stats build-wheel`. Any synthetic wheels already present in `Main Menu.xml` are preserved (not dropped) when generate-config regenerates the file.
 
@@ -1716,6 +1722,17 @@ spindoctor config show                          :: pretty-print the active confi
 ```
 
 Full key listing, per-system overrides (`config system set / list / clear`), and per-game scraper-ID overrides (`config game-override set / list / clear`) are covered in [Configuration reference](configuration.md).
+
+Per-system override flags accepted by `config system set`:
+
+| Flag | Effect |
+|------|--------|
+| `--screenscraper-id INT` | ScreenScraper platform ID |
+| `--thegamesdb-id INT` | TheGamesDB platform ID |
+| `--rom-extensions csv` | Comma-separated ROM extensions (e.g. `iso,bin,chd`) |
+| `--layout` | `per-game-folder` / `multi-disc-m3u` / `flat` |
+| `--emulator NAME` | RocketLauncher `Default_Emulator=` for new INI files |
+| `--rom-path PATH` | Exact ROM folder — overrides `roms_dir\<SystemName>` in `generate-config` |
 
 ### `config verify-credentials`
 
