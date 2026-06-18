@@ -460,9 +460,13 @@ def config_system_group():
 @click.option("--layout", default=None, type=click.Choice(_LAYOUT_CHOICES),
               help="ROM folder layout. 'flat' disables a built-in rule.")
 @click.option("--emulator", default=None,
-              help="RocketLauncher emulator name (e.g. RetroArch, MAME, RPCS3).")
+              help="RocketLauncher emulator name (e.g. RetroArch, MAME, Daphne).")
+@click.option("--rom-path", default=None,
+              help="Exact ROM folder path for this system. Used by generate-config "
+                   "as Rom_Path= instead of roms_dir/<SystemName>. Useful when ROMs "
+                   "share a folder (e.g. MAME variants) or live under a non-standard name.")
 def config_system_set(system_name, screenscraper_id, thegamesdb_id,
-                      rom_extensions, layout, emulator):
+                      rom_extensions, layout, emulator, rom_path):
     """Add or update overrides for SYSTEM_NAME.
 
     \b
@@ -472,6 +476,12 @@ def config_system_set(system_name, screenscraper_id, thegamesdb_id,
           --rom-extensions ps7,iso \\
           --layout per-game-folder \\
           --emulator RPCS7
+
+    \b
+    Example — fix ROM path and emulator for a non-standard system:
+      spindoctor config system set "Panasonic 3DO" \\
+          --emulator RetroArch \\
+          --rom-path "J:\\Games\\3DO"
     """
     config = _cfg()
     overrides = dict(config.system_overrides)
@@ -492,11 +502,14 @@ def config_system_set(system_name, screenscraper_id, thegamesdb_id,
         entry["layout"] = layout
     if emulator is not None:
         entry["emulator"] = emulator
+    if rom_path is not None:
+        entry["rom_path"] = rom_path
 
     if not entry:
         err_console.print(
             "[red]Nothing to set.[/red] Pass at least one of "
-            "--screenscraper-id / --thegamesdb-id / --rom-extensions / --layout / --emulator."
+            "--screenscraper-id / --thegamesdb-id / --rom-extensions / --layout / "
+            "--emulator / --rom-path."
         )
         sys.exit(1)
 

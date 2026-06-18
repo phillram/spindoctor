@@ -35,7 +35,11 @@ def test_rom_extensions_uses_override(isolated_config):
 
 
 def test_rom_extensions_falls_back_to_default(isolated_config):
-    assert get_rom_extensions("Unknown System") == [".zip", ".7z", ".rar"]
+    exts = get_rom_extensions("Unknown System")
+    assert ".zip" in exts
+    assert ".7z" in exts
+    assert ".iso" in exts
+    assert ".chd" in exts
 
 
 def test_required_layout_uses_override(isolated_config):

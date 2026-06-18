@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`config system set --rom-path PATH`** — new flag that permanently pins the ROM folder path for a system in `config.json`. `generate-config` now uses this value as `Rom_Path=` instead of deriving `roms_dir\<SystemName>`. Fixes "Can't find Rom in any rom_paths provided" for systems whose ROM folder name doesn't match the HyperSpin system name (e.g. "Panasonic 3DO" with ROMs in `J:\Games\3DO`, or any Daphne-based system). The override survives drive migrations and RL config restores. CLI: `spindoctor config system set "<System>" --emulator <Name> --rom-path <Path>`.
+
+- **GUI: ROM folder path field in Per-system overrides form.** The system override panel in the Systems tab now includes a "ROM folder path" entry. **Load current values** populates it from the saved override; **Save override** passes `--rom-path` to the CLI. Pairs with the existing Emulator field to configure non-standard systems without touching source code.
+
+- **Expanded EMULATOR_MAP** — `generate-config` now correctly assigns `Default_Emulator=` for many more systems when creating new per-system INI files: Daphne-based systems (Daphne, Action Max, American Laser Games, Wow Action Max → `Daphne`), 3DO (→ `RetroArch`), Taito Type X / X2 / X3 and NESiCAxLive (→ `PCLauncher`), Doujin / Doujin Games (→ `PCLauncher`), Sega Naomi / Atomiswave / TriForce (→ `MAME`), ZiNc (→ `ZiNc`), Sega Saturn (→ `SSF`), NDS / 3DS, PSP, and many more. Existing INIs are unaffected — `Default_Emulator=` is never overwritten for files that already exist.
+
+- **Expanded ROM extension coverage** — the default extension list (used for systems not in SpinDoctor's built-in map) now includes `.iso`, `.bin`, `.chd`, `.cue`, `.img`, and `.rom` in addition to `.zip`, `.7z`, `.rar`. Added targeted entries for 3DO, Daphne, Entex Adventure Vision, CD-i, PC Engine CD, Neo Geo CD, Atari Jaguar / ST, Amiga, Commodore 64, WonderSwan, Vectrex, Colecovision, Intellivision, Fairchild Channel F, Naomi/Atomiswave, Nintendo DS/3DS/GameCube/Wii U, PSP, and more. Per-system `--rom-extensions` overrides are unaffected.
+
 ### Fixed
 
 - **GUI: Override ID fields (ScreenScraper ID / TheGamesDB ID) now clear automatically when the game or system selection changes.** Previously, IDs entered for one game would linger in the form after navigating to a different game or switching systems, risking saving the wrong override. "Load current override" and manual typing are unaffected.
