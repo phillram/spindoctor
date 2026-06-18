@@ -74,20 +74,41 @@ spindoctor config system list
 spindoctor config system clear "Sony Playstation 7"
 ```
 
+All flags are optional — only the keys you supply are written; everything else is left unchanged.
+
+| Flag | What it controls |
+|------|-----------------|
+| `--screenscraper-id INT` | ScreenScraper platform ID used by `fetch-meta` / `fetch-media` |
+| `--thegamesdb-id INT` | TheGamesDB platform ID |
+| `--rom-extensions csv` | Extensions used by `add-system`, `audit`, and `generate-config` (e.g. `iso,bin,chd`) |
+| `--layout` | ROM folder layout: `per-game-folder`, `multi-disc-m3u`, or `flat` |
+| `--emulator NAME` | RocketLauncher emulator name written as `Default_Emulator=` in new per-system INIs |
+| `--rom-path PATH` | Exact ROM folder path — used by `generate-config` as `Rom_Path=` instead of `roms_dir\<SystemName>` |
+
 Common reasons to use overrides:
 
 - **`add-system` reports "no ROMs found"** — the file extension isn't in the recognized set. Add it via `--rom-extensions`.
 - **System has its own metadata IDs on ScreenScraper / TheGamesDB** — set `--screenscraper-id` / `--thegamesdb-id`.
 - **Multi-disc consoles where each game is a folder** — `--layout per-game-folder`.
 - **System uses a Sinden lightgun** — set `"lightgun": true` in the override (or run `spindoctor lightgun configure --system <name> --apply`, which sets it automatically). `lightgun audit` reports on every system with this flag.
-- **MAME variants sharing a single ROM folder** — set `rom_path` to the shared directory.  `generate-config` derives `Rom_Path` as `roms_dir\<SystemName>` by default; for systems like `MAME (Vector)` or `MAME (Vertical)` that share `J:\Games\MAME`, the derived path doesn't exist and SpinDoctor's preservation guard kicks in automatically.  Setting `rom_path` explicitly makes the intent permanent and immune to future changes in which folders exist on disk:
+- **System's emulator is not in SpinDoctor's built-in map** — set `--emulator` to the exact name from `Global Emulators.ini` (e.g. `--emulator Daphne`, `--emulator 4DO`). Only affects newly-created INI files; existing `Default_Emulator=` values are never overwritten.
+- **MAME variants or any system sharing a ROM folder** — set `--rom-path` to the shared directory. `generate-config` derives `Rom_Path` as `roms_dir\<SystemName>` by default; for systems like `MAME (Vector)`, `4-Player Games`, or any system where the ROM folder name doesn't match the system name, `--rom-path` makes the mapping permanent and immune to future drive migrations:
+
+  ```bat
+  spindoctor config system set "MAME (Vector)" --rom-path "J:\Games\MAME"
+  spindoctor config system set "Panasonic 3DO"  --emulator RetroArch --rom-path "J:\Games\3DO"
+  spindoctor config system set "Daphne"         --emulator Daphne    --rom-path "J:\Games\Daphne"
+  ```
+
+  The raw JSON / TOML representation (for reference — edit via CLI or GUI, not by hand):
 
   ```toml
   [system_overrides."MAME (Vector)"]
   rom_path = 'J:\Games\MAME'
 
-  [system_overrides."MAME (Vertical)"]
-  rom_path = 'J:\Games\MAME'
+  [system_overrides."Panasonic 3DO"]
+  emulator = 'RetroArch'
+  rom_path = 'J:\Games\3DO'
   ```
 
 ## Per-game overrides

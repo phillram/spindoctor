@@ -249,7 +249,12 @@ def test_get_rom_extensions_partial_match_prefers_longest_key(isolated_config):
 
 
 def test_get_rom_extensions_falls_back_to_default(isolated_config):
-    assert config_mod.get_rom_extensions("Imaginary System") == [".zip", ".7z", ".rar"]
+    exts = config_mod.get_rom_extensions("Imaginary System")
+    # Default list covers common archives and disc image formats.
+    assert ".zip" in exts
+    assert ".7z" in exts
+    assert ".iso" in exts
+    assert ".chd" in exts
 
 
 def test_get_rom_extensions_uses_override_with_or_without_dot(isolated_config):

@@ -14,23 +14,107 @@ CONFIG_DIR = Path.home() / ".spindoctor"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 ROM_EXTENSIONS: dict[str, list[str]] = {
-    "default": [".zip", ".7z", ".rar"],
+    # Unknown systems fall back to this.  Broad enough to cover compressed
+    # ROM dumps, CD images, and raw binary formats so that cabinets with
+    # non-standard or homebrew systems get a working RL config out of the box.
+    "default": [".zip", ".7z", ".rar", ".iso", ".bin", ".chd", ".cue", ".img", ".rom"],
+    # Arcade / MAME
     "mame": [".zip", ".7z"],
+    "arcade": [".zip", ".7z"],
+    "naomi": [".zip", ".7z", ".chd"],
+    "atomiswave": [".zip", ".7z", ".chd"],
+    "triforce": [".zip", ".7z", ".chd"],
+    # Nintendo consoles
     "nes": [".nes", ".zip", ".7z"],
     "snes": [".sfc", ".smc", ".zip", ".7z"],
-    "genesis": [".md", ".bin", ".smd", ".zip", ".7z"],
     "n64": [".z64", ".n64", ".v64", ".zip", ".7z"],
     "gba": [".gba", ".zip", ".7z"],
-    "psx": [".bin", ".cue", ".iso", ".img", ".zip", ".7z"],
-    "ps2": [".iso", ".bin", ".img"],
+    "gameboyadvance": [".gba", ".zip", ".7z"],
+    "gb": [".gb", ".zip", ".7z"],
+    "gbc": [".gbc", ".gb", ".zip", ".7z"],
+    "gamecube": [".iso", ".gcm", ".gcz", ".wbfs", ".ciso", ".rvz", ".zip", ".7z"],
+    "nintendogamecube": [".iso", ".gcm", ".gcz", ".wbfs", ".ciso", ".rvz", ".zip", ".7z"],
+    "wii": [".iso", ".wbfs", ".rvz", ".gcz", ".ciso"],
+    "wiiu": [".wud", ".wux", ".iso", ".rpx"],
+    "nds": [".nds", ".zip", ".7z"],
+    "nintendods": [".nds", ".zip", ".7z"],
+    "3ds": [".3ds", ".cia", ".cci", ".zip", ".7z"],
+    "nintendo3ds": [".3ds", ".cia", ".cci", ".zip", ".7z"],
+    # Sega
+    "genesis": [".md", ".bin", ".smd", ".zip", ".7z"],
+    "megadrive": [".md", ".bin", ".smd", ".zip", ".7z"],
+    "segagenesis": [".md", ".bin", ".smd", ".zip", ".7z"],
+    "mastersystem": [".sms", ".bin", ".zip", ".7z"],
+    "segamastersystem": [".sms", ".bin", ".zip", ".7z"],
+    "gamegear": [".gg", ".bin", ".zip", ".7z"],
+    "segacd": [".chd", ".cue", ".bin", ".iso"],
+    "32x": [".bin", ".zip", ".7z"],
+    "sega32x": [".bin", ".zip", ".7z"],
+    "saturn": [".chd", ".cue", ".bin", ".iso"],
+    "segasaturn": [".chd", ".cue", ".bin", ".iso"],
+    "dreamcast": [".chd", ".cdi", ".gdi", ".cue"],
+    "segadreamcast": [".chd", ".cdi", ".gdi", ".cue"],
+    # Sony
+    "psx": [".bin", ".cue", ".iso", ".img", ".chd", ".zip", ".7z"],
+    "playstation": [".bin", ".cue", ".iso", ".img", ".chd", ".zip", ".7z"],
+    "ps2": [".iso", ".bin", ".img", ".chd"],
+    "playstation2": [".iso", ".bin", ".img", ".chd"],
     "ps3": [".iso", ".pkg"],
     "playstation3": [".iso", ".pkg"],
-    "saturn": [".chd", ".cue", ".bin", ".iso"],
-    "dreamcast": [".chd", ".cdi", ".gdi", ".cue"],
-    "segacd": [".chd", ".cue", ".bin", ".iso"],
-    "wii": [".iso", ".wbfs", ".rvz"],
+    "psp": [".iso", ".cso", ".pbp", ".chd"],
+    "playstationportable": [".iso", ".cso", ".pbp", ".chd"],
+    "ps4": [".pkg"],
+    # Microsoft
+    "xbox": [".iso", ".xbe", ".zip", ".7z"],
     "xbox360": [".iso"],
-    "arcade": [".zip", ".7z"],
+    # NEC / TurboGrafx
+    "turbografx": [".pce", ".bin", ".zip", ".7z"],
+    "turbografx16": [".pce", ".bin", ".zip", ".7z"],
+    "pcengine": [".pce", ".bin", ".zip", ".7z"],
+    "turbografxcd": [".chd", ".cue", ".bin", ".iso"],
+    "pcenginecd": [".chd", ".cue", ".bin", ".iso"],
+    # SNK
+    "neogeo": [".zip", ".7z"],
+    "neogeocd": [".chd", ".cue", ".iso"],
+    "neogeomvs": [".zip", ".7z"],
+    # Atari
+    "atari2600": [".a26", ".bin", ".zip", ".7z"],
+    "atari7800": [".a78", ".bin", ".zip", ".7z"],
+    "atarilynx": [".lnx", ".bin", ".zip", ".7z"],
+    "atarijaguar": [".j64", ".jag", ".bin", ".zip", ".7z"],
+    "atarist": [".st", ".msa", ".stx", ".zip", ".7z"],
+    # Commodore / Amiga
+    "amiga": [".adf", ".dms", ".hdf", ".lha", ".zip", ".7z"],
+    "amigacd32": [".chd", ".iso", ".cue", ".bin"],
+    "c64": [".d64", ".t64", ".prg", ".crt", ".zip", ".7z"],
+    "commodore64": [".d64", ".t64", ".prg", ".crt", ".zip", ".7z"],
+    # 3DO
+    "3do": [".iso", ".bin", ".cue", ".chd"],
+    "panasonic3do": [".iso", ".bin", ".cue", ".chd"],
+    # LaserDisc / Daphne-based systems
+    "daphne": [".daphne", ".zip", ".7z"],
+    "actionmax": [".daphne", ".zip", ".7z"],
+    "americanlasergames": [".daphne", ".zip", ".7z"],
+    # Other CD-based systems
+    "philipscdivideo": [".chd", ".iso", ".cue", ".bin"],
+    "cd-i": [".chd", ".iso", ".cue", ".bin"],
+    "cdi": [".chd", ".iso", ".cue", ".bin"],
+    "3dointeractivemultiplayer": [".iso", ".bin", ".cue", ".chd"],
+    "pcfx": [".chd", ".cue", ".bin", ".iso"],
+    # Handheld / misc
+    "wonderswan": [".ws", ".wsc", ".zip", ".7z"],
+    "wonderswancolor": [".wsc", ".ws", ".zip", ".7z"],
+    "gameboycolor": [".gbc", ".gb", ".zip", ".7z"],
+    "entexadventurevision": [".bin", ".zip", ".7z"],
+    "adventurevision": [".bin", ".zip", ".7z"],
+    "vectrex": [".vec", ".bin", ".zip", ".7z"],
+    "colecovision": [".col", ".bin", ".rom", ".zip", ".7z"],
+    "intellivision": [".int", ".bin", ".rom", ".zip", ".7z"],
+    "channelf": [".chf", ".bin", ".zip", ".7z"],
+    "fairchildchannelf": [".chf", ".bin", ".zip", ".7z"],
+    # PC / Doujin (PCLauncher-based; extensions are .ini placeholders)
+    "doujin": [".ini"],
+    "doujingames": [".ini"],
 }
 
 # Ordered list — used for display, CSV columns, and download loops.
