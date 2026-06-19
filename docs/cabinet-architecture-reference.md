@@ -685,6 +685,68 @@ launch a game and gets the cryptic *"No valid roms found in the archive"* error.
 
 ---
 
+## Phoenix (Atari Jaguar) — Emulator Configuration and ROM Path Fix
+
+Phoenix v2.8.JAG emulates the Atari Jaguar (and Panasonic 3DO). Unlike most emulators, Phoenix does not accept a ROM path on the command line — RocketLauncher launches it by **editing `phoenix.config.xml` before each launch**.
+
+### File layout
+
+| File | Path |
+|------|------|
+| Emulator | `D:\Arcade\Emulators\Phoenix\PhoenixEmuProject.exe` |
+| Config | `D:\Arcade\Emulators\Phoenix\phoenix.config.xml` |
+| BIOS | `D:\Arcade\Emulators\Phoenix\Jaguar\BIOS\[BIOS] Atari Jaguar (World).j64` |
+| ROMs | `J:\Games\Atari Jaguar\` (extension `.j64`) |
+| RL module | `D:\Arcade\RocketLauncher\Modules\Phoenix\Phoenix.ahk` |
+
+### How the RL module loads a game
+
+Phoenix stores its media library in `phoenix.config.xml` as `<Dump>` entries under a `<CARTRIDGE>` node. The `attach` attribute on `<CARTRIDGE>` tells Phoenix which game to auto-select on startup:
+
+```xml
+<Platform-Jaguar>
+    <CARTRIDGE expanded="true" attach="J:/Games/Atari Jaguar/Tempest 2000 (World).j64"
+               last-path="J:/Games/Atari Jaguar">
+        <Dump path="J:/Games/Atari Jaguar/Air Cars (World).j64" ... />
+        <Dump path="J:/Games/Atari Jaguar/Tempest 2000 (World).j64" ... />
+        ...
+    </CARTRIDGE>
+</Platform-Jaguar>
+```
+
+Phoenix **only auto-selects a game if `attach` matches a `<Dump>` entry path exactly.** If the paths differ, Phoenix opens with no cartridge selected and any Power On attempt fails with *"You must select CARTRIDGE."*
+
+Before launch the module:
+1. Reads `phoenix.config.xml` into memory
+2. Rewrites every `<Dump path="…">` that contains `D:/Arcade/Games/Atari Jaguar/` → `J:/Games/Atari Jaguar/`
+3. Sets `attach` to the J: ROM path of the selected game
+4. Writes the file back and launches Phoenix
+5. Sends `{Alt}{Right}{Enter}{Enter}` to navigate Control → Power On
+
+### Why Dump paths needed rewriting
+
+The Phoenix library was originally built from `D:\Arcade\Games\Atari Jaguar\` (games added via *File → Add CARTRIDGE file to the collection*). The ROMs were later moved to `J:\Games\Atari Jaguar\`. Phoenix's library retained the D: paths, so any `attach` value set to a J: path would not match any `<Dump>` entry — causing the *"You must select CARTRIDGE"* error on every launch.
+
+The RL module rewrites the paths on every launch. After the first successful launch Phoenix saves the J: paths back to `phoenix.config.xml` itself, so subsequent launches the `StringReplace` finds nothing to replace and is a no-op.
+
+### BIOS
+
+The Jaguar BIOS is registered in the same `phoenix.config.xml` under a `<BIOS>` node and lives at:
+
+```
+D:\Arcade\Emulators\Phoenix\Jaguar\BIOS\[BIOS] Atari Jaguar (World).j64
+```
+
+This path is on D: (emulator folder, not game drive) and is not affected by the Dump path rewrite.
+
+### Reference copy of the RL module
+
+A reference copy of the customised `Phoenix.ahk` is kept in
+`spindoctor/assets/archive/Phoenix.ahk`. The canonical installed file is at
+`D:\Arcade\RocketLauncher\Modules\Phoenix\Phoenix.ahk` on the cabinet.
+
+---
+
 ## PCLauncher Architecture — Two-File System
 
 PCLauncher uses **two separate file types** for synthetic wheels. Many people confuse them:
