@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Phoenix (Atari Jaguar) emulator documented in cabinet architecture reference.** Covers the `phoenix.config.xml` launch mechanism (RL rewrites `attach` + `<Dump>` paths before each launch), the root cause of the *"You must select CARTRIDGE"* error (Phoenix only auto-selects a game if `attach` matches a `<Dump>` entry path exactly — J: paths failed because the library was built from D:), and the fix (RL module rewrites `D:/Arcade/Games/Atari Jaguar/` → `J:/Games/Atari Jaguar/` in all Dump entries on each launch). Reference copy of the customised `Phoenix.ahk` RL module added to `spindoctor/assets/archive/`.
+
 ### Fixed
 
 - **Corrected stale Daphne+RL ROM layout callout in cabinet architecture reference.** The callout in the `generate-config` section incorrectly described `.txt` files as empty placeholders, cited a wrong chip ROM path (`D:\Arcade\Games\Daphne\roms\`), and described the Daphne.ahk module as stripping the extension rather than passing `-framefile`. Updated to match the verified file layout: framefiles are data files (not placeholders), chip ROMs live at `J:\Games\Daphne\roms\<game>.zip` via `homedir = J:\Games\Daphne` in `Daphne.ini`, and the module passes the full `-framefile` path to daphne.exe.
