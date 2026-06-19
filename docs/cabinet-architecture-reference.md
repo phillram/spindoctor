@@ -117,6 +117,19 @@ ROMs live on a separate drive: `J:\Games\` (= `roms_dir` in `config.json`). This
 J:\Games\
 ├── MAME\          ← shared by MAME and all MAME subsystem wheels
 ├── Nintendo 64\
+├── Daphne\        ← Daphne LaserDisc system (see Daphne section below)
+│   ├── lair.txt   ← RL "ROM" for Dragon's Lair — this is a Daphne framefile, NOT a placeholder
+│   ├── esh.txt
+│   ├── ... (one .txt per game)
+│   ├── roms\      ← chip ROM zips read directly by daphne.exe
+│   │   ├── lair.zip
+│   │   └── ...
+│   ├── vldp\      ← VLDP video files, one subfolder per game
+│   │   ├── lair\
+│   │   │   ├── dl-slates.m2v
+│   │   │   └── ...
+│   │   └── ...
+│   └── vldp_dl\   ← Digital Leisure variant VLDP files
 └── ...
 ```
 
@@ -470,6 +483,69 @@ that RL reads the correct extension from the system file rather than falling bac
 > full `Global Emulators.ini` (with 40+ hand-configured emulators) was set up manually
 > and is never overwritten by SpinDoctor. When SpinDoctor creates a new Global Emulators.ini,
 > it writes `Rom_Extension=ini` for the `[PCLauncher]` section.
+
+---
+
+## Daphne (LaserDisc Games) — File Layout and Configuration
+
+Daphne uses **three separate file types** that live in three different locations. Getting any one wrong produces a different error.
+
+### File layout
+
+| File type | Location | Who reads it |
+|-----------|----------|-------------|
+| Framefile (`.txt`) | `J:\Games\Daphne\<game>.txt` | RocketLauncher (treats it as the ROM) + daphne.exe (`-framefile` arg) |
+| Chip ROMs (`.zip` containing `.bin` files) | `D:\Arcade\Emulators\Daphne\roms\<game>.zip` | daphne.exe directly |
+| VLDP video files | `J:\Games\Daphne\vldp\<game>\*.m2v` | daphne.exe (path read from framefile) |
+
+### Why `.txt` files are the RL "ROM"
+
+`Global Emulators.ini` `[Daphne]` has `Rom_Extension=txt`. RocketLauncher therefore scans `Rom_Path` (= `J:\Games\Daphne`) for `.txt` files, finds `lair.txt`, and passes it to the Daphne.ahk module as `romExtension=.txt`. Because `.txt` is not in the 7-zip format list (`zip|rar|7z|lha|...`), the module skips extraction entirely and passes the full path as `-framefile` to daphne.exe.
+
+**Never put the chip ROM `.zip` in `J:\Games\Daphne\`.** If `lair.zip` is there and `lair.txt` is absent, RL finds the zip, tries to extract it looking for a `.txt` file inside, and fails with "No valid roms found in the archive lair.zip".
+
+### Framefile format
+
+A Daphne framefile is a text file with game-specific video frame timing data. It is **not an empty placeholder** — it ships with the Daphne ROM set.
+
+The **first line** of the framefile is the path to the VLDP video directory, relative to the framefile's own location:
+
+```
+vldp\lair
+<frame timing data...>
+```
+
+daphne.exe resolves this relative to the directory containing the framefile (`J:\Games\Daphne\`), so `vldp\lair` → `J:\Games\Daphne\vldp\lair\`.
+
+### Chip ROM location
+
+The Daphne.ahk module runs daphne.exe with `-homedir .`, meaning daphne's home directory is its own install folder: `D:\Arcade\Emulators\Daphne\`. Daphne looks for chip ROMs at `<homedir>\roms\<game>.zip`, so chip ROMs must be at:
+
+```
+D:\Arcade\Emulators\Daphne\roms\lair.zip
+```
+
+### Common path mistakes in the framefile
+
+| Path in framefile | Resolves to | Problem |
+|-------------------|-------------|---------|
+| `/vldp/lair` | `D:\vldp\lair\` (absolute from drive root) | Leading `/` makes it absolute; daphne.exe runs from D:, so it looks on D: |
+| `../vldp/lair` | `J:\Games\vldp\lair\` | `..` goes up from `J:\Games\Daphne\` to `J:\Games\` — correct only if vldp is at `J:\Games\vldp\` |
+| `vldp\lair` | `J:\Games\Daphne\vldp\lair\` | **Correct** — relative to framefile location, stays inside the Daphne folder |
+
+If you need to bulk-correct framefiles that have the wrong path prefix, use PowerShell from the cabinet:
+
+```powershell
+# Preview what would change (no -replace yet)
+Select-String -Path "J:\Games\Daphne\*.txt" -Pattern "^/" | Select-Object Filename,Line
+
+# Fix a specific prefix in all framefiles
+Get-ChildItem "J:\Games\Daphne\*.txt" | ForEach-Object {
+    (Get-Content $_.FullName -Raw) -replace '^/vldp/', 'vldp/' | Set-Content $_.FullName
+}
+```
+
+Always preview before running the bulk replace, and always edit one file first to confirm the fix works before applying to all.
 
 ---
 
