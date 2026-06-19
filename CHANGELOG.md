@@ -18,6 +18,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Expanded ROM extension coverage** — the default extension list (used for systems not in SpinDoctor's built-in map) now includes `.iso`, `.bin`, `.chd`, `.cue`, `.img`, and `.rom` in addition to `.zip`, `.7z`, `.rar`. Added targeted entries for 3DO, Daphne, Entex Adventure Vision, CD-i, PC Engine CD, Neo Geo CD, Atari Jaguar / ST, Amiga, Commodore 64, WonderSwan, Vectrex, Colecovision, Intellivision, Fairchild Channel F, Naomi/Atomiswave, Nintendo DS/3DS/GameCube/Wii U, PSP, and more. Per-system `--rom-extensions` overrides are unaffected.
 
+- **Generic emulator-family shared-folder fallback in `generate-config`** — for emulator families where multiple HyperSpin wheels share one ROM folder (like Daphne-based systems), `generate-config` now detects that the system-named folder doesn't exist and falls back to the canonical family folder (`roms_dir/Daphne`) instead of writing a phantom path. Mirrors the existing MAME shared-folder logic. For example, "American Laser Games" (emulator `Daphne Singe`) will resolve to `J:\Games\Daphne` rather than the non-existent `J:\Games\American Laser Games`. When an existing per-system INI already points at a valid directory, that path is preserved unchanged.
+
 ### Fixed
 
 - **GUI: Override ID fields (ScreenScraper ID / TheGamesDB ID) now clear automatically when the game or system selection changes.** Previously, IDs entered for one game would linger in the form after navigating to a different game or switching systems, risking saving the wrong override. "Load current override" and manual typing are unaffected.
