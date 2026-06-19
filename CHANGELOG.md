@@ -12,6 +12,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`_Hasher.close()` missing — `test_sevenz_inner_hash` failed on Python 3.12.** py7zr ≥ 1.0 calls `close()` on each writer object after streaming inner files. The `_Hasher` file-like class had `write`/`read`/`seek`/`flush`/`size` but no `close()`, raising `AttributeError: '_Hasher' object has no attribute 'close'`. Added a no-op `close()`. py7zr 0.22 (the Windows 7 / Python 3.8 build) does not call `close()`, so the 3.8 CI job was unaffected.
+
 - **Corrected stale Daphne+RL ROM layout callout in cabinet architecture reference.** The callout in the `generate-config` section incorrectly described `.txt` files as empty placeholders, cited a wrong chip ROM path (`D:\Arcade\Games\Daphne\roms\`), and described the Daphne.ahk module as stripping the extension rather than passing `-framefile`. Updated to match the verified file layout: framefiles are data files (not placeholders), chip ROMs live at `J:\Games\Daphne\roms\<game>.zip` via `homedir = J:\Games\Daphne` in `Daphne.ini`, and the module passes the full `-framefile` path to daphne.exe.
 
 ### Added
