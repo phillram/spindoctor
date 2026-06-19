@@ -121,7 +121,7 @@ J:\Games\
 │   ├── lair.txt   ← RL "ROM" for Dragon's Lair — this is a Daphne framefile, NOT a placeholder
 │   ├── esh.txt
 │   ├── ... (one .txt per game)
-│   ├── roms\      ← chip ROM zips read directly by daphne.exe
+│   ├── roms\      ← chip ROM zips read by daphne.exe via -homedir J:\Games\Daphne
 │   │   ├── lair.zip
 │   │   └── ...
 │   ├── vldp\      ← VLDP video files, one subfolder per game
@@ -495,7 +495,7 @@ Daphne uses **three separate file types** that live in three different locations
 | File type | Location | Who reads it |
 |-----------|----------|-------------|
 | Framefile (`.txt`) | `J:\Games\Daphne\<game>.txt` | RocketLauncher (treats it as the ROM) + daphne.exe (`-framefile` arg) |
-| Chip ROMs (`.zip` containing `.bin` files) | `D:\Arcade\Emulators\Daphne\roms\<game>.zip` | daphne.exe directly |
+| Chip ROMs (`.zip` containing `.bin` files) | `J:\Games\Daphne\roms\<game>.zip` | daphne.exe directly (via `homedir`) |
 | VLDP video files | `J:\Games\Daphne\vldp\<game>\*.m2v` | daphne.exe (path read from framefile) |
 
 ### Why `.txt` files are the RL "ROM"
@@ -517,13 +517,43 @@ vldp\lair
 
 daphne.exe resolves this relative to the directory containing the framefile (`J:\Games\Daphne\`), so `vldp\lair` → `J:\Games\Daphne\vldp\lair\`.
 
-### Chip ROM location
+### Chip ROM location and `homedir`
 
-The Daphne.ahk module runs daphne.exe with `-homedir .`, meaning daphne's home directory is its own install folder: `D:\Arcade\Emulators\Daphne\`. Daphne looks for chip ROMs at `<homedir>\roms\<game>.zip`, so chip ROMs must be at:
+Daphne looks for chip ROMs at `<homedir>\roms\<game>.zip`. The `homedir` value is read per-game from `Daphne.ini` in the module folder:
 
 ```
-D:\Arcade\Emulators\Daphne\roms\lair.zip
+D:\Arcade\RocketLauncher\Modules\Daphne\Daphne.ini
 ```
+
+Every game section has a `homedir` key. On this cabinet it is set to `J:\Games\Daphne` for all games:
+
+```ini
+[lair]
+homedir = J:\Games\Daphne
+...
+
+[esh]
+homedir = J:\Games\Daphne
+...
+```
+
+This causes daphne.exe to be called with `-homedir J:\Games\Daphne`, so chip ROMs are found at:
+
+```
+J:\Games\Daphne\roms\lair.zip
+```
+
+> **Default value is `.`** — if `homedir` is left as `.`, daphne resolves it against its working directory (`D:\Arcade\Emulators\Daphne\`) and looks for ROMs in `D:\Arcade\Emulators\Daphne\roms\`. This is the out-of-box default from the RL module ini and must be changed when ROMs live on a separate drive.
+
+To update all game sections in bulk:
+
+```powershell
+(Get-Content "D:\Arcade\RocketLauncher\Modules\Daphne\Daphne.ini" -Raw) `
+    -replace 'homedir = \.', 'homedir = J:\Games\Daphne' |
+    Set-Content "D:\Arcade\RocketLauncher\Modules\Daphne\Daphne.ini"
+```
+
+Note that `homedir` only controls where daphne finds chip ROMs and other daphne-specific data (config, RAM saves). The VLDP video path is controlled separately by the framefile first line.
 
 ### Common path mistakes in the framefile
 
