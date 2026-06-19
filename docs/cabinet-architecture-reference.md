@@ -329,14 +329,14 @@ This writes `rom_path` under `system_overrides` in `config.json`; that value alw
 regardless of what folders exist on disk.  Use `--emulator` in the same command when the
 system's `Default_Emulator=` also needs to be set for the first time.
 
-> **Daphne+RL ROM layout:** RL "ROMs" for Daphne games are small `.txt` placeholder files
-> (e.g. `J:\Games\Daphne\lair.txt`).  The Daphne.ahk module strips the `.txt` extension
-> and passes the game name (`lair`) to daphne.exe, which reads the actual PCB chip ROMs
-> from its own `roms\` subfolder (`D:\Arcade\Games\Daphne\roms\lair.zip`).  RL never
-> extracts the `.zip` — daphne.exe does.  If RL reports "No valid roms found in the archive
-> lair.zip", the ROM archive is landing in the RL rom path rather than daphne.exe's `roms\`
-> subfolder; the fix is to move `lair.zip` to `D:\Arcade\Games\Daphne\roms\` and create
-> `J:\Games\Daphne\lair.txt` as the RL placeholder.
+> **Daphne+RL ROM layout:** RL "ROMs" for Daphne games are `.txt` **framefile** files
+> (e.g. `J:\Games\Daphne\lair.txt`) — not empty placeholders; they contain video frame
+> timing data.  The Daphne.ahk module passes the full path as `-framefile
+> "J:\Games\Daphne\lair.txt"` to daphne.exe.  Chip ROMs live at
+> `J:\Games\Daphne\roms\<game>.zip` and are found by daphne.exe via
+> `homedir = J:\Games\Daphne` in `Daphne.ini` (not by RL).  If RL reports "No valid roms
+> found in the archive lair.zip", a chip ROM zip is in `J:\Games\Daphne\` instead of
+> `J:\Games\Daphne\roms\` — move it there.  See the [Daphne section](#daphne-laserdisc-games--file-layout-and-configuration) for full details.
 
 > **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
 > `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL

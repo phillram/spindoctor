@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Corrected stale Daphne+RL ROM layout callout in cabinet architecture reference.** The callout in the `generate-config` section incorrectly described `.txt` files as empty placeholders, cited a wrong chip ROM path (`D:\Arcade\Games\Daphne\roms\`), and described the Daphne.ahk module as stripping the extension rather than passing `-framefile`. Updated to match the verified file layout: framefiles are data files (not placeholders), chip ROMs live at `J:\Games\Daphne\roms\<game>.zip` via `homedir = J:\Games\Daphne` in `Daphne.ini`, and the module passes the full `-framefile` path to daphne.exe.
+
 ### Added
 
 - **Daphne LaserDisc file layout documented in cabinet architecture reference.** Covers the three-file-type split (`.txt` framefile in `J:\Games\Daphne\`, chip ROMs in `J:\Games\Daphne\roms\`, VLDP video in `J:\Games\Daphne\vldp\<game>\`), framefile format (first line = relative VLDP path), `homedir` configuration in `Daphne.ini` (must be set to `J:\Games\Daphne` for each game section so daphne.exe finds chip ROMs on J: rather than its own install folder), common path mistakes, and PowerShell bulk-repair commands. ROM storage layout in the directory tree updated to show the Daphne folder structure.
