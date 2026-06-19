@@ -527,3 +527,84 @@ def test_guess_emulator_returns_mame_for_mame_variant_names(tmp_path):
     assert guess_emulator("MAME Atari Classics") == "MAME"
     assert guess_emulator("MAME") == "MAME"
     assert guess_emulator("4-Player Games") == "RetroArch"  # unchanged
+
+
+# ── Daphne-family emulator-family fallback ────────────────────────────────────
+
+def test_daphne_family_new_ini_falls_back_to_daphne_folder(tmp_path):
+    """New INI for a Daphne-family system (e.g. 'American Laser Games') falls
+    back to roms_dir/Daphne when the system-named folder doesn't exist."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "Daphne").mkdir(parents=True)   # J:\Games\Daphne exists
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    generate_rl_system_ini("American Laser Games", cfg)
+
+    emu_ini = rl / "Settings" / "American Laser Games" / "Emulators.ini"
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={roms / 'Daphne'}" in body
+    assert "American Laser Games" not in body.split("Rom_Path=", 1)[1].split("\n")[0]
+
+
+def test_daphne_family_existing_ini_falls_back_to_daphne_folder(tmp_path):
+    """Existing INI with Default_Emulator=Daphne Singe falls back to
+    roms_dir/Daphne when the current Rom_Path doesn't exist."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    (roms / "Daphne").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "American Laser Games" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=Daphne Singe\nRom_Path=J:\\Games\\American Laser Games\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("American Laser Games", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={roms / 'Daphne'}" in body
+    assert "Daphne Singe" in body                    # Default_Emulator preserved
+    assert "J:\\Games\\American Laser Games" not in body
+
+
+def test_daphne_family_existing_ini_preserves_valid_custom_path(tmp_path):
+    """When the existing Rom_Path IS a valid directory, it is preserved even
+    for Daphne-family systems — the fallback only fires when the path is gone."""
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+    custom_alg = tmp_path / "games" / "American Laser Games"
+    custom_alg.mkdir(parents=True)           # ALG folder EXISTS
+    (roms / "Daphne").mkdir(parents=True)
+    (rl / "Settings").mkdir(parents=True)
+    cfg = Config(roms_dir=str(roms), rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    emu_ini = rl / "Settings" / "American Laser Games" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        f"[ROMS]\nDefault_Emulator=Daphne Singe\nRom_Path={custom_alg}\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("American Laser Games", cfg)
+
+    body = emu_ini.read_text(encoding="utf-8")
+    assert f"Rom_Path={custom_alg}" in body           # original path preserved
+    assert str(roms / "Daphne") not in body
+
+
+def test_get_emulator_family_folder_matches_daphne_variants():
+    """_get_emulator_family_folder matches any Daphne-prefix emulator name."""
+    from spindoctor.rocketlauncher import _get_emulator_family_folder
+    assert _get_emulator_family_folder("Daphne") == "Daphne"
+    assert _get_emulator_family_folder("Daphne Singe") == "Daphne"
+    assert _get_emulator_family_folder("Daphne Singe (WoW Action Max)") == "Daphne"
+    assert _get_emulator_family_folder("MAME") is None
+    assert _get_emulator_family_folder("RetroArch") is None

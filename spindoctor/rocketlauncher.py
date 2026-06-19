@@ -105,8 +105,12 @@ EMULATOR_MAP: dict[str, str] = {
     "panasonic 3do": "RetroArch",
     "3do interactive multiplayer": "RetroArch",
     # ── LaserDisc / Daphne-based ───────────────────────────────────────────────
-    # These systems use the Daphne emulator.  The emulator name here must
-    # match the section header in Global Emulators.ini exactly.
+    # These systems use a Daphne-family emulator.  The emulator name must match
+    # the section header in Global Emulators.ini exactly — some cabinets use
+    # "Daphne Singe" or "Daphne Singe (WoW Action Max)" for ALG / WoW Action
+    # Max.  Use `config system set --emulator` to override when that is the
+    # case.  All Daphne-family emulators share the same ROM folder; see
+    # EMULATOR_FAMILY_FOLDERS below for the shared-path fallback logic.
     "daphne": "Daphne",
     "action max": "Daphne",
     "american laser games": "Daphne",
@@ -142,6 +146,43 @@ EMULATOR_MAP: dict[str, str] = {
     "taito type x3": "PCLauncher",
     "nesica": "PCLauncher",
 }
+
+
+# Emulator family → canonical ROM folder name under roms_dir.
+#
+# When a system's own ROM folder (roms_dir/<system_name>) doesn't exist,
+# generate-config falls back to roms_dir/<canonical_folder> when the
+# system's guessed (or existing) emulator name starts with a key in this
+# table.  This is the generic equivalent of the MAME-variant keyword logic:
+# instead of matching "MAME" in the system name we match the emulator name.
+#
+# Use case: "Daphne", "American Laser Games" (Daphne Singe), and
+# "WoW Action Max" (Daphne Singe (WoW Action Max)) all share game content
+# from one directory.  When generate-config runs for "American Laser Games"
+# and J:\Games\American Laser Games doesn't exist, it falls back to
+# J:\Games\Daphne rather than writing a phantom path.
+#
+# Key:   emulator name prefix, lower-case
+# Value: subfolder name under roms_dir to use as the shared ROM location
+EMULATOR_FAMILY_FOLDERS: dict[str, str] = {
+    "daphne": "Daphne",
+}
+
+
+def _get_emulator_family_folder(emulator_name: str) -> Optional[str]:
+    """Return the canonical shared ROM folder for *emulator_name*, or ``None``.
+
+    Checks :data:`EMULATOR_FAMILY_FOLDERS` by lower-case prefix match so that
+    variant names like ``"Daphne Singe"`` and ``"Daphne Singe (WoW Action Max)"``
+    both match the ``"daphne"`` key and return ``"Daphne"``.
+    MAME variants are handled by a separate keyword check in
+    :func:`generate_rl_system_ini` and intentionally have no entry here.
+    """
+    emu_lower = emulator_name.lower()
+    for prefix, canonical in EMULATOR_FAMILY_FOLDERS.items():
+        if emu_lower.startswith(prefix):
+            return canonical
+    return None
 
 
 def guess_emulator(system_name: str) -> str:
@@ -429,8 +470,13 @@ def generate_rl_system_ini(
     ovr = get_system_overrides().get(system_name, {})
     if isinstance(ovr.get("rom_path"), str) and ovr["rom_path"]:
         rom_path = ovr["rom_path"]
+        _natural_rom_path = rom_path
     else:
         rom_path = str(Path(config.roms_dir) / system_name)
+        # Track the system-derived path before any fallback so that existing-INI
+        # guards can test whether the system has its own folder, independently of
+        # whatever family fallback we may apply below.
+        _natural_rom_path = rom_path
         # MAME-variant system names (e.g. "MAME (Vector)", "MAME Atari
         # Classics") never have their own ROM folder — all ROMs live in the
         # main MAME folder.  Fall back to roms_dir/MAME when the
@@ -442,6 +488,16 @@ def generate_rl_system_ini(
             mame_path = str(Path(config.roms_dir) / "MAME")
             if Path(mame_path).exists():
                 rom_path = mame_path
+        # Generic emulator-family fallback: when the system's emulator maps to
+        # a shared canonical folder (e.g. "American Laser Games" → emulator
+        # "Daphne Singe" → canonical "Daphne"), use that folder when the
+        # system-named folder doesn't exist but the canonical one does.
+        if not Path(rom_path).exists():
+            _new_family = _get_emulator_family_folder(guess_emulator(system_name))
+            if _new_family:
+                _new_family_path = str(Path(config.roms_dir) / _new_family)
+                if Path(_new_family_path).exists():
+                    rom_path = _new_family_path
     emulator = guess_emulator(system_name)
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
     layout = detect_rl_layout(settings_dir, system_name)
@@ -460,7 +516,7 @@ def generate_rl_system_ini(
         _skip_update = False
         if not ovr.get("rom_path") and emu_ini.exists() and not output_base:
             _current = _read_rom_path_from_ini(emu_ini)
-            if _current and Path(_current).is_dir() and not Path(rom_path).exists():
+            if _current and Path(_current).is_dir() and not Path(_natural_rom_path).exists():
                 _skip_update = True
             if not _skip_update:
                 _existing_emu = _read_default_emulator_from_ini(emu_ini)
@@ -482,6 +538,14 @@ def generate_rl_system_ini(
                         _mame_fallback = str(Path(config.roms_dir) / "MAME")
                         if Path(_mame_fallback).exists():
                             rom_path = _mame_fallback
+                # Generic emulator-family fallback (e.g. existing ini has
+                # Default_Emulator=Daphne Singe → fall back to roms_dir/Daphne).
+                if not _skip_update and not Path(rom_path).exists() and _existing_emu:
+                    _folder_family = _get_emulator_family_folder(_existing_emu)
+                    if _folder_family:
+                        _folder_family_path = str(Path(config.roms_dir) / _folder_family)
+                        if Path(_folder_family_path).exists():
+                            rom_path = _folder_family_path
         if not _skip_update:
             if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
                 emu_ini.write_text("\n".join([
@@ -501,7 +565,7 @@ def generate_rl_system_ini(
         _skip_update_flat = False
         if not ovr.get("rom_path") and flat_ini.exists() and not output_base:
             _current_flat = _read_rom_path_from_ini(flat_ini)
-            if _current_flat and Path(_current_flat).is_dir() and not Path(rom_path).exists():
+            if _current_flat and Path(_current_flat).is_dir() and not Path(_natural_rom_path).exists():
                 _skip_update_flat = True
             if not _skip_update_flat:
                 _existing_emu_flat = _read_default_emulator_from_ini(flat_ini)
@@ -516,6 +580,13 @@ def generate_rl_system_ini(
                         _mame_fallback_flat = str(Path(config.roms_dir) / "MAME")
                         if Path(_mame_fallback_flat).exists():
                             rom_path = _mame_fallback_flat
+                # Generic emulator-family fallback for flat-layout INIs.
+                if not _skip_update_flat and not Path(rom_path).exists() and _existing_emu_flat:
+                    _flat_family = _get_emulator_family_folder(_existing_emu_flat)
+                    if _flat_family:
+                        _flat_family_path = str(Path(config.roms_dir) / _flat_family)
+                        if Path(_flat_family_path).exists():
+                            rom_path = _flat_family_path
         if not _skip_update_flat:
             if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
                 flat_ini.write_text("\n".join([
