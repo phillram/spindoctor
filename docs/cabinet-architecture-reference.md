@@ -276,41 +276,54 @@ SpinDoctor writes **both** files for new systems so the cabinet works regardless
 layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Path=` update
 only — all other keys are preserved.
 
-**MAME variant systems share a single ROM folder.** This cabinet has multiple MAME-derived
-systems (`MAME (Vector)`, `MAME Atari Classics`, `4-Player Games`, etc.) that all share
-`J:\Games\MAME` rather than each having their own sibling folder.  SpinDoctor applies a
-three-tier strategy when running `generate-config` for such systems:
+**Some emulator families share a single ROM folder.** This cabinet has two known families:
 
-1. **System name contains "MAME" (new file):** `generate-config` derives the initial
-   `Rom_Path` as `roms_dir\MAME` (not `roms_dir\<SystemName>`) when the variant folder
-   doesn't exist but `roms_dir\MAME` does.  The `Default_Emulator` is also inferred as
-   `MAME`.  This handles `MAME (Vector)`, `MAME Atari Classics`, etc. on first run.
+| Family | Shared folder | Systems | Emulators |
+|--------|--------------|---------|-----------|
+| MAME | `J:\Games\MAME` | MAME (Vector), MAME Atari Classics, 4-Player Games, … | MAME, MAME (XBOX 4P DSW), … |
+| Daphne | `J:\Games\Daphne` | Daphne, American Laser Games, WoW Action Max | Daphne, Daphne Singe, Daphne Singe (WoW Action Max) |
 
-2. **Existing file has a MAME-family `Default_Emulator`:**
-   - **Relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI): resolved from the
-     RL root directory (how RocketLauncher itself resolves it on Windows). If the resolved
-     directory exists, the path is preserved (`preserved (MAME emulator)` in the dry-run
-     table). If the directory no longer exists — e.g. ROMs were moved from D: to J: after
-     the backup was taken — the path is replaced with `roms_dir\MAME`.
-   - **Absolute `Rom_Path` that doesn't exist** (e.g. `J:\Games\4-Player Games` after a
-     restore from an old backup): replaced with `roms_dir\MAME` if that folder exists.
-     This covers non-MAME-named systems like `4-Player Games` whose emulator is
-     `MAME (XBOX 4P DSW)`.
+SpinDoctor applies a three-tier strategy when running `generate-config` for these systems:
 
-3. **Existing file has a valid absolute `Rom_Path`:** the original filesystem-existence
-   guard fires when the existing path is a real directory but the computed new path does
-   not exist (`preserved (custom path)` in the dry-run table).
+1. **No existing INI (new file):** `generate-config` derives `Rom_Path` as the system-named
+   folder first. If that folder doesn't exist, it checks whether the system's emulator
+   belongs to a known family (MAME or Daphne) and falls back to that family's shared folder
+   when it exists.  Examples:
+   - `MAME (Vector)` → `roms_dir\MAME` (MAME keyword in system name)
+   - `American Laser Games` → emulator `Daphne` → `roms_dir\Daphne`
+
+2. **Existing file with `Default_Emulator` in a known family:**
+   - **MAME family — relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI):
+     resolved from the RL root directory.  Preserved if the resolved directory exists;
+     replaced with `roms_dir\MAME` if it has gone stale (ROMs moved from D: to J:).
+   - **Any family — absolute `Rom_Path` that doesn't exist:** replaced with the family's
+     shared folder if that folder exists.  Covers cases like `J:\Games\American Laser Games`
+     appearing in an old backup when ROMs actually live in `J:\Games\Daphne`.
+
+3. **Existing file has a valid absolute `Rom_Path`:** the filesystem-existence guard fires
+   — the existing path is a real directory but the system-derived path does not exist —
+   so the file is left unchanged (`preserved (custom path)` in the dry-run table).
 
 For a permanent explicit override that survives any restore, use `config system set --rom-path`:
 
 ```bat
 spindoctor config system set "MAME (Vector)" --rom-path "J:\Games\MAME"
 spindoctor config system set "4-Player Games" --rom-path "J:\Games\MAME"
+spindoctor config system set "American Laser Games" --rom-path "J:\Games\Daphne"
 ```
 
 This writes `rom_path` under `system_overrides` in `config.json`; that value always wins
 regardless of what folders exist on disk.  Use `--emulator` in the same command when the
 system's `Default_Emulator=` also needs to be set for the first time.
+
+> **Daphne+RL ROM layout:** RL "ROMs" for Daphne games are small `.txt` placeholder files
+> (e.g. `J:\Games\Daphne\lair.txt`).  The Daphne.ahk module strips the `.txt` extension
+> and passes the game name (`lair`) to daphne.exe, which reads the actual PCB chip ROMs
+> from its own `roms\` subfolder (`D:\Arcade\Games\Daphne\roms\lair.zip`).  RL never
+> extracts the `.zip` — daphne.exe does.  If RL reports "No valid roms found in the archive
+> lair.zip", the ROM archive is landing in the RL rom path rather than daphne.exe's `roms\`
+> subfolder; the fix is to move `lair.zip` to `D:\Arcade\Games\Daphne\roms\` and create
+> `J:\Games\Daphne\lair.txt` as the RL placeholder.
 
 > **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
 > `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL

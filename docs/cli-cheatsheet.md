@@ -628,9 +628,10 @@ spindoctor config system list
 spindoctor config system set "Sony Playstation 7" --screenscraper-id 999 --rom-extensions ps7,iso --layout per-game-folder --emulator RPCS7
 
 :: Fix emulator + ROM path for a system SpinDoctor doesn't natively know
-spindoctor config system set "Panasonic 3DO" --emulator RetroArch --rom-path "J:\Games\3DO"
-spindoctor config system set "Daphne"        --emulator Daphne    --rom-path "J:\Games\Daphne"
-spindoctor config system set "MAME (Vector)" --rom-path "J:\Games\MAME"
+spindoctor config system set "Panasonic 3DO"       --emulator RetroArch      --rom-path "J:\Games\3DO"
+spindoctor config system set "Daphne"              --emulator Daphne         --rom-path "J:\Games\Daphne"
+spindoctor config system set "American Laser Games" --emulator "Daphne Singe" --rom-path "J:\Games\Daphne"
+spindoctor config system set "MAME (Vector)"       --rom-path "J:\Games\MAME"
 spindoctor config system clear "Sony Playstation 7"
 
 :: Test credentials without saving — useful before committing new values
