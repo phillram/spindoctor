@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Daphne LaserDisc file layout documented in cabinet architecture reference.** Covers the three-file-type split (`.txt` framefile in `J:\Games\Daphne\`, chip ROMs in `J:\Games\Daphne\roms\`, VLDP video in `J:\Games\Daphne\vldp\<game>\`), framefile format (first line = relative VLDP path), `homedir` configuration in `Daphne.ini` (must be set to `J:\Games\Daphne` for each game section so daphne.exe finds chip ROMs on J: rather than its own install folder), common path mistakes, and PowerShell bulk-repair commands. ROM storage layout in the directory tree updated to show the Daphne folder structure.
+
 - **`config system set --rom-path PATH`** — new flag that permanently pins the ROM folder path for a system in `config.json`. `generate-config` now uses this value as `Rom_Path=` instead of deriving `roms_dir\<SystemName>`. Fixes "Can't find Rom in any rom_paths provided" for systems whose ROM folder name doesn't match the HyperSpin system name (e.g. "Panasonic 3DO" with ROMs in `J:\Games\3DO`, or any Daphne-based system). The override survives drive migrations and RL config restores. CLI: `spindoctor config system set "<System>" --emulator <Name> --rom-path <Path>`.
 
 - **GUI: ROM folder path field in Per-system overrides form.** The system override panel in the Systems tab now includes a "ROM folder path" entry. **Load current values** populates it from the saved override; **Save override** passes `--rom-path` to the CLI. Pairs with the existing Emulator field to configure non-standard systems without touching source code.
