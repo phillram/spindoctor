@@ -326,12 +326,19 @@ spindoctor generate-config --overwrite-global --apply     :: replace an existing
 
 **What changes for existing systems:** only `Rom_Path=` is updated in-place. `Default_Emulator`, `Emu_Path`, `Module`, `Pause_Save_State_Keys`, and every other key are preserved exactly as set by HyperHQ / RLUI. This means cabinets with non-standard emulators (SSF for Sega Saturn, Mednafen for TurboGrafx-16, NullDC/Demul for Dreamcast, ZiNc, etc.) are unaffected — only the ROM path changes.
 
-**Systems that share a ROM folder** (e.g. `MAME (Vector)`, `MAME Atari Classics`, `4-Player Games`) are handled by a cascade of guards:
+**Systems that share a ROM folder** are handled by a cascade of guards.  Two known families on this cabinet:
 
-- **System name contains "MAME" (new or missing file):** SpinDoctor infers `Default_Emulator=MAME` and sets `Rom_Path` to `roms_dir\MAME` (not `roms_dir\<SystemName>`) when the variant folder doesn't exist.
-- **Existing file declares a MAME-family `Default_Emulator` with a relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI): the path is resolved from the RL root directory (how RocketLauncher itself resolves it). If the resolved directory exists the path is preserved (dry-run shows `preserved (MAME emulator)`); if it no longer resolves (e.g. ROMs moved to a different drive since the backup), it is replaced with `roms_dir\MAME`.
-- **Existing file declares a MAME-family `Default_Emulator` with an absolute `Rom_Path` that no longer exists** (e.g. after a restore from an old backup): SpinDoctor replaces it with `roms_dir\MAME` if that folder exists. This covers non-MAME-named systems like `4-Player Games` that use `MAME (XBOX 4P DSW)` as their emulator.
-- **Existing file has a valid absolute `Rom_Path`:** if that path is a real directory but the computed new path does not exist, the file is left untouched. Dry-run shows `preserved (custom path)`.
+| Family | Shared folder | Example systems |
+|--------|--------------|-----------------|
+| MAME | `J:\Games\MAME` | MAME (Vector), MAME Atari Classics, 4-Player Games |
+| Daphne | `J:\Games\Daphne` | Daphne, American Laser Games, WoW Action Max |
+
+- **System name contains "MAME" (new or missing file):** SpinDoctor infers `Default_Emulator=MAME` and sets `Rom_Path` to `roms_dir\MAME` when the variant folder doesn't exist.
+- **Emulator-family fallback (new or missing file):** when the system-named folder doesn't exist and the guessed emulator belongs to a known family (e.g. `American Laser Games` → emulator `Daphne` → family folder `Daphne`), SpinDoctor falls back to `roms_dir\Daphne` rather than writing a phantom path.
+- **Existing file declares a MAME-family `Default_Emulator` with a relative `Rom_Path`** (e.g. `..\Games\MAME` as written by RLUI): the path is resolved from the RL root directory. Preserved if the resolved directory exists (`preserved (MAME emulator)`); replaced with `roms_dir\MAME` if it has gone stale.
+- **Existing file declares a MAME-family `Default_Emulator` with an absolute `Rom_Path` that no longer exists**: replaced with `roms_dir\MAME`. Covers non-MAME-named systems like `4-Player Games` whose emulator is `MAME (XBOX 4P DSW)`.
+- **Existing file declares a Daphne-family `Default_Emulator` with an absolute `Rom_Path` that no longer exists** (e.g. `J:\Games\American Laser Games` after a restore): replaced with `roms_dir\Daphne` if that folder exists.
+- **Existing file has a valid absolute `Rom_Path`:** if that path is a real directory but the system-derived path does not exist, the file is left untouched. Dry-run shows `preserved (custom path)`.
 
 For an explicit permanent override that survives any restore, use `config system set --rom-path` or `--emulator` — see [Configuration → system_overrides](configuration.md#per-system-overrides).
 
