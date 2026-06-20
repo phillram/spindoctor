@@ -1166,6 +1166,30 @@ which controls active-browsing music at the top-level system wheel.
 
 **Zero-byte detection** — `audit.check_media()` uses `stat().st_size > 0` (not just `exists()`) to check each slot. A 0-byte file — left behind when a download completed with an empty HTTP 200 body or was interrupted just before content arrived — is treated identically to an absent file: it appears in the audit's missing-media list and causes `fetch-media` to re-download the slot on the next run. Without this check, a zero-byte stub would permanently satisfy the presence test and the slot would silently stay broken.
 
+### Main Menu wheel image lookup — known failure modes
+
+HyperSpin resolves a system's wheel graphic in `Media\Main Menu\Images\Wheel\` by matching the filename stem (without `.png`) against the system's `<game name="…"/>` entry in `Databases\Main Menu\Main Menu.xml`. **The match is effectively case-sensitive** even on Windows — a casing discrepancy between the XML entry and the image filename causes HyperSpin to intermittently fall back to rendering the system name as plain text instead of the image. (The filesystem finds the file case-insensitively, but HyperSpin's internal cache key is case-exact, so the lookup succeeds on some passes and fails on others.)
+
+**Fix:** rename the wheel image file to match the XML entry name exactly, character for character.
+
+Common examples seen on this cabinet:
+
+| XML entry | Mismatched filename | Correct filename |
+|---|---|---|
+| `Colecovision` | `ColecoVision.png` | `Colecovision.png` |
+| `NEC Turbografx-CD` | `NEC TurboGrafx-CD.png` | `NEC Turbografx-CD.png` |
+| `Mugen` | `MUGEN.png` | `Mugen.png` |
+
+**Duplicate wheels from duplicate XML entries** — if `Main Menu.xml` contains two `<game>` entries whose names differ only by casing or a punctuation variant (e.g. `Atari 8-Bit` / `Atari 8-bit`, `Doujin Games` / `Doujin Soft`, `Panasonic 3DO` / `Panasonic 3D0`), HyperSpin renders both as separate wheel items. Typically one entry matches the database folder (loads games correctly) while the other matches the wheel image filename (shows the graphic) — neither item is fully functional on its own. The fix is to remove the incorrect variant, keeping whichever name matches both `Databases\<name>\<name>.xml` and the wheel image file.
+
+The same name must match across three places to avoid split or broken wheels:
+
+```
+Databases\Main Menu\Main Menu.xml    <game name="Foo Bar"/>
+Databases\Foo Bar\Foo Bar.xml        ← folder and XML filename both match
+Media\Main Menu\Images\Wheel\Foo Bar.png  ← image filename matches exactly
+```
+
 ### Scraper provider comparison
 
 SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They have very different capabilities and coverage — understanding the difference is important for diagnosing gaps.
