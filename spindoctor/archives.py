@@ -169,6 +169,9 @@ def _sevenz_entries(path: Path) -> list[dict[str, Any]]:
         def flush(self) -> None:
             pass
 
+        def close(self) -> None:
+            pass
+
         def size(self) -> int:
             return self.length
 
