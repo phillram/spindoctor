@@ -604,8 +604,8 @@ D:\Arcade\Emulators\WoW Action Max\data\
 ├── sound\                            ← Daphne engine sound samples
 │   └── saveme.wav  (+ others)        ← copy from D:\Arcade\Emulators\Daphne\sound\
 └── singe\
-    ├── ActionMax\                    ← shared emulator assets + per-game sprite
-    │   ├── Emulator.singe            ← master emulator script; stays here
+    ├── ActionMax\                    ← ALL engine assets live here; loaded by Emulator.singe
+    │   ├── Emulator.singe            ← master emulator script (loaded via dofile from CWD)
     │   ├── sprite_LightOn.png        ┐
     │   ├── sprite_LightOff.png       │ shared across all games
     │   ├── sprite_ActionMax.png      │
@@ -618,23 +618,30 @@ D:\Arcade\Emulators\WoW Action Max\data\
     │   ├── sound_Gunshot.wav         │
     │   ├── sound_GoodHit.wav         │
     │   ├── sound_BadHit.wav          │
-    │   └── sound_GameOver.wav        ┘
+    │   ├── sound_GameOver.wav        ┘
+    │   ├── font_BlueStone.ttf        ┐
+    │   ├── font_chemrea.ttf          │ fonts used by Emulator.singe
+    │   └── font_*.ttf                ┘ (5 total; names visible in daphne_log.txt on failure)
     └── Singe\
         └── Framework.singe           ← Singe engine framework; must exist or game silently fails
 ```
 
-> **Shared vs. game-specific assets**: Five sprites and all seven sounds are shared across every WoW Action Max game and live in `singe\ActionMax\`. Each game also has one game-specific sprite named `sprite_<GameName>.png` (e.g. `sprite_BlueThunder.png`, `sprite_Hydrosub2021.png`) that also lives in `singe\ActionMax\` — **not** in the ROM directory on J:. If these files are deleted, every game will show sprite/sound errors in `daphne_log.txt` but may still partially run.
+> **Why all assets load from D:, not J:** Every per-game `.singe` script calls `dofile("singe/ActionMax/Emulator.singe")`. The `dofile()` path is relative to **daphne.exe's working directory** (D:\Arcade\Emulators\WoW Action Max\data\), not to where the `.singe` script lives. `Emulator.singe` then loads all sprites, sounds, and fonts using the same `singe/ActionMax/<filename>` relative prefix — again from D:. This means all engine assets **must** physically live in `singe\ActionMax\` on D:. You cannot redirect them to J: without editing `Emulator.singe` to use absolute paths.
+>
+> The per-game `.singe` scripts are the only thing that safely lives on J:. They contain only the game-specific config variables and the single `dofile()` call.
 
 ### ROM directory layout (J: drive)
 
 ```
 J:\Games\WoW Action Max\
-├── 38AmbushAlley.txt            ← framefile (video frame timing data)
-├── 38AmbushAlley.singe          ← game Singe script (moved here from emulator singe dir)
-├── PopsGhostly.txt
-├── PopsGhostly.singe
-└── <video files per game>
+├── <GameName>.singe             ← per-game script: config vars + dofile() call only
+├── <GameName>.txt               ← per-game framefile (video frame timing data)
+├── video_<GameName>.m2v         ┐
+├── video_<GameName>.ogg         │ per-game video content
+└── video_<GameName>.dat         ┘
 ```
+
+Sprites, sounds, fonts, and `Emulator.singe` do **not** belong on J:. Even if copied there, Daphne will not find them — it always resolves `singe/ActionMax/` relative to daphne.exe on D:.
 
 ### Global Emulators.ini entry
 
@@ -662,18 +669,21 @@ This means if RL finds a `.bat` file in the ROM folder (e.g. `38AmbushAlley.bat`
 | 1 | RL error: "Could not find your emulator/application" | `Emu_Path` in `Global Emulators.ini` pointed into `Games\` instead of `Emulators\` | Set `Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe` |
 | 2 | Daphne error dialog: "Loading 'saveme.wav' failed / Sound initialization failed" | `sound\` folder missing from the emulator `data\` directory | Copy `D:\Arcade\Emulators\Daphne\sound\` → `D:\Arcade\Emulators\WoW Action Max\data\sound\` |
 | 3 | RL fade-in completes, then RL errors "waiting for window DAPHNE" with no Daphne dialog | `Framework.singe` missing from `singe\Singe\`; Daphne exits silently | Place `Framework.singe` at `D:\Arcade\Emulators\WoW Action Max\data\singe\Singe\Framework.singe` |
+| 4 | `SINGE: Unable to load sprite singe/ActionMax/...` or `Could not open singe/ActionMax/sound_...` | Sprites, sounds, or fonts not present in `D:\...\singe\ActionMax\` (e.g. deleted or only on J:) | `xcopy "J:\Games\WoW Action Max\sprite_*.png" "D:\Arcade\Emulators\WoW Action Max\data\singe\ActionMax\" /Y` and same for `sound_*.wav` and `font_*.ttf` |
 
 Failure mode 3 produces **no Daphne error dialog** — Daphne simply exits. Temporarily disable RL Fade to see bare Daphne output when diagnosing it.
 
-### SingePathUpdate
+Failure mode 4 typically follows an attempt to "clean up" files from D: under the assumption they belong on J: with the ROMs. They do not — all `singe/ActionMax/` assets are emulator-side by design.
 
-If the `.singe` game scripts contain hardcoded paths from a prior install location, the Daphne Singe module can rewrite them automatically. Set `SingePathUpdate=true` in:
+### SingePathUpdate — not useful for WoW Action Max
 
-```
-D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini
-```
+The Daphne Singe RL module has a `SingePathUpdate` feature (`Daphne Singe.ini`) that rewrites hardcoded paths inside `.singe` files to match the current `romPath`. This does **not** help WoW Action Max.
 
-Launch any WoW Action Max game once — the module rewrites all path references in `Emulator.singe` and the game `.singe` to use the current `romPath` (`J:/Games/WoW Action Max/`). Set `SingePathUpdate=false` again afterwards.
+The per-game `.singe` scripts contain no absolute paths — only `dofile("singe/ActionMax/Emulator.singe")`, which is a CWD-relative path that is correct by design. `SingePathUpdate` would rewrite it to an absolute J: path, which would break the dofile() call and is not what you want.
+
+`Emulator.singe` similarly uses `singe/ActionMax/<asset>` relative paths throughout. These must stay as-is, resolving from daphne.exe's working directory on D:.
+
+**Leave `SingePathUpdate=false` for WoW Action Max.**
 
 ---
 
