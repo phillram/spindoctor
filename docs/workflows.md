@@ -265,7 +265,7 @@ spindoctor migrate --target J:\ --include roms --apply
 spindoctor generate-config --apply
 ```
 
-GUI path: **Migration tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Run migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Run generate-config**.
+GUI path: **Migration tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
@@ -281,19 +281,19 @@ spindoctor config set roms_dir J:\Games
 spindoctor generate-config --apply
 ```
 
-GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → tick Apply → click **Run generate-config**.
+GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → tick Apply → click **Update RocketLauncher INIs**.
 
 `generate-config --apply` updates `Rom_Path=` in every `<RocketLauncher>\Settings\<SystemName>\Emulators.ini`. It performs a surgical in-place update: only `Rom_Path=` changes. `Default_Emulator`, `Emu_Path`, `Module`, pause/save-state keys, and any other emulator settings are preserved exactly as you configured them in HyperHQ / RLUI.
 
 > **Emulators don't need to move.** `generate-config` only updates where your ROMs live. Emulator paths (`Emu_Path=`) in your `Global Emulators.ini` are separate and are never touched. If your emulators are still on D:\ and only your ROMs moved to J:\, no emulator configuration changes are needed.
 
-> **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup…** button in the GUI (Step 4: Metadata & Media → next to Run generate-config), or re-run `generate-config --apply` after correcting `roms_dir`.
+> **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup…** button in the GUI (Step 4: Metadata & Media → next to **Update RocketLauncher INIs**), or re-run `generate-config --apply` after correcting `roms_dir`.
 
 ### Things `migrate` does *not* move
 
 Be aware before assuming the new drive / PC is fully wired up:
 
-- **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Migration tab → Step 5 → Run generate-config) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
+- **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Migration tab → Step 5 → **Update RocketLauncher INIs**) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
 - **Emulator-internal paths.** RetroArch's `retroarch.cfg`, PCSX2's INI, Dolphin's user folder, etc. often hardcode absolute paths to BIOS, save folders, or shaders. SpinDoctor moves the emulator's files but does not rewrite those internal configs. Re-test each emulator and adjust.
 - **BIOS files outside `emulators_dir`.** Only included if they live under `<emulators_dir>` and you `--include emulators`.
 - **Hardcoded paths inside HyperSpin XML.** SpinDoctor preserves `<game>` content verbatim. If a previous tool wrote absolute Windows paths into the XML, those are not rewritten.
