@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **Daphne Singe (WoW Action Max) documented in cabinet architecture reference.** Covers the custom Daphne Singe 1.0.10 build layout (emulator on D:, game files on J:), the three required file locations (`sound\` folder, `singe\Singe\Framework.singe`, and per-game `.singe` + `.txt` in `J:\Games\WoW Action Max\`), how the Daphne Singe RL module ignores the found ROM extension and always constructs its own `-framefile`/`-script` command line, and the three failure modes in launch order with distinct symptoms and fixes.
+
 - **Phoenix (Atari Jaguar) emulator documented in cabinet architecture reference.** Covers the `phoenix.config.xml` launch mechanism (RL rewrites `attach` + `<Dump>` paths before each launch), the root cause of the *"You must select CARTRIDGE"* error (Phoenix only auto-selects a game if `attach` matches a `<Dump>` entry path exactly — J: paths failed because the library was built from D:), and the fix (RL module rewrites `D:/Arcade/Games/Atari Jaguar/` → `J:/Games/Atari Jaguar/` in all Dump entries on each launch). Reference copy of the customised `Phoenix.ahk` RL module added to `spindoctor/assets/archive/`.
 
 ### Fixed

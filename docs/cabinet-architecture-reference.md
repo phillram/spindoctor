@@ -592,6 +592,76 @@ Always preview before running the bulk replace, and always edit one file first t
 
 ---
 
+## Daphne Singe (WoW Action Max) — File Layout and Configuration
+
+WoW Action Max uses a **custom build of Daphne Singe 1.0.10** housed in its own emulator folder, separate from the standard Daphne install. Three locations must all be correct for a game to launch; each missing piece produces a distinct failure.
+
+### Emulator directory layout
+
+```
+D:\Arcade\Emulators\WoW Action Max\data\
+├── daphne.exe                   ← custom Daphne Singe 1.0.10 build
+├── sound\                       ← Daphne engine sound samples
+│   └── saveme.wav  (+ others)   ← copy from D:\Arcade\Emulators\Daphne\sound\
+└── singe\
+    ├── ActionMax\
+    │   └── Emulator.singe       ← master emulator script; stays here
+    └── Singe\
+        └── Framework.singe      ← Singe engine framework; must exist or game silently fails
+```
+
+### ROM directory layout (J: drive)
+
+```
+J:\Games\WoW Action Max\
+├── 38AmbushAlley.txt            ← framefile (video frame timing data)
+├── 38AmbushAlley.singe          ← game Singe script (moved here from emulator singe dir)
+├── PopsGhostly.txt
+├── PopsGhostly.singe
+└── <video files per game>
+```
+
+### Global Emulators.ini entry
+
+```ini
+[Daphne Singe (WoW Action Max)]
+Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe
+Rom_Extension=singe|bat|ogg|mpeg|mpg
+Module=..\Daphne Singe\Daphne Singe.ahk
+```
+
+### How the module launches a game
+
+The Daphne Singe module **ignores the actual file extension RL found** and always constructs its own command line:
+
+```
+daphne.exe singe vldp ... -framefile "<romPath>\<romName>.txt" -script "<romPath>\<romName>.singe"
+```
+
+This means if RL finds a `.bat` file in the ROM folder (e.g. `38AmbushAlley.bat`), it uses `38AmbushAlley` as the ROM name but the module still looks for `38AmbushAlley.txt` and `38AmbushAlley.singe` at the same path. The `.bat` content is never executed.
+
+### Three failure modes in launch order
+
+| # | Symptom | Cause | Fix |
+|---|---------|-------|-----|
+| 1 | RL error: "Could not find your emulator/application" | `Emu_Path` in `Global Emulators.ini` pointed into `Games\` instead of `Emulators\` | Set `Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe` |
+| 2 | Daphne error dialog: "Loading 'saveme.wav' failed / Sound initialization failed" | `sound\` folder missing from the emulator `data\` directory | Copy `D:\Arcade\Emulators\Daphne\sound\` → `D:\Arcade\Emulators\WoW Action Max\data\sound\` |
+| 3 | RL fade-in completes, then RL errors "waiting for window DAPHNE" with no Daphne dialog | `Framework.singe` missing from `singe\Singe\`; Daphne exits silently | Place `Framework.singe` at `D:\Arcade\Emulators\WoW Action Max\data\singe\Singe\Framework.singe` |
+
+Failure mode 3 produces **no Daphne error dialog** — Daphne simply exits. Temporarily disable RL Fade to see bare Daphne output when diagnosing it.
+
+### SingePathUpdate
+
+If the `.singe` game scripts contain hardcoded paths from a prior install location, the Daphne Singe module can rewrite them automatically. Set `SingePathUpdate=true` in:
+
+```
+D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini
+```
+
+Launch any WoW Action Max game once — the module rewrites all path references in `Emulator.singe` and the game `.singe` to use the current `romPath` (`J:/Games/WoW Action Max/`). Set `SingePathUpdate=false` again afterwards.
+
+---
+
 ## Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes
 
 ### Emulator version on this cabinet
