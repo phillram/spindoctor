@@ -311,6 +311,37 @@ class HyperspinDatabase:
             return True
         return False
 
+    def reorder_games(self, names: list) -> None:
+        """Reorder games to match the given sequence of ROM names.
+
+        Games not present in *names* are appended after the ordered entries
+        so no entries are silently dropped.  Also physically reorders the
+        XML elements so the saved file reflects the new order.
+        """
+        self._ensure_loaded()
+        name_set = set(names)
+        new_games: dict = {}
+        for n in names:
+            if n in self._games:
+                new_games[n] = self._games[n]
+        for n, g in self._games.items():
+            if n not in name_set:
+                new_games[n] = g
+        self._games = new_games
+
+        if self._root is not None and self._game_elements:
+            ordered_els = []
+            for n in names:
+                if n in self._game_elements:
+                    ordered_els.append(self._game_elements[n])
+            for n, el in self._game_elements.items():
+                if n not in name_set:
+                    ordered_els.append(el)
+            for el in ordered_els:
+                self._root.remove(el)
+            for el in ordered_els:
+                self._root.append(el)
+
     def reset_games(self) -> None:
         """Drop every game from both the dict and the parsed XML tree.
 
