@@ -600,15 +600,30 @@ WoW Action Max uses a **custom build of Daphne Singe 1.0.10** housed in its own 
 
 ```
 D:\Arcade\Emulators\WoW Action Max\data\
-├── daphne.exe                   ← custom Daphne Singe 1.0.10 build
-├── sound\                       ← Daphne engine sound samples
-│   └── saveme.wav  (+ others)   ← copy from D:\Arcade\Emulators\Daphne\sound\
+├── daphne.exe                        ← custom Daphne Singe 1.0.10 build
+├── sound\                            ← Daphne engine sound samples
+│   └── saveme.wav  (+ others)        ← copy from D:\Arcade\Emulators\Daphne\sound\
 └── singe\
-    ├── ActionMax\
-    │   └── Emulator.singe       ← master emulator script; stays here
+    ├── ActionMax\                    ← shared emulator assets + per-game sprite
+    │   ├── Emulator.singe            ← master emulator script; stays here
+    │   ├── sprite_LightOn.png        ┐
+    │   ├── sprite_LightOff.png       │ shared across all games
+    │   ├── sprite_ActionMax.png      │
+    │   ├── sprite_Crosshair.png      │
+    │   ├── sprite_Bullet.png         ┘
+    │   ├── sprite_<GameName>.png     ← one per game (e.g. sprite_PopsGhostly.png)
+    │   ├── sound_ActionMax.wav       ┐
+    │   ├── sound_ASteadyAimIsCritical.wav │
+    │   ├── sound_GetReadyForAction.wav    │ shared across all games
+    │   ├── sound_Gunshot.wav         │
+    │   ├── sound_GoodHit.wav         │
+    │   ├── sound_BadHit.wav          │
+    │   └── sound_GameOver.wav        ┘
     └── Singe\
-        └── Framework.singe      ← Singe engine framework; must exist or game silently fails
+        └── Framework.singe           ← Singe engine framework; must exist or game silently fails
 ```
+
+> **Shared vs. game-specific assets**: Five sprites and all seven sounds are shared across every WoW Action Max game and live in `singe\ActionMax\`. Each game also has one game-specific sprite named `sprite_<GameName>.png` (e.g. `sprite_BlueThunder.png`, `sprite_Hydrosub2021.png`) that also lives in `singe\ActionMax\` — **not** in the ROM directory on J:. If these files are deleted, every game will show sprite/sound errors in `daphne_log.txt` but may still partially run.
 
 ### ROM directory layout (J: drive)
 
