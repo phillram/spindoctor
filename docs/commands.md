@@ -11,7 +11,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 ## Contents
 
 - [Core library](#core-library) — `systems`, `audit`, `inspect`, `update-db`, `fetch-meta`, `fetch-media`, `media-add`, `media-scan`, `report`, `find-global`
-- [Editing](#editing) — `batch-edit`, `rename`, `clone`
+- [Editing](#editing) — `batch-edit`, `rename`, `clone`, `game`
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
@@ -303,6 +303,66 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 Undo deletes only the copies — the original is untouched.
 
 > **GUI alternative:** the **Systems** tab → **Step 3** wraps clone with the same game dropdown populated from the system's database. See [GUI walkthrough](gui.md).
+
+### `game`
+
+List, remove, or reorder individual games within a system's wheel database (the `<SystemName>.xml` file). All write commands are dry-run by default — pass `--apply` to commit.
+
+#### `game list`
+
+```bat
+spindoctor game list --system "Nintendo 64"
+spindoctor game list --system MAME --verbose
+```
+
+Prints every game in XML (wheel) order with its 1-based position number. `--verbose` adds year, manufacturer, genre, and enabled state.
+
+#### `game remove`
+
+```bat
+spindoctor game remove --system "Nintendo 64" "1080 Snowboarding"
+spindoctor game remove --system MAME "1942" --apply
+spindoctor game remove --system MAME "1942" --apply --verbose
+spindoctor game remove --system MAME "1942" --apply --output-dir D:\Output
+```
+
+Removes a single `<game>` entry from the system XML. **ROM and media files are NOT deleted** — only the database entry disappears, so the game stops showing on the wheel but all files remain on disk. `--verbose` prints the full metadata and database file path before removing.
+
+#### `game move`
+
+```bat
+spindoctor game move --system "Nintendo 64" "Zelda" 1
+spindoctor game move --system MAME "1942" 5 --apply
+spindoctor game move --system MAME "1942" 5 --apply --verbose
+```
+
+Moves a game to a specific 1-based position in the wheel order. HyperSpin displays games in XML element order, so this changes where the game appears on the wheel.
+
+#### `game move-up` / `game move-down`
+
+```bat
+spindoctor game move-up --system MAME "1942"
+spindoctor game move-up --system MAME "1942" --apply
+spindoctor game move-down --system MAME "1942" --apply --verbose
+```
+
+Shifts a game one slot earlier or later in the wheel order.
+
+#### `game sort`
+
+```bat
+spindoctor game sort --system "Nintendo 64"
+spindoctor game sort --system MAME --apply
+spindoctor game sort --system MAME --by name --apply
+spindoctor game sort --system MAME --apply --verbose
+```
+
+Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are ignored so "The Legend of Zelda" sorts under L, matching HyperSpin's own wheel sort convention.
+
+`--by description` (default) — sort by display title (`<description>` field).  
+`--by name` — sort by ROM filename instead.
+
+> **GUI alternative:** the **Systems** tab → **Manage games in a system wheel** panel provides a drag-table equivalent: pick a system, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`. **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 ---
 
