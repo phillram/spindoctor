@@ -10650,6 +10650,353 @@ def clone_cmd(system, game, to_name, display_name, apply_changes, undo_manifest,
     )
 
 
+# ─── game (wheel manager) ─────────────────────────────────────────────────────
+
+@cli.group("game")
+def game_group():
+    """List, remove, or reorder individual games within a system's wheel database."""
+
+
+@game_group.command("list")
+@click.option("--system", "-s", required=True, help="System whose games to list.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show full metadata (year, manufacturer, genre, enabled).")
+def game_list_cmd(system, verbose):
+    """List all games in a system's wheel database with their position.
+
+    \b
+    Examples:
+      spindoctor game list --system "Nintendo 64"
+      spindoctor game list --system MAME --verbose
+    """
+    config = _cfg()
+    _check_config(config)
+    db = load_database(system, config.databases_dir)
+    games = list(db.iter_xml_order())
+    if not games:
+        console.print(f"[yellow]No games found in {system}.[/yellow]")
+        return
+    console.print(f"\n[blue bold]{system}[/blue bold]  ({len(games)} games)\n")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}\n")
+    if verbose:
+        for i, g in enumerate(games, 1):
+            console.print(
+                f"  [cyan]{i:>4}[/cyan]  {escape(g.name)}\n"
+                f"        [dim]Description:[/dim] {escape(g.description)}\n"
+                f"        [dim]Year:[/dim] {escape(g.year)}  "
+                f"[dim]Manufacturer:[/dim] {escape(g.manufacturer)}  "
+                f"[dim]Genre:[/dim] {escape(g.genre)}  "
+                f"[dim]Enabled:[/dim] {escape(g.enabled)}"
+            )
+    else:
+        for i, g in enumerate(games, 1):
+            console.print(
+                f"  [cyan]{i:>4}[/cyan]  {escape(g.name)}"
+                + (f"  [dim]{escape(g.description)}[/dim]" if g.description and g.description != g.name else "")
+            )
+
+
+@game_group.command("remove")
+@click.option("--system", "-s", required=True, help="System to remove the game from.")
+@click.argument("game_name")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the removal. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show full game metadata and file path before removing.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_remove_cmd(system, game_name, apply_changes, verbose, output_dir):
+    """Remove a specific game from a system's wheel database.
+
+    Removes the <game> entry from the system XML.  The ROM and media files
+    are NOT deleted — use this when you want the game gone from the wheel
+    but keep the files on disk.
+
+    \b
+    Examples:
+      spindoctor game remove --system "Nintendo 64" "1080 Snowboarding"
+      spindoctor game remove --system MAME "1942" --apply
+      spindoctor game remove --system MAME "1942" --apply --verbose
+    """
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    db = load_database(system, config.databases_dir)
+    game = db.get(game_name)
+    if game is None:
+        console.print(f"[red]Game not found:[/red] {escape(game_name)} in {escape(system)}")
+        raise SystemExit(1)
+
+    # Determine position for verbose output.
+    games_ordered = list(db.iter_xml_order())
+    position = next((i + 1 for i, g in enumerate(games_ordered) if g.name == game_name), "?")
+
+    console.print(f"\n[blue bold]{system}[/blue bold]")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}")
+
+    if verbose:
+        console.print(
+            f"\n  [red]−[/red] #{position}  {escape(game.name)}\n"
+            f"      [dim]Description:[/dim] {escape(game.description)}\n"
+            f"      [dim]Year:[/dim] {escape(game.year)}  "
+            f"[dim]Manufacturer:[/dim] {escape(game.manufacturer)}  "
+            f"[dim]Genre:[/dim] {escape(game.genre)}  "
+            f"[dim]Enabled:[/dim] {escape(game.enabled)}"
+        )
+    else:
+        console.print(f"  [red]−[/red] #{position}  {escape(game_name)}")
+
+    if apply_changes:
+        db.remove_game(game_name)
+        _tmp = config.effective_atomic_tmp_dir
+        out_base = Path(output_dir) if output_dir else None
+        if out_base:
+            saved = db.save(
+                output_path=out_base / "Databases" / system / f"{system}.xml",
+                backup=False, tmp_dir=_tmp,
+            )
+        else:
+            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+            saved = db.save(backup=config.backup_before_modify,
+                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        console.print(f"  [green]Saved:[/green] {saved}")
+    else:
+        console.print("  [dim](dry run — pass --apply to write)[/dim]")
+
+
+def _game_move_impl(system, game_name, direction_or_pos, apply_changes, verbose, output_dir):
+    """Shared logic for game move / move-up / move-down."""
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    db = load_database(system, config.databases_dir)
+    games = list(db.iter_xml_order())
+    names = [g.name for g in games]
+    total = len(names)
+
+    if game_name not in names:
+        console.print(f"[red]Game not found:[/red] {escape(game_name)} in {escape(system)}")
+        raise SystemExit(1)
+
+    idx = names.index(game_name)
+    current_pos = idx + 1  # 1-based
+
+    if direction_or_pos == "up":
+        if idx == 0:
+            console.print(f"[yellow]{escape(game_name)} is already at position 1.[/yellow]")
+            return
+        new_idx = idx - 1
+    elif direction_or_pos == "down":
+        if idx == total - 1:
+            console.print(f"[yellow]{escape(game_name)} is already at position {total}.[/yellow]")
+            return
+        new_idx = idx + 1
+    else:
+        target = int(direction_or_pos)
+        if not 1 <= target <= total:
+            console.print(f"[red]Position {target} out of range (1–{total}).[/red]")
+            raise SystemExit(1)
+        new_idx = target - 1
+
+    new_pos = new_idx + 1
+    names.pop(idx)
+    names.insert(new_idx, game_name)
+
+    console.print(f"\n[blue bold]{system}[/blue bold]")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}")
+
+    if verbose:
+        game = db.get(game_name)
+        console.print(
+            f"\n  [cyan]↕[/cyan] {escape(game_name)}\n"
+            f"      [dim]Description:[/dim] {escape(game.description)}\n"
+            f"      [dim]Year:[/dim] {escape(game.year)}  "
+            f"[dim]Manufacturer:[/dim] {escape(game.manufacturer)}  "
+            f"[dim]Genre:[/dim] {escape(game.genre)}\n"
+            f"      Position: [yellow]{current_pos}[/yellow] → [green]{new_pos}[/green] of {total}"
+        )
+    else:
+        console.print(f"  [cyan]↕[/cyan] {escape(game_name)}  #{current_pos} → #{new_pos}")
+
+    if apply_changes:
+        db.reorder_games(names)
+        _tmp = config.effective_atomic_tmp_dir
+        out_base = Path(output_dir) if output_dir else None
+        if out_base:
+            saved = db.save(
+                output_path=out_base / "Databases" / system / f"{system}.xml",
+                backup=False, tmp_dir=_tmp,
+            )
+        else:
+            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+            saved = db.save(backup=config.backup_before_modify,
+                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        console.print(f"  [green]Saved:[/green] {saved}")
+    else:
+        console.print("  [dim](dry run — pass --apply to write)[/dim]")
+
+
+@game_group.command("move")
+@click.option("--system", "-s", required=True, help="System containing the game.")
+@click.argument("game_name")
+@click.argument("position", type=int)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the reorder. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show full game metadata and file path.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_move_cmd(system, game_name, position, apply_changes, verbose, output_dir):
+    """Move a game to a specific position in the wheel order.
+
+    Position is 1-based (1 = first on the wheel).
+
+    \b
+    Examples:
+      spindoctor game move --system "Nintendo 64" "Zelda" 1
+      spindoctor game move --system MAME "1942" 5 --apply
+    """
+    _game_move_impl(system, game_name, str(position), apply_changes, verbose, output_dir)
+
+
+@game_group.command("move-up")
+@click.option("--system", "-s", required=True, help="System containing the game.")
+@click.argument("game_name")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the reorder. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show full game metadata and file path.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_move_up_cmd(system, game_name, apply_changes, verbose, output_dir):
+    """Move a game up one position in the wheel order.
+
+    \b
+    Examples:
+      spindoctor game move-up --system MAME "1942"
+      spindoctor game move-up --system MAME "1942" --apply
+    """
+    _game_move_impl(system, game_name, "up", apply_changes, verbose, output_dir)
+
+
+@game_group.command("move-down")
+@click.option("--system", "-s", required=True, help="System containing the game.")
+@click.argument("game_name")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the reorder. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Show full game metadata and file path.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_move_down_cmd(system, game_name, apply_changes, verbose, output_dir):
+    """Move a game down one position in the wheel order.
+
+    \b
+    Examples:
+      spindoctor game move-down --system MAME "1942"
+      spindoctor game move-down --system MAME "1942" --apply
+    """
+    _game_move_impl(system, game_name, "down", apply_changes, verbose, output_dir)
+
+
+@game_group.command("sort")
+@click.option("--system", "-s", required=True, help="System whose games to sort.")
+@click.option("--by", "sort_by", default="description",
+              type=click.Choice(["description", "name"], case_sensitive=False),
+              show_default=True,
+              help="Sort key: 'description' (display title, default) or 'name' (ROM filename).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the sorted order. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print the sorted game list before saving.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
+    """Sort all games in a system's wheel database alphabetically.
+
+    Leading articles (The, A, An) are ignored so "The Legend of Zelda"
+    sorts under L, matching HyperSpin's own wheel sort convention.
+
+    \b
+    Examples:
+      spindoctor game sort --system "Nintendo 64"
+      spindoctor game sort --system MAME --apply
+      spindoctor game sort --system MAME --by name --apply
+    """
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    db = load_database(system, config.databases_dir)
+    games = list(db.iter_xml_order())
+    if not games:
+        console.print(f"[yellow]No games found in {system}.[/yellow]")
+        return
+
+    _ARTICLES = ("the ", "a ", "an ")
+
+    def _sort_key(g):
+        value = (g.description if sort_by == "description" else g.name) or g.name
+        lower = value.lower()
+        for article in _ARTICLES:
+            if lower.startswith(article):
+                value = value[len(article):]
+                break
+        return value.lower()
+
+    sorted_games = sorted(games, key=_sort_key)
+    sorted_names = [g.name for g in sorted_games]
+
+    console.print(f"\n[blue bold]{system}[/blue bold]  ({len(sorted_games)} games)")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}")
+    console.print(f"  [dim]Sort by:[/dim] {sort_by}")
+
+    if verbose:
+        for i, g in enumerate(sorted_games, 1):
+            console.print(f"  [cyan]{i:>4}[/cyan]  {escape(g.name)}"
+                          + (f"  [dim]{escape(g.description)}[/dim]"
+                             if g.description and g.description != g.name else ""))
+
+    if apply_changes:
+        db.reorder_games(sorted_names)
+        _tmp = config.effective_atomic_tmp_dir
+        out_base = Path(output_dir) if output_dir else None
+        if out_base:
+            saved = db.save(
+                output_path=out_base / "Databases" / system / f"{system}.xml",
+                backup=False, tmp_dir=_tmp,
+            )
+        else:
+            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+            saved = db.save(backup=config.backup_before_modify,
+                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        console.print(f"  [green]Saved:[/green] {saved}")
+    else:
+        console.print("  [dim](dry run — pass --apply to write)[/dim]")
+
+
 # ─── tools-audit ──────────────────────────────────────────────────────────────
 
 @cli.command("tools-audit")
