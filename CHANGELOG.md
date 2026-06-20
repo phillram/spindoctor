@@ -31,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **GUI: Game wheel manager — removed game stays visible until save confirms success.** `Remove Game` previously popped the entry from the in-memory table before the `game remove --apply` CLI call returned. On a subprocess failure (e.g. file-permission error) the game had already disappeared from the table but still existed in the XML — state desync on error. The table update is now deferred to an `on_complete` callback that fires only when the exit code is 0; on failure the row stays put so the user can retry.
+
+- **GUI: Game wheel manager — changing the system dropdown no longer silently overwrites the wrong database.** If a user loaded games for "Nintendo 64" then changed the dropdown to "MAME" before clicking Save Order, the MAME database would be overwritten with the Nintendo 64 game order. The panel now tracks which system is actually loaded (`_gwm_loaded_system`) independently of the combo's live value; changing the dropdown clears the table and count label so the mismatch is immediately obvious.
+
 - **`_Hasher.close()` missing — `test_sevenz_inner_hash` failed on Python 3.12.** py7zr ≥ 1.0 calls `close()` on each writer object after streaming inner files. The `_Hasher` file-like class had `write`/`read`/`seek`/`flush`/`size` but no `close()`, raising `AttributeError: '_Hasher' object has no attribute 'close'`. Added a no-op `close()`. py7zr 0.22 (the Windows 7 / Python 3.8 build) does not call `close()`, so the 3.8 CI job was unaffected.
 
 - **Corrected stale Daphne+RL ROM layout callout in cabinet architecture reference.** The callout in the `generate-config` section incorrectly described `.txt` files as empty placeholders, cited a wrong chip ROM path (`D:\Arcade\Games\Daphne\roms\`), and described the Daphne.ahk module as stripping the extension rather than passing `-framefile`. Updated to match the verified file layout: framefiles are data files (not placeholders), chip ROMs live at `J:\Games\Daphne\roms\<game>.zip` via `homedir = J:\Games\Daphne` in `Daphne.ini`, and the module passes the full `-framefile` path to daphne.exe.
