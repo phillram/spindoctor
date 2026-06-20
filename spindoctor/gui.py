@@ -9816,6 +9816,8 @@ class _SpinDoctorGUI:
         gwm_tree_frame.rowconfigure(0, weight=1)
 
         self._gwm_data: list[dict] = []  # [{"name": str, "description": str}]
+        self._gwm_loaded_system: str = ""  # tracks which system is actually in _gwm_data
+        self._gwm_system_combo.bind("<<ComboboxSelected>>", lambda _e: self._gwm_on_system_change())
         self._gwm_tree = self.ttk.Treeview(
             gwm_tree_frame,
             columns=("pos", "name", "desc"),
@@ -10320,6 +10322,13 @@ class _SpinDoctorGUI:
 
     # ── Game Wheel Manager handlers ──────────────────────────────────────────
 
+    def _gwm_on_system_change(self) -> None:
+        """Clear loaded game data when the system dropdown is changed."""
+        self._gwm_data = []
+        self._gwm_loaded_system = ""
+        self._gwm_repopulate_tree()
+        self._gwm_count_label.configure(text="")
+
     def _gwm_load(self) -> None:
         system = self._gwm_system_var.get().strip()
         if not system:
@@ -10333,6 +10342,7 @@ class _SpinDoctorGUI:
             self.messagebox.showerror("Load failed", str(exc))
             return
         self._gwm_data = [{"name": g.name, "description": g.description} for g in games]
+        self._gwm_loaded_system = system
         self._gwm_repopulate_tree()
         count = len(self._gwm_data)
         self._gwm_count_label.configure(text=f"{count} game{'s' if count != 1 else ''}")
@@ -10441,7 +10451,7 @@ class _SpinDoctorGUI:
             self._set_status("Select a game to remove.")
             return
         game_name = self._gwm_data[idx]["name"]
-        system = self._gwm_system_var.get().strip()
+        system = self._gwm_loaded_system or self._gwm_system_var.get().strip()
         apply_ = self._global_apply_var.get()
 
         if not apply_:
@@ -10463,14 +10473,23 @@ class _SpinDoctorGUI:
             return
 
         args = ["game", "remove", "--system", system, game_name, "--apply", "--verbose"]
-        self._gwm_data.pop(idx)
-        self._gwm_repopulate_tree()
-        count = len(self._gwm_data)
-        self._gwm_count_label.configure(text=f"{count} game{'s' if count != 1 else ''}")
-        self._run_cli("spindoctor", args)
+
+        def _on_done(rc: int) -> None:
+            if rc != 0:
+                return
+            # Search by name in case the user reordered during the CLI run.
+            for i, entry in enumerate(self._gwm_data):
+                if entry["name"] == game_name:
+                    self._gwm_data.pop(i)
+                    break
+            self._gwm_repopulate_tree()
+            count = len(self._gwm_data)
+            self._gwm_count_label.configure(text=f"{count} game{'s' if count != 1 else ''}")
+
+        self._run_cli("spindoctor", args, on_complete=_on_done)
 
     def _gwm_save_order(self) -> None:
-        system = self._gwm_system_var.get().strip()
+        system = self._gwm_loaded_system
         if not system:
             self._set_status("Load a system's games first.")
             return
