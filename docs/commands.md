@@ -347,6 +347,20 @@ spindoctor game move-down --system MAME "1942" --apply --verbose
 
 Shifts a game one slot earlier or later in the wheel order.
 
+#### `game sort`
+
+```bat
+spindoctor game sort --system "Nintendo 64"
+spindoctor game sort --system MAME --apply
+spindoctor game sort --system MAME --by name --apply
+spindoctor game sort --system MAME --apply --verbose
+```
+
+Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are ignored so "The Legend of Zelda" sorts under L, matching HyperSpin's own wheel sort convention.
+
+`--by description` (default) — sort by display title (`<description>` field).  
+`--by name` — sort by ROM filename instead.
+
 > **GUI alternative:** the **Systems** tab → **Manage games in a system wheel** panel provides a drag-table equivalent: pick a system, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`. **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 ---

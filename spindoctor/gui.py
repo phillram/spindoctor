@@ -9839,7 +9839,7 @@ class _SpinDoctorGUI:
         self._gwm_tree.bind("<Alt-Down>", lambda e: self._gwm_move_down())
 
         gwm_btn_row = self.ttk.Frame(gwm_frame)
-        gwm_btn_row.pack(anchor="w", padx=6, pady=(2, 6))
+        gwm_btn_row.pack(anchor="w", padx=6, pady=(2, 2))
         self.ttk.Button(
             gwm_btn_row, text="Move Up",
             command=self._gwm_move_up,
@@ -9861,10 +9861,21 @@ class _SpinDoctorGUI:
             gwm_btn_row, text="Remove Game",
             command=self._gwm_remove,
         ).pack(side="left", padx=(0, 10))
+
+        gwm_btn_row2 = self.ttk.Frame(gwm_frame)
+        gwm_btn_row2.pack(anchor="w", padx=6, pady=(2, 6))
         self.ttk.Button(
-            gwm_btn_row, text="Save Order",
-            command=self._gwm_save_order,
+            gwm_btn_row2, text="Sort A→Z (by title)",
+            command=lambda: self._gwm_sort("description"),
         ).pack(side="left")
+        self.ttk.Button(
+            gwm_btn_row2, text="Sort A→Z (by ROM name)",
+            command=lambda: self._gwm_sort("name"),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            gwm_btn_row2, text="Save Order",
+            command=self._gwm_save_order,
+        ).pack(side="left", padx=(20, 0))
 
         # ── Organize a system ────────────────────────────────────────────────
         # `organize` does two things: (a) writes sort wheels (per-axis
@@ -10396,6 +10407,33 @@ class _SpinDoctorGUI:
         iid = str(target)
         self._gwm_tree.selection_set(iid)
         self._gwm_tree.see(iid)
+
+    def _gwm_sort(self, key: str) -> None:
+        """Sort the in-memory game list alphabetically by *key* ('description' or 'name').
+
+        Falls back to ROM name when description is blank so no entry
+        floats to the top as an empty string.
+        """
+        if not self._gwm_data:
+            self._set_status("Load a system's games first.")
+            return
+        label = "title" if key == "description" else "ROM name"
+
+        def _sort_key(entry: dict) -> str:
+            value = (entry.get(key) or "").strip()
+            if not value:
+                value = (entry.get("name") or "").strip()
+            # Strip leading "The ", "A ", "An " for natural sort (same as HyperSpin).
+            lower = value.lower()
+            for article in ("the ", "a ", "an "):
+                if lower.startswith(article):
+                    value = value[len(article):]
+                    break
+            return value.lower()
+
+        self._gwm_data.sort(key=_sort_key)
+        self._gwm_repopulate_tree()
+        self._set_status(f"Sorted {len(self._gwm_data)} games A→Z by {label}. Click Save Order to write.")
 
     def _gwm_remove(self) -> None:
         idx = self._gwm_selected_index()

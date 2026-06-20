@@ -10915,6 +10915,88 @@ def game_move_down_cmd(system, game_name, apply_changes, verbose, output_dir):
     _game_move_impl(system, game_name, "down", apply_changes, verbose, output_dir)
 
 
+@game_group.command("sort")
+@click.option("--system", "-s", required=True, help="System whose games to sort.")
+@click.option("--by", "sort_by", default="description",
+              type=click.Choice(["description", "name"], case_sensitive=False),
+              show_default=True,
+              help="Sort key: 'description' (display title, default) or 'name' (ROM filename).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the sorted order. Without this flag, dry-run only.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="Print the sorted game list before saving.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
+    """Sort all games in a system's wheel database alphabetically.
+
+    Leading articles (The, A, An) are ignored so "The Legend of Zelda"
+    sorts under L, matching HyperSpin's own wheel sort convention.
+
+    \b
+    Examples:
+      spindoctor game sort --system "Nintendo 64"
+      spindoctor game sort --system MAME --apply
+      spindoctor game sort --system MAME --by name --apply
+    """
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    db = load_database(system, config.databases_dir)
+    games = list(db.iter_xml_order())
+    if not games:
+        console.print(f"[yellow]No games found in {system}.[/yellow]")
+        return
+
+    _ARTICLES = ("the ", "a ", "an ")
+
+    def _sort_key(g):
+        value = (g.description if sort_by == "description" else g.name) or g.name
+        lower = value.lower()
+        for article in _ARTICLES:
+            if lower.startswith(article):
+                value = value[len(article):]
+                break
+        return value.lower()
+
+    sorted_games = sorted(games, key=_sort_key)
+    sorted_names = [g.name for g in sorted_games]
+
+    console.print(f"\n[blue bold]{system}[/blue bold]  ({len(sorted_games)} games)")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}")
+    console.print(f"  [dim]Sort by:[/dim] {sort_by}")
+
+    if verbose:
+        for i, g in enumerate(sorted_games, 1):
+            console.print(f"  [cyan]{i:>4}[/cyan]  {escape(g.name)}"
+                          + (f"  [dim]{escape(g.description)}[/dim]"
+                             if g.description and g.description != g.name else ""))
+
+    if apply_changes:
+        db.reorder_games(sorted_names)
+        _tmp = config.effective_atomic_tmp_dir
+        out_base = Path(output_dir) if output_dir else None
+        if out_base:
+            saved = db.save(
+                output_path=out_base / "Databases" / system / f"{system}.xml",
+                backup=False, tmp_dir=_tmp,
+            )
+        else:
+            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+            saved = db.save(backup=config.backup_before_modify,
+                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        console.print(f"  [green]Saved:[/green] {saved}")
+    else:
+        console.print("  [dim](dry run — pass --apply to write)[/dim]")
+
+
 # ─── tools-audit ──────────────────────────────────────────────────────────────
 
 @cli.command("tools-audit")
