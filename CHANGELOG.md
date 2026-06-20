@@ -36,6 +36,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **GUI: "Fix PC game executable" section now auto-loads games on startup.** The game dropdown was empty when the Systems tab first opened because setting the system var programmatically doesn't fire `<<ComboboxSelected>>`. SpinDoctor now populates the game list automatically after pre-selecting "PC Games". The ↻ refresh button next to the Game dropdown now refreshes the game list (as the rename section's ↻ does) instead of trying to load exe candidates for an empty selection; selecting a game from the list or clicking ↻ also immediately populates the executable candidates.
+
 - **GUI: Override ID fields (ScreenScraper ID / TheGamesDB ID) now clear automatically when the game or system selection changes.** Previously, IDs entered for one game would linger in the form after navigating to a different game or switching systems, risking saving the wrong override. "Load current override" and manual typing are unaffected.
 
 - **GUI: Saved log `.txt` files no longer contain mid-path line breaks.** The CLI subprocess inherited the parent shell's `COLUMNS` value, causing Rich and Click to hard-wrap long file paths and URLs at that width. The GUI now sets `COLUMNS=9999` before launching the subprocess so output lines are preserved intact. Rich tables are unaffected (they size to their content by default, not the console width).
