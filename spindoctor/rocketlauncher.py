@@ -1248,12 +1248,13 @@ def _pclauncher_ini_text(game_name: str, executable) -> str:
 
 
 def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
-    """Return all .exe files in *game_dir*, recommended first.
+    """Return all .exe files in *game_dir* and every subdirectory, recommended first.
 
-    "Recommended" means the stem does not match any prefix in
-    :data:`_EXE_EXCLUSION_PREFIXES`.  Within each tier, files whose stem
-    most closely matches *title_hint* sort first; otherwise alphabetical.
-    Non-recursive — only the immediate directory is scanned.
+    Sort priority (ascending = better):
+    1. Excluded prefixes (setup, unins, vcredist, …) — excluded last.
+    2. Depth relative to *game_dir* — shallower files first (0 = top-level).
+    3. Stem similarity to *title_hint* — exact match, partial match, no match.
+    4. File name alphabetically.
     """
     if not game_dir.is_dir():
         return []
@@ -1263,6 +1264,7 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
         excluded = int(
             any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES)
         )
+        depth = len(p.relative_to(game_dir).parts) - 1  # 0 = directly in game_dir
         stem_norm = re.sub(r"[^a-z0-9]", "", p.stem.lower())
         if stem_norm == hint_norm:
             similarity = 0
@@ -1270,10 +1272,10 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
             similarity = 1
         else:
             similarity = 2
-        return (excluded, similarity, p.name.lower())
+        return (excluded, depth, similarity, p.name.lower())
 
     return sorted(
-        (p for p in game_dir.glob("*.exe") if p.is_file()),
+        (p for p in game_dir.rglob("*.exe") if p.is_file()),
         key=_sort_key,
     )
 
@@ -1295,10 +1297,17 @@ def _resolve_pclauncher_exe(rom_path, title: str):
 
     When *rom_path* is already a ``.exe`` it is returned as-is (preserving
     whatever path type was passed — ``PureWindowsPath``, ``Path``, or ``str``).
-    Otherwise (e.g. ``webcache.zip`` found by RocketLauncher's extension-
-    matching) the function looks for a real executable in the same directory
-    using :func:`_pick_best_exe`.  Falls back to *rom_path* when no ``.exe``
-    is found (so the INI is at least written with *something*).
+
+    For non-exe ROMs (.lnk, .zip, webcache, …) the function first checks
+    whether a game-named subdirectory exists alongside the ROM file (e.g.
+    ``PC Games/Hades/`` next to ``PC Games/Hades.lnk``); if so it uses
+    :func:`_pick_best_exe` to scan that subdirectory recursively.
+
+    If no game-named subdirectory is found, the parent directory is searched
+    *non-recursively* — it is typically a system-level folder (e.g.
+    ``PC Games/``) and a recursive scan would cross into sibling game folders.
+
+    Falls back to *rom_path* when no ``.exe`` is found.
 
     Avoids converting *rom_path* through ``Path()`` when the suffix already
     matches ``.exe`` — that conversion would mangle Windows-style backslash
@@ -1311,8 +1320,27 @@ def _resolve_pclauncher_exe(rom_path, title: str):
         suffix = _os.path.splitext(str(rom_path))[1].lower()
     if suffix == ".exe":
         return rom_path
-    best = _pick_best_exe(Path(rom_path).parent, title)
-    return best if best is not None else rom_path
+
+    parent = Path(rom_path).parent
+    stem = Path(str(rom_path)).stem
+
+    # Look for a game-named subdirectory first (e.g. "Hades/" next to "Hades.lnk").
+    # Scan it recursively — depth-sorted so the main exe rises to the top.
+    game_subdir = parent / stem
+    if game_subdir.is_dir():
+        best = _pick_best_exe(game_subdir, title)
+        if best is not None:
+            return best
+
+    # Fall back: scan the parent directory non-recursively only.  The parent is
+    # usually a system folder; rglob would reach into sibling game directories.
+    for p in sorted(parent.glob("*.exe")):
+        if p.is_file() and not any(
+            p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES
+        ):
+            return p
+
+    return rom_path
 
 
 def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) -> bool:
