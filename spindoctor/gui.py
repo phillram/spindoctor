@@ -5715,6 +5715,15 @@ class _SpinDoctorGUI:
                 # references it.
                 var.set(default if default in systems else systems[0])
 
+        # Auto-populate the fixexe game list when the section is first built
+        # with a pre-selected system.  Setting a var via .set() does NOT fire
+        # <<ComboboxSelected>>, so the game list would otherwise stay empty
+        # until the user manually picks a system from the dropdown.
+        fixexe_game_combo = getattr(self, "_fixexe_game_combo", None)
+        if fixexe_game_combo is not None and not fixexe_game_combo["values"]:
+            if getattr(self, "_fixexe_system_var", None) and self._fixexe_system_var.get():
+                self._refresh_fixexe_games()
+
         # Fill Defaults system combo — populate values but never auto-select;
         # blank = all systems is the intended default.
         fd_combo = getattr(self, "_fd_system_combo", None)
@@ -8815,6 +8824,8 @@ class _SpinDoctorGUI:
         if lb is not None:
             lb.delete(0, "end")
         self._fixexe_path_var.set("")
+        if games:
+            self._fixexe_load_candidates()
 
     def _fixexe_load_candidates(self) -> None:
         """Populate the exe listbox for the selected game."""
@@ -9883,7 +9894,7 @@ class _SpinDoctorGUI:
         )
         self.ttk.Button(
             fixexe_top, text="↻", width=3,
-            command=self._fixexe_load_candidates,
+            command=self._refresh_fixexe_games,
         ).pack(side="left")
 
         self.ttk.Label(
