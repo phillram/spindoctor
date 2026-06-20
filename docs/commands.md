@@ -539,7 +539,7 @@ The pre-flight plan reports total bytes to transfer and free space at the target
 spindoctor generate-config --apply
 ```
 
-GUI: Metadata & Media tab → tick Apply → click **Run generate-config**. `generate-config` writes `<RocketLauncher>\Settings\<SystemName>.ini` for every configured system directly into the configured `rocketlauncher_dir`, so no manual copying is needed — the files land exactly where RocketLauncher expects them.
+GUI: Metadata & Media tab → tick Apply → click **Update RocketLauncher INIs**. `generate-config` writes `<RocketLauncher>\Settings\<SystemName>.ini` for every configured system directly into the configured `rocketlauncher_dir`, so no manual copying is needed — the files land exactly where RocketLauncher expects them.
 
 See [Workflows → Moving only your ROMs to a new drive](workflows.md#moving-only-your-roms-to-a-new-drive) for the full end-to-end example.
 
