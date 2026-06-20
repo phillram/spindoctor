@@ -329,14 +329,14 @@ This writes `rom_path` under `system_overrides` in `config.json`; that value alw
 regardless of what folders exist on disk.  Use `--emulator` in the same command when the
 system's `Default_Emulator=` also needs to be set for the first time.
 
-> **Daphne+RL ROM layout:** RL "ROMs" for Daphne games are small `.txt` placeholder files
-> (e.g. `J:\Games\Daphne\lair.txt`).  The Daphne.ahk module strips the `.txt` extension
-> and passes the game name (`lair`) to daphne.exe, which reads the actual PCB chip ROMs
-> from its own `roms\` subfolder (`D:\Arcade\Games\Daphne\roms\lair.zip`).  RL never
-> extracts the `.zip` — daphne.exe does.  If RL reports "No valid roms found in the archive
-> lair.zip", the ROM archive is landing in the RL rom path rather than daphne.exe's `roms\`
-> subfolder; the fix is to move `lair.zip` to `D:\Arcade\Games\Daphne\roms\` and create
-> `J:\Games\Daphne\lair.txt` as the RL placeholder.
+> **Daphne+RL ROM layout:** RL "ROMs" for Daphne games are `.txt` **framefile** files
+> (e.g. `J:\Games\Daphne\lair.txt`) — not empty placeholders; they contain video frame
+> timing data.  The Daphne.ahk module passes the full path as `-framefile
+> "J:\Games\Daphne\lair.txt"` to daphne.exe.  Chip ROMs live at
+> `J:\Games\Daphne\roms\<game>.zip` and are found by daphne.exe via
+> `homedir = J:\Games\Daphne` in `Daphne.ini` (not by RL).  If RL reports "No valid roms
+> found in the archive lair.zip", a chip ROM zip is in `J:\Games\Daphne\` instead of
+> `J:\Games\Daphne\roms\` — move it there.  See the [Daphne section](#daphne-laserdisc-games--file-layout-and-configuration) for full details.
 
 > **Failure mode (pre-v2.4.27):** Running `generate-config --apply` created a per-system
 > `Emulators.ini` for MAME (Vector) with `Rom_Path=J:\Games\MAME (Vector)`.  Because RL
@@ -592,6 +592,241 @@ Always preview before running the bulk replace, and always edit one file first t
 
 ---
 
+## Daphne Singe (WoW Action Max) — File Layout and Configuration
+
+WoW Action Max uses a **custom build of Daphne Singe 1.0.10** housed in its own emulator folder, separate from the standard Daphne install. Three locations must all be correct for a game to launch; each missing piece produces a distinct failure.
+
+> **Dual-copy requirement:** This Daphne Singe build has unusual asset loading behaviour. The engine assets (Emulator.singe, sprites, sounds, fonts) must be present in **both** the emulator directory on D: and the ROM directory on J:. Removing them from either location breaks the games. The exact loading path that reads from J: is not fully understood — empirically confirmed through testing.
+
+### Emulator directory layout
+
+```
+D:\Arcade\Emulators\WoW Action Max\data\
+├── daphne.exe                        ← custom Daphne Singe 1.0.10 build
+├── sound\                            ← Daphne engine sound samples
+│   └── saveme.wav  (+ others)        ← copy from D:\Arcade\Emulators\Daphne\sound\
+└── singe\
+    ├── ActionMax\                    ← ALL engine assets live here; loaded by Emulator.singe
+    │   ├── Emulator.singe            ← master emulator script (loaded via dofile from CWD)
+    │   ├── sprite_LightOn.png        ┐
+    │   ├── sprite_LightOff.png       │ shared across all games
+    │   ├── sprite_ActionMax.png      │
+    │   ├── sprite_Crosshair.png      │
+    │   ├── sprite_Bullet.png         ┘
+    │   ├── sprite_<GameName>.png     ← one per game (e.g. sprite_PopsGhostly.png)
+    │   ├── sound_ActionMax.wav       ┐
+    │   ├── sound_ASteadyAimIsCritical.wav │
+    │   ├── sound_GetReadyForAction.wav    │ shared across all games
+    │   ├── sound_Gunshot.wav         │
+    │   ├── sound_GoodHit.wav         │
+    │   ├── sound_BadHit.wav          │
+    │   ├── sound_GameOver.wav        ┘
+    │   ├── font_BlueStone.ttf        ┐
+    │   ├── font_chemrea.ttf          │ fonts used by Emulator.singe
+    │   └── font_*.ttf                ┘ (5 total; names visible in daphne_log.txt on failure)
+    └── Singe\
+        └── Framework.singe           ← Singe engine framework; must exist or game silently fails
+```
+
+> **Why D: needs these files:** Every per-game `.singe` script calls `dofile("singe/ActionMax/Emulator.singe")`. The `dofile()` path is relative to **daphne.exe's working directory** (D:\Arcade\Emulators\WoW Action Max\data\), not to where the `.singe` script lives. `Emulator.singe` then loads all sprites, sounds, and fonts using the same `singe/ActionMax/<filename>` relative prefix — again from D:. If any of these are absent from D:, Daphne logs `SINGE: Unable to load sprite singe/ActionMax/...` errors.
+>
+> **Why J: also needs these files:** Empirically confirmed — removing sprites, sounds, fonts, or `Emulator.singe` from `J:\Games\WoW Action Max\` also breaks the games, even when D: copies are present. The exact loading path that reads from J: is not visible in `daphne_log.txt`. Treat the J: copies as a required duplicate; do not delete them.
+
+### ROM directory layout (J: drive)
+
+```
+J:\Games\WoW Action Max\
+├── <GameName>.singe             ← per-game script (config vars + dofile() call)
+├── <GameName>.txt               ← per-game framefile (video frame timing data)
+├── video_<GameName>.m2v         ┐
+├── video_<GameName>.ogg         │ per-game video content
+├── video_<GameName>.dat         ┘
+├── Emulator.singe               ← duplicate of D: copy; must exist here too
+├── sprite_*.png                 ← duplicate of D: copies (shared + per-game)
+├── sound_*.wav                  ← duplicate of D: copies
+└── font_*.ttf                   ← duplicate of D: copies
+```
+
+The engine assets on J: are flat (no `singe\ActionMax\` subfolder). Do not delete them — the games fail without copies in both locations.
+
+### Global Emulators.ini entry
+
+```ini
+[Daphne Singe (WoW Action Max)]
+Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe
+Rom_Extension=singe|bat|ogg|mpeg|mpg
+Module=..\Daphne Singe\Daphne Singe.ahk
+```
+
+### How the module launches a game
+
+The Daphne Singe module **ignores the actual file extension RL found** and always constructs its own command line:
+
+```
+daphne.exe singe vldp ... -framefile "<romPath>\<romName>.txt" -script "<romPath>\<romName>.singe"
+```
+
+This means if RL finds a `.bat` file in the ROM folder (e.g. `38AmbushAlley.bat`), it uses `38AmbushAlley` as the ROM name but the module still looks for `38AmbushAlley.txt` and `38AmbushAlley.singe` at the same path. The `.bat` content is never executed.
+
+### Three failure modes in launch order
+
+| # | Symptom | Cause | Fix |
+|---|---------|-------|-----|
+| 1 | RL error: "Could not find your emulator/application" | `Emu_Path` in `Global Emulators.ini` pointed into `Games\` instead of `Emulators\` | Set `Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe` |
+| 2 | Daphne error dialog: "Loading 'saveme.wav' failed / Sound initialization failed" | `sound\` folder missing from the emulator `data\` directory | Copy `D:\Arcade\Emulators\Daphne\sound\` → `D:\Arcade\Emulators\WoW Action Max\data\sound\` |
+| 3 | RL fade-in completes, then RL errors "waiting for window DAPHNE" with no Daphne dialog | `Framework.singe` missing from `singe\Singe\`; Daphne exits silently | Place `Framework.singe` at `D:\Arcade\Emulators\WoW Action Max\data\singe\Singe\Framework.singe` |
+| 4 | `SINGE: Unable to load sprite singe/ActionMax/...` or `Could not open singe/ActionMax/sound_...` | Sprites, sounds, or fonts missing from `D:\...\singe\ActionMax\` | Copy from J: to D: with xcopy (see dual-copy note above) |
+| 5 | Game launches but crashes / fails mid-load with no clear error | Sprites, sounds, fonts, or `Emulator.singe` missing from `J:\Games\WoW Action Max\` | Restore the flat copies on J: — both locations are required |
+
+Failure mode 3 produces **no Daphne error dialog** — Daphne simply exits. Temporarily disable RL Fade to see bare Daphne output when diagnosing it.
+
+Failure modes 4 and 5 are mirror images of each other due to the dual-copy requirement. If games fail silently or partially, check that the engine assets exist in both locations.
+
+### SingePathUpdate — not useful for WoW Action Max
+
+The Daphne Singe RL module has a `SingePathUpdate` feature (`Daphne Singe.ini`) that rewrites hardcoded paths inside `.singe` files to match the current `romPath`. This does **not** help WoW Action Max.
+
+The per-game `.singe` scripts contain no absolute paths — only `dofile("singe/ActionMax/Emulator.singe")`, which is a CWD-relative path that is correct by design. `SingePathUpdate` would rewrite it to an absolute J: path, which would break the dofile() call and is not what you want.
+
+`Emulator.singe` similarly uses `singe/ActionMax/<asset>` relative paths throughout. These must stay as-is, resolving from daphne.exe's working directory on D:.
+
+**Leave `SingePathUpdate=false` for WoW Action Max.**
+
+---
+
+## Daphne Singe (American Laser Games) — File Layout and Path Rewrite
+
+American Laser Games (ALG) titles — *Mad Dog McCree*, *Space Pirates*, *Crime Patrol*, and others — use a custom Daphne Singe 1.0.10 build with its own emulator folder. The original `.singe` scripts have hardcoded absolute `D:` paths referencing the old game location; these must be rewritten once when ROMs live on a different drive.
+
+> **Dual-copy requirement — .singe files only:** After the path rewrite (below), `.singe` script files must be present in **both** the ROM directory on J: and the emulator's `singe\[gamename]\` directory on D:. Assets (sprites, sounds, fonts, `.cfg` files) only need to be on J:. This is distinct from WoW Action Max, which requires *all* assets duplicated for an empirically-confirmed but poorly-understood reason, and whose scripts use CWD-relative paths that must not be rewritten.
+
+### File layout
+
+```
+D:\Arcade\Emulators\American Laser Games\data\     ← daphne.exe working directory (CWD)
+├── daphne.exe                                     ← custom Daphne Singe 1.0.10 build
+├── sound\                                         ← Daphne engine sounds
+└── singe\
+    └── [gamename]\                                ← .singe copies (required — see below)
+        ├── service.singe
+        └── *.singe  (all scripts for this game)
+
+J:\Games\American Laser Games\[gamename]\          ← ROM directory (one subfolder per game)
+├── [gamename].txt                                 ← framefile (video frame timing — RL "ROM")
+├── [gamename]_cdrom.singe                         ← main entry-point script (RL -script target)
+├── service.singe                                  ← reads/writes game settings + high scores
+├── *.singe                                        ← hitbox, level, and config scripts
+├── [gamename].cfg                                 ← settings + high scores; must exist before first run
+├── *.png  *.wav  *.ttf                            ← sprites, sounds, fonts (J: only — no D: copy needed)
+└── cdrom\                                         ← video data
+```
+
+### How RL launches a game
+
+The `Daphne Singe.ahk` module constructs:
+
+```
+daphne.exe singe vldp ... -framefile "J:\Games\American Laser Games\[gamename]\[gamename].txt" -script "J:\Games\American Laser Games\[gamename]\[gamename]_cdrom.singe"
+```
+
+Daphne runs with its CWD set to `D:\Arcade\Emulators\American Laser Games\data\`. Any `dofile()` path that is **relative** (e.g. `dofile("singe/maddog/service.singe")`) resolves against that D: CWD — not against the J: ROM directory.
+
+### Why paths fail after moving ROMs to J:
+
+The original ALG `.singe` scripts have hardcoded absolute paths to the old game location on D:, for example:
+
+```lua
+dofile("D:/Arcade/Games/American Laser Games/data/singe/maddog/service.singe")
+spriteLoad("D:/Arcade/Games/American Laser Games/data/singe/maddog/bullet.png")
+io.input("D:/Arcade/Games/American Laser Games/data/singe/maddog/maddog.cfg")
+```
+
+With ROMs on J: and the old D: game folder absent, every `spriteLoad`, `soundLoad`, `fontLoad`, and `dofile()` call fails. The `.cfg` file error crashes the game on the first overlay update frame even after the video starts playing.
+
+### SingePathUpdate and ForcePathUpdate
+
+These two keys in `Daphne Singe.ini` (`D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini`) control a one-time path rewrite:
+
+| Key | Behaviour |
+|-----|-----------|
+| `SingePathUpdate=true` | Before launching Daphne, rewrite every matching line in every `*.singe` file in `romPath` (the J: game directory). Calls `exitapp` after — **Daphne never launches on this run**. |
+| `ForcePathUpdate=true` | Bypass the skip-if-already-updated check. Without this, any `.singe` file that already contains the `romPath` string anywhere is skipped entirely, which can leave other files with stale D: paths. |
+
+The Lua functions the rewrite recognises: `dofile(`, `spriteLoad`, `io.input`, `io.output`, `fontLoad`, `soundLoad`
+
+Each matching line has its path directory replaced with the current `romPath` (the J: game directory); the filename at the end of the path is preserved.
+
+> **Expected behaviour after running:** No `daphne_log` is produced. RocketLauncher exits after the rewrite. This is correct — the path-rewrite run is a setup step, not a game launch. Set both keys back to `false` before the next run, which will actually launch the game.
+
+### Why .singe files need copies on both D: and J:
+
+`SingePathUpdate` updates the J: ROM directory copies. The `-script` argument points to a J: file, so the main script loads from J: with the updated paths. However, scripts frequently call `dofile()` with **relative** paths:
+
+```lua
+dofile("singe/maddog/service.singe")
+```
+
+Because Daphne's CWD is `D:\Arcade\Emulators\American Laser Games\data\`, this resolves to:
+
+```
+D:\Arcade\Emulators\American Laser Games\data\singe\maddog\service.singe
+```
+
+Daphne loads the D: copy of `service.singe` — which still has the original D: paths for `io.input`, `io.output`, etc. The updated J: copy is bypassed entirely.
+
+**Fix:** after SingePathUpdate has rewritten the J: copies, copy them to D::
+
+```bat
+xcopy /Y "J:\Games\American Laser Games\[gamename]\*.singe" "D:\Arcade\Emulators\American Laser Games\data\singe\[gamename]\"
+```
+
+The destination directory must exist first. Only `.singe` files need copying — sprites, sounds, fonts, and `.cfg` files are referenced by absolute J: paths in the updated scripts and do not need D: copies.
+
+### .cfg files — game settings and high scores
+
+Each game has a `.cfg` file (e.g. `maddog.cfg`) storing difficulty, coin settings, and high scores. `service.singe` reads it at game start via `io.input()` and writes it on exit via `io.output()`. After SingePathUpdate, these paths point to `J:\Games\American Laser Games\[gamename]\[gamename].cfg`.
+
+**The `.cfg` file must exist at the J: path before the game can run.** If missing, `io.input()` throws an error and the game crashes on the first overlay update frame. Either copy it from the old D: location if one exists, or create it with default values — see `service.singe` for the expected format (plain-text `key = value` lines followed by high score name/score entries).
+
+### One-time setup procedure
+
+This is done once per game. After completion, both keys stay `false` permanently.
+
+1. **Set both flags in `D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini`:**
+   ```ini
+   SingePathUpdate=true
+   ForcePathUpdate=true
+   ```
+
+2. **Launch each ALG game from HyperSpin once.** The `.singe` files in the J: ROM directory for that game are rewritten, then RL exits. No game window appears; no `daphne_log` is produced. This is expected and correct.
+
+   > `SingePathUpdate` is **per-game** — it only processes `.singe` files for the game currently being launched. Repeat this step for every ALG title.
+
+3. **Copy updated .singe files to D:.** For each game:
+   ```bat
+   xcopy /Y "J:\Games\American Laser Games\[gamename]\*.singe" "D:\Arcade\Emulators\American Laser Games\data\singe\[gamename]\"
+   ```
+
+4. **Restore both flags:**
+   ```ini
+   SingePathUpdate=false
+   ForcePathUpdate=false
+   ```
+
+5. **Launch each game normally to play.**
+
+### Comparison with WoW Action Max
+
+| | American Laser Games | WoW Action Max |
+|---|---|---|
+| Original script paths | Hardcoded absolute D: paths | CWD-relative (`singe/ActionMax/`) |
+| SingePathUpdate | **Required** (one-time setup per game) | **Do not use** — would break CWD-relative paths |
+| What needs D: copies | `.singe` files only | All assets (sprites, sounds, fonts) |
+| What needs J: copies | Everything (scripts + assets + cfg) | Everything |
+| Reason D: copy needed | `dofile()` relative paths resolve from D: CWD | Asset loading via unknown path (empirically confirmed) |
+
+---
+
 ## Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes
 
 ### Emulator version on this cabinet
@@ -682,6 +917,68 @@ extensions** button in the Diagnostics tab) to scan every `.zip`/`.7z`/`.rar` in
 directory and report files whose inner extensions are not listed in `Rom_Extension`. This
 catches `.rvz`, `.nkit.iso`, or any other non-standard format before the user tries to
 launch a game and gets the cryptic *"No valid roms found in the archive"* error.
+
+---
+
+## Phoenix (Atari Jaguar) — Emulator Configuration and ROM Path Fix
+
+Phoenix v2.8.JAG emulates the Atari Jaguar (and Panasonic 3DO). Unlike most emulators, Phoenix does not accept a ROM path on the command line — RocketLauncher launches it by **editing `phoenix.config.xml` before each launch**.
+
+### File layout
+
+| File | Path |
+|------|------|
+| Emulator | `D:\Arcade\Emulators\Phoenix\PhoenixEmuProject.exe` |
+| Config | `D:\Arcade\Emulators\Phoenix\phoenix.config.xml` |
+| BIOS | `D:\Arcade\Emulators\Phoenix\Jaguar\BIOS\[BIOS] Atari Jaguar (World).j64` |
+| ROMs | `J:\Games\Atari Jaguar\` (extension `.j64`) |
+| RL module | `D:\Arcade\RocketLauncher\Modules\Phoenix\Phoenix.ahk` |
+
+### How the RL module loads a game
+
+Phoenix stores its media library in `phoenix.config.xml` as `<Dump>` entries under a `<CARTRIDGE>` node. The `attach` attribute on `<CARTRIDGE>` tells Phoenix which game to auto-select on startup:
+
+```xml
+<Platform-Jaguar>
+    <CARTRIDGE expanded="true" attach="J:/Games/Atari Jaguar/Tempest 2000 (World).j64"
+               last-path="J:/Games/Atari Jaguar">
+        <Dump path="J:/Games/Atari Jaguar/Air Cars (World).j64" ... />
+        <Dump path="J:/Games/Atari Jaguar/Tempest 2000 (World).j64" ... />
+        ...
+    </CARTRIDGE>
+</Platform-Jaguar>
+```
+
+Phoenix **only auto-selects a game if `attach` matches a `<Dump>` entry path exactly.** If the paths differ, Phoenix opens with no cartridge selected and any Power On attempt fails with *"You must select CARTRIDGE."*
+
+Before launch the module:
+1. Reads `phoenix.config.xml` into memory
+2. Rewrites every `<Dump path="…">` that contains `D:/Arcade/Games/Atari Jaguar/` → `J:/Games/Atari Jaguar/`
+3. Sets `attach` to the J: ROM path of the selected game
+4. Writes the file back and launches Phoenix
+5. Sends `{Alt}{Right}{Enter}{Enter}` to navigate Control → Power On
+
+### Why Dump paths needed rewriting
+
+The Phoenix library was originally built from `D:\Arcade\Games\Atari Jaguar\` (games added via *File → Add CARTRIDGE file to the collection*). The ROMs were later moved to `J:\Games\Atari Jaguar\`. Phoenix's library retained the D: paths, so any `attach` value set to a J: path would not match any `<Dump>` entry — causing the *"You must select CARTRIDGE"* error on every launch.
+
+The RL module rewrites the paths on every launch. After the first successful launch Phoenix saves the J: paths back to `phoenix.config.xml` itself, so subsequent launches the `StringReplace` finds nothing to replace and is a no-op.
+
+### BIOS
+
+The Jaguar BIOS is registered in the same `phoenix.config.xml` under a `<BIOS>` node and lives at:
+
+```
+D:\Arcade\Emulators\Phoenix\Jaguar\BIOS\[BIOS] Atari Jaguar (World).j64
+```
+
+This path is on D: (emulator folder, not game drive) and is not affected by the Dump path rewrite.
+
+### Reference copy of the RL module
+
+A reference copy of the customised `Phoenix.ahk` is kept in
+`spindoctor/assets/archive/Phoenix.ahk`. The canonical installed file is at
+`D:\Arcade\RocketLauncher\Modules\Phoenix\Phoenix.ahk` on the cabinet.
 
 ---
 
@@ -1103,6 +1400,30 @@ it as `Media\<SystemName>\Sound\Wheel Click.mp3` for each synthetic wheel during
 which controls active-browsing music at the top-level system wheel.
 
 **Zero-byte detection** — `audit.check_media()` uses `stat().st_size > 0` (not just `exists()`) to check each slot. A 0-byte file — left behind when a download completed with an empty HTTP 200 body or was interrupted just before content arrived — is treated identically to an absent file: it appears in the audit's missing-media list and causes `fetch-media` to re-download the slot on the next run. Without this check, a zero-byte stub would permanently satisfy the presence test and the slot would silently stay broken.
+
+### Main Menu wheel image lookup — known failure modes
+
+HyperSpin resolves a system's wheel graphic in `Media\Main Menu\Images\Wheel\` by matching the filename stem (without `.png`) against the system's `<game name="…"/>` entry in `Databases\Main Menu\Main Menu.xml`. **The match is effectively case-sensitive** even on Windows — a casing discrepancy between the XML entry and the image filename causes HyperSpin to intermittently fall back to rendering the system name as plain text instead of the image. (The filesystem finds the file case-insensitively, but HyperSpin's internal cache key is case-exact, so the lookup succeeds on some passes and fails on others.)
+
+**Fix:** rename the wheel image file to match the XML entry name exactly, character for character.
+
+Common examples seen on this cabinet:
+
+| XML entry | Mismatched filename | Correct filename |
+|---|---|---|
+| `Colecovision` | `ColecoVision.png` | `Colecovision.png` |
+| `NEC Turbografx-CD` | `NEC TurboGrafx-CD.png` | `NEC Turbografx-CD.png` |
+| `Mugen` | `MUGEN.png` | `Mugen.png` |
+
+**Duplicate wheels from duplicate XML entries** — if `Main Menu.xml` contains two `<game>` entries whose names differ only by casing or a punctuation variant (e.g. `Atari 8-Bit` / `Atari 8-bit`, `Doujin Games` / `Doujin Soft`, `Panasonic 3DO` / `Panasonic 3D0`), HyperSpin renders both as separate wheel items. Typically one entry matches the database folder (loads games correctly) while the other matches the wheel image filename (shows the graphic) — neither item is fully functional on its own. The fix is to remove the incorrect variant, keeping whichever name matches both `Databases\<name>\<name>.xml` and the wheel image file.
+
+The same name must match across three places to avoid split or broken wheels:
+
+```
+Databases\Main Menu\Main Menu.xml    <game name="Foo Bar"/>
+Databases\Foo Bar\Foo Bar.xml        ← folder and XML filename both match
+Media\Main Menu\Images\Wheel\Foo Bar.png  ← image filename matches exactly
+```
 
 ### Scraper provider comparison
 
