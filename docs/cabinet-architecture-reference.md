@@ -694,6 +694,139 @@ The per-game `.singe` scripts contain no absolute paths — only `dofile("singe/
 
 ---
 
+## Daphne Singe (American Laser Games) — File Layout and Path Rewrite
+
+American Laser Games (ALG) titles — *Mad Dog McCree*, *Space Pirates*, *Crime Patrol*, and others — use a custom Daphne Singe 1.0.10 build with its own emulator folder. The original `.singe` scripts have hardcoded absolute `D:` paths referencing the old game location; these must be rewritten once when ROMs live on a different drive.
+
+> **Dual-copy requirement — .singe files only:** After the path rewrite (below), `.singe` script files must be present in **both** the ROM directory on J: and the emulator's `singe\[gamename]\` directory on D:. Assets (sprites, sounds, fonts, `.cfg` files) only need to be on J:. This is distinct from WoW Action Max, which requires *all* assets duplicated for an empirically-confirmed but poorly-understood reason, and whose scripts use CWD-relative paths that must not be rewritten.
+
+### File layout
+
+```
+D:\Arcade\Emulators\American Laser Games\data\     ← daphne.exe working directory (CWD)
+├── daphne.exe                                     ← custom Daphne Singe 1.0.10 build
+├── sound\                                         ← Daphne engine sounds
+└── singe\
+    └── [gamename]\                                ← .singe copies (required — see below)
+        ├── service.singe
+        └── *.singe  (all scripts for this game)
+
+J:\Games\American Laser Games\[gamename]\          ← ROM directory (one subfolder per game)
+├── [gamename].txt                                 ← framefile (video frame timing — RL "ROM")
+├── [gamename]_cdrom.singe                         ← main entry-point script (RL -script target)
+├── service.singe                                  ← reads/writes game settings + high scores
+├── *.singe                                        ← hitbox, level, and config scripts
+├── [gamename].cfg                                 ← settings + high scores; must exist before first run
+├── *.png  *.wav  *.ttf                            ← sprites, sounds, fonts (J: only — no D: copy needed)
+└── cdrom\                                         ← video data
+```
+
+### How RL launches a game
+
+The `Daphne Singe.ahk` module constructs:
+
+```
+daphne.exe singe vldp ... -framefile "J:\Games\American Laser Games\[gamename]\[gamename].txt" -script "J:\Games\American Laser Games\[gamename]\[gamename]_cdrom.singe"
+```
+
+Daphne runs with its CWD set to `D:\Arcade\Emulators\American Laser Games\data\`. Any `dofile()` path that is **relative** (e.g. `dofile("singe/maddog/service.singe")`) resolves against that D: CWD — not against the J: ROM directory.
+
+### Why paths fail after moving ROMs to J:
+
+The original ALG `.singe` scripts have hardcoded absolute paths to the old game location on D:, for example:
+
+```lua
+dofile("D:/Arcade/Games/American Laser Games/data/singe/maddog/service.singe")
+spriteLoad("D:/Arcade/Games/American Laser Games/data/singe/maddog/bullet.png")
+io.input("D:/Arcade/Games/American Laser Games/data/singe/maddog/maddog.cfg")
+```
+
+With ROMs on J: and the old D: game folder absent, every `spriteLoad`, `soundLoad`, `fontLoad`, and `dofile()` call fails. The `.cfg` file error crashes the game on the first overlay update frame even after the video starts playing.
+
+### SingePathUpdate and ForcePathUpdate
+
+These two keys in `Daphne Singe.ini` (`D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini`) control a one-time path rewrite:
+
+| Key | Behaviour |
+|-----|-----------|
+| `SingePathUpdate=true` | Before launching Daphne, rewrite every matching line in every `*.singe` file in `romPath` (the J: game directory). Calls `exitapp` after — **Daphne never launches on this run**. |
+| `ForcePathUpdate=true` | Bypass the skip-if-already-updated check. Without this, any `.singe` file that already contains the `romPath` string anywhere is skipped entirely, which can leave other files with stale D: paths. |
+
+The Lua functions the rewrite recognises: `dofile(`, `spriteLoad`, `io.input`, `io.output`, `fontLoad`, `soundLoad`
+
+Each matching line has its path directory replaced with the current `romPath` (the J: game directory); the filename at the end of the path is preserved.
+
+> **Expected behaviour after running:** No `daphne_log` is produced. RocketLauncher exits after the rewrite. This is correct — the path-rewrite run is a setup step, not a game launch. Set both keys back to `false` before the next run, which will actually launch the game.
+
+### Why .singe files need copies on both D: and J:
+
+`SingePathUpdate` updates the J: ROM directory copies. The `-script` argument points to a J: file, so the main script loads from J: with the updated paths. However, scripts frequently call `dofile()` with **relative** paths:
+
+```lua
+dofile("singe/maddog/service.singe")
+```
+
+Because Daphne's CWD is `D:\Arcade\Emulators\American Laser Games\data\`, this resolves to:
+
+```
+D:\Arcade\Emulators\American Laser Games\data\singe\maddog\service.singe
+```
+
+Daphne loads the D: copy of `service.singe` — which still has the original D: paths for `io.input`, `io.output`, etc. The updated J: copy is bypassed entirely.
+
+**Fix:** after SingePathUpdate has rewritten the J: copies, copy them to D::
+
+```bat
+xcopy /Y "J:\Games\American Laser Games\[gamename]\*.singe" "D:\Arcade\Emulators\American Laser Games\data\singe\[gamename]\"
+```
+
+The destination directory must exist first. Only `.singe` files need copying — sprites, sounds, fonts, and `.cfg` files are referenced by absolute J: paths in the updated scripts and do not need D: copies.
+
+### .cfg files — game settings and high scores
+
+Each game has a `.cfg` file (e.g. `maddog.cfg`) storing difficulty, coin settings, and high scores. `service.singe` reads it at game start via `io.input()` and writes it on exit via `io.output()`. After SingePathUpdate, these paths point to `J:\Games\American Laser Games\[gamename]\[gamename].cfg`.
+
+**The `.cfg` file must exist at the J: path before the game can run.** If missing, `io.input()` throws an error and the game crashes on the first overlay update frame. Either copy it from the old D: location if one exists, or create it with default values — see `service.singe` for the expected format (plain-text `key = value` lines followed by high score name/score entries).
+
+### One-time setup procedure
+
+This is done once per game. After completion, both keys stay `false` permanently.
+
+1. **Set both flags in `D:\Arcade\RocketLauncher\Modules\Daphne Singe\Daphne Singe.ini`:**
+   ```ini
+   SingePathUpdate=true
+   ForcePathUpdate=true
+   ```
+
+2. **Launch each ALG game from HyperSpin once.** The `.singe` files in the J: ROM directory for that game are rewritten, then RL exits. No game window appears; no `daphne_log` is produced. This is expected and correct.
+
+   > `SingePathUpdate` is **per-game** — it only processes `.singe` files for the game currently being launched. Repeat this step for every ALG title.
+
+3. **Copy updated .singe files to D:.** For each game:
+   ```bat
+   xcopy /Y "J:\Games\American Laser Games\[gamename]\*.singe" "D:\Arcade\Emulators\American Laser Games\data\singe\[gamename]\"
+   ```
+
+4. **Restore both flags:**
+   ```ini
+   SingePathUpdate=false
+   ForcePathUpdate=false
+   ```
+
+5. **Launch each game normally to play.**
+
+### Comparison with WoW Action Max
+
+| | American Laser Games | WoW Action Max |
+|---|---|---|
+| Original script paths | Hardcoded absolute D: paths | CWD-relative (`singe/ActionMax/`) |
+| SingePathUpdate | **Required** (one-time setup per game) | **Do not use** — would break CWD-relative paths |
+| What needs D: copies | `.singe` files only | All assets (sprites, sounds, fonts) |
+| What needs J: copies | Everything (scripts + assets + cfg) | Everything |
+| Reason D: copy needed | `dofile()` relative paths resolve from D: CWD | Asset loading via unknown path (empirically confirmed) |
+
+---
+
 ## Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes
 
 ### Emulator version on this cabinet
