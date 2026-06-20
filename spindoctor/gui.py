@@ -7838,7 +7838,7 @@ class _SpinDoctorGUI:
         be_grid.columnconfigure(1, weight=1)
 
         self.ttk.Button(
-            be_frame, text="Apply Bulk Edit",
+            be_frame, text="Run Bulk Edit",
             command=self._run_batch_edit,
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
