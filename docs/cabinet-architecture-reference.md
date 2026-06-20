@@ -596,6 +596,8 @@ Always preview before running the bulk replace, and always edit one file first t
 
 WoW Action Max uses a **custom build of Daphne Singe 1.0.10** housed in its own emulator folder, separate from the standard Daphne install. Three locations must all be correct for a game to launch; each missing piece produces a distinct failure.
 
+> **Dual-copy requirement:** This Daphne Singe build has unusual asset loading behaviour. The engine assets (Emulator.singe, sprites, sounds, fonts) must be present in **both** the emulator directory on D: and the ROM directory on J:. Removing them from either location breaks the games. The exact loading path that reads from J: is not fully understood — empirically confirmed through testing.
+
 ### Emulator directory layout
 
 ```
@@ -626,22 +628,26 @@ D:\Arcade\Emulators\WoW Action Max\data\
         └── Framework.singe           ← Singe engine framework; must exist or game silently fails
 ```
 
-> **Why all assets load from D:, not J:** Every per-game `.singe` script calls `dofile("singe/ActionMax/Emulator.singe")`. The `dofile()` path is relative to **daphne.exe's working directory** (D:\Arcade\Emulators\WoW Action Max\data\), not to where the `.singe` script lives. `Emulator.singe` then loads all sprites, sounds, and fonts using the same `singe/ActionMax/<filename>` relative prefix — again from D:. This means all engine assets **must** physically live in `singe\ActionMax\` on D:. You cannot redirect them to J: without editing `Emulator.singe` to use absolute paths.
+> **Why D: needs these files:** Every per-game `.singe` script calls `dofile("singe/ActionMax/Emulator.singe")`. The `dofile()` path is relative to **daphne.exe's working directory** (D:\Arcade\Emulators\WoW Action Max\data\), not to where the `.singe` script lives. `Emulator.singe` then loads all sprites, sounds, and fonts using the same `singe/ActionMax/<filename>` relative prefix — again from D:. If any of these are absent from D:, Daphne logs `SINGE: Unable to load sprite singe/ActionMax/...` errors.
 >
-> The per-game `.singe` scripts are the only thing that safely lives on J:. They contain only the game-specific config variables and the single `dofile()` call.
+> **Why J: also needs these files:** Empirically confirmed — removing sprites, sounds, fonts, or `Emulator.singe` from `J:\Games\WoW Action Max\` also breaks the games, even when D: copies are present. The exact loading path that reads from J: is not visible in `daphne_log.txt`. Treat the J: copies as a required duplicate; do not delete them.
 
 ### ROM directory layout (J: drive)
 
 ```
 J:\Games\WoW Action Max\
-├── <GameName>.singe             ← per-game script: config vars + dofile() call only
+├── <GameName>.singe             ← per-game script (config vars + dofile() call)
 ├── <GameName>.txt               ← per-game framefile (video frame timing data)
 ├── video_<GameName>.m2v         ┐
 ├── video_<GameName>.ogg         │ per-game video content
-└── video_<GameName>.dat         ┘
+├── video_<GameName>.dat         ┘
+├── Emulator.singe               ← duplicate of D: copy; must exist here too
+├── sprite_*.png                 ← duplicate of D: copies (shared + per-game)
+├── sound_*.wav                  ← duplicate of D: copies
+└── font_*.ttf                   ← duplicate of D: copies
 ```
 
-Sprites, sounds, fonts, and `Emulator.singe` do **not** belong on J:. Even if copied there, Daphne will not find them — it always resolves `singe/ActionMax/` relative to daphne.exe on D:.
+The engine assets on J: are flat (no `singe\ActionMax\` subfolder). Do not delete them — the games fail without copies in both locations.
 
 ### Global Emulators.ini entry
 
@@ -669,11 +675,12 @@ This means if RL finds a `.bat` file in the ROM folder (e.g. `38AmbushAlley.bat`
 | 1 | RL error: "Could not find your emulator/application" | `Emu_Path` in `Global Emulators.ini` pointed into `Games\` instead of `Emulators\` | Set `Emu_Path=..\Emulators\WoW Action Max\data\daphne.exe` |
 | 2 | Daphne error dialog: "Loading 'saveme.wav' failed / Sound initialization failed" | `sound\` folder missing from the emulator `data\` directory | Copy `D:\Arcade\Emulators\Daphne\sound\` → `D:\Arcade\Emulators\WoW Action Max\data\sound\` |
 | 3 | RL fade-in completes, then RL errors "waiting for window DAPHNE" with no Daphne dialog | `Framework.singe` missing from `singe\Singe\`; Daphne exits silently | Place `Framework.singe` at `D:\Arcade\Emulators\WoW Action Max\data\singe\Singe\Framework.singe` |
-| 4 | `SINGE: Unable to load sprite singe/ActionMax/...` or `Could not open singe/ActionMax/sound_...` | Sprites, sounds, or fonts not present in `D:\...\singe\ActionMax\` (e.g. deleted or only on J:) | `xcopy "J:\Games\WoW Action Max\sprite_*.png" "D:\Arcade\Emulators\WoW Action Max\data\singe\ActionMax\" /Y` and same for `sound_*.wav` and `font_*.ttf` |
+| 4 | `SINGE: Unable to load sprite singe/ActionMax/...` or `Could not open singe/ActionMax/sound_...` | Sprites, sounds, or fonts missing from `D:\...\singe\ActionMax\` | Copy from J: to D: with xcopy (see dual-copy note above) |
+| 5 | Game launches but crashes / fails mid-load with no clear error | Sprites, sounds, fonts, or `Emulator.singe` missing from `J:\Games\WoW Action Max\` | Restore the flat copies on J: — both locations are required |
 
 Failure mode 3 produces **no Daphne error dialog** — Daphne simply exits. Temporarily disable RL Fade to see bare Daphne output when diagnosing it.
 
-Failure mode 4 typically follows an attempt to "clean up" files from D: under the assumption they belong on J: with the ROMs. They do not — all `singe/ActionMax/` assets are emulator-side by design.
+Failure modes 4 and 5 are mirror images of each other due to the dual-copy requirement. If games fail silently or partially, check that the engine assets exist in both locations.
 
 ### SingePathUpdate — not useful for WoW Action Max
 
