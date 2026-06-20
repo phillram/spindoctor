@@ -130,9 +130,10 @@ spindoctor fetch-media --system NES --source screenscraper --apply  :: force one
 spindoctor fetch-media --system NES --source both --apply           :: explicit combined mode
 spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --apply  :: single game
 spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --types video --apply  :: just the video
+spindoctor fetch-media --all --apply --report D:\post_fetch_audit.csv               :: write audit CSV after run
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file. `--report PATH` writes a post-fetch audit CSV to a specific path (includes before/after download columns per media slot); this is independent of the `auto_audit_export_dir` auto-export, so both can be active simultaneously.
 
 A game that resolves but downloads nothing for every type is usually a name-matching problem, not a missing-media problem — see [Troubleshooting](troubleshooting.md#fetch-media-resolves-the-game-but-every-type-reports-no-url-even-with---source-both) and consider a [per-game override](configuration.md#per-game-overrides). When an override is active for a game, the metadata cache is automatically bypassed so the forced ID is always tried fresh — setting an override takes effect on the very next run without needing to clear the cache manually. `--verbose` output shows the active override IDs alongside the resolved source (`override: ss=XXXX`).
 
@@ -1210,6 +1211,7 @@ spindoctor ledblinky generate --apply      :: commit controls.ini / Colors.ini (
 spindoctor ledblinky generate --apply --verbose  :: also print file paths + format used
 spindoctor ledblinky inspect-rom 005       :: diagnose why 005's LED colors may not be applying
 spindoctor ledblinky audit
+spindoctor ledblinky audit --report D:\ledblinky_audit.csv
 spindoctor ledblinky check                 :: scan for overlay hook compatibility issues (read-only)
 spindoctor ledblinky fix                   :: dry-run preview of the overlay hook patch
 spindoctor ledblinky fix --apply           :: commit in-place (writes to ledblinky_dir / hyperspin_dir)
@@ -1653,9 +1655,10 @@ Read-only inventory of third-party arcade tools installed on this PC. Scans `Hyp
 spindoctor tools-audit
 spindoctor tools-audit --extra-path "C:\arcade-utils"
 spindoctor tools-audit --max-depth 6 --show-unknown
+spindoctor tools-audit --report D:\tools_audit.csv
 ```
 
-Best run on the arcade cabinet itself. The report is purely informational — it never uninstalls anything, but the "Replaced by" column tells you which tools are safely redundant once the spindoctor equivalent is wired up. `--show-unknown` lists `.exe` files the registry doesn't recognise so the project can grow the registry over time.
+Best run on the arcade cabinet itself. The report is purely informational — it never uninstalls anything, but the "Replaced by" column tells you which tools are safely redundant once the spindoctor equivalent is wired up. `--show-unknown` lists `.exe` files the registry doesn't recognise so the project can grow the registry over time. `--report PATH` writes a CSV with one row per detected tool: category, tool name, replaced-by spindoctor command(s), notes, and matched executable path(s).
 
 See [Standalone tools → Tools audit](standalone-tools.md) for the categorised mapping.
 
@@ -1691,6 +1694,7 @@ spindoctor cleanup categories                                                :: 
 spindoctor cleanup audit                                                     :: disk usage by category
 spindoctor cleanup audit --detail
 spindoctor cleanup audit -c metadata-cache -c db-backups
+spindoctor cleanup audit --report D:\cleanup_audit.csv
 
 spindoctor cleanup run --include safe                                        :: dry-run
 spindoctor cleanup run --include metadata-cache,match-cache --apply
