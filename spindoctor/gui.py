@@ -5688,6 +5688,7 @@ class _SpinDoctorGUI:
             ("_fav_system_combo",      "_fav_system_var",      None),
             ("_rename_system_combo",   "_rename_system_var",   None),
             ("_match_system_combo",    "_match_system_var",    None),
+            ("_gwm_system_combo",      "_gwm_system_var",      None),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
             ("_ovr_system_combo",      "_ovr_system_var",      None),
@@ -8872,6 +8873,29 @@ class _SpinDoctorGUI:
             args.extend(["--exe", exe])
         self._run_cli("spindoctor", args)
 
+    def _fixexe_browse(self) -> None:
+        """Open a native file browser to locate any executable on the system."""
+        current = self._fixexe_path_var.get().strip()
+        if current and Path(current).parent.exists():
+            initial_dir = str(Path(current).parent)
+        else:
+            try:
+                cfg = load_config()
+                system = self._fixexe_system_var.get().strip()
+                game = self._fixexe_game_var.get().strip()
+                candidate = Path(cfg.roms_dir) / system / game
+                initial_dir = str(candidate) if candidate.is_dir() else str(Path(cfg.roms_dir))
+            except Exception:  # noqa: BLE001
+                initial_dir = str(Path.home())
+        path = self.filedialog.askopenfilename(
+            title="Select executable",
+            initialdir=initial_dir,
+            filetypes=[("Executables", "*.exe"), ("All files", "*.*")],
+        )
+        if path:
+            # Normalise to native path separators (Tk returns POSIX-style on Windows).
+            self._fixexe_path_var.set(str(Path(path)))
+
     def _match_list(self) -> None:
         args = ["match", "list"]
         system = self._match_system_var.get().strip()
@@ -9753,6 +9777,108 @@ class _SpinDoctorGUI:
             command=lambda: self._run_rename_or_clone("clone"),
         ).pack(side="left", padx=6)
 
+        # ── Game Wheel Manager ───────────────────────────────────────────────
+        # Lets the user list all games in a system's XML database, remove
+        # a single game, or drag-reorder games exactly like the Main Menu
+        # carousel above — all using the same database module the CLI uses.
+        gwm_frame = self.ttk.LabelFrame(frame, text="Manage games in a system wheel")
+        gwm_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            gwm_frame,
+            text=("List, remove, or reorder individual games in any system's "
+                  "wheel database. Select a system, click Load, then use Move "
+                  "Up / Move Down (or Alt+Up / Alt+Down) to reposition a "
+                  "game, or select a game and click Remove to delete it from "
+                  "the XML. Save Order writes the result — dry-run unless "
+                  "Apply is ticked above."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(2, 4))
+
+        gwm_top = self.ttk.Frame(gwm_frame)
+        gwm_top.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(gwm_top, text="System").pack(side="left")
+        self._gwm_system_var = self.tk.StringVar()
+        self._gwm_system_combo = self.ttk.Combobox(
+            gwm_top, textvariable=self._gwm_system_var,
+            state="readonly", width=24,
+        )
+        self._gwm_system_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            gwm_top, text="Load Games",
+            command=self._gwm_load,
+        ).pack(side="left", padx=(0, 4))
+        self._gwm_count_label = self.ttk.Label(gwm_top, text="", foreground=_FG_DIM)
+        self._gwm_count_label.pack(side="left", padx=4)
+
+        gwm_tree_frame = self.ttk.Frame(gwm_frame)
+        gwm_tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+        gwm_tree_frame.columnconfigure(0, weight=1)
+        gwm_tree_frame.rowconfigure(0, weight=1)
+
+        self._gwm_data: list[dict] = []  # [{"name": str, "description": str}]
+        self._gwm_loaded_system: str = ""  # tracks which system is actually in _gwm_data
+        self._gwm_system_combo.bind("<<ComboboxSelected>>", lambda _e: self._gwm_on_system_change())
+        self._gwm_tree = self.ttk.Treeview(
+            gwm_tree_frame,
+            columns=("pos", "name", "desc"),
+            show="headings",
+            selectmode="browse",
+            height=14,
+        )
+        self._gwm_tree.heading("pos",  text="#",           anchor="center")
+        self._gwm_tree.heading("name", text="ROM Name",    anchor="w")
+        self._gwm_tree.heading("desc", text="Description", anchor="w")
+        self._gwm_tree.column("pos",  width=50,  stretch=False, anchor="center")
+        self._gwm_tree.column("name", width=280, stretch=True,  anchor="w")
+        self._gwm_tree.column("desc", width=320, stretch=True,  anchor="w")
+
+        gwm_vsb = self.ttk.Scrollbar(gwm_tree_frame, orient="vertical",
+                                     command=self._gwm_tree.yview)
+        self._gwm_tree.configure(yscrollcommand=gwm_vsb.set)
+        self._gwm_tree.grid(row=0, column=0, sticky="nsew")
+        gwm_vsb.grid(row=0, column=1, sticky="ns")
+        self._gwm_tree.bind("<Alt-Up>",   lambda e: self._gwm_move_up())
+        self._gwm_tree.bind("<Alt-Down>", lambda e: self._gwm_move_down())
+
+        gwm_btn_row = self.ttk.Frame(gwm_frame)
+        gwm_btn_row.pack(anchor="w", padx=6, pady=(2, 2))
+        self.ttk.Button(
+            gwm_btn_row, text="Move Up",
+            command=self._gwm_move_up,
+        ).pack(side="left")
+        self.ttk.Button(
+            gwm_btn_row, text="Move Down",
+            command=self._gwm_move_down,
+        ).pack(side="left", padx=(4, 2))
+        self._gwm_goto_var = self.tk.StringVar()
+        self.ttk.Label(gwm_btn_row, text="Move to #").pack(side="left", padx=(8, 2))
+        self.ttk.Entry(
+            gwm_btn_row, textvariable=self._gwm_goto_var, width=5,
+        ).pack(side="left", padx=(0, 2))
+        self.ttk.Button(
+            gwm_btn_row, text="Go",
+            command=self._gwm_move_to_pos,
+        ).pack(side="left", padx=(0, 10))
+        self.ttk.Button(
+            gwm_btn_row, text="Remove Game",
+            command=self._gwm_remove,
+        ).pack(side="left", padx=(0, 10))
+
+        gwm_btn_row2 = self.ttk.Frame(gwm_frame)
+        gwm_btn_row2.pack(anchor="w", padx=6, pady=(2, 6))
+        self.ttk.Button(
+            gwm_btn_row2, text="Sort A→Z (by title)",
+            command=lambda: self._gwm_sort("description"),
+        ).pack(side="left")
+        self.ttk.Button(
+            gwm_btn_row2, text="Sort A→Z (by ROM name)",
+            command=lambda: self._gwm_sort("name"),
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            gwm_btn_row2, text="Save Order",
+            command=self._gwm_save_order,
+        ).pack(side="left", padx=(20, 0))
+
         # ── Organize a system ────────────────────────────────────────────────
         # `organize` does two things: (a) writes sort wheels (per-axis
         # sub-databases under Databases/<sys>/{Genre,Year,...}) so
@@ -9865,8 +9991,9 @@ class _SpinDoctorGUI:
             fixexe_frame,
             text=("Fix a PC game that launches the wrong executable (uninstaller, "
                   "cache file, etc.). Select system and game — the list below shows "
-                  "every .exe found in the game folder, recommended first. Pick the "
-                  "correct one and click Apply to update the PCLauncher INI."),
+                  "every .exe found in the game folder and all subfolders, recommended "
+                  "first. Pick the correct one, or click Browse… to locate any file "
+                  "on the system. Then click Apply to update the PCLauncher INI."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(2, 4))
 
@@ -9898,7 +10025,8 @@ class _SpinDoctorGUI:
         ).pack(side="left")
 
         self.ttk.Label(
-            fixexe_frame, text="Executables in game folder (recommended first):",
+            fixexe_frame,
+            text="Executables in game folder and subfolders (recommended first):",
         ).pack(anchor="w", padx=6, pady=(4, 0))
         self._fixexe_listbox = self.tk.Listbox(
             fixexe_frame, height=5, selectmode="single",
@@ -9914,8 +10042,12 @@ class _SpinDoctorGUI:
         self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
         self._fixexe_path_var = self.tk.StringVar()
         self.ttk.Entry(
-            fixexe_path_row, textvariable=self._fixexe_path_var, width=60,
+            fixexe_path_row, textvariable=self._fixexe_path_var, width=55,
         ).pack(side="left", padx=6, fill="x", expand=True)
+        self.ttk.Button(
+            fixexe_path_row, text="Browse…",
+            command=self._fixexe_browse,
+        ).pack(side="left", padx=(0, 2))
 
         fixexe_btns = self.ttk.Frame(fixexe_frame)
         fixexe_btns.pack(anchor="w", padx=6, pady=(0, 6))
@@ -10187,6 +10319,250 @@ class _SpinDoctorGUI:
         except Exception as exc:  # noqa: BLE001
             log.warning("_load_games_for_system(%r): %s", system, exc)
             return []
+
+    # ── Game Wheel Manager handlers ──────────────────────────────────────────
+
+    def _gwm_on_system_change(self) -> None:
+        """Clear loaded game data when the system dropdown is changed."""
+        self._gwm_data = []
+        self._gwm_loaded_system = ""
+        self._gwm_repopulate_tree()
+        self._gwm_count_label.configure(text="")
+
+    def _gwm_load(self) -> None:
+        system = self._gwm_system_var.get().strip()
+        if not system:
+            self._set_status("Select a system first.")
+            return
+        try:
+            cfg = load_config()
+            db = load_database(system, cfg.databases_dir)
+            games = list(db.iter_xml_order())
+        except Exception as exc:  # noqa: BLE001
+            self.messagebox.showerror("Load failed", str(exc))
+            return
+        self._gwm_data = [{"name": g.name, "description": g.description} for g in games]
+        self._gwm_loaded_system = system
+        self._gwm_repopulate_tree()
+        count = len(self._gwm_data)
+        self._gwm_count_label.configure(text=f"{count} game{'s' if count != 1 else ''}")
+        self._set_status(f"Loaded {count} games from {system}.")
+
+    def _gwm_repopulate_tree(self) -> None:
+        self._gwm_tree.delete(*self._gwm_tree.get_children())
+        for i, entry in enumerate(self._gwm_data, 1):
+            self._gwm_tree.insert("", "end", iid=str(i), values=(
+                i, entry["name"], entry["description"],
+            ))
+
+    def _gwm_selected_index(self) -> int:
+        sel = self._gwm_tree.selection()
+        if not sel:
+            return -1
+        return int(sel[0]) - 1  # iid is 1-based
+
+    def _gwm_move_up(self) -> None:
+        idx = self._gwm_selected_index()
+        if idx < 0:
+            self._set_status("Select a game in the table first.")
+            return
+        if idx == 0:
+            self._set_status("Already at the top.")
+            return
+        self._gwm_data[idx], self._gwm_data[idx - 1] = (
+            self._gwm_data[idx - 1], self._gwm_data[idx]
+        )
+        self._gwm_repopulate_tree()
+        new_iid = str(idx)
+        self._gwm_tree.selection_set(new_iid)
+        self._gwm_tree.see(new_iid)
+
+    def _gwm_move_down(self) -> None:
+        idx = self._gwm_selected_index()
+        if idx < 0:
+            self._set_status("Select a game in the table first.")
+            return
+        if idx >= len(self._gwm_data) - 1:
+            self._set_status("Already at the bottom.")
+            return
+        self._gwm_data[idx], self._gwm_data[idx + 1] = (
+            self._gwm_data[idx + 1], self._gwm_data[idx]
+        )
+        self._gwm_repopulate_tree()
+        new_iid = str(idx + 2)
+        self._gwm_tree.selection_set(new_iid)
+        self._gwm_tree.see(new_iid)
+
+    def _gwm_move_to_pos(self) -> None:
+        idx = self._gwm_selected_index()
+        if idx < 0:
+            self._set_status("Select a game in the table first.")
+            return
+        raw = self._gwm_goto_var.get().strip()
+        try:
+            target = int(raw)
+        except ValueError:
+            self._set_status("Enter a valid position number.")
+            return
+        total = len(self._gwm_data)
+        if not 1 <= target <= total:
+            self._set_status(f"Position must be between 1 and {total}.")
+            return
+        target_idx = target - 1
+        if target_idx == idx:
+            return
+        item = self._gwm_data.pop(idx)
+        self._gwm_data.insert(target_idx, item)
+        self._gwm_repopulate_tree()
+        iid = str(target)
+        self._gwm_tree.selection_set(iid)
+        self._gwm_tree.see(iid)
+
+    def _gwm_sort(self, key: str) -> None:
+        """Sort the in-memory game list alphabetically by *key* ('description' or 'name').
+
+        Falls back to ROM name when description is blank so no entry
+        floats to the top as an empty string.
+        """
+        if not self._gwm_data:
+            self._set_status("Load a system's games first.")
+            return
+        label = "title" if key == "description" else "ROM name"
+
+        def _sort_key(entry: dict) -> str:
+            value = (entry.get(key) or "").strip()
+            if not value:
+                value = (entry.get("name") or "").strip()
+            # Strip leading "The ", "A ", "An " for natural sort (same as HyperSpin).
+            lower = value.lower()
+            for article in ("the ", "a ", "an "):
+                if lower.startswith(article):
+                    value = value[len(article):]
+                    break
+            return value.lower()
+
+        self._gwm_data.sort(key=_sort_key)
+        self._gwm_repopulate_tree()
+        self._set_status(f"Sorted {len(self._gwm_data)} games A→Z by {label}. Click Save Order to write.")
+
+    def _gwm_remove(self) -> None:
+        idx = self._gwm_selected_index()
+        if idx < 0:
+            self._set_status("Select a game to remove.")
+            return
+        game_name = self._gwm_data[idx]["name"]
+        system = self._gwm_loaded_system or self._gwm_system_var.get().strip()
+        apply_ = self._global_apply_var.get()
+
+        if not apply_:
+            self._set_status(
+                f"[DRY RUN] Would remove '{game_name}' from {system}. "
+                "Tick Apply and click Remove Game again to commit."
+            )
+            self._append_output(
+                f"[DRY RUN] game remove --system {system!r} {game_name!r}\n"
+                "  (pass --apply to write)\n"
+            )
+            return
+
+        if not self.messagebox.askyesno(
+            "Remove game?",
+            f"Remove '{game_name}' from the {system} wheel database?\n\n"
+            "The ROM and media files are NOT deleted — only the XML entry.",
+        ):
+            return
+
+        args = ["game", "remove", "--system", system, game_name, "--apply", "--verbose"]
+
+        def _on_done(rc: int) -> None:
+            if rc != 0:
+                return
+            # Search by name in case the user reordered during the CLI run.
+            for i, entry in enumerate(self._gwm_data):
+                if entry["name"] == game_name:
+                    self._gwm_data.pop(i)
+                    break
+            self._gwm_repopulate_tree()
+            count = len(self._gwm_data)
+            self._gwm_count_label.configure(text=f"{count} game{'s' if count != 1 else ''}")
+
+        self._run_cli("spindoctor", args, on_complete=_on_done)
+
+    def _gwm_save_order(self) -> None:
+        system = self._gwm_loaded_system
+        if not system:
+            self._set_status("Load a system's games first.")
+            return
+        if not self._gwm_data:
+            self._set_status("No games loaded — click Load Games first.")
+            return
+
+        apply_ = self._global_apply_var.get()
+        names = [entry["name"] for entry in self._gwm_data]
+
+        if not apply_:
+            self._set_status(
+                f"[DRY RUN] Would save new game order for {system} "
+                f"({len(names)} games). Tick Apply and click Save Order to commit."
+            )
+            self._append_output(
+                f"[DRY RUN] game save-order --system {system!r}\n"
+                f"  New order ({len(names)} games):\n"
+                + "".join(f"  {i+1:>4}  {n}\n" for i, n in enumerate(names))
+                + "  (pass --apply to write)\n"
+            )
+            return
+
+        if not self.messagebox.askyesno(
+            "Save game order?",
+            f"Write the new game order for {system} to its XML database?\n\n"
+            f"{len(names)} games will be saved in the current table order.",
+        ):
+            return
+
+        self._set_status(f"Saving game order for {system}…")
+
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str=f"game save-order → {system}",
+            dry_run=False,
+        )
+        record.append(f"$ game save-order\n  system: {system}\n  games: {len(names)}\n")
+        self._run_history.append(record)
+        self._refresh_logs_tab()
+
+        def _succeeded(saved_path) -> None:
+            record.append(f"  Saved: {saved_path}\n")
+            record.exit_code = 0
+            self._append_output(f"Game order saved for {system}: {saved_path}\n")
+            self._flash_status(f"Game order saved for {system}.")
+            self._refresh_logs_tab()
+
+        def _failed(msg: str) -> None:
+            record.append(f"  ERROR: {msg}\n")
+            record.exit_code = 1
+            self._set_status("Save failed — see Logs tab.")
+            self._refresh_logs_tab()
+            self.messagebox.showerror("Save failed", msg)
+
+        def _worker():
+            try:
+                cfg = load_config()
+                db = load_database(system, cfg.databases_dir)
+                db.reorder_games(names)
+                _bak_dir = (
+                    Path(cfg.backup_dir) if getattr(cfg, "backup_dir", "") else None
+                )
+                saved = db.save(
+                    backup=cfg.backup_before_modify,
+                    backup_dir=_bak_dir,
+                    tmp_dir=cfg.effective_atomic_tmp_dir,
+                )
+                self.root.after(0, _succeeded, saved)
+            except Exception as exc:  # noqa: BLE001
+                self.root.after(0, _failed, str(exc))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _refresh_rename_games(self) -> None:
         system = self._rename_system_var.get().strip()

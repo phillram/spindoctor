@@ -212,6 +212,31 @@ Auto-detection excludes uninstallers, `vcredist*`, `chromedriver.exe` (NW.js/Ele
 
 Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
 
+### `game` — list, reorder, or remove games in a wheel
+
+```bat
+spindoctor game list --system "Nintendo 64"                           :: games in wheel order
+spindoctor game list --system MAME --verbose                          :: full metadata per game
+
+spindoctor game remove --system MAME "1942"                           :: dry-run: show what would be removed
+spindoctor game remove --system MAME "1942" --apply                   :: remove from database (ROM untouched)
+spindoctor game remove --system MAME "1942" --apply --verbose         :: full metadata + file path
+
+spindoctor game move --system "Nintendo 64" "Zelda" 1 --apply         :: move to wheel position 1
+spindoctor game move-up   --system MAME "1942" --apply                :: shift one slot earlier
+spindoctor game move-down --system MAME "1942" --apply                :: shift one slot later
+
+spindoctor game sort --system "Nintendo 64" --apply                   :: A→Z by title (The/A/An stripped)
+spindoctor game sort --system MAME --by name --apply                  :: A→Z by ROM filename
+spindoctor game sort --system MAME --apply --verbose                  :: print sorted list before saving
+```
+
+All write commands are dry-run without `--apply`. `--output-dir` writes outside the live HyperSpin tree.
+
+> **GUI:** Systems tab → **Manage games in a system wheel** — same Move Up/Down/Move to #/Sort/Remove/Save Order controls as the Main Menu carousel.
+
+Reference: [Command reference → game](commands.md#game).
+
 ### `ignore` / `match` — taming the matcher
 
 ```bat
