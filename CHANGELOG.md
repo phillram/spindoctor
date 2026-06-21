@@ -10,11 +10,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **File paths no longer wrap mid-line in saved output logs.** All Rich console instances now use `soft_wrap=True`, which prevents Rich from breaking long lines (file paths, URLs) at the detected console width. This is belt-and-suspenders on top of the existing `COLUMNS=9999` subprocess environment fix — if the cabinet's Windows 7 / PyInstaller environment ignores `COLUMNS`, `soft_wrap` guarantees paths stay on a single line regardless.
 
+### Added
+
+- **Trailing actionable summaries for `generate-config` and `update-db`.** These commands process every system in the cabinet in a single run; any error or per-system result was previously buried inside a long table or scrolled-off list.
+  - `generate-config --apply`: if any system INI fails to write (e.g. `rocketlauncher_dir` not configured, bad path), the failing system names and error messages are repeated as an "Actionable items" section at the very end of output — visible without scrolling back through a 40-system table.
+  - `update-db`: after processing all systems, a one-line grand total is printed (`+N added  −M removed  K already in sync`) so the result of a full-library run is legible at a glance from the bottom of the terminal.
+
 ### Changed
 
 - **GUI: all action buttons now use plain-English labels instead of CLI command names.** Twenty-four buttons across six tabs were renamed so users never need to know a CLI sub-command to understand what a button does. Full mapping: "Run doctor" → "Run Health Check"; "Tools audit" → "Check Installed Tools"; "Run migration" → "Start Migration"; "Run generate-config" → "Update RocketLauncher INIs" (both Metadata & Media and Migration tabs); "Run fetch-meta" → "Download Game Info"; "Run on subset…" → "Download for Selected Systems…"; "Run fetch-media" → "Download Media Files"; "Run media-scan" → "Import Local Media"; "Run update-db" → "Sync Database to ROMs"; "Run batch-edit" → "Run Bulk Edit"; "Run curate" → "Archive / Delete Duplicates"; "Audit caches" → "Check Cache Status"; "Run cleanup" → "Clean Up Caches"; "Run add-system" → "Add Arcade System"; "Run add-pc-system" → "Add PC System"; "Run rename" → "Rename Game"; "Run clone" → "Clone Game"; "Run organize" → "Build Sort Wheels". CLI commands and behaviour are unchanged.
 
 ### Added
+
+- **`repath-system` — re-prefix game paths in a PCLauncher system INI after moving games to a new drive.** Designed for systems like Taito Type X whose games live in a system-level INI (`Modules\PCLauncher\<System>.ini`) and were moved to a different drive outside of a full SpinDoctor `migrate` run. In one command, rewrites `Application=` for every game whose path contains the system name as a directory component, and updates `Rom_Path=` in the matching `Emulators.ini`. All other per-game keys (`FadeTitle=`, `AppWaitExe=`, `ExitMethod=`, `PostExit=`, etc.) are left untouched. Dry-run by default; `--apply` commits. GUI: Migration tab → Step 6. CLI: `spindoctor repath-system "Taito Type X" --rom-path "J:\Games\Taito Type X" --apply`.
+
+- **`pc-fix-exe` now handles system-level PCLauncher INIs (Taito Type X, NESiCAxLive, etc.).** Previously the command only looked for per-game INIs under `Modules\PCLauncher\<System>\<game>.ini`. It now detects whether a system-level INI (`Modules\PCLauncher\<System>.ini`) exists and uses it automatically — the correct format for arcade-PC systems configured outside of SpinDoctor. The `--exe` flag works the same way; use it to point at `.ahk` launchers or any non-`.exe` application type.
+
+- **GUI — Migration tab gains Step 6 "Re-prefix game paths after a drive change".** System picker, new game folder path entry with Browse, and separate Preview / Apply buttons driving the new `repath-system` command.
+
+- **GUI — "Fix game executable" panel is now system-agnostic.** The panel (previously labelled "Fix PC game executable" and documented as PC-only) now accepts any PCLauncher-backed system in the system picker. Selecting Taito Type X, NESiCAxLive, or any other system-level INI system and clicking Apply writes the correct INI automatically.
+
+- **Fix game executable — candidate list now includes `.ahk` and `.bat` launchers.** `list_exe_candidates` previously only returned `.exe` files, making Taito Type X's `CleanLaunch.ahk` invisible in the GUI listbox and `--list-candidates` output. Non-excluded `.exe` files are still ranked first (so auto-detect still favours `.exe`); `.ahk` files follow, then `.bat`, then excluded `.exe` files. The Browse dialog in the GUI now lists AHK scripts and batch files as named filetypes alongside executables. `pc-fix-exe` also prints a warning when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script — the warning is duplicated at the very end of output so it's never buried.
+
+- **`repath-system` and `pc-fix-exe` now duplicate actionable warnings at the end of output.** For `repath-system`, games whose `Application=` path did not contain the system name as a directory component (and therefore could not be re-pathed automatically) are listed as actionable items at the very bottom with a suggested `pc-fix-exe` command. For `pc-fix-exe`, the auto-detect/`.ahk` mismatch warning is repeated at the bottom. This prevents important messages from being scrolled off when a system has many games. `repath-system` also backs up the PCLauncher system INI to a timestamped `.bak` file before writing, so a failed or interrupted write cannot destroy the original.
 
 - **`--report PATH` flag added to all audit commands for consistent CSV output.** Every audit-type command now supports `--report PATH` to write a machine-readable CSV alongside the terminal output:
   - `tools-audit --report PATH` — one row per detected tool with category, tool name, replaced-by spindoctor command, notes, and install path(s).
