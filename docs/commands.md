@@ -80,6 +80,8 @@ Adding stub entries for new ROMs is on by default; `--no-add-missing` turns it o
 
 A `.YYYYMMDD_HHMMSS.bak` is saved before in-place writes (toggle via `backup_before_modify`).
 
+After processing all systems with `--all`, a one-line grand total is printed at the very end of output (`+N added  −M removed  K already in sync`) so the result of a full-library run is legible at a glance without scrolling back through per-system rows.
+
 ### `fetch-meta`
 
 > **GUI alternative:** the **Metadata & Media** tab wraps `fetch-meta`, `fetch-media`, `media-scan`, `update-db`, and `generate-config` behind one shared "System (or All systems) + Apply" header. See [GUI walkthrough](gui.md).
@@ -413,6 +415,8 @@ spindoctor generate-config --system "Panasonic 3DO" --apply
 
 **Synthetic wheels are never touched by generate-config.** Favorites, Recently Played, and Most Played are excluded from both the RocketLauncher INI writes and the `Main Menu.xml` sync. Their settings are managed by `fav rebuild`, `recent rebuild`, and `stats build-wheel`. Any synthetic wheels already present in `Main Menu.xml` are preserved (not dropped) when generate-config regenerates the file.
 
+**Trailing actionable summary on `--apply`:** if any system INI fails to write (e.g. `rocketlauncher_dir` not configured, bad path, permission error), the failing system names and error messages are repeated as an "Actionable items" section at the very end of output — visible without scrolling back through the per-system table. Systems that succeeded are not repeated.
+
 ### `mainmenu`
 
 Inspect and edit the HyperSpin Main Menu — the top-level wheel of systems. `generate-config` writes this file; `mainmenu` lets you review the order, hide stale systems, and add forgotten ones.
@@ -545,9 +549,9 @@ spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates
 
 Without `--apply` the command shows the current `Application=` and the proposed replacement but writes nothing.
 
-**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins.
+**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) and all subfolders for executables and launcher scripts. Candidates are ranked in this order: non-excluded `.exe` files (shallower paths rank above deeper paths within the same tier), then `.ahk` scripts, then `.bat` scripts, then excluded `.exe` files. Within each tier the file whose name most closely matches the game title is preferred; ties go to the largest file. Common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.) are filtered into the excluded tier regardless of extension.
 
-If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. This is the normal workflow for Taito Type X `.ahk` launchers or other non-`.exe` application types.
+If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. A warning is printed at the end of output when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script — the warning is duplicated so it isn't buried under candidate output.
 
 **GUI alternative:** the **Systems** tab has a "Fix game executable" panel with a system/game picker and a candidate list populated from the game folder. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.) and defaults to "PC Games" on startup. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
 
@@ -573,6 +577,8 @@ spindoctor repath-system "Taito Type X" ^
 ```
 
 For **full library migrations** (all systems at once), use `migrate` instead — it moves the files and rewrites every config in one shot. Use `repath-system` only when you moved one system's folder manually outside of SpinDoctor.
+
+**Trailing actionable summary:** games whose `Application=` path did not contain the system name as a directory component (and therefore could not be re-pathed automatically) are listed at the very end of output as "Actionable items", each with a suggested `pc-fix-exe --exe <path>` command for manual correction. The PCLauncher system INI is backed up to a timestamped `.bak` file before any writes — a failed or interrupted run cannot destroy the original.
 
 **GUI alternative:** Migration tab → Step 6 — Re-prefix game paths after a drive change.
 
