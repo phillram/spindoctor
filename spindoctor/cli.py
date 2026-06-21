@@ -9254,6 +9254,16 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             current = None
         if current:
             console.print(f"  Current  Application= [dim]{current}[/dim]")
+            # Warn when auto-detect picked a .exe but the existing launcher is
+            # a .ahk or .bat (common for Taito Type X / NESiCAxLive systems).
+            if not exe_path and Path(current).suffix.lower() in (".ahk", ".bat"):
+                console.print(
+                    f"  [yellow]Warning:[/yellow] auto-detected "
+                    f"[green]{new_exe.name}[/green] but the current "
+                    f"Application= is a [cyan]{Path(current).suffix}[/cyan] script.\n"
+                    "  Use [cyan]--exe[/cyan] to specify the correct launcher "
+                    f'(e.g. [cyan]--exe "{current}"[/cyan]).'
+                )
         else:
             console.print(f"  [yellow]Section [{section}] not found in {ini_path}[/yellow]")
     else:

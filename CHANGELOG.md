@@ -20,6 +20,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **GUI — "Fix game executable" panel is now system-agnostic.** The panel (previously labelled "Fix PC game executable" and documented as PC-only) now accepts any PCLauncher-backed system in the system picker. Selecting Taito Type X, NESiCAxLive, or any other system-level INI system and clicking Apply writes the correct INI automatically.
 
+- **Fix game executable — candidate list now includes `.ahk` and `.bat` launchers.** `list_exe_candidates` previously only returned `.exe` files, making Taito Type X's `CleanLaunch.ahk` invisible in the GUI listbox and `--list-candidates` output. Non-excluded `.exe` files are still ranked first (so auto-detect still favours `.exe`); `.ahk` files follow, then `.bat`, then excluded `.exe` files. The Browse dialog in the GUI now lists AHK scripts and batch files as named filetypes alongside executables. `pc-fix-exe` also prints a warning when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script, prompting use of `--exe` to preserve the correct launcher.
+
 - **`--report PATH` flag added to all audit commands for consistent CSV output.** Every audit-type command now supports `--report PATH` to write a machine-readable CSV alongside the terminal output:
   - `tools-audit --report PATH` — one row per detected tool with category, tool name, replaced-by spindoctor command, notes, and install path(s).
   - `cleanup audit --report PATH` — one row per category with file count, total bytes, human-readable size, oldest/newest timestamps, and storage location.

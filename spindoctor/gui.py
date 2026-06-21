@@ -8967,7 +8967,12 @@ class _SpinDoctorGUI:
         path = self.filedialog.askopenfilename(
             title="Select executable",
             initialdir=initial_dir,
-            filetypes=[("Executables", "*.exe"), ("All files", "*.*")],
+            filetypes=[
+                    ("Executables & scripts", "*.exe;*.ahk;*.bat"),
+                    ("AHK scripts", "*.ahk"),
+                    ("Batch files", "*.bat"),
+                    ("All files", "*.*"),
+                ],
         )
         if path:
             # Normalise to native path separators (Tk returns POSIX-style on Windows).
