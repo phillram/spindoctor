@@ -1397,7 +1397,7 @@ def repath_pclauncher_system_ini(
     system_name: str,
     new_rom_path: str,
     apply: bool = False,
-) -> list:
+) -> tuple:
     """Re-prefix all ``Application=`` paths in a PCLauncher system-level INI.
 
     When a system's game folder moves to a new drive (e.g. from
@@ -1407,22 +1407,30 @@ def repath_pclauncher_system_ini(
 
     The game-relative suffix (e.g. ``Arcana Heart 3\\CleanLaunch.ahk``) is
     extracted by locating ``<system_name>\\`` in the current path and taking
-    everything after it.  Entries whose path does not contain the system name as
-    a directory component are skipped.
+    everything after it.
 
-    Returns a list of ``(game_name, old_path, new_path)`` tuples for every
-    entry that would change (or changed when *apply* is ``True``).
+    Returns a 2-tuple ``(changes, skipped)`` where:
+      - *changes*: list of ``(game_name, old_path, new_path)`` for every entry
+        that would change (or changed when *apply* is ``True``).
+      - *skipped*: list of ``(game_name, old_path)`` for entries whose
+        ``Application=`` path did not contain the system name as a directory
+        component and therefore could not be re-prefixed automatically.
+
+    Caller is responsible for making a backup of *system_ini* before calling
+    with ``apply=True``.
     """
     if not system_ini.exists():
-        return []
+        return [], []
 
     lines = system_ini.read_text(encoding="utf-8", errors="replace").splitlines(
         keepends=True
     )
     delimiter = system_name.replace("/", "\\") + "\\"
 
-    # First pass — collect which Application= values need changing.
+    # First pass — collect which Application= values need changing and which
+    # can't be resolved because the system name isn't in the path.
     section_changes: dict = {}
+    section_skipped: dict = {}
     current_section = ""
     for line in lines:
         stripped = line.rstrip("\r\n")
@@ -1434,22 +1442,24 @@ def repath_pclauncher_system_ini(
             normalised = old_path.replace("/", "\\")
             idx = normalised.lower().find(delimiter.lower())
             if idx == -1:
+                section_skipped[current_section] = old_path
                 continue
             suffix = normalised[idx + len(delimiter):]
             new_path = new_rom_path.rstrip("\\") + "\\" + suffix
             if normalised != new_path:
                 section_changes[current_section] = (old_path, new_path)
 
-    if not section_changes:
-        return []
-
-    results = [
+    changes = [
         (game, old, new_p)
         for game, (old, new_p) in sorted(section_changes.items())
     ]
+    skipped = [
+        (game, path)
+        for game, path in sorted(section_skipped.items())
+    ]
 
-    if not apply:
-        return results
+    if not apply or not changes:
+        return changes, skipped
 
     # Second pass — rewrite in place.
     current_section = ""
@@ -1468,7 +1478,7 @@ def repath_pclauncher_system_ini(
         new_lines.append(line)
 
     system_ini.write_text("".join(new_lines), encoding="utf-8")
-    return results
+    return changes, skipped
 
 
 def read_pclauncher_ini_application_path(

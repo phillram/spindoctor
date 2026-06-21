@@ -1176,12 +1176,15 @@ FadeTitle=Unrelated
 def test_repath_dry_run_returns_changes_without_writing(tmp_path):
     ini = tmp_path / "Taito Type X.ini"
     ini.write_text(_TAITO_INI, encoding="utf-8")
-    changes = repath_pclauncher_system_ini(
+    changes, skipped = repath_pclauncher_system_ini(
         ini, "Taito Type X", r"J:\Games\Taito Type X", apply=False,
     )
     assert len(changes) == 2
     games = {g for g, _, _ in changes}
     assert games == {"Arcana Heart 3", "Deathsmiles II"}
+    # Unrelated Game has no system name in its path — must be reported as skipped.
+    assert len(skipped) == 1
+    assert skipped[0][0] == "Unrelated Game"
     # File must not be modified in dry-run.
     assert ini.read_text(encoding="utf-8") == _TAITO_INI
 
@@ -1213,20 +1216,23 @@ def test_repath_preserves_non_application_keys(tmp_path):
 def test_repath_skips_entries_without_system_name(tmp_path):
     ini = tmp_path / "Taito Type X.ini"
     ini.write_text(_TAITO_INI, encoding="utf-8")
-    repath_pclauncher_system_ini(
+    changes, skipped = repath_pclauncher_system_ini(
         ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
     )
     result = ini.read_text(encoding="utf-8")
     # "Unrelated Game" section has no "Taito Type X" in its path — must be unchanged.
     assert r"Application=D:\SomeOtherPath\game.exe" in result
+    # And it must appear in the skipped list.
+    assert any(g == "Unrelated Game" for g, _ in skipped)
 
 
 def test_repath_missing_ini_returns_empty(tmp_path):
     missing = tmp_path / "NoSuchSystem.ini"
-    changes = repath_pclauncher_system_ini(
+    changes, skipped = repath_pclauncher_system_ini(
         missing, "NoSuchSystem", r"J:\Games\NoSuchSystem", apply=True,
     )
     assert changes == []
+    assert skipped == []
 
 
 def test_repath_already_correct_returns_empty(tmp_path):
@@ -1236,7 +1242,8 @@ def test_repath_already_correct_returns_empty(tmp_path):
     )
     ini = tmp_path / "Taito Type X.ini"
     ini.write_text(already, encoding="utf-8")
-    changes = repath_pclauncher_system_ini(
+    changes, skipped = repath_pclauncher_system_ini(
         ini, "Taito Type X", r"J:\Games\Taito Type X", apply=False,
     )
     assert changes == []
+    assert skipped == []

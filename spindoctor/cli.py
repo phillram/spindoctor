@@ -9247,6 +9247,10 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
         f" pc-fix-exe: [cyan]{system_name}[/cyan] / [cyan]{game}[/cyan] ",
         style="bold magenta",
     ))
+    # Accumulate actionable warnings to repeat at the bottom.
+    trailing_warnings: list[str] = []
+
+    current = None
     if ini_path.exists():
         try:
             current = read_pclauncher_ini_application_path(ini_path, section_name=section)
@@ -9257,13 +9261,15 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             # Warn when auto-detect picked a .exe but the existing launcher is
             # a .ahk or .bat (common for Taito Type X / NESiCAxLive systems).
             if not exe_path and Path(current).suffix.lower() in (".ahk", ".bat"):
-                console.print(
+                warn = (
                     f"  [yellow]Warning:[/yellow] auto-detected "
                     f"[green]{new_exe.name}[/green] but the current "
                     f"Application= is a [cyan]{Path(current).suffix}[/cyan] script.\n"
                     "  Use [cyan]--exe[/cyan] to specify the correct launcher "
                     f'(e.g. [cyan]--exe "{current}"[/cyan]).'
                 )
+                console.print(warn)
+                trailing_warnings.append(warn)
         else:
             console.print(f"  [yellow]Section [{section}] not found in {ini_path}[/yellow]")
     else:
@@ -9276,6 +9282,12 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             "\n[yellow bold][DRY RUN][/yellow bold] "
             "Re-run with [cyan]--apply[/cyan] to write changes."
         )
+        if trailing_warnings:
+            console.print(
+                "\n[bold yellow]─── Actionable items ───────────────────────────────[/bold yellow]"
+            )
+            for w in trailing_warnings:
+                console.print(w)
         return
 
     # ── write ─────────────────────────────────────────────────────────────────
@@ -9291,6 +9303,13 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             console.print(
                 f"  [dim]no change needed — Application= is already correct[/dim]"
             )
+
+    if trailing_warnings:
+        console.print(
+            "\n[bold yellow]─── Actionable items ───────────────────────────────[/bold yellow]"
+        )
+        for w in trailing_warnings:
+            console.print(w)
 
 
 # ─── repath-system ────────────────────────────────────────────────────────────
@@ -9326,6 +9345,8 @@ def repath_system(system_name, new_rom_path, apply_changes):
       spindoctor repath-system "Taito Type X" ^
           --rom-path "J:\\\\Games\\\\Taito Type X" --apply
     """
+    import shutil as _shutil
+    from datetime import datetime as _dt
     from .rocketlauncher import (
         _update_rom_path_in_ini,
         repath_pclauncher_system_ini,
@@ -9350,19 +9371,24 @@ def repath_system(system_name, new_rom_path, apply_changes):
             "Re-run with [cyan]--apply[/cyan] to commit.\n"
         )
 
+    # Accumulate actionable items for the trailing summary.
+    trailing: list[str] = []
+
     # ── 1. PCLauncher system INI ─────────────────────────────────────────────
     system_ini = rl_base / "Modules" / "PCLauncher" / f"{system_name}.ini"
     console.print(f"[blue bold]PCLauncher system INI:[/blue bold] {system_ini}")
+    skipped_games: list = []
     if not system_ini.exists():
         console.print(
             "  [yellow]Not found — skipping PCLauncher INI update.[/yellow]\n"
             "  (This system may use per-game INIs; use pc-rename --overwrite-pclauncher instead.)"
         )
     else:
-        changes = repath_pclauncher_system_ini(
-            system_ini, system_name, new_rom_path, apply=apply_changes,
+        # Dry-run first so we know what will change before touching the file.
+        changes, skipped_games = repath_pclauncher_system_ini(
+            system_ini, system_name, new_rom_path, apply=False,
         )
-        if not changes:
+        if not changes and not skipped_games:
             console.print(
                 "  [dim]No Application= paths match the system name — nothing to repath.[/dim]"
             )
@@ -9373,6 +9399,20 @@ def repath_system(system_name, new_rom_path, apply_changes):
                 console.print(f"  [{colour}]{verb}[/{colour}] [{game}]")
                 console.print(f"    [dim]old:[/dim] {old_path}")
                 console.print(f"    [dim]new:[/dim] {new_path}")
+            if skipped_games:
+                console.print(
+                    f"  [yellow]⚠ {len(skipped_games)} game(s) could not be re-pathed "
+                    f"(system name not found in path) — see summary below[/yellow]"
+                )
+            if apply_changes and changes:
+                # Back up the file before writing so a failed write can be recovered.
+                stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
+                bak = system_ini.with_suffix(f".{stamp}.bak")
+                _shutil.copy2(system_ini, bak)
+                console.print(f"  [dim]↳ Backed up to: {bak}[/dim]")
+                repath_pclauncher_system_ini(
+                    system_ini, system_name, new_rom_path, apply=True,
+                )
 
     # ── 2. Emulators.ini(s) ──────────────────────────────────────────────────
     emu_inis = [
@@ -9405,6 +9445,22 @@ def repath_system(system_name, new_rom_path, apply_changes):
             "\n[yellow bold][DRY RUN][/yellow bold] "
             "Re-run with [cyan]--apply[/cyan] to write changes."
         )
+
+    # ── Trailing actionable summary ───────────────────────────────────────────
+    for game, path in skipped_games:
+        trailing.append(
+            f"  [yellow]⚠ Could not repath [{game}][/yellow]\n"
+            f"    Application= [dim]{path}[/dim]\n"
+            f"    Reason: system name [cyan]{system_name!r}[/cyan] not found in path.\n"
+            f"    Fix: update this entry manually or run\n"
+            f"      [cyan]spindoctor pc-fix-exe \"{system_name}\" \"{game}\" --exe \"<correct path>\" --apply[/cyan]"
+        )
+    if trailing:
+        console.print(
+            "\n[bold yellow]─── Actionable items ───────────────────────────────[/bold yellow]"
+        )
+        for msg in trailing:
+            console.print(msg)
 
 
 # ─── organize ─────────────────────────────────────────────────────────────────
