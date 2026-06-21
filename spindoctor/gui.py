@@ -4601,7 +4601,7 @@ class _SpinDoctorGUI:
             btn_row, text="Test credentials", command=self._test_credentials,
         )
         self._cred_test_btn.pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Run doctor", command=lambda: self._run_cli(
+        self.ttk.Button(btn_row, text="Run Health Check", command=lambda: self._run_cli(
             "spindoctor", ["doctor"]
         )).pack(side="left", padx=6)
         # (The first-run wizard button lives at the top of this tab —
@@ -5284,10 +5284,10 @@ class _SpinDoctorGUI:
         self.ttk.Button(btn_row, text="Audit all systems",
                         command=self._run_audit_all,
                         ).pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Run doctor",
+        self.ttk.Button(btn_row, text="Run Health Check",
                         command=lambda: self._run_cli("spindoctor", ["doctor"])
                         ).pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Tools audit",
+        self.ttk.Button(btn_row, text="Check Installed Tools",
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
 
@@ -5393,10 +5393,10 @@ class _SpinDoctorGUI:
             health_row, text="✈  Preflight check…",
             command=self._run_preflight,
         ).pack(side="left")
-        self.ttk.Button(health_row, text="Run doctor",
+        self.ttk.Button(health_row, text="Run Health Check",
                         command=lambda: self._run_cli("spindoctor", ["doctor"])
                         ).pack(side="left", padx=6)
-        self.ttk.Button(health_row, text="Tools audit",
+        self.ttk.Button(health_row, text="Check Installed Tools",
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
 
@@ -6278,7 +6278,7 @@ class _SpinDoctorGUI:
             command=lambda: self._run_cli("spindoctor", ["config", "show"]),
         ).pack(side="left")
         self.ttk.Button(
-            cur_cfg_btn_row, text="Run doctor",
+            cur_cfg_btn_row, text="Run Health Check",
             command=lambda: self._run_cli("spindoctor", ["doctor"]),
         ).pack(side="left", padx=6)
 
@@ -6440,7 +6440,7 @@ class _SpinDoctorGUI:
         )
 
         self.ttk.Button(
-            mig_frame, text="Run migration", command=self._run_migrate,
+            mig_frame, text="Start Migration", command=self._run_migrate,
         ).grid(row=_comp_row_end + 8, column=0, columnspan=4,
                sticky="w", padx=6, pady=(4, 6))
 
@@ -6495,7 +6495,7 @@ class _SpinDoctorGUI:
             wraplength=800, justify="left",
         ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 4))
         self.ttk.Button(
-            post_frame, text="Run generate-config",
+            post_frame, text="Update RocketLauncher INIs",
             command=self._run_generate_config,
         ).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 6))
         self.ttk.Label(
@@ -7671,11 +7671,11 @@ class _SpinDoctorGUI:
         meta_run_row = self.ttk.Frame(meta_frame)
         meta_run_row.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            meta_run_row, text="Run fetch-meta",
+            meta_run_row, text="Download Game Info",
             command=self._run_fetch_meta,
         ).pack(side="left")
         self.ttk.Button(
-            meta_run_row, text="Run on subset…",
+            meta_run_row, text="Download for Selected Systems…",
             command=self._run_fetch_meta_subset,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -7720,7 +7720,7 @@ class _SpinDoctorGUI:
             variable=self._meta_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
-            media_frame, text="Run fetch-media",
+            media_frame, text="Download Media Files",
             command=self._run_fetch_media,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
@@ -7754,7 +7754,7 @@ class _SpinDoctorGUI:
             variable=self._meta_scan_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
-            scan_frame, text="Run media-scan",
+            scan_frame, text="Import Local Media",
             command=self._run_media_scan,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
@@ -7781,11 +7781,11 @@ class _SpinDoctorGUI:
         btn_row = self.ttk.Frame(db_frame)
         btn_row.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            btn_row, text="Run update-db",
+            btn_row, text="Sync Database to ROMs",
             command=self._run_update_db,
         ).pack(side="left")
         self.ttk.Button(
-            btn_row, text="Run generate-config",
+            btn_row, text="Update RocketLauncher INIs",
             command=self._run_generate_config,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -7839,7 +7839,7 @@ class _SpinDoctorGUI:
         be_grid.columnconfigure(1, weight=1)
 
         self.ttk.Button(
-            be_frame, text="Run batch-edit",
+            be_frame, text="Run Bulk Edit",
             command=self._run_batch_edit,
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
@@ -8627,7 +8627,7 @@ class _SpinDoctorGUI:
             command=self._show_curate_preview,
         ).pack(side="left")
         self.ttk.Button(
-            cur_btns, text="Run curate", command=self._run_curate,
+            cur_btns, text="Archive / Delete Duplicates", command=self._run_curate,
         ).pack(side="left", padx=6)
         self.ttk.Button(
             cur_btns, text="Undo most recent curate",
@@ -8698,11 +8698,11 @@ class _SpinDoctorGUI:
         cln_btns = self.ttk.Frame(cln_frame)
         cln_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            cln_btns, text="Audit caches",
+            cln_btns, text="Check Cache Status",
             command=lambda: self._run_cli("spindoctor", ["cleanup", "audit"]),
         ).pack(side="left")
         self.ttk.Button(
-            cln_btns, text="Run cleanup",
+            cln_btns, text="Clean Up Caches",
             command=self._run_cleanup,
         ).pack(side="left", padx=6)
 
@@ -9707,11 +9707,11 @@ class _SpinDoctorGUI:
         add_btns = self.ttk.Frame(add_frame)
         add_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            add_btns, text="Run add-system",
+            add_btns, text="Add Arcade System",
             command=lambda: self._run_add_system(False),
         ).pack(side="left")
         self.ttk.Button(
-            add_btns, text="Run add-pc-system",
+            add_btns, text="Add PC System",
             command=lambda: self._run_add_system(True),
         ).pack(side="left", padx=6)
         self.ttk.Label(
@@ -9769,11 +9769,11 @@ class _SpinDoctorGUI:
         rc_btns = self.ttk.Frame(rc_frame)
         rc_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            rc_btns, text="Run rename",
+            rc_btns, text="Rename Game",
             command=lambda: self._run_rename_or_clone("rename"),
         ).pack(side="left")
         self.ttk.Button(
-            rc_btns, text="Run clone",
+            rc_btns, text="Clone Game",
             command=lambda: self._run_rename_or_clone("clone"),
         ).pack(side="left", padx=6)
 
@@ -9928,7 +9928,7 @@ class _SpinDoctorGUI:
         org_btns = self.ttk.Frame(org_frame)
         org_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            org_btns, text="Run organize",
+            org_btns, text="Build Sort Wheels",
             command=self._run_organize,
         ).pack(side="left")
         self.ttk.Button(
