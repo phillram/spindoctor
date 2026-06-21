@@ -1248,10 +1248,10 @@ def _pclauncher_ini_text(game_name: str, executable) -> str:
 
 
 def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
-    """Return all .exe files in *game_dir* and every subdirectory, recommended first.
+    """Return .exe/.ahk/.bat files in *game_dir* and every subdirectory, recommended first.
 
     Sort priority (ascending = better):
-    1. Excluded prefixes (setup, unins, vcredist, …) — excluded last.
+    1. File type: non-excluded .exe → .ahk → .bat → excluded .exe.
     2. Depth relative to *game_dir* — shallower files first (0 = top-level).
     3. Stem similarity to *title_hint* — exact match, partial match, no match.
     4. File name alphabetically.
@@ -1261,9 +1261,18 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
     hint_norm = re.sub(r"[^a-z0-9]", "", title_hint.lower())
 
     def _sort_key(p: Path) -> tuple:
-        excluded = int(
-            any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES)
+        ext = p.suffix.lower()
+        is_excluded_exe = ext == ".exe" and any(
+            p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES
         )
+        if ext == ".exe" and not is_excluded_exe:
+            type_rank = 0
+        elif ext == ".ahk":
+            type_rank = 1
+        elif ext == ".bat":
+            type_rank = 2
+        else:
+            type_rank = 3  # excluded .exe
         depth = len(p.relative_to(game_dir).parts) - 1  # 0 = directly in game_dir
         stem_norm = re.sub(r"[^a-z0-9]", "", p.stem.lower())
         if stem_norm == hint_norm:
@@ -1272,19 +1281,21 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
             similarity = 1
         else:
             similarity = 2
-        return (excluded, depth, similarity, p.name.lower())
+        return (type_rank, depth, similarity, p.name.lower())
 
-    return sorted(
-        (p for p in game_dir.rglob("*.exe") if p.is_file()),
-        key=_sort_key,
-    )
+    candidates: list = []
+    for glob in ("*.exe", "*.ahk", "*.bat"):
+        candidates.extend(p for p in game_dir.rglob(glob) if p.is_file())
+    return sorted(candidates, key=_sort_key)
 
 
 def _pick_best_exe(game_dir: Path, title_hint: str = "") -> Optional[Path]:
-    """Return the most-likely game executable in *game_dir*, or None.
+    """Return the most-likely launcher in *game_dir*, or None.
 
     Delegates to :func:`list_exe_candidates` and returns the first entry
-    that is *not* in the excluded-prefix set.
+    that is *not* in the excluded-prefix set.  For PCLauncher systems that
+    use .ahk or .bat launchers the caller should verify the auto-detected
+    path makes sense; use --exe / Browse to override when needed.
     """
     for p in list_exe_candidates(game_dir, title_hint):
         if not any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES):
@@ -1379,6 +1390,95 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
     if changed:
         ini_path.write_text("".join(new_lines), encoding="utf-8")
     return changed
+
+
+def repath_pclauncher_system_ini(
+    system_ini: Path,
+    system_name: str,
+    new_rom_path: str,
+    apply: bool = False,
+) -> tuple:
+    """Re-prefix all ``Application=`` paths in a PCLauncher system-level INI.
+
+    When a system's game folder moves to a new drive (e.g. from
+    ``D:\\Arcade\\Games\\Taito Type X`` to ``J:\\Games\\Taito Type X``),
+    this rewrites every ``[GameName]`` section's ``Application=`` entry so the
+    path is rooted under *new_rom_path*.
+
+    The game-relative suffix (e.g. ``Arcana Heart 3\\CleanLaunch.ahk``) is
+    extracted by locating ``<system_name>\\`` in the current path and taking
+    everything after it.
+
+    Returns a 2-tuple ``(changes, skipped)`` where:
+      - *changes*: list of ``(game_name, old_path, new_path)`` for every entry
+        that would change (or changed when *apply* is ``True``).
+      - *skipped*: list of ``(game_name, old_path)`` for entries whose
+        ``Application=`` path did not contain the system name as a directory
+        component and therefore could not be re-prefixed automatically.
+
+    Caller is responsible for making a backup of *system_ini* before calling
+    with ``apply=True``.
+    """
+    if not system_ini.exists():
+        return [], []
+
+    lines = system_ini.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    delimiter = system_name.replace("/", "\\") + "\\"
+
+    # First pass — collect which Application= values need changing and which
+    # can't be resolved because the system name isn't in the path.
+    section_changes: dict = {}
+    section_skipped: dict = {}
+    current_section = ""
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            continue
+        if current_section and re.match(r"(?i)^Application\s*=", stripped):
+            old_path = stripped.split("=", 1)[1]
+            normalised = old_path.replace("/", "\\")
+            idx = normalised.lower().find(delimiter.lower())
+            if idx == -1:
+                section_skipped[current_section] = old_path
+                continue
+            suffix = normalised[idx + len(delimiter):]
+            new_path = new_rom_path.rstrip("\\") + "\\" + suffix
+            if normalised != new_path:
+                section_changes[current_section] = (old_path, new_path)
+
+    changes = [
+        (game, old, new_p)
+        for game, (old, new_p) in sorted(section_changes.items())
+    ]
+    skipped = [
+        (game, path)
+        for game, path in sorted(section_skipped.items())
+    ]
+
+    if not apply or not changes:
+        return changes, skipped
+
+    # Second pass — rewrite in place.
+    current_section = ""
+    new_lines: list = []
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        eol = line[len(stripped):]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+        if current_section in section_changes and re.match(
+            r"(?i)^Application\s*=", stripped
+        ):
+            _, new_path = section_changes[current_section]
+            new_lines.append(f"Application={new_path}" + eol)
+            continue
+        new_lines.append(line)
+
+    system_ini.write_text("".join(new_lines), encoding="utf-8")
+    return changes, skipped
 
 
 def read_pclauncher_ini_application_path(
