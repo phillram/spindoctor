@@ -5783,6 +5783,8 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
             "Re-run with [cyan]--apply[/cyan] to commit."
         )
 
+    grand_added = grand_removed = grand_in_sync = 0
+
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
         result = audit_system(sys_name, config, check_media_flag=False)
@@ -5838,8 +5840,24 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
             console.print(f"  [green]Saved:[/green] {saved}")
         elif not added and not removed:
             console.print("  [green]Database already in sync.[/green]")
+            grand_in_sync += 1
+
+        grand_added += added
+        grand_removed += removed
 
     _auto_export_audit(config, systems)
+
+    # ── Trailing grand total ──────────────────────────────────────────────────
+    if len(systems) > 1:
+        parts = []
+        if grand_added:
+            parts.append(f"[green]+{grand_added} added[/green]")
+        if grand_removed:
+            parts.append(f"[red]−{grand_removed} removed[/red]")
+        if grand_in_sync:
+            parts.append(f"[dim]{grand_in_sync} already in sync[/dim]")
+        if parts:
+            console.print("\n[bold]Grand total:[/bold] " + "  ".join(parts))
 
 
 # ─── generate-config ──────────────────────────────────────────────────────────
@@ -5946,6 +5964,9 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
             bak = target.with_suffix(f".{stamp}.bak")
         shutil.copy2(target, bak)
         return bak
+
+    # Populated inside gen_rl block; read by the trailing summary at the end.
+    _gen_rl_errors: list[tuple[str, str]] = []
 
     if gen_rl:
         console.print(
@@ -6103,6 +6124,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     tbl.add_row(sys_name, emulator, written_str, bak_str)
                 except ValueError as e:
                     tbl.add_row(sys_name, emulator, f"[red]{e}[/red]", "")
+                    _gen_rl_errors.append((sys_name, str(e)))
         console.print(tbl)
 
     if gen_menu:
@@ -6173,6 +6195,18 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     console.print(f"  [green]+[/green] {p}")
             else:
                 console.print("  [dim]All system databases already exist.[/dim]")
+
+    # ── Trailing actionable summary ───────────────────────────────────────────
+    if gen_rl and apply_changes and _gen_rl_errors:
+        console.print(
+            "\n[bold yellow]─── Actionable items ───────────────────────────────[/bold yellow]"
+        )
+        console.print(
+            f"  [red]{len(_gen_rl_errors)} system(s) failed to write — "
+            "fix the issue and re-run generate-config:[/red]"
+        )
+        for sys_name, err in _gen_rl_errors:
+            console.print(f"  [red]✗[/red] [cyan]{sys_name}[/cyan]: {err}")
 
 
 # ─── mainmenu ─────────────────────────────────────────────────────────────────
