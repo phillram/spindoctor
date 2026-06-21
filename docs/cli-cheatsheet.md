@@ -207,10 +207,11 @@ Reference: [Command reference → pc-rename](commands.md#pc-rename).
 spindoctor pc-fix-exe "PC GAMES" "ElecHead"                               :: preview auto-detect
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply                       :: auto-detect and fix
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --exe "J:\Games\...\ElecHead.exe" --apply
-spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: show .exe candidates (chromedriver etc. ranked last)
+spindoctor pc-fix-exe "Taito Type X" "Battle Fantasia" --exe "J:\Games\Taito Type X\Battle Fantasia\CleanLaunch.ahk" --apply
+spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: show all candidates ranked
 ```
 
-Auto-detection excludes uninstallers, `vcredist*`, `chromedriver.exe` (NW.js/Electron runtime), `nwjc.exe`, etc. For NW.js games such as RPGMaker titles, `Game.exe` is selected over `chromedriver.exe`.
+Auto-detection scans the game folder and all subfolders. Candidates are ranked: non-excluded `.exe` files first (shallower paths above deeper), then `.ahk` scripts, then `.bat` scripts, then excluded `.exe` files (uninstallers, `vcredist*`, `chromedriver.exe`, `nwjc.exe`, etc.). For NW.js/RPGMaker games, `Game.exe` is selected over `chromedriver.exe`. `.ahk` launchers (e.g. Taito Type X `CleanLaunch.ahk`) now appear in the candidate list automatically.
 
 Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
 
@@ -305,6 +306,8 @@ spindoctor update-db --all --remove-orphans --apply
 spindoctor update-db --system SNES --strip-variant-tags --apply
 ```
 
+When run with `--all`, a grand total is printed at the end of output (`+N added  −M removed  K already in sync`).
+
 Reference: [Command reference → update-db](commands.md#update-db).
 
 ### `generate-config` — bootstrap RocketLauncher per-system configs
@@ -314,6 +317,8 @@ spindoctor generate-config --apply
 ```
 
 Synthetic wheels (Favorites, Recently Played, Most Played) are never touched by generate-config — their settings are managed by `fav rebuild` / `recent rebuild` / `stats build-wheel`. Any synthetic wheels already in `Main Menu.xml` are preserved across generate-config runs.
+
+On `--apply`, any system INI write failures are repeated as an "Actionable items" section at the very end of output — visible without scrolling back through the per-system table.
 
 Reference: [Command reference → generate-config](commands.md#generate-config).
 
@@ -359,6 +364,21 @@ spindoctor migrate --undo latest --apply
 ```
 
 Reference: [Command reference → migrate](commands.md#migrate).
+
+### `repath-system` — re-prefix game paths after a manual drive change
+
+For systems like **Taito Type X** that were moved to a different drive outside of a full `migrate` run. Updates `Application=` in the PCLauncher system INI and `Rom_Path=` in the RL Emulators INI; all other per-game keys are left untouched. Backs up the system INI before writing.
+
+```bat
+spindoctor repath-system "Taito Type X" --rom-path "J:\Games\Taito Type X"          :: preview
+spindoctor repath-system "Taito Type X" --rom-path "J:\Games\Taito Type X" --apply  :: commit
+```
+
+Games whose paths couldn't be rewritten automatically are listed at the end of output as "Actionable items" with suggested `pc-fix-exe` commands for manual correction.
+
+> **GUI:** Migration tab → Step 6.
+
+Reference: [Command reference → repath-system](commands.md#repath-system).
 
 ---
 
