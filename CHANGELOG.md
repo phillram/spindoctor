@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Trailing actionable summaries for `generate-config` and `update-db`.** These commands process every system in the cabinet in a single run; any error or per-system result was previously buried inside a long table or scrolled-off list.
+  - `generate-config --apply`: if any system INI fails to write (e.g. `rocketlauncher_dir` not configured, bad path), the failing system names and error messages are repeated as an "Actionable items" section at the very end of output — visible without scrolling back through a 40-system table.
+  - `update-db`: after processing all systems, a one-line grand total is printed (`+N added  −M removed  K already in sync`) so the result of a full-library run is legible at a glance from the bottom of the terminal.
+
 ### Changed
 
 - **GUI: all action buttons now use plain-English labels instead of CLI command names.** Twenty-four buttons across six tabs were renamed so users never need to know a CLI sub-command to understand what a button does. Full mapping: "Run doctor" → "Run Health Check"; "Tools audit" → "Check Installed Tools"; "Run migration" → "Start Migration"; "Run generate-config" → "Update RocketLauncher INIs" (both Metadata & Media and Migration tabs); "Run fetch-meta" → "Download Game Info"; "Run on subset…" → "Download for Selected Systems…"; "Run fetch-media" → "Download Media Files"; "Run media-scan" → "Import Local Media"; "Run update-db" → "Sync Database to ROMs"; "Run batch-edit" → "Run Bulk Edit"; "Run curate" → "Archive / Delete Duplicates"; "Audit caches" → "Check Cache Status"; "Run cleanup" → "Clean Up Caches"; "Run add-system" → "Add Arcade System"; "Run add-pc-system" → "Add PC System"; "Run rename" → "Rename Game"; "Run clone" → "Clone Game"; "Run organize" → "Build Sort Wheels". CLI commands and behaviour are unchanged.
