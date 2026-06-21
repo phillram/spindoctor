@@ -7,6 +7,7 @@ import pytest
 
 from spindoctor.config import Config
 from spindoctor.rocketlauncher import (
+    repath_pclauncher_system_ini,
     EMULATOR_EXECUTABLES,
     EMULATOR_EXTENSIONS,
     EMULATOR_WINDOW_TITLES,
@@ -1094,3 +1095,94 @@ def test_list_exe_candidates_chromedriver_sorted_last(tmp_path):
     candidates = list_exe_candidates(game_dir, "Look Outside")
     names = [p.name for p in candidates]
     assert names.index("Game.exe") < names.index("chromedriver.exe")
+
+
+# ─── repath_pclauncher_system_ini ─────────────────────────────────────────────
+
+_TAITO_INI = """\
+[Arcana Heart 3]
+Application=..\\Games\\Taito Type X\\Arcana Heart 3\\CleanLaunch.ahk
+AppWaitExe=AH30-PC4-2pfixed-fullscreen.exe
+FadeTitle=AH3
+ExitMethod=WinClose Application
+PostExit=.\\Module Extensions\\nircmd\\res_1280x720.bat
+
+[Deathsmiles II]
+Application=..\\Games\\Taito Type X\\Deathsmiles II\\ds_loader.exe
+AppWaitExe=ds_loader.exe
+FadeTitle=DS2
+ExitMethod=WinClose Application
+
+[Unrelated Game]
+Application=D:\\SomeOtherPath\\game.exe
+FadeTitle=Unrelated
+"""
+
+
+def test_repath_dry_run_returns_changes_without_writing(tmp_path):
+    ini = tmp_path / "Taito Type X.ini"
+    ini.write_text(_TAITO_INI, encoding="utf-8")
+    changes = repath_pclauncher_system_ini(
+        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=False,
+    )
+    assert len(changes) == 2
+    games = {g for g, _, _ in changes}
+    assert games == {"Arcana Heart 3", "Deathsmiles II"}
+    # File must not be modified in dry-run.
+    assert ini.read_text(encoding="utf-8") == _TAITO_INI
+
+
+def test_repath_apply_rewrites_application_paths(tmp_path):
+    ini = tmp_path / "Taito Type X.ini"
+    ini.write_text(_TAITO_INI, encoding="utf-8")
+    repath_pclauncher_system_ini(
+        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
+    )
+    result = ini.read_text(encoding="utf-8")
+    assert r"Application=J:\Games\Taito Type X\Arcana Heart 3\CleanLaunch.ahk" in result
+    assert r"Application=J:\Games\Taito Type X\Deathsmiles II\ds_loader.exe" in result
+
+
+def test_repath_preserves_non_application_keys(tmp_path):
+    ini = tmp_path / "Taito Type X.ini"
+    ini.write_text(_TAITO_INI, encoding="utf-8")
+    repath_pclauncher_system_ini(
+        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
+    )
+    result = ini.read_text(encoding="utf-8")
+    assert "FadeTitle=AH3" in result
+    assert "AppWaitExe=AH30-PC4-2pfixed-fullscreen.exe" in result
+    assert "ExitMethod=WinClose Application" in result
+    assert r"PostExit=.\Module Extensions\nircmd\res_1280x720.bat" in result
+
+
+def test_repath_skips_entries_without_system_name(tmp_path):
+    ini = tmp_path / "Taito Type X.ini"
+    ini.write_text(_TAITO_INI, encoding="utf-8")
+    repath_pclauncher_system_ini(
+        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=True,
+    )
+    result = ini.read_text(encoding="utf-8")
+    # "Unrelated Game" section has no "Taito Type X" in its path — must be unchanged.
+    assert r"Application=D:\SomeOtherPath\game.exe" in result
+
+
+def test_repath_missing_ini_returns_empty(tmp_path):
+    missing = tmp_path / "NoSuchSystem.ini"
+    changes = repath_pclauncher_system_ini(
+        missing, "NoSuchSystem", r"J:\Games\NoSuchSystem", apply=True,
+    )
+    assert changes == []
+
+
+def test_repath_already_correct_returns_empty(tmp_path):
+    already = (
+        "[Arcana Heart 3]\n"
+        r"Application=J:\Games\Taito Type X\Arcana Heart 3\CleanLaunch.ahk" + "\n"
+    )
+    ini = tmp_path / "Taito Type X.ini"
+    ini.write_text(already, encoding="utf-8")
+    changes = repath_pclauncher_system_ini(
+        ini, "Taito Type X", r"J:\Games\Taito Type X", apply=False,
+    )
+    assert changes == []

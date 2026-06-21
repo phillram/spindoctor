@@ -9220,7 +9220,12 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
         raise SystemExit(1)
 
     stem = _win_safe_stem(game)
-    ini_path = rl_base / "Modules" / "PCLauncher" / system_name / f"{stem}.ini"
+    # Taito Type X and similar arcade-PC systems store all games in a single
+    # system-level INI (Modules/PCLauncher/<System>.ini) rather than per-game
+    # INIs.  Prefer the system-level file when it exists.
+    _system_ini = rl_base / "Modules" / "PCLauncher" / f"{system_name}.ini"
+    _per_game_ini = rl_base / "Modules" / "PCLauncher" / system_name / f"{stem}.ini"
+    ini_path = _system_ini if _system_ini.exists() else _per_game_ini
 
     # Resolve section name — may differ from *game* when the title contains
     # Windows-invalid characters (e.g. "Submachine: Legacy" → stem "Submachine Legacy").
@@ -9276,6 +9281,120 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             console.print(
                 f"  [dim]no change needed — Application= is already correct[/dim]"
             )
+
+
+# ─── repath-system ────────────────────────────────────────────────────────────
+
+@cli.command("repath-system")
+@click.argument("system_name")
+@click.option("--rom-path", "new_rom_path", required=True,
+              help="New absolute path to the system's game folder "
+                   "(e.g. J:\\\\Games\\\\Taito Type X).")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write updated INIs (default: preview only).")
+def repath_system(system_name, new_rom_path, apply_changes):
+    """Re-prefix game paths in a PCLauncher system INI after moving games to a new drive.
+
+    Updates two files in one shot:
+
+    \b
+    1. Modules\\PCLauncher\\<System>.ini — rewrites Application= for every game
+       whose path contains the system name as a directory component.
+    2. Settings\\<System>\\Emulators.ini — updates Rom_Path= to the new folder.
+
+    Only Application= (and Rom_Path=) are changed — FadeTitle=, AppWaitExe=,
+    ExitMethod=, PostExit=, and all other per-game keys survive verbatim.
+
+    \b
+    Use after manually moving a system's game folder to a different drive.
+    For a full library migration (all systems at once), use `migrate` instead.
+
+    \b
+    Examples:
+      spindoctor repath-system "Taito Type X" ^
+          --rom-path "J:\\\\Games\\\\Taito Type X"
+      spindoctor repath-system "Taito Type X" ^
+          --rom-path "J:\\\\Games\\\\Taito Type X" --apply
+    """
+    from .rocketlauncher import (
+        _update_rom_path_in_ini,
+        repath_pclauncher_system_ini,
+    )
+
+    config = _cfg()
+    _check_config(config)
+
+    rl_base = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    if not rl_base:
+        console.print("[red]rocketlauncher_dir not configured.[/red]")
+        raise SystemExit(1)
+
+    console.print(Panel(
+        f" repath-system: [cyan]{system_name}[/cyan] ",
+        style="bold magenta",
+    ))
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit.\n"
+        )
+
+    # ── 1. PCLauncher system INI ─────────────────────────────────────────────
+    system_ini = rl_base / "Modules" / "PCLauncher" / f"{system_name}.ini"
+    console.print(f"[blue bold]PCLauncher system INI:[/blue bold] {system_ini}")
+    if not system_ini.exists():
+        console.print(
+            "  [yellow]Not found — skipping PCLauncher INI update.[/yellow]\n"
+            "  (This system may use per-game INIs; use pc-rename --overwrite-pclauncher instead.)"
+        )
+    else:
+        changes = repath_pclauncher_system_ini(
+            system_ini, system_name, new_rom_path, apply=apply_changes,
+        )
+        if not changes:
+            console.print(
+                "  [dim]No Application= paths match the system name — nothing to repath.[/dim]"
+            )
+        else:
+            for game, old_path, new_path in changes:
+                verb = "updated" if apply_changes else "would update"
+                colour = "green" if apply_changes else "yellow"
+                console.print(f"  [{colour}]{verb}[/{colour}] [{game}]")
+                console.print(f"    [dim]old:[/dim] {old_path}")
+                console.print(f"    [dim]new:[/dim] {new_path}")
+
+    # ── 2. Emulators.ini(s) ──────────────────────────────────────────────────
+    emu_inis = [
+        rl_base / "Settings" / system_name / "Emulators.ini",   # folder layout
+        rl_base / "Settings" / f"{system_name}.ini",             # flat layout
+    ]
+    console.print(f"\n[blue bold]Emulators.ini — Rom_Path[/blue bold]")
+    found_any_emu = False
+    for emu_ini in emu_inis:
+        if not emu_ini.exists():
+            continue
+        found_any_emu = True
+        if apply_changes:
+            changed = _update_rom_path_in_ini(emu_ini, new_rom_path)
+            verb_str = "updated" if changed else "no Rom_Path= found in"
+            colour = "green" if changed else "dim"
+            console.print(f"  [{colour}]{verb_str}[/{colour}] {emu_ini}")
+        else:
+            console.print(
+                f"  [yellow]would update[/yellow] "
+                f"Rom_Path= → [green]{new_rom_path}[/green] in {emu_ini}"
+            )
+    if not found_any_emu:
+        console.print(
+            f"  [dim]No Emulators.ini found for '{system_name}' — skipping.[/dim]"
+        )
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow bold][DRY RUN][/yellow bold] "
+            "Re-run with [cyan]--apply[/cyan] to write changes."
+        )
 
 
 # ─── organize ─────────────────────────────────────────────────────────────────

@@ -1381,6 +1381,85 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
     return changed
 
 
+def repath_pclauncher_system_ini(
+    system_ini: Path,
+    system_name: str,
+    new_rom_path: str,
+    apply: bool = False,
+) -> list:
+    """Re-prefix all ``Application=`` paths in a PCLauncher system-level INI.
+
+    When a system's game folder moves to a new drive (e.g. from
+    ``D:\\Arcade\\Games\\Taito Type X`` to ``J:\\Games\\Taito Type X``),
+    this rewrites every ``[GameName]`` section's ``Application=`` entry so the
+    path is rooted under *new_rom_path*.
+
+    The game-relative suffix (e.g. ``Arcana Heart 3\\CleanLaunch.ahk``) is
+    extracted by locating ``<system_name>\\`` in the current path and taking
+    everything after it.  Entries whose path does not contain the system name as
+    a directory component are skipped.
+
+    Returns a list of ``(game_name, old_path, new_path)`` tuples for every
+    entry that would change (or changed when *apply* is ``True``).
+    """
+    if not system_ini.exists():
+        return []
+
+    lines = system_ini.read_text(encoding="utf-8", errors="replace").splitlines(
+        keepends=True
+    )
+    delimiter = system_name.replace("/", "\\") + "\\"
+
+    # First pass — collect which Application= values need changing.
+    section_changes: dict = {}
+    current_section = ""
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+            continue
+        if current_section and re.match(r"(?i)^Application\s*=", stripped):
+            old_path = stripped.split("=", 1)[1]
+            normalised = old_path.replace("/", "\\")
+            idx = normalised.lower().find(delimiter.lower())
+            if idx == -1:
+                continue
+            suffix = normalised[idx + len(delimiter):]
+            new_path = new_rom_path.rstrip("\\") + "\\" + suffix
+            if normalised != new_path:
+                section_changes[current_section] = (old_path, new_path)
+
+    if not section_changes:
+        return []
+
+    results = [
+        (game, old, new_p)
+        for game, (old, new_p) in sorted(section_changes.items())
+    ]
+
+    if not apply:
+        return results
+
+    # Second pass — rewrite in place.
+    current_section = ""
+    new_lines: list = []
+    for line in lines:
+        stripped = line.rstrip("\r\n")
+        eol = line[len(stripped):]
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current_section = stripped[1:-1]
+        if current_section in section_changes and re.match(
+            r"(?i)^Application\s*=", stripped
+        ):
+            _, new_path = section_changes[current_section]
+            new_lines.append(f"Application={new_path}" + eol)
+            continue
+        new_lines.append(line)
+
+    system_ini.write_text("".join(new_lines), encoding="utf-8")
+    return results
+
+
 def read_pclauncher_ini_application_path(
     ini_path: Path,
     section_name: Optional[str] = None,
