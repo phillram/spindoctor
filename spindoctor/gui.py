@@ -5695,6 +5695,7 @@ class _SpinDoctorGUI:
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_fixexe_system_combo",   "_fixexe_system_var",   pc_system),
+            ("_repath_system_combo",   "_repath_system_var",   None),
             # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
@@ -6504,6 +6505,58 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).grid(row=1, column=1, sticky="w", padx=6, pady=(0, 6))
 
+        # ── Step 6 — Repath a PCLauncher system ──────────────────────────────
+        repath_frame = self.ttk.LabelFrame(
+            frame, text="Step 6 — Re-prefix game paths after a drive change",
+        )
+        repath_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 4))
+        repath_frame.columnconfigure(1, weight=1)
+        self.ttk.Label(
+            repath_frame,
+            text=(
+                "For systems like Taito Type X whose games moved to a new drive "
+                "without a full SpinDoctor migration. Rewrites Application= in the "
+                "system's PCLauncher INI and Rom_Path= in its Emulators.ini. "
+                "Only those two values change — FadeTitle=, AppWaitExe=, ExitMethod=, "
+                "and all other per-game keys are left exactly as configured. "
+                "CLI: spindoctor repath-system <System> --rom-path <NewPath> --apply"
+            ),
+            wraplength=800, justify="left", foreground=_FG_DIM,
+        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 4))
+
+        self.ttk.Label(repath_frame, text="System").grid(
+            row=1, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._repath_system_var = self.tk.StringVar()
+        self._repath_system_combo = self.ttk.Combobox(
+            repath_frame, textvariable=self._repath_system_var,
+            state="readonly", width=28,
+        )
+        self._repath_system_combo.grid(row=1, column=1, sticky="w", padx=6, pady=2)
+
+        self.ttk.Label(repath_frame, text="New game folder").grid(
+            row=2, column=0, sticky="w", padx=6, pady=2,
+        )
+        self._repath_path_var = self.tk.StringVar()
+        self.ttk.Entry(
+            repath_frame, textvariable=self._repath_path_var, width=60,
+        ).grid(row=2, column=1, sticky="ew", padx=6, pady=2)
+        self.ttk.Button(
+            repath_frame, text="Browse…",
+            command=self._browse_repath_path,
+        ).grid(row=2, column=2, sticky="w", pady=2)
+
+        repath_btn_row = self.ttk.Frame(repath_frame)
+        repath_btn_row.grid(row=3, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
+        self.ttk.Button(
+            repath_btn_row, text="Preview",
+            command=lambda: self._run_repath_system(apply=False),
+        ).pack(side="left")
+        self.ttk.Button(
+            repath_btn_row, text="Apply",
+            command=lambda: self._run_repath_system(apply=True),
+        ).pack(side="left", padx=6)
+
         frame.columnconfigure(1, weight=1)
         return frame
 
@@ -6604,6 +6657,30 @@ class _SpinDoctorGUI:
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _run_repath_system(self, apply: bool = False) -> None:
+        system = self._repath_system_var.get().strip()
+        new_path = self._repath_path_var.get().strip()
+        if not system:
+            self.messagebox.showwarning(
+                "System required", "Select a system before re-pathing.",
+            )
+            return
+        if not new_path:
+            self.messagebox.showwarning(
+                "New game folder required",
+                "Enter the new absolute path to the system's game folder.",
+            )
+            return
+        args = ["repath-system", system, "--rom-path", new_path]
+        if apply:
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _browse_repath_path(self) -> None:
+        path = self.filedialog.askdirectory(title="Select new game folder for this system")
+        if path:
+            self._repath_path_var.set(str(Path(path)))
 
     def _refresh_migrate_manifests(self) -> None:
         """Populate the undo Combobox with manifests from the migrations dir."""
@@ -9999,7 +10076,7 @@ class _SpinDoctorGUI:
 
         fixexe_top = self.ttk.Frame(fixexe_frame)
         fixexe_top.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(fixexe_top, text="PC system").pack(side="left")
+        self.ttk.Label(fixexe_top, text="System").pack(side="left")
         self._fixexe_system_var = self.tk.StringVar()
         self._fixexe_system_combo = self.ttk.Combobox(
             fixexe_top, textvariable=self._fixexe_system_var,

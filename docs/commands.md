@@ -523,15 +523,21 @@ The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_c
 
 ### `pc-fix-exe`
 
-Fix a PC game that launches the wrong executable — for example when the per-game PCLauncher INI has an uninstaller, a GOG/Steam cache file, or a redistributable set as `Application=` instead of the real game binary.
+Fix a game that launches the wrong executable — for example when a PCLauncher INI has an uninstaller, a GOG/Steam cache file, or a redistributable set as `Application=` instead of the real game binary.
+
+Works with both **per-game INIs** (PC Games, Windows Games, etc.) and **system-level INIs** (Taito Type X, Taito Type X2, NESiCAxLive, etc.). The command automatically detects which INI format the system uses.
 
 ```bat
 spindoctor pc-fix-exe "PC GAMES" "ElecHead"           :: preview auto-detected fix
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --apply   :: auto-detect and write
 
-:: Override the executable path manually
+:: Override the executable path manually (works for any system/launcher type)
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" ^
     --exe "J:\Games\PC Games\ElecHead\ElecHead.exe" --apply
+
+:: Fix a Taito Type X game pointing to the wrong launcher
+spindoctor pc-fix-exe "Taito Type X" "Battle Fantasia" ^
+    --exe "J:\Games\Taito Type X\Battle Fantasia\CleanLaunch.ahk" --apply
 
 :: List all .exe candidates found in the game folder (recommended first)
 spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates
@@ -539,11 +545,36 @@ spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates
 
 Without `--apply` the command shows the current `Application=` and the proposed replacement but writes nothing.
 
-**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins. The `chromedriver.exe` exclusion handles NW.js / Electron-based games (e.g. RPGMaker titles with `Game.exe`) where the runtime ships alongside the real launcher.
+**Auto-detection** scans the game folder (`<roms_dir>/<system>/<game>/`) for `.exe` files, filters out common non-game executables (`unins*`, `setup*`, `install*`, `vcredist*`, `dxsetup`, `crashpad*`, `chromedriver*`, `nwjc*`, etc.), then prefers the file whose name most closely matches the game title. If multiple candidates remain after filtering, the largest file wins.
 
-If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path.
+If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. This is the normal workflow for Taito Type X `.ahk` launchers or other non-`.exe` application types.
 
-**GUI alternative:** the **Systems** tab has a "Fix PC game executable" panel (directly below "Add new games / refresh a PC system") with a system/game picker and a candidate list populated from the game folder. The game dropdown lists all subdirectories found on disk — including games not yet in the HyperSpin XML — and the system picker defaults to "PC Games" on startup.
+**GUI alternative:** the **Systems** tab has a "Fix game executable" panel with a system/game picker and a candidate list populated from the game folder. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.) and defaults to "PC Games" on startup. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+
+### `repath-system`
+
+Re-prefix all game paths in a PCLauncher system INI after manually moving a system's game folder to a different drive. Intended for systems like **Taito Type X** that were not included in a full `migrate` run — for example when their games live on a separate game drive that was swapped or re-lettered.
+
+Updates two files in one shot:
+
+1. `Modules\PCLauncher\<System>.ini` — rewrites `Application=` for every game whose path contains the system name as a directory component.
+2. `Settings\<System>\Emulators.ini` — updates `Rom_Path=` to the new folder.
+
+Only `Application=` and `Rom_Path=` change. `FadeTitle=`, `AppWaitExe=`, `ExitMethod=`, `PostExit=`, and all other per-game keys survive verbatim.
+
+```bat
+:: Preview what would change (no files written)
+spindoctor repath-system "Taito Type X" ^
+    --rom-path "J:\Games\Taito Type X"
+
+:: Commit the changes
+spindoctor repath-system "Taito Type X" ^
+    --rom-path "J:\Games\Taito Type X" --apply
+```
+
+For **full library migrations** (all systems at once), use `migrate` instead — it moves the files and rewrites every config in one shot. Use `repath-system` only when you moved one system's folder manually outside of SpinDoctor.
+
+**GUI alternative:** Migration tab → Step 6 — Re-prefix game paths after a drive change.
 
 ### `migrate`
 

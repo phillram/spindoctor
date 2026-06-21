@@ -12,6 +12,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`repath-system` — re-prefix game paths in a PCLauncher system INI after moving games to a new drive.** Designed for systems like Taito Type X whose games live in a system-level INI (`Modules\PCLauncher\<System>.ini`) and were moved to a different drive outside of a full SpinDoctor `migrate` run. In one command, rewrites `Application=` for every game whose path contains the system name as a directory component, and updates `Rom_Path=` in the matching `Emulators.ini`. All other per-game keys (`FadeTitle=`, `AppWaitExe=`, `ExitMethod=`, `PostExit=`, etc.) are left untouched. Dry-run by default; `--apply` commits. GUI: Migration tab → Step 6. CLI: `spindoctor repath-system "Taito Type X" --rom-path "J:\Games\Taito Type X" --apply`.
+
+- **`pc-fix-exe` now handles system-level PCLauncher INIs (Taito Type X, NESiCAxLive, etc.).** Previously the command only looked for per-game INIs under `Modules\PCLauncher\<System>\<game>.ini`. It now detects whether a system-level INI (`Modules\PCLauncher\<System>.ini`) exists and uses it automatically — the correct format for arcade-PC systems configured outside of SpinDoctor. The `--exe` flag works the same way; use it to point at `.ahk` launchers or any non-`.exe` application type.
+
+- **GUI — Migration tab gains Step 6 "Re-prefix game paths after a drive change".** System picker, new game folder path entry with Browse, and separate Preview / Apply buttons driving the new `repath-system` command.
+
+- **GUI — "Fix game executable" panel is now system-agnostic.** The panel (previously labelled "Fix PC game executable" and documented as PC-only) now accepts any PCLauncher-backed system in the system picker. Selecting Taito Type X, NESiCAxLive, or any other system-level INI system and clicking Apply writes the correct INI automatically.
+
 - **`--report PATH` flag added to all audit commands for consistent CSV output.** Every audit-type command now supports `--report PATH` to write a machine-readable CSV alongside the terminal output:
   - `tools-audit --report PATH` — one row per detected tool with category, tool name, replaced-by spindoctor command, notes, and install path(s).
   - `cleanup audit --report PATH` — one row per category with file count, total bytes, human-readable size, oldest/newest timestamps, and storage location.
