@@ -29,7 +29,7 @@ from .cache import SKIP_SENTINEL
 
 CACHE_DIR = Path.home() / ".spindoctor" / "pc_titles_cache"
 
-_console = Console()
+_console = Console(soft_wrap=True)
 
 
 def load_cache(system_name: str) -> dict[str, str]:

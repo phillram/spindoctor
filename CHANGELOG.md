@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **File paths no longer wrap mid-line in saved output logs.** All Rich console instances now use `soft_wrap=True`, which prevents Rich from breaking long lines (file paths, URLs) at the detected console width. This is belt-and-suspenders on top of the existing `COLUMNS=9999` subprocess environment fix — if the cabinet's Windows 7 / PyInstaller environment ignores `COLUMNS`, `soft_wrap` guarantees paths stay on a single line regardless.
+
 ### Added
 
 - **Trailing actionable summaries for `generate-config` and `update-db`.** These commands process every system in the cabinet in a single run; any error or per-system result was previously buried inside a long table or scrolled-off list.

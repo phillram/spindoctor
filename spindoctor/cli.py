@@ -31,8 +31,8 @@ from .config import (
 )
 from .database import GameEntry, HyperspinDatabase, load_database
 
-console = Console()
-err_console = Console(stderr=True)
+console = Console(soft_wrap=True)
+err_console = Console(stderr=True, soft_wrap=True)
 
 
 def _make_progress(*columns, **kwargs):
@@ -7200,7 +7200,7 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
         if output:
             with open(output, "w", encoding="utf-8") as f:
                 from rich.console import Console as RC
-                RC(file=f, no_color=True).print(tbl)
+                RC(file=f, no_color=True, soft_wrap=True).print(tbl)
             console.print(f"[green]Report written:[/green] {output}")
         return
 
