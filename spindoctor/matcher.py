@@ -17,8 +17,8 @@ if TYPE_CHECKING:
 CACHE_DIR = Path.home() / ".spindoctor" / "match_cache"
 MEDIA_CACHE_DIR = Path.home() / ".spindoctor" / "media_pick_cache"
 
-_console = Console()
-_err = Console(stderr=True)
+_console = Console(soft_wrap=True)
+_err = Console(stderr=True, soft_wrap=True)
 
 
 # ─── cache helpers ────────────────────────────────────────────────────────────
