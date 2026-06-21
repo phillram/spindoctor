@@ -1097,6 +1097,60 @@ def test_list_exe_candidates_chromedriver_sorted_last(tmp_path):
     assert names.index("Game.exe") < names.index("chromedriver.exe")
 
 
+def test_list_exe_candidates_includes_ahk(tmp_path):
+    """list_exe_candidates returns .ahk files so Taito launchers appear in the GUI."""
+    game_dir = tmp_path / "Battle Fantasia"
+    game_dir.mkdir()
+    (game_dir / "CleanLaunch.ahk").write_bytes(b"")
+    candidates = list_exe_candidates(game_dir, "Battle Fantasia")
+    assert any(p.name == "CleanLaunch.ahk" for p in candidates)
+
+
+def test_list_exe_candidates_exe_before_ahk(tmp_path):
+    """Non-excluded .exe ranks before .ahk so auto-detect still prefers .exe."""
+    game_dir = tmp_path / "Battle Fantasia"
+    game_dir.mkdir()
+    (game_dir / "game.exe").write_bytes(b"\x00" * 1000)
+    (game_dir / "CleanLaunch.ahk").write_bytes(b"")
+    (game_dir / "launcher.bat").write_bytes(b"")
+    candidates = list_exe_candidates(game_dir, "Battle Fantasia")
+    names = [p.name for p in candidates]
+    assert names.index("game.exe") < names.index("CleanLaunch.ahk")
+    assert names.index("CleanLaunch.ahk") < names.index("launcher.bat")
+
+
+def test_list_exe_candidates_ahk_before_excluded_exe(tmp_path):
+    """An .ahk file ranks ahead of an excluded .exe (setup, unins, etc.)."""
+    game_dir = tmp_path / "Arcana Heart 3"
+    game_dir.mkdir()
+    (game_dir / "setup.exe").write_bytes(b"\x00" * 500)
+    (game_dir / "CleanLaunch.ahk").write_bytes(b"")
+    candidates = list_exe_candidates(game_dir, "Arcana Heart 3")
+    names = [p.name for p in candidates]
+    assert names.index("CleanLaunch.ahk") < names.index("setup.exe")
+
+
+def test_pick_best_exe_returns_exe_over_ahk_when_both_present(tmp_path):
+    """_pick_best_exe prefers a non-excluded .exe over .ahk; .ahk is for manual pick."""
+    game_dir = tmp_path / "Battle Fantasia"
+    game_dir.mkdir()
+    (game_dir / "game.exe").write_bytes(b"\x00" * 1000)
+    (game_dir / "CleanLaunch.ahk").write_bytes(b"")
+    result = _pick_best_exe(game_dir, "Battle Fantasia")
+    assert result is not None
+    assert result.name == "game.exe"
+
+
+def test_pick_best_exe_returns_ahk_when_only_launcher(tmp_path):
+    """_pick_best_exe falls back to .ahk if no suitable .exe exists."""
+    game_dir = tmp_path / "Arcana Heart 3"
+    game_dir.mkdir()
+    (game_dir / "CleanLaunch.ahk").write_bytes(b"")
+    result = _pick_best_exe(game_dir, "Arcana Heart 3")
+    assert result is not None
+    assert result.name == "CleanLaunch.ahk"
+
+
 # ─── repath_pclauncher_system_ini ─────────────────────────────────────────────
 
 _TAITO_INI = """\

@@ -1248,10 +1248,10 @@ def _pclauncher_ini_text(game_name: str, executable) -> str:
 
 
 def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
-    """Return all .exe files in *game_dir* and every subdirectory, recommended first.
+    """Return .exe/.ahk/.bat files in *game_dir* and every subdirectory, recommended first.
 
     Sort priority (ascending = better):
-    1. Excluded prefixes (setup, unins, vcredist, …) — excluded last.
+    1. File type: non-excluded .exe → .ahk → .bat → excluded .exe.
     2. Depth relative to *game_dir* — shallower files first (0 = top-level).
     3. Stem similarity to *title_hint* — exact match, partial match, no match.
     4. File name alphabetically.
@@ -1261,9 +1261,18 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
     hint_norm = re.sub(r"[^a-z0-9]", "", title_hint.lower())
 
     def _sort_key(p: Path) -> tuple:
-        excluded = int(
-            any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES)
+        ext = p.suffix.lower()
+        is_excluded_exe = ext == ".exe" and any(
+            p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES
         )
+        if ext == ".exe" and not is_excluded_exe:
+            type_rank = 0
+        elif ext == ".ahk":
+            type_rank = 1
+        elif ext == ".bat":
+            type_rank = 2
+        else:
+            type_rank = 3  # excluded .exe
         depth = len(p.relative_to(game_dir).parts) - 1  # 0 = directly in game_dir
         stem_norm = re.sub(r"[^a-z0-9]", "", p.stem.lower())
         if stem_norm == hint_norm:
@@ -1272,19 +1281,21 @@ def list_exe_candidates(game_dir: Path, title_hint: str = "") -> list:
             similarity = 1
         else:
             similarity = 2
-        return (excluded, depth, similarity, p.name.lower())
+        return (type_rank, depth, similarity, p.name.lower())
 
-    return sorted(
-        (p for p in game_dir.rglob("*.exe") if p.is_file()),
-        key=_sort_key,
-    )
+    candidates: list = []
+    for glob in ("*.exe", "*.ahk", "*.bat"):
+        candidates.extend(p for p in game_dir.rglob(glob) if p.is_file())
+    return sorted(candidates, key=_sort_key)
 
 
 def _pick_best_exe(game_dir: Path, title_hint: str = "") -> Optional[Path]:
-    """Return the most-likely game executable in *game_dir*, or None.
+    """Return the most-likely launcher in *game_dir*, or None.
 
     Delegates to :func:`list_exe_candidates` and returns the first entry
-    that is *not* in the excluded-prefix set.
+    that is *not* in the excluded-prefix set.  For PCLauncher systems that
+    use .ahk or .bat launchers the caller should verify the auto-detected
+    path makes sense; use --exe / Browse to override when needed.
     """
     for p in list_exe_candidates(game_dir, title_hint):
         if not any(p.stem.lower().startswith(pf) for pf in _EXE_EXCLUSION_PREFIXES):
