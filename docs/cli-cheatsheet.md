@@ -41,6 +41,7 @@ Scans common install paths for HyperSpin / RocketLauncher / HyperHQ / RocketLaun
 
 ```bat
 spindoctor tools-audit
+spindoctor tools-audit --report D:\tools_audit.csv    :: save CSV (category, tool, replaced-by, path)
 ```
 
 Reference: [Command reference → tools-audit](commands.md#tools-audit).
@@ -179,6 +180,7 @@ Reference: [Command reference → curate](commands.md#curate).
 ```bat
 spindoctor cleanup categories         :: list disk-space hogs SpinDoctor manages
 spindoctor cleanup audit              :: same in summary form
+spindoctor cleanup audit --report D:\cleanup_audit.csv    :: save CSV (category, count, size, dates)
 spindoctor cleanup run --apply
 ```
 
@@ -277,8 +279,9 @@ Reference: [Command reference → fetch-meta](commands.md#fetch-meta).
 spindoctor fetch-media --system MAME --apply
 spindoctor fetch-media --all --apply
 spindoctor fetch-media --all --types wheel,artwork --apply
-spindoctor fetch-media --all --pick-media --apply       :: per-slot picker
-spindoctor fetch-media --all --skip-ambiguous --apply   :: cron-friendly
+spindoctor fetch-media --all --pick-media --apply              :: per-slot picker
+spindoctor fetch-media --all --skip-ambiguous --apply          :: cron-friendly
+spindoctor fetch-media --all --apply --report D:\audit.csv     :: post-fetch audit CSV
 ```
 
 Reference: [Command reference → fetch-media](commands.md#fetch-media).
@@ -603,6 +606,7 @@ spindoctor ledblinky inspect-rom 1942
 
 :: ── Audit / coverage ─────────────────────────────────────────────────────────
 spindoctor ledblinky audit
+spindoctor ledblinky audit --report D:\ledblinky_audit.csv    :: save CSV (rom, status, coverage flags)
 
 :: ── Color-RGB.ini — named color palette management ───────────────────────────
 spindoctor ledblinky colors list

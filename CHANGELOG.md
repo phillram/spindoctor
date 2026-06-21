@@ -12,6 +12,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`--report PATH` flag added to all audit commands for consistent CSV output.** Every audit-type command now supports `--report PATH` to write a machine-readable CSV alongside the terminal output:
+  - `tools-audit --report PATH` — one row per detected tool with category, tool name, replaced-by spindoctor command, notes, and install path(s).
+  - `cleanup audit --report PATH` — one row per category with file count, total bytes, human-readable size, oldest/newest timestamps, and storage location.
+  - `ledblinky audit --report PATH` — one row per ROM with `in_listxml`, `has_input`, `in_controls_ini`, `in_colors_ini`, and `status` (covered / would-synth / no-input / missing).
+  - `fetch-media --report PATH` — post-fetch ROM+media audit CSV identical to `audit --report`, with additional before/after download-result columns per media slot.
+  Commands that already had `--report` (`audit`, `media-scan`) are unchanged. `fetch-media`'s existing auto-export via `auto_audit_export_dir` is also unchanged and now supports writing to *both* the auto path and an explicit `--report` path in the same run.
+
 - **`game` CLI command group — list, remove, and reorder individual games within a system's wheel database.**
   - `spindoctor game list --system <System> [--verbose]` — lists all games in XML order with position numbers; `--verbose` adds year, manufacturer, genre, and enabled state.
   - `spindoctor game remove --system <System> <game_name> [--apply] [--verbose]` — removes a single game entry from the database XML (ROM and media files are untouched). Dry-run by default; `--verbose` prints full metadata and the file path before removing.
