@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **File paths no longer wrap mid-line in saved output logs.** All Rich console instances now use `soft_wrap=True`, which prevents Rich from breaking long lines (file paths, URLs) at the detected console width. This is belt-and-suspenders on top of the existing `COLUMNS=9999` subprocess environment fix — if the cabinet's Windows 7 / PyInstaller environment ignores `COLUMNS`, `soft_wrap` guarantees paths stay on a single line regardless.
+
 ### Changed
 
 - **GUI: all action buttons now use plain-English labels instead of CLI command names.** Twenty-four buttons across six tabs were renamed so users never need to know a CLI sub-command to understand what a button does. Full mapping: "Run doctor" → "Run Health Check"; "Tools audit" → "Check Installed Tools"; "Run migration" → "Start Migration"; "Run generate-config" → "Update RocketLauncher INIs" (both Metadata & Media and Migration tabs); "Run fetch-meta" → "Download Game Info"; "Run on subset…" → "Download for Selected Systems…"; "Run fetch-media" → "Download Media Files"; "Run media-scan" → "Import Local Media"; "Run update-db" → "Sync Database to ROMs"; "Run batch-edit" → "Run Bulk Edit"; "Run curate" → "Archive / Delete Duplicates"; "Audit caches" → "Check Cache Status"; "Run cleanup" → "Clean Up Caches"; "Run add-system" → "Add Arcade System"; "Run add-pc-system" → "Add PC System"; "Run rename" → "Rename Game"; "Run clone" → "Clone Game"; "Run organize" → "Build Sort Wheels". CLI commands and behaviour are unchanged.
