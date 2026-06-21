@@ -115,8 +115,9 @@ def _auto_export_audit(
     download_log: Optional[dict] = None,
     before_log: Optional[dict] = None,
     game_filter: Optional[str] = None,
+    explicit_path: Optional[Path] = None,
 ) -> None:
-    """If auto_audit_export_dir is configured, write an audit CSV there.
+    """Write an audit CSV to an explicit path and/or the auto_audit_export_dir.
 
     ``download_log`` is an optional mapping of
     ``game_name → {media_type → status_str}`` produced by fetch-media runs.
@@ -131,22 +132,30 @@ def _auto_export_audit(
     limits the audit to that one game instead of every game in
     ``systems`` — running `fetch-meta`/`fetch-media --game X` shouldn't
     produce a CSV listing every other untouched game on the console.
+
+    ``explicit_path``, when given, writes a second CSV to that exact path
+    (in addition to any auto-export). Used by ``fetch-media --report``.
     """
-    if not config.auto_audit_export_dir:
+    paths_to_write: list[Path] = []
+    if explicit_path is not None:
+        paths_to_write.append(explicit_path)
+    if config.auto_audit_export_dir:
+        export_dir = Path(config.auto_audit_export_dir)
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        paths_to_write.append(export_dir / f"audit_{stamp}.csv")
+    if not paths_to_write:
         return
-    export_dir = Path(config.auto_audit_export_dir)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_path = export_dir / f"audit_{stamp}.csv"
     results = [audit_system(s, config, check_media_flag=True) for s in systems]
     if game_filter:
         for result in results:
             result.entries = [
                 e for e in result.entries if e.rom_name == game_filter
             ]
-    _write_audit_csv(
-        results, report_path, download_log=download_log, before_log=before_log,
-    )
-    console.print(f"\n[dim]Auto-audit export:[/dim] {report_path}")
+    for report_path in paths_to_write:
+        _write_audit_csv(
+            results, report_path, download_log=download_log, before_log=before_log,
+        )
+        console.print(f"\n[dim]Audit report:[/dim] {report_path}")
 
 
 # ─── root command ─────────────────────────────────────────────────────────────
@@ -1001,6 +1010,80 @@ def _write_audit_csv(
                 writer.writerow(["system", "rom_name", "missing_types"])
                 for row in footer_rows:
                     writer.writerow(row)
+
+
+def _write_ledblinky_audit_csv(rows, path: Path) -> None:
+    """Write a LEDBlinky coverage audit to a CSV file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["rom_name", "in_listxml", "has_input", "in_controls_ini", "in_colors_ini", "status"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({
+                "rom_name": row.rom_name,
+                "in_listxml": row.in_listxml,
+                "has_input": row.has_input,
+                "in_controls_ini": row.in_controls_ini,
+                "in_colors_ini": row.in_colors_ini,
+                "status": row.status,
+            })
+
+
+def _write_cleanup_audit_csv(reports, path: Path) -> None:
+    """Write a cleanup audit summary to a CSV file."""
+    from .cleanup import format_size
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["category", "label", "safe", "file_count", "total_bytes", "total_size", "oldest", "newest", "location"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        for r in reports.values():
+            import datetime as _dt
+            oldest = (
+                _dt.datetime.fromtimestamp(r.oldest_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                if r.oldest_mtime is not None else ""
+            )
+            newest = (
+                _dt.datetime.fromtimestamp(r.newest_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                if r.newest_mtime is not None else ""
+            )
+            writer.writerow({
+                "category": r.key,
+                "label": r.label,
+                "safe": r.safe,
+                "file_count": r.count,
+                "total_bytes": r.total_bytes,
+                "total_size": format_size(r.total_bytes),
+                "oldest": oldest,
+                "newest": newest,
+                "location": r.location,
+            })
+
+
+def _write_tools_audit_csv(result, path: Path) -> None:
+    """Write a tools-audit result to a CSV file."""
+    from . import tools_audit as ta
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fields = ["category", "tool_name", "replaced_by", "notes", "path"]
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fields)
+        writer.writeheader()
+        grouped = result.by_category()
+        for category in ta.CATEGORY_ORDER:
+            items = grouped.get(category)
+            if not items:
+                continue
+            for finding in items:
+                entry = finding.entry
+                paths = "; ".join(str(p) for p in finding.matched_executables) if finding.matched_executables else ""
+                writer.writerow({
+                    "category": ta.category_label(category),
+                    "tool_name": entry.name,
+                    "replaced_by": entry.superseded_by or "",
+                    "notes": entry.notes or "",
+                    "path": paths,
+                })
 
 
 # ─── detailed file display helpers ───────────────────────────────────────────
@@ -4363,7 +4446,9 @@ def cleanup_categories():
 @click.option("--detail", is_flag=True, help="List every individual file under each category.")
 @click.option("--category", "-c", "categories", multiple=True,
               help="Limit audit to one or more category keys (repeatable, comma-separated).")
-def cleanup_audit(detail: bool, categories: tuple[str, ...]):
+@click.option("--report", "report_csv", type=click.Path(), default=None,
+              help="Write a CSV summary to this path.")
+def cleanup_audit(detail: bool, categories: tuple[str, ...], report_csv: Optional[str]):
     """Show disk usage for each SpinDoctor cache and manifest category.
 
     \b
@@ -4371,6 +4456,7 @@ def cleanup_audit(detail: bool, categories: tuple[str, ...]):
       spindoctor cleanup audit
       spindoctor cleanup audit --detail
       spindoctor cleanup audit -c metadata-cache -c db-backups
+      spindoctor cleanup audit --report D:\\cleanup.csv
     """
     from .cleanup import CATEGORY_KEYS, format_size, scan
 
@@ -4443,6 +4529,10 @@ def cleanup_audit(detail: bool, categories: tuple[str, ...]):
                     str(f.path),
                 )
             console.print(tbl)
+
+    if report_csv:
+        _write_cleanup_audit_csv(reports, Path(report_csv))
+        console.print(f"\n[dim]Report saved:[/dim] {report_csv}")
 
 
 @cleanup_group.command("run")
@@ -4965,8 +5055,11 @@ def _is_network_error(msg: str) -> bool:
               help="Print a line per game as metadata is resolved and per slot as "
                    "downloads complete, instead of only the end-of-run summary.")
 @click.option("--output-dir", type=click.Path(), default=None)
+@click.option("--report", "report_csv", type=click.Path(), default=None,
+              help="Write a post-fetch audit CSV to this path (includes before/after "
+                   "download results per media slot).")
 def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
-                skip_ambiguous, apply_changes, verbose, output_dir):
+                skip_ambiguous, apply_changes, verbose, output_dir, report_csv):
     """Download media assets for games in the database.
 
     Only downloads media that is missing unless --overwrite is passed.
@@ -5353,6 +5446,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         download_log=download_log or None,
         before_log=before_log or None,
         game_filter=game_filter or None,
+        explicit_path=Path(report_csv) if report_csv else None,
     )
 
 
@@ -6948,7 +7042,9 @@ def ledblinky_inspect_rom(rom_name):
 
 @ledblinky_group.command("audit")
 @click.option("--system", "-s", default="MAME")
-def ledblinky_audit(system):
+@click.option("--report", "report_csv", type=click.Path(), default=None,
+              help="Write a CSV report to this path.")
+def ledblinky_audit(system, report_csv):
     """Show LEDBlinky coverage per ROM (covered / would-synth / no-input / missing)."""
     config = _cfg()
     _check_config(config)
@@ -7000,6 +7096,10 @@ def ledblinky_audit(system):
         console.print(tbl)
         if len(missing_or_synth) > 60:
             console.print(f"  [dim]... and {len(missing_or_synth) - 60} more[/dim]")
+
+    if report_csv:
+        _write_ledblinky_audit_csv(rows, Path(report_csv))
+        console.print(f"\n[dim]Report saved:[/dim] {report_csv}")
 
 
 # ─── report ───────────────────────────────────────────────────────────────────
@@ -11008,7 +11108,9 @@ def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
 @click.option("--show-unknown", is_flag=True,
               help="List .exe files we found but don't recognise — useful "
                    "for telling us what to add to the registry.")
-def tools_audit_cmd(extra_paths, max_depth, show_unknown):
+@click.option("--report", "report_csv", type=click.Path(), default=None,
+              help="Write a CSV report to this path.")
+def tools_audit_cmd(extra_paths, max_depth, show_unknown, report_csv):
     """Audit third-party arcade tools installed on this PC.
 
     \b
@@ -11084,6 +11186,10 @@ def tools_audit_cmd(extra_paths, max_depth, show_unknown):
             "are fully covered by spindoctor commands. Safe to uninstall "
             "once you've confirmed the spindoctor equivalent works for you."
         )
+
+    if report_csv:
+        _write_tools_audit_csv(result, Path(report_csv))
+        console.print(f"\n[dim]Report saved:[/dim] {report_csv}")
 
 
 # ─── lightgun ─────────────────────────────────────────────────────────────────
