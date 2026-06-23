@@ -208,6 +208,8 @@ D:\Arcade\Settings\<System>.ini
 
 Each INI can contain multiple sections controlling the wheel's appearance and launch behaviour. The one SpinDoctor cares about is `[video defaults]`.
 
+> **When renaming a system:** HyperSpin will display "Cannot find &lt;NewName&gt;.ini" and refuse to open the wheel until `Settings\<OldName>.ini` is renamed to `Settings\<NewName>.ini`. This is purely a filename rename — no content changes are needed. It is separate from the other files that must be updated when renaming (Main Menu.xml, `RocketLauncher\Settings\<System>\`, HyperSpin `Databases\<System>\`). SpinDoctor does not manage Settings INI files.
+
 ### `[video defaults]` — video path redirect
 
 MAME subsystem wheels ("4-Player Games", "Driving Games", "Gun Games", etc.) do not have their own video collection. Instead they share the MAME video folder. HyperSpin is told where to look via the `[video defaults]` section in the system's Settings INI:
