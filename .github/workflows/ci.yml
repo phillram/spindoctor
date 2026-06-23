@@ -75,22 +75,40 @@ jobs:
 
       # actions/setup-python on Windows does not set TCL_LIBRARY, so Tcl
       # cannot locate init.tcl and tk.Tk() raises TclError at test time.
-      # The Tcl sub-directory name varies across Python patch releases
-      # (tcl8.6 vs tcl8.6.15), so we glob for whichever init.tcl exists
-      # rather than hardcoding the version suffix.  as_posix() produces
-      # forward slashes; mixed backslash/forward-slash paths trip Tcl.
+      # Two layout variations exist across Python patch releases:
+      #   prefix/tcl/tcl8.6.15/   (standard Windows installer)
+      #   prefix/tcl8.6.15/library/ (actions/setup-python toolcache, 3.12+)
+      # The original glob "tcl/tcl8*" misses the second layout entirely.
+      # Within each candidate, init.tcl may be at the root OR in library/.
+      # Zero-byte stub files (e.g. tcl/tcl8.6/init.tcl in 3.12.10) pass
+      # exists() but Tcl cannot source them; st_size > 0 filters them out.
+      # as_posix() produces forward slashes; mixed paths trip Tcl.
       - name: Set TCL_LIBRARY (Windows)
         if: runner.os == 'Windows'
         shell: python
         run: |
           import os, pathlib
           prefix = pathlib.Path(__import__('sys').prefix)
-          for candidate in sorted(prefix.glob("tcl/tcl8*"), reverse=True):
-              if (candidate / "init.tcl").exists():
-                  with open(os.environ["GITHUB_ENV"], "a") as f:
-                      f.write(f"TCL_LIBRARY={candidate.as_posix()}\n")
-                  print(f"TCL_LIBRARY={candidate.as_posix()}")
+          candidates = sorted(
+              list(dict.fromkeys([*prefix.glob("tcl/tcl8*"), *prefix.glob("tcl8*")])),
+              key=lambda p: p.name, reverse=True,
+          )
+          found = None
+          for candidate in candidates:
+              for sub in (candidate, candidate / "library"):
+                  init = sub / "init.tcl"
+                  try:
+                      if init.exists() and init.stat().st_size > 0:
+                          found = sub
+                          break
+                  except OSError:
+                      pass
+              if found:
                   break
+          if found:
+              with open(os.environ["GITHUB_ENV"], "a") as f:
+                  f.write(f"TCL_LIBRARY={found.as_posix()}\n")
+              print(f"TCL_LIBRARY={found.as_posix()}")
           else:
               print("WARNING: init.tcl not found — Tk tests may fail")
 
