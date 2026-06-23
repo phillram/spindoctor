@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import Config
-from .database import HyperspinDatabase, GameEntry
+from .database import HyperspinDatabase, GameEntry, _lxml_etree
 
 
 MAIN_MENU_FOLDER = "Main Menu"
@@ -133,8 +133,8 @@ def save_main_menu(
     db = menu._db
 
     # If we have a tree (file existed), rewrite its <game> children in the
-    # exact order requested.  This preserves comments, the <header>, and any
-    # unknown attributes/elements lxml saw during load.
+    # exact order requested.  This preserves the <header> and any unknown
+    # attributes/elements lxml saw during load; comments are stripped (see below).
     if db is not None and db._tree is not None and db._root is not None:
         # Sync the in-memory game map to match the menu order.
         db._games.clear()
@@ -142,6 +142,14 @@ def save_main_menu(
         # Drop existing <game> children from the tree; re-append in order.
         for child in list(db._root.findall("game")):
             db._root.remove(child)
+        # Strip any XML comment nodes — interleaved comments become orphaned
+        # when game elements are removed and would otherwise float to the top.
+        # HyperSpin-native Main Menu files never contain comments.
+        LET = _lxml_etree()
+        if LET is not None:
+            for child in list(db._root):
+                if callable(child.tag):  # lxml comment / PI nodes have callable tags
+                    db._root.remove(child)
         for entry in menu.entries:
             game = _entry_to_game(entry)
             db._games[game.name] = game
