@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI output panel no longer flooded with `────` box-drawing lines.** The subprocess environment previously forced `COLUMNS=9999`, which told Rich to render `Panel()` borders spanning 9,999 characters. Now that every Rich `Console` instance uses `soft_wrap=True` (added in v2.7.5), the `COLUMNS` override is redundant for its original purpose (preventing path wrapping) and has been removed. Rich now uses its pipe default (~80 columns) for panel borders, giving a compact header line instead of thousands of horizontal dashes.
+
+- **Save Log no longer fails with "Invalid argument" when the command slug contains Windows path characters.** For commands that accept a `--exe` path (e.g. `pc-fix-exe`), the exe path value was treated as a positional argument and joined into the auto-saved log filename — producing characters such as `\` and `:` that are illegal in Windows filenames. The filename builder now strips all Windows-invalid characters (`\ / : * ? " < > |`) from the slug and caps it at 80 characters before constructing the path.
+
 ### Added
 
 - **"(Not in wheel)" badge in system and game dropdowns.** System pickers across every GUI tab now annotate any system that exists as a folder in `roms_dir` or `databases_dir` but is absent from `Main Menu.xml` with a `(Not in wheel)` suffix. The **Fix PC game executable** game picker also badges any game folder on disk that has no matching entry in the system's HyperSpin XML database — the only game dropdown that reads from the filesystem rather than the XML, so the only one where the discrepancy can arise. The suffix is stripped before any CLI command runs — file paths and command arguments are never affected.
