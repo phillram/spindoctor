@@ -287,6 +287,21 @@ spindoctor fetch-media --all --apply --report D:\audit.csv     :: post-fetch aud
 
 Reference: [Command reference → fetch-media](commands.md#fetch-media).
 
+### `fetch-steam-media` — Steam Store media for one PC game
+
+```bat
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" --steam-id 1145360 --apply
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id "https://store.steampowered.com/app/1145360/Hades/" --apply
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --video-index 2 --snap-index 4 --apply   :: non-interactive
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --types video --apply                     :: just the video
+```
+
+No auth required. Use when SS/TGDB don't have media for an obscure PC game.
+Reference: [Command reference → fetch-steam-media](commands.md#fetch-steam-media).
+
 ### `media-add` / `media-scan` — manual + drift detection
 
 ```bat

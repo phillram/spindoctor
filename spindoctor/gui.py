@@ -7549,7 +7549,9 @@ class _SpinDoctorGUI:
                   "match well by name (language barrier, alternate "
                   "punctuation, remaster subtitle). Find the ID at "
                   "screenscraper.fr/gameinfos.php?gameid=XXXX or "
-                  "thegamesdb.net/game.php?id=XXXX."),
+                  "thegamesdb.net/game.php?id=XXXX. "
+                  "Tip: all ID fields accept the full URL — paste it "
+                  "directly and the ID is extracted automatically."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 2))
 
@@ -7581,20 +7583,32 @@ class _SpinDoctorGUI:
         # Override ID fields.
         gameovr_form = self.ttk.Frame(gameovr_frame)
         gameovr_form.pack(fill="x", padx=6, pady=(6, 2))
-        self.ttk.Label(gameovr_form, text="ScreenScraper ID (int)").grid(
+        self.ttk.Label(gameovr_form, text="ScreenScraper ID").grid(
             row=0, column=0, sticky="w", padx=(0, 6), pady=2,
         )
         self._gameovr_ss_id_var = self.tk.StringVar()
         self.ttk.Entry(
-            gameovr_form, textvariable=self._gameovr_ss_id_var, width=14,
+            gameovr_form, textvariable=self._gameovr_ss_id_var, width=18,
         ).grid(row=0, column=1, sticky="w", pady=2)
-        self.ttk.Label(gameovr_form, text="TheGamesDB ID (int)").grid(
+        self.ttk.Label(gameovr_form, text="TheGamesDB ID").grid(
             row=0, column=2, sticky="w", padx=(16, 6), pady=2,
         )
         self._gameovr_tgdb_id_var = self.tk.StringVar()
         self.ttk.Entry(
-            gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=14,
+            gameovr_form, textvariable=self._gameovr_tgdb_id_var, width=18,
         ).grid(row=0, column=3, sticky="w", pady=2)
+        self.ttk.Label(gameovr_form, text="Steam App ID").grid(
+            row=1, column=0, sticky="w", padx=(0, 6), pady=2,
+        )
+        self._gameovr_steam_id_var = self.tk.StringVar()
+        self.ttk.Entry(
+            gameovr_form, textvariable=self._gameovr_steam_id_var, width=40,
+        ).grid(row=1, column=1, columnspan=3, sticky="w", pady=2)
+        self.ttk.Label(
+            gameovr_form,
+            text="← bare ID or full store URL",
+            foreground=_FG_DIMMER,
+        ).grid(row=1, column=4, sticky="w", padx=(6, 0), pady=2)
 
         # Clear override ID fields when the game selection changes so stale
         # IDs from a previous game never linger.  System changes also fire
@@ -7605,11 +7619,12 @@ class _SpinDoctorGUI:
             lambda *_: (
                 self._gameovr_ss_id_var.set(""),
                 self._gameovr_tgdb_id_var.set(""),
+                self._gameovr_steam_id_var.set(""),
             ),
         )
 
         gameovr_btns = self.ttk.Frame(gameovr_frame)
-        gameovr_btns.pack(anchor="w", padx=6, pady=(4, 6))
+        gameovr_btns.pack(anchor="w", padx=6, pady=(4, 2))
         self.ttk.Button(
             gameovr_btns, text="Load current override",
             command=self._load_game_override,
@@ -7622,6 +7637,71 @@ class _SpinDoctorGUI:
             gameovr_btns, text="Clear override",
             command=self._clear_game_override,
         ).pack(side="left")
+
+        # ── Steam media panel ─────────────────────────────────────────────────
+        # One-off per-game tool: paste a Steam store URL or App ID, scan for
+        # available media, pick which video / screenshot / artwork to download.
+        # Only useful for PC/Steam games that SS/TGDB don't cover well.
+        steam_sep = self.ttk.Separator(gameovr_frame, orient="horizontal")
+        steam_sep.pack(fill="x", padx=6, pady=(8, 0))
+
+        steam_hdr = self.ttk.Frame(gameovr_frame)
+        steam_hdr.pack(fill="x", padx=6, pady=(6, 2))
+        self.ttk.Label(
+            steam_hdr,
+            text="Steam media  (optional, PC games only)",
+            font=("", 0, "bold"),
+        ).pack(side="left")
+        self.ttk.Label(
+            steam_hdr,
+            text="— paste a store URL or App ID, then Scan",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(6, 0))
+
+        steam_url_row = self.ttk.Frame(gameovr_frame)
+        steam_url_row.pack(fill="x", padx=6, pady=(2, 4))
+        self.ttk.Label(steam_url_row, text="Steam URL / App ID").pack(side="left")
+        self._steam_url_var = self.tk.StringVar()
+        self.ttk.Entry(
+            steam_url_row, textvariable=self._steam_url_var, width=52,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            steam_url_row, text="Scan",
+            command=self._scan_steam,
+        ).pack(side="left")
+
+        # Per-type candidate pickers (populated by _scan_steam).
+        steam_pick_frame = self.ttk.Frame(gameovr_frame)
+        steam_pick_frame.pack(fill="x", padx=6, pady=(0, 4))
+        self._steam_cands: dict[str, list] = {}  # filled by _scan_steam
+        self._steam_pick_vars: dict[str, "tk.StringVar"] = {}
+        self._steam_pick_combos: dict[str, "ttk.Combobox"] = {}
+
+        for col, mt in enumerate(("video", "snap", "artwork")):
+            lbl_text = {"video": "Video", "snap": "Screenshot", "artwork": "Artwork"}[mt]
+            self.ttk.Label(steam_pick_frame, text=lbl_text).grid(
+                row=0, column=col * 2, sticky="w", padx=(0 if col == 0 else 12, 4),
+            )
+            var = self.tk.StringVar(value="— scan first —")
+            cb = self.ttk.Combobox(
+                steam_pick_frame, textvariable=var,
+                state="disabled", width=30,
+            )
+            cb.grid(row=0, column=col * 2 + 1, sticky="w", padx=(0, 0))
+            self._steam_pick_vars[mt] = var
+            self._steam_pick_combos[mt] = cb
+
+        self._steam_overwrite_var = self.tk.BooleanVar(value=False)
+        steam_apply_row = self.ttk.Frame(gameovr_frame)
+        steam_apply_row.pack(anchor="w", padx=6, pady=(2, 8))
+        self.ttk.Button(
+            steam_apply_row, text="▶  Apply selected  (--apply)",
+            command=self._apply_steam_selection,
+        ).pack(side="left")
+        self.ttk.Checkbutton(
+            steam_apply_row, text="Overwrite existing",
+            variable=self._steam_overwrite_var,
+        ).pack(side="left", padx=10)
 
         # ── Step 1 — Full metadata refresh ───────────────────────────────────
         full_frame = self.ttk.LabelFrame(
@@ -8142,6 +8222,11 @@ class _SpinDoctorGUI:
         self._gameovr_ss_id_var.set("" if ss is None else str(ss))
         tg = current.get("thegamesdb_id")
         self._gameovr_tgdb_id_var.set("" if tg is None else str(tg))
+        steam = current.get("steam_app_id")
+        self._gameovr_steam_id_var.set("" if steam is None else str(steam))
+        # Also pre-fill the Steam scan URL box so Scan works right away.
+        if steam:
+            self._steam_url_var.set(str(steam))
         if not current:
             self._set_status(
                 f"No override saved for '{game_}' on {sys_} yet — fill the "
@@ -8157,28 +8242,17 @@ class _SpinDoctorGUI:
         args = ["config", "game-override", "set", sys_, game_]
         ss = self._gameovr_ss_id_var.get().strip()
         if ss:
-            try:
-                int(ss)
-            except ValueError:
-                self.messagebox.showerror(
-                    "Invalid ScreenScraper ID", f"Must be an integer; got {ss!r}.",
-                )
-                return
             args += ["--screenscraper-id", ss]
         tg = self._gameovr_tgdb_id_var.get().strip()
         if tg:
-            try:
-                int(tg)
-            except ValueError:
-                self.messagebox.showerror(
-                    "Invalid TheGamesDB ID", f"Must be an integer; got {tg!r}.",
-                )
-                return
             args += ["--thegamesdb-id", tg]
+        steam = self._gameovr_steam_id_var.get().strip()
+        if steam:
+            args += ["--steam-app-id", steam]
         if len(args) == 5:
             self._flash_validation(
                 "Nothing to save — fill in at least one of ScreenScraper ID "
-                "/ TheGamesDB ID first."
+                "/ TheGamesDB ID / Steam App ID first."
             )
             return
         self._run_cli("spindoctor", args)
@@ -8193,6 +8267,166 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", ["config", "game-override", "clear", sys_, game_])
         self._gameovr_ss_id_var.set("")
         self._gameovr_tgdb_id_var.set("")
+        self._gameovr_steam_id_var.set("")
+
+    def _scan_steam(self) -> None:
+        """Fetch Steam media candidates for the current System/Game/URL and
+        populate the per-type picker dropdowns.
+
+        Runs the Steam API call on a background thread so the GUI stays
+        responsive; updates the comboboxes on the main thread when done.
+        """
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        sys_, game_ = selection
+
+        raw = self._steam_url_var.get().strip()
+        if not raw:
+            self.messagebox.showwarning(
+                "No Steam URL / App ID",
+                "Paste a Steam store URL or App ID into the Steam URL field first.",
+            )
+            return
+
+        from .scraper import extract_steam_app_id as _extract, SteamClient, MetadataError
+
+        app_id = _extract(raw)
+        if app_id is None:
+            self.messagebox.showerror(
+                "Cannot parse App ID",
+                f"Could not extract a Steam App ID from:\n{raw}\n\n"
+                "Paste the full store URL (e.g. store.steampowered.com/app/1145360/Hades/) "
+                "or just the numeric App ID.",
+            )
+            return
+
+        self._set_status(f"Scanning Steam App {app_id}…")
+        for mt in ("video", "snap", "artwork"):
+            cb = self._steam_pick_combos[mt]
+            cb.configure(state="disabled")
+            self._steam_pick_vars[mt].set("scanning…")
+
+        def _worker():
+            try:
+                meta = SteamClient().fetch_by_app_id(app_id)
+            except MetadataError as exc:
+                self.tk.after(0, lambda: (
+                    self._set_status(f"Steam scan failed: {exc}"),
+                    self.messagebox.showerror("Steam scan failed", str(exc)),
+                ))
+                return
+            self.tk.after(0, lambda m=meta: self._on_steam_scan_done(app_id, m))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_steam_scan_done(self, app_id: str, meta) -> None:
+        """Called on the main thread when the Steam scan worker finishes."""
+        if meta is None:
+            self._set_status(f"Steam App {app_id} not found.")
+            self.messagebox.showwarning(
+                "App not found",
+                f"Steam App ID {app_id} returned no data — verify the ID at "
+                f"store.steampowered.com/app/{app_id}/",
+            )
+            for mt in ("video", "snap", "artwork"):
+                self._steam_pick_vars[mt].set("— not found —")
+            return
+
+        self._steam_cands = {}
+        label_map = {
+            "video":   lambda c, i: f"{i}. {c.version or c.source_type}",
+            "snap":    lambda c, i: f"{i}. {c.version or c.source_type}",
+            "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
+        }
+        any_found = False
+        for mt in ("video", "snap", "artwork"):
+            cands = meta.media_candidates.get(mt, [])
+            self._steam_cands[mt] = cands
+            cb = self._steam_pick_combos[mt]
+            var = self._steam_pick_vars[mt]
+            if cands:
+                labels = [label_map[mt](c, i) for i, c in enumerate(cands, 1)]
+                cb.configure(values=labels, state="readonly")
+                var.set(labels[0])
+                any_found = True
+            else:
+                cb.configure(values=[], state="disabled")
+                var.set("— none —")
+
+        found_parts = []
+        for mt in ("video", "snap", "artwork"):
+            n = len(self._steam_cands.get(mt, []))
+            if n:
+                found_parts.append(f"{n} {mt}")
+        summary = ", ".join(found_parts) if found_parts else "no media"
+        self._set_status(
+            f"Steam: {meta.name}  —  {summary}. "
+            "Pick candidates then click 'Apply selected'."
+        )
+        if not any_found:
+            self.messagebox.showinfo(
+                "No media found",
+                f"Steam returned no video, screenshot, or artwork for App {app_id}.",
+            )
+
+    def _apply_steam_selection(self) -> None:
+        """Shell out to fetch-steam-media with the currently selected candidates."""
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        sys_, game_ = selection
+
+        raw = self._steam_url_var.get().strip()
+        if not raw:
+            self.messagebox.showwarning(
+                "No Steam URL / App ID",
+                "Fill the Steam URL / App ID field and click Scan first.",
+            )
+            return
+
+        from .scraper import extract_steam_app_id as _extract
+        app_id = _extract(raw)
+        if app_id is None:
+            self.messagebox.showerror(
+                "Cannot parse App ID",
+                f"Could not extract a Steam App ID from:\n{raw}",
+            )
+            return
+
+        args = [
+            "fetch-steam-media",
+            "--system", sys_,
+            "--game", game_,
+            "--steam-id", app_id,
+        ]
+        types_to_fetch = []
+        for mt in ("video", "snap", "artwork"):
+            cands = self._steam_cands.get(mt, [])
+            if not cands:
+                continue
+            label = self._steam_pick_vars[mt].get()
+            # Label format: "1. <description>" — extract 1-based index.
+            try:
+                idx = int(label.split(".")[0].strip())
+            except (ValueError, IndexError):
+                continue
+            if 1 <= idx <= len(cands):
+                types_to_fetch.append(mt)
+                args += [f"--{mt}-index", str(idx)]
+
+        if not types_to_fetch:
+            self.messagebox.showwarning(
+                "Nothing selected",
+                "Scan first, then pick at least one video, screenshot, or artwork.",
+            )
+            return
+
+        args += ["--types", ",".join(types_to_fetch)]
+        if self._steam_overwrite_var.get():
+            args.append("--overwrite")
+        args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _build_fetch_meta_args(self, sys_args: list[str]) -> Optional[list[str]]:
         """Compose the full `fetch-meta` argv given a system selector.

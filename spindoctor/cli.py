@@ -29,6 +29,9 @@ from .audit import SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_game_override, get_systems, load_config, save_config,
 )
+from .scraper import (
+    extract_screenscraper_id, extract_thegamesdb_id, extract_steam_app_id,
+)
 from .database import GameEntry, HyperspinDatabase, load_database
 
 console = Console(soft_wrap=True)
@@ -579,25 +582,67 @@ def config_game_override_group():
 @config_game_override_group.command("set")
 @click.argument("system_name")
 @click.argument("game_name")
-@click.option("--screenscraper-id", type=int, default=None,
-              help="ScreenScraper game ID — from screenscraper.fr/gameinfos.php?gameid=<ID>.")
-@click.option("--thegamesdb-id", type=int, default=None,
-              help="TheGamesDB game ID — from thegamesdb.net/game.php?id=<ID>.")
-def config_game_override_set(system_name, game_name, screenscraper_id, thegamesdb_id):
-    """Force a specific scraper game ID for SYSTEM_NAME / GAME_NAME.
+@click.option("--screenscraper-id", "screenscraper_id_raw", default=None,
+              help="ScreenScraper game ID or full URL — e.g. screenscraper.fr/gameinfos.php?gameid=5775.")
+@click.option("--thegamesdb-id", "thegamesdb_id_raw", default=None,
+              help="TheGamesDB game ID or full URL — e.g. thegamesdb.net/game/11251/.")
+@click.option("--steam-app-id", "steam_app_id_raw", default=None,
+              help="Steam App ID or store URL — e.g. store.steampowered.com/app/1145360/Hades/. "
+                   "Stored for reference; use fetch-steam-media to download Steam media.")
+def config_game_override_set(system_name, game_name,
+                             screenscraper_id_raw, thegamesdb_id_raw, steam_app_id_raw):
+    """Force specific scraper IDs or a Steam App ID for SYSTEM_NAME / GAME_NAME.
+
+    All ID options accept either a bare integer/numeric string or a full URL
+    copied from the scraper or Steam store page — the ID is extracted
+    automatically.
 
     \b
     Example — a title that doesn't match well by name:
       spindoctor config game-override set "Nintendo DS" "Golden Sun - Dark Dawn (USA)" \\
           --screenscraper-id 5775 \\
           --thegamesdb-id 11251
+    Example — store the Steam App ID for later media fetching:
+      spindoctor config game-override set "PC Games" "Hades" \\
+          --steam-app-id "https://store.steampowered.com/app/1145360/Hades/"
     """
-    if screenscraper_id is None and thegamesdb_id is None:
+    if screenscraper_id_raw is None and thegamesdb_id_raw is None and steam_app_id_raw is None:
         err_console.print(
             "[red]Nothing to set.[/red] Pass at least one of "
-            "--screenscraper-id / --thegamesdb-id."
+            "--screenscraper-id / --thegamesdb-id / --steam-app-id."
         )
         sys.exit(1)
+
+    screenscraper_id: Optional[int] = None
+    if screenscraper_id_raw is not None:
+        screenscraper_id = extract_screenscraper_id(screenscraper_id_raw)
+        if screenscraper_id is None:
+            err_console.print(
+                f"[red]Cannot parse ScreenScraper ID from:[/red] {screenscraper_id_raw!r}\n"
+                "Expected a bare integer or a URL containing gameid=<N>."
+            )
+            sys.exit(1)
+
+    thegamesdb_id: Optional[int] = None
+    if thegamesdb_id_raw is not None:
+        thegamesdb_id = extract_thegamesdb_id(thegamesdb_id_raw)
+        if thegamesdb_id is None:
+            err_console.print(
+                f"[red]Cannot parse TheGamesDB ID from:[/red] {thegamesdb_id_raw!r}\n"
+                "Expected a bare integer or a URL containing id=<N> or /game/<N>/."
+            )
+            sys.exit(1)
+
+    steam_app_id: Optional[str] = None
+    if steam_app_id_raw is not None:
+        steam_app_id = extract_steam_app_id(steam_app_id_raw)
+        if steam_app_id is None:
+            err_console.print(
+                f"[red]Cannot parse Steam App ID from:[/red] {steam_app_id_raw!r}\n"
+                "Expected a bare numeric ID or a store.steampowered.com/app/<ID>/ URL."
+            )
+            sys.exit(1)
+
     config = _cfg()
     overrides = dict(config.game_overrides)
     system_map = dict(overrides.get(system_name, {}))
@@ -606,6 +651,8 @@ def config_game_override_set(system_name, game_name, screenscraper_id, thegamesd
         entry["screenscraper_id"] = screenscraper_id
     if thegamesdb_id is not None:
         entry["thegamesdb_id"] = thegamesdb_id
+    if steam_app_id is not None:
+        entry["steam_app_id"] = steam_app_id
     system_map[game_name] = entry
     overrides[system_name] = system_map
     config.game_overrides = overrides
@@ -5448,6 +5495,193 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
         game_filter=game_filter or None,
         explicit_path=Path(report_csv) if report_csv else None,
     )
+
+
+# ─── fetch-steam-media ────────────────────────────────────────────────────────
+
+_STEAM_MEDIA_TYPES = ("video", "snap", "artwork")
+
+
+@cli.command("fetch-steam-media")
+@click.option("--system", "-s", required=True, help="System name.")
+@click.option("--game", "-g", required=True,
+              help="ROM/game name (exact, no extension).")
+@click.option("--steam-id", "steam_id_raw", default=None,
+              help="Steam App ID or store URL (e.g. store.steampowered.com/app/1145360/Hades/). "
+                   "If omitted, the stored override value for this game is used.")
+@click.option("--types", default=",".join(_STEAM_MEDIA_TYPES),
+              help=f"Comma-separated media types to fetch. Options: {', '.join(_STEAM_MEDIA_TYPES)}. "
+                   "Default: all three.")
+@click.option("--video-index", "video_index", type=int, default=None,
+              help="1-based index of the video candidate to download without prompting.")
+@click.option("--snap-index", "snap_index", type=int, default=None,
+              help="1-based index of the screenshot candidate to download without prompting.")
+@click.option("--artwork-index", "artwork_index", type=int, default=None,
+              help="1-based index of the artwork candidate to download without prompting.")
+@click.option("--overwrite", is_flag=True, help="Overwrite existing file.")
+@click.option("--output-dir", type=click.Path(), default=None)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit downloads (default: dry-run preview).")
+def fetch_steam_media(system, game, steam_id_raw, types,
+                      video_index, snap_index, artwork_index,
+                      overwrite, output_dir, apply_changes):
+    """Download media for a specific game from the Steam Store.
+
+    Fetches trailer video(s), in-game screenshots, and/or header artwork
+    for a single game using its Steam App ID or store URL.  No Steam account
+    or API key is required.
+
+    When index flags (--video-index, --snap-index, --artwork-index) are
+    omitted the command runs an interactive numbered picker for each
+    requested type — the same picker used by fetch-media --pick-media.
+
+    The stored game override (config game-override set … --steam-app-id) is
+    used automatically when --steam-id is not passed on the command line.
+
+    \b
+    Examples:
+      # Interactive — browse and pick candidates:
+      spindoctor fetch-steam-media -s "PC Games" -g "Hades" \\
+          --steam-id 1145360 --apply
+
+      # Non-interactive — download the 2nd video and 4th screenshot:
+      spindoctor fetch-steam-media -s "PC Games" -g "Hades" \\
+          --steam-id "https://store.steampowered.com/app/1145360/Hades/" \\
+          --video-index 2 --snap-index 4 --apply
+
+      # Types subset — only fetch the video:
+      spindoctor fetch-steam-media -s "PC Games" -g "Hades" \\
+          --steam-id 1145360 --types video --apply
+    """
+    from .scraper import MetadataError, SteamClient
+    from .media import MediaDownloader
+    from .matcher import pick_media
+
+    # ── resolve App ID ────────────────────────────────────────────────────────
+    app_id: Optional[str] = None
+    if steam_id_raw:
+        app_id = extract_steam_app_id(steam_id_raw)
+        if app_id is None:
+            err_console.print(
+                f"[red]Cannot parse Steam App ID from:[/red] {steam_id_raw!r}\n"
+                "Expected a bare numeric ID or a store.steampowered.com/app/<ID>/ URL."
+            )
+            sys.exit(1)
+    else:
+        ovr = get_game_override(system, game)
+        app_id = ovr.get("steam_app_id")
+        if not app_id:
+            err_console.print(
+                "[red]No Steam App ID.[/red] Pass --steam-id or save one with:\n"
+                f"  spindoctor config game-override set {system!r} {game!r} "
+                "--steam-app-id <ID>"
+            )
+            sys.exit(1)
+
+    # ── parse requested types ─────────────────────────────────────────────────
+    requested = [t.strip() for t in types.split(",") if t.strip()]
+    invalid = [t for t in requested if t not in _STEAM_MEDIA_TYPES]
+    if invalid:
+        err_console.print(
+            f"[red]Unknown type(s):[/red] {', '.join(invalid)}\n"
+            f"Valid options: {', '.join(_STEAM_MEDIA_TYPES)}"
+        )
+        sys.exit(1)
+
+    # ── fetch from Steam ──────────────────────────────────────────────────────
+    console.print(f"  Fetching Steam data for App ID [cyan]{app_id}[/cyan]…")
+    try:
+        meta = SteamClient().fetch_by_app_id(app_id)
+    except MetadataError as exc:
+        err_console.print(f"[red]Steam fetch failed:[/red] {exc}")
+        sys.exit(1)
+
+    if meta is None:
+        err_console.print(
+            f"[red]App ID {app_id} not found on Steam[/red] — verify the ID at "
+            f"store.steampowered.com/app/{app_id}/"
+        )
+        sys.exit(1)
+
+    console.print(f"  Found: [bold]{meta.name}[/bold]")
+
+    # ── index map — type → provided index flag ────────────────────────────────
+    index_flags: dict[str, Optional[int]] = {
+        "video":   video_index,
+        "snap":    snap_index,
+        "artwork": artwork_index,
+    }
+
+    config = _cfg()
+    downloader = MediaDownloader(config, output_dir=output_dir)
+
+    SEP = "  " + "─" * 60
+
+    for mt in requested:
+        cands = meta.media_candidates.get(mt, [])
+        dest = downloader.media_path(system, game, mt)
+
+        console.print(SEP)
+        console.print(f"  [cyan]{mt}[/cyan]  →  {dest}")
+
+        if not cands:
+            console.print(f"    [yellow]No {mt} candidates available from Steam.[/yellow]")
+            continue
+
+        # Resolve which candidate to use.
+        idx_flag = index_flags.get(mt)
+        if idx_flag is not None:
+            # Non-interactive path (GUI / scripted): honour the explicit index.
+            if not 1 <= idx_flag <= len(cands):
+                err_console.print(
+                    f"    [red]--{mt}-index {idx_flag} out of range[/red] "
+                    f"(1–{len(cands)})."
+                )
+                continue
+            chosen = cands[idx_flag - 1]
+            console.print(f"    Using candidate {idx_flag}: {chosen.url}")
+        else:
+            # Interactive picker — prints the numbered table + prompts.
+            if not apply_changes:
+                # Dry-run: just list what's available, no prompt.
+                for i, c in enumerate(cands, 1):
+                    label = c.version or c.source_type or c.url
+                    console.print(f"    {i}. {label}  [dim]{c.url}[/dim]")
+                console.print(
+                    f"    [dim]{len(cands)} candidate(s) — "
+                    "re-run with --apply to pick and download.[/dim]"
+                )
+                continue
+            chosen = pick_media(
+                game, mt, cands, system,
+                interactive=True,
+                previewer=None,
+            )
+            if chosen is None:
+                console.print(f"    [dim]Skipped.[/dim]")
+                continue
+
+        if not apply_changes:
+            console.print(f"    [cyan]would download:[/cyan]  {chosen.url}")
+            continue
+
+        if dest.exists() and not overwrite:
+            console.print(f"    [dim]existing — skip (--overwrite to replace)[/dim]")
+            continue
+
+        result = downloader.download_to_path(
+            dest, chosen.url, label=game, media_type=mt, overwrite=overwrite,
+        )
+        if result.success:
+            console.print(f"    [green]downloaded:[/green]  {dest}")
+        else:
+            console.print(f"    [red]failed:[/red]  {result.error}")
+
+    console.print(SEP)
+    if not apply_changes:
+        console.print(
+            "\n  [dim]Dry-run complete — re-run with [bold]--apply[/bold] to commit.[/dim]"
+        )
 
 
 # ─── media add ────────────────────────────────────────────────────────────────

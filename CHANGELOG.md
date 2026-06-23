@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`fetch-steam-media` command** — download trailer videos, in-game screenshots, and/or header artwork for a specific game directly from the Steam Store (no API key or account required). Accepts a bare App ID or a full `store.steampowered.com/app/<ID>/` URL. Runs an interactive numbered picker by default (identical to `fetch-media --pick-media`); `--video-index N`, `--snap-index N`, and `--artwork-index N` flags enable non-interactive/scripted use. If `--steam-id` is omitted, the stored `steam_app_id` game override is used automatically. GUI: **Metadata & Media → Per-game & override → Steam media** panel (Scan + candidate dropdowns + Apply).
+
+- **`config game-override set --steam-app-id`** — new per-game override key that stores a Steam App ID alongside the existing `screenscraper_id` / `thegamesdb_id` fields. Used by `fetch-steam-media` as the default App ID when `--steam-id` is not passed.
+
+- **URL support for all `config game-override set` ID options** — `--screenscraper-id`, `--thegamesdb-id`, and `--steam-app-id` now accept full browser URLs in addition to bare numeric IDs. The ID is extracted automatically (`gameid=` param for ScreenScraper, `/game/<id>/` or `?id=` for TheGamesDB, `/app/<id>/` for Steam) so users can paste directly from the browser without manually extracting the number. GUI integer validation for scraper ID fields removed accordingly — the CLI handles extraction and validation.
+
+- **Steam media panel in the GUI** (Metadata & Media → Per-game & override): paste a Steam URL or App ID, click **Scan** to fetch available candidates in the background, pick from **Video** / **Screenshot** / **Artwork** dropdowns, then click **Apply selected**. The stored Steam App ID (via **Save override**) is pre-filled on load so repeat scans require no re-pasting. **Overwrite existing** checkbox controls file replacement.
+
+- **`SteamClient`** in `scraper.py` with `fetch_by_app_id(app_id)` and `search(game_name)`. Populates `video`, `snap` (full-resolution screenshot), and `artwork` (header capsule) media candidates. No wheel support (Steam has no transparent-logo equivalent).
+
+- **`extract_screenscraper_id()`, `extract_thegamesdb_id()`, `extract_steam_app_id()`** helper functions in `scraper.py` — shared by the CLI and GUI for URL-to-ID extraction.
+
 ## [2.7.5] - 2026-06-22
 
 ### Fixed
