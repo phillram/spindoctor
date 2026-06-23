@@ -743,6 +743,36 @@ def test_format_argv_leaves_simple_args_unquoted():
     assert gui._format_argv(["spindoctor", "doctor"]) == "spindoctor doctor"
 
 
+# ─── Tk-session guard ─────────────────────────────────────────────────────────
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _keep_tcl_alive():
+    """Prevent Tcl_Finalize() from being called between Tk tests.
+
+    On Windows, destroying the last live tk.Tk() root causes _tkinter to call
+    Tcl_Finalize().  A subsequent tk.Tk() call then fails because Tcl cannot
+    be re-initialised in the same process (confirmed: smoke test destroys its
+    root, GC finalises the TkApp, Tcl is finalised, menu test's tk.Tk() then
+    raises TclError — 1 failed, 135 passed on windows-2022 / Python 3.12).
+    Keeping one hidden root alive for the entire module means individual tests
+    can freely create and destroy their own roots without triggering
+    finalisation.  Does nothing if tkinter or Tk itself is unavailable.
+    """
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+    except Exception:
+        yield
+        return
+    yield
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
 # ─── Tk-construction smoke test ───────────────────────────────────────────────
 
 
