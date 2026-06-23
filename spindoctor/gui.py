@@ -13005,11 +13005,6 @@ class _SpinDoctorGUI:
         env = os.environ.copy()
         env.setdefault("PYTHONUNBUFFERED", "1")
         env.setdefault("PYTHONIOENCODING", "utf-8")
-        # Override terminal column width so rich/click don't hard-wrap long
-        # lines (file paths, URLs) at the parent shell's COLUMNS value.
-        # Rich tables are unaffected — they default to expand=False and only
-        # grow to fit their content, not the console width.
-        env["COLUMNS"] = "9999"
 
         try:
             self._proc = subprocess.Popen(
@@ -13848,9 +13843,10 @@ def _format_run_log_text(record: "_RunRecord") -> str:
 def _default_run_log_filename(record: "_RunRecord") -> str:
     """Filesystem-safe default filename for a run record's log file."""
     action = getattr(record, "command_slug", "") or "run"
+    safe_action = re.sub(r'[\\/:*?"<>|]', "_", action)[:80]
     return (
         record.started_at.replace(":", "-").replace(" ", "_")
-        + "_" + action
+        + "_" + safe_action
         + ".txt"
     )
 
