@@ -187,6 +187,40 @@ TheGamesDB only provides boxart (`artwork` slot). For all other types, ScreenScr
 
 `theme`, `fade`, and `sound` come from ScreenScraper only and coverage is sparse. For EmuMovies-style theme packs, drop the files into a folder and run `spindoctor media-scan SOURCE_DIR --apply` to bulk-import them.
 
+### `fetch-steam-media`
+
+Download trailer video(s), in-game screenshots, and/or header artwork for a specific game directly from the Steam Store. No account or API key is required. Only useful for PC/Steam games that ScreenScraper and TheGamesDB don't cover well.
+
+```
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" --steam-id 1145360 --apply
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id "https://store.steampowered.com/app/1145360/Hades/" --apply
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --types video,snap --apply
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --video-index 2 --snap-index 4 --apply
+```
+
+`--steam-id` accepts either a bare numeric App ID or a full `store.steampowered.com/app/<ID>/` URL — the ID is extracted automatically. If `--steam-id` is omitted, the `steam_app_id` stored in the game override is used (see `config game-override set --steam-app-id`).
+
+`--types` controls which slots to populate: `video`, `snap`, `artwork`. Default is all three.
+
+Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. With `--video-index N`, `--snap-index N`, and/or `--artwork-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
+
+Dry-run by default; pass `--apply` to commit.
+
+Media slots populated:
+
+| Steam source | HyperSpin slot |
+|---|---|
+| `movies[].mp4.max` | `video` (and `trailer`) |
+| `screenshots[].path_full` | `snap` |
+| `header_image` | `artwork` |
+
+No `wheel` slot — Steam has no transparent-logo equivalent. For wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
+
+> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the dropdowns, click **Apply selected**. See [GUI walkthrough](gui.md).
+
 ### `media-add`
 
 Manually drop a local file into the right HyperSpin media slot. Dry-run by default — the preview prints the exact destination path; re-run with `--apply` to commit.
@@ -1829,7 +1863,21 @@ spindoctor config set screenscraper_user myname
 spindoctor config show                          :: pretty-print the active config
 ```
 
-Full key listing, per-system overrides (`config system set / list / clear`), and per-game scraper-ID overrides (`config game-override set / list / clear`) are covered in [Configuration reference](configuration.md).
+Full key listing, per-system overrides (`config system set / list / clear`), and per-game overrides (`config game-override set / list / clear`) are covered in [Configuration reference](configuration.md).
+
+`config game-override set` accepts bare numeric IDs **or full browser URLs** for all three ID options — the ID is extracted automatically:
+
+```bat
+:: Bare IDs
+spindoctor config game-override set "Nintendo DS" "Golden Sun" --screenscraper-id 5775
+:: Full URLs — pasted directly from the browser
+spindoctor config game-override set "Nintendo DS" "Golden Sun" \
+    --screenscraper-id "https://www.screenscraper.fr/gameinfos.php?gameid=5775" \
+    --thegamesdb-id "https://www.thegamesdb.net/game/11251/"
+:: Steam App ID — saved for use with fetch-steam-media
+spindoctor config game-override set "PC Games" "Hades" \
+    --steam-app-id "https://store.steampowered.com/app/1145360/Hades/"
+```
 
 Per-system override flags accepted by `config system set`:
 
