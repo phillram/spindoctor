@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **XML comments in `Main Menu.xml` no longer float to the top of the file after a save.** When SpinDoctor processed a `Main Menu.xml` that contained interleaved XML comments (e.g. `<!-- ARCADE CABINETS -->`), the comments were left behind as orphaned nodes after the `<game>` elements were removed and re-appended, causing them to cluster at the top of the output with box-drawing characters encoded as XML entities. SpinDoctor now strips all comment nodes from the root when rewriting the file — HyperSpin-native Main Menu files never contain comments, and stripping them is cleaner than attempting to preserve their positions through reorder/hide operations.
+
 - **File paths no longer wrap mid-line in saved output logs.** All Rich console instances now use `soft_wrap=True`, which prevents Rich from breaking long lines (file paths, URLs) at the detected console width. This is belt-and-suspenders on top of the existing `COLUMNS=9999` subprocess environment fix — if the cabinet's Windows 7 / PyInstaller environment ignores `COLUMNS`, `soft_wrap` guarantees paths stay on a single line regardless.
 
 ### Added
