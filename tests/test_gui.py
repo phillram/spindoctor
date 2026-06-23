@@ -1975,24 +1975,62 @@ def test_save_game_override_flashes_when_both_ids_blank(monkeypatch):
         app.root.destroy()
 
 
-def test_save_game_override_rejects_non_integer_id(monkeypatch):
+def test_save_game_override_passes_raw_value_to_cli(monkeypatch):
+    # The GUI no longer validates SS/TGDB ID format — it accepts full URLs too,
+    # so raw values are forwarded to the CLI which handles extraction/validation.
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         app._meta_system_var.set("Nintendo DS")
         app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-        app._gameovr_ss_id_var.set("not-a-number")
+        url = "https://www.screenscraper.fr/gameinfos.php?gameid=5775"
+        app._gameovr_ss_id_var.set(url)
         ran: list[list[str]] = []
         monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
-        errors: list[tuple] = []
-        monkeypatch.setattr(
-            app.messagebox, "showerror",
-            lambda title, msg: errors.append((title, msg)),
-        )
 
         app._save_game_override()
 
-        assert ran == []
-        assert errors
+        assert len(ran) == 1
+        argv = ran[0]
+        assert "--screenscraper-id" in argv
+        assert url in argv
+    finally:
+        app.root.destroy()
+
+
+def test_save_game_override_includes_steam_app_id(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("PC Games")
+        app._meta_game_var.set("Hades")
+        app._gameovr_steam_id_var.set("1145360")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._save_game_override()
+
+        assert len(ran) == 1
+        argv = ran[0]
+        assert "--steam-app-id" in argv and "1145360" in argv
+    finally:
+        app.root.destroy()
+
+
+def test_save_game_override_steam_url_passed_raw(monkeypatch):
+    # Full Steam store URL is forwarded as-is; the CLI strips the App ID.
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("PC Games")
+        app._meta_game_var.set("Hades")
+        url = "https://store.steampowered.com/app/1145360/Hades/"
+        app._gameovr_steam_id_var.set(url)
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
+
+        app._save_game_override()
+
+        assert len(ran) == 1
+        argv = ran[0]
+        assert "--steam-app-id" in argv and url in argv
     finally:
         app.root.destroy()
 
@@ -2029,17 +2067,25 @@ def test_load_game_override_populates_form_from_config(monkeypatch):
                     "screenscraper_id": 5775, "thegamesdb_id": 11251,
                 },
             },
+            "PC Games": {
+                "Hades": {"steam_app_id": "1145360"},
+            },
         }
         monkeypatch.setattr("spindoctor.gui.load_config", lambda: cfg)
         monkeypatch.setattr("spindoctor.config.load_config", lambda: cfg)
 
         app._meta_system_var.set("Nintendo DS")
         app._meta_game_var.set("Golden Sun - Dark Dawn (USA)")
-
         app._load_game_override()
-
         assert app._gameovr_ss_id_var.get() == "5775"
         assert app._gameovr_tgdb_id_var.get() == "11251"
+        assert app._gameovr_steam_id_var.get() == ""
+
+        app._meta_system_var.set("PC Games")
+        app._meta_game_var.set("Hades")
+        app._load_game_override()
+        assert app._gameovr_steam_id_var.get() == "1145360"
+        assert app._steam_url_var.get() == "1145360"
     finally:
         app.root.destroy()
 
