@@ -14,6 +14,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **"(Not in wheel)" badge in system and game dropdowns.** System pickers across every GUI tab now annotate any system that exists as a folder in `roms_dir` or `databases_dir` but is absent from `Main Menu.xml` with a `(Not in wheel)` suffix. The **Fix PC game executable** game picker also badges any game folder on disk that has no matching entry in the system's HyperSpin XML database — the only game dropdown that reads from the filesystem rather than the XML, so the only one where the discrepancy can arise. The suffix is stripped before any CLI command runs — file paths and command arguments are never affected.
+
 - **`fetch-steam-media` command** — download trailer videos, in-game screenshots, and/or header artwork for a specific game directly from the Steam Store (no API key or account required). Accepts a bare App ID or a full `store.steampowered.com/app/<ID>/` URL. Runs an interactive numbered picker by default (identical to `fetch-media --pick-media`); `--video-index N`, `--snap-index N`, and `--artwork-index N` flags enable non-interactive/scripted use. If `--steam-id` is omitted, the stored `steam_app_id` game override is used automatically. GUI: **Metadata & Media → Per-game & override → Steam media** panel (Scan + candidate dropdowns + Apply).
 
 - **`config game-override set --steam-app-id`** — new per-game override key that stores a Steam App ID alongside the existing `screenscraper_id` / `thegamesdb_id` fields. Used by `fetch-steam-media` as the default App ID when `--steam-id` is not passed.

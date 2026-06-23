@@ -135,6 +135,12 @@ _DARK_SCROLL_THUMB        = "#6a6a6e"  # rests well above _DARK_BG_RAISE trough
 _DARK_SCROLL_THUMB_ACTIVE = "#8a8a8e"  # hover / pressed
 
 
+# Suffix appended to system names in all dropdowns when the system exists on
+# disk (roms_dir / databases_dir) but is absent from Main Menu.xml.  The GUI
+# strips this suffix before passing the name to any CLI command so it never
+# appears in file paths or output.
+_NOT_IN_WHEEL_SUFFIX = " (Not in wheel)"
+
 # ─── UI scale helpers (module-level for test access) ──────────────────────────
 
 # Hard clamp for `ui_scale`. Below 0.6 the UI is unreadable; above 2.0 the
@@ -5650,10 +5656,29 @@ class _SpinDoctorGUI:
 
     def _refresh_systems(self, *, notify: bool = False) -> None:
         try:
-            systems = get_systems(load_config())
+            _cfg = load_config()
+            systems = get_systems(_cfg)
         except Exception as exc:  # noqa: BLE001 — surface any config error to UI
+            _cfg = None
             systems = []
             self._set_status(f"Could not list systems: {exc}")
+
+        # Build the set of system names that are on the HyperSpin wheel so we
+        # can badge any orphan folders with "(Not in wheel)" in every dropdown.
+        # Failures (missing Main Menu.xml, bad config) silently skip annotation
+        # — the badge is cosmetic and should never block normal operation.
+        _wheel: set[str] = set()
+        if _cfg is not None:
+            try:
+                from . import mainmenu as _mm_mod
+                _mm = _mm_mod.load_main_menu(_cfg)
+                _wheel = {e.system.lower() for e in _mm.entries}
+            except Exception:  # noqa: BLE001
+                pass
+        display_systems = [
+            s if s.lower() in _wheel else s + _NOT_IN_WHEEL_SUFFIX
+            for s in systems
+        ]
 
         # Apply the optional quick-filter (toggled by Ctrl+Shift+F).
         # Case-insensitive substring match against the system name.
@@ -5701,11 +5726,17 @@ class _SpinDoctorGUI:
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
             ("_systems_old_combo",     "_systems_old_var",     None),
         ]
+        # Track which combos already have the badge-stripping binding so we
+        # don't accumulate duplicate bindings across repeated _refresh_systems()
+        # calls (tabs build lazily, so combos may be created mid-session).
+        _badge_bound: set[str] = getattr(self, "_system_badge_bound", set())
+        self._system_badge_bound = _badge_bound
+
         for combo_attr, var_attr, default in combos_and_vars:
             combo = getattr(self, combo_attr, None)
             if combo is None:
                 continue
-            combo["values"] = systems
+            combo["values"] = display_systems
             var = getattr(self, var_attr, None)
             if var is None:
                 continue
@@ -5716,6 +5747,16 @@ class _SpinDoctorGUI:
                 # sees a system that doesn't exist and the resulting argv
                 # references it.
                 var.set(default if default in systems else systems[0])
+            # Add a one-time binding that strips the "(Not in wheel)" badge
+            # from the var the moment the user picks from the dropdown so that
+            # every downstream CLI call always receives the clean system name.
+            if combo_attr not in _badge_bound:
+                _badge_bound.add(combo_attr)
+                def _strip_badge(event, _v=var):
+                    val = _v.get()
+                    if val.endswith(_NOT_IN_WHEEL_SUFFIX):
+                        _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
+                combo.bind("<<ComboboxSelected>>", _strip_badge, add=True)
 
         # Auto-populate the fixexe game list when the section is first built
         # with a pre-selected system.  Setting a var via .set() does NOT fire
@@ -5730,13 +5771,22 @@ class _SpinDoctorGUI:
         # blank = all systems is the intended default.
         fd_combo = getattr(self, "_fd_system_combo", None)
         if fd_combo is not None:
-            fd_combo["values"] = systems
+            fd_combo["values"] = display_systems
+            if fd_combo not in _badge_bound:
+                _badge_bound.add("_fd_system_combo")
+                _fd_var = getattr(self, "_fd_system_var", None)
+                if _fd_var is not None:
+                    def _strip_fd(event, _v=_fd_var):
+                        val = _v.get()
+                        if val.endswith(_NOT_IN_WHEEL_SUFFIX):
+                            _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
+                    fd_combo.bind("<<ComboboxSelected>>", _strip_fd, add=True)
 
         # Migrate systems Listbox — different widget type, handled separately.
         lb = getattr(self, "_migrate_systems_lb", None)
         if lb is not None:
             lb.delete(0, self.tk.END)
-            for s in systems:
+            for s in display_systems:
                 lb.insert(self.tk.END, s)
 
         if notify:
@@ -6590,7 +6640,8 @@ class _SpinDoctorGUI:
         selected_indices = self._migrate_systems_lb.curselection()
         if selected_indices:
             systems = ",".join(
-                self._migrate_systems_lb.get(i) for i in selected_indices
+                self._migrate_systems_lb.get(i).removesuffix(_NOT_IN_WHEEL_SUFFIX)
+                for i in selected_indices
             )
             args += ["--systems", systems]
         if self._migrate_keep_source_var.get():
@@ -9127,11 +9178,39 @@ class _SpinDoctorGUI:
                 )
             except Exception:  # noqa: BLE001
                 games = []
+
+        # Badge any game folder that has no matching entry in the system's
+        # HyperSpin XML.  Other game pickers read from the XML directly so
+        # all their entries are already in the database — only this picker
+        # needs the annotation.
+        _db_names: set[str] = set()
+        if games and system:
+            try:
+                cfg = load_config()  # already loaded above; cheap re-call
+                _db = load_database(system, cfg.databases_dir)
+                _db_names = {n.lower() for n in _db.games().keys()}
+            except Exception:  # noqa: BLE001
+                pass  # missing / bad XML — skip annotation
+        display_games = [
+            g if g.lower() in _db_names else g + _NOT_IN_WHEEL_SUFFIX
+            for g in games
+        ]
+
         combo = getattr(self, "_fixexe_game_combo", None)
         if combo is None:
             return
-        combo["values"] = games
+        combo["values"] = display_games
+        # Keep the var clean so all three _fixexe_game_var.get() call sites
+        # receive the raw game name without the badge.
         self._fixexe_game_var.set(games[0] if games else "")
+        # Strip badge on user selection (one-time binding per combo lifetime).
+        if not getattr(combo, "_game_badge_bound", False):
+            combo._game_badge_bound = True  # type: ignore[attr-defined]
+            def _strip_game_badge(event, _v=self._fixexe_game_var):
+                val = _v.get()
+                if val.endswith(_NOT_IN_WHEEL_SUFFIX):
+                    _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
+            combo.bind("<<ComboboxSelected>>", _strip_game_badge, add=True)
         lb = getattr(self, "_fixexe_listbox", None)
         if lb is not None:
             lb.delete(0, "end")
