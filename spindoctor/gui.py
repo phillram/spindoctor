@@ -9178,11 +9178,39 @@ class _SpinDoctorGUI:
                 )
             except Exception:  # noqa: BLE001
                 games = []
+
+        # Badge any game folder that has no matching entry in the system's
+        # HyperSpin XML.  Other game pickers read from the XML directly so
+        # all their entries are already in the database — only this picker
+        # needs the annotation.
+        _db_names: set[str] = set()
+        if games and system:
+            try:
+                cfg = load_config()  # already loaded above; cheap re-call
+                _db = load_database(system, cfg.databases_dir)
+                _db_names = {n.lower() for n in _db.games().keys()}
+            except Exception:  # noqa: BLE001
+                pass  # missing / bad XML — skip annotation
+        display_games = [
+            g if g.lower() in _db_names else g + _NOT_IN_WHEEL_SUFFIX
+            for g in games
+        ]
+
         combo = getattr(self, "_fixexe_game_combo", None)
         if combo is None:
             return
-        combo["values"] = games
+        combo["values"] = display_games
+        # Keep the var clean so all three _fixexe_game_var.get() call sites
+        # receive the raw game name without the badge.
         self._fixexe_game_var.set(games[0] if games else "")
+        # Strip badge on user selection (one-time binding per combo lifetime).
+        if not getattr(combo, "_game_badge_bound", False):
+            combo._game_badge_bound = True  # type: ignore[attr-defined]
+            def _strip_game_badge(event, _v=self._fixexe_game_var):
+                val = _v.get()
+                if val.endswith(_NOT_IN_WHEEL_SUFFIX):
+                    _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
+            combo.bind("<<ComboboxSelected>>", _strip_game_badge, add=True)
         lb = getattr(self, "_fixexe_listbox", None)
         if lb is not None:
             lb.delete(0, "end")
