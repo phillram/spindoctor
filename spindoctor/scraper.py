@@ -1547,6 +1547,221 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
 
 # ─── factory ──────────────────────────────────────────────────────────────────
 
+# ─── ID / URL extraction helpers ─────────────────────────────────────────────
+#
+# Each helper accepts either a bare numeric ID or a full browser URL copied
+# from the scraper / store site.  Stripping happens here (shared by both the
+# CLI `config game-override set` command and the GUI save handler) so the
+# user never has to manually extract an ID from a URL.
+
+_SS_GAMEID_RE = re.compile(r"gameid=(\d+)", re.IGNORECASE)
+_TGDB_ID_RE   = re.compile(r"(?:[?&]id=|/game/)(\d+)", re.IGNORECASE)
+_STEAM_APP_RE = re.compile(r"/app/(\d+)|steam://store/(\d+)", re.IGNORECASE)
+
+
+def extract_screenscraper_id(value: str) -> Optional[int]:
+    """Return a ScreenScraper game ID from a bare integer string or a URL.
+
+    Accepts "5775" or "https://www.screenscraper.fr/gameinfos.php?gameid=5775".
+    Returns None when *value* doesn't look like either form.
+    """
+    v = value.strip()
+    m = _SS_GAMEID_RE.search(v)
+    if m:
+        return int(m.group(1))
+    if v.isdigit():
+        return int(v)
+    return None
+
+
+def extract_thegamesdb_id(value: str) -> Optional[int]:
+    """Return a TheGamesDB game ID from a bare integer string or a URL.
+
+    Accepts "11251", "https://thegamesdb.net/game.php?id=11251", or
+    "https://www.thegamesdb.net/game/11251/".
+    Returns None when *value* doesn't look like either form.
+    """
+    v = value.strip()
+    m = _TGDB_ID_RE.search(v)
+    if m:
+        return int(m.group(1))
+    if v.isdigit():
+        return int(v)
+    return None
+
+
+def extract_steam_app_id(value: str) -> Optional[str]:
+    """Return a Steam App ID string from a bare numeric string or a store URL.
+
+    Accepts "1145360", "https://store.steampowered.com/app/1145360/Hades/",
+    "https://store.steampowered.com/app/1145360", or "steam://store/1145360".
+    Returns None when *value* doesn't parse as either form.
+    """
+    v = value.strip()
+    if v.isdigit():
+        return v
+    m = _STEAM_APP_RE.search(v)
+    if m:
+        return m.group(1) or m.group(2)
+    return None
+
+
+# ─── Steam Store client ───────────────────────────────────────────────────────
+
+_STEAM_API = "https://store.steampowered.com/api"
+
+
+class SteamClient:
+    """Steam Store API client for per-game media lookup by App ID.
+
+    Requires no authentication — uses the public ``appdetails`` endpoint.
+    Only useful for PC/Steam games; gracefully returns None for any app ID
+    that doesn't exist or returns a non-success response.
+
+    Media slots populated:
+      * ``video``    — MP4 trailer(s) from the ``movies`` array
+      * ``snap``     — full-resolution screenshots from the ``screenshots`` array
+      * ``artwork``  — the game's header capsule image (``header_image``)
+
+    No ``wheel`` slot: Steam has no transparent-logo equivalent.
+    """
+
+    def __init__(self, rate_limit: float = 1.0):
+        self._limiter = RateLimiter(rate_limit)
+        self._session = make_session()
+
+    def fetch_by_app_id(self, app_id: str) -> Optional[GameMetadata]:
+        """Fetch full game details + media candidates from Steam by App ID.
+
+        Returns a :class:`GameMetadata` with ``video``, ``snap``, and
+        ``artwork`` candidates populated, or ``None`` if the App ID is not
+        found or the request fails.
+        """
+        self._limiter.wait()
+        params = {
+            "appids": app_id,
+            "cc": "us",
+            "l": "en",
+            "filters": "basic,screenshots,movies",
+        }
+        url = f"{_STEAM_API}/appdetails"
+        try:
+            resp = self._session.get(url, params=params, timeout=15)
+            _log_http("steam.fetch_by_app_id", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            resp.raise_for_status()
+            outer = resp.json()
+        except Exception as exc:
+            _log_http("steam.fetch_by_app_id", "GET", url, params,
+                      None, "", error=exc)
+            raise MetadataError(f"Steam fetch failed: {exc}") from exc
+
+        entry = outer.get(str(app_id), {})
+        if not entry.get("success"):
+            return None
+        data = entry.get("data") or {}
+        if not data:
+            return None
+
+        return _parse_steam(app_id, data)
+
+    def search(self, game_name: str, max_results: int = 8) -> list[dict]:
+        """Search the Steam store for matching titles.
+
+        Returns a list of ``{"appid": str, "name": str}`` dicts, best match
+        first (Steam's own relevance ordering).  Useful for discovering an App
+        ID when only the game name is known; the caller should call
+        :meth:`fetch_by_app_id` with the chosen ID to get full media.
+        """
+        self._limiter.wait()
+        params = {"term": game_name, "cc": "us", "l": "en", "count": max_results}
+        url = "https://store.steampowered.com/api/storesearch/"
+        try:
+            resp = self._session.get(url, params=params, timeout=15)
+            _log_http("steam.search", "GET", url, params,
+                      resp.status_code, resp.text or "")
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            _log_http("steam.search", "GET", url, params, None, "", error=exc)
+            raise MetadataError(f"Steam search failed: {exc}") from exc
+
+        items = data.get("items") or []
+        return [
+            {"appid": str(item["id"]), "name": item.get("name", "")}
+            for item in items
+            if item.get("id")
+        ]
+
+
+def _parse_steam(app_id: str, data: dict) -> GameMetadata:
+    """Convert a Steam ``appdetails`` ``data`` block into a :class:`GameMetadata`."""
+    candidates: dict[str, list[MediaCandidate]] = {}
+
+    # Videos — prefer MP4 max quality; skip entries with no mp4 URL.
+    movies = data.get("movies") or []
+    video_cands: list[MediaCandidate] = []
+    for movie in movies:
+        mp4_url = (movie.get("mp4") or {}).get("max") or ""
+        if not mp4_url:
+            continue
+        video_cands.append(MediaCandidate(
+            url=mp4_url,
+            source_type="trailer",
+            format="mp4",
+            version=movie.get("name") or "",
+        ))
+    if video_cands:
+        candidates["video"] = video_cands
+        candidates["trailer"] = video_cands  # same candidates, both slots
+
+    # Screenshots — full-resolution path.
+    screenshots = data.get("screenshots") or []
+    snap_cands: list[MediaCandidate] = []
+    for i, ss in enumerate(screenshots):
+        full_url = ss.get("path_full") or ""
+        if not full_url:
+            continue
+        ext = Path(full_url.split("?")[0]).suffix.lstrip(".") or "jpg"
+        snap_cands.append(MediaCandidate(
+            url=full_url,
+            source_type="screenshot",
+            format=ext,
+            version=f"screenshot {i + 1}",
+        ))
+    if snap_cands:
+        candidates["snap"] = snap_cands
+
+    # Artwork — single header / capsule image.
+    header = data.get("header_image") or ""
+    if header:
+        ext = Path(header.split("?")[0]).suffix.lstrip(".") or "jpg"
+        candidates["artwork"] = [MediaCandidate(
+            url=header,
+            source_type="header",
+            format=ext,
+        )]
+
+    def _first(slot: str) -> str:
+        cs = candidates.get(slot)
+        return cs[0].url if cs else ""
+
+    source_url = f"https://store.steampowered.com/app/{app_id}/"
+    meta = GameMetadata(
+        name=data.get("name") or app_id,
+        description=data.get("short_description") or "",
+        source="steam",
+        source_id=str(app_id),
+        source_url=source_url,
+        snap_url=_first("snap"),
+        video_url=_first("video"),
+        trailer_url=_first("trailer"),
+        artwork_url=_first("artwork"),
+    )
+    meta.media_candidates = candidates
+    return meta
+
+
 class CombinedMetadataClient(_FetchWithSearchMixin):
     """ScreenScraper primary, TheGamesDB fills any slots SS missed.
 
