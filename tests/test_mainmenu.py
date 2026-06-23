@@ -301,3 +301,35 @@ def test_save_to_output_dir_routes_elsewhere(tmp_path):
     # Original file is untouched.
     original = tmp_path / "Databases" / "Main Menu" / "Main Menu.xml"
     assert _names_in(original)[0] == "MAME"
+
+
+def test_interleaved_comments_stripped_on_save(tmp_path):
+    """Comments interspersed between <game> elements must not float to the top
+    of the output after a save — they should be stripped entirely."""
+    xml_with_comments = textwrap.dedent("""\
+        <menu>
+          <!-- ARCADE CABINETS -->
+          <game name="MAME"/>
+          <game name="HBMAME"/>
+          <!-- HOME CONSOLES -->
+          <game name="Nintendo 64"/>
+          <!-- PINBALL -->
+          <game name="Future Pinball"/>
+        </menu>
+        """)
+    p = _seed_menu(tmp_path, xml_with_comments)
+    cfg = _config(tmp_path)
+    menu = load_main_menu(cfg)
+    # Round-trip without any edits.
+    save_main_menu(menu, cfg)
+    raw = p.read_text(encoding="utf-8")
+    # Comments must not appear in the output at all.
+    assert "<!--" not in raw
+    # All game elements must be present in the correct order.
+    assert _names_in(p) == ["MAME", "HBMAME", "Nintendo 64", "Future Pinball"]
+    # No game elements should appear before others in a mangled order.
+    mame_pos = raw.index("MAME")
+    hb_pos = raw.index("HBMAME")
+    n64_pos = raw.index("Nintendo 64")
+    fp_pos = raw.index("Future Pinball")
+    assert mame_pos < hb_pos < n64_pos < fp_pos
