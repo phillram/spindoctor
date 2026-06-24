@@ -2421,3 +2421,149 @@ def test_gated_commands_not_classified_read_only():
         ("media-add", "--system", "nes", "--game", "mario")
     )
     assert not gui._is_read_only_invocation(("pc-rename", "PC Games"))
+
+
+# ─── _on_steam_scan_done callback ────────────────────────────────────────────
+#
+# These tests cover the main-thread callback that populates the Steam picker
+# dropdowns after a scan.  This is the code path that froze on "scanning…"
+# twice (PR #349 — _fmt_duration scope bug; originally the same silent-freeze
+# failure mode each time) because Tk swallows exceptions inside root.after()
+# callbacks.  The guard wrapper in _on_steam_scan_done now makes failures
+# visible; these tests pin both the happy path and the guard behaviour.
+
+
+def _make_steam_meta(name="Hades", video_cands=None, snap_cands=None,
+                     artwork_cands=None, wheel_cands=None):
+    """Build a minimal GameMetadata fixture for Steam scan tests."""
+    from spindoctor.scraper import GameMetadata, MediaCandidate
+    meta = GameMetadata(name=name, source_url=f"https://store.steampowered.com/app/1145360/")
+    meta.media_candidates = {
+        "video":   video_cands   or [],
+        "snap":    snap_cands    or [],
+        "artwork": artwork_cands or [],
+        "wheel":   wheel_cands   or [],
+    }
+    return meta
+
+
+def test_on_steam_scan_done_populates_dropdowns(monkeypatch):
+    """Happy path: candidates land in the right comboboxes."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        meta = _make_steam_meta(
+            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
+                                       source_type="screenshot", format="jpg")],
+            artwork_cands=[MediaCandidate(url="https://cdn/header.jpg",
+                                          source_type="header_image", format="jpg")],
+        )
+        app._on_steam_scan_done("1145360", meta)
+
+        assert app._steam_pick_vars["snap"].get().startswith("1.")
+        assert app._steam_pick_vars["artwork"].get().startswith("1.")
+        # No video candidates → disabled sentinel
+        assert app._steam_pick_vars["video"].get() == "— none —"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_hls_duration_label(monkeypatch):
+    """HLS candidate with duration_secs must show M:SS in the dropdown label.
+
+    Regression guard for the _fmt_duration NameError that froze the UI in
+    PR #349: _fmt_duration was imported inside _scan_steam (the button handler)
+    but used inside _on_steam_scan_done (a separate method with no access to
+    that local).  The NameError was silently swallowed by Tk, leaving every
+    dropdown frozen on 'scanning…' with no visible error.
+    """
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        hls_cand = MediaCandidate(
+            url="https://cdn/trailer.m3u8",
+            source_type="trailer", format="m3u8",
+            version="Hades Trailer",
+            duration_secs=74.0,  # 1:14
+        )
+        meta = _make_steam_meta(video_cands=[hls_cand])
+        app._on_steam_scan_done("1145360", meta)
+
+        label = app._steam_pick_vars["video"].get()
+        assert "1:14" in label, f"duration not in label: {label!r}"
+        assert "HLS" in label, f"format hint not in label: {label!r}"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_skip_sentinel_is_first(monkeypatch):
+    """'— do not download —' must be the first value in every populated combo."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        meta = _make_steam_meta(
+            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
+                                       source_type="screenshot", format="jpg")],
+        )
+        app._on_steam_scan_done("1145360", meta)
+
+        values = app._steam_pick_combos["snap"].cget("values")
+        assert values[0] == "— do not download —"
+        # Default selection is still the first *real* candidate, not the sentinel
+        assert app._steam_pick_vars["snap"].get() != "— do not download —"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
+    """meta=None (App ID not found) must set all video/snap/artwork to '— not found —'."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        shown: list[str] = []
+        monkeypatch.setattr(app.messagebox, "showwarning",
+                            lambda title, msg: shown.append(title))
+        app._on_steam_scan_done("9999999", None)
+
+        for mt in ("video", "snap", "artwork"):
+            assert app._steam_pick_vars[mt].get() == "— not found —", mt
+        assert shown, "expected a showwarning dialog"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
+    """Any exception inside _on_steam_scan_done_inner must reset dropdowns to
+    '— scan error —' and show an error dialog instead of silently freezing.
+
+    This is the structural guard added after the second 'frozen on scanning…'
+    incident.  Tk swallows exceptions inside root.after() callbacks, making
+    any bug in the callback produce identical 'stuck UI' symptoms with no
+    visible error.  The wrapper in _on_steam_scan_done catches everything and
+    surfaces it to the user.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Force _on_steam_scan_done_inner to blow up.
+        monkeypatch.setattr(app, "_on_steam_scan_done_inner",
+                            lambda *_: (_ for _ in ()).throw(RuntimeError("injected failure")))
+
+        errors: list[str] = []
+        monkeypatch.setattr(app.messagebox, "showerror",
+                            lambda title, msg: errors.append(msg))
+
+        # Pre-set dropdowns to "scanning…" as _scan_steam would.
+        for mt in app._steam_pick_vars:
+            app._steam_pick_vars[mt].set("scanning…")
+
+        app._on_steam_scan_done("1145360", object())  # meta value irrelevant
+
+        # All dropdowns must be reset — none left on "scanning…".
+        for mt, var in app._steam_pick_vars.items():
+            assert var.get() == "— scan error —", (
+                f"{mt} dropdown still shows {var.get()!r} after error — "
+                "silent freeze not prevented"
+            )
+        # User must see an error dialog.
+        assert errors, "expected showerror to be called after callback exception"
+    finally:
+        app.root.destroy()
