@@ -135,6 +135,111 @@ def _open_in_default_app(path: Path) -> None:
 
 _VIDEO_CONTAINER_EXTS: frozenset[str] = frozenset({".mp4", ".mkv", ".avi", ".webm", ".mov"})
 
+# HLS downloads below this size or duration are likely truncated (ffmpeg exited
+# 0 with only the first 1-2 segments).  A Steam trailer at any reasonable quality
+# runs well over 5 MB / 30 s; flag anything smaller so the user gets an
+# actionable warning.
+_HLS_MIN_BYTES: int = 5_000_000
+_HLS_MIN_DURATION_SECS: float = 30.0
+
+
+def _probe_hls_duration(path: Path, ffprobe: Optional[str]) -> Optional[float]:
+    """Return the video duration in seconds via ffprobe, or None if unavailable."""
+    if not ffprobe:
+        return None
+    try:
+        r = subprocess.run(
+            [ffprobe, "-v", "quiet",
+             "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1",
+             str(path)],
+            capture_output=True, timeout=30,
+        )
+        if r.returncode == 0:
+            return float((r.stdout or b"").strip())
+    except (OSError, subprocess.TimeoutExpired, ValueError):
+        pass
+    return None
+
+
+def _hls_truncation_warning(
+    label: str, size: int, duration: Optional[float], stderr_text: str
+) -> str:
+    """Return a non-empty warning string when the HLS output looks truncated."""
+    size_ok = size >= _HLS_MIN_BYTES
+    dur_ok = duration is None or duration >= _HLS_MIN_DURATION_SECS
+    if size_ok and dur_ok:
+        return ""
+    reasons: list[str] = []
+    if not size_ok:
+        reasons.append(f"{size / 1_000_000:.1f} MB")
+    if not dur_ok:
+        assert duration is not None
+        mins, secs = divmod(int(duration), 60)
+        reasons.append(f"{mins}:{secs:02d}" if mins else f"{int(duration)}s")
+    warn = (
+        f"HLS output looks truncated ({', '.join(reasons)} — expected ≥30 s / 5 MB "
+        f"for a full trailer). Re-run with --overwrite --apply or try a different "
+        f"candidate index. See docs/troubleshooting.md."
+    )
+    _log.warning("Possible HLS truncation for %s (%d bytes, duration=%s):\n%s",
+                 label, size, f"{duration:.1f}s" if duration is not None else "unknown",
+                 stderr_text[-2000:])
+    return warn
+
+
+def _pick_hls_variant(master_url: str, max_height: int, session) -> str:
+    """Return the variant playlist URL whose height best fits within max_height.
+
+    Fetches the master HLS playlist, parses EXT-X-STREAM-INF entries, and
+    returns the highest-bandwidth variant whose height <= max_height.  Falls
+    back to master_url on any parse/network error so the caller can still
+    attempt a download (ffmpeg will pick the best quality itself).
+    """
+    try:
+        resp = session.get(master_url, timeout=15)
+        resp.raise_for_status()
+        base = master_url.split("?")[0].rsplit("/", 1)[0]
+        variants: list[tuple[int, int, str]] = []  # (bandwidth, height, url)
+        lines = resp.text.splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i].strip()
+            if line.startswith("#EXT-X-STREAM-INF:"):
+                bandwidth = height = 0
+                for part in line[18:].split(","):
+                    k, _, v = part.partition("=")
+                    if k == "BANDWIDTH":
+                        try:
+                            bandwidth = int(v)
+                        except ValueError:
+                            pass
+                    elif k == "RESOLUTION" and "x" in v:
+                        try:
+                            height = int(v.split("x")[-1])
+                        except ValueError:
+                            pass
+                i += 1
+                while i < len(lines) and (not lines[i].strip() or lines[i].startswith("#")):
+                    i += 1
+                if i < len(lines):
+                    uri = lines[i].strip()
+                    if not uri.startswith("http"):
+                        uri = f"{base}/{uri}"
+                    if bandwidth and height:
+                        variants.append((bandwidth, height, uri))
+            i += 1
+        if not variants:
+            return master_url
+        eligible = [(bw, h, url) for bw, h, url in variants if h <= max_height]
+        if eligible:
+            return max(eligible, key=lambda x: x[0])[2]
+        # All variants exceed max_height — use the smallest available.
+        return min(variants, key=lambda x: x[1])[2]
+    except Exception:
+        _log.debug("HLS variant parse failed for %s — using master", master_url)
+        return master_url
+
 
 def _find_ffmpeg(hint: str = "") -> tuple[Optional[str], Optional[str]]:
     """Return (ffmpeg, ffprobe) paths, or (None, None) if unavailable.
@@ -264,6 +369,8 @@ class DownloadResult:
     skipped: bool = False
     error: str = ""
     warning: str = ""
+    file_size_bytes: Optional[int] = None
+    duration_secs: Optional[float] = None
 
 
 class MediaDownloader:
@@ -331,13 +438,15 @@ class MediaDownloader:
         media_type: str = "",
         overwrite: bool = False,
         max_retries: int = 3,
+        hls_max_height: Optional[int] = None,
     ) -> DownloadResult:
         """Download a URL to a specific destination path (any HyperSpin location)."""
         if not url:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=False, error="No URL provided")
         return self._download_to(dest, url, label=label, media_type=media_type,
-                                 overwrite=overwrite, max_retries=max_retries)
+                                 overwrite=overwrite, max_retries=max_retries,
+                                 hls_max_height=hls_max_height)
 
     def _download_hls(
         self,
@@ -347,10 +456,11 @@ class MediaDownloader:
         label: str,
         media_type: str,
         overwrite: bool,
+        hls_max_height: Optional[int] = None,
     ) -> DownloadResult:
         """Download an HLS (.m3u8) stream to an MP4 file via ffmpeg."""
         ffmpeg_hint = getattr(self.config, "ffmpeg_path", "")
-        ffmpeg, _ = _find_ffmpeg(ffmpeg_hint)
+        ffmpeg, ffprobe = _find_ffmpeg(ffmpeg_hint)
         if not ffmpeg:
             return DownloadResult(
                 game_name=label, media_type=media_type, success=False,
@@ -366,32 +476,43 @@ class MediaDownloader:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
+        if hls_max_height is not None:
+            url = _pick_hls_variant(url, hls_max_height, self._session)
+
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
         try:
-            # -protocol_whitelist: ensures ffmpeg can follow https:// segment URLs
-            #   that some CDNs (Akamai) embed in the variant playlist.
-            # -c:v copy / -c:a aac: copy video, re-encode audio. Avoids applying
-            #   aac_adtstoasc to fMP4/CMAF HLS streams (audio already in MP4-ASC
-            #   format; double-converting corrupts the track and crashes WMP).
+            # -protocol_whitelist: ffmpeg's default whitelist excludes https, so
+            #   without this flag it cannot fetch segment URLs embedded in the
+            #   variant playlist on Akamai's CDN — causing a silent early abort.
+            # -c copy: stream-copy both video and audio without re-encoding.
+            #   For fMP4/CMAF HLS the audio is already in MP4-ASC format so no
+            #   bitstream filter is needed; the MP4 muxer handles the ADTS→ASC
+            #   conversion automatically for TS-based HLS.  Re-encoding with
+            #   -c:a aac introduced timestamp discontinuities that caused ffmpeg
+            #   to exit 0 with only the first 2-3 seconds muxed.
             # -movflags +faststart: writes moov atom at the start so WMP can play
             #   the file without seeking to the end first.
             cmd = [
                 ffmpeg, "-y",
                 "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
                 "-i", url,
-                "-c:v", "copy",
-                "-c:a", "aac",
+                "-c", "copy",
                 "-movflags", "+faststart",
                 str(tmp),
             ]
             result = subprocess.run(cmd, capture_output=True, timeout=300)
             stderr_text = (result.stderr or b"").decode("utf-8", errors="replace")
             if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
-                _log.debug("ffmpeg HLS OK for %s:\n%s", label, stderr_text[-2000:])
+                size = tmp.stat().st_size
+                _log.debug("ffmpeg HLS OK for %s (%d bytes):\n%s",
+                           label, size, stderr_text[-2000:])
                 os.replace(tmp, dest)
+                duration = _probe_hls_duration(dest, ffprobe)
+                warn = _hls_truncation_warning(label, size, duration, stderr_text)
                 return DownloadResult(game_name=label, media_type=media_type,
-                                      success=True, path=dest)
+                                      success=True, path=dest, warning=warn,
+                                      file_size_bytes=size, duration_secs=duration)
             _log.error("ffmpeg HLS failed (rc=%d) for %s:\n%s",
                        result.returncode, label, stderr_text)
             return DownloadResult(
@@ -420,13 +541,15 @@ class MediaDownloader:
         media_type: str,
         overwrite: bool,
         max_retries: int,
+        hls_max_height: Optional[int] = None,
     ) -> DownloadResult:
         parsed = urlparse(url)
         url_ext = Path(parsed.path).suffix.lower()
 
         if url_ext == ".m3u8":
             return self._download_hls(dest, url, label=label,
-                                      media_type=media_type, overwrite=overwrite)
+                                      media_type=media_type, overwrite=overwrite,
+                                      hls_max_height=hls_max_height)
 
         # Normalize destination extension to lowercase — HyperSpin filename
         # lookups are case-sensitive and expect lower-case extensions.

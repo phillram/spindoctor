@@ -505,25 +505,28 @@ def test_download_hls_happy_path(tmp_path, monkeypatch):
 
     def fake_run(cmd, capture_output, timeout):
         captured["cmd"] = cmd
-        # Simulate ffmpeg writing the tmp file.
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 1024)
+        tmp.write_bytes(b"\x00" * 50_000_000)  # 50 MB — realistic full trailer
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    # ffprobe: report full-length duration so no truncation warning fires.
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
 
     r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
 
     assert r.success
+    assert not r.warning
     assert r.path is not None and r.path.exists()
     assert r.path.suffix == ".mp4"
 
 
 def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
-    """The ffmpeg invocation must include the three flags added to fix fMP4/CMAF
-    compatibility and WMP playback: -protocol_whitelist, -c:a aac, -movflags +faststart.
-    The old -bsf:a aac_adtstoasc flag must NOT be present (it corrupts fMP4 audio).
+    """The ffmpeg invocation must use -c copy (stream-copy, no re-encode) with
+    -protocol_whitelist and -movflags +faststart.  -c:a aac must NOT be present
+    (re-encoding introduced timestamp discontinuities that caused early abort).
+    -bsf:a aac_adtstoasc must NOT be present (corrupts fMP4/CMAF audio).
     """
     dl = _hls_downloader(tmp_path)
     dest = dl.media_path("PC Games", "Hades", "video")
@@ -536,20 +539,99 @@ def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
         captured["cmd"] = cmd
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 512)
+        tmp.write_bytes(b"\x00" * 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
     dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
 
     cmd = captured["cmd"]
     assert "-protocol_whitelist" in cmd
     assert "file,http,https,tcp,tls,crypto" in cmd
-    assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "aac"
+    assert "-c" in cmd and cmd[cmd.index("-c") + 1] == "copy", (
+        "-c copy required: stream-copy avoids audio re-encode timestamp issues"
+    )
     assert "-movflags" in cmd and "+faststart" in cmd
+    assert "-c:a" not in cmd, "-c:a aac must not be present: caused HLS truncation"
     assert "-bsf:a" not in cmd, (
         "-bsf:a aac_adtstoasc must not be present: it corrupts fMP4/CMAF HLS audio"
     )
+
+
+def test_download_hls_small_output_sets_warning(tmp_path, monkeypatch):
+    """A 2 MB output file (the known real-world truncated-trailer size) must succeed
+    but set result.warning so the CLI can surface it to the user."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 2_000_000)  # 2 MB — matches real truncated-trailer size
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video",
+                            overwrite=True)
+
+    assert r.success
+    assert r.warning, "warning must be set for 2 MB HLS output"
+    assert "truncated" in r.warning.lower()
+
+
+def test_download_hls_short_duration_sets_warning(tmp_path, monkeypatch):
+    """A large file but short duration (< 30 s per ffprobe) must also set result.warning.
+    This catches the case where bitrate is very high but the clip is still truncated."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        # Large file (>5 MB) so only the duration check triggers the warning.
+        tmp.write_bytes(b"\x00" * 10_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    # ffprobe returns 3 seconds — clearly a truncated clip.
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 3.0)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video",
+                            overwrite=True)
+
+    assert r.success
+    assert r.warning, "warning must be set when ffprobe reports < 30 s duration"
+    assert "truncated" in r.warning.lower()
+
+
+def test_download_hls_full_length_no_warning(tmp_path, monkeypatch):
+    """A large file (≥5 MB) with ≥30 s duration must succeed with no warning."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)  # 50 MB — realistic full trailer
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video",
+                            overwrite=True)
+
+    assert r.success
+    assert not r.warning, f"no warning expected for full-length trailer, got: {r.warning}"
 
 
 def test_download_hls_no_ffmpeg_returns_error(tmp_path, monkeypatch):
@@ -664,10 +746,11 @@ def test_download_hls_tmp_cleaned_up_on_success(tmp_path, monkeypatch):
     def fake_run(cmd, capture_output, timeout):
         tmp = Path(cmd[-1])
         tmp.parent.mkdir(parents=True, exist_ok=True)
-        tmp.write_bytes(b"\x00" * 256)
+        tmp.write_bytes(b"\x00" * 50_000_000)
         return _FakeCompletedProcess(0)
 
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
 
     r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
 
