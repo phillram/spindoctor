@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.11] - 2026-06-24
+
 ### Fixed
 
 - **HLS video downloads silently truncated to ~2–3 seconds.** A full-length Steam trailer (e.g. A Boy and His Blob, App 281200 — 1:19 long) would download as a ~2.4 MB file that was only a few seconds long; SpinDoctor reported success because ffmpeg exited 0 and the file was non-empty. Two concurrent root causes: (1) Steam's newer fMP4/CMAF HLS segments carry AAC audio already in MPEG-4 ASC format — applying `-bsf:a aac_adtstoasc` double-converts it, corrupts the AAC track, and causes ffmpeg to abort mid-mux; (2) without `-protocol_whitelist file,http,https,tcp,tls,crypto`, ffmpeg cannot follow HTTPS segment URLs from Steam's Akamai CDN, causing a similar early abort with a partial file. Fixed by replacing `-bsf:a aac_adtstoasc` with `-c:a aac` (re-encodes audio correctly for both TS-based and fMP4-based HLS), adding `-protocol_whitelist file,http,https,tcp,tls,crypto`, and adding `-movflags +faststart` (writes the MP4 moov atom at the start for WMP seek compatibility).
@@ -1813,7 +1815,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.10...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.11...HEAD
+[2.7.11]: https://github.com/phillram/spindoctor/compare/v2.7.10...v2.7.11
 [2.7.10]: https://github.com/phillram/spindoctor/compare/v2.7.9...v2.7.10
 [2.7.9]: https://github.com/phillram/spindoctor/compare/v2.7.8...v2.7.9
 [2.7.8]: https://github.com/phillram/spindoctor/compare/v2.7.7...v2.7.8
