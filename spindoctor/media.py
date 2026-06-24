@@ -417,17 +417,6 @@ class MediaDownloader:
         if dest.suffix and dest.suffix != dest.suffix.lower():
             dest = dest.with_suffix(dest.suffix.lower())
 
-        _MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
-                       ".mp4", ".webm", ".avi", ".mkv", ".flv", ".mpg", ".mpeg",
-                       ".zip", ".mp3", ".ogg", ".wav"}
-        # Never replace a .png destination with .jpg — HyperSpin's Wheel,
-        # Artwork, Snap, and Title folders only load files by exact .png name.
-        # Steam's header capsule and screenshots are JPEG; we keep the .png
-        # dest and run _convert_to_png_inplace after download so the file is
-        # either real PNG (Pillow present) or JPEG bytes with a .png name
-        # (works on Windows via GDI+ magic-byte detection).
-        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix and dest.suffix != ".png":
-            dest = dest.with_suffix(url_ext)
 
         if dest.exists() and not overwrite:
             return DownloadResult(game_name=label, media_type=media_type,
