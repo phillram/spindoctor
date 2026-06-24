@@ -673,7 +673,8 @@ class MediaCandidate:
     source_type: str = ""     # raw API type tag ("box-2D", "screenmarquee", ...)
     width: str = ""           # ScreenScraper "size" / dims (when present)
     height: str = ""
-    duration_secs: Optional[float] = None  # video duration in seconds (HLS only)
+    duration_secs: Optional[float] = None   # video duration in seconds (HLS only)
+    estimated_bytes: Optional[int] = None   # estimated file size (HLS: BANDWIDTH×duration/8; MP4: Content-Length)
 
     def label(self) -> str:
         bits = [b for b in (self.region.upper() or "—",
@@ -692,44 +693,55 @@ def _fmt_duration(secs: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def _hls_duration(m3u8_url: str, session) -> Optional[float]:
-    """Return total duration in seconds by parsing an HLS playlist.
+def _hls_duration(m3u8_url: str, session) -> tuple[Optional[float], Optional[int]]:
+    """Return (duration_secs, estimated_bytes) by parsing an HLS playlist.
 
     Fetches the master M3U8, follows the first variant-stream URL, and sums
-    the ``#EXTINF`` segment durations.  Returns ``None`` on any error so the
-    caller can degrade gracefully (no duration shown in picker).
+    the ``#EXTINF`` segment durations.  ``estimated_bytes`` is derived from the
+    ``BANDWIDTH`` attribute of the preceding ``EXT-X-STREAM-INF`` tag multiplied
+    by the total duration (bits/s × s / 8 = bytes).  Returns ``(None, None)`` on
+    any error so the caller can degrade gracefully.
     """
     try:
         resp = session.get(m3u8_url, timeout=10)
         resp.raise_for_status()
         master = resp.text
 
-        # Resolve first variant stream (first non-comment, non-blank line).
+        # Resolve first variant stream; capture its declared peak BANDWIDTH.
         base = m3u8_url.split("?")[0].rsplit("/", 1)[0]
         variant_url: Optional[str] = None
+        bandwidth: Optional[int] = None
+        prev_line = ""
         for line in master.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                variant_url = line if line.startswith("http") else f"{base}/{line}"
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                variant_url = stripped if stripped.startswith("http") else f"{base}/{stripped}"
+                m = re.search(r"BANDWIDTH=(\d+)", prev_line)
+                if m:
+                    bandwidth = int(m.group(1))
                 break
+            prev_line = stripped
 
         if not variant_url:
-            return None
+            return None, None
 
         resp = session.get(variant_url, timeout=10)
         resp.raise_for_status()
 
         total = 0.0
         for line in resp.text.splitlines():
-            line = line.strip()
-            if line.startswith("#EXTINF:"):
+            stripped = line.strip()
+            if stripped.startswith("#EXTINF:"):
                 try:
-                    total += float(line[8:].split(",")[0])
+                    total += float(stripped[8:].split(",")[0])
                 except (ValueError, IndexError):
                     pass
-        return total if total > 0 else None
+
+        duration = total if total > 0 else None
+        estimated: Optional[int] = int(bandwidth * duration / 8) if (bandwidth and duration) else None
+        return duration, estimated
     except Exception:
-        return None
+        return None, None
 
 
 # Maps logical media slot → ordered list of ScreenScraper "type" values to try.
@@ -1716,11 +1728,19 @@ class SteamClient:
 
         meta = _parse_steam(app_id, data)
         if meta is not None:
-            # Fetch HLS playlist duration for video candidates.  The M3U8 is a
-            # small text file so two extra requests per movie entry are cheap.
+            # Fetch size/duration metadata for video candidates.
             for cand in meta.media_candidates.get("video", []):
                 if cand.format == "m3u8":
-                    cand.duration_secs = _hls_duration(cand.url, self._session)
+                    cand.duration_secs, cand.estimated_bytes = _hls_duration(cand.url, self._session)
+                else:
+                    # MP4 highlight: HEAD request for Content-Length (no body download needed).
+                    try:
+                        r = self._session.head(cand.url, timeout=5, allow_redirects=True)
+                        cl = r.headers.get("Content-Length")
+                        if cl:
+                            cand.estimated_bytes = int(cl)
+                    except Exception:
+                        pass
         return meta
 
     def search(self, game_name: str, max_results: int = 8) -> list[dict]:
