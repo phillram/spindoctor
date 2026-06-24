@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Steam scan dropdowns frozen on "scanning…" with no error shown.** `_fmt_duration` was imported as a local variable inside `_scan_steam` but referenced inside `_on_steam_scan_done`, a separate method with no access to that local. Tkinter silently swallows exceptions thrown inside `root.after()` callbacks, so the `NameError` was invisible and the UI froze. Import moved to `_on_steam_scan_done` where it is used. To prevent recurrence, `_on_steam_scan_done` is now wrapped in a broad `try/except` that resets all dropdowns to "— scan error —", updates the status bar, shows an error dialog, and logs the full traceback — so any future exception in this callback is immediately visible rather than causing a silent freeze.
+
 ## [2.7.9] - 2026-06-24
 
 ### Fixed
