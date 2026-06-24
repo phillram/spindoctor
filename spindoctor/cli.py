@@ -5616,7 +5616,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
     }
 
     config = _cfg()
-    downloader = MediaDownloader(config, output_dir=output_dir)
+    downloader = MediaDownloader(config, output_dir_override=Path(output_dir) if output_dir else None)
 
     SEP = "  " + "─" * 60
 
