@@ -2560,8 +2560,8 @@ def test_preview_steam_candidate_image_opens_direct_url(monkeypatch):
         app.root.destroy()
 
 
-def test_preview_steam_candidate_video_opens_store_page(monkeypatch):
-    """For video, the Steam store page URL must be opened (not the raw MP4/m3u8)."""
+def test_preview_steam_candidate_video_opens_direct_url(monkeypatch):
+    """For video, the candidate's direct URL must be opened (not the store page)."""
     from spindoctor.scraper import MediaCandidate
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
@@ -2574,7 +2574,7 @@ def test_preview_steam_candidate_video_opens_store_page(monkeypatch):
         monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
 
         app._preview_steam_candidate("video")
-        assert opened == ["https://store.steampowered.com/app/1145360/"]
+        assert opened == ["https://cdn/trailer.mp4"]
     finally:
         app.root.destroy()
 

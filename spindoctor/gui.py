@@ -8509,13 +8509,7 @@ class _SpinDoctorGUI:
             )
 
     def _preview_steam_candidate(self, mt: str) -> None:
-        """Open the selected candidate in the system browser.
-
-        Images (snap/artwork/wheel) open directly — the browser renders them.
-        Videos open the Steam store page so the user can watch the trailer
-        in the Steam web player (direct MP4 would trigger a download, and HLS
-        .m3u8 manifests don't play in browsers at all).
-        """
+        """Open the selected candidate's direct URL in the system browser."""
         cands = self._steam_cands.get(mt, [])
         if not cands:
             return
@@ -8527,9 +8521,8 @@ class _SpinDoctorGUI:
             cand = cands[idx]
         except (ValueError, IndexError):
             return
-        url = self._steam_source_url if mt == "video" else cand.url
-        if url:
-            self._open_url(url)
+        if cand.url:
+            self._open_url(cand.url)
 
     def _apply_steam_selection(self) -> None:
         """Shell out to fetch-steam-media with the currently selected candidates."""
