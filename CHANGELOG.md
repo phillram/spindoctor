@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.9] - 2026-06-24
+
 ### Fixed
 
 - **Windows reserved device names (NUL, CON, PRN, COM1, LPT1, etc.) used as game or system names would silently write to system devices instead of files.** On Windows, filenames like `NUL.png` or `CON.mp4` map to built-in device handles regardless of path or extension — writes succeed with no error but no file is created. `_win_safe_stem()` in both `media.py` and `rocketlauncher.py` now appends `_` when the sanitised stem matches a reserved name (e.g. the hypothetical game "NUL" → `NUL_.png`).
@@ -1801,7 +1803,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.8...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.9...HEAD
+[2.7.9]: https://github.com/phillram/spindoctor/compare/v2.7.8...v2.7.9
 [2.7.8]: https://github.com/phillram/spindoctor/compare/v2.7.7...v2.7.8
 [2.7.7]: https://github.com/phillram/spindoctor/compare/v2.7.6...v2.7.7
 [2.7.6]: https://github.com/phillram/spindoctor/compare/v2.7.5...v2.7.6
