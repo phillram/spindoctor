@@ -7728,6 +7728,8 @@ class _SpinDoctorGUI:
         self._steam_cands: dict[str, list] = {}  # filled by _scan_steam
         self._steam_pick_vars: dict[str, "tk.StringVar"] = {}
         self._steam_pick_combos: dict[str, "ttk.Combobox"] = {}
+        self._steam_preview_btns: dict[str, "ttk.Button"] = {}
+        self._steam_source_url: str = ""  # Steam store page URL, set by _on_steam_scan_done
 
         _picker_layout = [
             ("video",   "Video",      0, 0),
@@ -7737,7 +7739,7 @@ class _SpinDoctorGUI:
         ]
         for mt, lbl_text, row, col in _picker_layout:
             self.ttk.Label(steam_pick_frame, text=lbl_text).grid(
-                row=row, column=col * 2, sticky="w",
+                row=row, column=col * 3, sticky="w",
                 padx=(0 if col == 0 else 12, 4), pady=(0 if row == 0 else 4, 0),
             )
             var = self.tk.StringVar(value="— scan first —")
@@ -7745,10 +7747,18 @@ class _SpinDoctorGUI:
                 steam_pick_frame, textvariable=var,
                 state="disabled", width=30,
             )
-            cb.grid(row=row, column=col * 2 + 1, sticky="w",
+            cb.grid(row=row, column=col * 3 + 1, sticky="w",
                     padx=(0, 0), pady=(0 if row == 0 else 4, 0))
             self._steam_pick_vars[mt] = var
             self._steam_pick_combos[mt] = cb
+            preview_btn = self.ttk.Button(
+                steam_pick_frame, text="View",
+                state="disabled",
+                command=lambda m=mt: self._preview_steam_candidate(m),
+            )
+            preview_btn.grid(row=row, column=col * 3 + 2, sticky="w",
+                             padx=(4, 0), pady=(0 if row == 0 else 4, 0))
+            self._steam_preview_btns[mt] = preview_btn
 
         self._steam_overwrite_var = self.tk.BooleanVar(value=False)
         steam_apply_row = self.ttk.Frame(gameovr_frame)
@@ -8337,11 +8347,14 @@ class _SpinDoctorGUI:
         if not hasattr(self, "_steam_url_var"):
             return  # called before the panel is built (system-change trace on init)
         self._steam_url_var.set("")
+        self._steam_source_url = ""
         self._steam_cands = {}
         for mt, var in self._steam_pick_vars.items():
             var.set("— scan first —")
         for mt, cb in self._steam_pick_combos.items():
             cb.configure(values=[], state="disabled")
+        for mt, btn in self._steam_preview_btns.items():
+            btn.configure(state="disabled")
 
     def _scan_steam(self) -> None:
         """Fetch Steam media candidates for the current System/Game/URL and
@@ -8414,8 +8427,14 @@ class _SpinDoctorGUI:
             return
 
         self._steam_cands = {}
+        self._steam_source_url = meta.source_url or ""
+
+        def _video_label(c, i: int) -> str:
+            suffix = " (HLS — needs ffmpeg)" if c.format == "m3u8" else ""
+            return f"{i}. {c.version or c.source_type}{suffix}"
+
         label_map = {
-            "video":   lambda c, i: f"{i}. {c.version or c.source_type}",
+            "video":   _video_label,
             "snap":    lambda c, i: f"{i}. {c.version or c.source_type}",
             "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
             "wheel":   lambda c, i: f"{i}. {c.source_type} ({c.format})",
@@ -8430,10 +8449,12 @@ class _SpinDoctorGUI:
                 labels = [label_map[mt](c, i) for i, c in enumerate(cands, 1)]
                 cb.configure(values=labels, state="readonly")
                 var.set(labels[0])
+                self._steam_preview_btns[mt].configure(state="normal")
                 any_found = True
             else:
                 cb.configure(values=[], state="disabled")
                 var.set("— none —")
+                self._steam_preview_btns[mt].configure(state="disabled")
 
         found_parts = []
         for mt in ("video", "snap", "artwork", "wheel"):
@@ -8450,6 +8471,27 @@ class _SpinDoctorGUI:
                 "No media found",
                 f"Steam returned no video, screenshot, or artwork for App {app_id}.",
             )
+
+    def _preview_steam_candidate(self, mt: str) -> None:
+        """Open the selected candidate in the system browser.
+
+        Images (snap/artwork/wheel) open directly — the browser renders them.
+        Videos open the Steam store page so the user can watch the trailer
+        in the Steam web player (direct MP4 would trigger a download, and HLS
+        .m3u8 manifests don't play in browsers at all).
+        """
+        cands = self._steam_cands.get(mt, [])
+        if not cands:
+            return
+        label = self._steam_pick_vars[mt].get()
+        try:
+            idx = int(label.split(".")[0].strip()) - 1
+            cand = cands[idx]
+        except (ValueError, IndexError):
+            return
+        url = self._steam_source_url if mt == "video" else cand.url
+        if url:
+            self._open_url(url)
 
     def _apply_steam_selection(self) -> None:
         """Shell out to fetch-steam-media with the currently selected candidates."""
