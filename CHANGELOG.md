@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.6] - 2026-06-24
+
 ### Fixed
 
 - **`pc-fix-exe --apply` now creates the game section when it is missing from the system INI.** Previously, if the PCLauncher INI existed but had no `[Game Name]` section for the target game, `rewrite_pclauncher_application` silently skipped the file and returned `False`, causing the CLI to print "no change needed — Application= is already correct" even though nothing had been written. The section is now appended to the existing INI, preserving all other game entries.
@@ -1749,7 +1751,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.5...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.6...HEAD
+[2.7.6]: https://github.com/phillram/spindoctor/compare/v2.7.5...v2.7.6
 [2.7.5]: https://github.com/phillram/spindoctor/compare/v2.7.4...v2.7.5
 [2.7.4]: https://github.com/phillram/spindoctor/compare/v2.7.3...v2.7.4
 [2.7.3]: https://github.com/phillram/spindoctor/compare/v2.7.2...v2.7.3

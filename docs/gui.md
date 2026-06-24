@@ -363,6 +363,14 @@ Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab
 
 Every dropdown in the GUI (system pickers, the Metadata & Media Game dropdown, etc.) supports letter-key type-ahead: with the dropdown focused, pressing a letter jumps straight to the next entry starting with that letter — no need to scroll a list of hundreds of games by hand. Pressing the same letter again moves to the next match instead of looping back to the first one. This is wired up once, globally, so any dropdown added in the future gets it automatically.
 
+## "(Not in wheel)" system and game badges
+
+System pickers across every GUI tab annotate any system that exists as a folder in `roms_dir` or `databases_dir` but is absent from `Main Menu.xml` with a `(Not in wheel)` suffix — for example, `Taito Type X (Not in wheel)`. This makes it easy to spot systems you've added to disk but not yet registered in the wheel.
+
+The **Fix game executable** game picker also badges any game folder on disk that has no matching entry in the system's HyperSpin XML database. This is the only game dropdown that reads from the filesystem rather than the XML, so it is the only one where the discrepancy can arise; all other game pickers read the XML directly.
+
+Both badges are display-only — the suffix is stripped automatically before any CLI command runs, so file paths and `--system` / `--game` arguments are never affected.
+
 ## Dry-run feedback
 
 Commands fall into three categories, which the GUI tracks and displays in the History tab:
