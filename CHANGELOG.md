@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.8] - 2026-06-24
+
 ### Fixed
 
 - **`fetch-steam-media` crash on every run (`TypeError: output_dir`).** The `fetch_steam_media` command was constructing `MediaDownloader(config, output_dir=output_dir)`, but `MediaDownloader.__init__` only accepts `output_dir_override`. This caused an unconditional `TypeError` before any Steam data was fetched, making the command completely non-functional.
@@ -1779,7 +1781,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.7...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.8...HEAD
+[2.7.8]: https://github.com/phillram/spindoctor/compare/v2.7.7...v2.7.8
 [2.7.7]: https://github.com/phillram/spindoctor/compare/v2.7.6...v2.7.7
 [2.7.6]: https://github.com/phillram/spindoctor/compare/v2.7.5...v2.7.6
 [2.7.5]: https://github.com/phillram/spindoctor/compare/v2.7.4...v2.7.5
