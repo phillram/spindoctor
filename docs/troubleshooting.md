@@ -226,9 +226,15 @@ ffmpeg -version
 
 The video on the cabinet was downloaded before ffmpeg was installed. Re-download it with `--overwrite --apply` as shown above to replace the silent file.
 
-### Steam HLS video is only a few seconds long or crashes Windows Media Player
+### Steam HLS video downloads as a 2–3 second clip (full trailer never completes)
 
-**Cause:** Steam delivers most trailers as HLS streaming playlists (`.m3u8`). Newer titles use fMP4/CMAF segment format, where the AAC audio is already packaged in MPEG-4 ASC format. Versions of SpinDoctor before v2.7.11 passed `-bsf:a aac_adtstoasc` to ffmpeg, which double-converts audio that is already in ASC format — corrupting the audio track in the output MP4 and causing Windows Media Player to crash.
+**Symptom:** The downloaded file is only 2–3 seconds long and around 2–3 MB, even though the Steam store page shows a trailer that is over a minute long (e.g. A Boy and His Blob, App 281200, is 1:19). SpinDoctor reports the download as successful — ffmpeg exits 0 and the file is non-empty — so the truncation goes undetected.
+
+**Cause:** Two concurrent issues in versions before v2.7.11:
+
+1. **fMP4/CMAF audio corruption.** Steam has migrated many trailers to fMP4/CMAF HLS segments, where AAC audio is already in MPEG-4 ASC format. The previous ffmpeg command applied `-bsf:a aac_adtstoasc` unconditionally, which double-converts audio that is already containerised — corrupting the AAC track and causing ffmpeg to abort the mux partway through, writing only the first few segments.
+
+2. **HTTPS segment URLs blocked.** Without `-protocol_whitelist file,http,https,tcp,tls,crypto`, ffmpeg cannot follow the HTTPS segment URLs that Steam's Akamai CDN embeds in the variant playlist. ffmpeg exits 0 after writing whatever it had already buffered, producing the same 2–3 second result.
 
 **Fix:** Upgrade to SpinDoctor v2.7.11 or later, then re-download the affected video with `--overwrite --apply`:
 
@@ -237,9 +243,9 @@ spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID>
     --video-index 1 --types video --overwrite --apply
 ```
 
-The ffmpeg command is now `-c:a aac -movflags +faststart`, which re-encodes audio correctly for both TS-based and fMP4-based HLS streams and writes the MP4 moov atom at the start of the file so Windows Media Player can seek without needing to read the whole file first.
+The ffmpeg command is now `-protocol_whitelist file,http,https,tcp,tls,crypto -c:v copy -c:a aac -movflags +faststart`: the protocol whitelist enables HTTPS segment fetching, `-c:a aac` re-encodes audio correctly for both TS-based and fMP4-based HLS streams, and `+faststart` writes the MP4 moov atom at the start of the file so Windows Media Player can seek without reading to the end first.
 
-> **If the download still produces a short clip after upgrading:** Steam sometimes offers both an HLS full trailer (usually longer) and an MP4 highlight clip (often 30–90 s). Run the command without `--video-index` and check the dry-run listing — the Duration column shows which candidate is the full trailer. Use the index of the longer HLS candidate.
+> **If the download still produces a short clip after upgrading:** This is a different issue — you may have downloaded the MP4 highlight clip rather than the full HLS trailer. Run without `--video-index` and check the dry-run listing — candidates labelled `(HLS — full length, needs ffmpeg)` are the complete trailers; `(MP4 — may be highlight clip)` are shorter autoplay clips (~10–15 s). Use the index of the `HLS` candidate.
 
 ### `audit` reports a slot as present but the file has no content (0 bytes)
 
