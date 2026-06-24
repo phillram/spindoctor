@@ -568,6 +568,10 @@ class MediaDownloader:
         if not url:
             return None
         ext = Path(urlparse(url).path).suffix or f".{candidate.format or 'bin'}"
+        # _download_hls saves HLS streams as .mp4, not .m3u8 — use the same
+        # extension so tmp_path matches the file the downloader actually creates.
+        if ext == ".m3u8":
+            ext = ".mp4"
         tmp_dir = Path(tempfile.gettempdir()) / "spindoctor_preview"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = tmp_dir / f"candidate_{idx}_{abs(hash(url))}{ext}"
