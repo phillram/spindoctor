@@ -7661,9 +7661,9 @@ class _SpinDoctorGUI:
             foreground=_FG_DIMMER,
         ).grid(row=1, column=4, sticky="w", padx=(6, 0), pady=2)
 
-        # Clear override ID fields when the game selection changes so stale
-        # IDs from a previous game never linger.  System changes also fire
-        # this trace because _populate_meta_game_list calls
+        # Clear override ID fields and Steam scan panel when the game selection
+        # changes so stale IDs and previous scan results never linger.  System
+        # changes also fire this trace because _populate_meta_game_list calls
         # _meta_game_var.set(""), which counts as a write.
         self._meta_game_var.trace_add(
             "write",
@@ -7671,6 +7671,7 @@ class _SpinDoctorGUI:
                 self._gameovr_ss_id_var.set(""),
                 self._gameovr_tgdb_id_var.set(""),
                 self._gameovr_steam_id_var.set(""),
+                self._clear_steam_media_panel(),
             ),
         )
 
@@ -7728,17 +7729,24 @@ class _SpinDoctorGUI:
         self._steam_pick_vars: dict[str, "tk.StringVar"] = {}
         self._steam_pick_combos: dict[str, "ttk.Combobox"] = {}
 
-        for col, mt in enumerate(("video", "snap", "artwork")):
-            lbl_text = {"video": "Video", "snap": "Screenshot", "artwork": "Artwork"}[mt]
+        _picker_layout = [
+            ("video",   "Video",      0, 0),
+            ("snap",    "Screenshot", 0, 1),
+            ("artwork", "Artwork",    0, 2),
+            ("wheel",   "Wheel",      1, 0),
+        ]
+        for mt, lbl_text, row, col in _picker_layout:
             self.ttk.Label(steam_pick_frame, text=lbl_text).grid(
-                row=0, column=col * 2, sticky="w", padx=(0 if col == 0 else 12, 4),
+                row=row, column=col * 2, sticky="w",
+                padx=(0 if col == 0 else 12, 4), pady=(0 if row == 0 else 4, 0),
             )
             var = self.tk.StringVar(value="— scan first —")
             cb = self.ttk.Combobox(
                 steam_pick_frame, textvariable=var,
                 state="disabled", width=30,
             )
-            cb.grid(row=0, column=col * 2 + 1, sticky="w", padx=(0, 0))
+            cb.grid(row=row, column=col * 2 + 1, sticky="w",
+                    padx=(0, 0), pady=(0 if row == 0 else 4, 0))
             self._steam_pick_vars[mt] = var
             self._steam_pick_combos[mt] = cb
 
@@ -8320,6 +8328,21 @@ class _SpinDoctorGUI:
         self._gameovr_tgdb_id_var.set("")
         self._gameovr_steam_id_var.set("")
 
+    def _clear_steam_media_panel(self) -> None:
+        """Reset the Steam scan panel to its initial empty state.
+
+        Called whenever the system or game selection changes so results from
+        a previous scan don't persist for the newly-selected game.
+        """
+        if not hasattr(self, "_steam_url_var"):
+            return  # called before the panel is built (system-change trace on init)
+        self._steam_url_var.set("")
+        self._steam_cands = {}
+        for mt, var in self._steam_pick_vars.items():
+            var.set("— scan first —")
+        for mt, cb in self._steam_pick_combos.items():
+            cb.configure(values=[], state="disabled")
+
     def _scan_steam(self) -> None:
         """Fetch Steam media candidates for the current System/Game/URL and
         populate the per-type picker dropdowns.
@@ -8362,12 +8385,18 @@ class _SpinDoctorGUI:
             try:
                 meta = SteamClient().fetch_by_app_id(app_id)
             except MetadataError as exc:
-                self.tk.after(0, lambda: (
-                    self._set_status(f"Steam scan failed: {exc}"),
-                    self.messagebox.showerror("Steam scan failed", str(exc)),
+                self.root.after(0, lambda e=exc: (
+                    self._set_status(f"Steam scan failed: {e}"),
+                    self.messagebox.showerror("Steam scan failed", str(e)),
                 ))
                 return
-            self.tk.after(0, lambda m=meta: self._on_steam_scan_done(app_id, m))
+            except Exception as exc:  # noqa: BLE001 — surface unexpected errors
+                self.root.after(0, lambda e=exc: (
+                    self._set_status(f"Steam scan error: {e}"),
+                    self.messagebox.showerror("Steam scan error", str(e)),
+                ))
+                return
+            self.root.after(0, lambda m=meta: self._on_steam_scan_done(app_id, m))
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -8389,9 +8418,10 @@ class _SpinDoctorGUI:
             "video":   lambda c, i: f"{i}. {c.version or c.source_type}",
             "snap":    lambda c, i: f"{i}. {c.version or c.source_type}",
             "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
+            "wheel":   lambda c, i: f"{i}. {c.source_type} ({c.format})",
         }
         any_found = False
-        for mt in ("video", "snap", "artwork"):
+        for mt in ("video", "snap", "artwork", "wheel"):
             cands = meta.media_candidates.get(mt, [])
             self._steam_cands[mt] = cands
             cb = self._steam_pick_combos[mt]
@@ -8406,7 +8436,7 @@ class _SpinDoctorGUI:
                 var.set("— none —")
 
         found_parts = []
-        for mt in ("video", "snap", "artwork"):
+        for mt in ("video", "snap", "artwork", "wheel"):
             n = len(self._steam_cands.get(mt, []))
             if n:
                 found_parts.append(f"{n} {mt}")
@@ -8452,7 +8482,7 @@ class _SpinDoctorGUI:
             "--steam-id", app_id,
         ]
         types_to_fetch = []
-        for mt in ("video", "snap", "artwork"):
+        for mt in ("video", "snap", "artwork", "wheel"):
             cands = self._steam_cands.get(mt, [])
             if not cands:
                 continue
@@ -8469,7 +8499,7 @@ class _SpinDoctorGUI:
         if not types_to_fetch:
             self.messagebox.showwarning(
                 "Nothing selected",
-                "Scan first, then pick at least one video, screenshot, or artwork.",
+                "Scan first, then pick at least one video, screenshot, artwork, or wheel.",
             )
             return
 
