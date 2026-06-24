@@ -219,7 +219,7 @@ Media slots populated:
 | `header_image` | — | `artwork` | `.png` ¹ |
 | `header_image` | — | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
 
-Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates when both are available. Steam frequently provides both: the MP4 is a short highlight/autoplay clip (~10–15 s used on store browse pages); the HLS is the full-length trailer. If the downloaded video seems too short, try the `(HLS — full length)` candidate instead.
+Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates when both are available. Steam frequently provides both: the MP4 is a short highlight/autoplay clip (~10–15 s used on store browse pages); the HLS is the full-length trailer. If the downloaded video seems too short, try the `(HLS — full length)` candidate instead. After an HLS download, SpinDoctor runs ffprobe to verify the duration and prints a yellow `⚠` warning when the output is under 30 s or 5 MB — if you see that warning, re-run with `--overwrite --apply` or switch to a different candidate index.
 
 ¹ Steam serves these as JPEG. SpinDoctor saves them as `.png` (HyperSpin's required format) and converts the bytes to real PNG when Pillow is installed (`pip install spindoctor[preview]`). Without Pillow the JPEG content is saved under the `.png` name — Windows GDI+ loads it correctly via magic-byte detection.
 

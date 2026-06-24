@@ -5686,6 +5686,8 @@ def fetch_steam_media(system, game, steam_id_raw, types,
                 console.print(f"    [yellow]overwrote:[/yellow]  {dest}")
             else:
                 console.print(f"    [green]downloaded:[/green]  {dest}")
+            if result.warning:
+                console.print(f"    [yellow]⚠ {result.warning}[/yellow]")
         else:
             console.print(f"    [red]failed:[/red]  {result.error}")
 
