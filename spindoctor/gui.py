@@ -8376,7 +8376,7 @@ class _SpinDoctorGUI:
             )
             return
 
-        from .scraper import extract_steam_app_id as _extract, SteamClient, MetadataError
+        from .scraper import extract_steam_app_id as _extract, SteamClient, MetadataError, _fmt_duration
 
         app_id = _extract(raw)
         if app_id is None:
@@ -8430,10 +8430,11 @@ class _SpinDoctorGUI:
         self._steam_source_url = meta.source_url or ""
 
         def _video_label(c, i: int) -> str:
+            dur = f"  {_fmt_duration(c.duration_secs)}" if c.duration_secs else ""
             if c.format == "m3u8":
-                suffix = " (HLS — full length, needs ffmpeg)"
+                suffix = f"{dur}  (HLS — full length, needs ffmpeg)"
             else:
-                suffix = " (MP4 — may be highlight clip)"
+                suffix = f"{dur}  (MP4 — may be highlight clip)"
             return f"{i}. {c.version or c.source_type}{suffix}"
 
         label_map = {
