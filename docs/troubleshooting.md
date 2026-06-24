@@ -226,6 +226,27 @@ ffmpeg -version
 
 The video on the cabinet was downloaded before ffmpeg was installed. Re-download it with `--overwrite --apply` as shown above to replace the silent file.
 
+### Steam HLS video downloads as a 2–3 second clip (full trailer never completes)
+
+**Symptom:** The downloaded file is only 2–3 seconds long and around 2–3 MB, even though the Steam store page shows a trailer that is over a minute long (e.g. A Boy and His Blob, App 281200, is 1:19). SpinDoctor reports the download as successful — ffmpeg exits 0 and the file is non-empty — so the truncation goes undetected.
+
+**Cause:** Two concurrent issues in versions before v2.7.11:
+
+1. **fMP4/CMAF audio corruption.** Steam has migrated many trailers to fMP4/CMAF HLS segments, where AAC audio is already in MPEG-4 ASC format. The previous ffmpeg command applied `-bsf:a aac_adtstoasc` unconditionally, which double-converts audio that is already containerised — corrupting the AAC track and causing ffmpeg to abort the mux partway through, writing only the first few segments.
+
+2. **HTTPS segment URLs blocked.** Without `-protocol_whitelist file,http,https,tcp,tls,crypto`, ffmpeg cannot follow the HTTPS segment URLs that Steam's Akamai CDN embeds in the variant playlist. ffmpeg exits 0 after writing whatever it had already buffered, producing the same 2–3 second result.
+
+**Fix:** Upgrade to SpinDoctor v2.7.11 or later, then re-download the affected video with `--overwrite --apply`:
+
+```
+spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID> \
+    --video-index 1 --types video --overwrite --apply
+```
+
+The ffmpeg command is now `-protocol_whitelist file,http,https,tcp,tls,crypto -c:v copy -c:a aac -movflags +faststart`: the protocol whitelist enables HTTPS segment fetching, `-c:a aac` re-encodes audio correctly for both TS-based and fMP4-based HLS streams, and `+faststart` writes the MP4 moov atom at the start of the file so Windows Media Player can seek without reading to the end first.
+
+> **If the download still produces a short clip after upgrading:** This is a different issue — you may have downloaded the MP4 highlight clip rather than the full HLS trailer. Run without `--video-index` and check the dry-run listing — candidates labelled `(HLS — full length, needs ffmpeg)` are the complete trailers; `(MP4 — may be highlight clip)` are shorter autoplay clips (~10–15 s). Use the index of the `HLS` candidate.
+
 ### `audit` reports a slot as present but the file has no content (0 bytes)
 
 A 0-byte stub can land in the Media tree when a download server returns an empty HTTP 200 body, or when a previous download was interrupted before any bytes were written. Prior to v2.7.3 the presence check used `.exists()`, so a zero-byte file would pass and the slot would never be re-downloaded.
