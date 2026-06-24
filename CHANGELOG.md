@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fetch-steam-media` crash on every run (`TypeError: output_dir`).** The `fetch_steam_media` command was constructing `MediaDownloader(config, output_dir=output_dir)`, but `MediaDownloader.__init__` only accepts `output_dir_override`. This caused an unconditional `TypeError` before any Steam data was fetched, making the command completely non-functional.
+
+- **Steam video dropdown always empty for newer games.** Steam's `appdetails` API no longer returns `mp4.max` for newer titles — it serves only HLS (`.m3u8`) and DASH (`.mpd`) streaming manifests. The parser was skipping every movie entry that lacked `mp4.max`, leaving the video candidate list empty and showing `— none —` in the GUI picker and the interactive CLI picker. SpinDoctor now falls back to `hls_h264` for any movie that has no direct MP4 URL, and the downloader uses `ffmpeg -i <m3u8_url> -c copy` to pull the HLS stream down as a local MP4. `ffmpeg.exe` must be available (bundled next to `spindoctor.exe` or in `PATH`); without it a clear error message is shown instead of a silent failure.
+
+- **`preview_candidate` silently failed for HLS candidates.** The method derived `tmp_path` with a `.m3u8` extension, then passed it to `download_to_path` which routed the URL to `_download_hls` — which saves the output as `.mp4`. The file was created at `tmp_path.with_suffix(".mp4")` but `_open_in_default_app` was called on the original `.m3u8` path that never existed. Fixed by normalising the temp file extension to `.mp4` before the download when the URL is an HLS stream.
+
+### Added
+
+- **Steam media panel — per-type View buttons.** Each candidate picker (Video / Screenshot / Artwork / Wheel) now has a **View** button that opens a preview in the default browser. Images (snap, artwork, wheel) open the direct CDN URL so the browser renders the image inline. Videos open the Steam store page so the user can watch the trailer in the Steam web player (HLS `.m3u8` manifests don't play directly in browsers, and direct MP4 would trigger a download rather than a preview). Buttons are disabled until a Scan has been run and candidates are available.
+
+- **HLS video candidates labelled in the GUI picker.** Steam videos served via HLS now show `(HLS — needs ffmpeg)` in the dropdown label so it's clear before clicking Apply that ffmpeg must be available on the cabinet.
+
 ## [2.7.7] - 2026-06-23
 
 ### Fixed

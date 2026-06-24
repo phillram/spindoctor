@@ -1698,19 +1698,28 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
     """Convert a Steam ``appdetails`` ``data`` block into a :class:`GameMetadata`."""
     candidates: dict[str, list[MediaCandidate]] = {}
 
-    # Videos — prefer MP4 max quality; skip entries with no mp4 URL.
+    # Videos — prefer direct MP4 (old Steam API format); fall back to HLS
+    # (hls_h264) for newer games where Steam only serves streaming manifests.
     movies = data.get("movies") or []
     video_cands: list[MediaCandidate] = []
     for movie in movies:
-        mp4_url = (movie.get("mp4") or {}).get("max") or ""
-        if not mp4_url:
-            continue
-        video_cands.append(MediaCandidate(
-            url=mp4_url,
-            source_type="trailer",
-            format="mp4",
-            version=movie.get("name") or "",
-        ))
+        mp4_url = (movie.get("mp4") or {}).get("max") or (movie.get("mp4") or {}).get("480") or ""
+        if mp4_url:
+            video_cands.append(MediaCandidate(
+                url=mp4_url,
+                source_type="trailer",
+                format="mp4",
+                version=movie.get("name") or "",
+            ))
+        else:
+            hls_url = movie.get("hls_h264") or ""
+            if hls_url:
+                video_cands.append(MediaCandidate(
+                    url=hls_url,
+                    source_type="trailer",
+                    format="m3u8",
+                    version=movie.get("name") or "",
+                ))
     if video_cands:
         candidates["video"] = video_cands
         candidates["trailer"] = video_cands  # same candidates, both slots

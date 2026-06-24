@@ -279,6 +279,62 @@ class MediaDownloader:
         return self._download_to(dest, url, label=label, media_type=media_type,
                                  overwrite=overwrite, max_retries=max_retries)
 
+    def _download_hls(
+        self,
+        dest: Path,
+        url: str,
+        *,
+        label: str,
+        media_type: str,
+        overwrite: bool,
+    ) -> DownloadResult:
+        """Download an HLS (.m3u8) stream to an MP4 file via ffmpeg."""
+        ffmpeg_hint = getattr(self.config, "ffmpeg_path", "")
+        ffmpeg, _ = _find_ffmpeg(ffmpeg_hint)
+        if not ffmpeg:
+            return DownloadResult(
+                game_name=label, media_type=media_type, success=False,
+                error=(
+                    "This Steam video uses HLS streaming (no direct MP4 available). "
+                    "Install ffmpeg and place ffmpeg.exe + ffprobe.exe next to "
+                    "spindoctor.exe to download it. See docs/troubleshooting.md."
+                ),
+            )
+
+        dest = dest.with_suffix(".mp4")
+        if dest.exists() and not overwrite:
+            return DownloadResult(game_name=label, media_type=media_type,
+                                  success=True, path=dest, skipped=True)
+
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
+        try:
+            result = subprocess.run(
+                [ffmpeg, "-y", "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
+                 str(tmp)],
+                capture_output=True, timeout=300,
+            )
+            if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                os.replace(tmp, dest)
+                return DownloadResult(game_name=label, media_type=media_type,
+                                      success=True, path=dest)
+            stderr = (result.stderr or b"")[-400:].decode("utf-8", errors="replace")
+            return DownloadResult(
+                game_name=label, media_type=media_type, success=False,
+                error=f"ffmpeg HLS download failed (rc={result.returncode}): {stderr}",
+            )
+        except subprocess.TimeoutExpired:
+            return DownloadResult(game_name=label, media_type=media_type,
+                                  success=False, error="ffmpeg HLS download timed out")
+        except OSError as exc:
+            return DownloadResult(game_name=label, media_type=media_type,
+                                  success=False, error=f"OSError: {exc}")
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
     def _download_to(
         self,
         dest: Path,
@@ -291,6 +347,11 @@ class MediaDownloader:
     ) -> DownloadResult:
         parsed = urlparse(url)
         url_ext = Path(parsed.path).suffix.lower()
+
+        if url_ext == ".m3u8":
+            return self._download_hls(dest, url, label=label,
+                                      media_type=media_type, overwrite=overwrite)
+
         _MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
                        ".mp4", ".webm", ".avi", ".mkv", ".flv", ".mpg", ".mpeg",
                        ".zip", ".mp3", ".ogg", ".wav"}
@@ -507,6 +568,10 @@ class MediaDownloader:
         if not url:
             return None
         ext = Path(urlparse(url).path).suffix or f".{candidate.format or 'bin'}"
+        # _download_hls saves HLS streams as .mp4, not .m3u8 — use the same
+        # extension so tmp_path matches the file the downloader actually creates.
+        if ext == ".m3u8":
+            ext = ".mp4"
         tmp_dir = Path(tempfile.gettempdir()) / "spindoctor_preview"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = tmp_dir / f"candidate_{idx}_{abs(hash(url))}{ext}"
