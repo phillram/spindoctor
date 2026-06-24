@@ -8415,6 +8415,7 @@ class _SpinDoctorGUI:
 
     def _on_steam_scan_done(self, app_id: str, meta) -> None:
         """Called on the main thread when the Steam scan worker finishes."""
+        from .scraper import _fmt_duration
         if meta is None:
             self._set_status(f"Steam App {app_id} not found.")
             self.messagebox.showwarning(
