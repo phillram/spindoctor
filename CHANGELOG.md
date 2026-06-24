@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`pc-fix-exe --apply` now creates the game section when it is missing from the system INI.** Previously, if the PCLauncher INI existed but had no `[Game Name]` section for the target game, `rewrite_pclauncher_application` silently skipped the file and returned `False`, causing the CLI to print "no change needed — Application= is already correct" even though nothing had been written. The section is now appended to the existing INI, preserving all other game entries.
+
 - **GUI "Fix PC game executable" executables list now has a vertical scrollbar.** The Listbox showing candidate `.exe` files had no scrollbar, making games with many executables inaccessible. The list is now wrapped in a frame with a linked `ttk.Scrollbar` so all entries are reachable.
 
 - **GUI "Fix game executable" Apply button now respects the global Apply toggle.** The `_run_fixexe` method was hardcoding `--apply` unconditionally, meaning clicking the button always wrote the INI change even when the global Apply checkbox was unchecked. It now follows the same pattern as every other write operation in the GUI — `--apply` is only passed when the global toggle is on; without it the CLI runs in preview/dry-run mode and prints what it would change.
