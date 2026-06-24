@@ -1622,8 +1622,8 @@ class SteamClient:
       * ``video``    — MP4 trailer(s) from the ``movies`` array
       * ``snap``     — full-resolution screenshots from the ``screenshots`` array
       * ``artwork``  — the game's header capsule image (``header_image``)
-
-    No ``wheel`` slot: Steam has no transparent-logo equivalent.
+      * ``wheel``    — same header image; rectangular banner, not a transparent logo,
+                       but usable as a wheel image when no better source exists.
     """
 
     def __init__(self, rate_limit: float = 1.0):
@@ -1732,15 +1732,15 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
     if snap_cands:
         candidates["snap"] = snap_cands
 
-    # Artwork — single header / capsule image.
+    # Artwork / Wheel — single header / capsule image.
+    # The header is a rectangular banner (not a transparent logo), but it can
+    # serve as a wheel image when no better alternative exists.
     header = data.get("header_image") or ""
     if header:
         ext = Path(header.split("?")[0]).suffix.lstrip(".") or "jpg"
-        candidates["artwork"] = [MediaCandidate(
-            url=header,
-            source_type="header",
-            format=ext,
-        )]
+        header_cand = MediaCandidate(url=header, source_type="header", format=ext)
+        candidates["artwork"] = [header_cand]
+        candidates["wheel"] = [header_cand]
 
     def _first(slot: str) -> str:
         cs = candidates.get(slot)
