@@ -301,7 +301,7 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
     --steam-id 1145360 --types wheel --wheel-index 1 --apply     :: header image as wheel art
 ```
 
-No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,artwork`; pass fewer types to skip what you don't need. Wheel/artwork/snap are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow).
+No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,artwork`; pass fewer types to skip what you don't need. Wheel/artwork/snap are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow). HLS video candidates show their duration as `M:SS` in the dry-run listing and interactive picker — if the MP4 seems too short, try the HLS candidate instead.
 Reference: [Command reference → fetch-steam-media](commands.md#fetch-steam-media).
 
 ### `media-add` / `media-scan` — manual + drift detection

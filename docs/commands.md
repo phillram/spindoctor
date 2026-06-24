@@ -205,7 +205,7 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
 
 `--types` controls which slots to populate: `video`, `snap`, `artwork`, `wheel`. Default is `video,snap,artwork` — `wheel` must be requested explicitly. Pass fewer types to skip anything you don't need (e.g. `--types video` to grab only the trailer).
 
-Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. With `--video-index N`, `--snap-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
+Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. The picker table includes a **Duration** column for HLS video candidates (shown as `M:SS`, e.g. `1:14`); MP4 candidates carry no duration. The same duration appears in the dry-run listing so you can choose the right index before running with `--apply`. With `--video-index N`, `--snap-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
 
 Dry-run by default; pass `--apply` to commit.
 
