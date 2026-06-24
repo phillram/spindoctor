@@ -213,7 +213,8 @@ Media slots populated:
 
 | Steam source | HyperSpin slot |
 |---|---|
-| `movies[].mp4.max` | `video` (and `trailer`) |
+| `movies[].mp4.max` (direct MP4, older games) | `video` (and `trailer`) |
+| `movies[].hls_h264` (HLS stream, newer games — requires ffmpeg) | `video` (and `trailer`) |
 | `screenshots[].path_full` | `snap` |
 | `header_image` | `artwork` |
 | `header_image` | `wheel` (opt-in via `--types wheel` or `--wheel-index`) |
