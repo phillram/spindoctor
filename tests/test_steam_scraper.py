@@ -73,8 +73,10 @@ def test_hls_duration_happy_path():
         (200, _master("chunklist.m3u8")),
         (200, _variant(30.0, 44.5)),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(74.5)
+    duration, estimated = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(74.5)
+    # BANDWIDTH=1000 bits/s × 74.5 s / 8 = 9312 bytes
+    assert estimated == 9312
 
 
 def test_hls_duration_absolute_variant_url():
@@ -83,30 +85,30 @@ def test_hls_duration_absolute_variant_url():
         (200, _master("https://other-cdn.example.com/variant.m3u8")),
         (200, _variant(60.0)),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(60.0)
+    duration, _ = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(60.0)
 
 
 def test_hls_duration_no_variant_line_returns_none():
-    """Master playlist with no non-comment lines → None."""
+    """Master playlist with no non-comment lines → (None, None)."""
     master = "#EXTM3U\n#EXT-X-INDEPENDENT-SEGMENTS\n"
     session = _FakeHLSSession([(200, master)])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, None)
 
 
 def test_hls_duration_zero_total_returns_none():
-    """All #EXTINF values sum to 0 → None (not a valid duration)."""
+    """All #EXTINF values sum to 0 → (None, None)."""
     session = _FakeHLSSession([
         (200, _master("chunklist.m3u8")),
         (200, "#EXTM3U\n#EXT-X-ENDLIST\n"),
     ])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, None)
 
 
 def test_hls_duration_http_error_returns_none():
-    """HTTP error on the master playlist request → None, no exception raised."""
+    """HTTP error on the master playlist request → (None, None), no exception raised."""
     session = _FakeHLSSession([(404, "")])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, None)
 
 
 def test_hls_duration_malformed_extinf_skipped():
@@ -116,8 +118,21 @@ def test_hls_duration_malformed_extinf_skipped():
         (200, _master("chunklist.m3u8")),
         (200, variant),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(30.0)
+    duration, estimated = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(30.0)
+    assert estimated == 3750  # BANDWIDTH=1000 bits/s × 30 s / 8
+
+
+def test_hls_duration_no_bandwidth_tag_estimated_bytes_is_none():
+    """Master playlist without EXT-X-STREAM-INF → duration returned, estimated_bytes None."""
+    master = "#EXTM3U\nchunklist.m3u8\n"  # variant URL with no preceding STREAM-INF
+    session = _FakeHLSSession([
+        (200, master),
+        (200, _variant(20.0)),
+    ])
+    duration, estimated = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(20.0)
+    assert estimated is None
 
 
 # ─── _parse_steam ─────────────────────────────────────────────────────────────
@@ -256,14 +271,22 @@ def test_fetch_by_app_id_sets_duration_secs_on_hls_candidate(monkeypatch):
         def raise_for_status(self): pass
         def json(self): return self._data
 
+    class _FakeHeadResp:
+        status_code = 200
+        headers = {"Content-Length": "8000000"}
+
     client = SteamClient()
     monkeypatch.setattr(
         client._session, "get",
         lambda url, **_kw: _FakeResp(api_payload),
     )
     monkeypatch.setattr(
+        client._session, "head",
+        lambda url, **_kw: _FakeHeadResp(),
+    )
+    monkeypatch.setattr(
         "spindoctor.scraper._hls_duration",
-        lambda url, session: 74.0,
+        lambda url, session: (74.0, 52_000_000),
     )
 
     meta = client.fetch_by_app_id("1145360")
@@ -276,7 +299,9 @@ def test_fetch_by_app_id_sets_duration_secs_on_hls_candidate(monkeypatch):
     mp4_cand = next(c for c in video_cands if c.format == "mp4")
 
     assert hls_cand.duration_secs == pytest.approx(74.0)
+    assert hls_cand.estimated_bytes == 52_000_000
     assert mp4_cand.duration_secs is None
+    assert mp4_cand.estimated_bytes == 8_000_000
 
 
 # ─── _convert_to_png_inplace ──────────────────────────────────────────────────

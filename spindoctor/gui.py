@@ -8467,10 +8467,11 @@ class _SpinDoctorGUI:
 
         def _video_label(c, i: int) -> str:
             dur = f"  {_fmt_duration(c.duration_secs)}" if c.duration_secs else ""
+            sz = f"  ~{c.estimated_bytes / 1_000_000:.0f} MB" if c.estimated_bytes else ""
             if c.format == "m3u8":
-                suffix = f"{dur}  (HLS — full length, needs ffmpeg)"
+                suffix = f"{dur}{sz}  (HLS — full length, needs ffmpeg)"
             else:
-                suffix = f"{dur}  (MP4 — may be highlight clip)"
+                suffix = f"{dur}{sz}  (MP4 — may be highlight clip)"
             return f"{i}. {c.version or c.source_type}{suffix}"
 
         label_map = {
