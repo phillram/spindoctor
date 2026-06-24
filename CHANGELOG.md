@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **HLS video downloads produce short, corrupt files that crash Windows Media Player.** Steam has transitioned many trailers to fMP4/CMAF HLS segments, where audio is already in MPEG-4 ASC format. The previous ffmpeg command applied `-bsf:a aac_adtstoasc` unconditionally, which double-converted fMP4 audio and corrupted the AAC track in the output container, causing WMP to crash after a few seconds of playback. Fixed by re-encoding audio with `-c:a aac` (always produces valid AAC regardless of segment format), adding `-movflags +faststart` (moov atom at the start for WMP compatibility), and `-protocol_whitelist file,http,https,tcp,tls,crypto` (ensures HTTPS segment URLs from Akamai CDN are reachable).
+
 ## [2.7.10] - 2026-06-24
 
 ### Fixed
