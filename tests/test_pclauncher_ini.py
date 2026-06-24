@@ -146,6 +146,51 @@ def test_win_safe_stem_passthrough_for_safe_title():
     assert _win_safe_stem("Mega Man X") == "Mega Man X"
 
 
+def test_win_safe_stem_strips_trailing_dots():
+    assert _win_safe_stem("Game...") == "Game"
+    assert _win_safe_stem("Game.") == "Game"
+    # Interior dots are kept — only trailing ones are removed.
+    assert _win_safe_stem("Mega Man.exe") == "Mega Man.exe"
+
+
+def test_win_safe_stem_strips_surrounding_spaces():
+    assert _win_safe_stem("  Hades  ") == "Hades"
+    assert _win_safe_stem("\tGame\t") == "Game"
+
+
+def test_win_safe_stem_reserved_names_get_underscore():
+    # Canonical reserved names.
+    assert _win_safe_stem("NUL") == "NUL_"
+    assert _win_safe_stem("CON") == "CON_"
+    assert _win_safe_stem("PRN") == "PRN_"
+    assert _win_safe_stem("AUX") == "AUX_"
+    # COM and LPT series.
+    assert _win_safe_stem("COM1") == "COM1_"
+    assert _win_safe_stem("COM9") == "COM9_"
+    assert _win_safe_stem("LPT1") == "LPT1_"
+    assert _win_safe_stem("LPT9") == "LPT9_"
+
+
+def test_win_safe_stem_reserved_names_case_insensitive():
+    # Check is upper()-normalised so lowercase/mixed still matches.
+    assert _win_safe_stem("nul") == "nul_"
+    assert _win_safe_stem("Con") == "Con_"
+    assert _win_safe_stem("com5") == "com5_"
+
+
+def test_win_safe_stem_non_reserved_not_suffixed():
+    # Words that look similar but are not reserved.
+    assert _win_safe_stem("CONSOLE") == "CONSOLE"
+    assert _win_safe_stem("NULL") == "NULL"
+    assert _win_safe_stem("COMX") == "COMX"
+    assert _win_safe_stem("COM10") == "COM10"   # Only COM0-COM9 are reserved.
+
+
+def test_win_safe_stem_trailing_dot_uncovers_reserved():
+    # "CON." → strip dot → "CON" → reserved → "CON_"
+    assert _win_safe_stem("CON.") == "CON_"
+
+
 # ─── generate_pclauncher_inis with title_to_section ──────────────────────────
 
 def test_generate_pclauncher_inis_title_to_section_uses_dbname_in_header(tmp_path):
