@@ -1698,28 +1698,31 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
     """Convert a Steam ``appdetails`` ``data`` block into a :class:`GameMetadata`."""
     candidates: dict[str, list[MediaCandidate]] = {}
 
-    # Videos — prefer direct MP4 (old Steam API format); fall back to HLS
-    # (hls_h264) for newer games where Steam only serves streaming manifests.
+    # Videos — collect both direct MP4 and HLS candidates for every movie entry.
+    # Steam frequently provides both: mp4.max is often a short highlight/autoplay
+    # clip (~10-15 s) used on store browse pages, while hls_h264 is the full-length
+    # trailer.  Offering both lets the user pick whichever they need — the MP4 for
+    # a quick direct download, the HLS for the complete video (requires ffmpeg).
     movies = data.get("movies") or []
     video_cands: list[MediaCandidate] = []
     for movie in movies:
+        name = movie.get("name") or ""
         mp4_url = (movie.get("mp4") or {}).get("max") or (movie.get("mp4") or {}).get("480") or ""
+        hls_url = movie.get("hls_h264") or ""
         if mp4_url:
             video_cands.append(MediaCandidate(
                 url=mp4_url,
                 source_type="trailer",
                 format="mp4",
-                version=movie.get("name") or "",
+                version=name,
             ))
-        else:
-            hls_url = movie.get("hls_h264") or ""
-            if hls_url:
-                video_cands.append(MediaCandidate(
-                    url=hls_url,
-                    source_type="trailer",
-                    format="m3u8",
-                    version=movie.get("name") or "",
-                ))
+        if hls_url:
+            video_cands.append(MediaCandidate(
+                url=hls_url,
+                source_type="trailer",
+                format="m3u8",
+                version=name,
+            ))
     if video_cands:
         candidates["video"] = video_cands
         candidates["trailer"] = video_cands  # same candidates, both slots

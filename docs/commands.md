@@ -211,13 +211,15 @@ Dry-run by default; pass `--apply` to commit.
 
 Media slots populated:
 
-| Steam source | HyperSpin slot | Saved format |
-|---|---|---|
-| `movies[].mp4.max` (direct MP4, older games) | `video` (and `trailer`) | `.mp4` |
-| `movies[].hls_h264` (HLS stream, newer games — requires ffmpeg) | `video` (and `trailer`) | `.mp4` |
-| `screenshots[].path_full` | `snap` | `.png` ¹ |
-| `header_image` | `artwork` | `.png` ¹ |
-| `header_image` | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
+| Steam source | Picker label | HyperSpin slot | Saved format |
+|---|---|---|---|
+| `movies[].mp4.max` | `(MP4 — may be highlight clip)` | `video` (and `trailer`) | `.mp4` |
+| `movies[].hls_h264` | `(HLS — full length, needs ffmpeg)` | `video` (and `trailer`) | `.mp4` |
+| `screenshots[].path_full` | — | `snap` | `.png` ¹ |
+| `header_image` | — | `artwork` | `.png` ¹ |
+| `header_image` | — | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
+
+Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates when both are available. Steam frequently provides both: the MP4 is a short highlight/autoplay clip (~10–15 s used on store browse pages); the HLS is the full-length trailer. If the downloaded video seems too short, try the `(HLS — full length)` candidate instead.
 
 ¹ Steam serves these as JPEG. SpinDoctor saves them as `.png` (HyperSpin's required format) and converts the bytes to real PNG when Pillow is installed (`pip install spindoctor[preview]`). Without Pillow the JPEG content is saved under the `.png` name — Windows GDI+ loads it correctly via magic-byte detection.
 

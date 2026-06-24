@@ -8430,7 +8430,10 @@ class _SpinDoctorGUI:
         self._steam_source_url = meta.source_url or ""
 
         def _video_label(c, i: int) -> str:
-            suffix = " (HLS — needs ffmpeg)" if c.format == "m3u8" else ""
+            if c.format == "m3u8":
+                suffix = " (HLS — full length, needs ffmpeg)"
+            else:
+                suffix = " (MP4 — may be highlight clip)"
             return f"{i}. {c.version or c.source_type}{suffix}"
 
         label_map = {
