@@ -12,6 +12,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Steam video viewer opened the store page instead of the video URL.** Clicking the preview button next to the Video picker opened `store.steampowered.com/app/<id>/` rather than the actual MP4 or HLS candidate URL. Fixed to always open the candidate's direct URL so the user can inspect or play the video directly.
 
+### Added
+
+- **`--hls-quality` flag for `fetch-steam-media`.** Accepts `best` (default, picks the highest available — typically 1080p), `720p`, `480p`, or `360p`. SpinDoctor fetches the HLS master playlist, picks the best variant whose height ≤ the requested value, and passes that variant URL directly to ffmpeg. For arcade cabinets, `--hls-quality 480p` is typically sufficient and produces files ~10× smaller than the default 1080p (e.g. A Boy and His Blob 1:19 trailer: 52 MB at 1080p vs. ~5 MB at 480p).
+
+- **File size and duration printed after every HLS download.** SpinDoctor now prints `(X.X MB, M:SS)` on the line below "downloaded" / "overwrote" so you can immediately see whether the file is a reasonable size before playing it on the cabinet.
+
 ## [2.7.11] - 2026-06-24
 
 ### Fixed
