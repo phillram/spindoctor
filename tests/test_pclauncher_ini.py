@@ -981,9 +981,13 @@ def test_rewrite_pclauncher_application_section_not_found(tmp_path):
     changed = rewrite_pclauncher_application(
         ini, "Game", PureWindowsPath(r"J:\Games\Game\game.exe")
     )
-    # Section not present → no modification
-    assert not changed
-    assert "D:\\old.exe" in ini.read_text(encoding="utf-8")
+    # Section not present → appended to the file
+    assert changed
+    content = ini.read_text(encoding="utf-8")
+    assert "D:\\old.exe" in content           # existing section untouched
+    assert "[Game]" in content
+    assert r"Application=J:\Games\Game\game.exe" in content
+    assert r"WorkingFolder=J:\Games\Game" in content
 
 
 # ── _resolve_pclauncher_exe ───────────────────────────────────────────────────
