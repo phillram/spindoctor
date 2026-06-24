@@ -673,8 +673,9 @@ class MediaCandidate:
     source_type: str = ""     # raw API type tag ("box-2D", "screenmarquee", ...)
     width: str = ""           # ScreenScraper "size" / dims (when present)
     height: str = ""
-    duration_secs: Optional[float] = None   # video duration in seconds (HLS only)
-    estimated_bytes: Optional[int] = None   # estimated file size (HLS: BANDWIDTH×duration/8; MP4: Content-Length)
+    duration_secs: Optional[float] = None      # video duration in seconds (HLS only)
+    estimated_bytes: Optional[int] = None      # best-quality estimate (HLS) or Content-Length (MP4)
+    size_by_height: dict[int, int] = field(default_factory=dict)  # HLS only: {height: estimated_bytes}
 
     def label(self) -> str:
         bits = [b for b in (self.region.upper() or "—",
@@ -693,39 +694,51 @@ def _fmt_duration(secs: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def _hls_duration(m3u8_url: str, session) -> tuple[Optional[float], Optional[int]]:
-    """Return (duration_secs, estimated_bytes) by parsing an HLS playlist.
+def _hls_duration(m3u8_url: str, session) -> tuple[Optional[float], dict[int, int]]:
+    """Return (duration_secs, size_by_height) by parsing an HLS master playlist.
 
-    Fetches the master M3U8, follows the first variant-stream URL, and sums
-    the ``#EXTINF`` segment durations.  ``estimated_bytes`` is derived from the
-    ``BANDWIDTH`` attribute of the preceding ``EXT-X-STREAM-INF`` tag multiplied
-    by the total duration (bits/s × s / 8 = bytes).  Returns ``(None, None)`` on
-    any error so the caller can degrade gracefully.
+    Fetches the master M3U8 and collects every ``EXT-X-STREAM-INF`` entry's
+    ``BANDWIDTH`` and ``RESOLUTION`` height.  Follows the first variant-stream
+    URL and sums ``#EXTINF`` durations.  ``size_by_height`` maps each resolution
+    height to an estimated byte count (``BANDWIDTH`` bits/s × duration / 8).
+    Returns ``(None, {})`` on any error so the caller degrades gracefully.
     """
     try:
         resp = session.get(m3u8_url, timeout=10)
         resp.raise_for_status()
         master = resp.text
 
-        # Resolve first variant stream; capture its declared peak BANDWIDTH.
         base = m3u8_url.split("?")[0].rsplit("/", 1)[0]
-        variant_url: Optional[str] = None
-        bandwidth: Optional[int] = None
-        prev_line = ""
-        for line in master.splitlines():
-            stripped = line.strip()
-            if stripped and not stripped.startswith("#"):
-                variant_url = stripped if stripped.startswith("http") else f"{base}/{stripped}"
-                m = re.search(r"BANDWIDTH=(\d+)", prev_line)
-                if m:
-                    bandwidth = int(m.group(1))
-                break
-            prev_line = stripped
+        first_variant_url: Optional[str] = None
+        variant_info: list[tuple[int, int]] = []  # (height, bandwidth) for each EXT-X-STREAM-INF
 
-        if not variant_url:
-            return None, None
+        lines = master.splitlines()
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith("#EXT-X-STREAM-INF:"):
+                bw_m = re.search(r"BANDWIDTH=(\d+)", stripped)
+                res_m = re.search(r"RESOLUTION=\d+x(\d+)", stripped)
+                i += 1
+                # Skip any blank/comment lines to find the variant URL.
+                while i < len(lines) and (not lines[i].strip() or lines[i].strip().startswith("#")):
+                    i += 1
+                if i < len(lines):
+                    url = lines[i].strip()
+                    resolved = url if url.startswith("http") else f"{base}/{url}"
+                    if first_variant_url is None:
+                        first_variant_url = resolved
+                    if bw_m and res_m:
+                        variant_info.append((int(res_m.group(1)), int(bw_m.group(1))))
+            elif stripped and not stripped.startswith("#") and first_variant_url is None:
+                # Fallback: plain variant URL with no preceding EXT-X-STREAM-INF.
+                first_variant_url = stripped if stripped.startswith("http") else f"{base}/{stripped}"
+            i += 1
 
-        resp = session.get(variant_url, timeout=10)
+        if not first_variant_url:
+            return None, {}
+
+        resp = session.get(first_variant_url, timeout=10)
         resp.raise_for_status()
 
         total = 0.0
@@ -738,10 +751,13 @@ def _hls_duration(m3u8_url: str, session) -> tuple[Optional[float], Optional[int
                     pass
 
         duration = total if total > 0 else None
-        estimated: Optional[int] = int(bandwidth * duration / 8) if (bandwidth and duration) else None
-        return duration, estimated
+        size_by_height: dict[int, int] = {}
+        if duration:
+            for height, bw in variant_info:
+                size_by_height[height] = int(bw * duration / 8)
+        return duration, size_by_height
     except Exception:
-        return None, None
+        return None, {}
 
 
 # Maps logical media slot → ordered list of ScreenScraper "type" values to try.
@@ -1731,7 +1747,9 @@ class SteamClient:
             # Fetch size/duration metadata for video candidates.
             for cand in meta.media_candidates.get("video", []):
                 if cand.format == "m3u8":
-                    cand.duration_secs, cand.estimated_bytes = _hls_duration(cand.url, self._session)
+                    cand.duration_secs, cand.size_by_height = _hls_duration(cand.url, self._session)
+                    if cand.size_by_height:
+                        cand.estimated_bytes = cand.size_by_height[max(cand.size_by_height)]
                 else:
                     # MP4 highlight: HEAD request for Content-Length (no body download needed).
                     try:
