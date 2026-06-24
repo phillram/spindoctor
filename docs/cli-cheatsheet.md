@@ -299,9 +299,11 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
     --steam-id 1145360 --types video --apply                     :: just the video
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
     --steam-id 1145360 --types wheel --wheel-index 1 --apply     :: header image as wheel art
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --types video --hls-quality 480p --apply  :: 480p (~10× smaller)
 ```
 
-No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,artwork`; pass fewer types to skip what you don't need. Wheel/artwork/snap are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow). HLS video candidates show their duration as `M:SS` in the dry-run listing and interactive picker — if the MP4 seems too short, try the HLS candidate instead. After an HLS download, SpinDoctor runs ffprobe to verify duration and prints `⚠ HLS output looks truncated` if the file is under 30 s or 5 MB — re-run with `--overwrite --apply` or try a different `--video-index`.
+No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,artwork`; pass fewer types to skip what you don't need. Wheel/artwork/snap are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow). HLS video candidates show their duration as `M:SS` in the dry-run listing and interactive picker. After download, SpinDoctor prints the file size and duration (`52.3 MB, 1:19`) and warns if the output is under 30 s or 5 MB. Use `--hls-quality 480p` (or `720p`) to select a smaller quality variant — 480p is typically sufficient for arcade cabinet screens and produces files ~10× smaller than the default 1080p.
 Reference: [Command reference → fetch-steam-media](commands.md#fetch-steam-media).
 
 ### `media-add` / `media-scan` — manual + drift detection
