@@ -7761,6 +7761,7 @@ class _SpinDoctorGUI:
             self._steam_preview_btns[mt] = preview_btn
 
         self._steam_overwrite_var = self.tk.BooleanVar(value=False)
+        self._steam_quality_var = self.tk.StringVar(value="Best (1080p)")
         steam_apply_row = self.ttk.Frame(gameovr_frame)
         steam_apply_row.pack(anchor="w", padx=6, pady=(2, 8))
         self.ttk.Button(
@@ -7771,6 +7772,12 @@ class _SpinDoctorGUI:
             steam_apply_row, text="Overwrite existing",
             variable=self._steam_overwrite_var,
         ).pack(side="left", padx=10)
+        self.ttk.Label(steam_apply_row, text="Quality:").pack(side="left", padx=(10, 2))
+        self.ttk.Combobox(
+            steam_apply_row, textvariable=self._steam_quality_var,
+            values=["Best (1080p)", "720p", "480p", "360p"],
+            state="readonly", width=12,
+        ).pack(side="left")
 
         # ── Step 1 — Full metadata refresh ───────────────────────────────────
         full_frame = self.ttk.LabelFrame(
@@ -8582,6 +8589,9 @@ class _SpinDoctorGUI:
         args += ["--types", ",".join(types_to_fetch)]
         if self._steam_overwrite_var.get():
             args.append("--overwrite")
+        quality = self._steam_quality_var.get()
+        if quality != "Best (1080p)":
+            args += ["--hls-quality", quality.lower()]
         args.append("--apply")
         self._run_cli("spindoctor", args)
 
