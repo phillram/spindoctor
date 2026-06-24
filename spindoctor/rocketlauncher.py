@@ -1358,8 +1358,9 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
     """Update ``Application=`` and ``WorkingFolder=`` in *section* of *ini_path*.
 
     Only those two keys are modified; all other keys (``FadeTitle=``, etc.)
-    survive verbatim.  Line endings are preserved.  Returns ``True`` when the
-    file was actually changed, ``False`` when it was unchanged or missing.
+    survive verbatim.  Line endings are preserved.  If *section* is not found
+    in the file, the block is appended.  Returns ``True`` when the file was
+    actually changed, ``False`` when it was unchanged or missing.
     """
     if not ini_path.exists():
         return False
@@ -1367,6 +1368,7 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
         keepends=True
     )
     in_section = False
+    section_found = False
     new_lines: list = []
     changed = False
     for line in lines:
@@ -1374,6 +1376,8 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
         eol = line[len(stripped):]
         if stripped.startswith("[") and stripped.endswith("]"):
             in_section = stripped[1:-1].lower() == section.lower()
+            if in_section:
+                section_found = True
         if in_section and re.match(r"(?i)^Application\s*=", stripped):
             want = f"Application={new_exe}"
             if stripped != want:
@@ -1387,6 +1391,12 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
                 changed = True
                 continue
         new_lines.append(line)
+    if not section_found:
+        # Section is absent — append it after a blank separator line.
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines.append("\n")
+        new_lines.append("\n" + _pclauncher_ini_text(section, new_exe))
+        changed = True
     if changed:
         ini_path.write_text("".join(new_lines), encoding="utf-8")
     return changed
