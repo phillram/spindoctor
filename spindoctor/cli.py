@@ -5668,7 +5668,8 @@ def fetch_steam_media(system, game, steam_id_raw, types,
             console.print(f"    [cyan]would download:[/cyan]  {chosen.url}")
             continue
 
-        if dest.exists() and not overwrite:
+        replacing = dest.exists()
+        if replacing and not overwrite:
             console.print(f"    [dim]existing — skip (--overwrite to replace)[/dim]")
             continue
 
@@ -5676,7 +5677,10 @@ def fetch_steam_media(system, game, steam_id_raw, types,
             dest, chosen.url, label=game, media_type=mt, overwrite=overwrite,
         )
         if result.success:
-            console.print(f"    [green]downloaded:[/green]  {dest}")
+            if replacing:
+                console.print(f"    [yellow]overwrote:[/yellow]  {dest}")
+            else:
+                console.print(f"    [green]downloaded:[/green]  {dest}")
         else:
             console.print(f"    [red]failed:[/red]  {result.error}")
 
