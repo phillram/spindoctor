@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.10] - 2026-06-24
+
 ### Fixed
 
 - **Steam scan dropdowns frozen on "scanning…" with no error shown.** `_fmt_duration` was imported as a local variable inside `_scan_steam` but referenced inside `_on_steam_scan_done`, a separate method with no access to that local. Tkinter silently swallows exceptions thrown inside `root.after()` callbacks, so the `NameError` was invisible and the UI froze. Import moved to `_on_steam_scan_done` where it is used. To prevent recurrence, `_on_steam_scan_done` is now wrapped in a broad `try/except` that resets all dropdowns to "— scan error —", updates the status bar, shows an error dialog, and logs the full traceback — so any future exception in this callback is immediately visible rather than causing a silent freeze.
@@ -1807,7 +1809,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.9...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.10...HEAD
+[2.7.10]: https://github.com/phillram/spindoctor/compare/v2.7.9...v2.7.10
 [2.7.9]: https://github.com/phillram/spindoctor/compare/v2.7.8...v2.7.9
 [2.7.8]: https://github.com/phillram/spindoctor/compare/v2.7.7...v2.7.8
 [2.7.7]: https://github.com/phillram/spindoctor/compare/v2.7.6...v2.7.7
