@@ -264,8 +264,8 @@ def test_php_url_does_not_rename_destination(tmp_path, monkeypatch):
 
 
 def test_real_media_extension_in_url_is_honoured(tmp_path, monkeypatch):
-    """When a URL genuinely ends in a known media extension (e.g. a CDN that
-    serves real file paths), the destination is renamed to match."""
+    """URL extension is honoured for non-PNG slots (e.g. video), but image slots
+    whose destination is .png are never overridden — HyperSpin requires .png."""
     dl = _make_downloader(tmp_path)
     payload = b"\xff\xd8\xff fake-jpeg-body"
 
@@ -274,11 +274,11 @@ def test_real_media_extension_in_url_is_honoured(tmp_path, monkeypatch):
 
     monkeypatch.setattr(dl._session, "get", fake_get)
 
-    # URL says .jpg; media_path returns .png for wheel — should rename to .jpg
+    # URL says .jpg; media_path returns .png for wheel — must stay .png
     r = dl.download("1942", "MAME", "wheel",
                     "https://cdn.example.com/media/1942.jpg")
     assert r.success and r.path is not None
-    assert r.path.suffix == ".jpg", f"expected .jpg, got {r.path.suffix}"
+    assert r.path.suffix == ".png", f"expected .png (image slots always PNG), got {r.path.suffix}"
 
 
 # ─── atomic-write fault injection ────────────────────────────────────────────
