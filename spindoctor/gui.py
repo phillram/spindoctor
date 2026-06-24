@@ -7762,6 +7762,7 @@ class _SpinDoctorGUI:
 
         self._steam_overwrite_var = self.tk.BooleanVar(value=False)
         self._steam_quality_var = self.tk.StringVar(value="Best (1080p)")
+        self._steam_quality_var.trace_add("write", self._on_steam_quality_changed)
         steam_apply_row = self.ttk.Frame(gameovr_frame)
         steam_apply_row.pack(anchor="w", padx=6, pady=(2, 8))
         self.ttk.Button(
@@ -8420,6 +8421,55 @@ class _SpinDoctorGUI:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    # Maps Quality dropdown label → resolution height (None = best available).
+    _STEAM_QUALITY_MAP: dict[str, Optional[int]] = {
+        "Best (1080p)": None, "720p": 720, "480p": 480, "360p": 360,
+    }
+
+    def _steam_video_label(self, c, i: int) -> str:
+        """Build a video candidate dropdown label reflecting the current Quality selection."""
+        from .scraper import _fmt_duration
+        dur = f"  {_fmt_duration(c.duration_secs)}" if c.duration_secs else ""
+        height = self._STEAM_QUALITY_MAP.get(self._steam_quality_var.get())
+        if c.size_by_height:
+            if height is None:
+                sz_bytes = c.size_by_height.get(max(c.size_by_height))
+            else:
+                # Exact match or closest smaller variant (e.g. 720p requested but only 480p exists).
+                candidates = sorted(k for k in c.size_by_height if k <= height)
+                sz_bytes = c.size_by_height[candidates[-1]] if candidates else None
+        else:
+            sz_bytes = c.estimated_bytes
+        sz = f"  ~{sz_bytes / 1_000_000:.0f} MB" if sz_bytes else ""
+        if c.format == "m3u8":
+            suffix = f"{dur}{sz}  (HLS — full length, needs ffmpeg)"
+        else:
+            suffix = f"{dur}{sz}  (MP4 — may be highlight clip)"
+        return f"{i}. {c.version or c.source_type}{suffix}"
+
+    def _on_steam_quality_changed(self, *_) -> None:
+        """Refresh video candidate labels when the Quality dropdown changes."""
+        cands = self._steam_cands.get("video", [])
+        if not cands:
+            return
+        _SKIP = "— do not download —"
+        var = self._steam_pick_vars.get("video")
+        cb = self._steam_pick_combos.get("video")
+        if not var or not cb:
+            return
+        # Preserve the selected index so the same clip stays chosen after label rebuild.
+        old_label = var.get()
+        try:
+            old_idx = int(old_label.split(".")[0].strip()) if old_label not in (_SKIP, "") else 0
+        except (ValueError, IndexError):
+            old_idx = 0
+        new_labels = [self._steam_video_label(c, i) for i, c in enumerate(cands, 1)]
+        cb.configure(values=[_SKIP] + new_labels)
+        if old_label == _SKIP:
+            var.set(_SKIP)
+        elif 1 <= old_idx <= len(new_labels):
+            var.set(new_labels[old_idx - 1])
+
     def _on_steam_scan_done(self, app_id: str, meta) -> None:
         """Called on the main thread when the Steam scan worker finishes.
 
@@ -8465,17 +8515,8 @@ class _SpinDoctorGUI:
         self._steam_cands = {}
         self._steam_source_url = meta.source_url or ""
 
-        def _video_label(c, i: int) -> str:
-            dur = f"  {_fmt_duration(c.duration_secs)}" if c.duration_secs else ""
-            sz = f"  ~{c.estimated_bytes / 1_000_000:.0f} MB" if c.estimated_bytes else ""
-            if c.format == "m3u8":
-                suffix = f"{dur}{sz}  (HLS — full length, needs ffmpeg)"
-            else:
-                suffix = f"{dur}{sz}  (MP4 — may be highlight clip)"
-            return f"{i}. {c.version or c.source_type}{suffix}"
-
         label_map = {
-            "video":   _video_label,
+            "video":   self._steam_video_label,
             "snap":    lambda c, i: f"{i}. {c.version or c.source_type}",
             "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
             "wheel":   lambda c, i: f"{i}. {c.source_type} ({c.format})",
