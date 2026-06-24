@@ -64,6 +64,24 @@ SYSTEM_MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
 MAIN_MENU_DIR = "Main Menu"
 
 
+_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+
+
+def _win_safe_stem(name: str) -> str:
+    """Strip Windows-invalid characters from *name* to produce a safe filename stem.
+
+    Mirrors the function of the same name in rocketlauncher.py — kept local
+    here to avoid a circular import.  HyperSpin itself applies the same
+    stripping when resolving media filenames from game database names, so
+    ``media_path()`` must use this function to produce paths that HyperSpin
+    can actually find.
+    """
+    out = name
+    for ch in _WIN_FILENAME_FORBIDDEN:
+        out = out.replace(ch, "")
+    return out.strip().rstrip(".")
+
+
 def _convert_to_png_inplace(path: Path) -> None:
     """Convert *path* to real PNG bytes in-place when Pillow is available.
 
@@ -251,7 +269,12 @@ class MediaDownloader:
     def media_path(self, system_name: str, game_name: str, media_type: str) -> Path:
         parts = MEDIA_DIR_MAP.get(media_type, (media_type.capitalize(),))
         ext = MEDIA_EXTENSIONS.get(media_type, "")
-        return self._media_base() / system_name / Path(*parts) / f"{game_name}{ext}"
+        # Strip Windows-invalid characters (especially ':') from the filename
+        # stem — HyperSpin applies the same rule when resolving media lookups,
+        # and Windows NTFS treats colons as Alternate Data Stream separators
+        # (e.g. "Submachine: Legacy.png" → 0-byte "Submachine" + ADS).
+        safe = _win_safe_stem(game_name)
+        return self._media_base() / system_name / Path(*parts) / f"{safe}{ext}"
 
     def system_media_path(self, system_name: str, media_type: str) -> Path:
         """Return the HyperSpin Main Menu media path for *system_name*.
@@ -264,7 +287,7 @@ class MediaDownloader:
         ext = MEDIA_EXTENSIONS.get(media_type, "")
         return (
             self._media_base() / MAIN_MENU_DIR
-            / Path(*parts) / f"{system_name}{ext}"
+            / Path(*parts) / f"{_win_safe_stem(system_name)}{ext}"
         )
 
     # ── download from URL ──────────────────────────────────────────────────────
