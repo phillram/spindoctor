@@ -21,3 +21,30 @@ def test_system_media_path_layout(tmp_path):
 
     theme = dl.system_media_path("Sony Playstation 3", "theme")
     assert theme == tmp_path / "Media" / "Main Menu" / "Themes" / "Sony Playstation 3.zip"
+
+
+def test_media_path_sanitizes_colon_in_game_name(tmp_path):
+    """Colon in a game name must be stripped — NTFS treats it as an ADS separator."""
+    cfg = Config()
+    cfg.hyperspin_dir = str(tmp_path)
+    dl = MediaDownloader(cfg)
+    path = dl.media_path("PC Games", "Submachine: Legacy", "wheel")
+    assert path.name == "Submachine Legacy.png"
+
+
+def test_media_path_sanitizes_reserved_name(tmp_path):
+    """A game named exactly 'NUL' must become 'NUL_.png' to avoid the null device."""
+    cfg = Config()
+    cfg.hyperspin_dir = str(tmp_path)
+    dl = MediaDownloader(cfg)
+    path = dl.media_path("PC Games", "NUL", "wheel")
+    assert path.name == "NUL_.png"
+
+
+def test_system_media_path_sanitizes_slash_in_system_name(tmp_path):
+    """Slash in a system name must be stripped before building the path."""
+    cfg = Config()
+    cfg.hyperspin_dir = str(tmp_path)
+    dl = MediaDownloader(cfg)
+    path = dl.system_media_path("PC/DOS Games", "wheel")
+    assert path.name == "PCDOS Games.png"

@@ -2413,6 +2413,172 @@ def test_three_token_read_only_commands_match():
     )
 
 
+# ─── _apply_steam_selection ──────────────────────────────────────────────────
+
+
+def _setup_steam_apply(monkeypatch, app, video_label="1. Hades Trailer  (MP4 — may be highlight clip)"):
+    """Configure app state for _apply_steam_selection tests."""
+    from spindoctor.scraper import MediaCandidate
+    app._meta_system_var.set("PC Games")
+    app._meta_game_var.set("Hades")
+    app._steam_url_var.set("1145360")
+    cand = MediaCandidate(url="https://cdn/trailer.mp4", source_type="trailer", format="mp4")
+    app._steam_cands["video"] = [cand]
+    app._steam_pick_vars["video"].set(video_label)
+    app._steam_pick_combos["video"].configure(values=[video_label], state="readonly")
+
+
+def test_apply_steam_selection_builds_correct_args(monkeypatch):
+    """Valid selection with one video candidate must produce --video-index 1 and --types video."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _setup_steam_apply(monkeypatch, app)
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        args = ran[0]
+        assert "--video-index" in args
+        assert args[args.index("--video-index") + 1] == "1"
+        assert "--types" in args
+        assert "video" in args[args.index("--types") + 1].split(",")
+        assert "--apply" in args
+    finally:
+        app.root.destroy()
+
+
+def test_apply_steam_selection_skips_sentinel_type(monkeypatch):
+    """A picker set to '— do not download —' must be excluded from --types."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("PC Games")
+        app._meta_game_var.set("Hades")
+        app._steam_url_var.set("1145360")
+
+        # video: real candidate; snap: sentinel
+        video_cand = MediaCandidate(url="https://cdn/t.mp4", source_type="trailer", format="mp4")
+        snap_cand = MediaCandidate(url="https://cdn/s.jpg", source_type="screenshot", format="jpg")
+        app._steam_cands["video"] = [video_cand]
+        app._steam_cands["snap"] = [snap_cand]
+        app._steam_pick_vars["video"].set("1. trailer  (MP4 — may be highlight clip)")
+        app._steam_pick_vars["snap"].set("— do not download —")
+
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        args = ran[0]
+        types = args[args.index("--types") + 1].split(",")
+        assert "video" in types
+        assert "snap" not in types, "snap was set to sentinel and must be skipped"
+        assert "--snap-index" not in args
+    finally:
+        app.root.destroy()
+
+
+def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
+    """When all pickers are set to the sentinel, showwarning fires and no CLI call is made."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._meta_system_var.set("PC Games")
+        app._meta_game_var.set("Hades")
+        app._steam_url_var.set("1145360")
+        for mt in ("video", "snap", "artwork", "wheel"):
+            cand = MediaCandidate(url="https://cdn/x", source_type="x", format="jpg")
+            app._steam_cands[mt] = [cand]
+            app._steam_pick_vars[mt].set("— do not download —")
+
+        ran: list = []
+        warnings: list = []
+        monkeypatch.setattr(app, "_run_cli", lambda *_a, **_k: ran.append(True))
+        monkeypatch.setattr(app.messagebox, "showwarning",
+                            lambda title, msg: warnings.append(title))
+
+        app._apply_steam_selection()
+
+        assert not ran, "no CLI call expected when all types are set to sentinel"
+        assert warnings, "expected a showwarning dialog"
+    finally:
+        app.root.destroy()
+
+
+# ─── _preview_steam_candidate ────────────────────────────────────────────────
+
+
+def test_preview_steam_candidate_sentinel_label_no_url_opened(monkeypatch):
+    """'— do not download —' sentinel must prevent _open_url from being called."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
+        app._steam_cands["snap"] = [cand]
+        app._steam_pick_vars["snap"].set("— do not download —")
+
+        opened: list = []
+        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+
+        app._preview_steam_candidate("snap")
+        assert not opened
+    finally:
+        app.root.destroy()
+
+
+def test_preview_steam_candidate_empty_cands_no_url_opened(monkeypatch):
+    """No candidates → _open_url must not be called."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._steam_cands["snap"] = []
+        opened: list = []
+        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+        app._preview_steam_candidate("snap")
+        assert not opened
+    finally:
+        app.root.destroy()
+
+
+def test_preview_steam_candidate_image_opens_direct_url(monkeypatch):
+    """For image types (snap/artwork/wheel), the candidate's direct URL must be opened."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cand = MediaCandidate(url="https://cdn/shot.jpg", source_type="screenshot", format="jpg")
+        app._steam_cands["snap"] = [cand]
+        app._steam_pick_vars["snap"].set("1. screenshot")
+
+        opened: list = []
+        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+
+        app._preview_steam_candidate("snap")
+        assert opened == ["https://cdn/shot.jpg"]
+    finally:
+        app.root.destroy()
+
+
+def test_preview_steam_candidate_video_opens_store_page(monkeypatch):
+    """For video, the Steam store page URL must be opened (not the raw MP4/m3u8)."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cand = MediaCandidate(url="https://cdn/trailer.mp4", source_type="trailer", format="mp4")
+        app._steam_cands["video"] = [cand]
+        app._steam_pick_vars["video"].set("1. Hades Trailer  (MP4 — may be highlight clip)")
+        app._steam_source_url = "https://store.steampowered.com/app/1145360/"
+
+        opened: list = []
+        monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
+
+        app._preview_steam_candidate("video")
+        assert opened == ["https://store.steampowered.com/app/1145360/"]
+    finally:
+        app.root.destroy()
+
+
 def test_gated_commands_not_classified_read_only():
     """media-add and pc-rename now support --apply (dry-run by default),
     so they must NOT be in _READ_ONLY_COMMANDS — the DRY RUN banner is
@@ -2421,3 +2587,149 @@ def test_gated_commands_not_classified_read_only():
         ("media-add", "--system", "nes", "--game", "mario")
     )
     assert not gui._is_read_only_invocation(("pc-rename", "PC Games"))
+
+
+# ─── _on_steam_scan_done callback ────────────────────────────────────────────
+#
+# These tests cover the main-thread callback that populates the Steam picker
+# dropdowns after a scan.  This is the code path that froze on "scanning…"
+# twice (PR #349 — _fmt_duration scope bug; originally the same silent-freeze
+# failure mode each time) because Tk swallows exceptions inside root.after()
+# callbacks.  The guard wrapper in _on_steam_scan_done now makes failures
+# visible; these tests pin both the happy path and the guard behaviour.
+
+
+def _make_steam_meta(name="Hades", video_cands=None, snap_cands=None,
+                     artwork_cands=None, wheel_cands=None):
+    """Build a minimal GameMetadata fixture for Steam scan tests."""
+    from spindoctor.scraper import GameMetadata, MediaCandidate
+    meta = GameMetadata(name=name, source_url=f"https://store.steampowered.com/app/1145360/")
+    meta.media_candidates = {
+        "video":   video_cands   or [],
+        "snap":    snap_cands    or [],
+        "artwork": artwork_cands or [],
+        "wheel":   wheel_cands   or [],
+    }
+    return meta
+
+
+def test_on_steam_scan_done_populates_dropdowns(monkeypatch):
+    """Happy path: candidates land in the right comboboxes."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        meta = _make_steam_meta(
+            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
+                                       source_type="screenshot", format="jpg")],
+            artwork_cands=[MediaCandidate(url="https://cdn/header.jpg",
+                                          source_type="header_image", format="jpg")],
+        )
+        app._on_steam_scan_done("1145360", meta)
+
+        assert app._steam_pick_vars["snap"].get().startswith("1.")
+        assert app._steam_pick_vars["artwork"].get().startswith("1.")
+        # No video candidates → disabled sentinel
+        assert app._steam_pick_vars["video"].get() == "— none —"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_hls_duration_label(monkeypatch):
+    """HLS candidate with duration_secs must show M:SS in the dropdown label.
+
+    Regression guard for the _fmt_duration NameError that froze the UI in
+    PR #349: _fmt_duration was imported inside _scan_steam (the button handler)
+    but used inside _on_steam_scan_done (a separate method with no access to
+    that local).  The NameError was silently swallowed by Tk, leaving every
+    dropdown frozen on 'scanning…' with no visible error.
+    """
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        hls_cand = MediaCandidate(
+            url="https://cdn/trailer.m3u8",
+            source_type="trailer", format="m3u8",
+            version="Hades Trailer",
+            duration_secs=74.0,  # 1:14
+        )
+        meta = _make_steam_meta(video_cands=[hls_cand])
+        app._on_steam_scan_done("1145360", meta)
+
+        label = app._steam_pick_vars["video"].get()
+        assert "1:14" in label, f"duration not in label: {label!r}"
+        assert "HLS" in label, f"format hint not in label: {label!r}"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_skip_sentinel_is_first(monkeypatch):
+    """'— do not download —' must be the first value in every populated combo."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        meta = _make_steam_meta(
+            snap_cands=[MediaCandidate(url="https://cdn/shot.jpg",
+                                       source_type="screenshot", format="jpg")],
+        )
+        app._on_steam_scan_done("1145360", meta)
+
+        values = app._steam_pick_combos["snap"].cget("values")
+        assert values[0] == "— do not download —"
+        # Default selection is still the first *real* candidate, not the sentinel
+        assert app._steam_pick_vars["snap"].get() != "— do not download —"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
+    """meta=None (App ID not found) must set all video/snap/artwork to '— not found —'."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        shown: list[str] = []
+        monkeypatch.setattr(app.messagebox, "showwarning",
+                            lambda title, msg: shown.append(title))
+        app._on_steam_scan_done("9999999", None)
+
+        for mt in ("video", "snap", "artwork"):
+            assert app._steam_pick_vars[mt].get() == "— not found —", mt
+        assert shown, "expected a showwarning dialog"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
+    """Any exception inside _on_steam_scan_done_inner must reset dropdowns to
+    '— scan error —' and show an error dialog instead of silently freezing.
+
+    This is the structural guard added after the second 'frozen on scanning…'
+    incident.  Tk swallows exceptions inside root.after() callbacks, making
+    any bug in the callback produce identical 'stuck UI' symptoms with no
+    visible error.  The wrapper in _on_steam_scan_done catches everything and
+    surfaces it to the user.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Force _on_steam_scan_done_inner to blow up.
+        monkeypatch.setattr(app, "_on_steam_scan_done_inner",
+                            lambda *_: (_ for _ in ()).throw(RuntimeError("injected failure")))
+
+        errors: list[str] = []
+        monkeypatch.setattr(app.messagebox, "showerror",
+                            lambda title, msg: errors.append(msg))
+
+        # Pre-set dropdowns to "scanning…" as _scan_steam would.
+        for mt in app._steam_pick_vars:
+            app._steam_pick_vars[mt].set("scanning…")
+
+        app._on_steam_scan_done("1145360", object())  # meta value irrelevant
+
+        # All dropdowns must be reset — none left on "scanning…".
+        for mt, var in app._steam_pick_vars.items():
+            assert var.get() == "— scan error —", (
+                f"{mt} dropdown still shows {var.get()!r} after error — "
+                "silent freeze not prevented"
+            )
+        # User must see an error dialog.
+        assert errors, "expected showerror to be called after callback exception"
+    finally:
+        app.root.destroy()

@@ -400,3 +400,78 @@ def test_os_replace_failure_when_dest_absent_leaves_no_dest(tmp_path, monkeypatc
     )
     assert not dest.exists()
     assert r.success is False
+
+
+# ─── extension normalisation + PNG conversion ─────────────────────────────────
+
+
+def test_uppercase_dest_extension_normalised_to_lowercase(tmp_path, monkeypatch):
+    """A destination path with an uppercase extension (e.g. .PNG) must be
+    normalised to lowercase before the file is written.  HyperSpin filename
+    lookups are case-sensitive on Linux and the canonical extension is .png.
+    """
+    from pathlib import Path as _Path
+    dl = _make_downloader(tmp_path)
+    payload = b"\x89PNG fake-content"
+    dest = _Path(str(tmp_path / "Media" / "MAME" / "Images" / "Wheel" / "1942.PNG"))
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        return _FakeResp(payload)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+    # Monkeypatch _convert_to_png_inplace to a no-op so we're only testing
+    # the extension normalisation, not the conversion.
+    monkeypatch.setattr("spindoctor.media._convert_to_png_inplace", lambda _p: None)
+
+    r = dl.download_to_path(dest, "https://cdn/img.png", label="1942", media_type="wheel")
+    assert r.success and r.path is not None
+    assert r.path.suffix == ".png", f"expected .png, got {r.path.suffix}"
+    assert r.path.name == "1942.png"
+
+
+def test_convert_to_png_inplace_called_after_png_download(tmp_path, monkeypatch):
+    """_convert_to_png_inplace must be called after a successful download to a
+    .png destination.  This is what converts Steam's JPEG bytes to real PNG.
+    """
+    dl = _make_downloader(tmp_path)
+    payload = b"\xff\xd8\xff fake-jpeg"
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        return _FakeResp(payload)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    called_with: list = []
+    monkeypatch.setattr(
+        "spindoctor.media._convert_to_png_inplace",
+        lambda p: called_with.append(p),
+    )
+
+    r = dl.download("1942", "MAME", "wheel", "https://cdn/1942.jpg")
+    assert r.success and r.path is not None
+    assert r.path.suffix == ".png"
+    assert len(called_with) == 1, "expected _convert_to_png_inplace to be called once"
+    assert called_with[0] == r.path
+
+
+def test_convert_to_png_inplace_not_called_for_non_png_dest(tmp_path, monkeypatch):
+    """_convert_to_png_inplace must NOT be called for non-.png destinations
+    (e.g. video slots that land as .mp4).
+    """
+    dl = _make_downloader(tmp_path)
+    payload = b"fake-video-bytes"
+
+    def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
+        return _FakeResp(payload)
+
+    monkeypatch.setattr(dl._session, "get", fake_get)
+
+    called: list = []
+    monkeypatch.setattr(
+        "spindoctor.media._convert_to_png_inplace",
+        lambda p: called.append(p),
+    )
+
+    r = dl.download("1942", "MAME", "video", "https://cdn/1942.mp4")
+    assert r.success
+    assert not called, "_convert_to_png_inplace must not be called for .mp4 dest"
