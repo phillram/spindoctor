@@ -66,6 +66,14 @@ MAIN_MENU_DIR = "Main Menu"
 
 _WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
 
+# Windows device names that cannot be used as filenames regardless of extension.
+# "NUL.png" writes to the null device; "CON.mp4" maps to the console, etc.
+_WIN_RESERVED_NAMES: frozenset = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+})
+
 
 def _win_safe_stem(name: str) -> str:
     """Strip Windows-invalid characters from *name* to produce a safe filename stem.
@@ -79,7 +87,10 @@ def _win_safe_stem(name: str) -> str:
     out = name
     for ch in _WIN_FILENAME_FORBIDDEN:
         out = out.replace(ch, "")
-    return out.strip().rstrip(".")
+    out = out.strip().rstrip(".")
+    if out.upper() in _WIN_RESERVED_NAMES:
+        out = out + "_"
+    return out
 
 
 def _convert_to_png_inplace(path: Path) -> None:

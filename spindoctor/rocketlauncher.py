@@ -1206,6 +1206,14 @@ def generate_system_db_stubs(
 # Characters Windows forbids in filenames.
 _WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
 
+# Windows device names that cannot be used as filenames regardless of extension.
+# "NUL.png" writes to the null device; "CON.mp4" maps to the console, etc.
+_WIN_RESERVED_NAMES: frozenset = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+})
+
 # Lowercase stem-prefixes that identify non-game executables (uninstallers,
 # setup helpers, redistributables, etc.).  Used by list_exe_candidates and
 # _pick_best_exe to separate "recommended" launches from noise.
@@ -1229,7 +1237,12 @@ def _win_safe_stem(title: str) -> str:
     out = title
     for ch in _WIN_FILENAME_FORBIDDEN:
         out = out.replace(ch, "")
-    return out.strip().rstrip(".")
+    out = out.strip().rstrip(".")
+    # Guard against Windows reserved device names — these map to system devices
+    # rather than files (e.g. "NUL.png" writes to the null device, not a file).
+    if out.upper() in _WIN_RESERVED_NAMES:
+        out = out + "_"
+    return out
 
 
 def _pclauncher_ini_text(game_name: str, executable) -> str:

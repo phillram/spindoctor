@@ -673,12 +673,63 @@ class MediaCandidate:
     source_type: str = ""     # raw API type tag ("box-2D", "screenmarquee", ...)
     width: str = ""           # ScreenScraper "size" / dims (when present)
     height: str = ""
+    duration_secs: Optional[float] = None  # video duration in seconds (HLS only)
 
     def label(self) -> str:
         bits = [b for b in (self.region.upper() or "—",
                             self.source_type or "",
                             self.format or "") if b]
         return " · ".join(bits)
+
+
+def _fmt_duration(secs: float) -> str:
+    """Format *secs* as M:SS or H:MM:SS."""
+    s = int(round(secs))
+    m, s = divmod(s, 60)
+    h, m = divmod(m, 60)
+    if h:
+        return f"{h}:{m:02d}:{s:02d}"
+    return f"{m}:{s:02d}"
+
+
+def _hls_duration(m3u8_url: str, session) -> Optional[float]:
+    """Return total duration in seconds by parsing an HLS playlist.
+
+    Fetches the master M3U8, follows the first variant-stream URL, and sums
+    the ``#EXTINF`` segment durations.  Returns ``None`` on any error so the
+    caller can degrade gracefully (no duration shown in picker).
+    """
+    try:
+        resp = session.get(m3u8_url, timeout=10)
+        resp.raise_for_status()
+        master = resp.text
+
+        # Resolve first variant stream (first non-comment, non-blank line).
+        base = m3u8_url.split("?")[0].rsplit("/", 1)[0]
+        variant_url: Optional[str] = None
+        for line in master.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                variant_url = line if line.startswith("http") else f"{base}/{line}"
+                break
+
+        if not variant_url:
+            return None
+
+        resp = session.get(variant_url, timeout=10)
+        resp.raise_for_status()
+
+        total = 0.0
+        for line in resp.text.splitlines():
+            line = line.strip()
+            if line.startswith("#EXTINF:"):
+                try:
+                    total += float(line[8:].split(",")[0])
+                except (ValueError, IndexError):
+                    pass
+        return total if total > 0 else None
+    except Exception:
+        return None
 
 
 # Maps logical media slot → ordered list of ScreenScraper "type" values to try.
@@ -1663,7 +1714,14 @@ class SteamClient:
         if not data:
             return None
 
-        return _parse_steam(app_id, data)
+        meta = _parse_steam(app_id, data)
+        if meta is not None:
+            # Fetch HLS playlist duration for video candidates.  The M3U8 is a
+            # small text file so two extra requests per movie entry are cheap.
+            for cand in meta.media_candidates.get("video", []):
+                if cand.format == "m3u8":
+                    cand.duration_secs = _hls_duration(cand.url, self._session)
+        return meta
 
     def search(self, game_name: str, max_results: int = 8) -> list[dict]:
         """Search the Steam store for matching titles.
