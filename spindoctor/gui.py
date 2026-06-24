@@ -9258,7 +9258,9 @@ class _SpinDoctorGUI:
                 "Input required", "Select a system and game first.",
             )
             return
-        args = ["pc-fix-exe", system, game, "--apply"]
+        args = ["pc-fix-exe", system, game]
+        if self._global_apply_var.get():
+            args.append("--apply")
         if exe:
             args.extend(["--exe", exe])
         self._run_cli("spindoctor", args)
