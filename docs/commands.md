@@ -198,14 +198,14 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
     --steam-id 1145360 --types video,snap --apply
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
-    --steam-id 1145360 --video-index 2 --snap-index 4 --apply
+    --steam-id 1145360 --video-index 2 --snap-index 4 --wheel-index 1 --apply
 ```
 
 `--steam-id` accepts either a bare numeric App ID or a full `store.steampowered.com/app/<ID>/` URL — the ID is extracted automatically. If `--steam-id` is omitted, the `steam_app_id` stored in the game override is used (see `config game-override set --steam-app-id`).
 
-`--types` controls which slots to populate: `video`, `snap`, `artwork`. Default is all three.
+`--types` controls which slots to populate: `video`, `snap`, `artwork`, `wheel`. Default is `video,snap,artwork` — `wheel` must be requested explicitly.
 
-Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. With `--video-index N`, `--snap-index N`, and/or `--artwork-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
+Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. With `--video-index N`, `--snap-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
 
 Dry-run by default; pass `--apply` to commit.
 
@@ -216,10 +216,11 @@ Media slots populated:
 | `movies[].mp4.max` | `video` (and `trailer`) |
 | `screenshots[].path_full` | `snap` |
 | `header_image` | `artwork` |
+| `header_image` | `wheel` (opt-in via `--types wheel` or `--wheel-index`) |
 
-No `wheel` slot — Steam has no transparent-logo equivalent. For wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
+Steam has no transparent-logo equivalent, so the header capsule image is reused as the wheel image. For transparent-background wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
 
-> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the dropdowns, click **Apply selected**. See [GUI walkthrough](gui.md).
+> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns, click **Apply selected**. See [GUI walkthrough](gui.md).
 
 ### `media-add`
 
