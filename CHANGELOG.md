@@ -22,6 +22,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Steam media dropdowns now include a "— do not download —" option.** After a Steam scan, each picker (Video / Screenshot / Artwork / Wheel) gains a sentinel entry as its first value. The default selection remains the first real candidate (no behaviour change for users who want everything), but changing any picker to "— do not download —" tells Apply to skip that type entirely. Useful for games where you only want the video, or already have a better wheel image from ScreenScraper.
 
+### Removed
+
+- **URL extension override removed from `_download_to`.** The downloader previously inspected the URL path for a recognised media extension (`.jpg`, `.mp4`, `.avi`, etc.) and renamed the destination file to match when they differed. This was wrong for every media slot: HyperSpin locates files by exact name (e.g. `GameName.png` in `Images/Wheel/`), so a file saved as `GameName.jpg` is silently ignored. The override never served a useful purpose — all scrapers return URLs whose extension already matches the slot, and HLS streams (`.m3u8`) are handled separately by `_download_hls`. The destination path returned by `media_path()` is now always used unchanged, and a regression test (`test_url_extension_does_not_override_destination`) guards against re-introduction.
+
 ## [2.7.8] - 2026-06-24
 
 ### Fixed
