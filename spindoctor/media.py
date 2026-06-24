@@ -369,19 +369,35 @@ class MediaDownloader:
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
         try:
-            result = subprocess.run(
-                [ffmpeg, "-y", "-i", url, "-c", "copy", "-bsf:a", "aac_adtstoasc",
-                 str(tmp)],
-                capture_output=True, timeout=300,
-            )
+            # -protocol_whitelist: ensures ffmpeg can follow https:// segment URLs
+            #   that some CDNs (Akamai) embed in the variant playlist.
+            # -c:v copy / -c:a aac: copy video, re-encode audio. Avoids applying
+            #   aac_adtstoasc to fMP4/CMAF HLS streams (audio already in MP4-ASC
+            #   format; double-converting corrupts the track and crashes WMP).
+            # -movflags +faststart: writes moov atom at the start so WMP can play
+            #   the file without seeking to the end first.
+            cmd = [
+                ffmpeg, "-y",
+                "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+                "-i", url,
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-movflags", "+faststart",
+                str(tmp),
+            ]
+            result = subprocess.run(cmd, capture_output=True, timeout=300)
+            stderr_text = (result.stderr or b"").decode("utf-8", errors="replace")
             if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:
+                _log.debug("ffmpeg HLS OK for %s:\n%s", label, stderr_text[-2000:])
                 os.replace(tmp, dest)
                 return DownloadResult(game_name=label, media_type=media_type,
                                       success=True, path=dest)
-            stderr = (result.stderr or b"")[-400:].decode("utf-8", errors="replace")
+            _log.error("ffmpeg HLS failed (rc=%d) for %s:\n%s",
+                       result.returncode, label, stderr_text)
             return DownloadResult(
                 game_name=label, media_type=media_type, success=False,
-                error=f"ffmpeg HLS download failed (rc={result.returncode}): {stderr}",
+                error=f"ffmpeg HLS download failed (rc={result.returncode}): "
+                      f"{stderr_text[-400:]}",
             )
         except subprocess.TimeoutExpired:
             return DownloadResult(game_name=label, media_type=media_type,

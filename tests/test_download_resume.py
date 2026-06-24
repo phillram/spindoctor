@@ -475,3 +475,202 @@ def test_convert_to_png_inplace_not_called_for_non_png_dest(tmp_path, monkeypatc
     r = dl.download("1942", "MAME", "video", "https://cdn/1942.mp4")
     assert r.success
     assert not called, "_convert_to_png_inplace must not be called for .mp4 dest"
+
+
+# ─── _download_hls ────────────────────────────────────────────────────────────
+
+
+class _FakeCompletedProcess:
+    """Minimal subprocess.CompletedProcess stand-in."""
+    def __init__(self, returncode: int, stderr: bytes = b""):
+        self.returncode = returncode
+        self.stderr = stderr
+
+
+def _hls_downloader(tmp_path: Path) -> "MediaDownloader":
+    cfg = Config()
+    cfg.hyperspin_dir = str(tmp_path)
+    cfg.ffmpeg_path = ""
+    return MediaDownloader(cfg)
+
+
+def test_download_hls_happy_path(tmp_path, monkeypatch):
+    """ffmpeg exits 0 and writes a non-empty tmp file → renamed to dest, success."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, timeout):
+        captured["cmd"] = cmd
+        # Simulate ffmpeg writing the tmp file.
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 1024)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert r.success
+    assert r.path is not None and r.path.exists()
+    assert r.path.suffix == ".mp4"
+
+
+def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
+    """The ffmpeg invocation must include the three flags added to fix fMP4/CMAF
+    compatibility and WMP playback: -protocol_whitelist, -c:a aac, -movflags +faststart.
+    The old -bsf:a aac_adtstoasc flag must NOT be present (it corrupts fMP4 audio).
+    """
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, timeout):
+        captured["cmd"] = cmd
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 512)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    cmd = captured["cmd"]
+    assert "-protocol_whitelist" in cmd
+    assert "file,http,https,tcp,tls,crypto" in cmd
+    assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "aac"
+    assert "-movflags" in cmd and "+faststart" in cmd
+    assert "-bsf:a" not in cmd, (
+        "-bsf:a aac_adtstoasc must not be present: it corrupts fMP4/CMAF HLS audio"
+    )
+
+
+def test_download_hls_no_ffmpeg_returns_error(tmp_path, monkeypatch):
+    """When ffmpeg is not installed, return a clear error (not an exception)."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: (None, None))
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert not r.success
+    assert "ffmpeg" in r.error.lower()
+    assert not dest.exists()
+
+
+def test_download_hls_ffmpeg_nonzero_rc_returns_error(tmp_path, monkeypatch):
+    """Non-zero ffmpeg exit code → failure; temp file is cleaned up."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"partial")
+        return _FakeCompletedProcess(1, stderr=b"error: stream not found")
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert not r.success
+    assert "rc=1" in r.error
+    assert not dest.exists()
+    # Temp file must be cleaned up by the finally block.
+    tmp_path_glob = list(dest.parent.glob("*._hlstmp.mp4"))
+    assert not tmp_path_glob, f"tmp file not cleaned up: {tmp_path_glob}"
+
+
+def test_download_hls_empty_tmp_file_returns_error(tmp_path, monkeypatch):
+    """ffmpeg exits 0 but writes an empty file → failure (not silent success)."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"")
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert not r.success
+    assert not dest.exists()
+
+
+def test_download_hls_timeout_returns_error(tmp_path, monkeypatch):
+    """subprocess.TimeoutExpired → failure with a timeout message."""
+    import subprocess
+
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        raise subprocess.TimeoutExpired(cmd, timeout)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert not r.success
+    assert "timed out" in r.error.lower()
+    assert not dest.exists()
+
+
+def test_download_hls_skips_when_dest_exists_no_overwrite(tmp_path, monkeypatch):
+    """If the destination already exists and overwrite=False, skip without calling ffmpeg."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest.write_bytes(b"existing-video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(*_a, **_kw):
+        pytest.fail("ffmpeg must not be called when dest exists and overwrite=False")
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades",
+                            media_type="video", overwrite=False)
+
+    assert r.success and r.skipped
+    assert dest.read_bytes() == b"existing-video"
+
+
+def test_download_hls_tmp_cleaned_up_on_success(tmp_path, monkeypatch):
+    """After a successful download the ._hlstmp.mp4 temp file must not linger."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 256)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert r.success
+    tmp_files = list(dest.parent.glob("*._hlstmp.mp4"))
+    assert not tmp_files, f"tmp file lingered after success: {tmp_files}"

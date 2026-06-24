@@ -226,6 +226,21 @@ ffmpeg -version
 
 The video on the cabinet was downloaded before ffmpeg was installed. Re-download it with `--overwrite --apply` as shown above to replace the silent file.
 
+### Steam HLS video is only a few seconds long or crashes Windows Media Player
+
+**Cause:** Steam delivers most trailers as HLS streaming playlists (`.m3u8`). Newer titles use fMP4/CMAF segment format, where the AAC audio is already packaged in MPEG-4 ASC format. Versions of SpinDoctor before v2.7.11 passed `-bsf:a aac_adtstoasc` to ffmpeg, which double-converts audio that is already in ASC format — corrupting the audio track in the output MP4 and causing Windows Media Player to crash.
+
+**Fix:** Upgrade to SpinDoctor v2.7.11 or later, then re-download the affected video with `--overwrite --apply`:
+
+```
+spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID> \
+    --video-index 1 --types video --overwrite --apply
+```
+
+The ffmpeg command is now `-c:a aac -movflags +faststart`, which re-encodes audio correctly for both TS-based and fMP4-based HLS streams and writes the MP4 moov atom at the start of the file so Windows Media Player can seek without needing to read the whole file first.
+
+> **If the download still produces a short clip after upgrading:** Steam sometimes offers both an HLS full trailer (usually longer) and an MP4 highlight clip (often 30–90 s). Run the command without `--video-index` and check the dry-run listing — the Duration column shows which candidate is the full trailer. Use the index of the longer HLS candidate.
+
 ### `audit` reports a slot as present but the file has no content (0 bytes)
 
 A 0-byte stub can land in the Media tree when a download server returns an empty HTTP 200 body, or when a previous download was interrupted before any bytes were written. Prior to v2.7.3 the presence check used `.exists()`, so a zero-byte file would pass and the slot would never be re-downloaded.
