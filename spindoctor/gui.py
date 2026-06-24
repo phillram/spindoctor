@@ -8414,7 +8414,35 @@ class _SpinDoctorGUI:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_steam_scan_done(self, app_id: str, meta) -> None:
-        """Called on the main thread when the Steam scan worker finishes."""
+        """Called on the main thread when the Steam scan worker finishes.
+
+        Wrapped in a broad try/except so any unexpected exception resets the
+        dropdowns and shows a visible error instead of silently freezing on
+        'scanning…'.  Tkinter swallows exceptions thrown inside root.after()
+        callbacks, making silent failures indistinguishable from a hung thread.
+        """
+        try:
+            self._on_steam_scan_done_inner(app_id, meta)
+        except Exception as exc:  # noqa: BLE001
+            import traceback
+            detail = traceback.format_exc()
+            for mt in self._steam_pick_vars:
+                self._steam_pick_vars[mt].set("— scan error —")
+                self._steam_pick_combos[mt].configure(state="disabled")
+                self._steam_preview_btns[mt].configure(state="disabled")
+            self._set_status(f"Steam scan error (App {app_id}): {exc}")
+            self.messagebox.showerror(
+                "Steam scan error",
+                f"An unexpected error occurred while processing Steam results "
+                f"for App {app_id}:\n\n{exc}\n\nSee the Logs tab for the full "
+                f"traceback.",
+            )
+            import logging as _logging
+            _logging.getLogger(__name__).error(
+                "_on_steam_scan_done crashed for App %s:\n%s", app_id, detail,
+            )
+
+    def _on_steam_scan_done_inner(self, app_id: str, meta) -> None:
         from .scraper import _fmt_duration
         if meta is None:
             self._set_status(f"Steam App {app_id} not found.")
