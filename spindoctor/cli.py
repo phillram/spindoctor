@@ -5647,9 +5647,14 @@ def fetch_steam_media(system, game, steam_id_raw, types,
             # Interactive picker — prints the numbered table + prompts.
             if not apply_changes:
                 # Dry-run: just list what's available, no prompt.
+                from .scraper import _fmt_duration as _fd
                 for i, c in enumerate(cands, 1):
                     label = c.version or c.source_type or c.url
-                    console.print(f"    {i}. {label}  [dim]{c.url}[/dim]")
+                    dur = f"  {_fd(c.duration_secs)}" if c.duration_secs else ""
+                    fmt_hint = ""
+                    if mt == "video":
+                        fmt_hint = "  (HLS — full length, needs ffmpeg)" if c.format == "m3u8" else "  (MP4 — may be highlight clip)"
+                    console.print(f"    {i}. {label}{dur}{fmt_hint}  [dim]{c.url}[/dim]")
                 console.print(
                     f"    [dim]{len(cands)} candidate(s) — "
                     "re-run with --apply to pick and download.[/dim]"

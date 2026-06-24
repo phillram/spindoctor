@@ -64,6 +64,61 @@ SYSTEM_MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
 MAIN_MENU_DIR = "Main Menu"
 
 
+_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+
+# Windows device names that cannot be used as filenames regardless of extension.
+# "NUL.png" writes to the null device; "CON.mp4" maps to the console, etc.
+_WIN_RESERVED_NAMES: frozenset = frozenset({
+    "CON", "PRN", "AUX", "NUL",
+    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+})
+
+
+def _win_safe_stem(name: str) -> str:
+    """Strip Windows-invalid characters from *name* to produce a safe filename stem.
+
+    Mirrors the function of the same name in rocketlauncher.py — kept local
+    here to avoid a circular import.  HyperSpin itself applies the same
+    stripping when resolving media filenames from game database names, so
+    ``media_path()`` must use this function to produce paths that HyperSpin
+    can actually find.
+    """
+    out = name
+    for ch in _WIN_FILENAME_FORBIDDEN:
+        out = out.replace(ch, "")
+    out = out.strip().rstrip(".")
+    if out.upper() in _WIN_RESERVED_NAMES:
+        out = out + "_"
+    return out
+
+
+def _convert_to_png_inplace(path: Path) -> None:
+    """Convert *path* to real PNG bytes in-place when Pillow is available.
+
+    HyperSpin's Wheel / Artwork / Snap folders only load .png files.  Steam
+    serves these as JPEG, so after downloading we need either actual PNG bytes
+    or at minimum the .png extension (Windows GDI+ reads format from magic
+    bytes, so JPEG content under a .png name works on the cabinet too, but
+    real PNG is cleaner and avoids any renderer edge-cases).
+
+    No-op when: Pillow is not installed, the file is already PNG, or any
+    error occurs during conversion (the JPEG-named-.png fallback still loads).
+    """
+    try:
+        from PIL import Image  # type: ignore[import]
+    except ImportError:
+        return
+    try:
+        with Image.open(path) as img:
+            if img.format == "PNG":
+                return
+            out = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+            out.save(path, format="PNG")
+    except Exception as exc:
+        _log.warning("PNG conversion failed for %s: %s", path, exc)
+
+
 def _open_in_default_app(path: Path) -> None:
     """Open *path* with the OS default app (best-effort; never raises)."""
     try:
@@ -225,7 +280,12 @@ class MediaDownloader:
     def media_path(self, system_name: str, game_name: str, media_type: str) -> Path:
         parts = MEDIA_DIR_MAP.get(media_type, (media_type.capitalize(),))
         ext = MEDIA_EXTENSIONS.get(media_type, "")
-        return self._media_base() / system_name / Path(*parts) / f"{game_name}{ext}"
+        # Strip Windows-invalid characters (especially ':') from the filename
+        # stem — HyperSpin applies the same rule when resolving media lookups,
+        # and Windows NTFS treats colons as Alternate Data Stream separators
+        # (e.g. "Submachine: Legacy.png" → 0-byte "Submachine" + ADS).
+        safe = _win_safe_stem(game_name)
+        return self._media_base() / system_name / Path(*parts) / f"{safe}{ext}"
 
     def system_media_path(self, system_name: str, media_type: str) -> Path:
         """Return the HyperSpin Main Menu media path for *system_name*.
@@ -238,7 +298,7 @@ class MediaDownloader:
         ext = MEDIA_EXTENSIONS.get(media_type, "")
         return (
             self._media_base() / MAIN_MENU_DIR
-            / Path(*parts) / f"{system_name}{ext}"
+            / Path(*parts) / f"{_win_safe_stem(system_name)}{ext}"
         )
 
     # ── download from URL ──────────────────────────────────────────────────────
@@ -352,10 +412,21 @@ class MediaDownloader:
             return self._download_hls(dest, url, label=label,
                                       media_type=media_type, overwrite=overwrite)
 
+        # Normalize destination extension to lowercase — HyperSpin filename
+        # lookups are case-sensitive and expect lower-case extensions.
+        if dest.suffix and dest.suffix != dest.suffix.lower():
+            dest = dest.with_suffix(dest.suffix.lower())
+
         _MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
                        ".mp4", ".webm", ".avi", ".mkv", ".flv", ".mpg", ".mpeg",
                        ".zip", ".mp3", ".ogg", ".wav"}
-        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix:
+        # Never replace a .png destination with .jpg — HyperSpin's Wheel,
+        # Artwork, Snap, and Title folders only load files by exact .png name.
+        # Steam's header capsule and screenshots are JPEG; we keep the .png
+        # dest and run _convert_to_png_inplace after download so the file is
+        # either real PNG (Pillow present) or JPEG bytes with a .png name
+        # (works on Windows via GDI+ magic-byte detection).
+        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix and dest.suffix != ".png":
             dest = dest.with_suffix(url_ext)
 
         if dest.exists() and not overwrite:
@@ -439,6 +510,9 @@ class MediaDownloader:
                     pass
 
                 os.replace(part, dest)
+
+                if dest.suffix == ".png":
+                    _convert_to_png_inplace(dest)
 
                 audio_warn = _maybe_fix_video_audio(
                     dest, media_type,

@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows reserved device names (NUL, CON, PRN, COM1, LPT1, etc.) used as game or system names would silently write to system devices instead of files.** On Windows, filenames like `NUL.png` or `CON.mp4` map to built-in device handles regardless of path or extension — writes succeed with no error but no file is created. `_win_safe_stem()` in both `media.py` and `rocketlauncher.py` now appends `_` when the sanitised stem matches a reserved name (e.g. the hypothetical game "NUL" → `NUL_.png`).
+
+- **Steam video downloads only got the short highlight clip (~11 s), not the full trailer.** Steam's `appdetails` API provides two separate video assets per movie entry: `mp4.max` (a short autoplay highlight used on Steam store browse pages, typically 10–15 s) and `hls_h264` (the full-length HLS trailer). `_parse_steam` was using `if mp4 … else hls` — when `mp4.max` was present it was added as the only candidate and the `else` branch (HLS) never ran, so the full trailer was never offered. Both are now added independently. The GUI and interactive CLI picker label them `(MP4 — may be highlight clip)` and `(HLS — full length, needs ffmpeg)` so the distinction is visible before clicking Apply.
+
+- **Game names with colons (e.g. "Submachine: Legacy") produced 0-byte files and WinError 87 on Windows.** Windows NTFS treats a colon in a filename as an Alternate Data Stream separator — `Submachine: Legacy.png` is parsed as the file `Submachine` (main stream, 0 bytes) with an ADS named ` Legacy.png`. `os.replace()` then fails with WinError 87 because you cannot atomically rename an ADS to a regular file. `MediaDownloader.media_path()` and `system_media_path()` now apply `_win_safe_stem()` (the same stripping function already used for PCLauncher INI filenames) to the game/system name before building the path, matching what HyperSpin itself does when resolving media filenames.
+
+- **Steam media images saved as `.jpg` instead of `.png`, breaking HyperSpin load.** `MediaDownloader._download_to` was replacing the canonical `.png` destination suffix with the URL's extension. Steam's header capsule (wheel) and screenshots are served as JPEG, so the files landed in `Images/Wheel/` as `GameName.jpg` — a filename HyperSpin never finds, since it only looks for `.png`. The extension-override is now skipped when the destination is already `.png`. After download, `_convert_to_png_inplace` converts the JPEG bytes to real PNG when Pillow (`pip install spindoctor[preview]`) is available; without Pillow the file keeps JPEG content but the `.png` name, which Windows GDI+ still loads via magic-byte detection.
+
+### Added
+
+- **HLS video duration shown in picker and CLI listing.** After a Steam scan, `SteamClient` fetches the HLS M3U8 playlist for each video candidate and sums `#EXTINF` segment durations. The result is stored in `MediaCandidate.duration_secs` and shown as `M:SS` in the GUI dropdown (e.g. `Master Key Trailer  1:14  (HLS — full length, needs ffmpeg)`), in the `fetch-steam-media` dry-run listing, and in the interactive media picker table. MP4 candidates carry no duration (can't cheaply probe an MP4 without downloading it); the `(MP4 — may be highlight clip)` label is the signal to try HLS if the clip is too short.
+
+- **Steam media dropdowns now include a "— do not download —" option.** After a Steam scan, each picker (Video / Screenshot / Artwork / Wheel) gains a sentinel entry as its first value. The default selection remains the first real candidate (no behaviour change for users who want everything), but changing any picker to "— do not download —" tells Apply to skip that type entirely. Useful for games where you only want the video, or already have a better wheel image from ScreenScraper.
+
 ## [2.7.8] - 2026-06-24
 
 ### Fixed
