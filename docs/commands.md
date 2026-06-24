@@ -203,7 +203,7 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
 
 `--steam-id` accepts either a bare numeric App ID or a full `store.steampowered.com/app/<ID>/` URL — the ID is extracted automatically. If `--steam-id` is omitted, the `steam_app_id` stored in the game override is used (see `config game-override set --steam-app-id`).
 
-`--types` controls which slots to populate: `video`, `snap`, `artwork`, `wheel`. Default is `video,snap,artwork` — `wheel` must be requested explicitly.
+`--types` controls which slots to populate: `video`, `snap`, `artwork`, `wheel`. Default is `video,snap,artwork` — `wheel` must be requested explicitly. Pass fewer types to skip anything you don't need (e.g. `--types video` to grab only the trailer).
 
 Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. With `--video-index N`, `--snap-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
 
@@ -211,17 +211,19 @@ Dry-run by default; pass `--apply` to commit.
 
 Media slots populated:
 
-| Steam source | HyperSpin slot |
-|---|---|
-| `movies[].mp4.max` (direct MP4, older games) | `video` (and `trailer`) |
-| `movies[].hls_h264` (HLS stream, newer games — requires ffmpeg) | `video` (and `trailer`) |
-| `screenshots[].path_full` | `snap` |
-| `header_image` | `artwork` |
-| `header_image` | `wheel` (opt-in via `--types wheel` or `--wheel-index`) |
+| Steam source | HyperSpin slot | Saved format |
+|---|---|---|
+| `movies[].mp4.max` (direct MP4, older games) | `video` (and `trailer`) | `.mp4` |
+| `movies[].hls_h264` (HLS stream, newer games — requires ffmpeg) | `video` (and `trailer`) | `.mp4` |
+| `screenshots[].path_full` | `snap` | `.png` ¹ |
+| `header_image` | `artwork` | `.png` ¹ |
+| `header_image` | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
+
+¹ Steam serves these as JPEG. SpinDoctor saves them as `.png` (HyperSpin's required format) and converts the bytes to real PNG when Pillow is installed (`pip install spindoctor[preview]`). Without Pillow the JPEG content is saved under the `.png` name — Windows GDI+ loads it correctly via magic-byte detection.
 
 Steam has no transparent-logo equivalent, so the header capsule image is reused as the wheel image. For transparent-background wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
 
-> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns, click **Apply selected**. See [GUI walkthrough](gui.md).
+> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns (set any to "— do not download —" to skip that type), click **Apply selected**. See [GUI walkthrough](gui.md).
 
 ### `media-add`
 

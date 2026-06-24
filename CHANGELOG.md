@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Steam media images saved as `.jpg` instead of `.png`, breaking HyperSpin load.** `MediaDownloader._download_to` was replacing the canonical `.png` destination suffix with the URL's extension. Steam's header capsule (wheel) and screenshots are served as JPEG, so the files landed in `Images/Wheel/` as `GameName.jpg` — a filename HyperSpin never finds, since it only looks for `.png`. The extension-override is now skipped when the destination is already `.png`. After download, `_convert_to_png_inplace` converts the JPEG bytes to real PNG when Pillow (`pip install spindoctor[preview]`) is available; without Pillow the file keeps JPEG content but the `.png` name, which Windows GDI+ still loads via magic-byte detection.
+
+### Added
+
+- **Steam media dropdowns now include a "— do not download —" option.** After a Steam scan, each picker (Video / Screenshot / Artwork / Wheel) gains a sentinel entry as its first value. The default selection remains the first real candidate (no behaviour change for users who want everything), but changing any picker to "— do not download —" tells Apply to skip that type entirely. Useful for games where you only want the video, or already have a better wheel image from ScreenScraper.
+
 ## [2.7.8] - 2026-06-24
 
 ### Fixed
