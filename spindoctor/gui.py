@@ -8439,6 +8439,7 @@ class _SpinDoctorGUI:
             "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
             "wheel":   lambda c, i: f"{i}. {c.source_type} ({c.format})",
         }
+        _SKIP = "— do not download —"
         any_found = False
         for mt in ("video", "snap", "artwork", "wheel"):
             cands = meta.media_candidates.get(mt, [])
@@ -8446,9 +8447,11 @@ class _SpinDoctorGUI:
             cb = self._steam_pick_combos[mt]
             var = self._steam_pick_vars[mt]
             if cands:
-                labels = [label_map[mt](c, i) for i, c in enumerate(cands, 1)]
-                cb.configure(values=labels, state="readonly")
-                var.set(labels[0])
+                real_labels = [label_map[mt](c, i) for i, c in enumerate(cands, 1)]
+                # Prepend skip sentinel; default to first real candidate so
+                # existing workflows are unchanged — user can set to skip.
+                cb.configure(values=[_SKIP] + real_labels, state="readonly")
+                var.set(real_labels[0])
                 self._steam_preview_btns[mt].configure(state="normal")
                 any_found = True
             else:
@@ -8484,6 +8487,8 @@ class _SpinDoctorGUI:
         if not cands:
             return
         label = self._steam_pick_vars[mt].get()
+        if label.startswith("—"):
+            return
         try:
             idx = int(label.split(".")[0].strip()) - 1
             cand = cands[idx]
@@ -8523,12 +8528,15 @@ class _SpinDoctorGUI:
             "--game", game_,
             "--steam-id", app_id,
         ]
+        _SKIP = "— do not download —"
         types_to_fetch = []
         for mt in ("video", "snap", "artwork", "wheel"):
             cands = self._steam_cands.get(mt, [])
             if not cands:
                 continue
             label = self._steam_pick_vars[mt].get()
+            if label == _SKIP:
+                continue
             # Label format: "1. <description>" — extract 1-based index.
             try:
                 idx = int(label.split(".")[0].strip())

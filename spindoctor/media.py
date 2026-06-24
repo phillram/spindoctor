@@ -64,6 +64,32 @@ SYSTEM_MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
 MAIN_MENU_DIR = "Main Menu"
 
 
+def _convert_to_png_inplace(path: Path) -> None:
+    """Convert *path* to real PNG bytes in-place when Pillow is available.
+
+    HyperSpin's Wheel / Artwork / Snap folders only load .png files.  Steam
+    serves these as JPEG, so after downloading we need either actual PNG bytes
+    or at minimum the .png extension (Windows GDI+ reads format from magic
+    bytes, so JPEG content under a .png name works on the cabinet too, but
+    real PNG is cleaner and avoids any renderer edge-cases).
+
+    No-op when: Pillow is not installed, the file is already PNG, or any
+    error occurs during conversion (the JPEG-named-.png fallback still loads).
+    """
+    try:
+        from PIL import Image  # type: ignore[import]
+    except ImportError:
+        return
+    try:
+        with Image.open(path) as img:
+            if img.format == "PNG":
+                return
+            out = img.convert("RGBA") if img.mode in ("RGBA", "LA", "P") else img.convert("RGB")
+            out.save(path, format="PNG")
+    except Exception as exc:
+        _log.warning("PNG conversion failed for %s: %s", path, exc)
+
+
 def _open_in_default_app(path: Path) -> None:
     """Open *path* with the OS default app (best-effort; never raises)."""
     try:
@@ -352,10 +378,21 @@ class MediaDownloader:
             return self._download_hls(dest, url, label=label,
                                       media_type=media_type, overwrite=overwrite)
 
+        # Normalize destination extension to lowercase — HyperSpin filename
+        # lookups are case-sensitive and expect lower-case extensions.
+        if dest.suffix and dest.suffix != dest.suffix.lower():
+            dest = dest.with_suffix(dest.suffix.lower())
+
         _MEDIA_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".webp",
                        ".mp4", ".webm", ".avi", ".mkv", ".flv", ".mpg", ".mpeg",
                        ".zip", ".mp3", ".ogg", ".wav"}
-        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix:
+        # Never replace a .png destination with .jpg — HyperSpin's Wheel,
+        # Artwork, Snap, and Title folders only load files by exact .png name.
+        # Steam's header capsule and screenshots are JPEG; we keep the .png
+        # dest and run _convert_to_png_inplace after download so the file is
+        # either real PNG (Pillow present) or JPEG bytes with a .png name
+        # (works on Windows via GDI+ magic-byte detection).
+        if url_ext and url_ext in _MEDIA_EXTS and url_ext != dest.suffix and dest.suffix != ".png":
             dest = dest.with_suffix(url_ext)
 
         if dest.exists() and not overwrite:
@@ -439,6 +476,9 @@ class MediaDownloader:
                     pass
 
                 os.replace(part, dest)
+
+                if dest.suffix == ".png":
+                    _convert_to_png_inplace(dest)
 
                 audio_warn = _maybe_fix_video_audio(
                     dest, media_type,
