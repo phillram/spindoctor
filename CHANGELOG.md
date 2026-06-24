@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.7] - 2026-06-23
+
+### Fixed
+
+- **Steam scan stall.** `_scan_steam._worker` called `self.tk.after(0, ...)` to schedule its main-thread callback. `self.tk` is the Tkinter *module*, which has no `after()` method — only Tk widget instances do. This raised `AttributeError` inside the thread, which was silently swallowed (only `MetadataError` was caught), leaving the status bar permanently stuck on "Scanning…" with no error shown even with verbose logging. Fixed by changing both calls to `self.root.after(...)` and adding a broad `except Exception` handler so any future unexpected thread errors surface as an error dialog.
+
+- **Steam media panel not cleared on game/system change.** The `_meta_game_var` trace cleared the ScreenScraper/TGDB/Steam ID fields when a new game was selected but left the Steam URL box and all three candidate pickers showing stale results from the previous game. A new `_clear_steam_media_panel()` helper resets the URL field, empties `_steam_cands`, and resets all pickers to "— scan first —" / disabled; it is now wired into the existing trace.
+
+- **`fetch-steam-media` output distinguishes overwrites from fresh downloads.** When `--overwrite` replaces an existing file the output now prints `overwrote: <path>` (yellow) instead of `downloaded: <path>` (green), making it clear a file was replaced rather than freshly added. Skips when `--overwrite` is absent are unchanged.
+
+### Added
+
+- **Wheel image slot for `fetch-steam-media`.** Steam's header capsule image is now also placed in the `wheel` media slot. `--wheel-index N` (1-based) selects a specific candidate non-interactively; without it the interactive picker includes a **Wheel** row. The GUI's Steam media panel gains a second picker row below the existing Video / Screenshot / Artwork row. The `--types` default remains `video,snap,artwork` so existing scripts that omit `--types` are unaffected.
+
 ## [2.7.6] - 2026-06-24
 
 ### Fixed
@@ -1751,7 +1765,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.6...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.7...HEAD
+[2.7.7]: https://github.com/phillram/spindoctor/compare/v2.7.6...v2.7.7
 [2.7.6]: https://github.com/phillram/spindoctor/compare/v2.7.5...v2.7.6
 [2.7.5]: https://github.com/phillram/spindoctor/compare/v2.7.4...v2.7.5
 [2.7.4]: https://github.com/phillram/spindoctor/compare/v2.7.3...v2.7.4
