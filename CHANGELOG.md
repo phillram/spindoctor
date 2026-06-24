@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **HLS video still truncated to ~2–3 seconds after v2.7.11.** The v2.7.11 fix replaced `-bsf:a aac_adtstoasc` with `-c:a aac` (re-encode), but re-encoding audio introduces timestamp discontinuities between the copied video track and the re-encoded audio track. For CMAF/fMP4 segments (the format confirmed live against App 281200's Akamai CDN) these offsets accumulate and ffmpeg aborts the mux after the first 2–3 seconds while still exiting 0 — SpinDoctor reported success and the truncation was silent. Fixed by switching to `-c copy` (stream-copy, no re-encode): original timestamps are preserved, the MP4 muxer handles ADTS→ASC conversion natively, and the double-conversion issue that motivated v2.7.11 cannot recur because no explicit bitstream filter is applied. Verified end-to-end: the exact URL from the user's failing run downloads a correct 52 MB / 1:19.9 MP4 with `-c copy`. SpinDoctor now runs ffprobe after every HLS download to check the actual duration and file size; if the output is under 30 s or 5 MB a yellow `⚠ HLS output looks truncated` warning is printed so truncation is visible even if ffmpeg exits 0.
+
+- **Steam video viewer opened the store page instead of the video URL.** Clicking the preview button next to the Video picker opened `store.steampowered.com/app/<id>/` rather than the actual MP4 or HLS candidate URL. Fixed to always open the candidate's direct URL so the user can inspect or play the video directly.
+
+### Added
+
+- **`--hls-quality` flag for `fetch-steam-media`.** Accepts `best` (default, picks the highest available — typically 1080p), `720p`, `480p`, or `360p`. SpinDoctor fetches the HLS master playlist, picks the best variant whose height ≤ the requested value, and passes that variant URL directly to ffmpeg. For arcade cabinets, `--hls-quality 480p` is typically sufficient and produces files ~10× smaller than the default 1080p (e.g. A Boy and His Blob 1:19 trailer: 52 MB at 1080p vs. ~5 MB at 480p).
+
+- **File size and duration printed after every HLS download.** SpinDoctor now prints `(X.X MB, M:SS)` on the line below "downloaded" / "overwrote" so you can immediately see whether the file is a reasonable size before playing it on the cabinet.
+
 ## [2.7.11] - 2026-06-24
 
 ### Fixed

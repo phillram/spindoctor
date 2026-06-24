@@ -673,7 +673,9 @@ class MediaCandidate:
     source_type: str = ""     # raw API type tag ("box-2D", "screenmarquee", ...)
     width: str = ""           # ScreenScraper "size" / dims (when present)
     height: str = ""
-    duration_secs: Optional[float] = None  # video duration in seconds (HLS only)
+    duration_secs: Optional[float] = None      # video duration in seconds (HLS only)
+    estimated_bytes: Optional[int] = None      # best-quality estimate (HLS) or Content-Length (MP4)
+    size_by_height: dict[int, int] = field(default_factory=dict)  # HLS only: {height: estimated_bytes}
 
     def label(self) -> str:
         bits = [b for b in (self.region.upper() or "—",
@@ -692,44 +694,70 @@ def _fmt_duration(secs: float) -> str:
     return f"{m}:{s:02d}"
 
 
-def _hls_duration(m3u8_url: str, session) -> Optional[float]:
-    """Return total duration in seconds by parsing an HLS playlist.
+def _hls_duration(m3u8_url: str, session) -> tuple[Optional[float], dict[int, int]]:
+    """Return (duration_secs, size_by_height) by parsing an HLS master playlist.
 
-    Fetches the master M3U8, follows the first variant-stream URL, and sums
-    the ``#EXTINF`` segment durations.  Returns ``None`` on any error so the
-    caller can degrade gracefully (no duration shown in picker).
+    Fetches the master M3U8 and collects every ``EXT-X-STREAM-INF`` entry's
+    ``BANDWIDTH`` and ``RESOLUTION`` height.  Follows the first variant-stream
+    URL and sums ``#EXTINF`` durations.  ``size_by_height`` maps each resolution
+    height to an estimated byte count (``BANDWIDTH`` bits/s × duration / 8).
+    Returns ``(None, {})`` on any error so the caller degrades gracefully.
     """
     try:
         resp = session.get(m3u8_url, timeout=10)
         resp.raise_for_status()
         master = resp.text
 
-        # Resolve first variant stream (first non-comment, non-blank line).
         base = m3u8_url.split("?")[0].rsplit("/", 1)[0]
-        variant_url: Optional[str] = None
-        for line in master.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                variant_url = line if line.startswith("http") else f"{base}/{line}"
-                break
+        first_variant_url: Optional[str] = None
+        variant_info: list[tuple[int, int]] = []  # (height, bandwidth) for each EXT-X-STREAM-INF
 
-        if not variant_url:
-            return None
+        lines = master.splitlines()
+        i = 0
+        while i < len(lines):
+            stripped = lines[i].strip()
+            if stripped.startswith("#EXT-X-STREAM-INF:"):
+                bw_m = re.search(r"BANDWIDTH=(\d+)", stripped)
+                res_m = re.search(r"RESOLUTION=\d+x(\d+)", stripped)
+                i += 1
+                # Skip any blank/comment lines to find the variant URL.
+                while i < len(lines) and (not lines[i].strip() or lines[i].strip().startswith("#")):
+                    i += 1
+                if i < len(lines):
+                    url = lines[i].strip()
+                    resolved = url if url.startswith("http") else f"{base}/{url}"
+                    if first_variant_url is None:
+                        first_variant_url = resolved
+                    if bw_m and res_m:
+                        variant_info.append((int(res_m.group(1)), int(bw_m.group(1))))
+            elif stripped and not stripped.startswith("#") and first_variant_url is None:
+                # Fallback: plain variant URL with no preceding EXT-X-STREAM-INF.
+                first_variant_url = stripped if stripped.startswith("http") else f"{base}/{stripped}"
+            i += 1
 
-        resp = session.get(variant_url, timeout=10)
+        if not first_variant_url:
+            return None, {}
+
+        resp = session.get(first_variant_url, timeout=10)
         resp.raise_for_status()
 
         total = 0.0
         for line in resp.text.splitlines():
-            line = line.strip()
-            if line.startswith("#EXTINF:"):
+            stripped = line.strip()
+            if stripped.startswith("#EXTINF:"):
                 try:
-                    total += float(line[8:].split(",")[0])
+                    total += float(stripped[8:].split(",")[0])
                 except (ValueError, IndexError):
                     pass
-        return total if total > 0 else None
+
+        duration = total if total > 0 else None
+        size_by_height: dict[int, int] = {}
+        if duration:
+            for height, bw in variant_info:
+                size_by_height[height] = int(bw * duration / 8)
+        return duration, size_by_height
     except Exception:
-        return None
+        return None, {}
 
 
 # Maps logical media slot → ordered list of ScreenScraper "type" values to try.
@@ -1716,11 +1744,21 @@ class SteamClient:
 
         meta = _parse_steam(app_id, data)
         if meta is not None:
-            # Fetch HLS playlist duration for video candidates.  The M3U8 is a
-            # small text file so two extra requests per movie entry are cheap.
+            # Fetch size/duration metadata for video candidates.
             for cand in meta.media_candidates.get("video", []):
                 if cand.format == "m3u8":
-                    cand.duration_secs = _hls_duration(cand.url, self._session)
+                    cand.duration_secs, cand.size_by_height = _hls_duration(cand.url, self._session)
+                    if cand.size_by_height:
+                        cand.estimated_bytes = cand.size_by_height[max(cand.size_by_height)]
+                else:
+                    # MP4 highlight: HEAD request for Content-Length (no body download needed).
+                    try:
+                        r = self._session.head(cand.url, timeout=5, allow_redirects=True)
+                        cl = r.headers.get("Content-Length")
+                        if cl:
+                            cand.estimated_bytes = int(cl)
+                    except Exception:
+                        pass
         return meta
 
     def search(self, game_name: str, max_results: int = 8) -> list[dict]:

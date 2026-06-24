@@ -219,7 +219,9 @@ Media slots populated:
 | `header_image` | — | `artwork` | `.png` ¹ |
 | `header_image` | — | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
 
-Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates when both are available. Steam frequently provides both: the MP4 is a short highlight/autoplay clip (~10–15 s used on store browse pages); the HLS is the full-length trailer. If the downloaded video seems too short, try the `(HLS — full length)` candidate instead.
+Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates when both are available. Steam frequently provides both: the MP4 is a short highlight/autoplay clip (~10–15 s used on store browse pages); the HLS is the full-length trailer. If the downloaded video seems too short, try the `(HLS — full length)` candidate instead. After an HLS download, SpinDoctor runs ffprobe to verify the duration and prints the file size and length (`52.3 MB, 1:19`) next to the "downloaded" line; a yellow `⚠` warning appears when the output is under 30 s or 5 MB — if you see that warning, re-run with `--overwrite --apply` or switch to a different candidate index.
+
+`--hls-quality` selects the HLS quality variant before downloading. Steam provides four standard variants (1080p / 720p / 480p / 360p) inside the master playlist. The default (`best`) picks the highest available — typically 1080p at ~5.8 Mbps. For arcade cabinet use, `--hls-quality 480p` is usually sufficient and produces files roughly 10× smaller (the A Boy and His Blob 1:19 trailer: 52 MB at 1080p vs. ~5 MB at 480p). The quality flag only applies to HLS candidates; MP4 candidates are always downloaded as-is.
 
 ¹ Steam serves these as JPEG. SpinDoctor saves them as `.png` (HyperSpin's required format) and converts the bytes to real PNG when Pillow is installed (`pip install spindoctor[preview]`). Without Pillow the JPEG content is saved under the `.png` name — Windows GDI+ loads it correctly via magic-byte detection.
 

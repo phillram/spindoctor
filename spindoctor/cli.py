@@ -5522,11 +5522,18 @@ _STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
               help="1-based index of the wheel candidate to download without prompting.")
 @click.option("--overwrite", is_flag=True, help="Overwrite existing file.")
 @click.option("--output-dir", type=click.Path(), default=None)
+@click.option("--hls-quality", "hls_quality",
+              type=click.Choice(["best", "1080p", "720p", "480p", "360p"],
+                                case_sensitive=False),
+              default="best",
+              help="Quality for HLS video downloads. 'best' (default) picks the highest "
+                   "available. For arcade cabinets 480p is typically sufficient and "
+                   "produces files ~10× smaller than 1080p.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
 def fetch_steam_media(system, game, steam_id_raw, types,
                       video_index, snap_index, artwork_index, wheel_index,
-                      overwrite, output_dir, apply_changes):
+                      overwrite, output_dir, hls_quality, apply_changes):
     """Download media for a specific game from the Steam Store.
 
     Fetches trailer video(s), in-game screenshots, header artwork, and/or
@@ -5615,6 +5622,9 @@ def fetch_steam_media(system, game, steam_id_raw, types,
         "wheel":   wheel_index,
     }
 
+    _HLS_HEIGHT_MAP = {"best": None, "1080p": 1080, "720p": 720, "480p": 480, "360p": 360}
+    hls_max_height: Optional[int] = _HLS_HEIGHT_MAP.get(hls_quality.lower())
+
     config = _cfg()
     downloader = MediaDownloader(config, output_dir_override=Path(output_dir) if output_dir else None)
 
@@ -5680,12 +5690,24 @@ def fetch_steam_media(system, game, steam_id_raw, types,
 
         result = downloader.download_to_path(
             dest, chosen.url, label=game, media_type=mt, overwrite=overwrite,
+            hls_max_height=hls_max_height if mt == "video" else None,
         )
         if result.success:
             if replacing:
                 console.print(f"    [yellow]overwrote:[/yellow]  {dest}")
             else:
                 console.print(f"    [green]downloaded:[/green]  {dest}")
+            meta_parts: list[str] = []
+            sz = result.file_size_bytes or (dest.stat().st_size if dest.exists() else None)
+            if sz:
+                meta_parts.append(f"{sz / 1_000_000:.1f} MB")
+            if result.duration_secs:
+                m, s = divmod(int(result.duration_secs), 60)
+                meta_parts.append(f"{m}:{s:02d}")
+            if meta_parts:
+                console.print(f"    [dim]({', '.join(meta_parts)})[/dim]")
+            if result.warning:
+                console.print(f"    [yellow]⚠ {result.warning}[/yellow]")
         else:
             console.print(f"    [red]failed:[/red]  {result.error}")
 

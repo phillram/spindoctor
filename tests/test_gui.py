@@ -2508,6 +2508,90 @@ def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
         app.root.destroy()
 
 
+def test_apply_steam_selection_quality_480p_adds_hls_quality_flag(monkeypatch):
+    """Quality dropdown set to 480p must append --hls-quality 480p to the CLI args."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _setup_steam_apply(monkeypatch, app)
+        app._steam_quality_var.set("480p")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        args = ran[0]
+        assert "--hls-quality" in args
+        assert args[args.index("--hls-quality") + 1] == "480p"
+    finally:
+        app.root.destroy()
+
+
+def test_apply_steam_selection_quality_best_omits_hls_quality_flag(monkeypatch):
+    """Quality dropdown at default 'Best (1080p)' must not add --hls-quality to the CLI args."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _setup_steam_apply(monkeypatch, app)
+        app._steam_quality_var.set("Best (1080p)")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        assert "--hls-quality" not in ran[0]
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_quality_changed_updates_video_labels(monkeypatch):
+    """Changing Quality dropdown must update video candidate labels with quality-specific sizes."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Set up an HLS candidate with per-quality size data.
+        cand = MediaCandidate(
+            url="https://cdn/master.m3u8", source_type="trailer", format="m3u8",
+            duration_secs=74.0,
+            size_by_height={1080: 50_000_000, 720: 25_000_000, 480: 12_000_000, 360: 6_000_000},
+            estimated_bytes=50_000_000,
+        )
+        app._steam_cands["video"] = [cand]
+        app._steam_pick_vars["video"].set("1. trailer  1:14  ~50 MB  (HLS — full length, needs ffmpeg)")
+        app._steam_pick_combos["video"].configure(
+            values=["— do not download —", "1. trailer  1:14  ~50 MB  (HLS — full length, needs ffmpeg)"],
+            state="readonly",
+        )
+
+        app._steam_quality_var.set("480p")
+        label = app._steam_pick_vars["video"].get()
+        assert "~12 MB" in label, f"expected 480p size in label, got: {label!r}"
+
+        app._steam_quality_var.set("Best (1080p)")
+        label = app._steam_pick_vars["video"].get()
+        assert "~50 MB" in label, f"expected 1080p size in label, got: {label!r}"
+    finally:
+        app.root.destroy()
+
+
+def test_on_steam_quality_changed_preserves_skip_sentinel(monkeypatch):
+    """When the video picker is set to '— do not download —', quality changes must leave it there."""
+    from spindoctor.scraper import MediaCandidate
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cand = MediaCandidate(
+            url="https://cdn/master.m3u8", source_type="trailer", format="m3u8",
+            duration_secs=74.0, size_by_height={1080: 50_000_000, 480: 12_000_000},
+        )
+        app._steam_cands["video"] = [cand]
+        app._steam_pick_vars["video"].set("— do not download —")
+
+        app._steam_quality_var.set("480p")
+        assert app._steam_pick_vars["video"].get() == "— do not download —"
+    finally:
+        app.root.destroy()
+
+
 # ─── _preview_steam_candidate ────────────────────────────────────────────────
 
 
@@ -2560,8 +2644,8 @@ def test_preview_steam_candidate_image_opens_direct_url(monkeypatch):
         app.root.destroy()
 
 
-def test_preview_steam_candidate_video_opens_store_page(monkeypatch):
-    """For video, the Steam store page URL must be opened (not the raw MP4/m3u8)."""
+def test_preview_steam_candidate_video_opens_direct_url(monkeypatch):
+    """For video, the candidate's direct URL must be opened (not the store page)."""
     from spindoctor.scraper import MediaCandidate
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
@@ -2574,7 +2658,7 @@ def test_preview_steam_candidate_video_opens_store_page(monkeypatch):
         monkeypatch.setattr(app, "_open_url", lambda url: opened.append(url))
 
         app._preview_steam_candidate("video")
-        assert opened == ["https://store.steampowered.com/app/1145360/"]
+        assert opened == ["https://cdn/trailer.mp4"]
     finally:
         app.root.destroy()
 

@@ -54,8 +54,8 @@ class _FakeHLSResp:
             raise requests.HTTPError(response=self)
 
 
-def _master(variant_line: str) -> str:
-    return f"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1000\n{variant_line}\n"
+def _master(variant_line: str, bandwidth: int = 1000, height: int = 1080) -> str:
+    return f"#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION=1920x{height}\n{variant_line}\n"
 
 
 def _variant(*extinf_secs: float) -> str:
@@ -68,13 +68,15 @@ def _variant(*extinf_secs: float) -> str:
 
 
 def test_hls_duration_happy_path():
-    """Master playlist with a relative variant URL → sum of all #EXTINF values."""
+    """Master playlist with a relative variant URL → duration + size_by_height."""
     session = _FakeHLSSession([
-        (200, _master("chunklist.m3u8")),
+        (200, _master("chunklist.m3u8")),  # BANDWIDTH=1000, RESOLUTION=1920x1080
         (200, _variant(30.0, 44.5)),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(74.5)
+    duration, size_by_height = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(74.5)
+    # BANDWIDTH=1000 bits/s × 74.5 s / 8 = 9312 bytes at height=1080
+    assert size_by_height == {1080: 9312}
 
 
 def test_hls_duration_absolute_variant_url():
@@ -83,41 +85,76 @@ def test_hls_duration_absolute_variant_url():
         (200, _master("https://other-cdn.example.com/variant.m3u8")),
         (200, _variant(60.0)),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(60.0)
+    duration, _ = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(60.0)
 
 
 def test_hls_duration_no_variant_line_returns_none():
-    """Master playlist with no non-comment lines → None."""
+    """Master playlist with no non-comment lines → (None, {})."""
     master = "#EXTM3U\n#EXT-X-INDEPENDENT-SEGMENTS\n"
     session = _FakeHLSSession([(200, master)])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, {})
 
 
 def test_hls_duration_zero_total_returns_none():
-    """All #EXTINF values sum to 0 → None (not a valid duration)."""
+    """All #EXTINF values sum to 0 → (None, {}) — can't compute sizes without duration."""
     session = _FakeHLSSession([
         (200, _master("chunklist.m3u8")),
         (200, "#EXTM3U\n#EXT-X-ENDLIST\n"),
     ])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, {})
 
 
 def test_hls_duration_http_error_returns_none():
-    """HTTP error on the master playlist request → None, no exception raised."""
+    """HTTP error on the master playlist request → (None, {}), no exception raised."""
     session = _FakeHLSSession([(404, "")])
-    assert _hls_duration("https://cdn/master.m3u8", session) is None
+    assert _hls_duration("https://cdn/master.m3u8", session) == (None, {})
 
 
 def test_hls_duration_malformed_extinf_skipped():
     """Unparseable #EXTINF lines are skipped; valid lines still contribute."""
     variant = "#EXTM3U\n#EXTINF:abc,\nseg1.ts\n#EXTINF:30.0,\nseg2.ts\n#EXT-X-ENDLIST\n"
     session = _FakeHLSSession([
-        (200, _master("chunklist.m3u8")),
+        (200, _master("chunklist.m3u8")),  # BANDWIDTH=1000, height=1080
         (200, variant),
     ])
-    result = _hls_duration("https://cdn/master.m3u8", session)
-    assert result == pytest.approx(30.0)
+    duration, size_by_height = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(30.0)
+    assert size_by_height == {1080: 3750}  # 1000 bits/s × 30 s / 8
+
+
+def test_hls_duration_no_stream_inf_size_by_height_empty():
+    """Master playlist without EXT-X-STREAM-INF → duration returned, size_by_height empty."""
+    master = "#EXTM3U\nchunklist.m3u8\n"  # plain variant URL, no preceding STREAM-INF
+    session = _FakeHLSSession([
+        (200, master),
+        (200, _variant(20.0)),
+    ])
+    duration, size_by_height = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(20.0)
+    assert size_by_height == {}
+
+
+def test_hls_duration_multi_quality_builds_size_by_height():
+    """Master playlist with multiple EXT-X-STREAM-INF entries → size_by_height has all heights."""
+    master = (
+        "#EXTM3U\n"
+        "#EXT-X-STREAM-INF:BANDWIDTH=8000,RESOLUTION=1920x1080\n"
+        "v1080.m3u8\n"
+        "#EXT-X-STREAM-INF:BANDWIDTH=4000,RESOLUTION=1280x720\n"
+        "v720.m3u8\n"
+        "#EXT-X-STREAM-INF:BANDWIDTH=2000,RESOLUTION=854x480\n"
+        "v480.m3u8\n"
+    )
+    session = _FakeHLSSession([
+        (200, master),
+        (200, _variant(60.0)),  # only first variant fetched for duration
+    ])
+    duration, size_by_height = _hls_duration("https://cdn/master.m3u8", session)
+    assert duration == pytest.approx(60.0)
+    assert size_by_height[1080] == int(8000 * 60.0 / 8)
+    assert size_by_height[720] == int(4000 * 60.0 / 8)
+    assert size_by_height[480] == int(2000 * 60.0 / 8)
 
 
 # ─── _parse_steam ─────────────────────────────────────────────────────────────
@@ -256,14 +293,22 @@ def test_fetch_by_app_id_sets_duration_secs_on_hls_candidate(monkeypatch):
         def raise_for_status(self): pass
         def json(self): return self._data
 
+    class _FakeHeadResp:
+        status_code = 200
+        headers = {"Content-Length": "8000000"}
+
     client = SteamClient()
     monkeypatch.setattr(
         client._session, "get",
         lambda url, **_kw: _FakeResp(api_payload),
     )
     monkeypatch.setattr(
+        client._session, "head",
+        lambda url, **_kw: _FakeHeadResp(),
+    )
+    monkeypatch.setattr(
         "spindoctor.scraper._hls_duration",
-        lambda url, session: 74.0,
+        lambda url, session: (74.0, {1080: 52_000_000, 720: 26_000_000}),
     )
 
     meta = client.fetch_by_app_id("1145360")
@@ -276,7 +321,11 @@ def test_fetch_by_app_id_sets_duration_secs_on_hls_candidate(monkeypatch):
     mp4_cand = next(c for c in video_cands if c.format == "mp4")
 
     assert hls_cand.duration_secs == pytest.approx(74.0)
+    assert hls_cand.size_by_height == {1080: 52_000_000, 720: 26_000_000}
+    assert hls_cand.estimated_bytes == 52_000_000  # max height (1080p)
     assert mp4_cand.duration_secs is None
+    assert mp4_cand.size_by_height == {}
+    assert mp4_cand.estimated_bytes == 8_000_000
 
 
 # ─── _convert_to_png_inplace ──────────────────────────────────────────────────
