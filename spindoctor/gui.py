@@ -10425,11 +10425,19 @@ class _SpinDoctorGUI:
             fixexe_frame,
             text="Executables in game folder and subfolders (recommended first):",
         ).pack(anchor="w", padx=6, pady=(4, 0))
+        fixexe_lb_frame = self.ttk.Frame(fixexe_frame)
+        fixexe_lb_frame.pack(fill="x", padx=6, pady=(2, 4))
         self._fixexe_listbox = self.tk.Listbox(
-            fixexe_frame, height=5, selectmode="single",
+            fixexe_lb_frame, height=5, selectmode="single",
             activestyle="none",
         )
-        self._fixexe_listbox.pack(fill="x", padx=6, pady=(2, 4))
+        fixexe_lb_vsb = self.ttk.Scrollbar(
+            fixexe_lb_frame, orient="vertical",
+            command=self._fixexe_listbox.yview,
+        )
+        self._fixexe_listbox.configure(yscrollcommand=fixexe_lb_vsb.set)
+        self._fixexe_listbox.pack(side="left", fill="both", expand=True)
+        fixexe_lb_vsb.pack(side="right", fill="y")
         self._fixexe_listbox.bind(
             "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
         )
