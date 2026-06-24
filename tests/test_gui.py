@@ -2508,6 +2508,42 @@ def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
         app.root.destroy()
 
 
+def test_apply_steam_selection_quality_480p_adds_hls_quality_flag(monkeypatch):
+    """Quality dropdown set to 480p must append --hls-quality 480p to the CLI args."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _setup_steam_apply(monkeypatch, app)
+        app._steam_quality_var.set("480p")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        args = ran[0]
+        assert "--hls-quality" in args
+        assert args[args.index("--hls-quality") + 1] == "480p"
+    finally:
+        app.root.destroy()
+
+
+def test_apply_steam_selection_quality_best_omits_hls_quality_flag(monkeypatch):
+    """Quality dropdown at default 'Best (1080p)' must not add --hls-quality to the CLI args."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _setup_steam_apply(monkeypatch, app)
+        app._steam_quality_var.set("Best (1080p)")
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli", lambda _bin, args: ran.append(list(args)))
+
+        app._apply_steam_selection()
+
+        assert len(ran) == 1
+        assert "--hls-quality" not in ran[0]
+    finally:
+        app.root.destroy()
+
+
 # ─── _preview_steam_candidate ────────────────────────────────────────────────
 
 
