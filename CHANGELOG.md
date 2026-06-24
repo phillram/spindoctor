@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **GUI "Fix game executable" Apply button now respects the global Apply toggle.** The `_run_fixexe` method was hardcoding `--apply` unconditionally, meaning clicking the button always wrote the INI change even when the global Apply checkbox was unchecked. It now follows the same pattern as every other write operation in the GUI — `--apply` is only passed when the global toggle is on; without it the CLI runs in preview/dry-run mode and prints what it would change.
+
 - **GUI output panel no longer flooded with `────` box-drawing lines.** The subprocess environment previously forced `COLUMNS=9999`, which told Rich to render `Panel()` borders spanning 9,999 characters. Now that every Rich `Console` instance uses `soft_wrap=True` (added in v2.7.5), the `COLUMNS` override is redundant for its original purpose (preventing path wrapping) and has been removed. Rich now uses its pipe default (~80 columns) for panel borders, giving a compact header line instead of thousands of horizontal dashes.
 
 - **Save Log no longer fails with "Invalid argument" when the command slug contains Windows path characters.** For commands that accept a `--exe` path (e.g. `pc-fix-exe`), the exe path value was treated as a positional argument and joined into the auto-saved log filename — producing characters such as `\` and `:` that are illegal in Windows filenames. The filename builder now strips all Windows-invalid characters (`\ / : * ? " < > |`) from the slug and caps it at 80 characters before constructing the path.
