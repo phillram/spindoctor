@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **HLS video downloads silently truncated to ~2–3 seconds.** A full-length Steam trailer (e.g. A Boy and His Blob, App 281200 — 1:19 long) would download as a ~2.4 MB file that was only a few seconds long; SpinDoctor reported success because ffmpeg exited 0 and the file was non-empty. Two concurrent root causes: (1) Steam's newer fMP4/CMAF HLS segments carry AAC audio already in MPEG-4 ASC format — applying `-bsf:a aac_adtstoasc` double-converts it, corrupts the AAC track, and causes ffmpeg to abort mid-mux; (2) without `-protocol_whitelist file,http,https,tcp,tls,crypto`, ffmpeg cannot follow HTTPS segment URLs from Steam's Akamai CDN, causing a similar early abort with a partial file. Fixed by replacing `-bsf:a aac_adtstoasc` with `-c:a aac` (re-encodes audio correctly for both TS-based and fMP4-based HLS), adding `-protocol_whitelist file,http,https,tcp,tls,crypto`, and adding `-movflags +faststart` (writes the MP4 moov atom at the start for WMP seek compatibility).
+
 ## [2.7.10] - 2026-06-24
 
 ### Fixed
