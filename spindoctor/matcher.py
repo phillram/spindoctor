@@ -10,6 +10,7 @@ from rich.table import Table
 
 from . import cache as _cache
 from .cache import SKIP_SENTINEL
+from .scraper import _fmt_duration
 
 if TYPE_CHECKING:
     from .scraper import GameMetadata, MediaCandidate
@@ -245,16 +246,19 @@ def _prompt_media(
         tbl.add_column("Region", width=6)
         tbl.add_column("Type", style="cyan", max_width=20)
         tbl.add_column("Format", width=8)
+        tbl.add_column("Duration", width=8)
         tbl.add_column("Dims", width=11)
         tbl.add_column("URL", style="dim", no_wrap=False)
 
         for i, c in enumerate(candidates, 1):
             dims = f"{c.width}×{c.height}" if c.width and c.height else ""
+            dur = _fmt_duration(c.duration_secs) if c.duration_secs else ""
             tbl.add_row(
                 str(i),
                 (c.region or "—").upper(),
                 c.source_type or "",
                 c.format or "",
+                dur,
                 dims,
                 c.url,
             )
