@@ -1102,6 +1102,8 @@ If the section header also has the colon stripped (`[Submachine Legacy]`) PCLaun
 
 **Symptom to watch for:** If `pc-rename --verbose` shows a game as "current" but it still launches from the wrong path, the per-game INI may have been written with a mismatched section header by an older version of SpinDoctor (or by hand). Run `pc-rename "PC Games" --apply --overwrite-pclauncher` to rewrite all per-game INIs with correct section headers.
 
+**`add-pc-system --verbose`** provides the same per-game visibility during an initial bootstrap or refresh run. After the title-review step it prints each game labelled `new` (not yet in the HyperSpin XML) or `existing` (already present), followed by the resolved `Application=` path. Titles that are in the XML but absent from the current ROM scan are flagged as orphaned so you can decide whether to remove them with `update-db`. In the PCLauncher INI step each INI is listed with its full path and whether it would be written or skipped. Use `add-pc-system --verbose` rather than `pc-rename --verbose` when you want the full bootstrap output (system overrides, `add-system` invocation, DB write, and media fetch) alongside the per-game detail.
+
 ### Non-exe ROM files (GOG `webcache.zip`, multi-part archives, etc.)
 
 RocketLauncher finds a "rom" for each PC game by scanning the game folder for files whose extension matches the system's `romExtensions` setting (typically `zip|rar|7z|…`). For GOG installs this often surfaces `webcache.zip` (a cache file of no use to PCLauncher) or a redistributable archive rather than the real game executable.
