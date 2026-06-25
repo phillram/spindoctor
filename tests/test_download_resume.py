@@ -563,6 +563,145 @@ def test_download_hls_uses_correct_ffmpeg_args(tmp_path, monkeypatch):
     )
 
 
+# ── _pick_hls_variant audio-rendition parsing ─────────────────────────────────
+
+_STEAM_MASTER_WITH_AUDIO = """\
+#EXTM3U
+#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="audio",NAME="audio_0",DEFAULT=YES,URI="https://cdn/audio.m3u8"
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio"
+https://cdn/1080p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio"
+https://cdn/720p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=854x480,CODECS="avc1.64001f,mp4a.40.2",AUDIO="audio"
+https://cdn/480p.m3u8
+"""
+
+_STEAM_MASTER_NO_AUDIO = """\
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=5000000,RESOLUTION=1920x1080
+https://cdn/1080p.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2000000,RESOLUTION=1280x720
+https://cdn/720p.m3u8
+"""
+
+
+def _make_session(text: str):
+    """Return a minimal requests-session stub that returns *text* for any GET."""
+    class _Resp:
+        def raise_for_status(self): pass
+        @property
+        def text(self): return text
+    class _Session:
+        def get(self, url, timeout=15): return _Resp()
+    return _Session()
+
+
+def test_pick_hls_variant_returns_audio_url():
+    """EXT-X-MEDIA TYPE=AUDIO URI must be returned alongside the video variant URL."""
+    from spindoctor.media import _pick_hls_variant
+    video_url, audio_url = _pick_hls_variant(
+        "https://cdn/master.m3u8", 720, _make_session(_STEAM_MASTER_WITH_AUDIO)
+    )
+    assert video_url == "https://cdn/720p.m3u8", f"wrong video variant: {video_url}"
+    assert audio_url == "https://cdn/audio.m3u8", f"audio URL not extracted: {audio_url}"
+
+
+def test_pick_hls_variant_no_audio_rendition():
+    """Masters without EXT-X-MEDIA TYPE=AUDIO must return None for the audio URL."""
+    from spindoctor.media import _pick_hls_variant
+    video_url, audio_url = _pick_hls_variant(
+        "https://cdn/master.m3u8", 720, _make_session(_STEAM_MASTER_NO_AUDIO)
+    )
+    assert video_url == "https://cdn/720p.m3u8"
+    assert audio_url is None
+
+
+def test_pick_hls_variant_error_returns_master_and_none():
+    """Any network/parse error must fall back to (master_url, None)."""
+    from spindoctor.media import _pick_hls_variant
+    class _FailSession:
+        def get(self, *a, **kw): raise OSError("network error")
+    video_url, audio_url = _pick_hls_variant(
+        "https://cdn/master.m3u8", 720, _FailSession()
+    )
+    assert video_url == "https://cdn/master.m3u8"
+    assert audio_url is None
+
+
+def test_download_hls_passes_audio_url_to_ffmpeg(tmp_path, monkeypatch):
+    """When quality is selected and the master has an audio rendition, ffmpeg must
+    receive a second -i with the audio URL and explicit -map directives so the
+    audio track is included in the output (Steam video-only variants have no audio)."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+    monkeypatch.setattr(
+        "spindoctor.media._pick_hls_variant",
+        lambda url, h, sess: ("https://cdn/720p.m3u8", "https://cdn/audio.m3u8"),
+    )
+
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, timeout):
+        captured["cmd"] = cmd
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades",
+                            media_type="video", hls_max_height=720)
+
+    assert r.success
+    cmd = captured["cmd"]
+    assert cmd.count("-i") == 2, "expected two -i inputs (video variant + audio rendition)"
+    assert "https://cdn/720p.m3u8" in cmd
+    assert "https://cdn/audio.m3u8" in cmd
+    assert "-map" in cmd
+    assert "0:v:0" in cmd
+    assert "1:a:0" in cmd
+
+
+def test_download_hls_no_audio_url_uses_single_input(tmp_path, monkeypatch):
+    """When no audio rendition is found (or no quality selection), ffmpeg uses a
+    single -i so it handles the master playlist's rendition groups itself."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+    monkeypatch.setattr(
+        "spindoctor.media._pick_hls_variant",
+        lambda url, h, sess: ("https://cdn/720p.m3u8", None),
+    )
+
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, timeout):
+        captured["cmd"] = cmd
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades",
+                            media_type="video", hls_max_height=720)
+
+    assert r.success
+    cmd = captured["cmd"]
+    assert cmd.count("-i") == 1, "single -i expected when no separate audio rendition"
+    assert "-map" not in cmd
+
+
 def test_download_hls_small_output_sets_warning(tmp_path, monkeypatch):
     """A 2 MB output file (the known real-world truncated-trailer size) must succeed
     but set result.warning so the CLI can surface it to the user."""
@@ -823,3 +962,42 @@ def test_download_hls_audio_warn_surfaces_in_result(tmp_path, monkeypatch):
     assert r.success
     assert r.warning
     assert "silent" in r.warning.lower()
+
+
+def test_download_hls_best_quality_uses_explicit_variant(tmp_path, monkeypatch):
+    """Even when no hls_max_height cap is set ('best quality'), _pick_hls_variant
+    must be called with a large sentinel so SpinDoctor selects the variant URL
+    explicitly rather than letting ffmpeg pick from the master.  ffmpeg's internal
+    selection chooses the highest-bandwidth CMAF variant which older Windows ffmpeg
+    versions truncate to ~9 s; explicit selection reliably picks a usable stream."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+
+    calls: dict = {}
+
+    def fake_pick(url, max_height, sess):
+        calls["max_height"] = max_height
+        return (url, None)
+
+    monkeypatch.setattr("spindoctor.media._pick_hls_variant", fake_pick)
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
+
+    dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades",
+                        media_type="video", hls_max_height=None)
+
+    assert "max_height" in calls, "_pick_hls_variant was not called for best-quality download"
+    assert calls["max_height"] == 9999, (
+        f"expected sentinel 9999 for best-quality, got {calls['max_height']}"
+    )

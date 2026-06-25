@@ -188,24 +188,39 @@ def _hls_truncation_warning(
     return warn
 
 
-def _pick_hls_variant(master_url: str, max_height: int, session) -> str:
-    """Return the variant playlist URL whose height best fits within max_height.
+def _pick_hls_variant(
+    master_url: str, max_height: int, session
+) -> tuple[str, Optional[str]]:
+    """Return (video_variant_url, audio_rendition_url_or_None).
 
-    Fetches the master HLS playlist, parses EXT-X-STREAM-INF entries, and
-    returns the highest-bandwidth variant whose height <= max_height.  Falls
-    back to master_url on any parse/network error so the caller can still
-    attempt a download (ffmpeg will pick the best quality itself).
+    Steam HLS master playlists separate audio into an EXT-X-MEDIA TYPE=AUDIO
+    rendition rather than muxing it into the video variant segments.  When
+    ffmpeg is given a video-only variant URL it silently drops all audio.
+    This function also parses the EXT-X-MEDIA audio URI so the caller can
+    pass it as a second -i input, restoring the audio track.
+
+    Falls back to (master_url, None) on any parse/network error so ffmpeg can
+    still attempt the download against the master (which it handles natively).
     """
     try:
         resp = session.get(master_url, timeout=15)
         resp.raise_for_status()
         base = master_url.split("?")[0].rsplit("/", 1)[0]
         variants: list[tuple[int, int, str]] = []  # (bandwidth, height, url)
+        audio_url: Optional[str] = None
         lines = resp.text.splitlines()
         i = 0
         while i < len(lines):
             line = lines[i].strip()
-            if line.startswith("#EXT-X-STREAM-INF:"):
+            if line.startswith("#EXT-X-MEDIA:") and "TYPE=AUDIO" in line and audio_url is None:
+                for part in line[13:].split(","):
+                    k, _, v = part.partition("=")
+                    if k.strip() == "URI":
+                        raw = v.strip().strip('"')
+                        if raw:
+                            audio_url = raw if raw.startswith("http") else f"{base}/{raw}"
+                        break
+            elif line.startswith("#EXT-X-STREAM-INF:"):
                 bandwidth = height = 0
                 for part in line[18:].split(","):
                     k, _, v = part.partition("=")
@@ -230,20 +245,20 @@ def _pick_hls_variant(master_url: str, max_height: int, session) -> str:
                         variants.append((bandwidth, height, uri))
             i += 1
         if not variants:
-            return master_url
+            return master_url, None
         eligible = [(bw, h, url) for bw, h, url in variants if h <= max_height]
         if eligible:
-            return max(eligible, key=lambda x: x[0])[2]
+            return max(eligible, key=lambda x: x[0])[2], audio_url
         # All variants exceed max_height — use the smallest available and warn.
         best = min(variants, key=lambda x: x[1])
         _log.warning(
             "HLS: no variant ≤%dp for %s — falling back to %dp",
             max_height, master_url.split("?")[0].rsplit("/", 1)[-1], best[1],
         )
-        return best[2]
+        return best[2], audio_url
     except Exception:
         _log.debug("HLS variant parse failed for %s — using master", master_url)
-        return master_url
+        return master_url, None
 
 
 def _find_ffmpeg(hint: str = "") -> tuple[Optional[str], Optional[str]]:
@@ -481,8 +496,18 @@ class MediaDownloader:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
-        if hls_max_height is not None:
-            url = _pick_hls_variant(url, hls_max_height, self._session)
+        # Always parse the master playlist explicitly rather than letting ffmpeg
+        # pick a variant internally.  ffmpeg's built-in selection chooses the
+        # highest-bandwidth variant, which on Steam is a CMAF/fMP4-based stream
+        # that older Windows ffmpeg versions truncate to ~9 s while still exiting 0.
+        # Explicit variant selection (via requests + playlist parsing) reliably
+        # picks a stream whose segments ffmpeg can fully download on Windows 7.
+        # Use 9999 as "no cap" so best-quality downloads go through the same path.
+        url, audio_url = _pick_hls_variant(
+            url,
+            hls_max_height if hls_max_height is not None else 9999,
+            self._session,
+        )
 
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
@@ -498,14 +523,30 @@ class MediaDownloader:
             #   to exit 0 with only the first 2-3 seconds muxed.
             # -movflags +faststart: writes moov atom at the start so WMP can play
             #   the file without seeking to the end first.
-            cmd = [
-                ffmpeg, "-y",
-                "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
-                "-i", url,
-                "-c", "copy",
-                "-movflags", "+faststart",
-                str(tmp),
-            ]
+            # When quality is selected, Steam serves audio in a separate
+            #   EXT-X-MEDIA rendition not included in the video variant playlist.
+            #   Passing it as a second -i with explicit -map restores the audio.
+            if audio_url:
+                cmd = [
+                    ffmpeg, "-y",
+                    "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+                    "-i", url,
+                    "-i", audio_url,
+                    "-map", "0:v:0",
+                    "-map", "1:a:0",
+                    "-c", "copy",
+                    "-movflags", "+faststart",
+                    str(tmp),
+                ]
+            else:
+                cmd = [
+                    ffmpeg, "-y",
+                    "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+                    "-i", url,
+                    "-c", "copy",
+                    "-movflags", "+faststart",
+                    str(tmp),
+                ]
             result = subprocess.run(cmd, capture_output=True, timeout=300)
             stderr_text = (result.stderr or b"").decode("utf-8", errors="replace")
             if result.returncode == 0 and tmp.exists() and tmp.stat().st_size > 0:

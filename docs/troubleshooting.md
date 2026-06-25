@@ -247,7 +247,33 @@ spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID>
 
 The ffmpeg command is now `-protocol_whitelist file,http,https,tcp,tls,crypto -c copy -movflags +faststart`: stream-copy preserves original timestamps, the protocol whitelist enables HTTPS segment fetching, and `+faststart` writes the MP4 moov atom at the start for WMP seek compatibility.
 
-> **If the download still produces a short clip after upgrading:** You may have downloaded the MP4 highlight clip rather than the full HLS trailer. Run without `--video-index` and check the dry-run listing — candidates labelled `(HLS — full length, needs ffmpeg)` are the complete trailers; `(MP4 — may be highlight clip)` are shorter autoplay clips (~10–15 s). Use the index of the `HLS` candidate.
+> **If the download still produces a short clip after upgrading to v2.7.12:** You may have downloaded the MP4 highlight clip rather than the full HLS trailer. Run without `--video-index` and check the dry-run listing — candidates labelled `(HLS — full length, needs ffmpeg)` are the complete trailers; `(MP4 — may be highlight clip)` are shorter autoplay clips (~10–15 s). Use the index of the `HLS` candidate. If you are using v2.7.12 but not yet v2.7.14, also check the two sub-sections below for separate audio and best-quality truncation issues.
+
+### Steam HLS video plays with no audio (trailer downloads silently)
+
+**Symptom:** The downloaded MP4 has a correct length and file size (e.g. 52 MB / 1:19) but plays back silently on the cabinet. `ffprobe -select_streams a:0 -show_streams <file>` returns `"streams": []` — zero audio streams were muxed into the file.
+
+**Cause (before v2.7.14):** Steam HLS master playlists deliver audio in a separate `EXT-X-MEDIA TYPE=AUDIO` rendition that is not embedded in the video-only variant playlists. When SpinDoctor selected a quality variant (e.g. 720p) and passed that URL to ffmpeg, the resulting download contained only the video track — no audio had ever been available at that URL. The audio rendition URL is listed separately in the master playlist under `#EXT-X-MEDIA:TYPE=AUDIO,...,URI="..."`.
+
+**Fix:** Upgrade to SpinDoctor v2.7.14 or later. `_pick_hls_variant` now parses `EXT-X-MEDIA TYPE=AUDIO` entries from the master playlist and returns the audio rendition URL alongside the video variant URL. ffmpeg is invoked with a second `-i audio_url` input and `-map 0:v:0 -map 1:a:0` to mux both tracks into the output. Re-download any silently-playing video:
+
+```
+spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID> \
+    --video-index 1 --types video --overwrite --apply
+```
+
+### Steam HLS "best quality" download is only ~9 seconds long
+
+**Symptom:** Downloading without `--hls-quality` (or with a cap high enough that the best variant is selected) produces a file that is only ~8–10 seconds long and ~2–3 MB. ffmpeg exits 0 and the SpinDoctor success line shows the file as non-zero, but the `⚠ HLS output looks truncated` warning appears. The ffmpeg output references CMAF segment URLs like `chunk-stream0-XXXXX.m4s`.
+
+**Cause (before v2.7.14):** When no quality cap was set, SpinDoctor passed the master `.m3u8` URL directly to ffmpeg and let ffmpeg pick a variant internally. ffmpeg selects the highest-bandwidth variant, which on Steam is a CMAF/fMP4-based stream. Older Windows ffmpeg builds (the version available for Windows 7) silently abort this stream after approximately 9 seconds of wall-clock data while still exiting 0. The `--hls-quality 720p` (or lower) workaround selected a non-CMAF variant via SpinDoctor's own Python parser, bypassing the problematic ffmpeg auto-selection path — which is why that workaround worked while "best quality" did not.
+
+**Fix:** Upgrade to SpinDoctor v2.7.14 or later. SpinDoctor now always runs explicit variant selection via `_pick_hls_variant`, even when no quality cap is set (using a sentinel of 9999 for "best available"). ffmpeg receives a concrete variant URL rather than the master URL, bypassing the CMAF auto-selection path. Re-download any truncated file:
+
+```
+spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID> \
+    --video-index 1 --types video --overwrite --apply
+```
 
 ### `audit` reports a slot as present but the file has no content (0 bytes)
 
