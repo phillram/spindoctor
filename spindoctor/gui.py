@@ -30,6 +30,7 @@ import shutil
 import json
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from collections import deque
@@ -11234,49 +11235,24 @@ class _SpinDoctorGUI:
         ):
             return
 
-        self._set_status(f"Saving game order for {system}…")
-
-        record = _RunRecord(
-            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            argv_str=f"game save-order → {system}",
-            dry_run=False,
+        # Write names to a temp file so we stay within Win7's ~32 KB
+        # command-line limit even for systems with thousands of ROMs.
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", suffix=".txt", delete=False,
         )
-        record.append(f"$ game save-order\n  system: {system}\n  games: {len(names)}\n")
-        self._run_history.append(record)
-        self._refresh_logs_tab()
+        tmp.write("\n".join(names))
+        tmp.close()
+        tmp_path = tmp.name
 
-        def _succeeded(saved_path) -> None:
-            record.append(f"  Saved: {saved_path}\n")
-            record.exit_code = 0
-            self._append_output(f"Game order saved for {system}: {saved_path}\n")
-            self._flash_status(f"Game order saved for {system}.")
-            self._refresh_logs_tab()
-
-        def _failed(msg: str) -> None:
-            record.append(f"  ERROR: {msg}\n")
-            record.exit_code = 1
-            self._set_status("Save failed — see Logs tab.")
-            self._refresh_logs_tab()
-            self.messagebox.showerror("Save failed", msg)
-
-        def _worker():
+        def _cleanup(rc: int) -> None:
             try:
-                cfg = load_config()
-                db = load_database(system, cfg.databases_dir)
-                db.reorder_games(names)
-                _bak_dir = (
-                    Path(cfg.backup_dir) if getattr(cfg, "backup_dir", "") else None
-                )
-                saved = db.save(
-                    backup=cfg.backup_before_modify,
-                    backup_dir=_bak_dir,
-                    tmp_dir=cfg.effective_atomic_tmp_dir,
-                )
-                self.root.after(0, _succeeded, saved)
-            except Exception as exc:  # noqa: BLE001
-                self.root.after(0, _failed, str(exc))
+                Path(tmp_path).unlink(missing_ok=True)
+            except OSError:
+                pass
 
-        threading.Thread(target=_worker, daemon=True).start()
+        args = ["game", "save-order", "--system", system,
+                "--order-file", tmp_path, "--apply"]
+        self._run_cli("spindoctor", args, on_complete=_cleanup)
 
     def _refresh_rename_games(self) -> None:
         system = self._rename_system_var.get().strip()

@@ -11611,6 +11611,66 @@ def game_sort_cmd(system, sort_by, apply_changes, verbose, output_dir):
         console.print("  [dim](dry run — pass --apply to write)[/dim]")
 
 
+@game_group.command("save-order")
+@click.option("--system", "-s", required=True, help="System whose game order to save.")
+@click.option("--order-file", "order_file", required=True, type=click.Path(exists=True),
+              help="Path to a UTF-8 text file with one ROM name per line, in the "
+                   "desired order. Games not listed are appended after those that are.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the new order. Without this flag, dry-run only.")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Write the edited DB into <output-dir>/Databases/<system>/ "
+                   "instead of the live HyperSpin tree.")
+def game_save_order_cmd(system, order_file, apply_changes, output_dir):
+    """Save a custom game order to a system's wheel database.
+
+    Reads an ordered list of ROM names from --order-file (one name per line)
+    and writes that order to the system's XML database.  Games not listed in
+    the file are appended after the listed entries so no entries are dropped.
+
+    This is the CLI counterpart of the GUI's "Save Order" button in the
+    Games tab, which writes a temp file and calls this command.
+
+    \b
+    Examples:
+      spindoctor game save-order --system MAME --order-file order.txt
+      spindoctor game save-order --system MAME --order-file order.txt --apply
+    """
+    config = _cfg()
+    _check_config(config)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+
+    names = Path(order_file).read_text(encoding="utf-8").splitlines()
+    names = [n for n in names if n.strip()]
+
+    db = load_database(system, config.databases_dir)
+    console.print(f"\n[blue bold]{system}[/blue bold]")
+    console.print(f"  [dim]Database:[/dim] {db.xml_path}")
+    console.print(f"  [dim]Games in order file:[/dim] {len(names)}")
+
+    if apply_changes:
+        db.reorder_games(names)
+        _tmp = config.effective_atomic_tmp_dir
+        out_base = Path(output_dir) if output_dir else None
+        if out_base:
+            saved = db.save(
+                output_path=out_base / "Databases" / system / f"{system}.xml",
+                backup=False, tmp_dir=_tmp,
+            )
+        else:
+            _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+            saved = db.save(backup=config.backup_before_modify,
+                            backup_dir=_bak_dir, tmp_dir=_tmp)
+        console.print(f"  [green]Saved:[/green] {saved}")
+    else:
+        console.print("  [dim](dry run — pass --apply to write)[/dim]")
+
+
 # ─── tools-audit ──────────────────────────────────────────────────────────────
 
 @cli.command("tools-audit")

@@ -412,7 +412,20 @@ Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are i
 `--by description` (default) — sort by display title (`<description>` field).  
 `--by name` — sort by ROM filename instead.
 
-> **GUI alternative:** the **Games** tab → **Step 1 — Manage the game wheel** provides an equivalent table: set the system with the shared picker at the top, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Step 1 — Manage the game wheel** provides an equivalent table: set the system with the shared picker at the top, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save Order** shells out to `game save-order --apply` (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+
+#### `game save-order`
+
+```bat
+spindoctor game save-order --system MAME --order-file order.txt
+spindoctor game save-order --system MAME --order-file order.txt --apply
+```
+
+Saves a custom game order to the system's wheel database. The order file must contain one ROM name per line in the desired order (UTF-8). Games omitted from the file are appended after the listed entries — no entries are dropped.
+
+`--order-file` is required because large systems (1 000+ ROMs) exceed Windows 7's ~32 KB command-line limit when all names are passed as arguments.
+
+> **GUI:** the **Games** tab → **Save Order** button writes the current table order to a temp file and calls this command automatically.
 
 ---
 
