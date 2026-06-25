@@ -4845,7 +4845,7 @@ class _SpinDoctorGUI:
         if diverges:
             self._append_output(
                 "\n⚠ These values differ from saved config — "
-                "fetch-meta / curate will still use the SAVED values "
+                "metadata download / curate will still use the SAVED values "
                 "until you click Save configuration.\n"
             )
 
@@ -5111,7 +5111,7 @@ class _SpinDoctorGUI:
                 self._chain_end()
                 self._append_output(
                     "\nDry-run complete. "
-                    "Click 'Clear selected (--apply)' to permanently delete.\n"
+                    "Click 'Clear selected' to permanently delete.\n"
                 )
                 return
             step_num = total - len(remaining) + 1
@@ -5354,12 +5354,12 @@ class _SpinDoctorGUI:
         flags_row.grid(row=5, column=0, columnspan=3, sticky="w", pady=(2, 0))
         self._audit_no_media_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Skip media checks (--no-media)",
+            flags_row, text="Skip media checks",
             variable=self._audit_no_media_var,
         ).pack(side="left")
         self._audit_detailed_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Detailed output (--detailed)",
+            flags_row, text="Show detailed output",
             variable=self._audit_detailed_var,
         ).pack(side="left", padx=10)
 
@@ -5461,12 +5461,12 @@ class _SpinDoctorGUI:
         flags_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 6))
         self._audit_no_media_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Skip media checks (--no-media)",
+            flags_row, text="Skip media checks",
             variable=self._audit_no_media_var,
         ).pack(side="left")
         self._audit_detailed_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Detailed output (--detailed)",
+            flags_row, text="Show detailed output",
             variable=self._audit_detailed_var,
         ).pack(side="left", padx=10)
 
@@ -6452,29 +6452,28 @@ class _SpinDoctorGUI:
         )
         self._migrate_keep_source_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            mig_frame, text="Copy instead of move (--keep-source)",
+            mig_frame, text="Copy instead of move (keep source files)",
             variable=self._migrate_keep_source_var,
         ).grid(row=_comp_row_end + 4, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_verify_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             mig_frame,
-            text="SHA1-verify after copy (--verify; only with Copy)",
+            text="SHA1-verify each file after copying (Copy mode only)",
             variable=self._migrate_verify_var,
         ).grid(row=_comp_row_end + 5, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_no_update_config_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             mig_frame,
-            text="Don't rewrite config.json with new paths "
-                 "(--no-update-config)",
+            text="Don't update config.json with the new paths",
             variable=self._migrate_no_update_config_var,
         ).grid(row=_comp_row_end + 6, column=0, columnspan=4, sticky="w", padx=6, pady=2)
 
         self._migrate_preserve_names_var = self.tk.BooleanVar(value=False)
         _mig_preserve = self.ttk.Checkbutton(
             mig_frame,
-            text="Keep original folder names (--preserve-names)",
+            text="Keep original folder names",
             variable=self._migrate_preserve_names_var,
         )
         _mig_preserve.grid(row=_comp_row_end + 7, column=0, columnspan=4,
@@ -6658,7 +6657,7 @@ class _SpinDoctorGUI:
                 msg = (
                     f"Migrate library to:\n{target}\n\n"
                     "This will copy the selected components to the new "
-                    "drive. The originals stay in place (--keep-source). "
+                    "drive. The originals stay in place. "
                     "Reversible by deleting the destination copy.\n\n"
                     "Continue?"
                 )
@@ -7706,7 +7705,7 @@ class _SpinDoctorGUI:
         ).pack(side="left")
         self.ttk.Label(
             steam_hdr,
-            text="— paste a store URL or App ID, then Scan",
+            text="— click Find to look up the App ID, or paste a URL and click Scan",
             foreground=_FG_DIM,
         ).pack(side="left", padx=(6, 0))
 
@@ -7717,6 +7716,10 @@ class _SpinDoctorGUI:
         self.ttk.Entry(
             steam_url_row, textvariable=self._steam_url_var, width=52,
         ).pack(side="left", padx=6)
+        self.ttk.Button(
+            steam_url_row, text="Find",
+            command=self._find_steam_app,
+        ).pack(side="left", padx=(0, 4))
         self.ttk.Button(
             steam_url_row, text="Scan",
             command=self._scan_steam,
@@ -7766,7 +7769,7 @@ class _SpinDoctorGUI:
         steam_apply_row = self.ttk.Frame(gameovr_frame)
         steam_apply_row.pack(anchor="w", padx=6, pady=(2, 8))
         self.ttk.Button(
-            steam_apply_row, text="▶  Apply selected  (--apply)",
+            steam_apply_row, text="▶  Apply selected",
             command=self._apply_steam_selection,
         ).pack(side="left")
         self.ttk.Checkbutton(
@@ -7787,8 +7790,8 @@ class _SpinDoctorGUI:
         full_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             full_frame,
-            text=("One-click chain: fetch-meta → fetch-media → update-db in "
-                  "sequence for the selected system. Stops on first error. "
+            text=("Downloads metadata, artwork, and syncs the database for the "
+                  "selected system in one pass. Stops on first error. "
                   "Use the individual steps below to run or troubleshoot each "
                   "phase separately."),
             wraplength=860, justify="left",
@@ -7801,7 +7804,7 @@ class _SpinDoctorGUI:
         ).pack(side="left")
         self.ttk.Label(
             full_chain_row,
-            text="  — fetch-meta + fetch-media + update-db in one click",
+            text="  — metadata + artwork + database sync in one click",
             foreground=_FG_DIM,
         ).pack(side="left")
 
@@ -7849,7 +7852,7 @@ class _SpinDoctorGUI:
         )
         _meta_ag = self.ttk.Checkbutton(
             meta_frame,
-            text="Refresh complete entries too (--all-games)",
+            text="Re-scrape already-complete entries too",
             variable=self._meta_all_games_var,
         )
         _meta_ag.pack(anchor="w", padx=6, pady=2)
@@ -7868,7 +7871,7 @@ class _SpinDoctorGUI:
         )
         _meta_nc = self.ttk.Checkbutton(
             meta_frame,
-            text="Skip cache, hit the API every game (--no-cache)",
+            text="Bypass cache — hit the scraper API fresh for every game",
             variable=self._meta_no_cache_var,
         )
         _meta_nc.pack(anchor="w", padx=6, pady=2)
@@ -7950,7 +7953,7 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
         self._meta_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            media_frame, text="Overwrite existing files (--overwrite)",
+            media_frame, text="Overwrite existing files",
             variable=self._meta_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
@@ -7984,7 +7987,7 @@ class _SpinDoctorGUI:
         self._meta_scan_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             scan_frame,
-            text="Overwrite existing files (--overwrite)",
+            text="Overwrite existing files",
             variable=self._meta_scan_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
@@ -7997,19 +8000,18 @@ class _SpinDoctorGUI:
         db_frame.pack(fill="x", pady=(4, 4))
         self._meta_remove_orphans_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            db_frame, text="Remove DB entries without ROMs (--remove-orphans)",
+            db_frame, text="Remove database entries that have no matching ROM",
             variable=self._meta_remove_orphans_var,
         ).pack(anchor="w", padx=6, pady=2)
         self._meta_strip_variant_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            db_frame, text="Strip region/version tags from displays "
-                            "(--strip-variant-tags)",
+            db_frame, text="Strip region/version tags from display names",
             variable=self._meta_strip_variant_var,
         ).pack(anchor="w", padx=6, pady=2)
         self._generate_overwrite_global_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             db_frame,
-            text="Overwrite Global Emulators.ini (--overwrite-global)",
+            text="Overwrite RocketLauncher global emulator config",
             variable=self._generate_overwrite_global_var,
         ).pack(anchor="w", padx=6, pady=2)
         btn_row = self.ttk.Frame(db_frame)
@@ -8363,6 +8365,74 @@ class _SpinDoctorGUI:
             cb.configure(values=[], state="disabled")
         for mt, btn in self._steam_preview_btns.items():
             btn.configure(state="disabled")
+
+    def _find_steam_app(self) -> None:
+        """Search the Steam store by the selected game name and auto-populate
+        the Steam URL / App ID field with the best matching result.
+
+        Runs the search on a background thread; updates the URL entry on the
+        main thread when done.
+        """
+        selection = self._gameovr_selection()
+        if selection is None:
+            return
+        _sys, game_name = selection
+        if not game_name:
+            self.messagebox.showwarning(
+                "No game selected",
+                "Select a game from the Game dropdown first.",
+            )
+            return
+
+        self._set_status(f"Searching Steam for '{game_name}'…")
+
+        def _worker() -> None:
+            try:
+                import json
+                import urllib.parse
+                import urllib.request
+
+                term = urllib.parse.quote(game_name)
+                url = (
+                    f"https://store.steampowered.com/api/storesearch/"
+                    f"?term={term}&l=english&cc=US"
+                )
+                # nosec B310 — URL is the hardcoded Steam store search
+                # endpoint with a URL-encoded game name; not user-controlled.
+                # Bandit flags every urlopen because it could theoretically
+                # receive a file:// scheme from a caller.
+                with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
+                    data = json.loads(resp.read())
+
+                items = data.get("items") or []
+                games = [i for i in items if i.get("type") == "game"] or items
+                if not games:
+                    self.root.after(0, lambda: (
+                        self._set_status(f"Steam: no results for '{game_name}'"),
+                        self.messagebox.showinfo(
+                            "Not found on Steam",
+                            f"Steam returned no results for '{game_name}'.\n"
+                            "Try a shorter or variant title.",
+                        ),
+                    ))
+                    return
+
+                from .romutils import similarity
+                best = max(games, key=lambda i: similarity(i["name"], game_name))
+                app_id = str(best["id"])
+                store_url = f"https://store.steampowered.com/app/{app_id}/"
+                label = best["name"]
+                self.root.after(0, lambda u=store_url, n=label, a=app_id: (
+                    self._steam_url_var.set(u),
+                    self._set_status(f"Steam: found '{n}' (App {a}) — click Scan to load media"),
+                ))
+            except Exception as exc:  # noqa: BLE001
+                self.root.after(0, lambda e=exc: (
+                    self._set_status(f"Steam search error: {e}"),
+                    self.messagebox.showerror("Steam search error", str(e)),
+                ))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _scan_steam(self) -> None:
         """Fetch Steam media candidates for the current System/Game/URL and
@@ -10245,17 +10315,17 @@ class _SpinDoctorGUI:
         flags_row.pack(fill="x", padx=6, pady=2)
         self._systems_no_sys_media_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Skip system-level media (--no-system-media)",
+            flags_row, text="Skip system artwork download",
             variable=self._systems_no_sys_media_var,
         ).pack(side="left")
         self._systems_no_game_media_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Skip game-level media (--no-game-media)",
+            flags_row, text="Skip per-game artwork download",
             variable=self._systems_no_game_media_var,
         ).pack(side="left", padx=10)
         self._add_pc_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            flags_row, text="Overwrite existing PCLauncher INIs (--overwrite-pclauncher)",
+            flags_row, text="Overwrite existing launcher configs",
             variable=self._add_pc_overwrite_var,
         ).pack(side="left", padx=10)
 
@@ -10271,8 +10341,8 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=6)
         self.ttk.Label(
             add_btns,
-            text=("(add-pc-system runs an interactive title-picker "
-                  "via --auto-best where possible.)"),
+            text=("PC System auto-accepts the best title for each game. "
+                  "Use 'Add / Refresh Games' below to pick up new installs after initial setup."),
             foreground=_FG_DIM,
         ).pack(side="left", padx=10)
 
@@ -10466,17 +10536,17 @@ class _SpinDoctorGUI:
         self._organize_system_combo.pack(side="left", padx=6)
         self._organize_no_sort_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            org_row, text="Skip sort wheels (--no-sort)",
+            org_row, text="Skip sort wheels",
             variable=self._organize_no_sort_var,
         ).pack(side="left", padx=10)
         self._organize_restructure_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            org_row, text="Restructure ROMs (--restructure)",
+            org_row, text="Restructure ROMs into per-game subfolders",
             variable=self._organize_restructure_var,
         ).pack(side="left", padx=10)
         self._organize_overwrite_sort_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            org_row, text="Overwrite existing sort files (--overwrite-sort)",
+            org_row, text="Overwrite existing sort files",
             variable=self._organize_overwrite_sort_var,
         ).pack(side="left", padx=10)
 
@@ -10505,12 +10575,11 @@ class _SpinDoctorGUI:
         rename_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             rename_frame,
-            text=("Scans <roms_dir>/<system>/ for new or changed installs, "
-                  "updates title decisions, and writes PCLauncher INIs for any "
-                  "new entries. Run this after dropping new .exe / .lnk files "
-                  "into the folder. Verbose shows every title, executable path, "
-                  "and whether its INI is new, stale (wrong path — e.g. after "
-                  "a drive migration), or current."),
+            text=("After dropping new game installs or shortcuts into your PC games "
+                  "folder, click here to pick them up. Scans the folder for new "
+                  "entries, adds them to the HyperSpin database (so they appear in "
+                  "the wheel), and writes the launcher config for each new game. "
+                  "Games already in the wheel are left alone."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 2))
         rn_row = self.ttk.Frame(rename_frame)
@@ -10529,13 +10598,12 @@ class _SpinDoctorGUI:
         self._pc_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             rename_frame,
-            text="Overwrite existing INIs — rewrites ALL PCLauncher INIs, "
-                 "including stale ones (wrong drive or renamed exe). "
-                 "Use after a drive migration or file rename.",
+            text="Rewrite all launcher configs — use this after moving the cabinet "
+                 "to a new drive or renaming an executable.",
             variable=self._pc_overwrite_var,
         ).pack(anchor="w", padx=6, pady=(2, 2))
         self.ttk.Button(
-            rename_frame, text="Scan & refresh games",
+            rename_frame, text="Add / Refresh Games",
             command=self._run_pc_rename,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
@@ -11213,19 +11281,20 @@ class _SpinDoctorGUI:
         system = self._systems_old_var.get().strip()
         if not system:
             self._flash_validation(
-                "Pick a PC system first (the dropdown shows the systems "
-                "you've added via add-pc-system)."
+                "Pick a PC system first (the dropdown shows your existing PC systems)."
             )
             return
-        # pc-rename takes ONE positional arg (the system name). Older
-        # GUI code passed two — that was always broken.
-        # GUI also passes --no-interactive so the per-game review path
-        # doesn't hang on stdin; matches the add-pc-system pattern.
-        args = ["pc-rename", system, "--no-interactive"]
+        # Use add-pc-system with --no-menu/--no-system-media/--no-game-media so
+        # only the database XML and PCLauncher INIs are updated (the wheel entry
+        # and system artwork were already set up when the system was first added).
+        # --no-interactive auto-accepts proposed titles so stdin is never needed.
+        args = [
+            "add-pc-system", system,
+            "--no-menu", "--no-system-media", "--no-game-media",
+            "--no-interactive",
+        ]
         if self._global_apply_var.get():
             args.append("--apply")
-        if self._global_verbose_var.get():
-            args.append("--verbose")
         if getattr(self, "_pc_overwrite_var", None) and self._pc_overwrite_var.get():
             args.append("--overwrite-pclauncher")
         self._run_cli("spindoctor", args)
@@ -11266,7 +11335,7 @@ class _SpinDoctorGUI:
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            gen_frame, text="Overwrite existing entries — 3a Generate only (--overwrite)",
+            gen_frame, text="Overwrite existing entries (Generate step only)",
             variable=self._led_overwrite_var,
         ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
 
