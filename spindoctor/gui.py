@@ -2350,9 +2350,16 @@ class _SpinDoctorGUI:
         # tab builders can call _set_status() during construction.
         bar = self.ttk.Frame(self.root)
         bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        self.ttk.Label(bar, textvariable=self._status_var, anchor="w").pack(
-            side="left", fill="x", expand=True
+        self._status_bar_frame = bar
+        # width=1 prevents the label from demanding wide space when the
+        # status text is long (e.g. a full CLI command string). fill="x"
+        # + expand=True still give it all remaining space after the
+        # right-side widgets. _set_status() truncates with … so the
+        # checkboxes and buttons are never hidden.
+        self._status_label = self.ttk.Label(
+            bar, textvariable=self._status_var, anchor="w", width=1,
         )
+        self._status_label.pack(side="left", fill="x", expand=True)
         # Indeterminate progress bar sits between the status text and
         # the Stop button. Hidden by default; _run_cli starts it and
         # _on_proc_done stops it. Without this the only visual cue that
@@ -14044,6 +14051,40 @@ class _SpinDoctorGUI:
             pass
 
     def _set_status(self, text: str) -> None:
+        """Update the status bar text, truncating with … if wider than the allocated space.
+
+        Long CLI command strings (e.g. ``Running: spindoctor add-pc-system …``) can
+        overflow the status label and hide the right-side checkboxes and buttons.
+        We measure the label's current rendered width and binary-search for the
+        longest prefix that fits, then append an ellipsis.  Falls back to the raw
+        text when the label hasn't been mapped yet (early construction calls) or
+        when font metrics are unavailable.
+        """
+        try:
+            lbl = self._status_label
+            avail_w = lbl.winfo_width()
+            # avail_w is 1 (unmapped) or 0 during construction — skip truncation.
+            if avail_w > 20 and len(text) > 10:
+                from tkinter.font import nametofont
+                try:
+                    font = nametofont(lbl.cget("font") or "TkDefaultFont")
+                except Exception:  # noqa: BLE001
+                    font = nametofont("TkDefaultFont")
+                if font.measure(text) > avail_w:
+                    ellipsis = "…"
+                    ew = font.measure(ellipsis)
+                    budget = avail_w - ew
+                    # Binary search for the longest prefix that fits within budget.
+                    lo, hi = 0, len(text)
+                    while hi - lo > 1:
+                        mid = (lo + hi) // 2
+                        if font.measure(text[:mid]) <= budget:
+                            lo = mid
+                        else:
+                            hi = mid
+                    text = text[:lo].rstrip() + ellipsis
+        except Exception:  # noqa: BLE001 — widget not ready yet or font query failed
+            pass
         self._status_var.set(text)
 
     def _flash_validation(self, text: str) -> None:
