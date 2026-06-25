@@ -690,3 +690,90 @@ def test_game_remove_without_pclauncher_flag_leaves_ini(tmp_path, isolated_confi
     ])
     assert result.exit_code == 0, result.output
     assert ini_path.exists(), "INI must be untouched without --remove-pclauncher"
+
+
+# ─── game save-order ─────────────────────────────────────────────────────────
+
+
+def _build_ordered_library(tmp_path: Path) -> tuple[Config, Path]:
+    """Three-game system in alphabetical order for reorder tests."""
+    hs_dir = tmp_path / "hs"
+    db_dir = hs_dir / "Databases" / "MAME"
+    db_dir.mkdir(parents=True)
+    roms_dir = tmp_path / "roms"
+    roms_dir.mkdir(parents=True)
+
+    db = HyperspinDatabase("MAME", db_dir / "MAME.xml")
+    for name in ("1942", "Contra", "Zelda"):
+        db.upsert_game(GameEntry(name=name, description=name))
+    db.save()
+
+    cfg = Config()
+    cfg.hyperspin_dir = str(hs_dir)
+    cfg.roms_dir = str(roms_dir)
+    save_config(cfg)
+    return cfg, db_dir / "MAME.xml"
+
+
+def test_game_save_order_applies_custom_order(tmp_path, isolated_config):
+    """game save-order --apply reorders games to match the order file."""
+    _cfg, db_path = _build_ordered_library(tmp_path)
+
+    order_file = tmp_path / "order.txt"
+    order_file.write_text("Zelda\n1942\nContra\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "save-order",
+        "--system", "MAME",
+        "--order-file", str(order_file),
+        "--apply",
+    ], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    db = HyperspinDatabase("MAME", db_path)
+    db.load()
+    names = [g.name for g in db.iter_xml_order()]
+    assert names == ["Zelda", "1942", "Contra"]
+
+
+def test_game_save_order_dry_run_does_not_write(tmp_path, isolated_config):
+    """Without --apply, game save-order must not change the XML."""
+    _cfg, db_path = _build_ordered_library(tmp_path)
+    original = db_path.read_bytes()
+
+    order_file = tmp_path / "order.txt"
+    order_file.write_text("Zelda\n1942\nContra\n", encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "save-order",
+        "--system", "MAME",
+        "--order-file", str(order_file),
+    ], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+    assert db_path.read_bytes() == original, "XML must not be written in dry-run"
+
+
+def test_game_save_order_unlisted_games_appended(tmp_path, isolated_config):
+    """Games absent from the order file are appended, not dropped."""
+    _cfg, db_path = _build_ordered_library(tmp_path)
+
+    order_file = tmp_path / "order.txt"
+    order_file.write_text("Contra\n", encoding="utf-8")  # only one of three
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "save-order",
+        "--system", "MAME",
+        "--order-file", str(order_file),
+        "--apply",
+    ], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+
+    db = HyperspinDatabase("MAME", db_path)
+    db.load()
+    names = [g.name for g in db.iter_xml_order()]
+    assert names[0] == "Contra", "listed game must come first"
+    assert set(names) == {"1942", "Contra", "Zelda"}, "no games dropped"

@@ -252,6 +252,9 @@ spindoctor game move-down --system MAME "1942" --apply                :: shift o
 spindoctor game sort --system "Nintendo 64" --apply                   :: A→Z by title (The/A/An stripped)
 spindoctor game sort --system MAME --by name --apply                  :: A→Z by ROM filename
 spindoctor game sort --system MAME --apply --verbose                  :: print sorted list before saving
+
+spindoctor game save-order --system MAME --order-file order.txt       :: dry-run: show custom order
+spindoctor game save-order --system MAME --order-file order.txt --apply :: write custom order to XML
 ```
 
 All write commands are dry-run without `--apply`. `--output-dir` writes outside the live HyperSpin tree.
