@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.13] - 2026-06-25
+
 ### Fixed
 
 - **Steam HLS video plays with no audio after v2.7.12.** Switching the ffmpeg command to `-c copy` (stream-copy) in v2.7.12 correctly restored full-length downloads, but the post-download audio re-encode step (`_maybe_fix_video_audio`, added in #306 for ScreenScraper) was only wired into the regular HTTP download path — the HLS path returned immediately after the file was placed without calling it. Videos that carry non-AAC audio in the MP4 container therefore played silently on Windows 7 (Media Foundation) and macOS (AVFoundation). Fixed by calling `_maybe_fix_video_audio` at the end of a successful HLS download, identical to the HTTP path.
@@ -1837,7 +1839,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.12...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.13...HEAD
+[2.7.13]: https://github.com/phillram/spindoctor/compare/v2.7.12...v2.7.13
 [2.7.12]: https://github.com/phillram/spindoctor/compare/v2.7.11...v2.7.12
 [2.7.11]: https://github.com/phillram/spindoctor/compare/v2.7.10...v2.7.11
 [2.7.10]: https://github.com/phillram/spindoctor/compare/v2.7.9...v2.7.10
