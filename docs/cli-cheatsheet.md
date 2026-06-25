@@ -158,7 +158,7 @@ spindoctor clone  --system "Sony Playstation" --game "Resident Evil" --to "Resid
 
 Reference: [rename](commands.md#rename), [clone](commands.md#clone).
 
-> **GUI:** Systems tab → Step 3. Select a system — the game dropdown auto-populates from the database. ↻ refreshes the list.
+> **GUI:** Games tab → Step 2. The system is set by the shared picker at the top of the tab — the game dropdown auto-populates from the database. ↻ refreshes the list.
 
 ### `curate` — region / revision thinning
 
@@ -216,6 +216,8 @@ Use this when you only want to fix or regenerate `.ini` files without changing w
 
 Reference: [Command reference → pc-rename](commands.md#pc-rename).
 
+> **GUI:** Games tab → Step 3 (**Add new PC games / refresh the wheel**) — select the PC system using the shared picker at the top, tick **Overwrite existing PCLauncher INIs** if needed, then click **Scan & add new games**.
+
 ### `pc-fix-exe` — fix a PC game launching the wrong executable
 
 ```bat
@@ -229,6 +231,8 @@ spindoctor pc-fix-exe "PC GAMES" "ElecHead" --list-candidates             :: sho
 Auto-detection scans the game folder and all subfolders. Candidates are ranked: non-excluded `.exe` files first (shallower paths above deeper), then `.ahk` scripts, then `.bat` scripts, then excluded `.exe` files (uninstallers, `vcredist*`, `chromedriver.exe`, `nwjc.exe`, etc.). For NW.js/RPGMaker games, `Game.exe` is selected over `chromedriver.exe`. `.ahk` launchers (e.g. Taito Type X `CleanLaunch.ahk`) now appear in the candidate list automatically.
 
 Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
+
+> **GUI:** Games tab → Step 4 (**Fix a game that launches the wrong executable**) — select the system and game using the pickers, choose the correct candidate from the ranked list (or Browse…), then click **Apply fix**.
 
 ### `game` — list, reorder, or remove games in a wheel
 
@@ -252,7 +256,7 @@ spindoctor game sort --system MAME --apply --verbose                  :: print s
 
 All write commands are dry-run without `--apply`. `--output-dir` writes outside the live HyperSpin tree.
 
-> **GUI:** Systems tab → **Manage games in a system wheel** — same Move Up/Down/Move to #/Sort/Remove/Save Order controls as the Main Menu carousel.
+> **GUI:** Games tab → Step 1 (**Manage the game wheel**) — shared system picker at the top, then Move Up/Down/Jump to #/Sort/Remove Game/Save Order controls. Tick **Also remove PCLauncher INI** when removing from a PC system.
 
 Reference: [Command reference → game](commands.md#game).
 

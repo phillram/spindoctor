@@ -17,6 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **New Games tab in GUI:** Game-level operations (manage wheel, rename/clone, add new PC games, fix game executable) moved from the Systems tab into a dedicated **Games** tab positioned between Systems and Metadata & Media. A single system picker at the top of the tab drives all four steps — pick the system once and every section below operates on that selection, eliminating four redundant per-section dropdowns. Systems tab now covers only system-level operations: main menu carousel, add a new system, organize sort wheels. Each step has expanded help text and tips to make the workflow self-explanatory without consulting the docs.
 - **GUI: "Add / Refresh Games" (PC systems) now updates the HyperSpin XML database.** Previously called `pc-rename`, which only wrote PCLauncher INIs — new games never appeared in the wheel because no XML entry was created. Now calls `add-pc-system --no-menu --no-system-media --no-game-media --no-interactive`: updates both the XML database and the launcher configs. Re-running on an existing system is safe; already-present entries are skipped.
 - **GUI: Removed CLI flag names from checkbox and button labels throughout.** Labels like `Skip media checks (--no-media)` and `Remove DB entries without ROMs (--remove-orphans)` now use plain English across all tabs.
 
