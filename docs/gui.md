@@ -50,6 +50,8 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 A single window with a workflow-ordered tab strip across the top, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom showing the current command and control buttons. Every tab scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
 
+The status bar text is automatically truncated with … when a command string is too long to fit — the right-side buttons and checkboxes are always visible regardless of command length.
+
 ### Global Apply, Verbose, and Save Log checkboxes
 
 The status bar contains three checkboxes that apply to **every command in every tab**:
