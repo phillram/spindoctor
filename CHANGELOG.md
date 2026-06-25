@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.8.2] - 2026-06-24
+
 ### Added
 
 - **`add-pc-system` prunes stale games.** Re-running `add-pc-system --apply` after uninstalling a PC game now removes the stale entry from the HyperSpin XML database **and** deletes the corresponding PCLauncher INI file. Previously only new games were appended; uninstalled games lingered in the wheel and in `Modules/PCLauncher/<system>/` until manually removed. Dry-run output (without `--apply`) previews additions as `would add:` and removals as `would remove (stale):`. Verbose dry-run also lists stale INI paths under `would delete … stale INI(s)`.
@@ -1892,7 +1894,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.2...HEAD
+[2.8.2]: https://github.com/phillram/spindoctor/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/phillram/spindoctor/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/phillram/spindoctor/compare/v2.7.14...v2.8.0
 [2.7.14]: https://github.com/phillram/spindoctor/compare/v2.7.13...v2.7.14
