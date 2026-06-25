@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`game remove --remove-pclauncher`:** New flag that also deletes the per-game PCLauncher INI (`Modules/PCLauncher/<system>/<game>.ini`) in addition to removing the XML database entry. Without this flag `game remove` only touches the wheel database and leaves the INI on disk (existing behaviour, preserved for non-PC systems). Dry-run without `--apply` previews the `would delete` path. Skips silently if `rocketlauncher_dir` is not configured or the INI file doesn't exist. GUI: **Manage games in a system wheel** → **Remove Game** now has an **Also remove PCLauncher INI** checkbox that passes the flag automatically.
+
 ## [2.7.14] - 2026-06-24
 
 ### Fixed
