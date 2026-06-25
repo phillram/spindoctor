@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-06-24
+
 ### Fixed
 
 - **PC game scan picks up one entry per install folder.** `_scan_recursive` previously did a flat `rglob` and treated every matching file as a separate game, causing spurious duplicates (e.g. `Peglin` + `Peglin Launcher` from the same folder) and junk entries (`Launch Ape Out.lnk`, `GAMESTORRENT.CO.url`) to appear in the HyperSpin wheel. Rewrote to group candidates by their top-level slot (the immediate child of the PC games folder) and pick the single best executable per slot. Within a slot, `.exe` files are preferred over shortcuts; known installer / helper stems (`setup`, `uninstall`, `vcredist`, `crashreport`, etc.) are deprioritised. Root-level `.url` files pointing to `http(s)://` addresses are silently dropped (website shortcuts left behind by some game packages). Root-level `.lnk` / `.url` files whose stem starts with `Launch ` are dropped (Windows per-game launch shortcuts that duplicate the game's own subfolder). `_propose_pc_titles` now delegates to `scan_roms` so the same filters apply consistently to `add-pc-system`, `pc-rename`, and `update-db`.
@@ -1864,7 +1866,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.14...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.0...HEAD
+[2.8.0]: https://github.com/phillram/spindoctor/compare/v2.7.14...v2.8.0
 [2.7.14]: https://github.com/phillram/spindoctor/compare/v2.7.13...v2.7.14
 [2.7.13]: https://github.com/phillram/spindoctor/compare/v2.7.12...v2.7.13
 [2.7.12]: https://github.com/phillram/spindoctor/compare/v2.7.11...v2.7.12
