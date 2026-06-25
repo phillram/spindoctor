@@ -173,7 +173,7 @@ def test_health_to_tabs_only_references_real_tab_labels():
     # Kept in sync manually — mirroring the order in `_build_layout`.
     expected_tabs = {
         "Setup", "Diagnostics", "Metadata & Media", "Maintenance",
-        "Toolkit", "Systems", "LEDBlinky", "Lightgun",
+        "Toolkit", "Systems", "Games", "LEDBlinky", "Lightgun",
         "Backup & Restore", "Migration", "History", "Console",
     }
     for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
