@@ -962,3 +962,42 @@ def test_download_hls_audio_warn_surfaces_in_result(tmp_path, monkeypatch):
     assert r.success
     assert r.warning
     assert "silent" in r.warning.lower()
+
+
+def test_download_hls_best_quality_uses_explicit_variant(tmp_path, monkeypatch):
+    """Even when no hls_max_height cap is set ('best quality'), _pick_hls_variant
+    must be called with a large sentinel so SpinDoctor selects the variant URL
+    explicitly rather than letting ffmpeg pick from the master.  ffmpeg's internal
+    selection chooses the highest-bandwidth CMAF variant which older Windows ffmpeg
+    versions truncate to ~9 s; explicit selection reliably picks a usable stream."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+
+    calls: dict = {}
+
+    def fake_pick(url, max_height, sess):
+        calls["max_height"] = max_height
+        return (url, None)
+
+    monkeypatch.setattr("spindoctor.media._pick_hls_variant", fake_pick)
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
+
+    dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades",
+                        media_type="video", hls_max_height=None)
+
+    assert "max_height" in calls, "_pick_hls_variant was not called for best-quality download"
+    assert calls["max_height"] == 9999, (
+        f"expected sentinel 9999 for best-quality, got {calls['max_height']}"
+    )
