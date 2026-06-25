@@ -801,8 +801,8 @@ def test_gui_constructs_against_real_tk():
         app.root.update_idletasks()
         # Sanity: every tab builder ran without exception, including the
         # Maintenance tab (foreground TclError) and the Systems tab
-        # (_output AttributeError). 12 = the documented tab count.
-        assert len(app._tab_base_names) == 12
+        # (_output AttributeError). 13 = the documented tab count.
+        assert len(app._tab_base_names) == 13
         # Pin the workflow-oriented order so a drive-by reorder doesn't
         # regress UX without anyone noticing. See `_build_layout` for
         # the rationale behind the sequencing.
@@ -810,6 +810,7 @@ def test_gui_constructs_against_real_tk():
             "Setup",
             "Diagnostics",
             "Systems",
+            "Games",
             "Metadata & Media",
             "Maintenance",
             "Toolkit",
@@ -1090,7 +1091,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
         app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
         try:
             app.root.update_idletasks()
-            assert len(app._tab_base_names) == 12
+            assert len(app._tab_base_names) == 13
             # Pin the workflow-oriented order so a future drive-by
             # reorder doesn't regress UX without anyone noticing.
             # See `_build_layout` for the rationale.
@@ -1098,6 +1099,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
                 "Setup",
                 "Diagnostics",
                 "Systems",
+                "Games",
                 "Metadata & Media",
                 "Maintenance",
                 "Toolkit",
