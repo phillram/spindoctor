@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Steam media: Find now auto-scans.** Clicking **Find** in the Steam media panel (Metadata & Media tab) now automatically triggers the media scan after populating the URL field — no separate **Scan** click required. Manually pasting a URL and clicking **Scan** continues to work as before.
+- **Steam media: Video dropdown widened.** The Video candidate dropdown is now twice as wide (width 60 vs 30) so long candidate labels are readable without truncation.
+- **Steam media: Artwork picker moved.** The Artwork picker moved from the first picker row (Video / Screenshot / Artwork) to the second row alongside Wheel (Artwork / Wheel), giving each picker more horizontal space.
+
+### Added
+
+- **Steam media: Store page button.** New **Store page** button next to Scan opens the game's Steam store page in the default browser. Enabled after a successful scan; resets when the game or system selection changes.
+
 ## [2.8.0] - 2026-06-24
 
 ### Fixed
