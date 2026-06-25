@@ -152,3 +152,53 @@ def test_add_pc_system_no_rename_accepts_proposals(cabinet):
     body = sys_db.read_text(encoding="utf-8")
     assert 'name="Cyberpunk 2077"' in body
     assert 'name="Hades"' in body
+
+
+def test_add_pc_system_removes_stale_games(cabinet, monkeypatch):
+    """Re-running after a game is uninstalled removes it from the DB and INIs."""
+    monkeypatch.setattr("builtins.input", lambda _prompt="": "")
+
+    runner = CliRunner()
+
+    # First run: bootstrap with Cyberpunk 2077 + Hades.
+    result = runner.invoke(
+        cli,
+        [
+            "add-pc-system", "PC Games",
+            "--no-system-media",
+            "--no-game-media",
+            "--apply",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    pcl_dir = cabinet["rl"] / "Modules" / "PCLauncher" / "PC Games"
+    assert (pcl_dir / "Cyberpunk 2077.ini").exists()
+    assert (pcl_dir / "Hades.ini").exists()
+
+    # Simulate uninstalling Cyberpunk 2077 by removing its folder.
+    import shutil
+    shutil.rmtree(cabinet["roms"] / "PC Games" / "Cyberpunk 2077")
+
+    # Second run: should remove Cyberpunk 2077 from the DB and delete its INI.
+    result = runner.invoke(
+        cli,
+        [
+            "add-pc-system", "PC Games",
+            "--no-system-media",
+            "--no-game-media",
+            "--no-interactive",
+            "--apply",
+        ],
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+
+    sys_db = cabinet["hs"] / "Databases" / "PC Games" / "PC Games.xml"
+    body = sys_db.read_text(encoding="utf-8")
+    assert 'name="Cyberpunk 2077"' not in body, "stale XML entry not removed"
+    assert 'name="Hades"' in body, "Hades should still be present"
+
+    assert not (pcl_dir / "Cyberpunk 2077.ini").exists(), "stale INI not deleted"
+    assert (pcl_dir / "Hades.ini").exists(), "Hades INI should still be present"
