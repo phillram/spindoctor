@@ -1859,9 +1859,9 @@ def test_flash_validation_rings_bell_and_sets_status(monkeypatch):
 
 
 def test_run_pc_rename_passes_single_positional_arg(monkeypatch):
-    """pc-rename CLI takes ONE positional arg (system_name) — older GUI
-    code passed two and the button was effectively broken. Verify the
-    argv shape matches what the CLI accepts."""
+    """'Add / Refresh Games' button now calls add-pc-system (not pc-rename)
+    so that the HyperSpin XML database is updated and new games appear in
+    the wheel.  Verify the argv shape and required flags."""
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         app._systems_old_var.set("PC Games")
@@ -1873,13 +1873,19 @@ def test_run_pc_rename_passes_single_positional_arg(monkeypatch):
 
         assert len(ran) == 1
         argv = ran[0]
-        assert argv[0] == "pc-rename"
+        # Command must be add-pc-system (not pc-rename) so the XML database
+        # is written and new games appear in the HyperSpin wheel.
+        assert argv[0] == "add-pc-system"
         # Single positional: the system name. No second positional.
         assert argv[1] == "PC Games"
-        # Two slots: command + one positional. Any further args must be
-        # options (start with --).
+        # All further args must be options (start with --).
         for a in argv[2:]:
             assert a.startswith("--"), f"unexpected positional: {a!r}"
+        # Must skip the wheel carousel, system media, and game media steps —
+        # this button is only for updating the database + PCLauncher INIs.
+        assert "--no-menu" in argv
+        assert "--no-system-media" in argv
+        assert "--no-game-media" in argv
         # GUI must pass --no-interactive so the title-review input() loop
         # never blocks the subprocess.
         assert "--no-interactive" in argv

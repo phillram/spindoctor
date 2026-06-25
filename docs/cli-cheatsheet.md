@@ -186,18 +186,33 @@ spindoctor cleanup run --apply
 
 Reference: [Command reference → cleanup](commands.md#cleanup).
 
-### `pc-rename` — re-curate PC game titles after adding new games
+### `add-pc-system` — add new games to an existing PC system wheel
+
+```bat
+:: First time — full bootstrap of a new PC system
+spindoctor add-pc-system "PC Games"                                      :: dry-run preview
+spindoctor add-pc-system "PC Games" --no-interactive --apply             :: commit (auto-accept all titles)
+
+:: After dropping new games into the roms folder — updates XML database + PCLauncher INIs
+:: (this is what the GUI "Add / Refresh Games" button does)
+spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --apply
+spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --overwrite-pclauncher --apply  :: rewrite ALL INIs (fixes stale paths + wrong exes)
+```
+
+The scanner enforces **one entry per install folder** — if a folder contains both `Game.exe` and `Game Launcher.exe`, only the best candidate is picked. Website `.url` shortcuts and root-level "Launch X" `.lnk` shortcuts are silently dropped.
+
+Reference: [Command reference → add-pc-system](commands.md#add-pc-system).
+
+### `pc-rename` — regenerate PCLauncher INIs only (does not update the wheel XML)
 
 ```bat
 spindoctor pc-rename "PC Games"                                          :: dry-run preview
 spindoctor pc-rename "PC Games" --verbose                                :: show each game's resolved exe + status (full paths, no truncation)
-spindoctor pc-rename "PC Games" --apply                                  :: write new PCLauncher INIs
-spindoctor pc-rename "PC Games" --no-interactive --apply                 :: auto-accept all (GUI / scripted)
+spindoctor pc-rename "PC Games" --apply                                  :: write new / missing PCLauncher INIs
 spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply           :: rewrite ALL INIs (fixes stale paths + wrong exes)
-spindoctor pc-rename "PC Games" --no-interactive --verbose --overwrite-pclauncher --apply  :: full audit + fix
 ```
 
-Resolves the real game `.exe` when RocketLauncher's extension-matching finds a non-exe file (e.g. `webcache.zip` from a GOG install). Run with `--overwrite-pclauncher --apply` to bulk-fix all games in one pass.
+Use this when you only want to fix or regenerate `.ini` files without changing what appears in the wheel. To add new games to the wheel, use `add-pc-system --no-menu --no-system-media --no-game-media` instead (see above).
 
 Reference: [Command reference → pc-rename](commands.md#pc-rename).
 

@@ -9005,28 +9005,19 @@ def _propose_pc_titles(
     system_name: str,
     config: Config,
 ) -> list[tuple[Path, str]]:
-    """Walk the system's ROM dir and return ``(path, proposed_title)`` pairs.
+    """Return ``(path, proposed_title)`` pairs for the system's ROM folder.
 
-    Honours the override's title_strategy.  Same files that ``scan_roms``
-    would pick up — kept separate so the picker can show the file path
-    behind each proposed title.
+    Delegates to ``scan_roms`` so the same one-per-folder deduplication,
+    web-URL filtering, and "Launch " shortcut filtering that apply to
+    ``update-db`` also apply here.
     """
-    from .config import get_rom_extensions, get_system_overrides
-    from .romutils import derive_pc_title
+    from .audit import scan_roms
 
-    rom_dir = Path(config.roms_dir) / system_name
-    if not rom_dir.exists():
-        return []
-    extensions = {e.lower() for e in get_rom_extensions(system_name)}
-    strategy = (
-        get_system_overrides().get(system_name, {}).get("title_strategy", "smart")
+    roms = scan_roms(system_name, Path(config.roms_dir))
+    return sorted(
+        [(info.path, info.name) for info in roms.values()],
+        key=lambda x: x[1].lower(),
     )
-    proposals: list[tuple[Path, str]] = []
-    for path in sorted(rom_dir.rglob("*")):
-        if not path.is_file() or path.suffix.lower() not in extensions:
-            continue
-        proposals.append((path, derive_pc_title(path, rom_dir, strategy)))
-    return proposals
 
 
 @cli.command("add-pc-system")
