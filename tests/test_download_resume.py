@@ -631,7 +631,9 @@ def test_pick_hls_variant_error_returns_master_and_none():
 def test_download_hls_passes_audio_url_to_ffmpeg(tmp_path, monkeypatch):
     """When quality is selected and the master has an audio rendition, ffmpeg must
     receive a second -i with the audio URL and explicit -map directives so the
-    audio track is included in the output (Steam video-only variants have no audio)."""
+    audio track is included in the output (Steam video-only variants have no audio).
+    When audio pre-download fails (returns None), the HLS URL is used directly and
+    protocol_whitelist is applied before BOTH -i inputs."""
     dl = _hls_downloader(tmp_path)
     dest = dl.media_path("PC Games", "Hades", "video")
 
@@ -640,6 +642,11 @@ def test_download_hls_passes_audio_url_to_ffmpeg(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "spindoctor.media._pick_hls_variant",
         lambda url, h, sess: ("https://cdn/720p.m3u8", "https://cdn/audio.m3u8"),
+    )
+    # Simulate pre-download failure so the URL is passed to ffmpeg directly.
+    monkeypatch.setattr(
+        "spindoctor.media._download_hls_audio_to_file",
+        lambda *a, **kw: None,
     )
 
     captured: dict = {}
@@ -666,6 +673,13 @@ def test_download_hls_passes_audio_url_to_ffmpeg(tmp_path, monkeypatch):
     assert "-map" in cmd
     assert "0:v:0" in cmd
     assert "1:a:0" in cmd
+    # protocol_whitelist must appear before each -i so old ffmpeg can fetch https
+    # segments for both the video variant and the audio rendition playlists.
+    pw_indices = [i for i, tok in enumerate(cmd) if tok == "-protocol_whitelist"]
+    i_indices = [i for i, tok in enumerate(cmd) if tok == "-i"]
+    assert len(pw_indices) == 2, f"expected 2 -protocol_whitelist flags, got {pw_indices}"
+    assert pw_indices[0] < i_indices[0], "-protocol_whitelist must precede first -i"
+    assert pw_indices[1] < i_indices[1], "-protocol_whitelist must precede second -i"
 
 
 def test_download_hls_no_audio_url_uses_single_input(tmp_path, monkeypatch):
@@ -1001,3 +1015,151 @@ def test_download_hls_best_quality_uses_explicit_variant(tmp_path, monkeypatch):
     assert calls["max_height"] == 9999, (
         f"expected sentinel 9999 for best-quality, got {calls['max_height']}"
     )
+
+
+# ── _download_hls_audio_to_file ───────────────────────────────────────────────
+
+_AUDIO_PLAYLIST = """\
+#EXTM3U
+#EXT-X-VERSION:7
+#EXT-X-INDEPENDENT-SEGMENTS
+#EXT-X-TARGETDURATION:3
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-MAP:URI="dash_h264/init-stream4.m4s"
+#EXTINF:3
+dash_h264/chunk-stream4-00001.m4s
+#EXTINF:3
+dash_h264/chunk-stream4-00002.m4s
+#EXTINF:0.8
+dash_h264/chunk-stream4-00003.m4s
+#EXT-X-ENDLIST
+"""
+
+
+class _MockSession:
+    """Requests session stub that serves preset responses by URL."""
+
+    def __init__(self, responses: dict[str, bytes]):
+        self._resp = responses
+
+    def get(self, url, timeout=15):
+        class _R:
+            def __init__(self, body: bytes):
+                self.content = body
+                self.text = body.decode("utf-8", errors="replace")
+            def raise_for_status(self): pass
+        return _R(self._resp.get(url, b""))
+
+
+def test_download_hls_audio_to_file_happy_path(tmp_path):
+    """init segment + all chunk segments are written to tmp_path in order."""
+    from spindoctor.media import _download_hls_audio_to_file
+
+    base = "https://cdn/trailers/1234"
+    playlist_url = f"{base}/hls_audio.m3u8"
+    init_data = b"INIT"
+    chunk1 = b"CHUNK1"
+    chunk2 = b"CHUNK2"
+    chunk3 = b"CHUNK3"
+
+    session = _MockSession({
+        playlist_url: _AUDIO_PLAYLIST.encode(),
+        f"{base}/dash_h264/init-stream4.m4s": init_data,
+        f"{base}/dash_h264/chunk-stream4-00001.m4s": chunk1,
+        f"{base}/dash_h264/chunk-stream4-00002.m4s": chunk2,
+        f"{base}/dash_h264/chunk-stream4-00003.m4s": chunk3,
+    })
+
+    out = tmp_path / "audio._audiotmp.mp4"
+    result = _download_hls_audio_to_file(playlist_url, session, out)
+
+    assert result == str(out), "must return path to written file on success"
+    assert out.exists()
+    assert out.read_bytes() == init_data + chunk1 + chunk2 + chunk3
+
+
+def test_download_hls_audio_to_file_no_init_segment(tmp_path):
+    """Playlists without EXT-X-MAP still write all chunk data."""
+    from spindoctor.media import _download_hls_audio_to_file
+
+    playlist_no_map = """\
+#EXTM3U
+#EXTINF:3
+chunk-00001.aac
+#EXTINF:3
+chunk-00002.aac
+#EXT-X-ENDLIST
+"""
+    base = "https://cdn/ts"
+    url = f"{base}/audio.m3u8"
+    session = _MockSession({
+        url: playlist_no_map.encode(),
+        f"{base}/chunk-00001.aac": b"AAC1",
+        f"{base}/chunk-00002.aac": b"AAC2",
+    })
+
+    out = tmp_path / "audio._audiotmp.mp4"
+    result = _download_hls_audio_to_file(url, session, out)
+
+    assert result == str(out)
+    assert out.read_bytes() == b"AAC1" + b"AAC2"
+
+
+def test_download_hls_audio_to_file_network_error_returns_none(tmp_path):
+    """Any network failure must return None (caller falls back to URL)."""
+    from spindoctor.media import _download_hls_audio_to_file
+
+    class _FailSession:
+        def get(self, *a, **kw): raise OSError("timeout")
+
+    out = tmp_path / "audio._audiotmp.mp4"
+    result = _download_hls_audio_to_file("https://cdn/audio.m3u8", _FailSession(), out)
+
+    assert result is None
+    assert not out.exists(), "partial file must be cleaned up on failure"
+
+
+def test_download_hls_audio_pre_download_used_as_ffmpeg_input(tmp_path, monkeypatch):
+    """When audio pre-download succeeds, ffmpeg receives a local file path (not the
+    HLS URL) as its second -i, bypassing the HLS demuxer for the audio track."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Arzette", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg",
+                        lambda _: ("/usr/bin/ffmpeg", "/usr/bin/ffprobe"))
+    monkeypatch.setattr(
+        "spindoctor.media._pick_hls_variant",
+        lambda url, h, sess: ("https://cdn/480p.m3u8", "https://cdn/audio.m3u8"),
+    )
+
+    pre_download_path = str(tmp_path / "Arzette._audiotmp.mp4")
+
+    monkeypatch.setattr(
+        "spindoctor.media._download_hls_audio_to_file",
+        lambda audio_url, session, tmp: pre_download_path,
+    )
+
+    captured: dict = {}
+
+    def fake_run(cmd, capture_output, timeout):
+        captured["cmd"] = cmd
+        out = Path(cmd[-1])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 72.8)
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Arzette",
+                            media_type="video", hls_max_height=480)
+
+    assert r.success
+    cmd = captured["cmd"]
+    assert cmd.count("-i") == 2
+    assert "https://cdn/480p.m3u8" in cmd
+    assert pre_download_path in cmd, "pre-downloaded local file must be used as audio input"
+    assert "https://cdn/audio.m3u8" not in cmd, "HLS audio URL must not be passed to ffmpeg when pre-download succeeds"
+    assert "0:v:0" in cmd
+    assert "1:a:0" in cmd
