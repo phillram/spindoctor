@@ -10,6 +10,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`add-pc-system --verbose`**: `--verbose` flag for `add-pc-system`. After the title-review step it prints every game labelled `new` (not yet in the HyperSpin XML) or `existing` (already present), followed by its resolved `Application=` executable path. Titles that are in the database but absent from the current ROM scan are flagged as orphaned entries. In the PCLauncher INI step, each INI is listed with its full path and whether it would be written or skipped (dry-run), or was written or kept (apply). Full paths are never truncated regardless of terminal width.
 
+### Fixed
+
+- **GUI status bar: long command strings no longer hide checkboxes.** When a command with many flags (e.g. `add-pc-system --no-menu --no-system-media --no-game-media --verbose --apply`) was running, the status bar label demanded enough horizontal space to display the full command string, pushing the **Apply / Verbose / Save Log** checkboxes and the **Hide / Copy / Clear / Stop** buttons off screen. The label now has a fixed minimum width of 1 character so the right-side controls always stay visible. `_set_status` dynamically truncates any text that would overflow the allocated label width, appending … so the truncation is visually obvious.
+
 ## [2.8.1] - 2026-06-24
 
 ### Fixed
