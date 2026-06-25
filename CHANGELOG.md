@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`add-pc-system` prunes stale games.** Re-running `add-pc-system --apply` after uninstalling a PC game now removes the stale entry from the HyperSpin XML database **and** deletes the corresponding PCLauncher INI file. Previously only new games were appended; uninstalled games lingered in the wheel and in `Modules/PCLauncher/<system>/` until manually removed. Dry-run output (without `--apply`) previews additions as `would add:` and removals as `would remove (stale):`. Verbose dry-run also lists stale INI paths under `would delete … stale INI(s)`.
+
 - **`add-pc-system --verbose`**: `--verbose` flag for `add-pc-system`. After the title-review step it prints every game labelled `new` (not yet in the HyperSpin XML) or `existing` (already present), followed by its resolved `Application=` executable path. Titles that are in the database but absent from the current ROM scan are flagged as orphaned entries. In the PCLauncher INI step, each INI is listed with its full path and whether it would be written or skipped (dry-run), or was written or kept (apply). Full paths are never truncated regardless of terminal width.
 
 ### Fixed
