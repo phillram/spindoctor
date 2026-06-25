@@ -522,7 +522,7 @@ Sort axes default to all four (`genre,manufacturer,year,letter`); existing sort-
 
 ### `add-system`
 
-> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` (with `--no-system-media` / `--no-game-media` toggles, dry-run by default). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Systems** tab wraps `add-system` and `add-pc-system` (with **Skip system media download** / **Skip per-game media download** toggles, dry-run by default). The **Add / Refresh Games** button on the PC section runs `add-pc-system --no-menu --no-system-media --no-game-media --no-interactive`, which updates both the XML database and PCLauncher INIs without touching the wheel carousel or media files. See [GUI walkthrough](gui.md).
 
 Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and walks the metadata + media fetch flow.
 
@@ -537,7 +537,7 @@ spindoctor add-system "Sega Saturn" --source thegamesdb --apply :: force one scr
 
 ### `add-pc-system`
 
-Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs.
+Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs. The scanner enforces **one entry per install folder**: all files inside a subfolder are grouped together and a single best-candidate executable is picked, preventing duplicate entries (e.g. "Peglin" and "Peglin Launcher" from the same folder). Website `.url` shortcuts and root-level "Launch X" `.lnk`/`.url` shortcuts are automatically ignored.
 
 ```bat
 spindoctor add-pc-system "PC Games"                          :: dry-run preview
@@ -551,7 +551,7 @@ Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-d
 
 ### `pc-rename`
 
-Scan for new or changed games in an existing PC system and refresh PCLauncher INIs. Use after dropping new `.exe` / `.lnk` files into `<roms_dir>/<system>/` without re-running the full `add-pc-system` flow.
+Scan for new or changed games in an existing PC system and refresh PCLauncher INIs only (does **not** update the HyperSpin XML database). Use this from a terminal when you want to fix or regenerate INI files without changing what appears in the wheel. To add new games to the wheel, use `add-pc-system --no-menu --no-system-media --no-game-media` (or the GUI's **Add / Refresh Games** button, which does exactly that).
 
 ```bat
 spindoctor pc-rename "PC Games"                            :: dry-run: scan and preview
@@ -565,7 +565,7 @@ The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_c
 
 `--overwrite-pclauncher` rewrites every INI, including ones that already exist. Use this after a **drive migration** (e.g. roms moved from `D:\Games` to `J:\Games`), after renaming an executable, when a game whose dbName contains a colon was previously written with a colon-stripped section header, or when GOG/Steam installs have the wrong `Application=` path (e.g. `webcache.zip` instead of the real `.exe`). Each INI write resolves the actual game executable: if the "rom" RocketLauncher found by extension-matching is not a `.exe` (common for GOG games), SpinDoctor scans the game folder for the best `.exe` and writes that instead. `--verbose` prints each game's resolved executable and INI status (`new` / `stale` / `ok`) on separate lines with full paths — no truncation regardless of terminal width.
 
-`--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `pc-rename <system>` from a terminal without the flag.
+`--no-interactive` skips the per-game `input()` prompt and auto-accepts the proposed title for every game. **Required from non-TTY contexts** (the GUI uses it by default, where the interactive path would hang the subprocess on stdin). Users who want to curate titles by hand run `add-pc-system <system>` or `pc-rename <system>` from a terminal without the flag.
 
 ### `pc-fix-exe`
 

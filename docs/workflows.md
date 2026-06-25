@@ -48,7 +48,7 @@ Once `D:\SpinDoctorOutput` looks right, copy its contents over your live `hypers
 
 ## Adding your first system
 
-> **GUI alternative:** the **Systems** tab wraps `add-system`, `add-pc-system`, and `pc-rename` with a system-name field, optional skip-media toggles, and a dry-run-by-default Apply checkbox.
+> **GUI alternative:** the **Systems** tab wraps `add-system` and `add-pc-system` with a system-name field, **Skip system media download** / **Skip per-game media download** toggles, and a dry-run-by-default Apply checkbox.
 
 You've got ROMs in `C:\Games\Nintendo Entertainment System\` but the cabinet doesn't show NES yet. Walk:
 
@@ -71,7 +71,7 @@ spindoctor generate-config --apply
 spindoctor doctor
 ```
 
-For PC / Windows / Steam libraries replace `add-system` with `add-pc-system` — it scans nested folders and prompts a title-picker.
+For PC / Windows / Steam libraries replace `add-system` with `add-pc-system` — it scans nested folders, enforces one entry per install folder, and prompts a title-picker. See [Managing PC games](#managing-pc-games) for the full add/refresh/remove workflow.
 
 If `add-system` reports "no ROMs found", the file extension isn't in SpinDoctor's recognized set for that system. See [Configuration → Per-system overrides](configuration.md#per-system-overrides).
 
