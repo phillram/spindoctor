@@ -5712,7 +5712,6 @@ class _SpinDoctorGUI:
             ("_verify_system_combo",   "_verify_system_var",   None),
             ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
-            ("_rename_system_combo",   "_rename_system_var",   None),
             ("_match_system_combo",    "_match_system_var",    None),
             ("_games_system_combo",    "_games_system_var",    None),
             ("_organize_system_combo", "_organize_system_var", None),
@@ -6985,15 +6984,19 @@ class _SpinDoctorGUI:
             wraplength=860, justify="left", foreground=_FG_DIMMER,
         ).pack(anchor="w", padx=6, pady=(0, 4))
 
+        self.ttk.Label(
+            pc_lf,
+            text=("Overwrite mode rewrites every existing INI, including ones with a "
+                  "stale executable path (wrong drive, renamed file). Use after a drive "
+                  "migration or when a game launches the wrong executable. Leave unticked "
+                  "for a normal scan that only adds missing entries."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 0))
         self._pc_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             pc_lf,
-            text=("Overwrite existing PCLauncher INIs — rewrites every existing "
-                  "INI, including ones with a stale executable path (wrong drive, "
-                  "renamed file). Use after a drive migration or when a game "
-                  "launches the wrong executable. Leave unticked for a normal scan."),
+            text="Overwrite existing PCLauncher INIs (--overwrite-pclauncher)",
             variable=self._pc_overwrite_var,
-            wraplength=820,
         ).pack(anchor="w", padx=6, pady=(2, 2))
 
         pc_btns = self.ttk.Frame(pc_lf)
