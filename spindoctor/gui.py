@@ -8083,6 +8083,12 @@ class _SpinDoctorGUI:
             steam_url_row, text="Scan",
             command=self._scan_steam,
         ).pack(side="left")
+        self._steam_store_btn = self.ttk.Button(
+            steam_url_row, text="Store page",
+            state="disabled",
+            command=lambda: self._open_url(self._steam_source_url),
+        )
+        self._steam_store_btn.pack(side="left", padx=(4, 0))
 
         # Per-type candidate pickers (populated by _scan_steam).
         steam_pick_frame = self.ttk.Frame(gameovr_frame)
@@ -8096,9 +8102,10 @@ class _SpinDoctorGUI:
         _picker_layout = [
             ("video",   "Video",      0, 0),
             ("snap",    "Screenshot", 0, 1),
-            ("artwork", "Artwork",    0, 2),
-            ("wheel",   "Wheel",      1, 0),
+            ("artwork", "Artwork",    1, 0),
+            ("wheel",   "Wheel",      1, 1),
         ]
+        _cb_widths = {"video": 60}
         for mt, lbl_text, row, col in _picker_layout:
             self.ttk.Label(steam_pick_frame, text=lbl_text).grid(
                 row=row, column=col * 3, sticky="w",
@@ -8107,7 +8114,7 @@ class _SpinDoctorGUI:
             var = self.tk.StringVar(value="— scan first —")
             cb = self.ttk.Combobox(
                 steam_pick_frame, textvariable=var,
-                state="disabled", width=30,
+                state="disabled", width=_cb_widths.get(mt, 30),
             )
             cb.grid(row=row, column=col * 3 + 1, sticky="w",
                     padx=(0, 0), pady=(0 if row == 0 else 4, 0))
@@ -8724,6 +8731,7 @@ class _SpinDoctorGUI:
             cb.configure(values=[], state="disabled")
         for mt, btn in self._steam_preview_btns.items():
             btn.configure(state="disabled")
+        self._steam_store_btn.configure(state="disabled")
 
     def _find_steam_app(self) -> None:
         """Search the Steam store by the selected game name and auto-populate
@@ -8783,7 +8791,8 @@ class _SpinDoctorGUI:
                 label = best["name"]
                 self.root.after(0, lambda u=store_url, n=label, a=app_id: (
                     self._steam_url_var.set(u),
-                    self._set_status(f"Steam: found '{n}' (App {a}) — click Scan to load media"),
+                    self._set_status(f"Steam: found '{n}' (App {a}) — scanning…"),
+                    self._scan_steam(),
                 ))
             except Exception as exc:  # noqa: BLE001
                 self.root.after(0, lambda e=exc: (
@@ -8943,6 +8952,8 @@ class _SpinDoctorGUI:
 
         self._steam_cands = {}
         self._steam_source_url = meta.source_url or ""
+        if self._steam_source_url:
+            self._steam_store_btn.configure(state="normal")
 
         label_map = {
             "video":   self._steam_video_label,
