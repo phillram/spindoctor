@@ -261,6 +261,72 @@ def _pick_hls_variant(
         return master_url, None
 
 
+def _download_hls_audio_to_file(
+    audio_url: str, session, tmp_path: Path
+) -> Optional[str]:
+    """Download all segments of an HLS audio rendition into a concatenated fMP4 file.
+
+    Steam audio renditions use CMAF/fMP4 segments (EXT-X-MAP + .m4s chunks).
+    When the audio URL is passed directly to ffmpeg as a second -i, older
+    Windows ffmpeg versions truncate the output after only a few seconds while
+    still exiting 0 — the same class of bug that affected video until explicit
+    variant selection was added.  For audio there is no lower-quality variant
+    to fall back to, so we pre-download each segment via requests (which handles
+    HTTPS correctly on all platforms), concatenate init + chunks into a plain
+    fMP4 file, and hand that local file to ffmpeg instead.
+
+    Returns str(tmp_path) on success, or None on any error; callers then fall
+    back to passing the HLS URL directly to ffmpeg.
+    """
+    try:
+        resp = session.get(audio_url, timeout=15)
+        resp.raise_for_status()
+        base = audio_url.split("?")[0].rsplit("/", 1)[0]
+        lines = resp.text.splitlines()
+
+        init_url: Optional[str] = None
+        seg_urls: list[str] = []
+
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("#EXT-X-MAP:"):
+                for part in stripped[11:].split(","):
+                    k, _, v = part.partition("=")
+                    if k.strip() == "URI":
+                        raw = v.strip().strip('"')
+                        if raw:
+                            init_url = raw if raw.startswith("http") else f"{base}/{raw}"
+                        break
+            elif stripped and not stripped.startswith("#"):
+                uri = stripped if stripped.startswith("http") else f"{base}/{stripped}"
+                seg_urls.append(uri)
+
+        if not seg_urls:
+            _log.debug("Audio rendition at %s has no segments", audio_url)
+            return None
+
+        with tmp_path.open("wb") as fh:
+            if init_url:
+                r = session.get(init_url, timeout=30)
+                r.raise_for_status()
+                fh.write(r.content)
+            for seg_url in seg_urls:
+                r = session.get(seg_url, timeout=30)
+                r.raise_for_status()
+                fh.write(r.content)
+
+        _log.debug("Pre-downloaded %d audio segments to %s (%d bytes)",
+                   len(seg_urls), tmp_path.name, tmp_path.stat().st_size)
+        return str(tmp_path)
+    except Exception as exc:
+        _log.debug("Audio pre-download failed for %s: %s — passing URL to ffmpeg", audio_url, exc)
+        try:
+            tmp_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+
+
 def _find_ffmpeg(hint: str = "") -> tuple[Optional[str], Optional[str]]:
     """Return (ffmpeg, ffprobe) paths, or (None, None) if unavailable.
 
@@ -511,27 +577,35 @@ class MediaDownloader:
 
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
+        tmp_audio = dest.with_name(dest.stem + "._audiotmp.mp4") if audio_url else None
         try:
-            # -protocol_whitelist: ffmpeg's default whitelist excludes https, so
-            #   without this flag it cannot fetch segment URLs embedded in the
-            #   variant playlist on Akamai's CDN — causing a silent early abort.
-            # -c copy: stream-copy both video and audio without re-encoding.
-            #   For fMP4/CMAF HLS the audio is already in MP4-ASC format so no
-            #   bitstream filter is needed; the MP4 muxer handles the ADTS→ASC
-            #   conversion automatically for TS-based HLS.  Re-encoding with
-            #   -c:a aac introduced timestamp discontinuities that caused ffmpeg
-            #   to exit 0 with only the first 2-3 seconds muxed.
-            # -movflags +faststart: writes moov atom at the start so WMP can play
-            #   the file without seeking to the end first.
-            # When quality is selected, Steam serves audio in a separate
-            #   EXT-X-MEDIA rendition not included in the video variant playlist.
-            #   Passing it as a second -i with explicit -map restores the audio.
+            # Pre-download audio segments to a local fMP4 file when a separate
+            # audio rendition is present.  Steam audio renditions use CMAF/fMP4
+            # (.m4s) segments with EXT-X-MAP; older Windows ffmpeg versions
+            # truncate the audio after a few seconds when reading such a playlist
+            # as a second -i (the same family of bug that affected video before
+            # explicit variant selection was added).  Downloading via requests
+            # and writing a concatenated local file avoids the broken HLS demuxer
+            # path entirely.  Falls back to the URL if the pre-download fails.
+            audio_input: Optional[str] = audio_url
+            if audio_url and tmp_audio:
+                audio_input = _download_hls_audio_to_file(
+                    audio_url, self._session, tmp_audio
+                ) or audio_url
+
+            # -protocol_whitelist: apply to each -i separately; it is a
+            #   per-input format option in ffmpeg, not a global flag, so
+            #   omitting it from a second -i leaves that input without https
+            #   support on platforms where the default whitelist excludes it.
+            # -c copy: stream-copy without re-encoding (see earlier note).
+            # -movflags +faststart: moov atom at the start for WMP compat.
             if audio_url:
                 cmd = [
                     ffmpeg, "-y",
                     "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
                     "-i", url,
-                    "-i", audio_url,
+                    "-protocol_whitelist", "file,http,https,tcp,tls,crypto",
+                    "-i", audio_input,
                     "-map", "0:v:0",
                     "-map", "1:a:0",
                     "-c", "copy",
@@ -579,6 +653,11 @@ class MediaDownloader:
                 tmp.unlink(missing_ok=True)
             except OSError:
                 pass
+            if tmp_audio:
+                try:
+                    tmp_audio.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _download_to(
         self,
