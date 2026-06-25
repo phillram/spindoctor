@@ -1460,7 +1460,7 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 When the audio rendition is present (the common case for 2024+ Steam titles):
 
 ```
-ffmpeg -protocol_whitelist file,http,https,tcp,tls,crypto -i <video_variant_url> -i <audio_rendition_url> -map 0:v:0 -map 1:a:0 -c copy -movflags +faststart <dest>.mp4
+ffmpeg -protocol_whitelist file,http,https,tcp,tls,crypto -i <video_variant_url> -i <local_audio_tmp.mp4> -map 0:v:0 -map 1:a:0 -c copy -movflags +faststart <dest>.mp4
 ```
 
 When no separate audio rendition exists (older muxed-track variants):
@@ -1470,6 +1470,8 @@ ffmpeg -protocol_whitelist file,http,https,tcp,tls,crypto -i <video_variant_url>
 ```
 
 `-protocol_whitelist` enables HTTPS segment fetching from Steam's Akamai CDN. `-c copy` stream-copies video and audio tracks without re-encoding — this is critical for CMAF/fMP4 segments: re-encoding audio with `-c:a aac` introduces timestamp discontinuities that cause ffmpeg to silently abort the mux after 2–3 seconds while still exiting 0. `-movflags +faststart` places the moov atom at the start for Windows Media Player seek compatibility. Without ffmpeg a clear error is returned rather than a silent failure.
+
+When an audio rendition is present, `_download_hls` **pre-downloads** the audio segments via the Python `requests` session rather than passing the audio HLS URL directly to ffmpeg. Steam's audio renditions use CMAF/fMP4 segments (`EXT-X-MAP` init segment + `.m4s` chunks); older Windows 7 ffmpeg versions silently truncate CMAF audio HLS after ~5 seconds when given the playlist URL as a second `-i` input — the same family of bug that caused video truncation (fixed by explicit variant selection). Since there is no lower-quality audio fallback, `_download_hls` fetches each segment over HTTPS, concatenates init + chunks into a temporary fMP4 file in the system temp directory, and passes the local path to ffmpeg as the second `-i`. The temp file is removed after the ffmpeg call regardless of success. If any segment download fails the fallback is to pass the rendition URL directly to ffmpeg (the pre-v2.8.1 behaviour).
 
 **HLS quality variants and size:** Steam's HLS master playlist (`hls_h264` URL ending in `_master.m3u8`) contains `EXT-X-STREAM-INF` entries for multiple resolutions and `EXT-X-MEDIA TYPE=AUDIO` entries carrying the audio rendition URI. `_pick_hls_variant(master_url, max_height, session)` parses both, selects the highest-resolution video variant that fits within `max_height`, and returns `(video_variant_url, audio_rendition_url_or_None)`. SpinDoctor always performs explicit variant selection — even when `--hls-quality best` is requested (sentinel `max_height=9999` selects the highest available), the master URL is never passed directly to ffmpeg. Passing the master URL causes ffmpeg to select a CMAF/fMP4 stream (`dash_h264/chunk-stream0-XXXXX.m4s`), which older Windows 7 ffmpeg versions silently abort after ~9 seconds while still exiting 0. The CLI flag `--hls-quality best|1080p|720p|480p|360p` (default `best`) controls the cap. At 1080p a long trailer (e.g. Submachine Legacy at 11:13) can reach 400+ MB; 480p brings the same trailer to ~25 MB. The GUI exposes this as a Quality dropdown (`Best (1080p)` / `720p` / `480p` / `360p`) next to the Overwrite checkbox in the Steam apply row.
 
