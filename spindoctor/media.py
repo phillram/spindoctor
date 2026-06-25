@@ -496,9 +496,18 @@ class MediaDownloader:
             return DownloadResult(game_name=label, media_type=media_type,
                                   success=True, path=dest, skipped=True)
 
-        audio_url: Optional[str] = None
-        if hls_max_height is not None:
-            url, audio_url = _pick_hls_variant(url, hls_max_height, self._session)
+        # Always parse the master playlist explicitly rather than letting ffmpeg
+        # pick a variant internally.  ffmpeg's built-in selection chooses the
+        # highest-bandwidth variant, which on Steam is a CMAF/fMP4-based stream
+        # that older Windows ffmpeg versions truncate to ~9 s while still exiting 0.
+        # Explicit variant selection (via requests + playlist parsing) reliably
+        # picks a stream whose segments ffmpeg can fully download on Windows 7.
+        # Use 9999 as "no cap" so best-quality downloads go through the same path.
+        url, audio_url = _pick_hls_variant(
+            url,
+            hls_max_height if hls_max_height is not None else 9999,
+            self._session,
+        )
 
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_name(dest.stem + "._hlstmp.mp4")
