@@ -1,6 +1,8 @@
 """Audit and scan logic for SpinDoctor."""
 from __future__ import annotations
 
+import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -8,6 +10,57 @@ from typing import Optional
 from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides
 from .database import GameEntry, load_database
 from .romutils import clean_display_name, derive_pc_title, find_best_match
+
+# Stems that indicate an installer / helper, not the game itself.
+_JUNK_STEM_RE = re.compile(
+    r'^(setup|install|uninstall|uninst|patch|redist|vcredist|vc_redist|'
+    r'dotnet|directx|dxwebsetup|dxsetup|_commonredist|crashpad|'
+    r'crashreport|bugsplat|easyanticheat|uplay|steam_api)',
+    re.IGNORECASE,
+)
+
+# Root-level .lnk / .url files whose stem starts with "Launch " are Windows
+# per-game shortcuts created by some installers — they duplicate the real game
+# entry that lives inside its own subfolder.
+_LAUNCH_PREFIX_RE = re.compile(r'^launch[\s_]', re.IGNORECASE)
+
+
+def _is_web_url(path: Path) -> bool:
+    """Return True if *path* is a .url file whose URL= line is http(s)://."""
+    try:
+        for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+            if line.upper().startswith("URL="):
+                return line[4:].strip().startswith(("http://", "https://"))
+    except OSError:
+        pass
+    return False
+
+
+# Extension preference order for picking one file from a game's subfolder.
+_EXT_RANK = {".exe": 0, ".lnk": 1, ".bat": 2, ".url": 3}
+
+
+def _pick_best_from_group(candidates: list[Path]) -> Optional[Path]:
+    """Return the best game-launch file from a list in the same install folder.
+
+    Prefers real .exe files over shortcuts, and deprioritises known installer /
+    helper stems (setup, uninstall, redist, crash-reporter, etc.).  Skips .url
+    files that point to a website.
+    """
+    valid = [p for p in candidates
+             if not (p.suffix.lower() == ".url" and _is_web_url(p))]
+    if not valid:
+        return None
+
+    def _score(p: Path) -> tuple:
+        stem = p.stem.lower()
+        ext_rank = _EXT_RANK.get(p.suffix.lower(), 99)
+        is_junk = bool(_JUNK_STEM_RE.match(stem))
+        is_launcher = "launcher" in stem or "launch" in stem
+        depth = len(p.parts)
+        return (is_junk, ext_rank, is_launcher, depth)
+
+    return min(valid, key=_score)
 
 
 @dataclass
@@ -143,25 +196,59 @@ def _scan_recursive(
     extensions: list[str],
     title_strategy: str,
 ) -> dict[str, RomFileInfo]:
-    """Walk *system_rom_dir* recursively, deriving a title for each match.
+    """Walk *system_rom_dir* recursively, returning ONE entry per game slot.
 
-    When two files in different sub-folders derive to the same title (e.g.
-    a game with both an .exe and a .lnk), the first one wins; subsequent
-    duplicates are dropped so the database key stays unique.
+    A "slot" is the immediate child of *system_rom_dir* — either a per-game
+    subfolder (the common case) or a root-level file.  Grouping by slot and
+    picking the best candidate per slot enforces the "one game per folder"
+    rule: a folder that contains both ``Peglin.exe`` and ``PeglinLauncher.exe``
+    produces a single "Peglin" entry, not two.
+
+    Additional filters applied to root-level files:
+    - ``.url`` files whose ``URL=`` line is an http(s):// address are skipped
+      (website shortcuts left behind by pirated-game packages).
+    - ``.lnk`` / ``.url`` files whose stem starts with "Launch " are skipped
+      (Windows per-game launch shortcuts that duplicate the game's own folder).
     """
-    roms: dict[str, RomFileInfo] = {}
     ext_set = {e.lower() for e in extensions}
+
+    # ── Collect all matching files grouped by their top-level slot ────────────
+    by_slot: dict[Path, list[Path]] = defaultdict(list)
     for rom_path in system_rom_dir.rglob("*"):
         if not rom_path.is_file() or rom_path.suffix.lower() not in ext_set:
             continue
-        title = derive_pc_title(rom_path, system_rom_dir, title_strategy)
-        if title in roms:
-            continue
-        roms[title] = RomFileInfo(
-            name=title,
-            path=rom_path,
-            extension=rom_path.suffix.lower(),
-        )
+        try:
+            rel = rom_path.relative_to(system_rom_dir)
+            slot = system_rom_dir / rel.parts[0]
+        except (ValueError, IndexError):
+            slot = rom_path
+        by_slot[slot].append(rom_path)
+
+    # ── Pick one representative per slot and derive its title ─────────────────
+    roms: dict[str, RomFileInfo] = {}
+    for slot in sorted(by_slot):
+        candidates = by_slot[slot]
+
+        if slot.is_file():
+            # Root-level file: apply extra junk filters before accepting.
+            if slot.suffix.lower() == ".url" and _is_web_url(slot):
+                continue
+            if (slot.suffix.lower() in {".lnk", ".url"}
+                    and _LAUNCH_PREFIX_RE.match(slot.stem)):
+                continue
+            best = slot
+        else:
+            best = _pick_best_from_group(candidates)
+            if best is None:
+                continue
+
+        title = derive_pc_title(best, system_rom_dir, title_strategy)
+        if title not in roms:
+            roms[title] = RomFileInfo(
+                name=title,
+                path=best,
+                extension=best.suffix.lower(),
+            )
     return roms
 
 
