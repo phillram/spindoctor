@@ -589,3 +589,104 @@ def test_is_fatal_scraper_error_detects_quota_and_server_errors():
     assert _is_fatal_scraper_error("ScreenScraper: ScreenScraper search failed: 429 Client Error")
     assert not _is_fatal_scraper_error("ScreenScraper fetch failed: JSONDecodeError at offset 0")
     assert not _is_fatal_scraper_error("TheGamesDB: no results returned")
+
+
+# ─── game remove --remove-pclauncher ─────────────────────────────────────────
+
+
+def _build_pc_library(tmp_path: Path) -> tuple[Config, Path]:
+    """A minimal PC Games system: one XML entry + one PCLauncher INI.
+
+    Returns (config, pclauncher_ini_path).
+    """
+    hs_dir = tmp_path / "hs"
+    rl_dir = tmp_path / "rl"
+    db_dir = hs_dir / "Databases" / "PC Games"
+    db_dir.mkdir(parents=True)
+    ini_dir = rl_dir / "Modules" / "PCLauncher" / "PC Games"
+    ini_dir.mkdir(parents=True)
+
+    db = HyperspinDatabase("PC Games", db_dir / "PC Games.xml")
+    db.upsert_game(GameEntry(name="Peglin", description="Peglin"))
+    db.save()
+
+    ini_path = ini_dir / "Peglin.ini"
+    ini_path.write_text("[Peglin]\nApplication=J:\\Games\\Peglin\\Peglin.exe\n",
+                        encoding="utf-8")
+
+    roms_dir = tmp_path / "roms" / "PC Games"
+    roms_dir.mkdir(parents=True)
+
+    cfg = Config()
+    cfg.hyperspin_dir = str(hs_dir)
+    cfg.rocketlauncher_dir = str(rl_dir)
+    cfg.roms_dir = str(tmp_path / "roms")
+    save_config(cfg)
+    return cfg, ini_path
+
+
+def test_game_remove_pclauncher_deletes_ini_with_apply(tmp_path, isolated_config):
+    """game remove --remove-pclauncher --apply deletes the PCLauncher INI
+    in addition to removing the XML entry."""
+    _cfg, ini_path = _build_pc_library(tmp_path)
+    assert ini_path.exists()
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "remove",
+        "--system", "PC Games",
+        "Peglin",
+        "--remove-pclauncher",
+        "--apply",
+    ])
+    assert result.exit_code == 0, result.output
+    assert not ini_path.exists(), "PCLauncher INI should have been deleted"
+    assert "Deleted" in result.output or "deleted" in result.output.lower()
+
+
+def test_game_remove_pclauncher_dry_run_does_not_delete(tmp_path, isolated_config):
+    """Without --apply the INI is preserved and a 'would delete' preview is shown."""
+    _cfg, ini_path = _build_pc_library(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "remove",
+        "--system", "PC Games",
+        "Peglin",
+        "--remove-pclauncher",
+    ])
+    assert result.exit_code == 0, result.output
+    assert ini_path.exists(), "INI must not be deleted in dry-run"
+    assert "would delete" in result.output.lower()
+
+
+def test_game_remove_pclauncher_missing_ini_is_skipped(tmp_path, isolated_config):
+    """If the PCLauncher INI doesn't exist, --remove-pclauncher is a silent no-op."""
+    _cfg, ini_path = _build_pc_library(tmp_path)
+    ini_path.unlink()   # remove it before running the command
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "remove",
+        "--system", "PC Games",
+        "Peglin",
+        "--remove-pclauncher",
+        "--apply",
+    ])
+    assert result.exit_code == 0, result.output
+    assert "not found" in result.output.lower() or "skipped" in result.output.lower()
+
+
+def test_game_remove_without_pclauncher_flag_leaves_ini(tmp_path, isolated_config):
+    """Without --remove-pclauncher the INI is untouched even with --apply."""
+    _cfg, ini_path = _build_pc_library(tmp_path)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, [
+        "game", "remove",
+        "--system", "PC Games",
+        "Peglin",
+        "--apply",
+    ])
+    assert result.exit_code == 0, result.output
+    assert ini_path.exists(), "INI must be untouched without --remove-pclauncher"

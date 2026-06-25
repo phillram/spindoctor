@@ -368,9 +368,15 @@ spindoctor game remove --system "Nintendo 64" "1080 Snowboarding"
 spindoctor game remove --system MAME "1942" --apply
 spindoctor game remove --system MAME "1942" --apply --verbose
 spindoctor game remove --system MAME "1942" --apply --output-dir D:\Output
+
+:: PC systems — also delete the PCLauncher INI
+spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher --apply
+spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher          :: dry-run preview
 ```
 
 Removes a single `<game>` entry from the system XML. **ROM and media files are NOT deleted** — only the database entry disappears, so the game stops showing on the wheel but all files remain on disk. `--verbose` prints the full metadata and database file path before removing.
+
+`--remove-pclauncher` also deletes the per-game PCLauncher INI at `Modules/PCLauncher/<system>/<game>.ini`. Use this for PC systems (PC Games, Windows Games, etc.) so RocketLauncher no longer finds the game. Without this flag the INI is left on disk and the launcher config persists. The flag is a no-op if `rocketlauncher_dir` is not configured or the INI file doesn't exist — it prints "not found — skipped" and continues. Dry-run (without `--apply`) shows `would delete: <path>` without touching the file.
 
 #### `game move`
 
@@ -406,7 +412,7 @@ Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are i
 `--by description` (default) — sort by display title (`<description>` field).  
 `--by name` — sort by ROM filename instead.
 
-> **GUI alternative:** the **Systems** tab → **Manage games in a system wheel** panel provides a drag-table equivalent: pick a system, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`. **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Systems** tab → **Manage games in a system wheel** panel provides a drag-table equivalent: pick a system, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI** next to the button to include `--remove-pclauncher` (use for PC systems). **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 ---
 
