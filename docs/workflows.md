@@ -383,23 +383,25 @@ Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good
 
 End-to-end recipes for the two most common PC game tasks: adding newly installed games to the wheel, and cleanly removing a game.
 
-### Adding new PC games to an existing system
+### Syncing the PC game wheel (installs and uninstalls)
 
-You've installed a new game to `D:\Arcade\ROMs\PC Games\Peglin\` and want it to appear on the HyperSpin wheel.
+You've installed a new game or uninstalled one and want the HyperSpin wheel to reflect the current state of the disk.
 
 > **GUI alternative:** Games tab → pick the system from the shared dropdown at the top → Step 3 **Add new PC games / refresh the wheel** → tick **Apply** → click **Scan & add new games**.
 
 ```bat
-:: Dry-run first — see what would be added without writing anything
+:: Dry-run first — shows "would add:" for new games and "would remove (stale):" for uninstalled ones
 spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media
 
-:: Commit — updates both the XML database and the PCLauncher INIs
+:: Commit — adds new entries, removes stale ones (both XML + PCLauncher INIs)
 spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --apply
 ```
 
+`add-pc-system --apply` is fully idempotent: each run adds games whose install folder now exists and removes entries for games whose folder is gone. The HyperSpin XML database and every PCLauncher INI under `Modules/PCLauncher/<system>/` are kept in sync automatically — no manual cleanup needed after an uninstall.
+
 The scanner enforces **one entry per install folder**: if `Peglin\` contains both `Peglin.exe` and `PeglinLauncher.exe` only a single "Peglin" entry is created. Website `.url` shortcuts and root-level "Launch X" shortcuts left behind by some packages are silently ignored.
 
-Running on a system that already has games is safe — existing XML entries are skipped, only new installs are added. To force-rewrite all PCLauncher INIs (e.g. after a drive migration):
+To force-rewrite all PCLauncher INIs (e.g. after a drive migration or when `Application=` paths are stale):
 
 ```bat
 spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --overwrite-pclauncher --apply

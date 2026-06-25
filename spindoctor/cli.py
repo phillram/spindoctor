@@ -9189,8 +9189,8 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
             console.print(f"           {_vb_resolved[title]}")
         if _vb_removed:
             console.print(
-                f"\n  [yellow]! {len(_vb_removed)} title(s) in DB not found in ROM scan "
-                f"(orphaned — run update-db to clean up):[/yellow]"
+                f"\n  [yellow]! {len(_vb_removed)} stale title(s) in DB not found in ROM scan "
+                f"(will be removed):[/yellow]"
             )
             for t in _vb_removed:
                 console.print(f"    [dim]{t}[/dim]")
@@ -9198,11 +9198,24 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
 
     if not apply_changes:
         if not verbose:
-            for t in sorted(by_title):
-                console.print(f"  [yellow]would add stub:[/yellow] {t}")
+            # Load the existing DB so we can show what would be added vs removed.
+            try:
+                _dry_db = load_database(system_name, config.databases_dir)
+                _dry_existing = set(_dry_db.games().keys())
+            except Exception:  # noqa: BLE001
+                _dry_existing = set()
+            _dry_new = sorted(set(by_title) - _dry_existing)
+            _dry_stale = sorted(_dry_existing - set(by_title))
+            for t in _dry_new:
+                console.print(f"  [yellow]would add:[/yellow] {t}")
+            for t in _dry_stale:
+                console.print(f"  [yellow]would remove (stale):[/yellow] {t}")
+            if not _dry_new and not _dry_stale:
+                console.print("  [yellow]database already in sync with titles[/yellow]")
     else:
         db = load_database(system_name, config.databases_dir)
         existing = set(db.games().keys())
+        stale_titles = sorted(existing - set(by_title))
         new_count = 0
         for title in sorted(by_title):
             if title in existing:
@@ -9213,7 +9226,9 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
             )
             db.upsert_game(stub)
             new_count += 1
-        if new_count:
+        for title in stale_titles:
+            db.remove_game(title)
+        if new_count or stale_titles:
             _tmp = config.effective_atomic_tmp_dir
             if out_base:
                 saved = db.save(
@@ -9224,7 +9239,11 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
                 saved = db.save(backup=config.backup_before_modify,
                                 backup_dir=_bak_dir, tmp_dir=_tmp)
-            console.print(f"  [green]+[/green] {new_count} stub(s) → {saved}")
+            if new_count:
+                console.print(f"  [green]+[/green] {new_count} stub(s) added")
+            for title in stale_titles:
+                console.print(f"  [red]-[/red] removed stale: {title}")
+            console.print(f"  [green]→[/green] saved {saved}")
         else:
             console.print("  [green]Database already in sync with titles.[/green]")
 
@@ -9239,6 +9258,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 _ini_dir = (
                     Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher" / system_name
                 )
+                _expected_stems = {_ini_safe(_t) for _t in by_title}
                 _would_write = []
                 _would_skip = []
                 for _t in sorted(by_title):
@@ -9247,6 +9267,10 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                         _would_skip.append((_t, _ini))
                     else:
                         _would_write.append((_t, _ini))
+                _would_delete_ini = sorted(
+                    _p for _p in _ini_dir.glob("*.ini")
+                    if _p.stem not in _expected_stems
+                ) if _ini_dir.exists() else []
                 if _would_write:
                     console.print(
                         f"  [yellow]would write {len(_would_write)} INI(s) "
@@ -9261,6 +9285,12 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     )
                     for _t, _ini in _would_skip:
                         console.print(f"    [dim]· {_t}[/dim]")
+                if _would_delete_ini:
+                    console.print(
+                        f"  [yellow]would delete {len(_would_delete_ini)} stale INI(s):[/yellow]"
+                    )
+                    for _p in _would_delete_ini:
+                        console.print(f"    [red]✕[/red] {_p}")
             else:
                 console.print(
                     f"  [yellow]would write {len(by_title)} INI(s) under "
@@ -9300,6 +9330,18 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     if verbose:
                         for _p in sorted(skipped):
                             console.print(f"    [dim]· {_p}[/dim]")
+                # Delete INIs for games that are no longer in the ROM scan.
+                _expected_ini_stems = {_win_safe_stem(t) for t in by_title}
+                _stale_inis = sorted(
+                    p for p in module_dir.glob("*.ini")
+                    if p.stem not in _expected_ini_stems
+                )
+                for _stale_ini in _stale_inis:
+                    try:
+                        _stale_ini.unlink()
+                        console.print(f"  [red]-[/red] deleted stale INI: {_stale_ini.name}")
+                    except OSError as _e:
+                        err_console.print(f"  [red]could not delete {_stale_ini}: {_e}[/red]")
 
     # 5. Per-game media ──────────────────────────────────────────────────────
     if no_game_media:

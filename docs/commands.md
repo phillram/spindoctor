@@ -558,6 +558,8 @@ spindoctor add-system "Sega Saturn" --source thegamesdb --apply :: force one scr
 
 Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs. The scanner enforces **one entry per install folder**: all files inside a subfolder are grouped together and a single best-candidate executable is picked, preventing duplicate entries (e.g. "Peglin" and "Peglin Launcher" from the same folder). Website `.url` shortcuts and root-level "Launch X" `.lnk`/`.url` shortcuts are automatically ignored.
 
+Re-running `add-pc-system --apply` on an existing system is **fully idempotent** — it both adds newly installed games and removes stale entries for games that have been uninstalled. The HyperSpin XML database and the PCLauncher INI files are kept in sync with whatever is currently on disk.
+
 ```bat
 spindoctor add-pc-system "PC Games"                                   :: dry-run preview
 spindoctor add-pc-system "PC Games" --verbose                         :: dry-run + per-game exe paths and INI status
@@ -574,9 +576,9 @@ Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-d
 
 - **DB status**: `new` (title will be added as a stub) or `existing` (already in the HyperSpin XML database — no change).
 - **Resolved executable**: the full path SpinDoctor will write as `Application=` in the PCLauncher INI. Useful for catching GOG/Steam installs where the ROM scanner found a `.zip` or non-game `.exe` — the resolver walks the install folder to find the real binary.
-- **Orphaned entries**: if titles exist in the database but were not found in the current ROM scan, they are listed separately so you can decide whether to clean them up with `update-db`.
-- **INI status** (dry-run): each title is listed as `would write` (no INI exists yet) or `would skip` (INI already present; pass `--overwrite-pclauncher` to replace it), with the full INI path.
-- **INI status** (apply): the full path of each written INI and any kept (skipped) INIs.
+- **Stale entries**: if titles exist in the database but were not found in the current ROM scan, they are listed as `will be removed` so you can verify before committing with `--apply`.
+- **INI status** (dry-run): each title is listed as `would write` (no INI exists yet) or `would skip` (INI already present; pass `--overwrite-pclauncher` to replace it), with the full INI path. Stale INIs (no corresponding ROM scan hit) are listed under `would delete … stale INI(s)`.
+- **INI status** (apply): the full path of each written INI, any kept (skipped) INIs, and the name of each deleted stale INI.
 
 Full paths are never truncated regardless of terminal width.
 
