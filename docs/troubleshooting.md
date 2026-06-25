@@ -275,6 +275,19 @@ spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID>
     --video-index 1 --types video --overwrite --apply
 ```
 
+### Steam HLS audio is truncated to ~5 seconds on Windows 7
+
+**Symptom:** The downloaded MP4 has a full-length video track but the audio cuts out after approximately 5 seconds. `ffprobe` shows an audio stream is present (unlike the zero-audio case above), but the audio duration is only a few seconds while the video is full-length.
+
+**Cause (before v2.8.1):** When a Steam trailer uses a separate `EXT-X-MEDIA TYPE=AUDIO` rendition, that audio playlist may consist of CMAF/fMP4 segments (`.m4s` files) with an `EXT-X-MAP` initialization segment. Older Windows ffmpeg builds (the version available for Windows 7) silently truncate CMAF HLS audio after a few seconds when these playlists are passed as a second `-i` input — the same family of CMAF segment demuxer bug that previously caused video to truncate at ~9 s. Unlike video, there is no lower-quality audio rendition to fall back to.
+
+**Fix:** Upgrade to SpinDoctor v2.8.1 or later. SpinDoctor now pre-downloads each audio segment via the Python `requests` session (which handles HTTPS correctly on all platforms), concatenates the init segment and all audio chunks into a temporary plain fMP4 file, and passes that local file to ffmpeg instead of the HLS audio URL. This bypasses the broken CMAF HLS demuxer path entirely. The pre-download falls back to passing the URL directly to ffmpeg if segment fetching fails for any reason. Re-download any affected file:
+
+```
+spindoctor fetch-steam-media --system "PC Games" --game "<GAME>" --steam-id <ID> \
+    --video-index 1 --types video --overwrite --apply
+```
+
 ### `audit` reports a slot as present but the file has no content (0 bytes)
 
 A 0-byte stub can land in the Media tree when a download server returns an empty HTTP 200 body, or when a previous download was interrupted before any bytes were written. Prior to v2.7.3 the presence check used `.exists()`, so a zero-byte file would pass and the slot would never be re-downloaded.
