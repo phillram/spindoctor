@@ -6,9 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **PC game scan picks up one entry per install folder.** `_scan_recursive` previously did a flat `rglob` and treated every matching file as a separate game, causing spurious duplicates (e.g. `Peglin` + `Peglin Launcher` from the same folder) and junk entries (`Launch Ape Out.lnk`, `GAMESTORRENT.CO.url`) to appear in the HyperSpin wheel. Rewrote to group candidates by their top-level slot (the immediate child of the PC games folder) and pick the single best executable per slot. Within a slot, `.exe` files are preferred over shortcuts; known installer / helper stems (`setup`, `uninstall`, `vcredist`, `crashreport`, etc.) are deprioritised. Root-level `.url` files pointing to `http(s)://` addresses are silently dropped (website shortcuts left behind by some game packages). Root-level `.lnk` / `.url` files whose stem starts with `Launch ` are dropped (Windows per-game launch shortcuts that duplicate the game's own subfolder). `_propose_pc_titles` now delegates to `scan_roms` so the same filters apply consistently to `add-pc-system`, `pc-rename`, and `update-db`.
+
 ### Added
 
 - **`game remove --remove-pclauncher`:** New flag that also deletes the per-game PCLauncher INI (`Modules/PCLauncher/<system>/<game>.ini`) in addition to removing the XML database entry. Without this flag `game remove` only touches the wheel database and leaves the INI on disk (existing behaviour, preserved for non-PC systems). Dry-run without `--apply` previews the `would delete` path. Skips silently if `rocketlauncher_dir` is not configured or the INI file doesn't exist. GUI: **Manage games in a system wheel** → **Remove Game** now has an **Also remove PCLauncher INI** checkbox that passes the flag automatically.
+- **Steam media: Find button.** New **Find** button in the Steam media section (Metadata & Media tab) searches the Steam store by the selected game name and auto-populates the Steam URL / App ID field with the best match — no manual copy-paste required. Runs on a background thread; uses fuzzy name matching to rank results. After Find populates the field, click **Scan** as usual to load available media.
+
+### Changed
+
+- **GUI: "Add / Refresh Games" (PC systems) now updates the HyperSpin XML database.** Previously called `pc-rename`, which only wrote PCLauncher INIs — new games never appeared in the wheel because no XML entry was created. Now calls `add-pc-system --no-menu --no-system-media --no-game-media --no-interactive`: updates both the XML database and the launcher configs. Re-running on an existing system is safe; already-present entries are skipped.
+- **GUI: Removed CLI flag names from checkbox and button labels throughout.** Labels like `Skip media checks (--no-media)` and `Remove DB entries without ROMs (--remove-orphans)` now use plain English across all tabs.
 
 ## [2.7.14] - 2026-06-24
 
