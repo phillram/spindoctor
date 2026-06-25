@@ -331,7 +331,7 @@ spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 The plan refuses to overwrite anything already at the target name. Each apply writes a manifest with each move recorded so undo can reverse it back to the source paths.
 
-> **GUI alternative:** the **Systems** tab → **Step 3 — Rename or clone a game** wraps both commands. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh the list. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Step 2 — Rename or clone a game** wraps both commands. Set the system with the shared picker at the top of the tab; the game dropdown auto-populates from that system's database. Click **↻** to refresh the list. See [GUI walkthrough](gui.md).
 
 ### `clone`
 
@@ -346,7 +346,7 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 Undo deletes only the copies — the original is untouched.
 
-> **GUI alternative:** the **Systems** tab → **Step 3** wraps clone with the same game dropdown populated from the system's database. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Step 2** wraps clone with the same game dropdown populated from the system's database via the shared system picker. See [GUI walkthrough](gui.md).
 
 ### `game`
 
@@ -412,7 +412,7 @@ Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are i
 `--by description` (default) — sort by display title (`<description>` field).  
 `--by name` — sort by ROM filename instead.
 
-> **GUI alternative:** the **Systems** tab → **Manage games in a system wheel** panel provides a drag-table equivalent: pick a system, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI** next to the button to include `--remove-pclauncher` (use for PC systems). **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Step 1 — Manage the game wheel** provides an equivalent table: set the system with the shared picker at the top, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save Order** writes the full reordered list in one shot (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 ---
 
@@ -601,7 +601,7 @@ Without `--apply` the command shows the current `Application=` and the proposed 
 
 If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. A warning is printed at the end of output when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script — the warning is duplicated so it isn't buried under candidate output.
 
-**GUI alternative:** the **Systems** tab has a "Fix game executable" panel with a system/game picker and a candidate list populated from the game folder. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.) and defaults to "PC Games" on startup. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+**GUI alternative:** the **Games** tab → **Step 4 — Fix a game that launches the wrong executable** has a game picker (auto-populated from the shared system picker at the top of the tab) and a ranked candidate list. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.). CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
 
 ### `repath-system`
 

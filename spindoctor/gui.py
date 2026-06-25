@@ -2314,6 +2314,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
         self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
         self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
+        self._add_scrollable_tab(nb, self._build_games_tab,        "Games")
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
         self._add_scrollable_tab(nb, self._build_tools_tab,        "Toolkit")
@@ -5711,20 +5712,17 @@ class _SpinDoctorGUI:
             ("_verify_system_combo",   "_verify_system_var",   None),
             ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
-            ("_rename_system_combo",   "_rename_system_var",   None),
             ("_match_system_combo",    "_match_system_var",    None),
-            ("_gwm_system_combo",      "_gwm_system_var",      None),
+            ("_games_system_combo",    "_games_system_var",    None),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
             ("_ovr_system_combo",      "_ovr_system_var",      None),
             ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
-            ("_fixexe_system_combo",   "_fixexe_system_var",   pc_system),
             ("_repath_system_combo",   "_repath_system_var",   None),
             # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
             ("_lg_system_combo",       "_lg_system_var",       None),
             ("_tools_wheel_combo",     "_tools_wheel_var",     "Toolkit"),
-            ("_systems_old_combo",     "_systems_old_var",     None),
         ]
         # Track which combos already have the badge-stripping binding so we
         # don't accumulate duplicate bindings across repeated _refresh_systems()
@@ -5764,7 +5762,7 @@ class _SpinDoctorGUI:
         # until the user manually picks a system from the dropdown.
         fixexe_game_combo = getattr(self, "_fixexe_game_combo", None)
         if fixexe_game_combo is not None and not fixexe_game_combo["values"]:
-            if getattr(self, "_fixexe_system_var", None) and self._fixexe_system_var.get():
+            if getattr(self, "_games_system_var", None) and self._games_system_var.get():
                 self._refresh_fixexe_games()
 
         # Fill Defaults system combo — populate values but never auto-select;
@@ -6741,6 +6739,366 @@ class _SpinDoctorGUI:
         self._migrate_undo_combo["values"] = names
         if not self._migrate_undo_var.get():
             self._migrate_undo_var.set("latest")
+
+    def _on_games_system_change(self) -> None:
+        """Shared system picker on the Games tab changed.
+
+        Cascades to all four steps: clears the game-wheel table so stale
+        entries from the previous system don't linger, and refreshes both
+        the rename/clone and fix-exe game dropdowns for the new system.
+        """
+        self._gwm_on_system_change()
+        self._refresh_rename_games()
+        self._refresh_fixexe_games()
+
+    def _build_games_tab(self, parent):  # noqa: PLR0915
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Manage games within any HyperSpin system. Pick a system "
+                  "from the dropdown below and all four steps operate on that "
+                  "selection — no need to re-pick the system in each section. "
+                  "Step 1 loads the game list and lets you reorder or remove "
+                  "entries. Step 2 renames or clones a game. Step 3 adds "
+                  "newly-installed PC games. Step 4 fixes a game that launches "
+                  "the wrong executable."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 6))
+
+        # ── Shared system picker ──────────────────────────────────────────────
+        picker_lf = self.ttk.LabelFrame(frame, text="System")
+        picker_lf.pack(fill="x", pady=(0, 10))
+
+        picker_row = self.ttk.Frame(picker_lf)
+        picker_row.pack(fill="x", padx=6, pady=6)
+        self.ttk.Label(picker_row, text="System:").pack(side="left")
+
+        self._games_system_var = self.tk.StringVar()
+        # Aliases so every existing handler reads the same StringVar without
+        # needing individual changes — one picker drives all four steps.
+        self._gwm_system_var = self._games_system_var
+        self._rename_system_var = self._games_system_var
+        self._fixexe_system_var = self._games_system_var
+        self._systems_old_var = self._games_system_var
+
+        self._games_system_combo = self.ttk.Combobox(
+            picker_row, textvariable=self._games_system_var,
+            state="readonly", width=34,
+        )
+        self._games_system_combo.pack(side="left", padx=8)
+        self._games_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._on_games_system_change(),
+        )
+        self.ttk.Label(
+            picker_row,
+            text="Select a system here — Steps 1–4 below all operate on this system.",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(4, 0))
+
+        # ── Step 1 — Manage the game wheel ───────────────────────────────────
+        self._gwm_data: list[dict] = []
+        self._gwm_loaded_system: str = ""
+
+        gwm_lf = self.ttk.LabelFrame(
+            frame, text="Step 1 — Manage the game wheel",
+        )
+        gwm_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            gwm_lf,
+            text=("Load the game list for the selected system, then reorder "
+                  "or remove entries. All changes are held in memory — you can "
+                  "reorder freely and only write to disk when you click Save "
+                  "Order. Removing a game only removes it from the wheel "
+                  "database (XML); ROM and media files are not deleted unless "
+                  "you tick 'Also remove PCLauncher INI' (PC systems)."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        self.ttk.Label(
+            gwm_lf,
+            text="Tip: select a row and use Alt+Up / Alt+Down to nudge without leaving the keyboard.",
+            foreground=_FG_DIMMER,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        gwm_load_row = self.ttk.Frame(gwm_lf)
+        gwm_load_row.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Button(
+            gwm_load_row, text="Load Games",
+            command=self._gwm_load,
+        ).pack(side="left")
+        self._gwm_count_label = self.ttk.Label(
+            gwm_load_row, text="", foreground=_FG_DIM,
+        )
+        self._gwm_count_label.pack(side="left", padx=8)
+
+        gwm_tree_frame = self.ttk.Frame(gwm_lf)
+        gwm_tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+        gwm_tree_frame.columnconfigure(0, weight=1)
+        gwm_tree_frame.rowconfigure(0, weight=1)
+
+        self._gwm_tree = self.ttk.Treeview(
+            gwm_tree_frame,
+            columns=("pos", "name", "desc"),
+            show="headings",
+            selectmode="browse",
+            height=14,
+        )
+        self._gwm_tree.heading("pos",  text="#",             anchor="center")
+        self._gwm_tree.heading("name", text="ROM Name",      anchor="w")
+        self._gwm_tree.heading("desc", text="Display Title", anchor="w")
+        self._gwm_tree.column("pos",  width=50,  stretch=False, anchor="center")
+        self._gwm_tree.column("name", width=280, stretch=True,  anchor="w")
+        self._gwm_tree.column("desc", width=320, stretch=True,  anchor="w")
+
+        gwm_vsb = self.ttk.Scrollbar(
+            gwm_tree_frame, orient="vertical", command=self._gwm_tree.yview,
+        )
+        self._gwm_tree.configure(yscrollcommand=gwm_vsb.set)
+        self._gwm_tree.grid(row=0, column=0, sticky="nsew")
+        gwm_vsb.grid(row=0, column=1, sticky="ns")
+        self._gwm_tree.bind("<Alt-Up>",   lambda e: self._gwm_move_up())
+        self._gwm_tree.bind("<Alt-Down>", lambda e: self._gwm_move_down())
+
+        # Reorder controls + sort buttons on one row to reduce visual noise.
+        gwm_reorder_row = self.ttk.Frame(gwm_lf)
+        gwm_reorder_row.pack(anchor="w", padx=6, pady=(4, 2))
+        self.ttk.Button(
+            gwm_reorder_row, text="Move Up",   command=self._gwm_move_up,
+        ).pack(side="left")
+        self.ttk.Button(
+            gwm_reorder_row, text="Move Down", command=self._gwm_move_down,
+        ).pack(side="left", padx=(4, 0))
+        self._gwm_goto_var = self.tk.StringVar()
+        self.ttk.Label(gwm_reorder_row, text="Jump to #").pack(
+            side="left", padx=(10, 2),
+        )
+        self.ttk.Entry(
+            gwm_reorder_row, textvariable=self._gwm_goto_var, width=5,
+        ).pack(side="left", padx=(0, 2))
+        self.ttk.Button(
+            gwm_reorder_row, text="Go", command=self._gwm_move_to_pos,
+        ).pack(side="left", padx=(0, 14))
+        self.ttk.Button(
+            gwm_reorder_row, text="Sort A→Z (by title)",
+            command=lambda: self._gwm_sort("description"),
+        ).pack(side="left", padx=(0, 4))
+        self.ttk.Button(
+            gwm_reorder_row, text="Sort A→Z (by ROM name)",
+            command=lambda: self._gwm_sort("name"),
+        ).pack(side="left")
+
+        # Remove + save on a separate row so destructive/commit buttons
+        # are visually separated from the reorder controls.
+        gwm_action_row = self.ttk.Frame(gwm_lf)
+        gwm_action_row.pack(anchor="w", padx=6, pady=(2, 8))
+        self.ttk.Button(
+            gwm_action_row, text="Remove Game", command=self._gwm_remove,
+        ).pack(side="left")
+        self._gwm_remove_pclauncher_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            gwm_action_row,
+            text="Also remove PCLauncher INI (PC systems only)",
+            variable=self._gwm_remove_pclauncher_var,
+        ).pack(side="left", padx=(6, 16))
+        self.ttk.Button(
+            gwm_action_row, text="Save Order", command=self._gwm_save_order,
+        ).pack(side="left")
+        self.ttk.Label(
+            gwm_action_row,
+            text=" — commits the current table order to the wheel XML",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(2, 0))
+
+        # ── Step 2 — Rename or clone a game ──────────────────────────────────
+        rc_lf = self.ttk.LabelFrame(frame, text="Step 2 — Rename or clone a game")
+        rc_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            rc_lf,
+            text=("Rename moves the ROM file, database entry, and every media "
+                  "file in one operation and writes an undo manifest so the "
+                  "change is reversible. Clone duplicates everything under a "
+                  "new name — useful for keeping a speed-hack alongside the "
+                  "clean dump, or creating a multi-language variant."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        self.ttk.Label(
+            rc_lf,
+            text="Tip: both operations are dry-run until you tick Apply at the top of the window.",
+            foreground=_FG_DIMMER,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        rc_row = self.ttk.Frame(rc_lf)
+        rc_row.pack(fill="x", padx=6, pady=2)
+        self.ttk.Label(rc_row, text="Game").pack(side="left")
+        self._rename_game_var = self.tk.StringVar()
+        self._rename_game_combo = self.ttk.Combobox(
+            rc_row, textvariable=self._rename_game_var,
+            state="readonly", width=34,
+        )
+        self._rename_game_combo.pack(side="left", padx=6)
+        self.ttk.Button(
+            rc_row, text="↻", width=3,
+            command=self._refresh_rename_games,
+        ).pack(side="left")
+        self.ttk.Label(rc_row, text="→ New name").pack(
+            side="left", padx=(10, 0),
+        )
+        self._rename_to_var = self.tk.StringVar()
+        self.ttk.Entry(
+            rc_row, textvariable=self._rename_to_var, width=26,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+
+        rc_btns = self.ttk.Frame(rc_lf)
+        rc_btns.pack(anchor="w", padx=6, pady=(4, 8))
+        self.ttk.Button(
+            rc_btns, text="Rename Game",
+            command=lambda: self._run_rename_or_clone("rename"),
+        ).pack(side="left")
+        self.ttk.Button(
+            rc_btns, text="Clone Game",
+            command=lambda: self._run_rename_or_clone("clone"),
+        ).pack(side="left", padx=6)
+
+        # ── Step 3 — Add new PC games / refresh ──────────────────────────────
+        pc_lf = self.ttk.LabelFrame(
+            frame, text="Step 3 — Add new PC games / refresh the wheel",
+        )
+        pc_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            pc_lf,
+            text=("For PC / Windows / Steam systems only. Scans every install "
+                  "folder inside <roms_dir>/<system>/ and adds any new games "
+                  "to the HyperSpin wheel database — one entry per folder, "
+                  "junk shortcuts silently ignored. Also writes PCLauncher INIs "
+                  "for new entries so RocketLauncher can launch them. Run this "
+                  "after installing a game to the PC Games folder."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        self.ttk.Label(
+            pc_lf,
+            text=("Not needed for MAME, SNES, or other ROM-based systems — "
+                  "use Diagnostics → Audit or Metadata & Media → "
+                  "Sync DB to ROMs for those."),
+            wraplength=860, justify="left", foreground=_FG_DIMMER,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        self.ttk.Label(
+            pc_lf,
+            text=("Overwrite mode rewrites every existing INI, including ones with a "
+                  "stale executable path (wrong drive, renamed file). Use after a drive "
+                  "migration or when a game launches the wrong executable. Leave unticked "
+                  "for a normal scan that only adds missing entries."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 0))
+        self._pc_overwrite_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            pc_lf,
+            text="Overwrite existing PCLauncher INIs (--overwrite-pclauncher)",
+            variable=self._pc_overwrite_var,
+        ).pack(anchor="w", padx=6, pady=(2, 2))
+
+        pc_btns = self.ttk.Frame(pc_lf)
+        pc_btns.pack(anchor="w", padx=6, pady=(4, 8))
+        self.ttk.Button(
+            pc_btns, text="Scan & add new games",
+            command=self._run_pc_rename,
+        ).pack(side="left")
+        self.ttk.Label(
+            pc_btns,
+            text="Run dry-run first (Apply unticked) to preview what will be added.",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=10)
+
+        # ── Step 4 — Fix a game's executable ─────────────────────────────────
+        fixexe_lf = self.ttk.LabelFrame(
+            frame, text="Step 4 — Fix a game that launches the wrong executable",
+        )
+        fixexe_lf.pack(fill="x", pady=(0, 8))
+
+        self.ttk.Label(
+            fixexe_lf,
+            text=("Fix a PC game that launches the wrong file — uninstaller, "
+                  "GOG/Steam cache file, NW.js runtime, etc. SpinDoctor scans "
+                  "the game folder and ranks candidates: real executables first "
+                  "(shallower paths ranked above deeper ones), then .ahk scripts, "
+                  "then .bat files, then known junk at the bottom. Pick the correct "
+                  "one and click Apply to update the PCLauncher INI. Other keys in "
+                  "the INI (FadeTitle, AppWaitExe, etc.) are left untouched."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 2))
+        self.ttk.Label(
+            fixexe_lf,
+            text=("Works for any PCLauncher-backed system — not just PC Games. "
+                  "Change the system picker above to target Taito Type X or any "
+                  "other arcade-PC system."),
+            wraplength=860, justify="left", foreground=_FG_DIMMER,
+        ).pack(anchor="w", padx=6, pady=(0, 4))
+
+        fixexe_game_row = self.ttk.Frame(fixexe_lf)
+        fixexe_game_row.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(fixexe_game_row, text="Game").pack(side="left")
+        self._fixexe_game_var = self.tk.StringVar()
+        self._fixexe_game_combo = self.ttk.Combobox(
+            fixexe_game_row, textvariable=self._fixexe_game_var,
+            state="readonly", width=36,
+        )
+        self._fixexe_game_combo.pack(side="left", padx=6)
+        self._fixexe_game_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._fixexe_load_candidates(),
+        )
+        self.ttk.Button(
+            fixexe_game_row, text="↻", width=3,
+            command=self._refresh_fixexe_games,
+        ).pack(side="left")
+
+        self.ttk.Label(
+            fixexe_lf,
+            text="Candidates in game folder and subfolders (ranked — real .exe files first):",
+        ).pack(anchor="w", padx=6, pady=(4, 0))
+        fixexe_lb_frame = self.ttk.Frame(fixexe_lf)
+        fixexe_lb_frame.pack(fill="x", padx=6, pady=(2, 4))
+        self._fixexe_listbox = self.tk.Listbox(
+            fixexe_lb_frame, height=5, selectmode="single",
+            activestyle="none",
+        )
+        fixexe_lb_vsb = self.ttk.Scrollbar(
+            fixexe_lb_frame, orient="vertical",
+            command=self._fixexe_listbox.yview,
+        )
+        self._fixexe_listbox.configure(yscrollcommand=fixexe_lb_vsb.set)
+        self._fixexe_listbox.pack(side="left", fill="both", expand=True)
+        fixexe_lb_vsb.pack(side="right", fill="y")
+        self._fixexe_listbox.bind(
+            "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
+        )
+
+        fixexe_path_row = self.ttk.Frame(fixexe_lf)
+        fixexe_path_row.pack(fill="x", padx=6, pady=(0, 4))
+        self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
+        self._fixexe_path_var = self.tk.StringVar()
+        self.ttk.Entry(
+            fixexe_path_row, textvariable=self._fixexe_path_var, width=55,
+        ).pack(side="left", padx=6, fill="x", expand=True)
+        self.ttk.Button(
+            fixexe_path_row, text="Browse…",
+            command=self._fixexe_browse,
+        ).pack(side="left", padx=(0, 2))
+
+        fixexe_btns = self.ttk.Frame(fixexe_lf)
+        fixexe_btns.pack(anchor="w", padx=6, pady=(0, 8))
+        self.ttk.Button(
+            fixexe_btns, text="Apply fix",
+            command=self._run_fixexe,
+        ).pack(side="left")
+        self.ttk.Label(
+            fixexe_btns,
+            text="Updates Application= and WorkingFolder= in the PCLauncher INI.",
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=10)
+
+        return frame
 
     # ── Main Menu tab (LEGACY — content merged into _build_systems_tab) ─────────
 
@@ -10159,10 +10517,10 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             frame,
             text=("Manage HyperSpin's game systems — reorder the main menu "
-                  "wheel, add or remove systems, rename or clone individual "
-                  "games, and organize a system's sort order. Use the "
-                  "numbered Steps in sequence when setting up a new system "
-                  "for the first time, or jump to the step you need."),
+                  "wheel, add new systems, and organize sort order. To add, "
+                  "remove, or rename individual games, use the Games tab. "
+                  "Follow the numbered Steps in sequence when setting up a "
+                  "new system for the first time, or jump to the step you need."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -10346,170 +10704,6 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left", padx=10)
 
-        # ── Rename / Clone a single game ──────────────────────────────────────
-        # Common follow-up to an audit ("this ROM is mis-named" / "let me
-        # keep a Speed Hack alongside the clean dump"). Previously only
-        # reachable via Custom Command, which made these high-value ops
-        # feel like power-user-only territory.
-        rc_frame = self.ttk.LabelFrame(frame, text="Step 3 — Rename or clone a game")
-        rc_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            rc_frame,
-            text=("Rename moves the ROM, DB entry, and every media file "
-                  "in one shot (and writes an undo manifest). Clone "
-                  "duplicates them under a new name. Both are dry-run "
-                  "until you tick Apply at the top of the tab."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-
-        rc_row = self.ttk.Frame(rc_frame)
-        rc_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(rc_row, text="System").pack(side="left")
-        self._rename_system_var = self.tk.StringVar()
-        self._rename_system_combo = self.ttk.Combobox(
-            rc_row, textvariable=self._rename_system_var,
-            state="readonly", width=20,
-        )
-        self._rename_system_combo.pack(side="left", padx=6)
-        self._rename_system_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._refresh_rename_games(),
-        )
-        self.ttk.Label(rc_row, text="Game").pack(side="left", padx=(8, 0))
-        self._rename_game_var = self.tk.StringVar()
-        self._rename_game_combo = self.ttk.Combobox(
-            rc_row, textvariable=self._rename_game_var,
-            state="readonly", width=30,
-        )
-        self._rename_game_combo.pack(side="left", padx=6)
-        self.ttk.Button(
-            rc_row, text="↻", width=3,
-            command=self._refresh_rename_games,
-        ).pack(side="left")
-        self.ttk.Label(rc_row, text="→ New name").pack(side="left", padx=(8, 0))
-        self._rename_to_var = self.tk.StringVar()
-        self.ttk.Entry(
-            rc_row, textvariable=self._rename_to_var, width=20,
-        ).pack(side="left", padx=6, fill="x", expand=True)
-
-        rc_btns = self.ttk.Frame(rc_frame)
-        rc_btns.pack(anchor="w", padx=6, pady=(4, 6))
-        self.ttk.Button(
-            rc_btns, text="Rename Game",
-            command=lambda: self._run_rename_or_clone("rename"),
-        ).pack(side="left")
-        self.ttk.Button(
-            rc_btns, text="Clone Game",
-            command=lambda: self._run_rename_or_clone("clone"),
-        ).pack(side="left", padx=6)
-
-        # ── Game Wheel Manager ───────────────────────────────────────────────
-        # Lets the user list all games in a system's XML database, remove
-        # a single game, or drag-reorder games exactly like the Main Menu
-        # carousel above — all using the same database module the CLI uses.
-        gwm_frame = self.ttk.LabelFrame(frame, text="Manage games in a system wheel")
-        gwm_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            gwm_frame,
-            text=("List, remove, or reorder individual games in any system's "
-                  "wheel database. Select a system, click Load, then use Move "
-                  "Up / Move Down (or Alt+Up / Alt+Down) to reposition a "
-                  "game, or select a game and click Remove to delete it from "
-                  "the XML. Save Order writes the result — dry-run unless "
-                  "Apply is ticked above."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-
-        gwm_top = self.ttk.Frame(gwm_frame)
-        gwm_top.pack(fill="x", padx=6, pady=(0, 4))
-        self.ttk.Label(gwm_top, text="System").pack(side="left")
-        self._gwm_system_var = self.tk.StringVar()
-        self._gwm_system_combo = self.ttk.Combobox(
-            gwm_top, textvariable=self._gwm_system_var,
-            state="readonly", width=24,
-        )
-        self._gwm_system_combo.pack(side="left", padx=6)
-        self.ttk.Button(
-            gwm_top, text="Load Games",
-            command=self._gwm_load,
-        ).pack(side="left", padx=(0, 4))
-        self._gwm_count_label = self.ttk.Label(gwm_top, text="", foreground=_FG_DIM)
-        self._gwm_count_label.pack(side="left", padx=4)
-
-        gwm_tree_frame = self.ttk.Frame(gwm_frame)
-        gwm_tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
-        gwm_tree_frame.columnconfigure(0, weight=1)
-        gwm_tree_frame.rowconfigure(0, weight=1)
-
-        self._gwm_data: list[dict] = []  # [{"name": str, "description": str}]
-        self._gwm_loaded_system: str = ""  # tracks which system is actually in _gwm_data
-        self._gwm_system_combo.bind("<<ComboboxSelected>>", lambda _e: self._gwm_on_system_change())
-        self._gwm_tree = self.ttk.Treeview(
-            gwm_tree_frame,
-            columns=("pos", "name", "desc"),
-            show="headings",
-            selectmode="browse",
-            height=14,
-        )
-        self._gwm_tree.heading("pos",  text="#",           anchor="center")
-        self._gwm_tree.heading("name", text="ROM Name",    anchor="w")
-        self._gwm_tree.heading("desc", text="Description", anchor="w")
-        self._gwm_tree.column("pos",  width=50,  stretch=False, anchor="center")
-        self._gwm_tree.column("name", width=280, stretch=True,  anchor="w")
-        self._gwm_tree.column("desc", width=320, stretch=True,  anchor="w")
-
-        gwm_vsb = self.ttk.Scrollbar(gwm_tree_frame, orient="vertical",
-                                     command=self._gwm_tree.yview)
-        self._gwm_tree.configure(yscrollcommand=gwm_vsb.set)
-        self._gwm_tree.grid(row=0, column=0, sticky="nsew")
-        gwm_vsb.grid(row=0, column=1, sticky="ns")
-        self._gwm_tree.bind("<Alt-Up>",   lambda e: self._gwm_move_up())
-        self._gwm_tree.bind("<Alt-Down>", lambda e: self._gwm_move_down())
-
-        gwm_btn_row = self.ttk.Frame(gwm_frame)
-        gwm_btn_row.pack(anchor="w", padx=6, pady=(2, 2))
-        self.ttk.Button(
-            gwm_btn_row, text="Move Up",
-            command=self._gwm_move_up,
-        ).pack(side="left")
-        self.ttk.Button(
-            gwm_btn_row, text="Move Down",
-            command=self._gwm_move_down,
-        ).pack(side="left", padx=(4, 2))
-        self._gwm_goto_var = self.tk.StringVar()
-        self.ttk.Label(gwm_btn_row, text="Move to #").pack(side="left", padx=(8, 2))
-        self.ttk.Entry(
-            gwm_btn_row, textvariable=self._gwm_goto_var, width=5,
-        ).pack(side="left", padx=(0, 2))
-        self.ttk.Button(
-            gwm_btn_row, text="Go",
-            command=self._gwm_move_to_pos,
-        ).pack(side="left", padx=(0, 10))
-        self.ttk.Button(
-            gwm_btn_row, text="Remove Game",
-            command=self._gwm_remove,
-        ).pack(side="left", padx=(0, 6))
-        self._gwm_remove_pclauncher_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            gwm_btn_row,
-            text="Also remove PCLauncher INI",
-            variable=self._gwm_remove_pclauncher_var,
-        ).pack(side="left", padx=(0, 10))
-
-        gwm_btn_row2 = self.ttk.Frame(gwm_frame)
-        gwm_btn_row2.pack(anchor="w", padx=6, pady=(2, 6))
-        self.ttk.Button(
-            gwm_btn_row2, text="Sort A→Z (by title)",
-            command=lambda: self._gwm_sort("description"),
-        ).pack(side="left")
-        self.ttk.Button(
-            gwm_btn_row2, text="Sort A→Z (by ROM name)",
-            command=lambda: self._gwm_sort("name"),
-        ).pack(side="left", padx=(6, 0))
-        self.ttk.Button(
-            gwm_btn_row2, text="Save Order",
-            command=self._gwm_save_order,
-        ).pack(side="left", padx=(20, 0))
-
         # ── Organize a system ────────────────────────────────────────────────
         # `organize` does two things: (a) writes sort wheels (per-axis
         # sub-databases under Databases/<sys>/{Genre,Year,...}) so
@@ -10518,7 +10712,7 @@ class _SpinDoctorGUI:
         # ROM restructuring with an undo manifest. Restructure honours
         # the tab-level Apply checkbox.
         org_frame = self.ttk.LabelFrame(
-            frame, text="Step 4 — Organize a system (sort wheels + optional restructure)",
+            frame, text="Step 3 — Organize a system (sort wheels + optional restructure)",
         )
         org_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
@@ -10566,132 +10760,6 @@ class _SpinDoctorGUI:
             org_btns, text="Undo latest restructure",
             command=self._run_organize_undo,
         ).pack(side="left", padx=6)
-
-        # ── pc-rename (re-review titles for a PC system) ──────────────────────
-        # Unnumbered: it's a PC-systems-only companion to add-pc-system,
-        # not part of the every-cabinet Step 1–4 journey, so it lives
-        # below the numbered steps with the other occasional-use forms.
-        # The CLI command is misleadingly named — it doesn't rename the
-        # *system*; it re-runs the per-game title picker for an existing
-        # PC system so the user can fix derived titles or pick up newly-
-        # dropped installs. Reflect that in the form: one system dropdown,
-        # no Old/New fields. (Earlier versions had a two-field form that
-        # was actually broken — the CLI takes one positional arg.)
-        rename_frame = self.ttk.LabelFrame(frame, text="Add new games / refresh a PC system")
-        rename_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            rename_frame,
-            text=("After dropping new game installs or shortcuts into your PC games "
-                  "folder, click here to pick them up. Scans the folder for new "
-                  "entries, adds them to the HyperSpin database (so they appear in "
-                  "the wheel), and writes the launcher config for each new game. "
-                  "Games already in the wheel are left alone."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
-        rn_row = self.ttk.Frame(rename_frame)
-        rn_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(rn_row, text="PC system").pack(side="left")
-        self._systems_old_var = self.tk.StringVar()
-        # Kept for back-compat: _systems_new_var is referenced by an
-        # older code path (and by the system-quick-filter on launch).
-        # It's now ignored by _run_pc_rename.
-        self._systems_new_var = self.tk.StringVar()
-        self._systems_old_combo = self.ttk.Combobox(
-            rn_row, textvariable=self._systems_old_var,
-            state="readonly", width=28,
-        )
-        self._systems_old_combo.pack(side="left", padx=6)
-        self._pc_overwrite_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            rename_frame,
-            text="Rewrite all launcher configs — use this after moving the cabinet "
-                 "to a new drive or renaming an executable.",
-            variable=self._pc_overwrite_var,
-        ).pack(anchor="w", padx=6, pady=(2, 2))
-        self.ttk.Button(
-            rename_frame, text="Add / Refresh Games",
-            command=self._run_pc_rename,
-        ).pack(anchor="w", padx=6, pady=(4, 6))
-
-        # ── Fix PC game executable ────────────────────────────────────────────
-        fixexe_frame = self.ttk.LabelFrame(frame, text="Fix PC game executable")
-        fixexe_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            fixexe_frame,
-            text=("Fix a PC game that launches the wrong executable (uninstaller, "
-                  "cache file, etc.). Select system and game — the list below shows "
-                  "every .exe found in the game folder and all subfolders, recommended "
-                  "first. Pick the correct one, or click Browse… to locate any file "
-                  "on the system. Then click Apply to update the PCLauncher INI."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
-
-        fixexe_top = self.ttk.Frame(fixexe_frame)
-        fixexe_top.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(fixexe_top, text="System").pack(side="left")
-        self._fixexe_system_var = self.tk.StringVar()
-        self._fixexe_system_combo = self.ttk.Combobox(
-            fixexe_top, textvariable=self._fixexe_system_var,
-            state="readonly", width=28,
-        )
-        self._fixexe_system_combo.pack(side="left", padx=6)
-        self._fixexe_system_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._refresh_fixexe_games(),
-        )
-        self.ttk.Label(fixexe_top, text="Game").pack(side="left", padx=(10, 0))
-        self._fixexe_game_var = self.tk.StringVar()
-        self._fixexe_game_combo = self.ttk.Combobox(
-            fixexe_top, textvariable=self._fixexe_game_var,
-            state="readonly", width=30,
-        )
-        self._fixexe_game_combo.pack(side="left", padx=6)
-        self._fixexe_game_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._fixexe_load_candidates(),
-        )
-        self.ttk.Button(
-            fixexe_top, text="↻", width=3,
-            command=self._refresh_fixexe_games,
-        ).pack(side="left")
-
-        self.ttk.Label(
-            fixexe_frame,
-            text="Executables in game folder and subfolders (recommended first):",
-        ).pack(anchor="w", padx=6, pady=(4, 0))
-        fixexe_lb_frame = self.ttk.Frame(fixexe_frame)
-        fixexe_lb_frame.pack(fill="x", padx=6, pady=(2, 4))
-        self._fixexe_listbox = self.tk.Listbox(
-            fixexe_lb_frame, height=5, selectmode="single",
-            activestyle="none",
-        )
-        fixexe_lb_vsb = self.ttk.Scrollbar(
-            fixexe_lb_frame, orient="vertical",
-            command=self._fixexe_listbox.yview,
-        )
-        self._fixexe_listbox.configure(yscrollcommand=fixexe_lb_vsb.set)
-        self._fixexe_listbox.pack(side="left", fill="both", expand=True)
-        fixexe_lb_vsb.pack(side="right", fill="y")
-        self._fixexe_listbox.bind(
-            "<<ListboxSelect>>", lambda _e: self._fixexe_on_select(),
-        )
-
-        fixexe_path_row = self.ttk.Frame(fixexe_frame)
-        fixexe_path_row.pack(fill="x", padx=6, pady=(0, 4))
-        self.ttk.Label(fixexe_path_row, text="Executable path:").pack(side="left")
-        self._fixexe_path_var = self.tk.StringVar()
-        self.ttk.Entry(
-            fixexe_path_row, textvariable=self._fixexe_path_var, width=55,
-        ).pack(side="left", padx=6, fill="x", expand=True)
-        self.ttk.Button(
-            fixexe_path_row, text="Browse…",
-            command=self._fixexe_browse,
-        ).pack(side="left", padx=(0, 2))
-
-        fixexe_btns = self.ttk.Frame(fixexe_frame)
-        fixexe_btns.pack(anchor="w", padx=6, pady=(0, 6))
-        self.ttk.Button(
-            fixexe_btns, text="Apply",
-            command=self._run_fixexe,
-        ).pack(side="left")
 
         # ── Per-system overrides ─────────────────────────────────────────────
         # Surfaces `config system set` so users with niche systems
