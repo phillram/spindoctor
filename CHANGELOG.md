@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.8.1] - 2026-06-24
+
 ### Fixed
 
 - **Steam HLS audio truncated after ~5 seconds on Windows 7.** When a Steam trailer uses a separate HLS audio rendition (`EXT-X-MEDIA TYPE=AUDIO`), the audio playlist contains CMAF/fMP4 segments (`.m4s` files with an `EXT-X-MAP` initialization segment). Older Windows ffmpeg versions silently truncate CMAF audio after a few seconds when these playlists are passed as a second `-i` input — the same family of bug that previously caused video to truncate at ~9 s (fixed by explicit variant selection). For audio there is no lower-quality rendition to fall back to, so `_download_hls` now pre-downloads each audio segment via the Python requests session (which handles HTTPS correctly on all platforms), concatenates init + chunks into a temporary plain fMP4 file, and hands that local file to ffmpeg instead of the HLS URL. This bypasses the broken CMAF HLS demuxer path entirely. Observed specifically on Arzette: The Jewel of Faramore (Steam app 1924780), which has only a CMAF HLS trailer with no direct MP4. Additionally, `-protocol_whitelist` is now applied before **both** `-i` inputs rather than just the first; it is a per-input format option in ffmpeg and omitting it from the audio input left the audio stream without https support on platforms where the default whitelist excludes it. The pre-download falls back to passing the URL directly to ffmpeg if the segment download fails for any reason.
@@ -1880,7 +1882,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.1...HEAD
+[2.8.1]: https://github.com/phillram/spindoctor/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/phillram/spindoctor/compare/v2.7.14...v2.8.0
 [2.7.14]: https://github.com/phillram/spindoctor/compare/v2.7.13...v2.7.14
 [2.7.13]: https://github.com/phillram/spindoctor/compare/v2.7.12...v2.7.13
