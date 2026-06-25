@@ -5662,7 +5662,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
                     label = c.version or c.source_type or c.url
                     dur = f"  {_fd(c.duration_secs)}" if c.duration_secs else ""
                     fmt_hint = ""
-                    if mt == "video":
+                    if mt in ("video", "trailer"):
                         fmt_hint = "  (HLS — full length, needs ffmpeg)" if c.format == "m3u8" else "  (MP4 — may be highlight clip)"
                     console.print(f"    {i}. {label}{dur}{fmt_hint}  [dim]{c.url}[/dim]")
                 console.print(
@@ -5690,7 +5690,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
 
         result = downloader.download_to_path(
             dest, chosen.url, label=game, media_type=mt, overwrite=overwrite,
-            hls_max_height=hls_max_height if mt == "video" else None,
+            hls_max_height=hls_max_height if mt in ("video", "trailer") else None,
         )
         if result.success:
             if replacing:

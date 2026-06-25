@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Steam HLS video plays with no audio after v2.7.12.** Switching the ffmpeg command to `-c copy` (stream-copy) in v2.7.12 correctly restored full-length downloads, but the post-download audio re-encode step (`_maybe_fix_video_audio`, added in #306 for ScreenScraper) was only wired into the regular HTTP download path — the HLS path returned immediately after the file was placed without calling it. Videos that carry non-AAC audio in the MP4 container therefore played silently on Windows 7 (Media Foundation) and macOS (AVFoundation). Fixed by calling `_maybe_fix_video_audio` at the end of a successful HLS download, identical to the HTTP path.
+
+- **`--hls-quality` ignored when downloading via "trailer" media type.** The quality cap passed to `_pick_hls_variant` was gated on `mt == "video"`, but the "trailer" slot in Steam metadata shares the same HLS candidates. If `--types trailer` was passed, quality selection was silently skipped and the best available variant was always used. Fixed to apply quality selection to both `"video"` and `"trailer"` types.
+
+- **`--hls-quality` fallback to smallest variant was silent.** When every HLS variant exceeded the requested height (e.g. `--hls-quality 480p` but only 720p and 1080p exist), SpinDoctor fell back to the smallest available variant without any notification. SpinDoctor now logs a warning so the mismatch is visible in the log output.
+
 ## [2.7.12] - 2026-06-24
 
 ### Fixed
