@@ -10487,6 +10487,12 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             gwm_btn_row, text="Remove Game",
             command=self._gwm_remove,
+        ).pack(side="left", padx=(0, 6))
+        self._gwm_remove_pclauncher_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            gwm_btn_row,
+            text="Also remove PCLauncher INI",
+            variable=self._gwm_remove_pclauncher_var,
         ).pack(side="left", padx=(0, 10))
 
         gwm_btn_row2 = self.ttk.Frame(gwm_frame)
@@ -11084,26 +11090,35 @@ class _SpinDoctorGUI:
         game_name = self._gwm_data[idx]["name"]
         system = self._gwm_loaded_system or self._gwm_system_var.get().strip()
         apply_ = self._global_apply_var.get()
+        rm_pc = getattr(self, "_gwm_remove_pclauncher_var", None) and self._gwm_remove_pclauncher_var.get()
 
         if not apply_:
+            extra = " + PCLauncher INI" if rm_pc else ""
             self._set_status(
-                f"[DRY RUN] Would remove '{game_name}' from {system}. "
+                f"[DRY RUN] Would remove '{game_name}' from {system}{extra}. "
                 "Tick Apply and click Remove Game again to commit."
             )
+            dry_flags = "--remove-pclauncher " if rm_pc else ""
             self._append_output(
-                f"[DRY RUN] game remove --system {system!r} {game_name!r}\n"
+                f"[DRY RUN] game remove --system {system!r} {game_name!r} {dry_flags}\n"
                 "  (pass --apply to write)\n"
             )
             return
 
+        ini_note = (
+            "\n\nThe matching PCLauncher INI will also be deleted."
+            if rm_pc else
+            "\n\nThe ROM and media files are NOT deleted — only the XML entry."
+        )
         if not self.messagebox.askyesno(
             "Remove game?",
-            f"Remove '{game_name}' from the {system} wheel database?\n\n"
-            "The ROM and media files are NOT deleted — only the XML entry.",
+            f"Remove '{game_name}' from the {system} wheel database?{ini_note}",
         ):
             return
 
         args = ["game", "remove", "--system", system, game_name, "--apply", "--verbose"]
+        if rm_pc:
+            args.append("--remove-pclauncher")
 
         def _on_done(rc: int) -> None:
             if rc != 0:

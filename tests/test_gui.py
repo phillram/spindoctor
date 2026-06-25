@@ -2823,3 +2823,96 @@ def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
         assert errors, "expected showerror to be called after callback exception"
     finally:
         app.root.destroy()
+
+
+# ─── game remove --remove-pclauncher GUI wiring ───────────────────────────────
+
+
+def test_gwm_remove_passes_remove_pclauncher_when_checked(monkeypatch):
+    """Remove Game with 'Also remove PCLauncher INI' ticked appends
+    --remove-pclauncher to the game remove argv."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # Seed the in-memory game list so _gwm_selected_index returns 0.
+        app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
+        app._gwm_loaded_system = "PC Games"
+        # iid must be the 1-based numeric string that _gwm_repopulate_tree uses,
+        # because _gwm_selected_index does int(sel[0]) - 1.
+        app._gwm_tree.insert("", "end", iid="1", values=(1, "Peglin", "Peglin"))
+        app._gwm_tree.selection_set("1")
+
+        app._global_apply_var.set(True)
+        app._gwm_remove_pclauncher_var.set(True)
+
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda binary, args, on_complete=None: ran.append(args))
+        monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
+
+        app._gwm_remove()
+
+        assert len(ran) == 1
+        argv = ran[0]
+        assert "--remove-pclauncher" in argv
+        assert "Peglin" in argv
+        assert "--system" in argv
+        assert argv[argv.index("--system") + 1] == "PC Games"
+    finally:
+        app.root.destroy()
+
+
+def test_gwm_remove_no_pclauncher_flag_when_unchecked(monkeypatch):
+    """Remove Game with 'Also remove PCLauncher INI' unticked must NOT
+    send --remove-pclauncher — non-PC systems would receive a spurious flag."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._gwm_data = [{"name": "1942", "description": "1942", "pos": 1}]
+        app._gwm_loaded_system = "MAME"
+        app._gwm_tree.insert("", "end", iid="1", values=(1, "1942", "1942"))
+        app._gwm_tree.selection_set("1")
+
+        app._global_apply_var.set(True)
+        app._gwm_remove_pclauncher_var.set(False)
+
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda binary, args, on_complete=None: ran.append(args))
+        monkeypatch.setattr(app.messagebox, "askyesno", lambda *_a, **_k: True)
+
+        app._gwm_remove()
+
+        assert len(ran) == 1
+        assert "--remove-pclauncher" not in ran[0]
+    finally:
+        app.root.destroy()
+
+
+def test_gwm_remove_dry_run_shows_pclauncher_note(monkeypatch):
+    """Dry-run path mentions PCLauncher INI removal when checkbox is ticked."""
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._gwm_data = [{"name": "Peglin", "description": "Peglin", "pos": 1}]
+        app._gwm_loaded_system = "PC Games"
+        app._gwm_tree.insert("", "end", iid="1", values=(1, "Peglin", "Peglin"))
+        app._gwm_tree.selection_set("1")
+
+        app._global_apply_var.set(False)   # dry-run
+        app._gwm_remove_pclauncher_var.set(True)
+
+        ran: list[list[str]] = []
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda binary, args, on_complete=None: ran.append(args))
+        statuses: list[str] = []
+        monkeypatch.setattr(app, "_set_status", lambda msg: statuses.append(msg))
+        outputs: list[str] = []
+        monkeypatch.setattr(app, "_append_output", lambda msg: outputs.append(msg))
+
+        app._gwm_remove()
+
+        # Must not shell out in dry-run.
+        assert ran == []
+        # Status and output must mention PCLauncher.
+        assert any("PCLauncher" in s for s in statuses), statuses
+        assert any("remove-pclauncher" in o for o in outputs), outputs
+    finally:
+        app.root.destroy()
