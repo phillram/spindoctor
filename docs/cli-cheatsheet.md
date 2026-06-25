@@ -191,7 +191,9 @@ Reference: [Command reference → cleanup](commands.md#cleanup).
 ```bat
 :: First time — full bootstrap of a new PC system
 spindoctor add-pc-system "PC Games"                                      :: dry-run preview
+spindoctor add-pc-system "PC Games" --verbose                            :: dry-run + per-game exe paths, DB status, and INI paths
 spindoctor add-pc-system "PC Games" --no-interactive --apply             :: commit (auto-accept all titles)
+spindoctor add-pc-system "PC Games" --verbose --no-interactive --apply   :: commit + full per-game detail
 
 :: After dropping new games into the roms folder — updates XML database + PCLauncher INIs
 :: (this is what the GUI "Add / Refresh Games" button does)
@@ -200,6 +202,8 @@ spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media 
 ```
 
 The scanner enforces **one entry per install folder** — if a folder contains both `Game.exe` and `Game Launcher.exe`, only the best candidate is picked. Website `.url` shortcuts and root-level "Launch X" `.lnk` shortcuts are silently dropped.
+
+`--verbose` adds a per-game breakdown after the title review and PCLauncher INI steps: each game is labelled `new` (not yet in the HyperSpin XML) or `existing` (already present), its resolved executable path is printed, and any DB titles not found in the current ROM scan are flagged as orphaned. In the INI step each INI is listed as `would write` / `would skip` (dry-run) or the full written path (apply). Full paths are never truncated.
 
 Reference: [Command reference → add-pc-system](commands.md#add-pc-system).
 

@@ -559,14 +559,26 @@ spindoctor add-system "Sega Saturn" --source thegamesdb --apply :: force one scr
 Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs. The scanner enforces **one entry per install folder**: all files inside a subfolder are grouped together and a single best-candidate executable is picked, preventing duplicate entries (e.g. "Peglin" and "Peglin Launcher" from the same folder). Website `.url` shortcuts and root-level "Launch X" `.lnk`/`.url` shortcuts are automatically ignored.
 
 ```bat
-spindoctor add-pc-system "PC Games"                          :: dry-run preview
-spindoctor add-pc-system "PC Games" --apply                  :: commit (interactive title review)
-spindoctor add-pc-system "PC Games" --no-interactive --apply :: auto-accept every proposed title
-spindoctor add-pc-system "PC Games" --no-rename --apply      :: skip the title-review pass entirely
-spindoctor add-pc-system "PC Games" --no-pclauncher --apply  :: skip per-game PCLauncher INIs
+spindoctor add-pc-system "PC Games"                                   :: dry-run preview
+spindoctor add-pc-system "PC Games" --verbose                         :: dry-run + per-game exe paths and INI status
+spindoctor add-pc-system "PC Games" --apply                           :: commit (interactive title review)
+spindoctor add-pc-system "PC Games" --verbose --apply                 :: commit + show each game's resolved exe, DB status, and INI path
+spindoctor add-pc-system "PC Games" --no-interactive --apply          :: auto-accept every proposed title
+spindoctor add-pc-system "PC Games" --no-rename --apply               :: skip the title-review pass entirely
+spindoctor add-pc-system "PC Games" --no-pclauncher --apply           :: skip per-game PCLauncher INIs
 ```
 
 Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-db` (per-system database), `--no-system-media` / `--no-game-media` (media fetches), plus `--no-pclauncher` and `--overwrite-pclauncher` for the INI step, `--pick-media` for interactive media picks, and `--source` to force one scraper.
+
+`--verbose` prints a per-game table after the title review step and after the PCLauncher INI step. For each game it shows:
+
+- **DB status**: `new` (title will be added as a stub) or `existing` (already in the HyperSpin XML database — no change).
+- **Resolved executable**: the full path SpinDoctor will write as `Application=` in the PCLauncher INI. Useful for catching GOG/Steam installs where the ROM scanner found a `.zip` or non-game `.exe` — the resolver walks the install folder to find the real binary.
+- **Orphaned entries**: if titles exist in the database but were not found in the current ROM scan, they are listed separately so you can decide whether to clean them up with `update-db`.
+- **INI status** (dry-run): each title is listed as `would write` (no INI exists yet) or `would skip` (INI already present; pass `--overwrite-pclauncher` to replace it), with the full INI path.
+- **INI status** (apply): the full path of each written INI and any kept (skipped) INIs.
+
+Full paths are never truncated regardless of terminal width.
 
 ### `pc-rename`
 

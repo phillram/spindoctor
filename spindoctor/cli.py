@@ -9046,9 +9046,13 @@ def _propose_pc_titles(
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None)
+@click.option("--verbose", is_flag=True,
+              help="Print each game's resolved executable path and per-step "
+                   "status (new / existing / removed from DB; INI written / "
+                   "skipped). Full paths, no truncation.")
 def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                   no_db, no_game_media, no_pclauncher, overwrite_pclauncher,
-                  pick_media, source, apply_changes, output_dir):
+                  pick_media, source, apply_changes, output_dir, verbose):
     """Bootstrap a PC/Windows/Steam games system end-to-end.
 
     \b
@@ -9164,9 +9168,38 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
         return
 
     console.print(f"  [green]+[/green] {len(by_title)} title(s) accepted")
+
+    # Verbose: resolve executables + diff against current DB before any writes.
+    if verbose:
+        from .rocketlauncher import _resolve_pclauncher_exe as _vb_resolve
+        _vb_resolved: dict[str, Path] = {
+            t: _vb_resolve(by_title[t], t) for t in by_title
+        }
+        try:
+            _vb_db = load_database(system_name, config.databases_dir)
+            _vb_existing = set(_vb_db.games().keys())
+        except Exception:  # noqa: BLE001
+            _vb_existing = set()
+        _vb_removed = sorted(_vb_existing - set(by_title))
+        for title in sorted(by_title):
+            if title in _vb_existing:
+                console.print(f"  [dim]existing[/dim]  [bold]{title}[/bold]")
+            else:
+                console.print(f"  [green]new[/green]      [bold]{title}[/bold]")
+            console.print(f"           {_vb_resolved[title]}")
+        if _vb_removed:
+            console.print(
+                f"\n  [yellow]! {len(_vb_removed)} title(s) in DB not found in ROM scan "
+                f"(orphaned — run update-db to clean up):[/yellow]"
+            )
+            for t in _vb_removed:
+                console.print(f"    [dim]{t}[/dim]")
+        console.print()
+
     if not apply_changes:
-        for t in sorted(by_title):
-            console.print(f"  [yellow]would add stub:[/yellow] {t}")
+        if not verbose:
+            for t in sorted(by_title):
+                console.print(f"  [yellow]would add stub:[/yellow] {t}")
     else:
         db = load_database(system_name, config.databases_dir)
         existing = set(db.games().keys())
@@ -9201,10 +9234,38 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
     else:
         console.print("\n[blue bold]6. PCLauncher per-game INIs[/blue bold]")
         if not apply_changes:
-            console.print(
-                f"  [yellow]would write {len(by_title)} INI(s) under "
-                f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
-            )
+            if verbose and config.rocketlauncher_dir:
+                from .rocketlauncher import _win_safe_stem as _ini_safe
+                _ini_dir = (
+                    Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher" / system_name
+                )
+                _would_write = []
+                _would_skip = []
+                for _t in sorted(by_title):
+                    _ini = _ini_dir / f"{_ini_safe(_t)}.ini"
+                    if _ini.exists() and not overwrite_pclauncher:
+                        _would_skip.append((_t, _ini))
+                    else:
+                        _would_write.append((_t, _ini))
+                if _would_write:
+                    console.print(
+                        f"  [yellow]would write {len(_would_write)} INI(s) "
+                        f"under {_ini_dir}[/yellow]"
+                    )
+                    for _t, _ini in _would_write:
+                        console.print(f"    [green]→[/green] [bold]{_t}[/bold]")
+                        console.print(f"      {_ini}")
+                if _would_skip:
+                    console.print(
+                        f"  [dim]would skip {len(_would_skip)} existing INI(s)[/dim]"
+                    )
+                    for _t, _ini in _would_skip:
+                        console.print(f"    [dim]· {_t}[/dim]")
+            else:
+                console.print(
+                    f"  [yellow]would write {len(by_title)} INI(s) under "
+                    f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
+                )
         else:
             from .rocketlauncher import _win_safe_stem, generate_pclauncher_inis
             # Map folder-derived titles to HyperSpin dbNames that may have
@@ -9228,11 +9289,17 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 err_console.print(f"  [red]{e}[/red]")
             else:
                 console.print(f"  [green]+[/green] wrote {len(written)} INI(s) → {module_dir}")
+                if verbose:
+                    for _p in sorted(written):
+                        console.print(f"    [green]→[/green] {_p}")
                 if skipped:
                     console.print(
                         f"  [dim]· kept {len(skipped)} existing INI(s) "
                         f"(pass --overwrite-pclauncher to replace)[/dim]"
                     )
+                    if verbose:
+                        for _p in sorted(skipped):
+                            console.print(f"    [dim]· {_p}[/dim]")
 
     # 5. Per-game media ──────────────────────────────────────────────────────
     if no_game_media:
