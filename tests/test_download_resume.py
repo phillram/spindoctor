@@ -482,9 +482,10 @@ def test_convert_to_png_inplace_not_called_for_non_png_dest(tmp_path, monkeypatc
 
 class _FakeCompletedProcess:
     """Minimal subprocess.CompletedProcess stand-in."""
-    def __init__(self, returncode: int, stderr: bytes = b""):
+    def __init__(self, returncode: int, stderr: bytes = b"", stdout: bytes = b""):
         self.returncode = returncode
         self.stderr = stderr
+        self.stdout = stdout
 
 
 def _hls_downloader(tmp_path: Path) -> "MediaDownloader":
@@ -513,6 +514,9 @@ def test_download_hls_happy_path(tmp_path, monkeypatch):
     monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
     # ffprobe: report full-length duration so no truncation warning fires.
     monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    # Audio fix is tested separately; suppress it here so this test stays focused on
+    # download mechanics and is not coupled to ffprobe availability in the mock.
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", lambda *a, **kw: None)
 
     r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
 
@@ -757,3 +761,65 @@ def test_download_hls_tmp_cleaned_up_on_success(tmp_path, monkeypatch):
     assert r.success
     tmp_files = list(dest.parent.glob("*._hlstmp.mp4"))
     assert not tmp_files, f"tmp file lingered after success: {tmp_files}"
+
+
+def test_download_hls_audio_fix_is_applied(tmp_path, monkeypatch):
+    """_maybe_fix_video_audio must be called after a successful HLS download so that
+    non-AAC audio streams are re-encoded in a separate pass (the in-mux -c:a aac approach
+    caused timestamp discontinuities and early abort; post-processing avoids that)."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+
+    called_with: dict = {}
+
+    def fake_fix(path, media_type, ffmpeg_hint=""):
+        called_with["path"] = path
+        called_with["media_type"] = media_type
+        return None
+
+    monkeypatch.setattr("spindoctor.media._maybe_fix_video_audio", fake_fix)
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert r.success
+    assert "path" in called_with, "_maybe_fix_video_audio was not called after HLS download"
+    assert called_with["media_type"] == "video"
+
+
+def test_download_hls_audio_warn_surfaces_in_result(tmp_path, monkeypatch):
+    """When _maybe_fix_video_audio returns a warning (e.g. ffmpeg unavailable), it must
+    appear in result.warning so the user is informed the audio may be silent."""
+    dl = _hls_downloader(tmp_path)
+    dest = dl.media_path("PC Games", "Hades", "video")
+
+    monkeypatch.setattr("spindoctor.media._find_ffmpeg", lambda _: ("/usr/bin/ffmpeg", None))
+
+    def fake_run(cmd, capture_output, timeout):
+        tmp = Path(cmd[-1])
+        tmp.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(b"\x00" * 50_000_000)
+        return _FakeCompletedProcess(0)
+
+    monkeypatch.setattr("spindoctor.media.subprocess.run", fake_run)
+    monkeypatch.setattr("spindoctor.media._probe_hls_duration", lambda path, fp: 79.9)
+    monkeypatch.setattr(
+        "spindoctor.media._maybe_fix_video_audio",
+        lambda *a, **kw: "audio re-encode failed — video may be silent",
+    )
+
+    r = dl.download_to_path(dest, "https://cdn/master.m3u8", label="Hades", media_type="video")
+
+    assert r.success
+    assert r.warning
+    assert "silent" in r.warning.lower()

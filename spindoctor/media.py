@@ -234,8 +234,13 @@ def _pick_hls_variant(master_url: str, max_height: int, session) -> str:
         eligible = [(bw, h, url) for bw, h, url in variants if h <= max_height]
         if eligible:
             return max(eligible, key=lambda x: x[0])[2]
-        # All variants exceed max_height — use the smallest available.
-        return min(variants, key=lambda x: x[1])[2]
+        # All variants exceed max_height — use the smallest available and warn.
+        best = min(variants, key=lambda x: x[1])
+        _log.warning(
+            "HLS: no variant ≤%dp for %s — falling back to %dp",
+            max_height, master_url.split("?")[0].rsplit("/", 1)[-1], best[1],
+        )
+        return best[2]
     except Exception:
         _log.debug("HLS variant parse failed for %s — using master", master_url)
         return master_url
@@ -509,7 +514,9 @@ class MediaDownloader:
                            label, size, stderr_text[-2000:])
                 os.replace(tmp, dest)
                 duration = _probe_hls_duration(dest, ffprobe)
-                warn = _hls_truncation_warning(label, size, duration, stderr_text)
+                trunc_warn = _hls_truncation_warning(label, size, duration, stderr_text)
+                audio_warn = _maybe_fix_video_audio(dest, media_type, ffmpeg_hint)
+                warn = "\n".join(w for w in [trunc_warn, audio_warn] if w)
                 return DownloadResult(game_name=label, media_type=media_type,
                                       success=True, path=dest, warning=warn,
                                       file_size_bytes=size, duration_secs=duration)
