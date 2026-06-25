@@ -239,6 +239,7 @@ spindoctor game list --system MAME --verbose                          :: full me
 spindoctor game remove --system MAME "1942"                           :: dry-run: show what would be removed
 spindoctor game remove --system MAME "1942" --apply                   :: remove from database (ROM untouched)
 spindoctor game remove --system MAME "1942" --apply --verbose         :: full metadata + file path
+spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher --apply   :: also delete PCLauncher INI
 
 spindoctor game move --system "Nintendo 64" "Zelda" 1 --apply         :: move to wheel position 1
 spindoctor game move-up   --system MAME "1942" --apply                :: shift one slot earlier

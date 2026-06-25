@@ -19,6 +19,7 @@ Common end-to-end flows. Each one is a recipe — copy, paste, edit paths to mat
 - [Migration](#migration)
 - [Recovery from mistakes](#recovery-from-mistakes)
 - [ROM integrity sweep](#rom-integrity-sweep)
+- [Managing PC games](#managing-pc-games)
 - [Adding a Favorite](#adding-a-favorite)
 - [Searching across systems](#searching-across-systems)
 - [Auditing legacy arcade tools](#auditing-legacy-arcade-tools)
@@ -375,6 +376,52 @@ spindoctor verify --system "Sony Playstation" --dat "C:\Dats\Sony - PS - Redump.
 ```
 
 Each ROM is classified `good` / `renamed` / `bad` / `unknown`. Pass `--show-good` to also list verified-good files; `--match wrapper` for TOSEC-style DATs. See [Command reference → verify](commands.md#verify).
+
+---
+
+## Managing PC games
+
+End-to-end recipes for the two most common PC game tasks: adding newly installed games to the wheel, and cleanly removing a game.
+
+### Adding new PC games to an existing system
+
+You've installed a new game to `D:\Arcade\ROMs\PC Games\Peglin\` and want it to appear on the HyperSpin wheel.
+
+> **GUI alternative:** Systems tab → **Add new games / refresh a PC system** → pick the system from the dropdown → tick **Apply** → click **Add / Refresh Games**.
+
+```bat
+:: Dry-run first — see what would be added without writing anything
+spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media
+
+:: Commit — updates both the XML database and the PCLauncher INIs
+spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --apply
+```
+
+The scanner enforces **one entry per install folder**: if `Peglin\` contains both `Peglin.exe` and `PeglinLauncher.exe` only a single "Peglin" entry is created. Website `.url` shortcuts and root-level "Launch X" shortcuts left behind by some packages are silently ignored.
+
+Running on a system that already has games is safe — existing XML entries are skipped, only new installs are added. To force-rewrite all PCLauncher INIs (e.g. after a drive migration):
+
+```bat
+spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media --no-interactive --overwrite-pclauncher --apply
+```
+
+### Removing a PC game from the wheel
+
+Removing a PC game requires two steps: delete the XML entry (so the game disappears from the wheel) and delete the PCLauncher INI (so RocketLauncher stops finding it). `game remove --remove-pclauncher` does both in one command.
+
+> **GUI alternative:** Systems tab → **Manage games in a system wheel** → pick **PC Games** → **Load Games** → select the game row → tick **Also remove PCLauncher INI** → tick **Apply** → click **Remove Game**.
+
+```bat
+:: Dry-run first
+spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher
+
+:: Commit — removes XML entry + Modules/PCLauncher/PC Games/Peglin.ini
+spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher --apply
+```
+
+The INI filename uses Windows-safe characters (colons and other forbidden characters are stripped). A game named `Submachine: Legacy` has the INI `Submachine Legacy.ini`. The `--remove-pclauncher` flag prints "not found — skipped" and exits cleanly if the INI is already gone.
+
+Without `--remove-pclauncher`, only the XML entry is removed — the INI stays on disk and RocketLauncher keeps the game in its scan results. Use bare `game remove --apply` for ROM-based systems (MAME, NES, etc.) where there is no PCLauncher INI to clean up.
 
 ---
 

@@ -11281,21 +11281,31 @@ def game_list_cmd(system, verbose):
               help="Commit the removal. Without this flag, dry-run only.")
 @click.option("--verbose", "-v", is_flag=True,
               help="Show full game metadata and file path before removing.")
+@click.option("--remove-pclauncher", "remove_pclauncher", is_flag=True,
+              help="Also delete the PCLauncher per-game INI from "
+                   "Modules/PCLauncher/<system>/<game>.ini. "
+                   "No-op if the file does not exist or rocketlauncher_dir is not set.")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write the edited DB into <output-dir>/Databases/<system>/ "
                    "instead of the live HyperSpin tree.")
-def game_remove_cmd(system, game_name, apply_changes, verbose, output_dir):
+def game_remove_cmd(system, game_name, apply_changes, verbose, remove_pclauncher, output_dir):
     """Remove a specific game from a system's wheel database.
 
     Removes the <game> entry from the system XML.  The ROM and media files
     are NOT deleted — use this when you want the game gone from the wheel
     but keep the files on disk.
 
+    For PC systems (those that use per-game PCLauncher INIs) pass
+    --remove-pclauncher to also delete the matching INI from
+    Modules/PCLauncher/<system>/<game>.ini.  Without this flag the INI is
+    left on disk and RocketLauncher will still find the game on next scan.
+
     \b
     Examples:
       spindoctor game remove --system "Nintendo 64" "1080 Snowboarding"
       spindoctor game remove --system MAME "1942" --apply
       spindoctor game remove --system MAME "1942" --apply --verbose
+      spindoctor game remove --system "PC Games" "Peglin" --remove-pclauncher --apply
     """
     config = _cfg()
     _check_config(config)
@@ -11331,6 +11341,27 @@ def game_remove_cmd(system, game_name, apply_changes, verbose, output_dir):
     else:
         console.print(f"  [red]−[/red] #{position}  {escape(game_name)}")
 
+    # Resolve the PCLauncher INI path (only if --remove-pclauncher was passed).
+    pclauncher_ini: "Optional[Path]" = None
+    if remove_pclauncher:
+        rl_dir = getattr(config, "rocketlauncher_dir", "") or ""
+        if rl_dir:
+            from .rocketlauncher import _win_safe_stem
+            stem = _win_safe_stem(game_name)
+            candidate = Path(rl_dir) / "Modules" / "PCLauncher" / system / f"{stem}.ini"
+            if candidate.exists():
+                pclauncher_ini = candidate
+                console.print(f"  [dim]PCLauncher INI:[/dim] {pclauncher_ini}")
+            else:
+                console.print(
+                    f"  [dim]PCLauncher INI:[/dim] {candidate} [dim](not found — skipped)[/dim]"
+                )
+        else:
+            console.print(
+                "  [yellow]--remove-pclauncher ignored:[/yellow] "
+                "rocketlauncher_dir is not configured."
+            )
+
     if apply_changes:
         db.remove_game(game_name)
         _tmp = config.effective_atomic_tmp_dir
@@ -11345,8 +11376,13 @@ def game_remove_cmd(system, game_name, apply_changes, verbose, output_dir):
             saved = db.save(backup=config.backup_before_modify,
                             backup_dir=_bak_dir, tmp_dir=_tmp)
         console.print(f"  [green]Saved:[/green] {saved}")
+        if pclauncher_ini is not None:
+            pclauncher_ini.unlink()
+            console.print(f"  [green]Deleted:[/green] {pclauncher_ini}")
     else:
         console.print("  [dim](dry run — pass --apply to write)[/dim]")
+        if pclauncher_ini is not None:
+            console.print(f"  [dim]would delete:[/dim] {pclauncher_ini}")
 
 
 def _game_move_impl(system, game_name, direction_or_pos, apply_changes, verbose, output_dir):
