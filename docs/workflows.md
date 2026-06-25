@@ -387,7 +387,7 @@ End-to-end recipes for the two most common PC game tasks: adding newly installed
 
 You've installed a new game to `D:\Arcade\ROMs\PC Games\Peglin\` and want it to appear on the HyperSpin wheel.
 
-> **GUI alternative:** Systems tab → **Add new games / refresh a PC system** → pick the system from the dropdown → tick **Apply** → click **Add / Refresh Games**.
+> **GUI alternative:** Games tab → pick the system from the shared dropdown at the top → Step 3 **Add new PC games / refresh the wheel** → tick **Apply** → click **Scan & add new games**.
 
 ```bat
 :: Dry-run first — see what would be added without writing anything
@@ -409,7 +409,7 @@ spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media 
 
 Removing a PC game requires two steps: delete the XML entry (so the game disappears from the wheel) and delete the PCLauncher INI (so RocketLauncher stops finding it). `game remove --remove-pclauncher` does both in one command.
 
-> **GUI alternative:** Systems tab → **Manage games in a system wheel** → pick **PC Games** → **Load Games** → select the game row → tick **Also remove PCLauncher INI** → tick **Apply** → click **Remove Game**.
+> **GUI alternative:** Games tab → pick **PC Games** from the shared dropdown at the top → Step 1 **Manage the game wheel** → **Load Games** → select the game row → tick **Also remove PCLauncher INI (PC systems only)** → tick **Apply** → click **Remove Game**.
 
 ```bat
 :: Dry-run first
