@@ -6,15 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Steam HLS audio truncated after ~5 seconds on Windows 7.** When a Steam trailer uses a separate HLS audio rendition (`EXT-X-MEDIA TYPE=AUDIO`), the audio playlist contains CMAF/fMP4 segments (`.m4s` files with an `EXT-X-MAP` initialization segment). Older Windows ffmpeg versions silently truncate CMAF audio after a few seconds when these playlists are passed as a second `-i` input — the same family of bug that previously caused video to truncate at ~9 s (fixed by explicit variant selection). For audio there is no lower-quality rendition to fall back to, so `_download_hls` now pre-downloads each audio segment via the Python requests session (which handles HTTPS correctly on all platforms), concatenates init + chunks into a temporary plain fMP4 file, and hands that local file to ffmpeg instead of the HLS URL. This bypasses the broken CMAF HLS demuxer path entirely. Observed specifically on Arzette: The Jewel of Faramore (Steam app 1924780), which has only a CMAF HLS trailer with no direct MP4. Additionally, `-protocol_whitelist` is now applied before **both** `-i` inputs rather than just the first; it is a per-input format option in ffmpeg and omitting it from the audio input left the audio stream without https support on platforms where the default whitelist excludes it. The pre-download falls back to passing the URL directly to ffmpeg if the segment download fails for any reason.
+
+### Added
+
+- **Steam media: Store page button.** New **Store page** button next to Scan opens the game's Steam store page in the default browser. Enabled after a successful scan; resets when the game or system selection changes.
+
 ### Changed
 
 - **Steam media: Find now auto-scans.** Clicking **Find** in the Steam media panel (Metadata & Media tab) now automatically triggers the media scan after populating the URL field — no separate **Scan** click required. Manually pasting a URL and clicking **Scan** continues to work as before.
 - **Steam media: Video dropdown widened.** The Video candidate dropdown is now twice as wide (width 60 vs 30) so long candidate labels are readable without truncation.
 - **Steam media: Artwork picker moved.** The Artwork picker moved from the first picker row (Video / Screenshot / Artwork) to the second row alongside Wheel (Artwork / Wheel), giving each picker more horizontal space.
-
-### Added
-
-- **Steam media: Store page button.** New **Store page** button next to Scan opens the game's Steam store page in the default browser. Enabled after a successful scan; resets when the game or system selection changes.
 
 ## [2.8.0] - 2026-06-24
 
