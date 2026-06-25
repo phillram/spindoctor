@@ -8397,7 +8397,11 @@ class _SpinDoctorGUI:
                     f"https://store.steampowered.com/api/storesearch/"
                     f"?term={term}&l=english&cc=US"
                 )
-                with urllib.request.urlopen(url, timeout=10) as resp:
+                # nosec B310 — URL is the hardcoded Steam store search
+                # endpoint with a URL-encoded game name; not user-controlled.
+                # Bandit flags every urlopen because it could theoretically
+                # receive a file:// scheme from a caller.
+                with urllib.request.urlopen(url, timeout=10) as resp:  # nosec B310
                     data = json.loads(resp.read())
 
                 items = data.get("items") or []
