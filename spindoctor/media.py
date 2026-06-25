@@ -509,7 +509,9 @@ class MediaDownloader:
                            label, size, stderr_text[-2000:])
                 os.replace(tmp, dest)
                 duration = _probe_hls_duration(dest, ffprobe)
-                warn = _hls_truncation_warning(label, size, duration, stderr_text)
+                trunc_warn = _hls_truncation_warning(label, size, duration, stderr_text)
+                audio_warn = _maybe_fix_video_audio(dest, media_type, ffmpeg_hint)
+                warn = "\n".join(w for w in [trunc_warn, audio_warn] if w)
                 return DownloadResult(game_name=label, media_type=media_type,
                                       success=True, path=dest, warning=warn,
                                       file_size_bytes=size, duration_secs=duration)
