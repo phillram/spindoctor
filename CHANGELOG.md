@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.7.14] - 2026-06-24
+
 ### Fixed
 
 - **Steam HLS video has no audio when `--hls-quality` is used (root cause).** The v2.7.13 fix called `_maybe_fix_video_audio` after the HLS download assuming the audio track existed but had the wrong codec. The actual problem is that audio is missing entirely: Steam HLS master playlists deliver audio in a separate `EXT-X-MEDIA TYPE=AUDIO` rendition not included in any video-only variant playlist. When `_pick_hls_variant` extracted the 720p variant URL and ffmpeg downloaded it, zero audio streams were muxed — confirmed by `ffprobe -select_streams a:0` returning an empty array. Fixed: `_pick_hls_variant` now also parses `EXT-X-MEDIA TYPE=AUDIO` entries and returns the audio rendition URL alongside the video variant URL. When an audio URL is present, ffmpeg receives a second `-i audio_url` with `-map 0:v:0 -map 1:a:0` so both tracks are muxed into the output. When no audio rendition exists (older muxed variants), the original single-input command is used unchanged.
@@ -1845,7 +1847,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.13...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.7.14...HEAD
+[2.7.14]: https://github.com/phillram/spindoctor/compare/v2.7.13...v2.7.14
 [2.7.13]: https://github.com/phillram/spindoctor/compare/v2.7.12...v2.7.13
 [2.7.12]: https://github.com/phillram/spindoctor/compare/v2.7.11...v2.7.12
 [2.7.11]: https://github.com/phillram/spindoctor/compare/v2.7.10...v2.7.11
