@@ -234,8 +234,13 @@ def _pick_hls_variant(master_url: str, max_height: int, session) -> str:
         eligible = [(bw, h, url) for bw, h, url in variants if h <= max_height]
         if eligible:
             return max(eligible, key=lambda x: x[0])[2]
-        # All variants exceed max_height — use the smallest available.
-        return min(variants, key=lambda x: x[1])[2]
+        # All variants exceed max_height — use the smallest available and warn.
+        best = min(variants, key=lambda x: x[1])
+        _log.warning(
+            "HLS: no variant ≤%dp for %s — falling back to %dp",
+            max_height, master_url.split("?")[0].rsplit("/", 1)[-1], best[1],
+        )
+        return best[2]
     except Exception:
         _log.debug("HLS variant parse failed for %s — using master", master_url)
         return master_url
