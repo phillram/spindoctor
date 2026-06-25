@@ -227,7 +227,7 @@ Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates 
 
 Steam has no transparent-logo equivalent, so the header capsule image is reused as the wheel image. For transparent-background wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
 
-> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Paste a URL or App ID, click **Scan**, pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns (set any to "— do not download —" to skip that type), click **Apply selected**. See [GUI walkthrough](gui.md).
+> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Click **Find** to auto-populate the URL and scan in one step — or paste a URL / App ID manually and click **Scan**. Pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns (set any to "— do not download —" to skip that type), then click **Apply selected**. The **Store page** button (enabled after a scan) opens the game's Steam page in the browser. See [GUI walkthrough](gui.md).
 
 ### `media-add`
 
