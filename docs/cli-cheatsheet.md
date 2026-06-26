@@ -203,7 +203,7 @@ spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media 
 
 The scanner enforces **one entry per install folder** — if a folder contains both `Game.exe` and `Game Launcher.exe`, only the best candidate is picked. Website `.url` shortcuts and root-level "Launch X" `.lnk` shortcuts are silently dropped.
 
-Re-running on an existing system is fully idempotent: new games are added and uninstalled games are removed from both the HyperSpin XML database and the `Modules/PCLauncher/<system>/` INI folder. The dry-run preview shows `would add:` for new games and `would remove (stale):` for games no longer on disk.
+Re-running on an existing system is fully idempotent: new games are added and uninstalled games are removed from both the HyperSpin XML database and the `Modules/PCLauncher/<system>/` INI folder. `Settings/<system>/Emulators.ini` and `Settings/<system>.ini` are also written (or corrected) with `Default_Emulator=PCLauncher`, `Rom_Path=Modules/PCLauncher/<system>`, and `Rom_Extension=ini`. The dry-run preview shows `would add:` for new games and `would remove (stale):` for games no longer on disk.
 
 `--verbose` adds a per-game breakdown after the title review and PCLauncher INI steps: each game is labelled `new` (not yet in the HyperSpin XML) or `existing` (already present), its resolved executable path is printed, and any DB titles not found in the current ROM scan are flagged as `will be removed`. In the INI step each INI is listed as `would write` / `would skip` (dry-run) or the full written path (apply), and stale INIs are listed under `would delete … stale INI(s)`. Full paths are never truncated.
 
