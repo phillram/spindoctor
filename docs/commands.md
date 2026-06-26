@@ -466,7 +466,7 @@ spindoctor generate-config --overwrite-global --apply     :: replace an existing
 
 For an explicit permanent override that survives any restore, use `config system set --rom-path` or `--emulator` — see [Configuration → system_overrides](configuration.md#per-system-overrides).
 
-**What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, Daphne-based → Daphne, Taito Type X → PCLauncher, etc.). Use `config system set --emulator` to override for any system not in the built-in map, and `--rom-path` when the ROM folder name doesn't match the system name:
+**What changes for new systems** (first-time `add-system` flow): both folder-layout and flat-layout INI files are created with `Default_Emulator` set from SpinDoctor's built-in emulator map (MAME → MAME, SNES/NES/GBA → RetroArch, N64 → Project64, PS2 → PCSX2, Daphne-based → Daphne, Taito Type X → PCLauncher, etc.). **PCLauncher systems** (any system whose emulator resolves to PCLauncher, including user-named PC libraries set up with `add-pc-system`) always receive `Rom_Path=<rl_root>\Modules\PCLauncher\<system>` and `Rom_Extension=ini` — this is what allows RocketLauncher to discover the per-game placeholder INIs rather than the actual game executables. Use `config system set --emulator` to override for any system not in the built-in map, and `--rom-path` when the ROM folder name doesn't match the system name:
 
 ```bat
 spindoctor config system set "Panasonic 3DO" --emulator RetroArch --rom-path "J:\Games\3DO"
@@ -558,7 +558,7 @@ spindoctor add-system "Sega Saturn" --source thegamesdb --apply :: force one scr
 
 Same as `add-system` but for PC / Windows / Steam libraries — handles recursive scanning of nested install folders, the title-picker for awkward layouts, and per-game PCLauncher INIs. The scanner enforces **one entry per install folder**: all files inside a subfolder are grouped together and a single best-candidate executable is picked, preventing duplicate entries (e.g. "Peglin" and "Peglin Launcher" from the same folder). Website `.url` shortcuts and root-level "Launch X" `.lnk`/`.url` shortcuts are automatically ignored.
 
-Re-running `add-pc-system --apply` on an existing system is **fully idempotent** — it both adds newly installed games and removes stale entries for games that have been uninstalled. The HyperSpin XML database and the PCLauncher INI files are kept in sync with whatever is currently on disk.
+Re-running `add-pc-system --apply` on an existing system is **fully idempotent** — it both adds newly installed games and removes stale entries for games that have been uninstalled. The HyperSpin XML database, the `Modules/PCLauncher/<system>/` per-game INIs, and the RocketLauncher system settings files (`Settings/<system>/Emulators.ini` and `Settings/<system>.ini`) are all kept in sync with whatever is currently on disk.
 
 ```bat
 spindoctor add-pc-system "PC Games"                                   :: dry-run preview
@@ -604,7 +604,7 @@ The title review always runs (decisions are cached in `~/.spindoctor/pc_titles_c
 
 Fix a game that launches the wrong executable — for example when a PCLauncher INI has an uninstaller, a GOG/Steam cache file, or a redistributable set as `Application=` instead of the real game binary.
 
-Works with both **per-game INIs** (PC Games, Windows Games, etc.) and **system-level INIs** (Taito Type X, Taito Type X2, NESiCAxLive, etc.). The command automatically detects which INI format the system uses.
+Works with both **per-game INIs** (PC Games, Windows Games, and any system set up by `add-pc-system`) and **system-level INIs** (Taito Type X, Taito Type X2, NESiCAxLive — one file for all games). Detection priority: per-game INI (`Modules/PCLauncher/<System>/<game>.ini`) wins when it exists; the system-level INI (`Modules/PCLauncher/<System>.ini`) is the fallback for arcade-PC systems that have no per-game subfolder. When neither exists a new per-game INI is created.
 
 ```bat
 spindoctor pc-fix-exe "PC GAMES" "ElecHead"           :: preview auto-detected fix
