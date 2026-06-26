@@ -9350,10 +9350,39 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     except OSError as _e:
                         err_console.print(f"  [red]could not delete {_stale_ini}: {_e}[/red]")
 
-    # 5. Per-game media ──────────────────────────────────────────────────────
+    # 5. RocketLauncher system settings ─────────────────────────────────────
+    if not no_pclauncher:
+        _rl_dir = (
+            Path(output_dir) if output_dir
+            else (Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None)
+        )
+        if _rl_dir:
+            _folder_ini = _rl_dir / "Settings" / system_name / "Emulators.ini"
+            _flat_ini = _rl_dir / "Settings" / f"{system_name}.ini"
+            console.print("\n[blue bold]7. RocketLauncher system settings[/blue bold]")
+            if not apply_changes:
+                console.print(f"  [yellow]would write[/yellow] {_folder_ini}")
+                console.print(f"  [yellow]would write[/yellow] {_flat_ini}")
+                console.print(
+                    f"    [dim]Default_Emulator=PCLauncher, "
+                    f"Rom_Path=…\\Modules\\PCLauncher\\{system_name}, "
+                    f"Rom_Extension=ini[/dim]"
+                )
+            else:
+                from .rocketlauncher import generate_synthetic_system_ini as _gen_rl_sys_ini
+                try:
+                    _gen_rl_sys_ini(system_name, _rl_dir)
+                    console.print(f"  [green]+[/green] wrote {_folder_ini}")
+                    console.print(f"  [green]+[/green] wrote {_flat_ini}")
+                except Exception as _e:  # noqa: BLE001
+                    err_console.print(
+                        f"  [red]could not write RL settings: {_e}[/red]"
+                    )
+
+    # 6. Per-game media ──────────────────────────────────────────────────────
     if no_game_media:
         return
-    console.print("\n[blue bold]7. Per-game media[/blue bold]")
+    console.print("\n[blue bold]8. Per-game media[/blue bold]")
     extra = ["--system", system_name]
     if pick_media:
         extra.append("--pick-media")

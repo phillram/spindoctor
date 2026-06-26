@@ -12,6 +12,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **`add-pc-system --verbose` not forwarded to inner `add-system` sub-call.** The `--verbose` flag was never appended to the `add-system` argument list, so verbose output from the scaffolding and media steps was suppressed even when the user passed `--verbose`.
 
+- **`add-pc-system` never wrote `Settings/<system>/Emulators.ini`, leaving RocketLauncher unconfigured for the new system.** After writing the per-game PCLauncher INIs, `add-pc-system` did not write (or update) the RocketLauncher system settings file. RL would then use whatever stale or default settings existed — typically the wrong `Rom_Path` and the built-in default extension list (`zip|rar|7z|...`) instead of `ini` — causing "Cannot find Rom … with any provided Rom_extension: zip|rar|7z|…" on first launch. A new **step 7** in `add-pc-system` now writes both `Settings/<system>/Emulators.ini` (folder layout) and `Settings/<system>.ini` (flat layout) with `Default_Emulator=PCLauncher`, `Rom_Path=Modules/PCLauncher/<system>`, and `Rom_Extension=ini`.
+
+- **`generate-config` generated wrong `Rom_Path` and `Rom_Extension` for PCLauncher systems.** `generate_rl_system_ini` used `roms_dir/<system>` as `Rom_Path` and `exe|lnk|url|bat` as the extension for any system whose emulator is PCLauncher. RL needs `Rom_Path` pointing at `Modules/PCLauncher/<system>/` (where the per-game placeholder INIs live) and `Rom_Extension=ini` to discover games. PCLauncher systems now delegate to `generate_synthetic_system_ini`, which already generates the correct layout.
+
 ## [2.8.2] - 2026-06-24
 
 ### Added
