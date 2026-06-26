@@ -9658,12 +9658,20 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
         raise SystemExit(1)
 
     stem = _win_safe_stem(game)
-    # Taito Type X and similar arcade-PC systems store all games in a single
-    # system-level INI (Modules/PCLauncher/<System>.ini) rather than per-game
-    # INIs.  Prefer the system-level file when it exists.
+    # Standard PC systems (added via add-pc-system) use per-game INIs under
+    # Modules/PCLauncher/<System>/<game>.ini — that is what PCLauncher reads.
+    # Taito Type X / NESiCAxLive collect all games in a single system-level
+    # Modules/PCLauncher/<System>.ini and have no per-game subfolder.
+    # Per-game INI wins when it exists; system-level is the fallback.
+    # When neither exists, default to per-game so new entries land correctly.
     _system_ini = rl_base / "Modules" / "PCLauncher" / f"{system_name}.ini"
     _per_game_ini = rl_base / "Modules" / "PCLauncher" / system_name / f"{stem}.ini"
-    ini_path = _system_ini if _system_ini.exists() else _per_game_ini
+    if _per_game_ini.exists():
+        ini_path = _per_game_ini
+    elif _system_ini.exists():
+        ini_path = _system_ini
+    else:
+        ini_path = _per_game_ini
 
     # Resolve section name — may differ from *game* when the title contains
     # Windows-invalid characters (e.g. "Submachine: Legacy" → stem "Submachine Legacy").
