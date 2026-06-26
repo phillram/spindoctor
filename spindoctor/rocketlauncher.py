@@ -499,6 +499,19 @@ def generate_rl_system_ini(
                 if Path(_new_family_path).exists():
                     rom_path = _new_family_path
     emulator = guess_emulator(system_name)
+
+    # PCLauncher systems need Rom_Path pointing to the per-game INI directory
+    # (Modules/PCLauncher/<system>/) and Rom_Extension=ini so RL discovers
+    # games via their placeholder INIs regardless of how game files are laid
+    # out on disk.  generate_synthetic_system_ini already generates exactly
+    # this layout (and always rewrites so stale paths are corrected).
+    if emulator == "PCLauncher":
+        generate_synthetic_system_ini(system_name, rl_base)
+        return [
+            rl_base / "Settings" / system_name / "Emulators.ini",
+            rl_base / "Settings" / f"{system_name}.ini",
+        ]
+
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
     layout = detect_rl_layout(settings_dir, system_name)
     written: list[Path] = []
