@@ -9090,6 +9090,11 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
         console.print(f"  [yellow]would write[/yellow] system_overrides[{system_name!r}]:")
         for k, v in merged.items():
             console.print(f"    [dim]{k}:[/dim] {v}")
+        # Inject into the in-memory override cache so scan_roms picks up
+        # recursive_scan/rom_extensions for the title-review step below,
+        # even though nothing has been persisted yet in dry-run mode.
+        from .config import get_system_overrides as _get_ovr
+        _get_ovr()[system_name] = merged
     else:
         entry = _ensure_pc_overrides(config, system_name)
         reset_override_cache()
@@ -9110,6 +9115,8 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
         inner.append("--pick-media")
     if apply_changes:
         inner.append("--apply")
+    if verbose:
+        inner.append("--verbose")
     if output_dir:
         inner.extend(["--output-dir", str(output_dir)])
     if source:

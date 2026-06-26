@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`add-pc-system` dry-run falsely reports "No game files found" for new systems.** When `add-pc-system` runs without `--apply`, the PC overrides (`recursive_scan: True`, `rom_extensions`, etc.) are computed in memory but never persisted to `settings.json`. The subsequent title-review scan reads the config-file-backed override cache — which has no entry for the new system yet — and falls back to flat mode (only files directly in the root folder). Any system whose games live in subfolders (the normal layout for installed PC games) therefore showed no titles. The fix injects the computed overrides into the in-memory cache immediately after the dry-run preview is printed, so the scan sees `recursive_scan: True` without writing anything to disk.
+
+- **`add-pc-system --verbose` not forwarded to inner `add-system` sub-call.** The `--verbose` flag was never appended to the `add-system` argument list, so verbose output from the scaffolding and media steps was suppressed even when the user passed `--verbose`.
+
 ## [2.8.2] - 2026-06-24
 
 ### Added
