@@ -514,6 +514,89 @@ Each game entry in this file contains a `path=` line pointing to where the game 
 
 > **Note:** RocketLauncher's `Rom_Path=` for ScummVM tells RL where to find ROM *archives* (`.7z`, `.zip`) — it does not control where ScummVM reads game data from when running in Standard mode. These are two separate path settings.
 
+### RocketLauncher launches the wrong drive after moving an emulator to a new drive
+
+**Symptom:** After moving an emulator (e.g. Pinball Arcade, MAME) to a different
+drive, RocketLauncher throws an AutoHotkey error on launch:
+
+```
+Error in #include file "D:\Arcade\RocketLauncher\Lib\Shared.ahk":
+Failed attempt to launch program or document:
+Action <PinballArcade.exe>
+Specifically: The system cannot find the file specified.
+```
+
+Despite the error mentioning `Shared.ahk`, the real cause is that the emulator
+executable no longer exists at the path RocketLauncher was told to use — the
+`#include` wording is just where AHK surfaces the runtime error.
+
+**Why it happens:** `Global Emulators.ini` stores emulator paths relative to the
+RocketLauncher directory (`..` = one level up). A relative path always resolves
+against the drive RocketLauncher lives on. If the emulator moves to a *different*
+drive (e.g. from `D:` to `J:`), the relative path silently points to the wrong
+place and the exe is never found.
+
+```ini
+; D:\Arcade\RocketLauncher\Settings\Global Emulators.ini
+[Pinball Arcade]
+Emu_Path=..\Games\PinballArcade\PinballArcade.exe   ← resolves to D:\Arcade\Games\...
+                                                        even when the exe is on J:
+```
+
+**Option A — absolute path (quick fix):**
+
+Edit `D:\Arcade\RocketLauncher\Settings\Global Emulators.ini` and replace the
+relative path with the full path on the new drive:
+
+```ini
+[Pinball Arcade]
+Emu_Path=J:\Arcade\Games\PinballArcade\PinballArcade.exe
+```
+
+This is the simplest fix and is perfectly fine for a dedicated cabinet that isn't
+going to be moved to another machine.
+
+**Option B — directory junction (keeps relative paths working):**
+
+Create an NTFS directory junction that makes the new drive's folder appear under
+the old `D:` path. RocketLauncher then follows the original relative path without
+any ini change.
+
+Run this once in an elevated (`Run as Administrator`) Command Prompt:
+
+```bat
+mklink /J "D:\Arcade\Games\PinballArcade" "J:\Arcade\Games\PinballArcade"
+```
+
+A junction is a filesystem-level redirect — every program (including
+AutoHotkey/RocketLauncher) sees it as a real folder, unlike a Windows shortcut
+(`.lnk`) which only works at the application level and is ignored by programs
+that access the filesystem directly.
+
+> **No built-in Windows 7 UI for junctions.** The free shell extension
+> [Link Shell Extension](http://schinagl.priv.at/nt/hardlinkshellext/linkshellextension.html)
+> adds junction creation to Explorer's right-click menu and works on Windows 7.
+
+After creating the junction, leave `Global Emulators.ini` on its original
+relative path — no further changes needed.
+
+**Which option to choose:**
+
+| | Option A (absolute path) | Option B (junction) |
+|---|---|---|
+| Effort | Edit one ini line | One `mklink` command (admin) |
+| Portable to a new machine | No — path is machine-specific | No — junction must be re-created |
+| Keeps relative-path convention | No | Yes |
+| Invisible infrastructure risk | None | Junction folder can be accidentally deleted |
+
+For a dedicated single-machine cabinet, Option A is simpler and just as correct.
+Use Option B if you prefer relative paths in your ini files or have multiple
+emulators that all moved to the same new drive.
+
+**How to confirm the fix:** Relaunch the game from HyperSpin. The RocketLauncher
+log (`D:\Arcade\RocketLauncher\RocketLauncher.log`) should show `emuFullPath`
+resolving to the correct new path, and the AutoHotkey error will not appear.
+
 ---
 
 ### After a migration, wheel art is missing

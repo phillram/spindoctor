@@ -1589,6 +1589,159 @@ ScreenScraper splits DOS/legacy PC (id=135, key `"pc"`) from PC Windows/exe (id=
 
 ---
 
+## RetroArch Input Architecture
+
+### Input chain overview
+
+Physical arcade buttons → **keyboard encoder (I-PAC-style)** → USB keystrokes → RetroArch reads them as keyboard input.
+
+Simultaneously, the **Xbox 360 controller** connects over USB and is read by RetroArch via the `winxinput` joypad driver — independently of the keyboard encoder path. **Xpadder** is also running, but it only virtualises additional keyboard/mouse events for the controller; the raw controller is still visible to RetroArch through `winxinput`.
+
+Both input sources can be bound in a single RetroArch system cfg. RetroArch fires an action if **either** the keyboard key **or** the controller button is pressed.
+
+### System-level cfg files
+
+RetroArch reads a per-system config file in addition to `retroarch.cfg`:
+
+```
+D:\Arcade\Emulators\RetroArch\config\<System Name>.cfg
+```
+
+These files override any key they define, leaving everything else inherited from the global `retroarch.cfg`.
+
+### Cabinet keyboard encoder layout
+
+The cabinet uses a keyboard encoder that translates physical arcade buttons to keyboard keystrokes. The full mapping as of this document:
+
+**Non-player / admin buttons**
+
+| Function | Key |
+|----------|-----|
+| Left click | Left Mouse Button |
+| Right click | Right Mouse Button |
+| Select | Enter |
+| Exit | Escape |
+| Search | `/` (Forward-Slash) |
+| Pause | `p` |
+
+**Player 1**
+
+| Function | Key | RetroArch action |
+|----------|-----|-----------------|
+| Up | `↑` (Up arrow) | `input_player1_up` |
+| Down | `↓` (Down arrow) | `input_player1_down` |
+| Left | `←` (Left arrow) | `input_player1_left` |
+| Right | `→` (Right arrow) | `input_player1_right` |
+| Start | `r` | `input_player1_start` |
+| Coin | `s` | `input_player1_select` |
+| Button 1 | `a` | `input_player1_b` |
+| Button 2 | `b` | `input_player1_a` |
+| Button 3 | `c` | `input_player1_y` |
+| Button 4 | `a` (same as Button 1) | — |
+| Button 5 | `d` | `input_player1_x` |
+| Button 6 | `e` | `input_player1_l` |
+| Button 7 | `f` | `input_player1_r` |
+| Button 8 | `b` (same as Button 2) | — |
+
+**Player 2**
+
+| Function | Key | RetroArch action |
+|----------|-----|-----------------|
+| Up | `n` | `input_player2_up` |
+| Down | `q` | `input_player2_down` |
+| Left | `m` | `input_player2_left` |
+| Right | `o` | `input_player2_right` |
+| Start | `t` | `input_player2_start` |
+| Coin | `u` | `input_player2_select` |
+| Button 1 | `g` | `input_player2_b` |
+| Button 2 | `h` | `input_player2_a` |
+| Button 3 | `i` | `input_player2_y` |
+| Button 4 | `g` (same as Button 1) | — |
+| Button 5 | `j` | `input_player2_x` |
+| Button 6 | `k` | `input_player2_l` |
+| Button 7 | `l` | `input_player2_r` |
+| Button 8 | `h` (same as Button 2) | — |
+
+RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
+
+### Xbox 360 button numbers (winxinput driver)
+
+| Button | `_btn` value | Notes |
+|--------|-------------|-------|
+| A | `0` | Primary action |
+| B | `1` | Secondary action |
+| X | `2` | |
+| Y | `3` | |
+| LB | `4` | |
+| RB | `5` | |
+| Back | `6` | Maps to Select/Coin |
+| Start | `7` | |
+| D-pad Up | `h0up` | Hat switch |
+| D-pad Down | `h0down` | Hat switch |
+| D-pad Left | `h0left` | Hat switch |
+| D-pad Right | `h0right` | Hat switch |
+
+### Dual keyboard + controller binding in a single cfg
+
+A single system cfg can hold both binding forms simultaneously. RetroArch fires the action if either input is triggered:
+
+```ini
+input_player1_up = "up"       # keyboard encoder → Up arrow
+input_player1_up_btn = "h0up" # Xbox 360 d-pad up
+```
+
+This is the correct approach for this cabinet: do not maintain two separate profiles. Put both in one `.cfg` file.
+
+### Critical: explicit `"nul"` bindings override autodetect
+
+When a system cfg sets bindings to `"nul"`:
+
+```ini
+input_player1_up = "nul"
+input_player1_up_btn = "nul"
+```
+
+RetroArch **actively disables** those inputs for that player. The explicit `"nul"` overrides:
+- `input_autodetect_enable = "true"` — autodetect is suppressed for that binding
+- `keyboard_gamepad_enable = "true"` — keyboard gamepad mode is suppressed for that binding
+
+The result is that the entire control set is dead, even though autodetect and keyboard gamepad are nominally enabled. Controls working fine on other systems is not evidence against this — other systems either have no system cfg, or their system cfgs do not have explicit `"nul"` overrides.
+
+**Symptom:** Controls are completely non-functional for one system while all other emulators on the same cabinet work fine.
+
+**Fix:** Replace `"nul"` with the correct keyboard key string and/or controller button number.
+
+### RetroArch Quick Menu access
+
+The Quick Menu hotkey is system-cfg-controlled. The global `retroarch.cfg` default is `F1`, but a system cfg can override it:
+
+```ini
+input_menu_toggle = "tab"   # Quick Menu opens with Tab, not F1
+```
+
+The `Nintendo Game & Watch.cfg` on this cabinet uses `Tab`. The Xpadder profile for this system sends no `Tab` key, so Quick Menu requires a physical keyboard — it cannot be opened from the arcade controls alone.
+
+### Nintendo Game & Watch — system notes
+
+| Property | Value |
+|----------|-------|
+| System name (RL) | `Nintendo Game & Watch` |
+| Emulator | RetroArch |
+| Core | `gw_libretro` |
+| RL module | `LibRetro_GW` |
+| ROM extension | `.mgw` |
+| ROM path | `J:\Games\Nintendo Game & Watch\` |
+| RetroArch cfg | `D:\Arcade\Emulators\RetroArch\config\Nintendo Game & Watch.cfg` |
+| Savefile dir | `:\saves\Nintendo Game & Watch` |
+| Savestate dir | `:\states\Nintendo Game & Watch` |
+| Quick Menu hotkey | `Tab` (keyboard only) |
+
+The system cfg had all `input_player1_*` and `input_player2_*` bindings set to `"nul"`, making controls completely non-functional. Fixed by patching both keyboard encoder and Xbox 360 controller bindings into the cfg (see *Dual keyboard + controller binding* above).
+
+No AHK keymapper profile exists for this system — `D:\Arcade\RocketLauncher\Profiles\AHK\Nintendo Game & Watch\RetroArch.ahk` and `_Default.ahk` are both absent. This is logged as a WARNING by RocketLauncher but is not an error.
+
+---
+
 ## LEDBlinky
 
 ### Key files
