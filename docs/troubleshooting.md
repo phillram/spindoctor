@@ -493,6 +493,27 @@ Locally — `mame -listxml` is run as a subprocess and the output is cached in `
 
 ## Migration / drives
 
+### ScummVM games launch but show a blank screen or quit immediately after a drive change
+
+**Symptom:** ScummVM launches and then quits after a few seconds, or opens without loading any game. The RocketLauncher log shows the correct ROM path on the new drive (e.g. `romPath := "J:\Games\ScummVM"`) but the game doesn't load.
+
+**Cause:** RocketLauncher's ScummVM module runs in **Standard/Auto launch mode** — it passes the game ID (e.g. `simon1-cd-win`) to ScummVM and lets ScummVM look up the game's folder path from its own config file. That config file is separate from RocketLauncher and is not updated by `generate-config` or any SpinDoctor command:
+
+```
+C:\Users\<username>\AppData\Roaming\ScummVM\scummvm.ini
+```
+
+Each game entry in this file contains a `path=` line pointing to where the game data lives on disk. When you move games to a new drive, this file still has the old drive letter — ScummVM finds no data at the old path and quits.
+
+**Fix:** Close ScummVM, then open that file in Notepad and do a find-and-replace:
+
+1. Press `Ctrl+H`
+2. Find what: `E:\` (or whichever old drive letter the paths use — check `path=` lines in the file)
+3. Replace with: `J:\` (your new drive)
+4. Click **Replace All**, then save
+
+> **Note:** RocketLauncher's `Rom_Path=` for ScummVM tells RL where to find ROM *archives* (`.7z`, `.zip`) — it does not control where ScummVM reads game data from when running in Standard mode. These are two separate path settings.
+
 ### RocketLauncher launches the wrong drive after moving an emulator to a new drive
 
 **Symptom:** After moving an emulator (e.g. Pinball Arcade, MAME) to a different
@@ -593,6 +614,37 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 ### My new drive is FAT32 / exFAT and the wheel rebuild is slow
 
 `fav rebuild` and `stats-report build-wheel` default to hardlinks, which need NTFS / ext4 / APFS. On FAT32 / exFAT they fall back to copy automatically (via `auto` mode), which doubles disk use. Either pass `--media-mode copy` explicitly to make the fallback intentional, or move the wheel target to an NTFS volume.
+
+---
+
+## ScummVM
+
+### ScummVM window appears blank and requires a click to display
+
+**Symptom:** ScummVM launches but the window stays black until you click on it. This happens intermittently, not on every launch.
+
+**Cause:** ScummVM's SDL window opens at its default 640×480 size, then switches to fullscreen. Windows drops focus during this transition — even though RocketLauncher calls `WaitActive` on the window, the fullscreen switch happens after that and steals focus back to nothing.
+
+**Fix:** Create a RocketLauncher User Function file that clicks the window once it is active:
+
+```
+D:\Arcade\RocketLauncher\Lib\User Functions\ScummVM\Emulators\ScummVM.ahk
+```
+
+Contents:
+
+```ahk
+StartEmu:
+    Sleep, 1000
+    WinActivate, ahk_class SDL_app
+    Sleep, 200
+    Click
+Return
+```
+
+RocketLauncher picks this file up automatically — no other config changes are needed. The `Sleep, 1000` gives ScummVM time to complete its fullscreen transition before the click is sent. If the blank screen is shorter or longer on your cabinet, adjust this value (try 500–1500 ms).
+
+> **Note:** The `User Functions` folder and its subfolders may not exist yet. Create them in Windows Explorer if needed: `RocketLauncher\Lib\User Functions\ScummVM\Emulators\`.
 
 ## General
 
