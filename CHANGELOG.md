@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **Troubleshooting: ScummVM game paths after a drive migration.** Added an entry under *Migration / drives* explaining that RocketLauncher's `Rom_Path=` and ScummVM's own `scummvm.ini` (at `%APPDATA%\ScummVM\scummvm.ini`) are two separate path settings. When games move to a new drive, the `scummvm.ini` `path=` entries must be updated via Notepad find-and-replace — `generate-config` does not touch this file.
+
+- **Troubleshooting: ScummVM blank screen on launch.** Added a new *ScummVM* section documenting the SDL fullscreen-transition focus-drop and the fix: create `RocketLauncher\Lib\User Functions\ScummVM\Emulators\ScummVM.ahk` with a `StartEmu` label that sleeps 1 s, re-activates the SDL window, and clicks it.
+
 ### Fixed
 
 - **`add-pc-system` dry-run falsely reports "No game files found" for new systems.** When `add-pc-system` runs without `--apply`, the PC overrides (`recursive_scan: True`, `rom_extensions`, etc.) are computed in memory but never persisted to `settings.json`. The subsequent title-review scan reads the config-file-backed override cache — which has no entry for the new system yet — and falls back to flat mode (only files directly in the root folder). Any system whose games live in subfolders (the normal layout for installed PC games) therefore showed no titles. The fix injects the computed overrides into the in-memory cache immediately after the dry-run preview is printed, so the scan sees `recursive_scan: True` without writing anything to disk.
