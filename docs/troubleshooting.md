@@ -617,6 +617,82 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 
 ---
 
+## Dolphin / GameCube
+
+### GameCube games fail with "error waiting for the window FPS ahk_class wxWindowNR"
+
+**Symptom:** Dolphin opens, the game starts running (visible on the taskbar), but
+RocketLauncher times out and shows *"There was an error waiting for the window FPS
+ahk_class wxWindowNR"*. Games work fine when launched directly from Dolphin.
+
+**Cause:** Dolphin was upgraded from a 2017-era Ishiiruka build (wxWidgets UI,
+window class `wxWindowNR`) to an official 5.0-12188+ build (Qt UI, window class
+`Qt5150QWindowIcon`). The RL module (`Dolphin.ahk`) still looks for the old class and
+never finds the game window.
+
+**Fix:** Edit `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` and replace
+all 7 occurrences of `wxWindowNR` with `Qt5150QWindowIcon`. See the
+[Dolphin architecture section](cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation)
+for the full list of edits.
+
+---
+
+### Dolphin opens to the game browser instead of launching the selected game
+
+**Symptom:** Dolphin opens showing its game list. The correct game is listed
+but does not auto-start. Games launch fine when double-clicked inside Dolphin.
+
+**Cause:** The RL module launches Dolphin with Windows-style flags (`/b /e`).
+Qt-based Dolphin (5.0-12188+) only accepts POSIX-style flags (`-b -e`); it
+ignores the `/b /e` arguments and opens normally without a game.
+
+**Fix:** In `Dolphin.ahk`, find:
+
+```ahk
+primaryExe.Run(" /b /e """ . romPath . "\" . romName . romExtension . """")
+```
+
+Change to:
+
+```ahk
+primaryExe.Run(" -b -e """ . romPath . "\" . romName . romExtension . """")
+```
+
+---
+
+### "No valid roms found in the archive" for a .rvz inside a .zip
+
+**Cause:** `.rvz` is not in the `Rom_Extension=` list RocketLauncher uses to
+validate files inside archives.
+
+**Fix (preferred):** Unzip the `.rvz` files directly into the ROM folder — `.rvz`
+is already compressed and does not benefit from re-zipping. Then add `rvz` to
+`Rom_Extension=` in
+`D:\Arcade\RocketLauncher\Settings\Nintendo Gamecube\Nintendo Gamecube.ini`.
+
+**Fix (keep the zip):** Add `rvz` to `Rom_Extension=` in `Global Emulators.ini`
+under `[Dolphin Ishiiruka]`.
+
+Run `spindoctor check-archive-ext --system "Nintendo Gamecube"` to verify all
+inner extensions are covered before launching.
+
+---
+
+### "Your module does not contain a CloseProcess section"
+
+**Cause:** `Dolphin.ahk` is corrupted — it contains HTML (e.g. from a file-sharing
+site's landing page) instead of AHK code. This happens when a "Proceed to download"
+warning page is saved as the file rather than the actual AHK module.
+
+**Diagnosis:** Check the file size. A valid `Dolphin.ahk` is ≈ 32 KB. If it is
+≈ 5 KB, open in Notepad — if it starts with `<!doctype html>` the wrong file was saved.
+
+**Fix:** Re-copy the correct `Dolphin.ahk` via USB stick or network share. Avoid
+web file-sharing services that show an intermediate landing page; the page HTML
+gets saved instead of the file if the download link isn't clicked through correctly.
+
+---
+
 ## ScummVM
 
 ### ScummVM window appears blank and requires a click to display
