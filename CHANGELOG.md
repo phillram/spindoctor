@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Docs
 
+- **RetroArch input architecture documented.** New section in `cabinet-architecture-reference.md` covering: the full cabinet keyboard encoder layout for Player 1 and Player 2; how dual keyboard-encoder + Xbox 360 controller bindings coexist in a single system cfg; the critical behavior where explicit `"nul"` bindings in a system cfg actively suppress `input_autodetect_enable` and `keyboard_gamepad_enable` (root cause of controls being completely dead for one system while all others work); Xbox 360 button numbers for the `winxinput` driver; Quick Menu hotkey override via `input_menu_toggle`; and Nintendo Game & Watch system-specific notes (core `gw_libretro`, cfg path, ROM path, Quick Menu on Tab).
+
 - **Troubleshooting: RocketLauncher cross-drive emulator path.** Added an entry under *Migration / drives* explaining why `Global Emulators.ini` relative paths silently point to the wrong drive when an emulator moves to a different drive, and documenting both fixes: updating to an absolute path (quick) and creating an NTFS directory junction via `mklink /J` (keeps relative paths intact). Includes a note that Windows shortcuts (`.lnk`) are not equivalent to junctions and will not work here, and a pointer to Link Shell Extension for a Windows 7-compatible GUI approach.
 
 ### Fixed
