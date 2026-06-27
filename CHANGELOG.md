@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **Troubleshooting: RocketLauncher cross-drive emulator path.** Added an entry under *Migration / drives* explaining why `Global Emulators.ini` relative paths silently point to the wrong drive when an emulator moves to a different drive, and documenting both fixes: updating to an absolute path (quick) and creating an NTFS directory junction via `mklink /J` (keeps relative paths intact). Includes a note that Windows shortcuts (`.lnk`) are not equivalent to junctions and will not work here, and a pointer to Link Shell Extension for a Windows 7-compatible GUI approach.
+
 ### Fixed
 
 - **`add-pc-system` dry-run falsely reports "No game files found" for new systems.** When `add-pc-system` runs without `--apply`, the PC overrides (`recursive_scan: True`, `rom_extensions`, etc.) are computed in memory but never persisted to `settings.json`. The subsequent title-review scan reads the config-file-backed override cache — which has no entry for the new system yet — and falls back to flat mode (only files directly in the root folder). Any system whose games live in subfolders (the normal layout for installed PC games) therefore showed no titles. The fix injects the computed overrides into the in-memory cache immediately after the dry-run preview is printed, so the scan sees `recursive_scan: True` without writing anything to disk.
