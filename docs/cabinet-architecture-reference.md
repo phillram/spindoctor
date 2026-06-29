@@ -892,7 +892,69 @@ To replace the Dolphin executable while keeping all settings and controller prof
 2. Copy the new `Dolphin.exe` (and supporting DLLs if present) into
    `D:\Arcade\Emulators\Dolphin Ishiiruka\` — overwrite the old exe only
 3. The `User\` folder and `portable.txt` are untouched; settings carry over automatically
-4. No changes to `Global Emulators.ini` or RocketLauncher settings are needed
+4. No changes to `Global Emulators.ini` are needed
+5. **If upgrading from a 2017-era Dolphin Ishiiruka (wx-based) to Dolphin 5.0-12188+
+   (Qt-based), the RocketLauncher module also needs updating** — see *RL module
+   compatibility when upgrading build generation* below.
+
+### RL module compatibility when upgrading build generation
+
+Old Dolphin builds used the **wxWidgets** UI framework (window class `wxWindowNR`).
+Dolphin 5.0-12188+ switched to **Qt** (window class `Qt5150QWindowIcon`).
+RocketLauncher's `Dolphin.ahk` module detects game windows by class name, so upgrading
+from a wx build to a Qt build without updating the module causes two failures:
+
+| Symptom | Cause |
+|---------|-------|
+| RL fade-in completes, then error: *"There was an error waiting for the window FPS ahk\_class wxWindowNR"* | Module looks for `wxWindowNR`; Qt Dolphin registers as `Qt5150QWindowIcon` |
+| Dolphin opens to the game browser instead of launching the selected game | Old Windows-style flags (`/b /e`) are not parsed by Qt-based Dolphin; use POSIX-style (`-b -e`) |
+
+**Three edits are needed in `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`:**
+
+1. **All window class references** — replace every occurrence of `wxWindowNR` with
+   `Qt5150QWindowIcon`. There are 7 occurrences (primary window × 3, game window × 3,
+   NetPlay windows × 2 across several conditional blocks).
+
+2. **Launch flags** — find the line that runs the emulator:
+   ```ahk
+   primaryExe.Run(" /b /e """ . romPath . "\" . romName . romExtension . """")
+   ```
+   Change `/b /e` to `-b -e`:
+   ```ahk
+   primaryExe.Run(" -b -e """ . romPath . "\" . romName . romExtension . """")
+   ```
+
+3. **Render_To_Main module setting** — the module's game-window detection relies on a
+   separate render window titled `FPS`. In newer Dolphin builds this window may not
+   appear as a separate top-level window. If the game still fails to launch after the
+   above two fixes, set `Render_To_Main=true` in
+   `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ini`:
+   ```ini
+   [Settings]
+   Render_To_Main=true
+   ```
+   The module will then write `RenderToMain=True` into Dolphin's own `Dolphin.ini`
+   and wait for the main Dolphin window instead of the separate FPS render window.
+
+> **CRC warning is harmless.** Editing `Dolphin.ahk` causes RL to log
+> *"CRC does not match official module"* — this is a WARNING, not an error, and
+> does not prevent the module from running.
+
+### RVZ — per-system Rom_Extension
+
+When ROMs are stored as bare `.rvz` files (not inside a zip), `rvz` must appear in the
+`Rom_Extension=` list in the **per-system** settings file as well as `Global Emulators.ini`:
+
+```ini
+; D:\Arcade\RocketLauncher\Settings\Nintendo Gamecube\Nintendo Gamecube.ini
+[ROMS]
+Rom_Extension=lha|lzh|gzip|tar|gcz|7z|zip|ciso|iso|elf|dol|gcm|wad|rar|wbfs|rvz
+```
+
+If ROMs are stored as `.rvz` **inside** a `.zip` archive, add `rvz` to `Global Emulators.ini`
+`[Dolphin Ishiiruka]` → `Rom_Extension=` instead (or in addition). Unzipping the `.rvz` files
+directly to the ROM folder is the simpler layout — `.rvz` is already compressed and gains
+nothing from being re-zipped.
 
 To add a **second Dolphin instance** (e.g. keep Ishiiruka for one system, new build for another):
 

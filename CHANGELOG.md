@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Docs
 
+- **Dolphin Qt upgrade guide.** Documented the three edits required when upgrading from a 2017-era Dolphin Ishiiruka (wxWidgets) build to Dolphin 5.0-12188+ (Qt): replace all `wxWindowNR` window class references with `Qt5150QWindowIcon` in `Dolphin.ahk`; change launch flags from `/b /e` to `-b -e`; set `Render_To_Main=true` in the module's `Dolphin.ini` if the FPS render window is not detected. Added a note that the CRC mismatch warning after editing is harmless. Also documented the `rvz` per-system `Rom_Extension` requirement and how it differs from the global emulator setting. Added a new *Dolphin / GameCube* troubleshooting section covering all four failure modes encountered during the Ishiiruka → 5.0-16101 upgrade (window class mismatch, POSIX flags, archive extension mismatch, corrupted module file).
+
 - **Troubleshooting: ScummVM game paths after a drive migration.** Added an entry under *Migration / drives* explaining that RocketLauncher's `Rom_Path=` and ScummVM's own `scummvm.ini` (at `%APPDATA%\ScummVM\scummvm.ini`) are two separate path settings. When games move to a new drive, the `scummvm.ini` `path=` entries must be updated via Notepad find-and-replace — `generate-config` does not touch this file.
 
 - **Troubleshooting: ScummVM blank screen on launch.** Added a new *ScummVM* section documenting the SDL fullscreen-transition focus-drop and the fix: create `RocketLauncher\Lib\User Functions\ScummVM\Emulators\ScummVM.ahk` with a `StartEmu` label that sleeps 1 s, re-activates the SDL window, and clicks it.
