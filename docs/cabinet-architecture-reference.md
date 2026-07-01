@@ -1733,52 +1733,52 @@ The cabinet uses a keyboard encoder that translates physical arcade buttons to k
 
 **Non-player / admin buttons**
 
-| Function | Key |
-|----------|-----|
-| Left click | Left Mouse Button |
-| Right click | Right Mouse Button |
-| Select | Enter |
-| Exit | Escape |
-| Search | `/` (Forward-Slash) |
-| Pause | `p` |
+| Function | Key | Mini-PAC pin |
+|----------|-----|-------------|
+| Left click | Left Mouse Button | pin43 |
+| Right click | Right Mouse Button | pin42 |
+| Select | Enter | pin02 |
+| Exit | Escape | pin03 |
+| Search | `/` (Forward-Slash) | pin04 |
+| Pause | `p` | pin05 |
 
 **Player 1**
 
-| Function | Key | RetroArch action |
-|----------|-----|-----------------|
-| Up | `↑` (Up arrow) | `input_player1_up` |
-| Down | `↓` (Down arrow) | `input_player1_down` |
-| Left | `←` (Left arrow) | `input_player1_left` |
-| Right | `→` (Right arrow) | `input_player1_right` |
-| Start | `r` | `input_player1_start` |
-| Coin | `s` | `input_player1_select` |
-| Button 1 | `a` | `input_player1_b` |
-| Button 2 | `b` | `input_player1_a` |
-| Button 3 | `c` | `input_player1_y` |
-| Button 4 | `a` (same as Button 1) | — |
-| Button 5 | `d` | `input_player1_x` |
-| Button 6 | `e` | `input_player1_l` |
-| Button 7 | `f` | `input_player1_r` |
-| Button 8 | `b` (same as Button 2) | — |
+| Function | Key | Mini-PAC pin | RetroArch action |
+|----------|-----|-------------|-----------------|
+| Up | `↑` (Up arrow) | pin37 | `input_player1_up` |
+| Down | `↓` (Down arrow) | pin36 | `input_player1_down` |
+| Left | `←` (Left arrow) | pin38 | `input_player1_left` |
+| Right | `→` (Right arrow) | pin39 | `input_player1_right` |
+| Start | `r` | pin25 | `input_player1_start` |
+| Coin | `s` | pin23 | `input_player1_select` |
+| Button 1 | `a` | pin32 | `input_player1_b` |
+| Button 2 | `b` | pin26 | `input_player1_a` |
+| Button 3 | `c` | pin33 | `input_player1_y` |
+| Button 4 | `a` (same as Button 1) | pin35 | — |
+| Button 5 | `d` | pin29 | `input_player1_x` |
+| Button 6 | `e` | pin28 | `input_player1_l` |
+| Button 7 | `f` | pin27 | `input_player1_r` |
+| Button 8 | `b` (same as Button 2) | pin34 | — |
 
 **Player 2**
 
-| Function | Key | RetroArch action |
-|----------|-----|-----------------|
-| Up | `n` | `input_player2_up` |
-| Down | `q` | `input_player2_down` |
-| Left | `m` | `input_player2_left` |
-| Right | `o` | `input_player2_right` |
-| Start | `t` | `input_player2_start` |
-| Coin | `u` | `input_player2_select` |
-| Button 1 | `g` | `input_player2_b` |
-| Button 2 | `h` | `input_player2_a` |
-| Button 3 | `i` | `input_player2_y` |
-| Button 4 | `g` (same as Button 1) | — |
-| Button 5 | `j` | `input_player2_x` |
-| Button 6 | `k` | `input_player2_l` |
-| Button 7 | `l` | `input_player2_r` |
-| Button 8 | `h` (same as Button 2) | — |
+| Function | Key | Mini-PAC pin | RetroArch action |
+|----------|-----|-------------|-----------------|
+| Up | `n` | pin17 | `input_player2_up` |
+| Down | `q` | pin16 | `input_player2_down` |
+| Left | `m` | pin18 | `input_player2_left` |
+| Right | `o` | pin19 | `input_player2_right` |
+| Start | `t` | pin24 | `input_player2_start` |
+| Coin | `u` | pin22 | `input_player2_select` |
+| Button 1 | `g` | pin12 | `input_player2_b` |
+| Button 2 | `h` | pin06 | `input_player2_a` |
+| Button 3 | `i` | pin13 | `input_player2_y` |
+| Button 4 | `g` (same as Button 1) | pin15 | — |
+| Button 5 | `j` | pin09 | `input_player2_x` |
+| Button 6 | `k` | pin08 | `input_player2_l` |
+| Button 7 | `l` | pin07 | `input_player2_r` |
+| Button 8 | `h` (same as Button 2) | pin14 | — |
 
 RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
 
