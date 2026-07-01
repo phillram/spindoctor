@@ -1671,6 +1671,62 @@ D:\Arcade\Emulators\RetroArch\config\<System Name>.cfg
 
 These files override any key they define, leaving everything else inherited from the global `retroarch.cfg`.
 
+### Hardware: Ultimarc Mini-PAC + PAC-LED64
+
+The cabinet uses two Ultimarc boards over USB:
+
+| Board | Purpose |
+|-------|---------|
+| **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
+| **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
+
+The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML.
+
+#### WinIPAC pin-to-key mapping (as exported)
+
+The following table decodes the board's current EEPROM state (USB HID keycodes → key names). Pin numbers match WinIPAC's XML export format.
+
+| Pin | Key | Logical function |
+|-----|-----|-----------------|
+| pin02 | Enter | Select / confirm |
+| pin03 | Escape | Exit |
+| pin04 | `/` | Search |
+| pin05 | P | Pause |
+| pin06 | H | P2 Button 2 |
+| pin07 | L | P2 Button 7 |
+| pin08 | K | P2 Button 6 |
+| pin09 | J | P2 Button 5 |
+| pin12 | G | P2 Button 1 |
+| pin13 | I | P2 Button 3 |
+| pin14 | **H** *(duplicate of pin06)* | P2 Button 4 |
+| pin15 | **G** *(duplicate of pin12)* | P2 Button 8 |
+| pin16 | Q | P2 Down |
+| pin17 | N | P2 Up |
+| pin18 | M | P2 Left |
+| pin19 | O | P2 Right |
+| pin22 | U | P2 Coin |
+| pin23 | S *(shift/swop key)* | P1 Coin |
+| pin24 | T | P2 Start |
+| pin25 | R | P1 Start |
+| pin26 | B | P1 Button 2 |
+| pin27 | F | P1 Button 7 |
+| pin28 | E | P1 Button 6 |
+| pin29 | D | P1 Button 5 |
+| pin32 | A | P1 Button 1 |
+| pin33 | C | P1 Button 3 |
+| pin34 | **B** *(duplicate of pin26)* | P1 Button 4 |
+| pin35 | **A** *(duplicate of pin32)* | P1 Button 8 |
+| pin36 | ↓ Down Arrow | P1 Down |
+| pin37 | ↑ Up Arrow | P1 Up |
+| pin38 | ← Left Arrow | P1 Left |
+| pin39 | → Right Arrow | P1 Right |
+| pin42 | Mouse Middle Button | Trackball button |
+| pin43 | Mouse Left Button | Trackball button |
+
+Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
+
+**Duplicate pins:** P1 Buttons 1 & 4 share `a`; P1 Buttons 2 & 8 share `b`; P2 Buttons 1 & 4 share `g`; P2 Buttons 2 & 8 share `h`. These were intentional at setup time (shared actions on both players) but mean the duplicated buttons cannot be independently rebound in emulators. To make them unique, reassign the duplicate pins in WinIPAC and update the corresponding emulator key bindings.
+
 ### Cabinet keyboard encoder layout
 
 The cabinet uses a keyboard encoder that translates physical arcade buttons to keyboard keystrokes. The full mapping as of this document:
