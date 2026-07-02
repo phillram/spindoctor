@@ -693,6 +693,32 @@ gets saved instead of the file if the download link isn't clicked through correc
 
 ---
 
+### GameCube controller not responding when launched through HyperSpin
+
+**Symptom:** Controller works when Dolphin is launched directly, but stops responding when
+the same game is launched through HyperSpin. The problem persists even when Dolphin is
+launched directly afterward, until the computer is rebooted. Dolphin's controller list shows
+`[disconnected] DInput/0/Wireless Controller` instead of `XInput/0/Gamepad`.
+
+**Cause:** DS4Windows — which converts the PS4 controller into a virtual XInput device —
+is tied to HyperSpin's process lifetime and exits when HyperSpin closes. Without DS4Windows
+running, the `XInput/0/Gamepad` virtual device disappears. Dolphin's GCPad profile is bound
+to `XInput/0/Gamepad`, so it loses the controller. The raw DInput device
+(`DInput/0/Wireless Controller`) remains visible but is not what Dolphin's profile maps to,
+so buttons do not register even though the device appears connected.
+
+**Fix:**
+1. Configure DS4Windows to start at Windows login independently of HyperSpin — add it to
+   the Startup folder (`shell:startup`) or create a Task Scheduler entry set to run at logon.
+2. Confirm Dolphin's GCPad Port 1 is set to `XInput/0/Gamepad` (not `DInput/0/Wireless Controller`).
+
+**Diagnosis:** Press `Win+B` to access the system tray while HyperSpin's taskbar is hidden.
+If DS4Windows is not listed in the tray, it has exited. See
+[Controller input — DS4Windows and XInput](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)
+for the full architecture reference.
+
+---
+
 ## ScummVM
 
 ### ScummVM window appears blank and requires a click to display
