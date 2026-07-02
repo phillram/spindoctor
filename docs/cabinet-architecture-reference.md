@@ -1729,6 +1729,16 @@ Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not b
 
 The cabinet uses a keyboard encoder that translates physical arcade buttons to keyboard keystrokes. The full mapping as of this document:
 
+**Swop (secondary) key functions**
+
+Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second button to trigger its secondary function:
+
+| Combination | Secondary key | Function |
+|-------------|--------------|---------|
+| P1 Coin + Joystick Up (pin37) | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Joystick Down (pin36) | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Select (pin02) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
+
 **Non-player / admin buttons**
 
 | Function | Key | Mini-PAC pin |
