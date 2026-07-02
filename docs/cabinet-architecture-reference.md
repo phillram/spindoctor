@@ -1764,52 +1764,52 @@ Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second bu
 
 **Admin buttons**
 
-| Function | Key | Mini-PAC pin |
-|----------|-----|-------------|
-| Left click | Left Mouse Button | pin43 |
-| Right click | Right Mouse Button | pin42 |
-| Select | Enter | pin02 |
-| Exit | Escape | pin03 |
-| Search | `/` (Forward-Slash) | pin04 |
-| Pause | `p` | pin05 |
+| Mini-PAC pin | Key | Function |
+|-------------|-----|---------|
+| pin02 | Enter | Select |
+| pin03 | Escape | Exit |
+| pin04 | `/` (Forward-Slash) | Search |
+| pin05 | `p` | Pause |
+| pin42 | Right Mouse Button | Right click |
+| pin43 | Left Mouse Button | Left click |
 
 **Player 1**
 
-| Function | Key | Mini-PAC pin | RetroArch action |
-|----------|-----|-------------|-----------------|
-| Up | `↑` (Up arrow) | pin37 | `input_player1_up` |
-| Down | `↓` (Down arrow) | pin36 | `input_player1_down` |
-| Left | `←` (Left arrow) | pin38 | `input_player1_left` |
-| Right | `→` (Right arrow) | pin39 | `input_player1_right` |
-| Start | `r` | pin25 | `input_player1_start` |
-| Coin | `s` | pin23 | `input_player1_select` |
-| Button 1 | `a` | pin35 | `input_player1_b` |
-| Button 2 | `b` | pin34 | `input_player1_a` |
-| Button 3 | `c` | pin33 | `input_player1_y` |
-| Button 4 | `v` | pin32 | — |
-| Button 5 | `d` | pin29 | `input_player1_x` |
-| Button 6 | `e` | pin28 | `input_player1_l` |
-| Button 7 | `f` | pin27 | `input_player1_r` |
-| Button 8 | `w` | pin26 | — |
+| Mini-PAC pin | Key | Function | RetroArch action |
+|-------------|-----|---------|-----------------|
+| pin23 | `s` | Coin | `input_player1_select` |
+| pin25 | `r` | Start | `input_player1_start` |
+| pin26 | `w` | Button 8 | — |
+| pin27 | `f` | Button 7 | `input_player1_r` |
+| pin28 | `e` | Button 6 | `input_player1_l` |
+| pin29 | `d` | Button 5 | `input_player1_x` |
+| pin32 | `v` | Button 4 | — |
+| pin33 | `c` | Button 3 | `input_player1_y` |
+| pin34 | `b` | Button 2 | `input_player1_a` |
+| pin35 | `a` | Button 1 | `input_player1_b` |
+| pin36 | `↓` (Down arrow) | Down | `input_player1_down` |
+| pin37 | `↑` (Up arrow) | Up | `input_player1_up` |
+| pin38 | `←` (Left arrow) | Left | `input_player1_left` |
+| pin39 | `→` (Right arrow) | Right | `input_player1_right` |
 
 **Player 2**
 
-| Function | Key | Mini-PAC pin | RetroArch action |
-|----------|-----|-------------|-----------------|
-| Up | `n` | pin17 | `input_player2_up` |
-| Down | `q` | pin16 | `input_player2_down` |
-| Left | `m` | pin18 | `input_player2_left` |
-| Right | `o` | pin19 | `input_player2_right` |
-| Start | `t` | pin24 | `input_player2_start` |
-| Coin | `u` | pin22 | `input_player2_select` |
-| Button 1 | `g` | pin15 | `input_player2_b` |
-| Button 2 | `h` | pin14 | `input_player2_a` |
-| Button 3 | `i` | pin13 | `input_player2_y` |
-| Button 4 | `y` | pin12 | — |
-| Button 5 | `j` | pin09 | `input_player2_x` |
-| Button 6 | `k` | pin08 | `input_player2_l` |
-| Button 7 | `l` | pin07 | `input_player2_r` |
-| Button 8 | `x` | pin06 | — |
+| Mini-PAC pin | Key | Function | RetroArch action |
+|-------------|-----|---------|-----------------|
+| pin06 | `x` | Button 8 | — |
+| pin07 | `l` | Button 7 | `input_player2_r` |
+| pin08 | `k` | Button 6 | `input_player2_l` |
+| pin09 | `j` | Button 5 | `input_player2_x` |
+| pin12 | `y` | Button 4 | — |
+| pin13 | `i` | Button 3 | `input_player2_y` |
+| pin14 | `h` | Button 2 | `input_player2_a` |
+| pin15 | `g` | Button 1 | `input_player2_b` |
+| pin16 | `q` | Down | `input_player2_down` |
+| pin17 | `n` | Up | `input_player2_up` |
+| pin18 | `m` | Left | `input_player2_left` |
+| pin19 | `o` | Right | `input_player2_right` |
+| pin22 | `u` | Coin | `input_player2_select` |
+| pin24 | `t` | Start | `input_player2_start` |
 
 RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
 
