@@ -1680,11 +1680,36 @@ The cabinet uses two Ultimarc boards over USB:
 | **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
 | **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
-The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML.
+The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
 
-#### WinIPAC pin-to-key mapping (as exported)
+#### Physical button layout
 
-The following table decodes the board's current EEPROM state (USB HID keycodes → key names). Pin numbers match WinIPAC's XML export format.
+```
+ ┌─────────────────────────────────────────────────────────────────┐
+ │                    PLAYER 1              PLAYER 2               │
+ │                                                                 │
+ │  Joystick            [↑]                    [N]                │
+ │                   [←][↓][→]             [M][Q][O]              │
+ │                                                                 │
+ │  Coin / Start      [S]  [R]             [U]  [T]               │
+ │                                                                 │
+ │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
+ │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
+ │                                                                 │
+ │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
+ │  Trackball:  [Mouse L]  [Mouse M]                              │
+ │                                                                 │
+ │  Hold [S] (P1 Coin) +                                          │
+ │    [↑] → Volume Up     [↓] → Volume Down    [Enter] → RetroArch Menu │
+ └─────────────────────────────────────────────────────────────────┘
+```
+
+Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y  
+Letters free: Z
+
+#### Pin-to-key mapping
+
+All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → key names):
 
 | Pin | Key | Logical function |
 |-----|-----|-----------------|
@@ -1725,9 +1750,7 @@ The following table decodes the board's current EEPROM state (USB HID keycodes �
 
 Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
 
-### Cabinet keyboard encoder layout
-
-The cabinet uses a keyboard encoder that translates physical arcade buttons to keyboard keystrokes. The full mapping as of this document:
+#### Button function reference
 
 **Swop (secondary) key functions**
 
@@ -1739,7 +1762,7 @@ Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second bu
 | P1 Coin + Joystick Down (pin36) | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
 | P1 Coin + Select (pin02) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
 
-**Non-player / admin buttons**
+**Admin buttons**
 
 | Function | Key | Mini-PAC pin |
 |----------|-----|-------------|
@@ -1791,31 +1814,6 @@ Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second bu
 RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
 
 Buttons 4 and 8 for both players have no RetroArch binding yet — they send unique keys (`v`, `w`, `y`, `x`) and can be bound to any action in a system cfg.
-
-### Physical button layout
-
-```
- ┌─────────────────────────────────────────────────────────────────┐
- │                    PLAYER 1              PLAYER 2               │
- │                                                                 │
- │  Joystick            [↑]                    [N]                │
- │                   [←][↓][→]             [M][Q][O]              │
- │                                                                 │
- │  Coin / Start      [S]  [R]             [U]  [T]               │
- │                                                                 │
- │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
- │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
- │                                                                 │
- │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
- │  Trackball:  [Mouse L]  [Mouse M]                              │
- │                                                                 │
- │  Hold [S] (P1 Coin) +                                          │
- │    [↑] → Volume Up     [↓] → Volume Down    [Enter] → RetroArch Menu │
- └─────────────────────────────────────────────────────────────────┘
-```
-
-Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y
-Letters free: Z
 
 ### Xbox 360 button numbers (winxinput driver)
 
