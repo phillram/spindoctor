@@ -1692,14 +1692,14 @@ The following table decodes the board's current EEPROM state (USB HID keycodes �
 | pin03 | Escape | Exit |
 | pin04 | `/` | Search |
 | pin05 | P | Pause |
-| pin06 | H | P2 Button 2 |
+| pin06 | X | P2 Button 8 |
 | pin07 | L | P2 Button 7 |
 | pin08 | K | P2 Button 6 |
 | pin09 | J | P2 Button 5 |
-| pin12 | G | P2 Button 1 |
+| pin12 | Y | P2 Button 4 |
 | pin13 | I | P2 Button 3 |
-| pin14 | **H** *(duplicate of pin06)* | P2 Button 4 |
-| pin15 | **G** *(duplicate of pin12)* | P2 Button 8 |
+| pin14 | H | P2 Button 2 |
+| pin15 | G | P2 Button 1 |
 | pin16 | Q | P2 Down |
 | pin17 | N | P2 Up |
 | pin18 | M | P2 Left |
@@ -1708,14 +1708,14 @@ The following table decodes the board's current EEPROM state (USB HID keycodes �
 | pin23 | S *(shift/swop key)* | P1 Coin |
 | pin24 | T | P2 Start |
 | pin25 | R | P1 Start |
-| pin26 | B | P1 Button 2 |
+| pin26 | W | P1 Button 8 |
 | pin27 | F | P1 Button 7 |
 | pin28 | E | P1 Button 6 |
 | pin29 | D | P1 Button 5 |
-| pin32 | A | P1 Button 1 |
+| pin32 | V | P1 Button 4 |
 | pin33 | C | P1 Button 3 |
-| pin34 | **B** *(duplicate of pin26)* | P1 Button 4 |
-| pin35 | **A** *(duplicate of pin32)* | P1 Button 8 |
+| pin34 | B | P1 Button 2 |
+| pin35 | A | P1 Button 1 |
 | pin36 | ↓ Down Arrow | P1 Down |
 | pin37 | ↑ Up Arrow | P1 Up |
 | pin38 | ← Left Arrow | P1 Left |
@@ -1724,8 +1724,6 @@ The following table decodes the board's current EEPROM state (USB HID keycodes �
 | pin43 | Mouse Left Button | Trackball button |
 
 Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
-
-**Duplicate pins:** P1 Buttons 1 & 4 share `a`; P1 Buttons 2 & 8 share `b`; P2 Buttons 1 & 4 share `g`; P2 Buttons 2 & 8 share `h`. These were intentional at setup time (shared actions on both players) but mean the duplicated buttons cannot be independently rebound in emulators. To make them unique, reassign the duplicate pins in WinIPAC and update the corresponding emulator key bindings.
 
 ### Cabinet keyboard encoder layout
 
@@ -1752,14 +1750,14 @@ The cabinet uses a keyboard encoder that translates physical arcade buttons to k
 | Right | `→` (Right arrow) | pin39 | `input_player1_right` |
 | Start | `r` | pin25 | `input_player1_start` |
 | Coin | `s` | pin23 | `input_player1_select` |
-| Button 1 | `a` | pin32 | `input_player1_b` |
-| Button 2 | `b` | pin26 | `input_player1_a` |
+| Button 1 | `a` | pin35 | `input_player1_b` |
+| Button 2 | `b` | pin34 | `input_player1_a` |
 | Button 3 | `c` | pin33 | `input_player1_y` |
-| Button 4 | `a` (same as Button 1) | pin35 | — |
+| Button 4 | `v` | pin32 | — |
 | Button 5 | `d` | pin29 | `input_player1_x` |
 | Button 6 | `e` | pin28 | `input_player1_l` |
 | Button 7 | `f` | pin27 | `input_player1_r` |
-| Button 8 | `b` (same as Button 2) | pin34 | — |
+| Button 8 | `w` | pin26 | — |
 
 **Player 2**
 
@@ -1771,16 +1769,40 @@ The cabinet uses a keyboard encoder that translates physical arcade buttons to k
 | Right | `o` | pin19 | `input_player2_right` |
 | Start | `t` | pin24 | `input_player2_start` |
 | Coin | `u` | pin22 | `input_player2_select` |
-| Button 1 | `g` | pin12 | `input_player2_b` |
-| Button 2 | `h` | pin06 | `input_player2_a` |
+| Button 1 | `g` | pin15 | `input_player2_b` |
+| Button 2 | `h` | pin14 | `input_player2_a` |
 | Button 3 | `i` | pin13 | `input_player2_y` |
-| Button 4 | `g` (same as Button 1) | pin15 | — |
+| Button 4 | `y` | pin12 | — |
 | Button 5 | `j` | pin09 | `input_player2_x` |
 | Button 6 | `k` | pin08 | `input_player2_l` |
 | Button 7 | `l` | pin07 | `input_player2_r` |
-| Button 8 | `h` (same as Button 2) | pin14 | — |
+| Button 8 | `x` | pin06 | — |
 
 RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
+
+Buttons 4 and 8 for both players have no RetroArch binding yet — they send unique keys (`v`, `w`, `y`, `x`) and can be bound to any action in a system cfg.
+
+### Physical button layout
+
+```
+ ┌─────────────────────────────────────────────────────────────────┐
+ │                    PLAYER 1              PLAYER 2               │
+ │                                                                 │
+ │  Joystick            [↑]                    [N]                │
+ │                   [←][↓][→]             [M][Q][O]              │
+ │                                                                 │
+ │  Coin / Start      [S]  [R]             [U]  [T]               │
+ │                                                                 │
+ │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
+ │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
+ │                                                                 │
+ │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
+ │  Trackball:  [Mouse L]  [Mouse M]                              │
+ └─────────────────────────────────────────────────────────────────┘
+```
+
+Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y
+Letters free: Z
 
 ### Xbox 360 button numbers (winxinput driver)
 
