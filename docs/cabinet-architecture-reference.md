@@ -1671,60 +1671,149 @@ D:\Arcade\Emulators\RetroArch\config\<System Name>.cfg
 
 These files override any key they define, leaving everything else inherited from the global `retroarch.cfg`.
 
-### Cabinet keyboard encoder layout
+### Hardware: Ultimarc Mini-PAC + PAC-LED64
 
-The cabinet uses a keyboard encoder that translates physical arcade buttons to keyboard keystrokes. The full mapping as of this document:
+The cabinet uses two Ultimarc boards over USB:
 
-**Non-player / admin buttons**
+| Board | Purpose |
+|-------|---------|
+| **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
+| **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
-| Function | Key |
-|----------|-----|
-| Left click | Left Mouse Button |
-| Right click | Right Mouse Button |
-| Select | Enter |
-| Exit | Escape |
-| Search | `/` (Forward-Slash) |
-| Pause | `p` |
+The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
+
+#### Physical button layout
+
+```
+ ┌─────────────────────────────────────────────────────────────────┐
+ │                    PLAYER 1              PLAYER 2               │
+ │                                                                 │
+ │  Joystick            [↑]                    [N]                │
+ │                   [←][↓][→]             [M][Q][O]              │
+ │                                                                 │
+ │  Coin / Start      [S]  [R]             [U]  [T]               │
+ │                                                                 │
+ │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
+ │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
+ │                                                                 │
+ │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
+ │  Trackball:  [Mouse L]  [Mouse M]                              │
+ │                                                                 │
+ │  Hold [S] (P1 Coin) +                                          │
+ │    [↑] → Volume Up     [↓] → Volume Down    [Enter] → RetroArch Menu │
+ └─────────────────────────────────────────────────────────────────┘
+```
+
+Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y  
+Letters free: Z
+
+#### Pin-to-key mapping
+
+All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → key names):
+
+| Pin | Key | Logical function |
+|-----|-----|-----------------|
+| pin02 | Enter | Select / confirm |
+| pin03 | Escape | Exit |
+| pin04 | `/` | Search |
+| pin05 | P | Pause |
+| pin06 | X | P2 Button 8 |
+| pin07 | L | P2 Button 7 |
+| pin08 | K | P2 Button 6 |
+| pin09 | J | P2 Button 5 |
+| pin12 | Y | P2 Button 4 |
+| pin13 | I | P2 Button 3 |
+| pin14 | H | P2 Button 2 |
+| pin15 | G | P2 Button 1 |
+| pin16 | Q | P2 Down |
+| pin17 | N | P2 Up |
+| pin18 | M | P2 Left |
+| pin19 | O | P2 Right |
+| pin22 | U | P2 Coin |
+| pin23 | S *(shift/swop key)* | P1 Coin |
+| pin24 | T | P2 Start |
+| pin25 | R | P1 Start |
+| pin26 | W | P1 Button 8 |
+| pin27 | F | P1 Button 7 |
+| pin28 | E | P1 Button 6 |
+| pin29 | D | P1 Button 5 |
+| pin32 | V | P1 Button 4 |
+| pin33 | C | P1 Button 3 |
+| pin34 | B | P1 Button 2 |
+| pin35 | A | P1 Button 1 |
+| pin36 | ↓ Down Arrow | P1 Down |
+| pin37 | ↑ Up Arrow | P1 Up |
+| pin38 | ← Left Arrow | P1 Left |
+| pin39 | → Right Arrow | P1 Right |
+| pin42 | Mouse Middle Button | Trackball button |
+| pin43 | Mouse Left Button | Trackball button |
+
+Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
+
+#### Button function reference
+
+**Swop (secondary) key functions**
+
+Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second button to trigger its secondary function:
+
+| Combination | Secondary key | Function |
+|-------------|--------------|---------|
+| P1 Coin + Joystick Up (pin37) | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Joystick Down (pin36) | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Select (pin02) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
+
+**Admin buttons**
+
+| Mini-PAC pin | Key | Function |
+|-------------|-----|---------|
+| pin02 | Enter | Select |
+| pin03 | Escape | Exit |
+| pin04 | `/` (Forward-Slash) | Search |
+| pin05 | `p` | Pause |
+| pin42 | Right Mouse Button | Right click |
+| pin43 | Left Mouse Button | Left click |
 
 **Player 1**
 
-| Function | Key | RetroArch action |
-|----------|-----|-----------------|
-| Up | `↑` (Up arrow) | `input_player1_up` |
-| Down | `↓` (Down arrow) | `input_player1_down` |
-| Left | `←` (Left arrow) | `input_player1_left` |
-| Right | `→` (Right arrow) | `input_player1_right` |
-| Start | `r` | `input_player1_start` |
-| Coin | `s` | `input_player1_select` |
-| Button 1 | `a` | `input_player1_b` |
-| Button 2 | `b` | `input_player1_a` |
-| Button 3 | `c` | `input_player1_y` |
-| Button 4 | `a` (same as Button 1) | — |
-| Button 5 | `d` | `input_player1_x` |
-| Button 6 | `e` | `input_player1_l` |
-| Button 7 | `f` | `input_player1_r` |
-| Button 8 | `b` (same as Button 2) | — |
+| Mini-PAC pin | Key | Function | RetroArch action |
+|-------------|-----|---------|-----------------|
+| pin23 | `s` | Coin | `input_player1_select` |
+| pin25 | `r` | Start | `input_player1_start` |
+| pin26 | `w` | Button 8 | — |
+| pin27 | `f` | Button 7 | `input_player1_r` |
+| pin28 | `e` | Button 6 | `input_player1_l` |
+| pin29 | `d` | Button 5 | `input_player1_x` |
+| pin32 | `v` | Button 4 | — |
+| pin33 | `c` | Button 3 | `input_player1_y` |
+| pin34 | `b` | Button 2 | `input_player1_a` |
+| pin35 | `a` | Button 1 | `input_player1_b` |
+| pin36 | `↓` (Down arrow) | Down | `input_player1_down` |
+| pin37 | `↑` (Up arrow) | Up | `input_player1_up` |
+| pin38 | `←` (Left arrow) | Left | `input_player1_left` |
+| pin39 | `→` (Right arrow) | Right | `input_player1_right` |
 
 **Player 2**
 
-| Function | Key | RetroArch action |
-|----------|-----|-----------------|
-| Up | `n` | `input_player2_up` |
-| Down | `q` | `input_player2_down` |
-| Left | `m` | `input_player2_left` |
-| Right | `o` | `input_player2_right` |
-| Start | `t` | `input_player2_start` |
-| Coin | `u` | `input_player2_select` |
-| Button 1 | `g` | `input_player2_b` |
-| Button 2 | `h` | `input_player2_a` |
-| Button 3 | `i` | `input_player2_y` |
-| Button 4 | `g` (same as Button 1) | — |
-| Button 5 | `j` | `input_player2_x` |
-| Button 6 | `k` | `input_player2_l` |
-| Button 7 | `l` | `input_player2_r` |
-| Button 8 | `h` (same as Button 2) | — |
+| Mini-PAC pin | Key | Function | RetroArch action |
+|-------------|-----|---------|-----------------|
+| pin06 | `x` | Button 8 | — |
+| pin07 | `l` | Button 7 | `input_player2_r` |
+| pin08 | `k` | Button 6 | `input_player2_l` |
+| pin09 | `j` | Button 5 | `input_player2_x` |
+| pin12 | `y` | Button 4 | — |
+| pin13 | `i` | Button 3 | `input_player2_y` |
+| pin14 | `h` | Button 2 | `input_player2_a` |
+| pin15 | `g` | Button 1 | `input_player2_b` |
+| pin16 | `q` | Down | `input_player2_down` |
+| pin17 | `n` | Up | `input_player2_up` |
+| pin18 | `m` | Left | `input_player2_left` |
+| pin19 | `o` | Right | `input_player2_right` |
+| pin22 | `u` | Coin | `input_player2_select` |
+| pin24 | `t` | Start | `input_player2_start` |
 
 RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
+
+Buttons 4 and 8 for both players have no RetroArch binding yet — they send unique keys (`v`, `w`, `y`, `x`) and can be bound to any action in a system cfg.
 
 ### Xbox 360 button numbers (winxinput driver)
 
