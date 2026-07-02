@@ -1808,6 +1808,9 @@ Buttons 4 and 8 for both players have no RetroArch binding yet — they send uni
  │                                                                 │
  │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
  │  Trackball:  [Mouse L]  [Mouse M]                              │
+ │                                                                 │
+ │  Hold [S] (P1 Coin) +                                          │
+ │    [↑] → Volume Up     [↓] → Volume Down     [Enter] → RA Menu │
  └─────────────────────────────────────────────────────────────────┘
 ```
 
