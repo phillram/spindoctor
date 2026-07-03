@@ -621,7 +621,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "tools-audit", "systems", "report", "preview",
     "audit", "inspect", "find-dupes",
     "check-discs", "check-archive-ext", "verify", "lint", "stats",
-    "find-global", "theme-scan", "theme-pack-create", "diff",
+    "find-global", "theme-scan", "theme-fill", "theme-pack-create", "diff",
     "install-tools", "stats-report", "self-doctor",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
@@ -960,6 +960,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "theme-scan --keyword xbox",
     "theme-scan --output <PATH>",
     "theme-scan --system <SYSTEM>",
+    "theme-fill --system <SYSTEM>",
+    "theme-fill --system <SYSTEM> --apply",
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
@@ -8533,6 +8535,28 @@ class _SpinDoctorGUI:
             command=self._run_media_add,
         ).pack(side="left")
 
+        # ── Fill missing game themes ──────────────────────────────────────────
+        fill_frame = self.ttk.LabelFrame(frame, text="Fill missing game themes")
+        fill_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            fill_frame,
+            text=("For each video in Media\\<System>\\Video\\ that has no "
+                  "matching theme zip, install a blank full-screen theme so "
+                  "HyperSpin plays the video as-is. Existing theme zips are "
+                  "never overwritten. Uses the System selected above."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 4))
+        fill_btns = self.ttk.Frame(fill_frame)
+        fill_btns.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Button(
+            fill_btns, text="Preview missing themes",
+            command=self._run_theme_fill_preview,
+        ).pack(side="left")
+        self.ttk.Button(
+            fill_btns, text="Fill blank themes (apply)",
+            command=self._run_theme_fill_apply,
+        ).pack(side="left", padx=(6, 0))
+
         return frame
 
     def _browse_media_file(self) -> None:
@@ -8573,6 +8597,26 @@ class _SpinDoctorGUI:
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)
+
+    def _run_theme_fill_preview(self) -> None:
+        sys_ = self._meta_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Select a system at the top of this tab first.",
+            )
+            return
+        self._run_cli("spindoctor", ["theme-fill", "--system", sys_])
+
+    def _run_theme_fill_apply(self) -> None:
+        sys_ = self._meta_system_var.get().strip()
+        if not sys_:
+            self.messagebox.showwarning(
+                "No system selected",
+                "Select a system at the top of this tab first.",
+            )
+            return
+        self._run_cli("spindoctor", ["theme-fill", "--system", sys_, "--apply"])
 
     def _run_batch_edit(self) -> None:
         sys_args = self._meta_system_args()
