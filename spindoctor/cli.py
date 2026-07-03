@@ -6681,8 +6681,8 @@ def mainmenu_hide(system, apply, output_dir):
 def mainmenu_add(system, apply, output_dir):
     """Append SYSTEM to the Main Menu (idempotent).
 
-    For the three synthetic wheels (Favorites, Most Played, Recently Played)
-    this also installs all bundled media assets (wheel logo, background image,
+    For the four synthetic wheels (Favorites, Most Played, Recently Played,
+    Recompiled) this also installs all bundled media assets (wheel logo,
     attract-mode music and video) to ``Media\\Main Menu\\`` and regenerates the
     RocketLauncher system settings files (``Settings/<system>.ini`` and
     ``Settings/<system>/Emulators.ini``) with ``Rom_Extension=ini`` so that

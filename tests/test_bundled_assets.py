@@ -21,7 +21,7 @@ from spindoctor.rocketlauncher import (
     install_system_wheel_art,
 )
 
-SYNTHETIC = ("Favorites", "Most Played", "Recently Played")
+SYNTHETIC = ("Favorites", "Most Played", "Recently Played", "Recompiled")
 NON_SYNTHETIC = "MAME"
 
 
@@ -128,11 +128,12 @@ class TestInstallBundledSystemAssets:
     def test_all_assets_installed_for_synthetic(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=False)
-        # "music" is intentionally no_asset — attract-mode audio is in the MP4.
+        # "background" is no_asset — background PNGs have been removed from the
+        # bundle; the MP4 visually fills the screen for all synthetic wheels.
         expected = {
             "wheel_art":      "installed",
-            "background":     "installed",
-            "music":          "no_asset",
+            "background":     "no_asset",
+            "music":          "installed",
             "video":          "installed",
             "theme":          "installed",
             "navigate_sound": "installed",
@@ -173,19 +174,18 @@ def test_wheel_art_installs(tmp_path, system_name):
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
-def test_background_installs(tmp_path, system_name):
+def test_background_returns_no_asset(tmp_path, system_name):
+    # Background PNGs removed from bundle; MP4 fills the screen for all wheels.
     hs = _hs_dir(tmp_path)
     _, status = install_system_background(hs, system_name)
-    assert status == "installed"
+    assert status == "no_asset"
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
-def test_music_returns_no_asset(tmp_path, system_name):
-    # _MUSIC_ASSETS is intentionally empty — attract-mode audio is in the MP4.
-    # Active-browsing (main-menu scrolling) plays silence.
+def test_music_installs(tmp_path, system_name):
     hs = _hs_dir(tmp_path)
     _, status = install_system_music(hs, system_name)
-    assert status == "no_asset"
+    assert status == "installed"
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
