@@ -9223,7 +9223,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
         db = load_database(system_name, config.databases_dir)
         existing = set(db.games().keys())
         stale_titles = sorted(existing - set(by_title))
-        new_count = 0
+        new_titles: list[str] = []
         for title in sorted(by_title):
             if title in existing:
                 continue
@@ -9232,10 +9232,10 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 strip_variants=config.strip_variant_tags_in_display_name,
             )
             db.upsert_game(stub)
-            new_count += 1
+            new_titles.append(title)
         for title in stale_titles:
             db.remove_game(title)
-        if new_count or stale_titles:
+        if new_titles or stale_titles:
             _tmp = config.effective_atomic_tmp_dir
             if out_base:
                 saved = db.save(
@@ -9246,8 +9246,11 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                 _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
                 saved = db.save(backup=config.backup_before_modify,
                                 backup_dir=_bak_dir, tmp_dir=_tmp)
-            if new_count:
-                console.print(f"  [green]+[/green] {new_count} stub(s) added")
+            if new_titles:
+                console.print(f"  [green]+[/green] {len(new_titles)} stub(s) added")
+                if verbose:
+                    for title in new_titles:
+                        console.print(f"    [green]→[/green] [bold]{title}[/bold]")
             for title in stale_titles:
                 console.print(f"  [red]-[/red] removed stale: {title}")
             console.print(f"  [green]→[/green] saved {saved}")
