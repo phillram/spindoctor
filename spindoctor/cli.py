@@ -1943,6 +1943,9 @@ def find_orphan_media(system, all_systems, apply_changes, verbose):
 
     console.print(f"\n[yellow]{grand_total}[/yellow] orphan(s) total.")
     if not apply_changes:
+        if verbose:
+            for o in pending_delete:
+                console.print(f"  [yellow]would delete:[/yellow] {o.path}")
         console.print(
             "[dim]Re-run with[/dim] [cyan]--apply[/cyan] [dim]to remove "
             "them (irreversible).[/dim]"
@@ -9263,7 +9266,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
     else:
         console.print("\n[blue bold]6. PCLauncher per-game INIs[/blue bold]")
         if not apply_changes:
-            if verbose and config.rocketlauncher_dir:
+            if config.rocketlauncher_dir:
                 from .rocketlauncher import _win_safe_stem as _ini_safe
                 _ini_dir = (
                     Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher" / system_name
@@ -9281,20 +9284,26 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                     _p for _p in _ini_dir.glob("*.ini")
                     if _p.stem not in _expected_stems
                 ) if _ini_dir.exists() else []
-                if _would_write:
+                if verbose:
+                    if _would_write:
+                        console.print(
+                            f"  [yellow]would write {len(_would_write)} INI(s) "
+                            f"under {_ini_dir}[/yellow]"
+                        )
+                        for _t, _ini in _would_write:
+                            console.print(f"    [green]→[/green] [bold]{_t}[/bold]")
+                            console.print(f"      {_ini}")
+                    if _would_skip:
+                        console.print(
+                            f"  [dim]would skip {len(_would_skip)} existing INI(s)[/dim]"
+                        )
+                        for _t, _ini in _would_skip:
+                            console.print(f"    [dim]· {_t}[/dim]")
+                else:
                     console.print(
-                        f"  [yellow]would write {len(_would_write)} INI(s) "
-                        f"under {_ini_dir}[/yellow]"
+                        f"  [yellow]would write {len(by_title)} INI(s) under "
+                        f"{_ini_dir}[/yellow]"
                     )
-                    for _t, _ini in _would_write:
-                        console.print(f"    [green]→[/green] [bold]{_t}[/bold]")
-                        console.print(f"      {_ini}")
-                if _would_skip:
-                    console.print(
-                        f"  [dim]would skip {len(_would_skip)} existing INI(s)[/dim]"
-                    )
-                    for _t, _ini in _would_skip:
-                        console.print(f"    [dim]· {_t}[/dim]")
                 if _would_delete_ini:
                     console.print(
                         f"  [yellow]would delete {len(_would_delete_ini)} stale INI(s):[/yellow]"
@@ -9303,8 +9312,7 @@ def add_pc_system(system_name, rename, no_interactive, no_menu, no_system_media,
                         console.print(f"    [red]✕[/red] {_p}")
             else:
                 console.print(
-                    f"  [yellow]would write {len(by_title)} INI(s) under "
-                    f"{Path(config.rocketlauncher_dir) / 'Modules' / 'PCLauncher' / system_name}[/yellow]"
+                    f"  [yellow]would write {len(by_title)} INI(s)[/yellow]"
                 )
         else:
             from .rocketlauncher import _win_safe_stem, generate_pclauncher_inis
