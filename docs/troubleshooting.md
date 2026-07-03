@@ -693,6 +693,122 @@ gets saved instead of the file if the download link isn't clicked through correc
 
 ---
 
+### GameCube controller not responding when launched through HyperSpin
+
+**Symptom:** Controller works when Dolphin is launched directly, but stops responding when
+the same game is launched through HyperSpin. The problem persists even when Dolphin is
+launched directly afterward, until the computer is rebooted. Dolphin's controller list shows
+`[disconnected] DInput/0/Wireless Controller` instead of `XInput/0/Gamepad`.
+
+**Cause:** DS4Windows — which converts the PS4 controller into a virtual XInput device —
+is tied to HyperSpin's process lifetime and exits when HyperSpin closes. Without DS4Windows
+running, the `XInput/0/Gamepad` virtual device disappears. Dolphin's GCPad profile is bound
+to `XInput/0/Gamepad`, so it loses the controller. The raw DInput device
+(`DInput/0/Wireless Controller`) remains visible but is not what Dolphin's profile maps to,
+so buttons do not register even though the device appears connected.
+
+**Fix:**
+1. Configure DS4Windows to start at Windows login independently of HyperSpin — add it to
+   the Startup folder (`shell:startup`) or create a Task Scheduler entry set to run at logon.
+2. Confirm Dolphin's GCPad Port 1 is set to `XInput/0/Gamepad` (not `DInput/0/Wireless Controller`).
+
+**Diagnosis:** Press `Win+B` to access the system tray while HyperSpin's taskbar is hidden.
+If DS4Windows is not listed in the tray, it has exited. See
+[Controller input — DS4Windows and XInput](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)
+for the full architecture reference.
+
+---
+
+### Loading screen reaches 100% then errors — but the game is actually running in the background
+
+**Symptom:** The RocketLauncher fade/loading screen fills its progress bar to 100% and then
+shows *"There was an error waiting for the window FPS ahk_class Qt5150QWindowIcon"*. The game
+is audible (music plays, controller rumbles) and Dolphin is visible on the taskbar — but
+RocketLauncher has already given up and returned to HyperSpin.
+
+**Cause:** Qt-based Dolphin (5.0-12188+) takes longer to start emulating than the fade
+animation lasts. When the fake progress bar reaches 100% RocketLauncher checks whether the
+game window has appeared yet; if not, it fires the error. The window check (`emuGameWindow.Wait()`)
+has no explicit timeout so it defers to the animation duration — typically 45–60 seconds —
+which is shorter than some games' boot time (Animal Crossing takes ≈ 50 s).
+
+**Fix:** Edit `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`. Find:
+
+```ahk
+emuGameWindow.Wait()
+emuGameWindow.Get("ID")
+emuGameWindow.WaitActive()
+```
+
+Change to:
+
+```ahk
+emuGameWindow.Wait(120)
+emuGameWindow.Get("ID")
+```
+
+Two changes: add a 120-second explicit timeout so the wait outlasts the animation, and
+**remove `WaitActive` entirely** (see next entry for why).
+
+---
+
+### After the game loads, HyperSpin stays in front — the game is audible but not visible
+
+**Symptom:** The loading screen disappears but the game window stays hidden behind HyperSpin.
+Sound plays, controller LEDs light up, but the screen never switches to the game. Alt-Tab
+shows Dolphin running. If you Alt-Tab to the game, it works — but pressing the back button
+immediately quits back to HyperSpin.
+
+**Cause:** `emuGameWindow.WaitActive()` waits for Dolphin's rendering window to become
+the focused window. But RocketLauncher's own CoverFE overlay is an always-on-top AHK window
+that sits in front of everything — Dolphin can never naturally gain focus while the overlay
+exists. `WaitActive` hangs indefinitely (or errors after its timeout), so RL never reaches
+the lines that remove the overlay (`HideAppEnd`) and activate Dolphin (`emuGameWindow.Activate()`).
+The back-button quitting is a secondary symptom: if `WaitActive` eventually fires an error,
+RL reloads the HyperSpin Xpadder profile before the user reaches the game — that profile maps
+the back button to Escape, which quits Dolphin.
+
+**Fix:** Remove `emuGameWindow.WaitActive()` from `Dolphin.ahk` as shown in the entry above.
+With the line gone, RL falls through immediately to `emuGameWindow.Activate()` and `HideAppEnd`,
+which remove the overlay and bring Dolphin to the front in the correct sequence — the same
+result as Alt-Tab, but automatic.
+
+---
+
+### Dolphin launches windowed instead of fullscreen — title bar visible at the top
+
+**Symptom:** The game runs but a window title bar is visible at the top of the screen, pushing
+the game content down slightly. Bezels are misaligned. Running Dolphin directly (without
+HyperSpin) goes fullscreen correctly.
+
+**Cause:** The RL module contains a ternary expression that converts the `Fullscreen` variable
+from `"true"` to `"True"` before writing it to `Dolphin.ini`. Due to how AHK 1.1 evaluates
+the `If … ? … :` form inside an assignment, the variable ends up as `"False"` instead, and
+`Dolphin.ini` keeps `Fullscreen = False`. Because the module runs before Dolphin opens, the
+incorrect value is already on disk when the emulator reads its config.
+
+**Fix:** In `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`, find:
+
+```ahk
+dolphinINI.Write(Fullscreen, "Display", "Fullscreen", 1)
+```
+
+Change to:
+
+```ahk
+dolphinINI.Write("True", "Display", "Fullscreen", 1)
+```
+
+Also set the value directly in `C:\Users\User\Documents\Dolphin Emulator\Config\Dolphin.ini`
+right now so it takes effect before the next launch:
+
+```ini
+[Display]
+Fullscreen = True
+```
+
+---
+
 ## ScummVM
 
 ### ScummVM window appears blank and requires a click to display

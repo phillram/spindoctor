@@ -982,6 +982,57 @@ directory and report files whose inner extensions are not listed in `Rom_Extensi
 catches `.rvz`, `.nkit.iso`, or any other non-standard format before the user tries to
 launch a game and gets the cryptic *"No valid roms found in the archive"* error.
 
+### Controller input — DS4Windows and XInput
+
+This cabinet uses a PS4 DualShock 4 controller. Windows does not natively expose PS4
+controllers as XInput devices; DS4Windows provides that translation layer.
+
+#### How DS4Windows works
+
+DS4Windows runs as a background process and presents the PS4 controller to Windows as a
+virtual Xbox 360 (XInput) controller. Without DS4Windows running, Windows sees two
+representations of the controller:
+
+| Device | Protocol | Visible when |
+|--------|----------|--------------|
+| `DInput/0/Wireless Controller` | DirectInput (raw HID) | Always |
+| `XInput/0/Gamepad` | XInput (virtual Xbox 360) | Only while DS4Windows is running |
+
+Dolphin's GCPad must be configured for **`XInput/0/Gamepad`** — the DS4Windows virtual
+controller. If configured for `DInput/0/Wireless Controller` (the raw HID device), inputs
+will not register correctly.
+
+#### DS4Windows must run independently of HyperSpin
+
+DS4Windows is started alongside HyperSpin and exits when HyperSpin exits. If DS4Windows
+closes during an active Dolphin session — or its process lifetime is tied to HyperSpin —
+the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
+
+```
+[disconnected] DInput/0/Wireless Controller
+```
+
+The controller does not recover until DS4Windows is restarted or the machine is rebooted.
+
+**Fix:** Configure DS4Windows to start at Windows login (Startup folder or Task Scheduler),
+independent of HyperSpin's process lifetime.
+
+#### LED colour change is normal
+
+When DS4Windows activates, the PS4 controller lightbar switches from its default blue to
+the colour in the active DS4Windows profile. This is expected and indicates DS4Windows has
+taken ownership of the device. It is not a sign of a problem.
+
+#### Diagnosis checklist
+
+If the GameCube controller stops responding after launching through HyperSpin:
+
+1. Open Dolphin's controller settings (`Options → Controller Settings`). If Port 1 shows
+   `[disconnected] DInput/0/Wireless Controller`, DS4Windows is not running.
+2. Press `Win+B` to focus the system tray (works even when HyperSpin hides the taskbar),
+   then open DS4Windows from the tray icon and confirm the controller is listed.
+3. Confirm Dolphin's GCPad Port 1 device is set to `XInput/0/Gamepad`.
+
 ---
 
 ## Phoenix (Atari Jaguar) — Emulator Configuration and ROM Path Fix
