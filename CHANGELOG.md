@@ -36,6 +36,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`find-orphan-media --verbose` showed full file paths in `--apply` mode but not in dry-run mode.** The table already printed relative paths for all orphans; adding `--verbose` in dry-run now also prints each absolute path prefixed with `would delete:`, matching the apply-mode output.
+
+- **`add-pc-system` dry-run never warned about stale PCLauncher INIs that would be deleted unless `--verbose` was also passed.** With `--apply`, stale INI deletions were always reported. Without `--apply`, the same warning only appeared under `--verbose`, so users could run a plain dry-run, see no mention of deletions, then be surprised when `--apply` deleted INIs. The stale-deletion preview now shows in all dry-run modes (verbose and non-verbose alike).
+
+- **`add-pc-system --apply --verbose` did not list individual game names added to the database.** In dry-run + verbose mode the command printed each game title as `new` or `existing`; with `--apply` it only printed the summary line `X stub(s) added`. The apply path now collects newly-added titles into a list and, when `--verbose` is set, prints each one after the summary line — matching the dry-run output.
+
 - **`add-pc-system` dry-run falsely reports "No game files found" for new systems.** When `add-pc-system` runs without `--apply`, the PC overrides (`recursive_scan: True`, `rom_extensions`, etc.) are computed in memory but never persisted to `settings.json`. The subsequent title-review scan reads the config-file-backed override cache — which has no entry for the new system yet — and falls back to flat mode (only files directly in the root folder). Any system whose games live in subfolders (the normal layout for installed PC games) therefore showed no titles. The fix injects the computed overrides into the in-memory cache immediately after the dry-run preview is printed, so the scan sees `recursive_scan: True` without writing anything to disk.
 
 - **`add-pc-system --verbose` not forwarded to inner `add-system` sub-call.** The `--verbose` flag was never appended to the `add-system` argument list, so verbose output from the scaffolding and media steps was suppressed even when the user passed `--verbose`.
