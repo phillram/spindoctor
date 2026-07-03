@@ -3790,6 +3790,66 @@ def theme_pack_create(output_dir, target):
         console.print(f"  [yellow]{len(result.skipped)} file(s) skipped.[/yellow]")
 
 
+@cli.command("theme-fill")
+@click.option("--system", "-s", required=True,
+              help="HyperSpin system name (e.g. 'MAME', 'SNES').")
+@click.option("--apply", is_flag=True,
+              help="Write the blank theme zips. Without this flag the "
+                   "command lists what would be installed (dry-run).")
+def theme_fill(system, apply):
+    """Install a blank theme zip for every game that has a video but no theme.
+
+    \b
+    Walks Media/<SYSTEM>/Video/ and for each video file that has no matching
+    Media/<SYSTEM>/Themes/<game>.zip copies the bundled theme_blank.zip
+    (full-screen video, no other decoration) into place.  Existing theme zips
+    are never overwritten.
+
+    \b
+    Examples:
+      spindoctor theme-fill --system MAME
+      spindoctor theme-fill --system "SNES" --apply
+    """
+    from pathlib import Path
+    from .rocketlauncher import fill_missing_themes
+
+    config = _cfg()
+    _check_config(config)
+    hs_dir = getattr(config, "hyperspin_dir", None)
+    if not hs_dir:
+        console.print("[red]hyperspin_dir is not set.[/red] Run: spindoctor config set hyperspin_dir <PATH>")
+        raise SystemExit(1)
+
+    results = fill_missing_themes(Path(hs_dir), system, dry_run=not apply)
+
+    if not results:
+        console.print(
+            f"[yellow]No video files found[/yellow] in "
+            f"[cyan]Media\\{system}\\Video\\[/cyan] — nothing to do."
+        )
+        return
+
+    tbl = Table(show_header=True, header_style="bold")
+    tbl.add_column("Game")
+    tbl.add_column("Status")
+    for game, status in sorted(results.items()):
+        colour = {"installed": "green", "dry_run": "cyan", "skipped": "dim", "no_asset": "red"}.get(status, "white")
+        tbl.add_row(game, f"[{colour}]{status}[/{colour}]")
+    console.print(tbl)
+
+    installed = sum(1 for s in results.values() if s == "installed")
+    would_install = sum(1 for s in results.values() if s == "dry_run")
+    skipped = sum(1 for s in results.values() if s == "skipped")
+
+    if apply:
+        console.print(f"\n[green]✓[/green] {installed} theme(s) installed, {skipped} already present.")
+    else:
+        console.print(
+            f"\n[dim]Dry-run:[/dim] {would_install} theme(s) would be installed, "
+            f"{skipped} already present. Pass [cyan]--apply[/cyan] to write."
+        )
+
+
 def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
     """Return the directory where install-tools should write bat + ini files.
 

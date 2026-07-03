@@ -764,10 +764,10 @@ _BACKGROUND_ASSETS: dict[str, str] = {}
 # not attract-mode idle).  HyperSpin path: Media\Main Menu\Sound\<SystemName>.*
 # (extension preserved from the source file — HyperSpin accepts .mp3 and .wav)
 _MUSIC_ASSETS: dict[str, str] = {
-    "Favorites":       "music_Favorites.wav",
-    "Most Played":     "music_Most_Played.wav",
+    "Favorites":       "music_Favorites.mp3",
+    "Most Played":     "music_Most_Played.mp3",
     "Recently Played": "music_Recently_Played.mp3",
-    "Recompiled":      "music_Recompiled.wav",
+    "Recompiled":      "music_Recompiled.mp3",
 }
 
 # Attract-mode video — static-frame MP4 containing the background image and
@@ -1083,6 +1083,63 @@ def install_bundled_system_assets(
         "theme":          install_system_theme(         hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
         "navigate_sound": install_system_navigate_sound(hyperspin_dir, system_name, dry_run=dry_run, overwrite=overwrite),
     }
+
+
+# ─── Blank-theme filler ───────────────────────────────────────────────────────
+
+_VIDEO_EXTS: frozenset[str] = frozenset({".mp4", ".avi", ".flv", ".mkv"})
+
+
+def fill_missing_themes(
+    hyperspin_dir: Path,
+    system_name: str,
+    *,
+    dry_run: bool = False,
+) -> dict[str, str]:
+    """Install a blank theme zip for every game that has a video but no theme.
+
+    Walks ``Media/<system_name>/Video/`` for files with a recognised video
+    extension, then checks ``Media/<system_name>/Themes/<game>.zip``.  When
+    the zip is absent the bundled ``assets/theme_blank.zip`` is copied in its
+    place so HyperSpin plays the video fullscreen with no other decoration.
+    Existing theme zips are never touched.
+
+    Returns a mapping of ``{game_name: status}`` where *status* is one of:
+
+    * ``"installed"`` — blank theme zip written.
+    * ``"skipped"`` — theme zip already exists.
+    * ``"dry_run"`` — would install but *dry_run* is True.
+    * ``"no_asset"`` — ``theme_blank.zip`` is missing from the package.
+    """
+    src = Path(__file__).parent / "assets" / "theme_blank.zip"
+    if not src.exists():
+        video_dir = hyperspin_dir / "Media" / system_name / "Video"
+        return {
+            p.stem: "no_asset"
+            for p in sorted(video_dir.iterdir())
+            if p.suffix.lower() in _VIDEO_EXTS
+        } if video_dir.is_dir() else {}
+
+    video_dir = hyperspin_dir / "Media" / system_name / "Video"
+    themes_dir = hyperspin_dir / "Media" / system_name / "Themes"
+    if not video_dir.is_dir():
+        return {}
+
+    results: dict[str, str] = {}
+    for video_file in sorted(video_dir.iterdir()):
+        if video_file.suffix.lower() not in _VIDEO_EXTS:
+            continue
+        game_name = video_file.stem
+        dest = themes_dir / f"{game_name}.zip"
+        if dest.exists():
+            results[game_name] = "skipped"
+        elif dry_run:
+            results[game_name] = "dry_run"
+        else:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+            results[game_name] = "installed"
+    return results
 
 
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────

@@ -8,6 +8,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`theme-fill` command (CLI + GUI).** `spindoctor theme-fill --system <SYSTEM> [--apply]` scans `Media\<SYSTEM>\Video\` and installs a blank full-screen theme zip for every game that has a video but no matching `Themes\<game>.zip`. Existing theme zips are never overwritten. Available in the GUI under *Metadata & Media → Fill missing game themes*.
+
+- **`theme_blank.zip` bundled asset.** A reusable full-screen video-only HyperSpin theme zip (`Theme.xml` with a 1024×768 centred video element) shipped inside the package for use by `theme-fill` and any other per-game theme operation.
+
 - **Recompiled games wheel.** New synthetic wheel `Recompiled` is now fully supported by `mainmenu add Recompiled --apply`. Bundled assets include: attract-mode video (`video_Recompiled.mp4`), wheel art (`wheel_art_Recompiled.png`), browse music (`music_Recompiled.wav`), navigation sound (shared `navigate_sound.mp3`), and HyperSpin theme zip (`theme_Recompiled.zip`). RocketLauncher PCLauncher settings are generated automatically on add.
 
 ### Changed
@@ -16,7 +20,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Background images removed from synthetic wheels.** `bg_Favorites.png`, `bg_Most_Played.png`, and `bg_Recently_Played.png` have been removed from the asset bundle and are no longer installed by `mainmenu add`. The attract-mode MP4 fills the screen for all synthetic wheels, making separate background PNGs redundant.
 
-- **Browse music now installed by `mainmenu add`.** `_MUSIC_ASSETS` is now populated for all four synthetic wheels (`.wav` for Favorites, Most Played, Recompiled; `.mp3` for Recently Played). The `install_system_music` installer preserves the source file extension rather than forcing `.mp3`.
+- **Browse music now installed by `mainmenu add`.** `_MUSIC_ASSETS` is now populated for all four synthetic wheels (all `.mp3`). The `install_system_music` installer preserves the source file extension rather than forcing `.mp3`.
+
+- **Music tracks converted to MP3.** All browse-music assets (`music_*.wav`) converted to `.mp3` for consistency. Archive copies updated to match.
 
 ### Docs
 
