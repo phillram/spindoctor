@@ -24,6 +24,7 @@ SKIP_GENERATE_CONFIG: frozenset[str] = frozenset({
     "Favorites",
     "Recently Played",
     "Most Played",
+    "Recompiled",
     "Main Menu",
 })
 
@@ -748,25 +749,26 @@ _WHEEL_ART_ASSETS: dict[str, str] = {
     "Favorites":       "wheel_art_Favorites.png",
     "Most Played":     "wheel_art_Most_Played.png",
     "Recently Played": "wheel_art_Recently_Played.png",
+    "Recompiled":      "wheel_art_Recompiled.png",
 }
 
 # System background image — displayed behind the game list while browsing.
 # HyperSpin path: Media\<SystemName>\Images\Backgrounds\<SystemName>.png
-_BACKGROUND_ASSETS: dict[str, str] = {
-    "Favorites":       "bg_Favorites.png",
-    "Most Played":     "bg_Most_Played.png",
-    "Recently Played": "bg_Recently_Played.png",
-}
+#
+# Background files have been removed: the attract-mode MP4 visually fills the
+# screen for all synthetic wheels, so separate per-system background PNGs are
+# redundant.  Add entries here and place PNG files in assets/ to restore.
+_BACKGROUND_ASSETS: dict[str, str] = {}
 
 # Background music — plays while the user browses the wheel (active browsing,
-# not attract-mode idle).  HyperSpin path: Media\Main Menu\Sound\<SystemName>.mp3
-#
-# Intentionally empty: the attract-mode MP4 already contains the audio track,
-# and that covers the idle/attract use-case the cabinet cares about.  Separate
-# MP3 files would only add active-browsing music (when the user is scrolling the
-# main-menu wheel); we ship nothing there so HyperSpin uses silence during
-# active browsing.  Add entries here and drop MP3 files in assets/ to restore.
-_MUSIC_ASSETS: dict[str, str] = {}
+# not attract-mode idle).  HyperSpin path: Media\Main Menu\Sound\<SystemName>.*
+# (extension preserved from the source file — HyperSpin accepts .mp3 and .wav)
+_MUSIC_ASSETS: dict[str, str] = {
+    "Favorites":       "music_Favorites.wav",
+    "Most Played":     "music_Most_Played.wav",
+    "Recently Played": "music_Recently_Played.mp3",
+    "Recompiled":      "music_Recompiled.wav",
+}
 
 # Attract-mode video — static-frame MP4 containing the background image and
 # looped music at exactly 2× the music duration.  HyperSpin plays this video
@@ -778,6 +780,7 @@ _VIDEO_ASSETS: dict[str, str] = {
     "Favorites":       "video_Favorites.mp4",
     "Most Played":     "video_Most_Played.mp4",
     "Recently Played": "video_Recently_Played.mp4",
+    "Recompiled":      "video_Recompiled.mp4",
 }
 
 # HyperSpin theme zip — controls where HyperSpin renders the video slot when
@@ -794,6 +797,7 @@ _THEME_ASSETS: dict[str, str] = {
     "Favorites":       "theme_Favorites.zip",
     "Most Played":     "theme_Most_Played.zip",
     "Recently Played": "theme_Recently_Played.zip",
+    "Recompiled":      "theme_Recompiled.zip",
 }
 
 # Navigate sound — plays on every left/right cursor move while browsing the
@@ -805,6 +809,7 @@ _NAVIGATE_SOUND_ASSETS: dict[str, str] = {
     "Favorites":       "navigate_sound.mp3",
     "Most Played":     "navigate_sound.mp3",
     "Recently Played": "navigate_sound.mp3",
+    "Recompiled":      "navigate_sound.mp3",
 }
 
 
@@ -923,16 +928,12 @@ def install_system_music(
 
     Destination::
 
-        <hyperspin_dir>/Media/Main Menu/Sound/<system_name>.mp3
+        <hyperspin_dir>/Media/Main Menu/Sound/<system_name><ext>
 
-    HyperSpin reads active-browsing audio from ``Media/Main Menu/Sound/`` — this
-    plays while the user is scrolling through systems on the main menu, distinct
-    from the attract-mode audio carried by the MP4 video.
-
-    ``_MUSIC_ASSETS`` is currently empty: the attract-mode MP4 provides all the
-    audio the cabinet needs, and active-browsing silence is acceptable.
-    This function always returns ``("no_asset", None)`` until entries are added
-    to ``_MUSIC_ASSETS`` and matching MP3 files placed in ``assets/``.
+    where *ext* is the source file's extension (.mp3 or .wav).  HyperSpin reads
+    active-browsing audio from ``Media/Main Menu/Sound/`` — this plays while the
+    user is scrolling through systems on the main menu, distinct from the
+    attract-mode audio carried by the MP4 video.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
     When *overwrite* is ``True`` (``mainmenu add``) it is always written.
@@ -943,7 +944,7 @@ def install_system_music(
     src = _resolve_asset(_MUSIC_ASSETS, system_name)
     if src is None:
         return None, "no_asset"
-    dest = hyperspin_dir / "Media" / "Main Menu" / "Sound" / f"{system_name}.mp3"
+    dest = hyperspin_dir / "Media" / "Main Menu" / "Sound" / f"{system_name}{src.suffix}"
     return _install_asset(src, dest, dry_run, overwrite=overwrite)
 
 

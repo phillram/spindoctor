@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Recompiled games wheel.** New synthetic wheel `Recompiled` is now fully supported by `mainmenu add Recompiled --apply`. Bundled assets include: attract-mode video (`video_Recompiled.mp4`), wheel art (`wheel_art_Recompiled.png`), browse music (`music_Recompiled.wav`), navigation sound (shared `navigate_sound.mp3`), and HyperSpin theme zip (`theme_Recompiled.zip`). RocketLauncher PCLauncher settings are generated automatically on add.
+
+### Changed
+
+- **Synthetic wheel media refreshed (Favorites, Most Played, Recently Played, Recompiled).** Attract-mode videos and browse-music tracks replaced with new versions. Old videos archived as `assets/archive/video_*_old.mp4`.
+
+- **Background images removed from synthetic wheels.** `bg_Favorites.png`, `bg_Most_Played.png`, and `bg_Recently_Played.png` have been removed from the asset bundle and are no longer installed by `mainmenu add`. The attract-mode MP4 fills the screen for all synthetic wheels, making separate background PNGs redundant.
+
+- **Browse music now installed by `mainmenu add`.** `_MUSIC_ASSETS` is now populated for all four synthetic wheels (`.wav` for Favorites, Most Played, Recompiled; `.mp3` for Recently Played). The `install_system_music` installer preserves the source file extension rather than forcing `.mp3`.
+
 ### Docs
 
 - **Dolphin GameCube controller — DS4Windows dependency.** Documented that the PS4 DualShock 4 controller requires DS4Windows to be running to present as `XInput/0/Gamepad`. Dolphin GCPad must be bound to `XInput/0/Gamepad`; if DS4Windows exits (tied to HyperSpin's lifetime), the virtual device disappears and Dolphin shows `[disconnected] DInput/0/Wireless Controller` until reboot. Fix: configure DS4Windows to start at Windows login independently of HyperSpin. Added architecture reference section and troubleshooting entry covering symptoms, cause, fix, and the `Win+B` tray-access workaround for reaching DS4Windows while HyperSpin hides the taskbar.
