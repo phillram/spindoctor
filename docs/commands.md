@@ -578,7 +578,7 @@ Step-skipping flags mirror `add-system`: `--no-menu` (Main Menu upsert), `--no-d
 - **DB status**: `new` (title will be added as a stub) or `existing` (already in the HyperSpin XML database — no change).
 - **Resolved executable**: the full path SpinDoctor will write as `Application=` in the PCLauncher INI. Useful for catching GOG/Steam installs where the ROM scanner found a `.zip` or non-game `.exe` — the resolver walks the install folder to find the real binary.
 - **Stale entries**: if titles exist in the database but were not found in the current ROM scan, they are listed as `will be removed` so you can verify before committing with `--apply`.
-- **INI status** (dry-run): each title is listed as `would write` (no INI exists yet) or `would skip` (INI already present; pass `--overwrite-pclauncher` to replace it), with the full INI path. Stale INIs (no corresponding ROM scan hit) are listed under `would delete … stale INI(s)`.
+- **INI status** (dry-run): each title is listed as `would write` (no INI exists yet) or `would skip` (INI already present; pass `--overwrite-pclauncher` to replace it), with the full INI path. Stale INIs (no corresponding ROM scan hit) are always listed under `would delete … stale INI(s)` — this warning appears in all dry-run modes, with or without `--verbose`.
 - **INI status** (apply): the full path of each written INI, any kept (skipped) INIs, and the name of each deleted stale INI.
 
 Full paths are never truncated regardless of terminal width.
@@ -818,9 +818,12 @@ Selection rules, in order: exclude prototypes/demos/betas (pass `--include-proto
 Wheels, snaps, videos, and themes whose game no longer exists in the database or ROMs. `--apply` removes them after a confirmation prompt (irreversible — no undo).
 
 ```bat
-spindoctor find-orphan-media --all                    :: dry-run report
-spindoctor find-orphan-media --system SNES --apply    :: remove (prompts)
+spindoctor find-orphan-media --all                           :: dry-run report
+spindoctor find-orphan-media --all --verbose                 :: dry-run + absolute path per orphan
+spindoctor find-orphan-media --system SNES --apply           :: remove (prompts)
 ```
+
+`--verbose` in dry-run prints each orphan's absolute path prefixed with `would delete:`, matching the full-path output shown in apply mode.
 
 ### `check-discs`
 

@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.9.0] - 2026-06-24
+
 ### Added
 
 - **`fetch-steam-media` now downloads per-game backgrounds.** The `background` slot is populated from Steam's `screenshots[].path_full` list (same source as `snap`) and is now part of the default `--types` set (`video,snap,background,artwork`). The first screenshot is written to `Images\Backgrounds\<game>.png`; use `--background-index N` to pick a different screenshot. Available in the GUI's Steam media panel as the **Background** dropdown. `--background-index` added as the corresponding non-interactive flag.
@@ -1948,7 +1950,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.8.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.0...HEAD
+[2.9.0]: https://github.com/phillram/spindoctor/compare/v2.8.2...v2.9.0
 [2.8.2]: https://github.com/phillram/spindoctor/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/phillram/spindoctor/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/phillram/spindoctor/compare/v2.7.14...v2.8.0
