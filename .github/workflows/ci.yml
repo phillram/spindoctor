@@ -209,19 +209,19 @@ jobs:
         run: python build/build_windows.py --modern
 
       - name: Smoke-test binaries (from shared-runtime folder)
-        # --onedir build: EXEs live in dist\spindoctor-windows\ alongside _internal\.
+        # --onedir build: EXEs live in dist\spindoctor-win10\ alongside _internal\.
         # spindoctor-gui.exe is --windowed; verify the file exists via bash.
         shell: cmd
         run: |
-          dist\spindoctor-windows\spindoctor.exe --version
-          dist\spindoctor-windows\spindoctor-fav.exe --help
-          dist\spindoctor-windows\spindoctor-recent.exe --help
-          dist\spindoctor-windows\spindoctor-stats.exe --help
+          dist\spindoctor-win10\spindoctor.exe --version
+          dist\spindoctor-win10\spindoctor-fav.exe --help
+          dist\spindoctor-win10\spindoctor-recent.exe --help
+          dist\spindoctor-win10\spindoctor-stats.exe --help
 
       - name: Smoke-test GUI binary exists
         shell: bash
-        run: test -f dist/spindoctor-windows/spindoctor-gui.exe
+        run: test -f dist/spindoctor-win10/spindoctor-gui.exe
 
       - name: Verify _internal shared runtime present
         shell: bash
-        run: test -d dist/spindoctor-windows/_internal
+        run: test -d dist/spindoctor-win10/_internal

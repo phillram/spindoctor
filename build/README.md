@@ -22,7 +22,7 @@ Five self-contained EXEs in `dist/`. Each is a standalone self-extracting archiv
 
 ### Modern bundle — `--onedir` COLLECT (Python 3.12 + PyInstaller 6.x)
 
-One `spindoctor-windows/` folder in `dist/`. The Python 3.12 runtime lives once in `_internal/`; PyInstaller's COLLECT deduplicates it across all five EXEs — significantly smaller than five separate `--onefile` EXEs each embedding their own copy. Windows 10/11 only; PyInstaller 6.x bootloader requires Windows 8.1+.
+One `spindoctor-win10/` folder in `dist/`. The Python 3.12 runtime lives once in `_internal/`; PyInstaller's COLLECT deduplicates it across all five EXEs — significantly smaller than five separate `--onefile` EXEs each embedding their own copy. Windows 10/11 only; PyInstaller 6.x bootloader requires Windows 8.1+.
 
 Hidden imports are split per-target so each EXE only bundles what it actually uses:
 
@@ -60,7 +60,7 @@ python build/build_windows.py
 pip install -e .[all]
 pip install -r build/requirements-build-modern.txt
 python build/build_windows.py --modern
-:: Output: dist\spindoctor-windows\spindoctor.exe, ..., dist\spindoctor-windows\_internal\
+:: Output: dist\spindoctor-win10\spindoctor.exe, ..., dist\spindoctor-win10\_internal\
 ```
 
 Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
@@ -84,15 +84,15 @@ Generating the entry-point shims at build time (rather than committing spec file
 2. Installs runtime extras + PyInstaller 5.x (`requirements-build.txt`).
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each binary.
-5. Packages as `spindoctor-windows-<tag>.zip` (five flat EXEs).
+5. Packages as `spindoctor-win7-<tag>.zip` (five flat EXEs).
 6. Uploads as a workflow artifact.
 
 **`build-modern`** — Python 3.12 + PyInstaller 6.x:
 1. Spins up `windows-2022` with Python 3.12.
 2. Installs runtime extras + PyInstaller 6.x (`requirements-build-modern.txt`).
 3. Runs `python build/build_windows.py --modern`.
-4. Smoke-tests each binary from `dist\spindoctor-windows\`.
-5. Packages as `spindoctor-modern-<tag>.zip` (the whole `spindoctor-windows/` folder).
+4. Smoke-tests each binary from `dist\spindoctor-win10\`.
+5. Packages as `spindoctor-win10-<tag>.zip` (the whole `spindoctor-win10/` folder).
 6. Uploads as a workflow artifact.
 
 **`publish`** — runs after both builds succeed (tag push only):

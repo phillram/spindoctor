@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
+          cd dist && 7z a "../artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip" *.exe
 
       - name: Generate SHA256 checksums (Win7)
         shell: bash
@@ -96,14 +96,14 @@ jobs:
         continue-on-error: true
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
         with:
-          subject-path: 'artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip'
+          subject-path: 'artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip'
 
       - name: Upload Win7 artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: win7-bundle
           path: |
-            artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip
+            artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip
             artifacts/SHA256SUMS-win7.txt
           retention-days: 30
 
@@ -139,17 +139,17 @@ jobs:
       - name: Smoke-test every binary
         shell: cmd
         run: |
-          dist\spindoctor-windows\spindoctor.exe --version
-          dist\spindoctor-windows\spindoctor-fav.exe --help
-          dist\spindoctor-windows\spindoctor-recent.exe --help
-          dist\spindoctor-windows\spindoctor-stats.exe --help
+          dist\spindoctor-win10\spindoctor.exe --version
+          dist\spindoctor-win10\spindoctor-fav.exe --help
+          dist\spindoctor-win10\spindoctor-recent.exe --help
+          dist\spindoctor-win10\spindoctor-stats.exe --help
 
-      # GUI in --onedir mode: the EXE sits in spindoctor-windows/ alongside its
+      # GUI in --onedir mode: the EXE sits in spindoctor-win10/ alongside its
       # siblings, so Path(sys.executable).parent finds them correctly.
       - name: Smoke-test GUI module
         shell: bash
         run: |
-          test -f dist/spindoctor-windows/spindoctor-gui.exe
+          test -f dist/spindoctor-win10/spindoctor-gui.exe
           python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
 
       - name: Resolve release tag
@@ -163,11 +163,11 @@ jobs:
           fi
 
       - name: Package modern zip
-        # Zip the entire spindoctor-windows/ folder (EXEs + shared _internal/).
+        # Zip the entire spindoctor-win10/ folder (EXEs + shared _internal/).
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-modern-${{ steps.tag.outputs.tag }}.zip" spindoctor-windows
+          cd dist && 7z a "../artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip" spindoctor-win10
 
       - name: Generate SHA256 checksums (modern)
         shell: bash
@@ -180,14 +180,14 @@ jobs:
         continue-on-error: true
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
         with:
-          subject-path: 'artifacts/spindoctor-modern-${{ steps.tag.outputs.tag }}.zip'
+          subject-path: 'artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip'
 
       - name: Upload modern artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: modern-bundle
           path: |
-            artifacts/spindoctor-modern-${{ steps.tag.outputs.tag }}.zip
+            artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip
             artifacts/SHA256SUMS-modern.txt
           retention-days: 30
 
@@ -236,16 +236,16 @@ jobs:
             echo
             echo "| Bundle | File | Requires | Python | PyInstaller |"
             echo "|---|---|---|---|---|"
-            echo "| **Modern** *(recommended)* | \`spindoctor-modern-${{ github.ref_name }}.zip\` | Windows 10/11 | 3.12 | 6.x |"
-            echo "| **Win7** | \`spindoctor-windows-${{ github.ref_name }}.zip\` | Windows 7 SP1+ | 3.8 | 5.x |"
+            echo "| **Modern** *(recommended)* | \`spindoctor-win10-${{ github.ref_name }}.zip\` | Windows 10/11 | 3.12 | 6.x |"
+            echo "| **Win7** | \`spindoctor-win7-${{ github.ref_name }}.zip\` | Windows 7 SP1+ | 3.8 | 5.x |"
             echo
             echo "### Modern bundle (Windows 10/11)"
             echo
             echo "Shared-runtime \`--onedir\` build — the Python runtime lives once in \`_internal/\` instead of being embedded in each EXE."
             echo
             echo "\`\`\`"
-            echo "spindoctor-modern-${{ github.ref_name }}.zip"
-            echo "└── spindoctor-windows/"
+            echo "spindoctor-win10-${{ github.ref_name }}.zip"
+            echo "└── spindoctor-win10/"
             echo "    ├── spindoctor.exe          ← full CLI"
             echo "    ├── spindoctor-gui.exe      ← double-clickable GUI launcher"
             echo "    ├── spindoctor-fav.exe      ← Favorites wheel manager"
@@ -254,14 +254,14 @@ jobs:
             echo "    └── _internal/              ← shared Python 3.12 runtime"
             echo "\`\`\`"
             echo
-            echo "Extract the zip, then double-click \`spindoctor-windows\\spindoctor-gui.exe\`. Keep all files in the same folder."
+            echo "Extract the zip, then double-click \`spindoctor-win10\\spindoctor-gui.exe\`. Keep all files in the same folder."
             echo
             echo "### Win7 bundle (Windows 7 SP1 and newer)"
             echo
             echo "Five self-contained \`--onefile\` EXEs — each is a standalone self-extracting archive. Drop them in a folder of your choice."
             echo
             echo "\`\`\`"
-            echo "spindoctor-windows-${{ github.ref_name }}.zip"
+            echo "spindoctor-win7-${{ github.ref_name }}.zip"
             echo "├── spindoctor.exe          ← full CLI"
             echo "├── spindoctor-gui.exe      ← double-clickable GUI launcher"
             echo "├── spindoctor-fav.exe      ← Favorites wheel manager"
@@ -303,6 +303,6 @@ jobs:
           generate_release_notes: true
           body_path: release-notes.md
           files: |
-            artifacts/spindoctor-windows-${{ github.ref_name }}.zip
-            artifacts/spindoctor-modern-${{ github.ref_name }}.zip
+            artifacts/spindoctor-win7-${{ github.ref_name }}.zip
+            artifacts/spindoctor-win10-${{ github.ref_name }}.zip
             artifacts/SHA256SUMS.txt

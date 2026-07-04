@@ -27,16 +27,16 @@ Each release ships **two bundles** — pick whichever matches your Windows versi
 
 | Bundle | File | Requires | Built with |
 |---|---|---|---|
-| **Modern** *(recommended)* | `spindoctor-modern-vX.Y.Z.zip` | Windows 10 / 11 | Python 3.12 + PyInstaller 6.x |
-| **Win7** | `spindoctor-windows-vX.Y.Z.zip` | Windows 7 SP1+ | Python 3.8 + PyInstaller 5.x |
+| **Modern** *(recommended)* | `spindoctor-win10-vX.Y.Z.zip` | Windows 10 / 11 | Python 3.12 + PyInstaller 6.x |
+| **Win7** | `spindoctor-win7-vX.Y.Z.zip` | Windows 7 SP1+ | Python 3.8 + PyInstaller 5.x |
 
 ### Modern bundle (Windows 10/11)
 
 Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_internal/`; all five EXEs share it.
 
 ```
-spindoctor-modern-vX.Y.Z.zip
-└── spindoctor-windows/
+spindoctor-win10-vX.Y.Z.zip
+└── spindoctor-win10/
     ├── spindoctor.exe          ← full CLI (every command)
     ├── spindoctor-gui.exe      ← double-clickable GUI launcher
     ├── spindoctor-fav.exe      ← Favorites wheel manager
@@ -45,14 +45,14 @@ spindoctor-modern-vX.Y.Z.zip
     └── _internal/              ← shared Python 3.12 runtime (do not delete)
 ```
 
-Extract and keep the whole `spindoctor-windows/` folder together — the `_internal/` directory must stay next to the EXEs.
+Extract and keep the whole `spindoctor-win10/` folder together — the `_internal/` directory must stay next to the EXEs.
 
 ### Win7 bundle (Windows 7 SP1 and newer)
 
 Five self-contained `--onefile` EXEs — each is a standalone self-extracting archive. Drop them wherever you like.
 
 ```
-spindoctor-windows-vX.Y.Z.zip
+spindoctor-win7-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI (every command)
 ├── spindoctor-gui.exe      ← double-clickable GUI launcher
 ├── spindoctor-fav.exe      ← Favorites wheel manager
@@ -84,15 +84,15 @@ If you'd rather download from the command line:
 
 ```bat
 :: Use whichever URL the release page shows — example for v2.4.1:
-curl -L -o spindoctor-windows.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-windows-v2.4.1.zip
+curl -L -o spindoctor-win10.zip ^
+    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-win7-v2.4.1.zip
 ```
 
 ## Install
 
 There's no installer — just extract and optionally rename.
 
-**Modern bundle:** Extract the zip. Move the entire `spindoctor-windows/` folder to a location of your choice (e.g. `C:\spindoctor\`). You should end up with:
+**Modern bundle:** Extract the zip. Move the entire `spindoctor-win10/` folder to a location of your choice (e.g. `C:\spindoctor\`). You should end up with:
 
    ```
    C:\spindoctor\
