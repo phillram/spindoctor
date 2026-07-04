@@ -93,17 +93,15 @@ pip install click rich requests lxml
 
 ## Windows binaries (no Python required)
 
-For older / locked-down cabinets where installing Python isn't an option, every release attaches a zip of standalone `.exe` files to its [GitHub Release](https://github.com/phillram/spindoctor/releases).
+For older / locked-down cabinets where installing Python isn't an option, every release attaches two zips to its [GitHub Release](https://github.com/phillram/spindoctor/releases):
 
-```
-spindoctor-windows-vX.Y.Z.zip
-├── spindoctor.exe          ← full CLI
-├── spindoctor-gui.exe      ← double-clickable GUI launcher
-├── spindoctor-fav.exe      ← Favorites wheel manager
-├── spindoctor-recent.exe   ← Recently Played rebuild
-└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
-```
+| Bundle | File | Requires |
+|---|---|---|
+| **Modern** *(recommended)* | `spindoctor-win10-vX.Y.Z.zip` | Windows 10 / 11 |
+| **Win7** | `spindoctor-win7-vX.Y.Z.zip` | Windows 7 SP1 / 8 / 8.1 / 10 / 11 |
 
-Quick version: download → extract → move the five EXEs to a folder of your choice (e.g. `C:\spindoctor\`) → double-click `spindoctor-gui.exe`. Each binary is self-contained. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
+**Modern bundle** (Windows 10/11): extract → keep the whole `spindoctor-win10/` folder together → double-click `spindoctor-win10\spindoctor-gui.exe`. The shared runtime lives in `_internal/` alongside the EXEs.
+
+**Win7 bundle**: five self-contained `.exe` files. Extract → move them to a folder of your choice (e.g. `C:\spindoctor\`) → double-click `spindoctor-gui.exe`. Each binary is self-contained. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
 Full walkthrough — including a tour of the GUI tabs, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions — at [Windows binaries](windows-binaries.md).

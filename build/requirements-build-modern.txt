@@ -1,0 +1,15 @@
+# Modern Windows (10/11) build — Python 3.12 + PyInstaller 6.x.
+#
+# PyInstaller 6.x raises the minimum Windows target to 8.1; its bootloader
+# references api-ms-win-core-path-l1-1-0.dll which is absent on Windows 7.
+# DO NOT use this file for the Win7 build — use requirements-build.txt instead.
+#
+# PyInstaller 6.x produces a clean _internal/ shared-runtime layout in --onedir
+# mode, enabling COLLECT to deduplicate the Python runtime across all five EXEs.
+# This is the fix for the PR #273 revert: with PyInstaller 5.x the runtime
+# landed flat next to the EXEs and couldn't be isolated; 6.x solved that.
+PyInstaller>=6.0,<7.0
+lxml>=5.0
+py7zr>=0.20
+rarfile>=4.0
+pillow>=10.0

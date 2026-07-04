@@ -23,10 +23,36 @@ Standalone `.exe` files for cabinets that can't (or shouldn't) install Python. D
 
 ## What you get
 
-Each release at [github.com/phillram/spindoctor/releases](https://github.com/phillram/spindoctor/releases) attaches a single zip:
+Each release ships **two bundles** — pick whichever matches your Windows version:
+
+| Bundle | File | Requires | Built with |
+|---|---|---|---|
+| **Modern** *(recommended)* | `spindoctor-win10-vX.Y.Z.zip` | Windows 10 / 11 | Python 3.12 + PyInstaller 6.x |
+| **Win7** | `spindoctor-win7-vX.Y.Z.zip` | Windows 7 SP1+ | Python 3.8 + PyInstaller 5.x |
+
+### Modern bundle (Windows 10/11)
+
+Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_internal/`; all five EXEs share it.
 
 ```
-spindoctor-windows-vX.Y.Z.zip
+spindoctor-win10-vX.Y.Z.zip
+└── spindoctor-win10/
+    ├── spindoctor.exe          ← full CLI (every command)
+    ├── spindoctor-gui.exe      ← double-clickable GUI launcher
+    ├── spindoctor-fav.exe      ← Favorites wheel manager
+    ├── spindoctor-recent.exe   ← Recently Played rebuild
+    ├── spindoctor-stats.exe    ← playtime reports + Most Played wheel
+    └── _internal/              ← shared Python 3.12 runtime (do not delete)
+```
+
+Extract and keep the whole `spindoctor-win10/` folder together — the `_internal/` directory must stay next to the EXEs.
+
+### Win7 bundle (Windows 7 SP1 and newer)
+
+Five self-contained `--onefile` EXEs — each is a standalone self-extracting archive. Drop them wherever you like.
+
+```
+spindoctor-win7-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI (every command)
 ├── spindoctor-gui.exe      ← double-clickable GUI launcher
 ├── spindoctor-fav.exe      ← Favorites wheel manager
@@ -34,41 +60,53 @@ spindoctor-windows-vX.Y.Z.zip
 └── spindoctor-stats.exe    ← playtime reports + Most Played wheel
 ```
 
-Each binary is a self-contained, self-extracting executable — no installer, no setup wizard, no DLL hell, no shared runtime to keep together. Drop any of them wherever you like and they just run.
-
-Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar. Earlier releases shipped without `--icon` in the PyInstaller invocation and as a result rendered the default Tk feather everywhere Windows shows an icon; that's fixed.
+Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar.
 
 ## Compatibility
 
-| Windows version | Status |
-|---|---|
-| Windows 7 SP1 (x64) | ✓ Supported |
-| Windows 8 / 8.1 | ✓ Supported |
-| Windows 10 | ✓ Supported (SmartScreen warning — see [Troubleshooting](#troubleshooting)) |
-| Windows 11 | ✓ Supported (SmartScreen warning — see [Troubleshooting](#troubleshooting)) |
-| Windows 7 RTM (no SP1) | ✗ Not supported — install SP1 from Windows Update first |
-| Windows XP / Vista | ✗ Not supported — Python 3.8 dropped them |
+| Windows version | Modern bundle | Win7 bundle |
+|---|---|---|
+| Windows 11 | ✓ Recommended | ✓ Works |
+| Windows 10 | ✓ Recommended | ✓ Works |
+| Windows 8 / 8.1 | ✓ Works | ✓ Works |
+| Windows 7 SP1 (x64) | ✗ Not supported | ✓ Supported |
+| Windows 7 RTM (no SP1) | ✗ Not supported | ✗ Install SP1 first |
+| Windows XP / Vista | ✗ Not supported | ✗ Python 3.8 dropped them |
 
-Built with **Python 3.8.10 + PyInstaller 5.13.2** on a `windows-2022` GitHub Actions runner. The Win 7 SP1 compatibility comes from the CPython 3.8 + PyInstaller 5.x pairing — these pins are deliberate, see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md#windows-7-compatibility) for the rationale.
+The Win7 bundle is built with **Python 3.8.10 + PyInstaller 5.13.2** — the only pairing whose bootloader loads on Windows 7 SP1. The modern bundle uses **Python 3.12 + PyInstaller 6.x**, which raises the minimum to Windows 8.1 but enables the shared-runtime `--onedir` layout that significantly reduces download size.
 
 ## Download
 
 1. Open the [latest release](https://github.com/phillram/spindoctor/releases/latest) on GitHub.
-2. Under **Assets**, click `spindoctor-windows-vX.Y.Z.zip`.
+2. Under **Assets**, pick the bundle for your Windows version (see table above).
 
 If you'd rather download from the command line:
 
 ```bat
 :: Use whichever URL the release page shows — example for v2.4.1:
-curl -L -o spindoctor-windows.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-windows-v2.4.1.zip
+curl -L -o spindoctor-win10.zip ^
+    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-win7-v2.4.1.zip
 ```
 
 ## Install
 
 There's no installer — just extract and optionally rename.
 
-1. Extract the zip. Move the five `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). You should end up with:
+**Modern bundle:** Extract the zip. Move the entire `spindoctor-win10/` folder to a location of your choice (e.g. `C:\spindoctor\`). You should end up with:
+
+   ```
+   C:\spindoctor\
+   ├── spindoctor.exe
+   ├── spindoctor-gui.exe
+   ├── spindoctor-fav.exe
+   ├── spindoctor-recent.exe
+   ├── spindoctor-stats.exe
+   └── _internal\        ← keep this next to the EXEs
+   ```
+
+   Do not move individual EXEs out of the folder — `_internal\` must stay alongside them.
+
+**Win7 bundle:** Extract the zip. Move the five `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). Each binary is self-contained — you can place them individually or together as you prefer.
 
    ```
    C:\spindoctor\
@@ -79,7 +117,7 @@ There's no installer — just extract and optionally rename.
    └── spindoctor-stats.exe
    ```
 
-   Each binary is self-contained — you can place them individually or together as you prefer. `spindoctor-gui.exe` finds its peer binaries by looking in the same directory as itself, so keeping them in one folder is recommended for GUI use.
+`spindoctor-gui.exe` finds its peer binaries by looking in the same directory as itself, so keeping them in one folder is recommended for GUI use (both bundles).
 
 2. **Add the folder to `PATH`** (optional, GUI users can skip) so you can run `spindoctor` from anywhere:
 

@@ -18,12 +18,11 @@ permissions:
   attestations: write   # required by attest-build-provenance to record SLSA
 
 jobs:
-  build:
-    name: Build Windows executables
-    # windows-2022 is the oldest Windows runner GitHub still offers
-    # (windows-2019 was retired). The Win 7 SP1 compatibility of the
-    # produced exe comes from CPython 3.8.10 itself — pinned below —
-    # not from the build host's SDK version, so a newer runner is fine.
+  # ── Win7 build ──────────────────────────────────────────────────────────────
+  # Python 3.8 + PyInstaller 5.x — the only pairing whose bootloader loads on
+  # Windows 7 SP1.  Produces five self-contained --onefile EXEs.
+  build-win7:
+    name: Build (Windows 7 SP1+)
     runs-on: windows-2022
 
     steps:
@@ -31,7 +30,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
 
       - name: Set up Python 3.8
-        # Python 3.8 was the last release to officially support Windows 7.
+        # Python 3.8 was the last release to officially support Windows 7 SP1.
         # Building with 3.8 keeps the bundled CPython runtime compatible.
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
         with:
@@ -44,15 +43,7 @@ jobs:
           pip install -e .[all]
           pip install -r build/requirements-build.txt
 
-      # Unit tests are intentionally NOT re-run here. The CI workflow
-      # (.github/workflows/ci.yml) already runs `pytest -q` on the same
-      # windows-2022 + Python 3.8 matrix on every push to main, so by
-      # the time a `v*` tag exists those tests are known-green. Running
-      # them again in the release pipeline doubled wall-clock time
-      # (~5+ min) and added a flaky failure path for shipping a release.
-      # The PyInstaller smoke step below is the release-specific guard.
-
-      - name: Build Windows executables
+      - name: Build Windows executables (Win7)
         shell: bash
         run: python build/build_windows.py
 
@@ -87,62 +78,192 @@ jobs:
             echo "tag=${{ github.event.inputs.tag || 'manual' }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Package as zip
+      - name: Package Win7 zip
         # Zip just the five flat EXEs from dist/ — each is self-contained.
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-windows-${{ steps.tag.outputs.tag }}.zip" *.exe
+          cd dist && 7z a "../artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip" *.exe
 
-      # Lets users verify their download with `sha256sum -c SHA256SUMS.txt`.
-      - name: Generate SHA256 checksums
+      - name: Generate SHA256 checksums (Win7)
         shell: bash
         run: |
-          cd artifacts && sha256sum *.zip > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          cd artifacts && sha256sum *.zip > SHA256SUMS-win7.txt
+          cat SHA256SUMS-win7.txt
 
-      # Records a signed SLSA provenance statement so users can run
-      # `gh attestation verify <zip> --repo ${{ github.repository }}`
-      # to prove the artifact came from this workflow on this repo.
-      - name: Attest build provenance
+      - name: Attest build provenance (Win7)
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-        # continue-on-error: attestation uses GitHub's OIDC / Sigstore API
-        # which has occasional transient failures. A failed attestation is not
-        # a reason to skip Upload or Publish — the zip is already built and
-        # the SHA256 checksum is already generated. Users can still verify the
-        # download; they just won't get the `gh attestation verify` path.
         continue-on-error: true
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
         with:
-          subject-path: 'artifacts/*.zip'
+          subject-path: 'artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip'
 
-      - name: Upload build artifacts
-        # Always uploaded, even on workflow_dispatch — useful for testing the
-        # build pipeline without publishing a release.
+      - name: Upload Win7 artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
-          name: spindoctor-windows-${{ steps.tag.outputs.tag }}
-          path: artifacts/*.zip
+          name: win7-bundle
+          path: |
+            artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip
+            artifacts/SHA256SUMS-win7.txt
           retention-days: 30
+
+  # ── Modern build ─────────────────────────────────────────────────────────────
+  # Python 3.12 + PyInstaller 6.x — Windows 10/11 only.
+  # PyInstaller 6.x produces a clean _internal/ shared-runtime layout so COLLECT
+  # can deduplicate the Python runtime across all five EXEs (the PR #273 goal that
+  # was reverted in PR #275 because PyInstaller 5.x couldn't produce _internal/).
+  build-modern:
+    name: Build (Windows 10/11+)
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install runtime + build dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[all]
+          pip install -r build/requirements-build-modern.txt
+
+      - name: Build Windows executables (modern)
+        shell: bash
+        run: python build/build_windows.py --modern
+
+      - name: Smoke-test every binary
+        shell: cmd
+        run: |
+          dist\spindoctor-win10\spindoctor.exe --version
+          dist\spindoctor-win10\spindoctor-fav.exe --help
+          dist\spindoctor-win10\spindoctor-recent.exe --help
+          dist\spindoctor-win10\spindoctor-stats.exe --help
+
+      # GUI in --onedir mode: the EXE sits in spindoctor-win10/ alongside its
+      # siblings, so Path(sys.executable).parent finds them correctly.
+      - name: Smoke-test GUI module
+        shell: bash
+        run: |
+          test -f dist/spindoctor-win10/spindoctor-gui.exe
+          python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.event.inputs.tag || 'manual' }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Package modern zip
+        # Zip the entire spindoctor-win10/ folder (EXEs + shared _internal/).
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          cd dist && 7z a "../artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip" spindoctor-win10
+
+      - name: Generate SHA256 checksums (modern)
+        shell: bash
+        run: |
+          cd artifacts && sha256sum *.zip > SHA256SUMS-modern.txt
+          cat SHA256SUMS-modern.txt
+
+      - name: Attest build provenance (modern)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        continue-on-error: true
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: 'artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip'
+
+      - name: Upload modern artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: modern-bundle
+          path: |
+            artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip
+            artifacts/SHA256SUMS-modern.txt
+          retention-days: 30
+
+  # ── Publish ──────────────────────────────────────────────────────────────────
+  # Waits for both builds, merges checksums, and creates the GitHub Release.
+  # Only runs on tag pushes — workflow_dispatch builds upload artifacts but
+  # don't publish.
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-win7, build-modern]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Download Win7 artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: win7-bundle
+          path: artifacts
+
+      - name: Download modern artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: modern-bundle
+          path: artifacts
+
+      - name: Merge SHA256 checksums
+        run: |
+          cat artifacts/SHA256SUMS-win7.txt artifacts/SHA256SUMS-modern.txt > artifacts/SHA256SUMS.txt
+          echo "=== Combined SHA256SUMS.txt ==="
+          cat artifacts/SHA256SUMS.txt
 
       - name: Build release notes
         # Pulls the curated section from CHANGELOG.md and prepends a short
         # header about the binaries. The auto-generated PR / commit list
         # appended by `generate_release_notes: true` lands underneath.
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
           {
             echo "## Windows binaries"
             echo
-            echo "Built with Python 3.8.10 + PyInstaller 5.13.2 on \`windows-2022\`. Runs on Windows 7 SP1 and newer."
+            echo "Two bundles are available — pick whichever matches your Windows version:"
             echo
-            echo "Extract the zip — you get five self-contained \`.exe\` files. Move them to a folder of your choice (e.g. \`C:\spindoctor\\\`), then double-click \`spindoctor-gui.exe\` to launch. No Python install required. See [docs/installation.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/installation.md#windows-binaries-no-python-required) for the full walkthrough."
+            echo "| Bundle | File | Requires | Python | PyInstaller |"
+            echo "|---|---|---|---|---|"
+            echo "| **Modern** *(recommended)* | \`spindoctor-win10-${{ github.ref_name }}.zip\` | Windows 10/11 | 3.12 | 6.x |"
+            echo "| **Win7** | \`spindoctor-win7-${{ github.ref_name }}.zip\` | Windows 7 SP1+ | 3.8 | 5.x |"
             echo
-            echo "**What's in \`spindoctor-windows-${{ github.ref_name }}.zip\`:**"
+            echo "**Not sure which to pick?** Windows 10 or 11 → grab the Modern bundle. Windows 7 SP1, 8, or 8.1 → grab the Win7 bundle. The Win7 bundle also works on Windows 10/11 if you prefer the simpler five-EXE layout."
+            echo
+            echo "### Modern bundle (Windows 10/11)"
+            echo
+            echo "Shared-runtime \`--onedir\` build — the Python runtime lives once in \`_internal/\` instead of being embedded in each EXE."
             echo
             echo "\`\`\`"
-            echo "spindoctor-windows-${{ github.ref_name }}.zip"
+            echo "spindoctor-win10-${{ github.ref_name }}.zip"
+            echo "└── spindoctor-win10/"
+            echo "    ├── spindoctor.exe          ← full CLI"
+            echo "    ├── spindoctor-gui.exe      ← double-clickable GUI launcher"
+            echo "    ├── spindoctor-fav.exe      ← Favorites wheel manager"
+            echo "    ├── spindoctor-recent.exe   ← Recently Played rebuild"
+            echo "    ├── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
+            echo "    └── _internal/              ← shared Python 3.12 runtime"
+            echo "\`\`\`"
+            echo
+            echo "Extract the zip, then double-click \`spindoctor-win10\\spindoctor-gui.exe\`. Keep all files in the same folder."
+            echo
+            echo "### Win7 bundle (Windows 7 SP1 and newer)"
+            echo
+            echo "Five self-contained \`--onefile\` EXEs — each is a standalone self-extracting archive. Drop them in a folder of your choice."
+            echo
+            echo "\`\`\`"
+            echo "spindoctor-win7-${{ github.ref_name }}.zip"
             echo "├── spindoctor.exe          ← full CLI"
             echo "├── spindoctor-gui.exe      ← double-clickable GUI launcher"
             echo "├── spindoctor-fav.exe      ← Favorites wheel manager"
@@ -153,7 +274,7 @@ jobs:
             echo "**Verify your download:**"
             echo
             echo "- \`SHA256SUMS.txt\` — verify with \`sha256sum -c SHA256SUMS.txt\`."
-            echo "- Build provenance: \`gh attestation verify spindoctor-windows-${{ github.ref_name }}.zip --repo ${{ github.repository }}\` proves the zip came from this workflow."
+            echo "- Build provenance: \`gh attestation verify <zip> --repo ${{ github.repository }}\` proves the zip came from this workflow."
             echo
             echo "---"
             echo
@@ -168,23 +289,22 @@ jobs:
         # This step is the canonical source of the release title and body.
         # Running `gh release create` or editing the release in the GitHub UI
         # before this step completes will produce an incorrectly formatted
-        # release. Wait ~4 minutes after pushing the tag for this step to run.
+        # release. Wait ~8 minutes after pushing the tag for both builds to
+        # complete and this step to run.
         #
         # Release format enforced here:
         #   Title : SpinDoctor vX.Y.Z
-        #   Body  : Windows binaries header
+        #   Body  : Two-bundle download table
         #           + CHANGELOG section (build/extract_changelog.py)
         #           + auto-generated "What's Changed" PR list
-        #   Assets: spindoctor-windows-vX.Y.Z.zip + SHA256SUMS.txt
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        #   Assets: both zips + SHA256SUMS.txt
         uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b  # v3.0.1
         with:
           tag_name: ${{ github.ref_name }}
           name: SpinDoctor ${{ github.ref_name }}
-          # generate_release_notes still appends "What's Changed" PR list
-          # below the curated body — best of both worlds.
           generate_release_notes: true
           body_path: release-notes.md
           files: |
-            artifacts/*.zip
+            artifacts/spindoctor-win7-${{ github.ref_name }}.zip
+            artifacts/spindoctor-win10-${{ github.ref_name }}.zip
             artifacts/SHA256SUMS.txt
