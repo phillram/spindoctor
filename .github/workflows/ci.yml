@@ -178,3 +178,50 @@ jobs:
       - name: Smoke-test GUI binary exists
         shell: bash
         run: test -f dist/spindoctor-gui.exe
+
+  build-smoke-modern:
+    name: PyInstaller build smoke test (modern, Win10/11)
+    # Verifies the --modern COLLECT build (Python 3.12 + PyInstaller 6.x)
+    # produces working binaries from the shared-runtime --onedir layout.
+    # The main test matrix (windows-2022 × 3.12) already covers Python 3.12
+    # Tk/library behaviour; this job focuses on the build path itself.
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            pyproject.toml
+            build/requirements-build-modern.txt
+
+      - name: Install
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e .[all]
+          pip install -r build/requirements-build-modern.txt
+
+      - name: Build (modern --onedir)
+        shell: bash
+        run: python build/build_windows.py --modern
+
+      - name: Smoke-test binaries (from shared-runtime folder)
+        # --onedir build: EXEs live in dist\spindoctor-windows\ alongside _internal\.
+        # spindoctor-gui.exe is --windowed; verify the file exists via bash.
+        shell: cmd
+        run: |
+          dist\spindoctor-windows\spindoctor.exe --version
+          dist\spindoctor-windows\spindoctor-fav.exe --help
+          dist\spindoctor-windows\spindoctor-recent.exe --help
+          dist\spindoctor-windows\spindoctor-stats.exe --help
+
+      - name: Smoke-test GUI binary exists
+        shell: bash
+        run: test -f dist/spindoctor-windows/spindoctor-gui.exe
+
+      - name: Verify _internal shared runtime present
+        shell: bash
+        run: test -d dist/spindoctor-windows/_internal

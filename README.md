@@ -12,7 +12,7 @@ SpinDoctor ships in three forms — pick whichever matches your cabinet:
 
 | | Best for | What you get | Walkthrough |
 |---|---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Five `.exe` files including a windowed GUI launcher and the full CLI. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11. | [docs/windows-binaries.md](docs/windows-binaries.md) |
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1 and newer, five standalone `.exe` files). Both include a windowed GUI launcher and the full CLI. | [docs/windows-binaries.md](docs/windows-binaries.md) |
 | 🐍 **Pip install from source** | Dev machines, custom builds, anyone already running Python 3.8+ | Same CLI plus `spindoctor-gui` console script, importable as a package. Cross-platform (Windows / macOS / Linux). | [docs/installation.md](docs/installation.md) |
 | 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is | The `.py` wrappers in [`scripts/`](scripts/) run directly from a checkout via `python scripts\spindoctor-fav.py …`. | [docs/installation.md#running-without-pip-install](docs/installation.md#running-without-pip-install) |
 
@@ -27,8 +27,10 @@ Then pick how you want to *use* it:
 
 ### Five-minute quick start (binaries)
 
-1. Grab `spindoctor-windows-vX.Y.Z.zip` from the [latest release](https://github.com/phillram/spindoctor/releases).
-2. Extract the zip — you get five standalone `.exe` files. Move them to a folder of your choice (e.g. `C:\spindoctor\`). Optionally add that folder to `PATH` for CLI use.
+1. Grab the right zip from the [latest release](https://github.com/phillram/spindoctor/releases):
+   - **Windows 10/11** → `spindoctor-modern-vX.Y.Z.zip` (shared runtime, recommended)
+   - **Windows 7 SP1 / 8 / 8.1 or 10/11** → `spindoctor-windows-vX.Y.Z.zip` (five standalone `.exe` files)
+2. Extract the zip and move the folder (or EXEs) to a location of your choice (e.g. `C:\spindoctor\`). Optionally add that folder to `PATH` for CLI use. See [docs/windows-binaries.md](docs/windows-binaries.md) for the layout of each bundle.
 3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done.
 
 ### Five-minute quick start (pip)
