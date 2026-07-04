@@ -217,6 +217,24 @@ def _bundle_asset(path: Path, exe_name: str) -> bool:
 _STANDALONE_NAMES = {"spindoctor-fav", "spindoctor-recent", "spindoctor-stats"}
 
 
+def iter_bundle_assets(name: str) -> list[Path]:
+    """Return the top-level asset files to bundle into *name*'s EXE.
+
+    Single source of truth for both the Win7 (--onefile) and modern
+    (--onedir) build paths — the directory-vs-file and per-EXE media
+    filtering must apply identically to both, or one build silently
+    picks up assets the other excludes (e.g. the assets/archive/
+    subfolder, which is a directory and must never be recursed into).
+    """
+    if not ASSETS_DIR.exists():
+        return []
+    return [
+        asset_file
+        for asset_file in sorted(ASSETS_DIR.iterdir())
+        if asset_file.is_file() and _bundle_asset(asset_file, name)
+    ]
+
+
 def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
     mode_flag = "--windowed" if windowed else "--console"
     cmd = [
@@ -230,14 +248,8 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
     ]
     if ICON.exists():
         cmd += ["--icon", str(ICON)]
-    if ASSETS_DIR.exists():
-        # Bundle only the top-level asset files — NOT subdirectories.
-        # The archive/ subdir holds deprecated originals kept for reference;
-        # it is excluded from pip installs and must also be excluded here
-        # so it doesn't bloat every frozen exe.
-        for asset_file in sorted(ASSETS_DIR.iterdir()):
-            if asset_file.is_file() and _bundle_asset(asset_file, name):
-                cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
+    for asset_file in iter_bundle_assets(name):
+        cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS[name]:
         cmd += ["--hidden-import", hi]
     if name in _STANDALONE_NAMES:
@@ -265,11 +277,10 @@ def generate_onedir_spec(shims: dict[str, Path]) -> Path:
 
     for _entry, name, windowed in TARGETS:
         safe = name.replace("-", "_")
-        datas: list[tuple[str, str]] = []
-        if ASSETS_DIR.exists():
-            for asset_file in sorted(ASSETS_DIR.iterdir()):
-                if _bundle_asset(asset_file, name):
-                    datas.append((asset_file.as_posix(), "spindoctor/assets"))
+        datas: list[tuple[str, str]] = [
+            (asset_file.as_posix(), "spindoctor/assets")
+            for asset_file in iter_bundle_assets(name)
+        ]
         excludes = _STANDALONE_EXCLUDES if name in _STANDALONE_NAMES else []
         icon_repr = repr(ICON.as_posix()) if ICON.exists() else "None"
 
