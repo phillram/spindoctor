@@ -239,6 +239,8 @@ jobs:
             echo "| **Modern** *(recommended)* | \`spindoctor-win10-${{ github.ref_name }}.zip\` | Windows 10/11 | 3.12 | 6.x |"
             echo "| **Win7** | \`spindoctor-win7-${{ github.ref_name }}.zip\` | Windows 7 SP1+ | 3.8 | 5.x |"
             echo
+            echo "**Not sure which to pick?** Windows 10 or 11 → grab the Modern bundle. Windows 7 SP1, 8, or 8.1 → grab the Win7 bundle. The Win7 bundle also works on Windows 10/11 if you prefer the simpler five-EXE layout."
+            echo
             echo "### Modern bundle (Windows 10/11)"
             echo
             echo "Shared-runtime \`--onedir\` build — the Python runtime lives once in \`_internal/\` instead of being embedded in each EXE."
