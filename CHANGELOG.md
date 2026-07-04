@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Release now ships two Windows bundles.** `spindoctor-win10-vX.Y.Z.zip` targets Windows 10/11 and uses Python 3.12 + PyInstaller 6.x with a shared-runtime `--onedir` COLLECT layout (`_internal/` houses the runtime once, shared across all five EXEs). `spindoctor-win7-vX.Y.Z.zip` remains the Win7-compatible five-flat-onefile bundle built with Python 3.8 + PyInstaller 5.x. This revives the PR #273 goal that was reverted in PR #275 because PyInstaller 5.x lacked the `_internal/` isolation that makes the shared layout work; on Windows 10/11 with PyInstaller 6.x it works correctly.
+
+- **Deployment media compressed.** Videos and background images for all four synthetic wheels are re-encoded at lower bitrate/resolution, reducing release download size and EXE payload.
+
+- **Media only bundled in EXEs that need it.** `spindoctor-gui.exe` shells out to `spindoctor.exe` for all media-installing operations and no longer embeds deployment media (videos, backgrounds, music, wheel art, themes). `spindoctor-stats.exe` is also excluded — it never installs synthetic-wheel assets. Only `spindoctor.exe`, `spindoctor-fav.exe`, and `spindoctor-recent.exe` carry the media payload.
+
 ## [2.9.0] - 2026-06-24
 
 ### Added
