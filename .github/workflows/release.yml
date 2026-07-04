@@ -163,11 +163,15 @@ jobs:
           fi
 
       - name: Package modern zip
-        # Zip the entire spindoctor-win10/ folder (EXEs + shared _internal/).
+        # Rename the output folder to include the version tag before zipping so
+        # extracting the zip produces spindoctor-win10-vX.Y.Z/ (not the bare
+        # spindoctor-win10/ name that PyInstaller writes).
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip" spindoctor-win10
+          cd dist
+          mv spindoctor-win10 "spindoctor-win10-${{ steps.tag.outputs.tag }}"
+          7z a "../artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip" "spindoctor-win10-${{ steps.tag.outputs.tag }}"
 
       - name: Generate SHA256 checksums (modern)
         shell: bash
@@ -247,7 +251,7 @@ jobs:
             echo
             echo "\`\`\`"
             echo "spindoctor-win10-${{ github.ref_name }}.zip"
-            echo "└── spindoctor-win10/"
+            echo "└── spindoctor-win10-${{ github.ref_name }}/"
             echo "    ├── spindoctor.exe          ← full CLI"
             echo "    ├── spindoctor-gui.exe      ← double-clickable GUI launcher"
             echo "    ├── spindoctor-fav.exe      ← Favorites wheel manager"
@@ -256,7 +260,7 @@ jobs:
             echo "    └── _internal/              ← shared Python 3.12 runtime"
             echo "\`\`\`"
             echo
-            echo "Extract the zip, then double-click \`spindoctor-win10\\spindoctor-gui.exe\`. Keep all files in the same folder."
+            echo "Extract the zip, then double-click \`spindoctor-win10-${{ github.ref_name }}\\spindoctor-gui.exe\`. Keep all files in the same folder."
             echo
             echo "### Win7 bundle (Windows 7 SP1 and newer)"
             echo
