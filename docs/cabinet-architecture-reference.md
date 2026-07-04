@@ -383,7 +383,7 @@ recognise, it leaves `Default_Emulator` unchanged (see note below).
 > *"Could not find an Emu_path for RetroArch"* for every game on every console.
 
 The folder-layout `Emulators.ini` for synthetic wheels (Favorites, Recently Played,
-Most Played) looks like — SpinDoctor writes these in full:
+Most Played, Recompiled) looks like — SpinDoctor writes these in full:
 
 ```ini
 [ROMS]
@@ -481,7 +481,7 @@ Key points:
 The `[PCLauncher]` section **must** have `Rom_Extension=ini`. PCLauncher "ROMs" are
 always per-game INI files stored in `Modules\PCLauncher\<system>\<game>.ini`; the actual
 application executable (`.exe`, `.lnk`, etc.) is referenced inside the INI. This applies
-to both synthetic wheels (Favorites, Recently Played, Most Played) and real PC/Windows/Steam
+to both synthetic wheels (Favorites, Recently Played, Most Played, Recompiled) and real PC/Windows/Steam
 systems.
 
 When `Rom_Extension` is missing or set to a non-ini value, RL falls back to its built-in
@@ -1103,7 +1103,7 @@ PCLauncher uses **two separate file types** for synthetic wheels. Many people co
 
 ### 1. ROM Placeholder Files — `Modules\PCLauncher\<System>\<game>.ini`
 
-For **synthetic wheels** (Favorites, Recently Played, Most Played): used only by RocketLauncher to enumerate which games exist in the wheel. PCLauncher.ahk reads the system-level INI instead (see section 2). The placeholder content is irrelevant.
+For **synthetic wheels** (Favorites, Recently Played, Most Played, Recompiled): used only by RocketLauncher to enumerate which games exist in the wheel. PCLauncher.ahk reads the system-level INI instead (see section 2). The placeholder content is irrelevant.
 
 For **PC game wheels** (PC Games, Windows, etc.): the per-game INI IS the launch config. PCLauncher.ahk reads it first (before the system-level INI) and uses `[<game_name>]` / `Application=`. See *PCLauncher Architecture — PC Game Wheels* below.
 
@@ -1270,7 +1270,7 @@ SpinDoctor's dry-run mode compares each per-game INI's `Application=` value agai
 A normal wheel (MAME, Nintendo 64, etc.) maps every entry to a single system. HyperSpin
 exits, one `RocketLauncher.exe` runs, the emulator loads. One RL instance, start to finish.
 
-A **synthetic wheel** (Favorites, Recently Played, Most Played) is a cross-system list.
+A **synthetic wheel** (Favorites, Recently Played, Most Played, Recompiled) is a cross-system list.
 A single Favorites wheel might contain a MAME game, a Zinc game, and a PC game side by
 side. HyperSpin has no native concept of cross-system wheels — it can only launch entries
 from one system using one emulator. The only mechanism available is **PCLauncher**, which
@@ -1419,7 +1419,7 @@ source system** (e.g. "MAME"), not to "Favorites". This is because PCLauncher pa
 However, if a session is somehow attributed to a synthetic system name (e.g. if RL#1 logs
 the session before RL#2 runs), SpinDoctor's stats reader (`collect_play_records` in
 `recent.py` and `load_all_playtime` in `playtime.py`) **skips** Statistics.ini files for
-the three synthetic system names:
+these system names:
 
 ```python
 SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played"})
@@ -1427,6 +1427,10 @@ SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played
 
 This ensures that playing "Strider" from Favorites never adds it to Recently Played or
 Most Played via the synthetic wheel path — only real arcade wheel plays count.
+
+> **Note:** `Recompiled` is intentionally absent from `SYNTHETIC_SYSTEM_NAMES`. It is a
+> curated hand-picked wheel (not auto-generated from stats), so plays from it *do* count
+> toward Recently Played and Most Played. Only the three auto-generated wheels are excluded.
 
 ### Stale stats entries from failed launches (cascading failure)
 
@@ -1564,7 +1568,7 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 
 **ScreenScraper is the primary provider; TheGamesDB is the complementary fallback.** The default `CombinedMetadataClient` queries both per game: SS metadata and every SS media slot take priority; TGDB fills any slot SS left empty (e.g. wheel clearlogo, snap screenshot). If SS finds nothing at all, the full TGDB result is used. `--source screenscraper|thegamesdb|both` forces a specific behaviour (available in both CLI and GUI). TheGamesDB is especially useful for newer indie PC games that have stub-only entries on ScreenScraper.
 
-**Steam Store is a supplemental per-game source** (not part of the main `fetch-meta`/`fetch-media` pipeline). `SteamClient.fetch_by_app_id(app_id)` hits `store.steampowered.com/api/appdetails?appids=<id>&filters=basic,screenshots,movies` (no auth required) and returns a `GameMetadata` with `video`, `snap`, `artwork`, and `wheel` candidates populated. Invoked explicitly via `spindoctor fetch-steam-media` or the GUI's Steam media panel — never as an automatic fallback inside `CombinedMetadataClient`. This keeps the main bulk-fetch path clean: Steam is for the long tail of PC games that SS/TGDB simply don't have, targeted one game at a time. Steam provides no transparent-logo equivalent, so the header capsule image doubles as the `wheel` slot (rectangular banner, not a transparent logo). The `steam_app_id` key in `config.game_overrides` stores the App ID for a game so `fetch-steam-media` can find it without the user re-pasting the URL.
+**Steam Store is a supplemental per-game source** (not part of the main `fetch-meta`/`fetch-media` pipeline). `SteamClient.fetch_by_app_id(app_id)` hits `store.steampowered.com/api/appdetails?appids=<id>&filters=basic,screenshots,movies` (no auth required) and returns a `GameMetadata` with `video`, `snap`, `background`, `artwork`, and `wheel` candidates populated. The `background` slot uses the same screenshot list as `snap` — the first screenshot is written to `Images\Backgrounds\` as the per-game background; a different screenshot can be selected via `--background-index`. Invoked explicitly via `spindoctor fetch-steam-media` or the GUI's Steam media panel — never as an automatic fallback inside `CombinedMetadataClient`. This keeps the main bulk-fetch path clean: Steam is for the long tail of PC games that SS/TGDB simply don't have, targeted one game at a time. Steam provides no transparent-logo equivalent, so the header capsule image doubles as the `wheel` slot (rectangular banner, not a transparent logo). The `steam_app_id` key in `config.game_overrides` stores the App ID for a game so `fetch-steam-media` can find it without the user re-pasting the URL.
 
 **Windows-invalid filename characters — full list:** `_win_safe_stem()` strips the nine characters Windows forbids in filenames (`\ / : * ? " < > |`), trims leading/trailing spaces, and strips trailing dots. It also guards against Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0–9`, `LPT0–9`): any of these as a game or system name would silently write to the corresponding device handle instead of creating a file. The function appends `_` when the sanitised stem matches a reserved name (e.g. a hypothetical game "NUL" → `NUL_`). The function is defined in `rocketlauncher.py` (for PCLauncher INI filenames) and copied verbatim into `media.py` (for media paths) to avoid a circular import.
 
