@@ -3790,6 +3790,127 @@ def theme_pack_create(output_dir, target):
         console.print(f"  [yellow]{len(result.skipped)} file(s) skipped.[/yellow]")
 
 
+@cli.command("theme-fill")
+@click.option("--system", "-s", default=None,
+              help="HyperSpin system name (e.g. 'MAME', 'SNES'). "
+                   "Mutually exclusive with --all.")
+@click.option("--all", "all_systems", is_flag=True,
+              help="Scan every system in Main Menu.xml and show a per-console "
+                   "summary of missing themes.")
+@click.option("--apply", is_flag=True,
+              help="Write the blank theme zips. Without this flag the "
+                   "command lists what would be installed (dry-run).")
+def theme_fill(system, all_systems, apply):
+    """Install a blank theme zip for every game that has a video but no theme.
+
+    \b
+    Walks Media/<SYSTEM>/Video/ and for each video file that has no matching
+    Media/<SYSTEM>/Themes/<game>.zip copies the bundled theme_blank.zip
+    (background image + full-screen video overlay) into place.  Existing
+    theme zips are never overwritten.
+
+    \b
+    Without --apply the command is a dry-run: it lists what would be installed
+    but writes nothing.  With --all it scans every system in Main Menu.xml and
+    prints a per-console summary so you can see which consoles are missing
+    themes at a glance.
+
+    \b
+    Examples:
+      spindoctor theme-fill --system MAME
+      spindoctor theme-fill --system "SNES" --apply
+      spindoctor theme-fill --all
+      spindoctor theme-fill --all --apply
+    """
+    from pathlib import Path
+    from .rocketlauncher import _read_main_menu_systems, fill_missing_themes
+
+    if not system and not all_systems:
+        console.print("[red]Provide --system SYSTEM or --all.[/red]")
+        raise SystemExit(1)
+    if system and all_systems:
+        console.print("[red]--system and --all are mutually exclusive.[/red]")
+        raise SystemExit(1)
+
+    config = _cfg()
+    _check_config(config)
+    hs_dir = getattr(config, "hyperspin_dir", None)
+    if not hs_dir:
+        console.print("[red]hyperspin_dir is not set.[/red] Run: spindoctor config set hyperspin_dir <PATH>")
+        raise SystemExit(1)
+    hs_path = Path(hs_dir)
+
+    _STATUS_COLOUR = {"installed": "green", "dry_run": "cyan", "skipped": "dim", "no_asset": "red"}
+
+    def _run_one(sys_name: str) -> dict[str, str]:
+        return fill_missing_themes(hs_path, sys_name, dry_run=not apply)
+
+    def _print_system(sys_name: str, results: dict[str, str]) -> None:
+        would_install = sum(1 for s in results.values() if s == "dry_run")
+        installed_n = sum(1 for s in results.values() if s == "installed")
+        skipped_n = sum(1 for s in results.values() if s == "skipped")
+        if not results:
+            console.print(f"  [dim]{sys_name}[/dim] — no videos found")
+            return
+        if apply:
+            console.print(f"  [bold]{sys_name}[/bold]: {installed_n} installed, {skipped_n} already present")
+        else:
+            console.print(
+                f"  [bold]{sys_name}[/bold]: {would_install} would install, {skipped_n} already present"
+            )
+
+    if all_systems:
+        mm_path = hs_path / "Databases" / "Main Menu" / "Main Menu.xml"
+        systems = _read_main_menu_systems(mm_path)
+        if not systems:
+            console.print(f"[yellow]No systems found in[/yellow] [cyan]{mm_path}[/cyan]")
+            return
+        total_installed = total_would = total_skipped = 0
+        for sys_name in systems:
+            results = _run_one(sys_name)
+            _print_system(sys_name, results)
+            total_installed += sum(1 for s in results.values() if s == "installed")
+            total_would     += sum(1 for s in results.values() if s == "dry_run")
+            total_skipped   += sum(1 for s in results.values() if s == "skipped")
+        console.print()
+        if apply:
+            console.print(f"[green]✓[/green] Total: {total_installed} installed, {total_skipped} already present.")
+        else:
+            console.print(
+                f"[dim]Dry-run:[/dim] {total_would} would install across {len(systems)} system(s). "
+                f"Pass [cyan]--apply[/cyan] to write."
+            )
+        return
+
+    # Single system
+    results = _run_one(system)
+    if not results:
+        console.print(
+            f"[yellow]No video files found[/yellow] in "
+            f"[cyan]Media\\{system}\\Video\\[/cyan] — nothing to do."
+        )
+        return
+
+    tbl = Table(show_header=True, header_style="bold")
+    tbl.add_column("Game")
+    tbl.add_column("Status")
+    for game, status in sorted(results.items()):
+        colour = _STATUS_COLOUR.get(status, "white")
+        tbl.add_row(game, f"[{colour}]{status}[/{colour}]")
+    console.print(tbl)
+
+    installed_n = sum(1 for s in results.values() if s == "installed")
+    would_install = sum(1 for s in results.values() if s == "dry_run")
+    skipped_n = sum(1 for s in results.values() if s == "skipped")
+    if apply:
+        console.print(f"\n[green]✓[/green] {installed_n} theme(s) installed, {skipped_n} already present.")
+    else:
+        console.print(
+            f"\n[dim]Dry-run:[/dim] {would_install} theme(s) would be installed, "
+            f"{skipped_n} already present. Pass [cyan]--apply[/cyan] to write."
+        )
+
+
 def _resolve_tools_output_dir(add_to_system: str, rl_dir: "Path") -> "Path":
     """Return the directory where install-tools should write bat + ini files.
 
@@ -5502,7 +5623,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
 # ─── fetch-steam-media ────────────────────────────────────────────────────────
 
-_STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
+_STEAM_MEDIA_TYPES = ("video", "snap", "background", "artwork", "wheel")
 
 
 @cli.command("fetch-steam-media")
@@ -5512,13 +5633,15 @@ _STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
 @click.option("--steam-id", "steam_id_raw", default=None,
               help="Steam App ID or store URL (e.g. store.steampowered.com/app/1145360/Hades/). "
                    "If omitted, the stored override value for this game is used.")
-@click.option("--types", default=",".join(("video", "snap", "artwork")),
+@click.option("--types", default=",".join(("video", "snap", "background", "artwork")),
               help=f"Comma-separated media types to fetch. Options: {', '.join(_STEAM_MEDIA_TYPES)}. "
-                   "Default: video, snap, artwork.")
+                   "Default: video, snap, background, artwork.")
 @click.option("--video-index", "video_index", type=int, default=None,
               help="1-based index of the video candidate to download without prompting.")
 @click.option("--snap-index", "snap_index", type=int, default=None,
               help="1-based index of the screenshot candidate to download without prompting.")
+@click.option("--background-index", "background_index", type=int, default=None,
+              help="1-based index of the background candidate to download without prompting.")
 @click.option("--artwork-index", "artwork_index", type=int, default=None,
               help="1-based index of the artwork candidate to download without prompting.")
 @click.option("--wheel-index", "wheel_index", type=int, default=None,
@@ -5535,17 +5658,18 @@ _STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
 def fetch_steam_media(system, game, steam_id_raw, types,
-                      video_index, snap_index, artwork_index, wheel_index,
+                      video_index, snap_index, background_index, artwork_index, wheel_index,
                       overwrite, output_dir, hls_quality, apply_changes):
     """Download media for a specific game from the Steam Store.
 
-    Fetches trailer video(s), in-game screenshots, header artwork, and/or
-    wheel image for a single game using its Steam App ID or store URL.  No
-    Steam account or API key is required.
+    Fetches trailer video(s), in-game screenshots, per-game background,
+    header artwork, and/or wheel image for a single game using its Steam
+    App ID or store URL.  No Steam account or API key is required.
 
-    When index flags (--video-index, --snap-index, --artwork-index, --wheel-index) are
-    omitted the command runs an interactive numbered picker for each
-    requested type — the same picker used by fetch-media --pick-media.
+    When index flags (--video-index, --snap-index, --background-index,
+    --artwork-index, --wheel-index) are omitted the command runs an
+    interactive numbered picker for each requested type — the same picker
+    used by fetch-media --pick-media.
 
     The stored game override (config game-override set … --steam-app-id) is
     used automatically when --steam-id is not passed on the command line.
@@ -5619,10 +5743,11 @@ def fetch_steam_media(system, game, steam_id_raw, types,
 
     # ── index map — type → provided index flag ────────────────────────────────
     index_flags: dict[str, Optional[int]] = {
-        "video":   video_index,
-        "snap":    snap_index,
-        "artwork": artwork_index,
-        "wheel":   wheel_index,
+        "video":      video_index,
+        "snap":       snap_index,
+        "background": background_index,
+        "artwork":    artwork_index,
+        "wheel":      wheel_index,
     }
 
     _HLS_HEIGHT_MAP = {"best": None, "1080p": 1080, "720p": 720, "480p": 480, "360p": 360}
@@ -6684,8 +6809,8 @@ def mainmenu_hide(system, apply, output_dir):
 def mainmenu_add(system, apply, output_dir):
     """Append SYSTEM to the Main Menu (idempotent).
 
-    For the three synthetic wheels (Favorites, Most Played, Recently Played)
-    this also installs all bundled media assets (wheel logo, background image,
+    For the four synthetic wheels (Favorites, Most Played, Recently Played,
+    Recompiled) this also installs all bundled media assets (wheel logo,
     attract-mode music and video) to ``Media\\Main Menu\\`` and regenerates the
     RocketLauncher system settings files (``Settings/<system>.ini`` and
     ``Settings/<system>/Emulators.ini``) with ``Rom_Extension=ini`` so that

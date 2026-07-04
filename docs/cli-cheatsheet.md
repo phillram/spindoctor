@@ -323,16 +323,18 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" --steam-id 1145360 --apply
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
     --steam-id "https://store.steampowered.com/app/1145360/Hades/" --apply
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
-    --steam-id 1145360 --video-index 2 --snap-index 4 --apply   :: non-interactive
+    --steam-id 1145360 --video-index 2 --snap-index 4 --apply        :: non-interactive
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
-    --steam-id 1145360 --types video --apply                     :: just the video
+    --steam-id 1145360 --types video --apply                          :: just the video
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
-    --steam-id 1145360 --types wheel --wheel-index 1 --apply     :: header image as wheel art
+    --steam-id 1145360 --types background --background-index 2 --apply :: 2nd screenshot as background
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
-    --steam-id 1145360 --types video --hls-quality 480p --apply  :: 480p (~10× smaller)
+    --steam-id 1145360 --types wheel --wheel-index 1 --apply          :: header image as wheel art
+spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
+    --steam-id 1145360 --types video --hls-quality 480p --apply       :: 480p (~10× smaller)
 ```
 
-No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,artwork`; pass fewer types to skip what you don't need. Wheel/artwork/snap are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow). HLS video candidates show their duration as `M:SS` in the dry-run listing and interactive picker. After download, SpinDoctor prints the file size and duration (`52.3 MB, 1:19`) and warns if the output is under 30 s or 5 MB. Use `--hls-quality 480p` (or `720p`) to select a smaller quality variant — 480p is typically sufficient for arcade cabinet screens and produces files ~10× smaller than the default 1080p.
+No auth required. Use when SS/TGDB don't have media for an obscure PC game. `--types` default is `video,snap,background,artwork`; pass fewer types to skip what you don't need. The `background` slot uses the same screenshot list as `snap` — the first screenshot is written to `Images\Backgrounds\` so it shows as the per-game background in HyperSpin; use `--background-index` to pick a different screenshot. `wheel` must be requested explicitly. Wheel/artwork/snap/background are always saved as `.png` (HyperSpin requirement) — Steam's JPEG source is converted automatically (Pillow) or stored as JPEG-under-.png (works on Windows without Pillow). HLS video candidates show their duration as `M:SS` in the dry-run listing and interactive picker. After download, SpinDoctor prints the file size and duration (`52.3 MB, 1:19`) and warns if the output is under 30 s or 5 MB. Use `--hls-quality 480p` (or `720p`) to select a smaller quality variant — 480p is typically sufficient for arcade cabinet screens and produces files ~10× smaller than the default 1080p.
 Reference: [Command reference → fetch-steam-media](commands.md#fetch-steam-media).
 
 ### `media-add` / `media-scan` — manual + drift detection
@@ -579,6 +581,19 @@ spindoctor theme-pack-create D:\my-pack --target frontend
 ```
 
 Reference: [Command reference → theme-pack-create](commands.md#theme-pack-create).
+
+### `theme-fill` — fill missing per-game theme zips
+
+Installs a blank full-screen theme zip for every game that has a video or background screenshot but no per-game theme zip. Shows background from `Images\Backgrounds\` and overlays the video on top. Existing themes are never overwritten.
+
+```bat
+spindoctor theme-fill --system MAME                    :: dry-run: list missing for one console
+spindoctor theme-fill --all                            :: dry-run: per-console summary across all systems
+spindoctor theme-fill --system MAME --apply            :: write blank themes for MAME
+spindoctor theme-fill --all --apply                    :: write blank themes for every system
+```
+
+Reference: [Command reference → theme-fill](commands.md#theme-fill).
 
 ---
 

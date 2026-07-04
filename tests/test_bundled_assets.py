@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from spindoctor.rocketlauncher import (
+    fill_missing_themes,
     install_bundled_system_assets,
     install_system_background,
     install_system_music,
@@ -21,7 +22,7 @@ from spindoctor.rocketlauncher import (
     install_system_wheel_art,
 )
 
-SYNTHETIC = ("Favorites", "Most Played", "Recently Played")
+SYNTHETIC = ("Favorites", "Most Played", "Recently Played", "Recompiled")
 NON_SYNTHETIC = "MAME"
 
 
@@ -128,11 +129,10 @@ class TestInstallBundledSystemAssets:
     def test_all_assets_installed_for_synthetic(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=False)
-        # "music" is intentionally no_asset — attract-mode audio is in the MP4.
         expected = {
             "wheel_art":      "installed",
             "background":     "installed",
-            "music":          "no_asset",
+            "music":          "installed",
             "video":          "installed",
             "theme":          "installed",
             "navigate_sound": "installed",
@@ -180,12 +180,10 @@ def test_background_installs(tmp_path, system_name):
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
-def test_music_returns_no_asset(tmp_path, system_name):
-    # _MUSIC_ASSETS is intentionally empty — attract-mode audio is in the MP4.
-    # Active-browsing (main-menu scrolling) plays silence.
+def test_music_installs(tmp_path, system_name):
     hs = _hs_dir(tmp_path)
     _, status = install_system_music(hs, system_name)
-    assert status == "no_asset"
+    assert status == "installed"
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
@@ -202,3 +200,53 @@ def test_navigate_sound_installs_as_wheel_click(tmp_path, system_name):
     assert status == "installed"
     assert dest == hs / "Media" / system_name / "Sound" / "Wheel Click.mp3"
     assert dest.exists()
+
+
+# ── fill_missing_themes ────────────────────────────────────────────────────────
+
+class TestFillMissingThemes:
+
+    def _make_video(self, hs: Path, system: str, name: str) -> None:
+        video_dir = hs / "Media" / system / "Video"
+        video_dir.mkdir(parents=True, exist_ok=True)
+        (video_dir / f"{name}.mp4").write_bytes(b"fake")
+
+    def _make_theme(self, hs: Path, system: str, name: str) -> None:
+        themes_dir = hs / "Media" / system / "Themes"
+        themes_dir.mkdir(parents=True, exist_ok=True)
+        (themes_dir / f"{name}.zip").write_bytes(b"fake")
+
+    def test_installs_blank_theme_for_video_without_theme(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        self._make_video(hs, "MAME", "Galaga")
+        results = fill_missing_themes(hs, "MAME", dry_run=False)
+        assert results["Galaga"] == "installed"
+        assert (hs / "Media" / "MAME" / "Themes" / "Galaga.zip").exists()
+
+    def test_skips_game_with_existing_theme(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        self._make_video(hs, "MAME", "Galaga")
+        self._make_theme(hs, "MAME", "Galaga")
+        results = fill_missing_themes(hs, "MAME", dry_run=False)
+        assert results["Galaga"] == "skipped"
+
+    def test_dry_run_does_not_write(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        self._make_video(hs, "MAME", "Galaga")
+        results = fill_missing_themes(hs, "MAME", dry_run=True)
+        assert results["Galaga"] == "dry_run"
+        assert not (hs / "Media" / "MAME" / "Themes" / "Galaga.zip").exists()
+
+    def test_empty_when_no_video_dir(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        results = fill_missing_themes(hs, "MAME", dry_run=False)
+        assert results == {}
+
+    def test_mixed_existing_and_missing(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        self._make_video(hs, "SNES", "Donkey Kong Country")
+        self._make_video(hs, "SNES", "Super Mario World")
+        self._make_theme(hs, "SNES", "Super Mario World")
+        results = fill_missing_themes(hs, "SNES", dry_run=False)
+        assert results["Donkey Kong Country"] == "installed"
+        assert results["Super Mario World"] == "skipped"

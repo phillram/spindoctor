@@ -2497,7 +2497,7 @@ def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
         app._meta_system_var.set("PC Games")
         app._meta_game_var.set("Hades")
         app._steam_url_var.set("1145360")
-        for mt in ("video", "snap", "artwork", "wheel"):
+        for mt in ("video", "snap", "background", "artwork", "wheel"):
             cand = MediaCandidate(url="https://cdn/x", source_type="x", format="jpg")
             app._steam_cands[mt] = [cand]
             app._steam_pick_vars[mt].set("— do not download —")
@@ -2635,7 +2635,7 @@ def test_preview_steam_candidate_empty_cands_no_url_opened(monkeypatch):
 
 
 def test_preview_steam_candidate_image_opens_direct_url(monkeypatch):
-    """For image types (snap/artwork/wheel), the candidate's direct URL must be opened."""
+    """For image types (snap/background/artwork/wheel), the candidate's direct URL must be opened."""
     from spindoctor.scraper import MediaCandidate
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
@@ -2774,7 +2774,7 @@ def test_on_steam_scan_done_skip_sentinel_is_first(monkeypatch):
 
 
 def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
-    """meta=None (App ID not found) must set all video/snap/artwork to '— not found —'."""
+    """meta=None (App ID not found) must set all video/snap/background/artwork to '— not found —'."""
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         shown: list[str] = []
@@ -2782,7 +2782,7 @@ def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
                             lambda title, msg: shown.append(title))
         app._on_steam_scan_done("9999999", None)
 
-        for mt in ("video", "snap", "artwork"):
+        for mt in ("video", "snap", "background", "artwork"):
             assert app._steam_pick_vars[mt].get() == "— not found —", mt
         assert shown, "expected a showwarning dialog"
     finally:

@@ -189,7 +189,7 @@ TheGamesDB only provides boxart (`artwork` slot). For all other types, ScreenScr
 
 ### `fetch-steam-media`
 
-Download trailer video(s), in-game screenshots, and/or header artwork for a specific game directly from the Steam Store. No account or API key is required. Only useful for PC/Steam games that ScreenScraper and TheGamesDB don't cover well.
+Download trailer video(s), in-game screenshots, per-game background images, and/or header artwork for a specific game directly from the Steam Store. No account or API key is required. Only useful for PC/Steam games that ScreenScraper and TheGamesDB don't cover well.
 
 ```
 spindoctor fetch-steam-media -s "PC Games" -g "Hades" --steam-id 1145360 --apply
@@ -203,9 +203,9 @@ spindoctor fetch-steam-media -s "PC Games" -g "Hades" \
 
 `--steam-id` accepts either a bare numeric App ID or a full `store.steampowered.com/app/<ID>/` URL — the ID is extracted automatically. If `--steam-id` is omitted, the `steam_app_id` stored in the game override is used (see `config game-override set --steam-app-id`).
 
-`--types` controls which slots to populate: `video`, `snap`, `artwork`, `wheel`. Default is `video,snap,artwork` — `wheel` must be requested explicitly. Pass fewer types to skip anything you don't need (e.g. `--types video` to grab only the trailer).
+`--types` controls which slots to populate: `video`, `snap`, `background`, `artwork`, `wheel`. Default is `video,snap,background,artwork` — `wheel` must be requested explicitly. Pass fewer types to skip anything you don't need (e.g. `--types video` to grab only the trailer).
 
-Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. The picker table includes a **Duration** column for HLS video candidates (shown as `M:SS`, e.g. `1:14`); MP4 candidates carry no duration. The same duration appears in the dry-run listing so you can choose the right index before running with `--apply`. With `--video-index N`, `--snap-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
+Without index flags the command runs an **interactive numbered picker** for each requested type, identical to `fetch-media --pick-media`. The picker table includes a **Duration** column for HLS video candidates (shown as `M:SS`, e.g. `1:14`); MP4 candidates carry no duration. The same duration appears in the dry-run listing so you can choose the right index before running with `--apply`. With `--video-index N`, `--snap-index N`, `--background-index N`, `--artwork-index N`, and/or `--wheel-index N` (1-based), it downloads that specific candidate non-interactively — useful for scripting and the GUI's Apply button.
 
 Dry-run by default; pass `--apply` to commit.
 
@@ -215,7 +215,8 @@ Media slots populated:
 |---|---|---|---|
 | `movies[].mp4.max` | `(MP4 — may be highlight clip)` | `video` (and `trailer`) | `.mp4` |
 | `movies[].hls_h264` | `(HLS — full length, needs ffmpeg)` | `video` (and `trailer`) | `.mp4` |
-| `screenshots[].path_full` | — | `snap` | `.png` ¹ |
+| `screenshots[].path_full` | — | `snap` (`Images\Artwork3\`) | `.png` ¹ |
+| `screenshots[].path_full` | — | `background` (`Images\Backgrounds\`) | `.png` ¹ |
 | `header_image` | — | `artwork` | `.png` ¹ |
 | `header_image` | — | `wheel` (opt-in via `--types wheel` or `--wheel-index`) | `.png` ¹ |
 
@@ -227,7 +228,7 @@ Both `mp4.max` and `hls_h264` are offered as separate numbered video candidates 
 
 Steam has no transparent-logo equivalent, so the header capsule image is reused as the wheel image. For transparent-background wheel art see [Synthetic Wheel Media](synthetic-wheel-media.md) or ScreenScraper.
 
-> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Click **Find** to auto-populate the URL and scan in one step — or paste a URL / App ID manually and click **Scan**. Pick candidates from the **Video / Screenshot / Artwork / Wheel** dropdowns (set any to "— do not download —" to skip that type), then click **Apply selected**. The **Store page** button (enabled after a scan) opens the game's Steam page in the browser. See [GUI walkthrough](gui.md).
+> **GUI alternative:** **Metadata & Media → Per-game & override → Steam media** panel. Click **Find** to auto-populate the URL and scan in one step — or paste a URL / App ID manually and click **Scan**. Pick candidates from the **Video / Screenshot / Background / Artwork / Wheel** dropdowns (set any to "— do not download —" to skip that type), then click **Apply selected**. The **Store page** button (enabled after a scan) opens the game's Steam page in the browser. See [GUI walkthrough](gui.md).
 
 ### `media-add`
 
@@ -1245,6 +1246,8 @@ Corrections are stored in `~/.spindoctor/config.json` under `emulator_window_tit
 
 Inventory, back up, and replace HyperSpin's frontend overlay art — the controller-hint glyphs that appear at the bottom of the cabinet UI (Special A / Special B). Three commands: a read-only `theme-scan` for figuring out what's there, a `theme-apply` that swaps a community pack onto the cabinet with full undo support, and a `theme-pack-create` that is the inverse — snapshot the cabinet's current art into a portable pack folder.
 
+For per-game console wheel themes, see [`theme-fill`](#theme-fill) — it fills any game that has a video (or background screenshot) but no theme zip with a minimal blank theme so HyperSpin plays its media.
+
 > **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack…" button on that window opens a Plan/Apply window for swapping a community pack, with a scope picker that accepts comma-separated system names for multi-system swaps. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo, a **Show diff** button that renders the swap table as a before/after grid, and a **Revert just \<SYSTEM\>…** button for per-system partial rollback.
 
 ### `theme-scan`
@@ -1331,6 +1334,36 @@ The output mirrors the art's scope/bucket: `<output_dir>/Frontend/Frontend/Image
 | Option | Description |
 |--------|-------------|
 | `--target` | `all` (default), `frontend`, or a system name — same semantics as `theme-apply --target` |
+
+### `theme-fill`
+
+Install a blank HyperSpin theme zip for every game that has a video or background screenshot but no per-game theme zip. The installed theme (`theme_blank.zip`) shows the background image from `Images\Backgrounds\` and overlays the game video on top when one exists — no other decoration. Existing theme zips are never overwritten.
+
+```bat
+:: Dry-run: list what would be installed for one console
+spindoctor theme-fill --system MAME
+
+:: Dry-run: show all consoles and their missing-theme counts at a glance
+spindoctor theme-fill --all
+
+:: Write blank themes for all games in MAME that are missing one
+spindoctor theme-fill --system MAME --apply
+
+:: Write blank themes across every system in Main Menu.xml
+spindoctor theme-fill --all --apply
+```
+
+Without `--apply` the command is a dry-run; it lists what would be installed but writes nothing. With `--all` it reads `Databases\Main Menu\Main Menu.xml` and prints a one-line per-console summary, making it easy to see at a glance which systems still have games with no theme.
+
+**Options:**
+
+| Option | Description |
+|--------|-------------|
+| `--system SYSTEM` | One HyperSpin system name. Mutually exclusive with `--all`. |
+| `--all` | Scan every system in Main Menu.xml. Mutually exclusive with `--system`. |
+| `--apply` | Write the blank theme zips. Dry-run without this flag. |
+
+> **GUI alternative:** *Metadata & Media* tab → **Fill missing game themes** section. Uses the shared System / All systems selector at the top of the tab.
 
 ---
 
