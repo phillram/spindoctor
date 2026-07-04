@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.9.1] - 2026-07-03
+
 ### Changed
 
 - **Release now ships two Windows bundles.** `spindoctor-win10-vX.Y.Z.zip` targets Windows 10/11 and uses Python 3.12 + PyInstaller 6.x with a shared-runtime `--onedir` COLLECT layout (`_internal/` houses the runtime once, shared across all five EXEs). `spindoctor-win7-vX.Y.Z.zip` remains the Win7-compatible five-flat-onefile bundle built with Python 3.8 + PyInstaller 5.x. This revives the PR #273 goal that was reverted in PR #275 because PyInstaller 5.x lacked the `_internal/` isolation that makes the shared layout work; on Windows 10/11 with PyInstaller 6.x it works correctly.
@@ -1958,7 +1960,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.1...HEAD
+[2.9.1]: https://github.com/phillram/spindoctor/compare/v2.9.0...v2.9.1
 [2.9.0]: https://github.com/phillram/spindoctor/compare/v2.8.2...v2.9.0
 [2.8.2]: https://github.com/phillram/spindoctor/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/phillram/spindoctor/compare/v2.8.0...v2.8.1
