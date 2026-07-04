@@ -943,7 +943,7 @@ def _build_parser() -> argparse.ArgumentParser:
                            help="Regenerate the Favorites system + media + launchers")
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
-                       default="copy")
+                       default="auto")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
     p_reb.add_argument("--verbose", action="store_true",
@@ -1065,6 +1065,12 @@ def main(argv: Optional[list[str]] = None) -> int:
                 "PCLauncher INIs will be written.",
                 file=sys.stderr,
             )
+        # Banner first: the sync below saves favorites.json (an intentional
+        # store import that runs regardless of --apply); only the wheel
+        # rebuild is gated by --apply.
+        if not args.apply:
+            print("[DRY RUN] No wheel files will be written. "
+                  "Re-run with --apply to commit.")
         _prog, _log = _stdout_sync_progress()
         synced, sync_warns, sync_notes = sync_native(
             store, config, progress_cb=_prog, log_cb=_log,
@@ -1084,8 +1090,6 @@ def main(argv: Optional[list[str]] = None) -> int:
             print(f"  note: {note}")
         skip_media = args.media_mode == "none"
         mode = LinkMode.AUTO if skip_media else LinkMode(args.media_mode)
-        if not args.apply:
-            print("[DRY RUN] No files will be written. Re-run with --apply to commit.")
         summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
                           dry_run=not args.apply,
                           verbose=getattr(args, "verbose", False))

@@ -1472,7 +1472,11 @@ def _replace_color_in_colors_ini(
         rf"^(?!;)([^=]+=)\s*{re.escape(old_name)}\s*\r?$",
         re.MULTILINE,
     )
-    new_text, count = pattern.subn(rf"\g<1>{new_name}", text)
+    # Callable replacement: a color name may legitimately contain characters
+    # that a template replacement would misread as backreferences/escapes
+    # (e.g. a name copied from a path). See the Windows-7 regex note in
+    # docs/cabinet-architecture-reference.md.
+    new_text, count = pattern.subn(lambda m: f"{m.group(1)}{new_name}", text)
     return new_text, count
 
 
@@ -1486,9 +1490,11 @@ def _replace_color_in_controls_xml(
     if not path.exists():
         return "", 0
     text = path.read_text(encoding="utf-8", errors="replace")
+    # Callable replacement so a backslash/escape sequence in new_name is
+    # written literally rather than interpreted as a regex backreference.
     new_text, count = re.subn(
         rf'color="{re.escape(old_name)}"',
-        f'color="{new_name}"',
+        lambda m: f'color="{new_name}"',
         text,
     )
     return new_text, count

@@ -332,3 +332,31 @@ def test_save_config_crash_leaves_original_intact(isolated_config, monkeypatch):
     assert cfg.hyperspin_dir == "/hs"
 
 
+
+# ─── get_rom_extensions ──────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "system,expected_first",
+    [
+        # Canonical HyperSpin database folder names (long form) must resolve
+        # to their real extensions, not fall through to the default list —
+        # otherwise unzipped .nes/.sfc/.z64 ROMs are missed by audit.
+        ("Nintendo Entertainment System", ".nes"),
+        ("Super Nintendo Entertainment System", ".sfc"),
+        ("Super Nintendo", ".sfc"),
+        ("Nintendo 64", ".z64"),
+        # Short aliases keep working.
+        ("NES", ".nes"),
+        ("SNES", ".sfc"),
+    ],
+)
+def test_get_rom_extensions_canonical_system_names(system, expected_first):
+    exts = config_mod.get_rom_extensions(system)
+    assert expected_first in exts, f"{system!r} → {exts}"
+
+
+def test_get_rom_extensions_unknown_falls_back_to_default():
+    assert config_mod.get_rom_extensions("Totally Made Up System") == (
+        config_mod.ROM_EXTENSIONS["default"]
+    )

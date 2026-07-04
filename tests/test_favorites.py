@@ -888,3 +888,14 @@ def test_rebuild_caches_source_db_loads(isolated_config, tmp_path, monkeypatch):
     rebuild(store, cfg, media_mode=LinkMode.COPY)
 
     assert loads.count("Super Nintendo") == 1
+
+
+def test_standalone_rebuild_media_mode_defaults_to_auto():
+    """Boot-time refreshes must hardlink by default (match the CLI + docs).
+
+    The standalone parser previously defaulted to `copy`, so `.bat`/startup
+    refreshes duplicated media where the full CLI hardlinked.
+    """
+    from spindoctor.favorites import _build_parser
+    args = _build_parser().parse_args(["rebuild"])
+    assert args.media_mode == "auto"

@@ -42,7 +42,7 @@ _LATEST_RELEASE_URL = (
 _TIMEOUT_SECONDS = 5
 
 # Opt-out env var for users who want a hermetic launch. Documented in
-# README's troubleshooting section once the feature lands.
+# docs/configuration.md (Environment variables) and docs/troubleshooting.md.
 _DISABLE_ENV = "SPINDOCTOR_NO_UPDATE_CHECK"
 
 

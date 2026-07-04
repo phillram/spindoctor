@@ -83,6 +83,27 @@ def test_read_stats_file_parses_last_time_played_key(tmp_path):
     assert ace.play_count == 3
 
 
+def test_read_stats_file_handles_utf8_bom(tmp_path):
+    """RL sometimes writes Statistics.ini with a UTF-8 BOM.
+
+    Plain utf-8 leaves the BOM on the first section header and configparser
+    raises MissingSectionHeaderError, silently dropping the whole file — so
+    the system vanished from Recently Played while still appearing in Most
+    Played (playtime already read these files with utf-8-sig).
+    """
+    ini = tmp_path / "mame.ini"
+    ini.write_bytes(
+        b"\xef\xbb\xbf"  # UTF-8 BOM
+        b"[pacman]\n"
+        b"Last_Time_Played=2026-07-01 10:00:00\n"
+        b"Number_of_Times_Played=3\n"
+    )
+    warnings: list[str] = []
+    records = _read_stats_file(ini, "MAME", warnings=warnings)
+    assert [r.rom_name for r in records] == ["pacman"]
+    assert warnings == []
+
+
 def test_top_recent_dedupes_and_sorts():
     older = PlayRecord("snes", "Tetris", datetime(2026, 4, 1, 0, 0, 0), 1)
     newer = PlayRecord("snes", "Tetris", datetime(2026, 4, 27, 0, 0, 0), 2)
@@ -501,3 +522,9 @@ def test_rebuild_uses_description_not_rom_name(isolated_config, tmp_path):
     assert ">mslug<" not in db_text, (
         "raw ROM name must not appear as the description in the wheel DB"
     )
+
+
+def test_standalone_rebuild_media_mode_defaults_to_auto():
+    from spindoctor.recent import _build_parser
+    args = _build_parser().parse_args(["rebuild"])
+    assert args.media_mode == "auto"
