@@ -265,7 +265,6 @@ def test_fetch_by_app_id_sets_duration_secs_on_hls_candidate(monkeypatch):
     """After fetch_by_app_id, HLS candidates must have duration_secs populated;
     MP4 candidates must have duration_secs=None (can't be probed cheaply).
     """
-    import json
     from spindoctor.scraper import SteamClient
 
     api_payload = {
@@ -365,7 +364,7 @@ def test_convert_to_png_inplace_no_op_on_corrupt_file(tmp_path):
 
 def test_convert_to_png_inplace_already_png_unchanged(tmp_path):
     """A file that is already valid PNG must be left bit-identical."""
-    PIL = pytest.importorskip("PIL")
+    pytest.importorskip("PIL")
     from PIL import Image
     from io import BytesIO
     from spindoctor.media import _convert_to_png_inplace
@@ -382,7 +381,7 @@ def test_convert_to_png_inplace_already_png_unchanged(tmp_path):
 
 def test_convert_to_png_inplace_converts_jpeg_to_png(tmp_path):
     """JPEG content must be converted to real PNG bytes in-place."""
-    PIL = pytest.importorskip("PIL")
+    pytest.importorskip("PIL")
     from PIL import Image
     from io import BytesIO
     from spindoctor.media import _convert_to_png_inplace

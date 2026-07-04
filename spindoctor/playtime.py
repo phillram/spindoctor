@@ -30,7 +30,7 @@ from typing import Iterable, Optional
 from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
-from .recent import SYNTHETIC_SYSTEM_NAMES, _STATS_EXCLUDE, _build_synthetic_wheel, _parse_time
+from .recent import _STATS_EXCLUDE, _build_synthetic_wheel, _parse_time
 
 
 DEFAULT_PLAYED_SYSTEM = "Most Played"

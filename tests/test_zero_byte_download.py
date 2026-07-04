@@ -10,9 +10,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
-import pytest
 
 from spindoctor.config import Config
 from spindoctor.media import MediaDownloader

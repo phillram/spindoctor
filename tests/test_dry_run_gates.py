@@ -580,3 +580,46 @@ def test_pc_rename_apply_writes_inis(tmp_path, isolated_config, monkeypatch):
     assert result.exit_code == 0, result.output
     inis = list((rl_dir / "Modules" / "PCLauncher").rglob("*.ini"))
     assert inis, f"expected PCLauncher INI(s) under {rl_dir}, output: {result.output}"
+
+
+# ─── generate-config ─────────────────────────────────────────────────────────
+
+
+def test_generate_config_dry_run_does_not_touch_disk(tmp_path, isolated_config):
+    """generate-config's dry-run preview must run cleanly and write nothing.
+
+    Regression test for the 2.9.1 NameError: the dry-run branch called
+    ``re.search`` for the MAME-variant fallback without ``re`` being
+    imported in cli.py, so the *default* invocation crashed for any
+    config with ``roms_dir`` set while ``--apply`` (which skips that
+    branch) worked. Library-level tests in test_rl_system_ini.py never
+    caught it because they bypass the CLI. Includes a MAME-named system
+    so both ``re.search`` call sites actually execute.
+    """
+    cfg = _build_nes_library(tmp_path)
+    hs_dir = Path(cfg.hyperspin_dir)
+    roms_dir = Path(cfg.roms_dir)
+
+    # A MAME-variant system exercises the fallback that inspects the
+    # system name; an existing RL dir exercises the existing-INI probes.
+    mame_db_dir = hs_dir / "Databases" / "MAME 2003"
+    mame_db_dir.mkdir(parents=True)
+    db = HyperspinDatabase("MAME 2003", mame_db_dir / "MAME 2003.xml")
+    db.upsert_game(GameEntry(name="pacman", description="Pac-Man"))
+    db.save()
+    (roms_dir / "MAME").mkdir()
+
+    rl_dir = tmp_path / "rl"
+    (rl_dir / "Settings").mkdir(parents=True)
+    cfg.rocketlauncher_dir = str(rl_dir)
+    save_config(cfg)
+    config_mod.reset_override_cache()
+
+    before = _snapshot(hs_dir, roms_dir, rl_dir)
+
+    runner = CliRunner()
+    result = runner.invoke(cli, ["generate-config"])
+
+    assert result.exit_code == 0, result.output
+    assert "DRY RUN" in result.output
+    assert _snapshot(hs_dir, roms_dir, rl_dir) == before

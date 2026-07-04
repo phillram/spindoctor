@@ -5725,7 +5725,7 @@ class _SpinDoctorGUI:
             ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
             ("_match_system_combo",    "_match_system_var",    None),
-            ("_games_system_combo",    "_games_system_var",    None),
+            ("_games_system_combo",    "_games_system_var",    pc_system),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
             ("_ovr_system_combo",      "_ovr_system_var",      None),
@@ -7414,7 +7414,8 @@ class _SpinDoctorGUI:
         :func:`spindoctor.mainmenu.save_main_menu`.
 
         Single canonical writer (the one the CLI uses) handles backup,
-        XML declaration, lxml comment preservation, and the legacy
+        XML declaration, comment stripping (interleaved comments would
+        orphan when games reorder), and the legacy
         ``enabled``-attribute self-heal in
         :func:`spindoctor.database._update_game_element`. The GUI just
         composes the desired :class:`MainMenu` state and hands it off.
@@ -8105,9 +8106,9 @@ class _SpinDoctorGUI:
         steam_pick_frame = self.ttk.Frame(gameovr_frame)
         steam_pick_frame.pack(fill="x", padx=6, pady=(0, 4))
         self._steam_cands: dict[str, list] = {}  # filled by _scan_steam
-        self._steam_pick_vars: dict[str, "tk.StringVar"] = {}
-        self._steam_pick_combos: dict[str, "ttk.Combobox"] = {}
-        self._steam_preview_btns: dict[str, "ttk.Button"] = {}
+        self._steam_pick_vars: dict[str, "tk.StringVar"] = {}  # noqa: F821 - string annotation, runtime is self.tk
+        self._steam_pick_combos: dict[str, "ttk.Combobox"] = {}  # noqa: F821 - string annotation, runtime is self.ttk
+        self._steam_preview_btns: dict[str, "ttk.Button"] = {}  # noqa: F821 - string annotation, runtime is self.ttk
         self._steam_source_url: str = ""  # Steam store page URL, set by _on_steam_scan_done
 
         _picker_layout = [
@@ -8868,7 +8869,7 @@ class _SpinDoctorGUI:
             )
             return
 
-        from .scraper import extract_steam_app_id as _extract, SteamClient, MetadataError, _fmt_duration
+        from .scraper import extract_steam_app_id as _extract, SteamClient, MetadataError
 
         app_id = _extract(raw)
         if app_id is None:
@@ -8984,7 +8985,6 @@ class _SpinDoctorGUI:
             )
 
     def _on_steam_scan_done_inner(self, app_id: str, meta) -> None:
-        from .scraper import _fmt_duration
         if meta is None:
             self._set_status(f"Steam App {app_id} not found.")
             self.messagebox.showwarning(
@@ -11081,7 +11081,10 @@ class _SpinDoctorGUI:
             db = load_database(system, cfg.databases_dir)
             return sorted(db.games().keys())
         except Exception as exc:  # noqa: BLE001
-            log.warning("_load_games_for_system(%r): %s", system, exc)
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "_load_games_for_system(%r): %s", system, exc,
+            )
             return []
 
     # ── Game Wheel Manager handlers ──────────────────────────────────────────

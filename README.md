@@ -4,7 +4,7 @@ A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](htt
 
 SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
 
-> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-misplaced`, `verify`, `check-discs`, `stats`, `doctor`, `self-doctor`, `tools-audit`, `find-global`, `lightgun detect`, `lightgun audit`, `theme-scan`) need no flag. Most destructive commands write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. `scrub --stats` deletes `Statistics.ini` files permanently — use `scrub --backup-dir E:\Backups --apply` to back up before deleting, then `scrub-restore` to undo.
+> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `doctor`, `self-doctor`, `tools-audit`, `theme-scan`, `mainmenu show`, `find-misplaced` without `--apply`, `lightgun audit`, `lightgun detect` without `--apply`) need no flag. Most destructive commands write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. `scrub --stats` deletes `Statistics.ini` files permanently — use `scrub --backup-dir E:\Backups --apply` to back up before deleting, then `scrub-restore` to undo.
 
 ## Pick your install route
 

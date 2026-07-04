@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 import shutil
 import sys
 from datetime import datetime
@@ -5067,8 +5068,8 @@ def fetch_meta(system, all_systems, game, source, fetch_all,
                     console.print(f"  [red]Error [{game.name}]:[/red] {err_str}")
                     if _is_fatal_scraper_error(err_str):
                         console.print(
-                            f"  [red bold]Fatal scraper error — stopping metadata "
-                            f"resolution to protect API quota.[/red bold]"
+                            "  [red bold]Fatal scraper error — stopping metadata "
+                            "resolution to protect API quota.[/red bold]"
                         )
                         scraper_aborted = True
                 prog.advance(task)
@@ -5361,7 +5362,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     if not chosen:
                         no_match.append(game.name)
                         if verbose:
-                            prog.console.print(f"    [yellow]→ no match on scraper[/yellow]")
+                            prog.console.print("    [yellow]→ no match on scraper[/yellow]")
                         total_fail += len(media_types)
                         consecutive_net_errors = 0
                         prog.advance(task)
@@ -5378,7 +5379,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                             f"  [magenta]override: {', '.join(ovr_parts)}[/magenta]"
                             if ovr_parts else ""
                         )
-                        prog.console.print(f"    [green]→ resolved[/green]" +
+                        prog.console.print("    [green]→ resolved[/green]" +
                                            (f" [dim]({src})[/dim]" if src else "") +
                                            ovr_note)
                     consecutive_net_errors = 0
@@ -5446,7 +5447,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     console.print(f"    [red]metadata error:[/red] {meta_errors[gname]}")
                     continue
                 if gname in no_match:
-                    console.print(f"    [yellow]no match found on scraper[/yellow]")
+                    console.print("    [yellow]no match found on scraper[/yellow]")
                     continue
                 for mt in media_types:
                     dest = downloader.media_path(sys_name, gname, mt)
@@ -5542,12 +5543,12 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                     continue
 
                 if gname in no_match:
-                    console.print(f"    [yellow]no match found on scraper[/yellow]")
+                    console.print("    [yellow]no match found on scraper[/yellow]")
                     download_log_sys[gname] = {mt: "no_match" for mt in media_types}
                     continue
 
                 if scraper_aborted and gname not in results_by_game:
-                    console.print(f"    [dim]skipped — scraper aborted[/dim]")
+                    console.print("    [dim]skipped — scraper aborted[/dim]")
                     download_log_sys[gname] = {mt: "aborted" for mt in media_types}
                     continue
 
@@ -5804,7 +5805,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
                 previewer=None,
             )
             if chosen is None:
-                console.print(f"    [dim]Skipped.[/dim]")
+                console.print("    [dim]Skipped.[/dim]")
                 continue
 
         if not apply_changes:
@@ -5813,7 +5814,7 @@ def fetch_steam_media(system, game, steam_id_raw, types,
 
         replacing = dest.exists()
         if replacing and not overwrite:
-            console.print(f"    [dim]existing — skip (--overwrite to replace)[/dim]")
+            console.print("    [dim]existing — skip (--overwrite to replace)[/dim]")
             continue
 
         result = downloader.download_to_path(
@@ -9749,7 +9750,6 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
     """
     import json as _json
     from .rocketlauncher import (
-        _EXE_EXCLUSION_PREFIXES,
         _pick_best_exe,
         _pclauncher_ini_text,
         _win_safe_stem,
@@ -9883,7 +9883,7 @@ def pc_fix_exe(system_name, game, exe_path, list_candidates, apply_changes):
             console.print(f"  [green]✓[/green] updated Application= in {ini_path}")
         else:
             console.print(
-                f"  [dim]no change needed — Application= is already correct[/dim]"
+                "  [dim]no change needed — Application= is already correct[/dim]"
             )
 
     if trailing_warnings:
@@ -10001,7 +10001,7 @@ def repath_system(system_name, new_rom_path, apply_changes):
         rl_base / "Settings" / system_name / "Emulators.ini",   # folder layout
         rl_base / "Settings" / f"{system_name}.ini",             # flat layout
     ]
-    console.print(f"\n[blue bold]Emulators.ini — Rom_Path[/blue bold]")
+    console.print("\n[blue bold]Emulators.ini — Rom_Path[/blue bold]")
     found_any_emu = False
     for emu_ini in emu_inis:
         if not emu_ini.exists():
@@ -12290,3 +12290,9 @@ def find_global(query: str, limit: int, exact: bool):
         )
         for sys_name, reason in skipped:
             console.print(f"  [dim]{sys_name}:[/dim] [yellow]{reason}[/yellow]")
+
+
+if __name__ == "__main__":
+    # `python -m spindoctor.cli` is the documented fallback when the console
+    # scripts aren't on PATH (docs/installation.md, docs/troubleshooting.md).
+    cli()
