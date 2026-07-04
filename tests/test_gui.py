@@ -2694,8 +2694,8 @@ def test_gated_commands_not_classified_read_only():
 def _make_steam_meta(name="Hades", video_cands=None, snap_cands=None,
                      artwork_cands=None, wheel_cands=None):
     """Build a minimal GameMetadata fixture for Steam scan tests."""
-    from spindoctor.scraper import GameMetadata, MediaCandidate
-    meta = GameMetadata(name=name, source_url=f"https://store.steampowered.com/app/1145360/")
+    from spindoctor.scraper import GameMetadata
+    meta = GameMetadata(name=name, source_url="https://store.steampowered.com/app/1145360/")
     meta.media_candidates = {
         "video":   video_cands   or [],
         "snap":    snap_cands    or [],

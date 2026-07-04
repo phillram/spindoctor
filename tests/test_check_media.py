@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from spindoctor.audit import MediaStatus, check_media, _exists
+from spindoctor.audit import check_media, _exists
 
 
 # ─── _exists ──────────────────────────────────────────────────────────────────

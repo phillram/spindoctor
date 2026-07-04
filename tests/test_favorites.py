@@ -293,8 +293,6 @@ def test_clear_native_favorites_only_strips_value_one(isolated_config, tmp_path,
     """clear_native_favorites must only remove favorite=\"1\" attributes.
     Attributes with other values (favorite=\"0\", favorite=\"false\") must
     be left untouched — stripping them would corrupt third-party markup."""
-    import re as _re
-    from spindoctor.favorites import clear_native_favorites
 
     hs = tmp_path / "hs"
     xml_dir = hs / "Databases" / "Arcade"
@@ -348,12 +346,12 @@ def test_rebuild_writes_media_before_deleting_orphans(isolated_config, tmp_path,
     save_store(store, isolated_config / "favorites.json")
 
     # First rebuild creates the wheel media
-    summary1 = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
     wheel_dir = hs / "Media" / "Favorites" / "Images" / "Wheel"
     assert any(wheel_dir.iterdir()), "first rebuild should create wheel media"
 
     # Second rebuild with the same store should NOT delete the just-written file
-    summary2 = rebuild(store, cfg, media_mode=LinkMode.COPY)
+    rebuild(store, cfg, media_mode=LinkMode.COPY)
     assert any(wheel_dir.iterdir()), "second rebuild must not delete current entries' media"
 
 
