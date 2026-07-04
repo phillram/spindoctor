@@ -8111,10 +8111,11 @@ class _SpinDoctorGUI:
         self._steam_source_url: str = ""  # Steam store page URL, set by _on_steam_scan_done
 
         _picker_layout = [
-            ("video",   "Video",      0, 0),
-            ("snap",    "Screenshot", 0, 1),
-            ("artwork", "Artwork",    1, 0),
-            ("wheel",   "Wheel",      1, 1),
+            ("video",      "Video",      0, 0),
+            ("snap",       "Screenshot", 0, 1),
+            ("background", "Background", 1, 0),
+            ("artwork",    "Artwork",    2, 0),
+            ("wheel",      "Wheel",      2, 1),
         ]
         _cb_widths = {"video": 60}
         for mt, lbl_text, row, col in _picker_layout:
@@ -8880,7 +8881,7 @@ class _SpinDoctorGUI:
             return
 
         self._set_status(f"Scanning Steam App {app_id}…")
-        for mt in ("video", "snap", "artwork"):
+        for mt in ("video", "snap", "background", "artwork"):
             cb = self._steam_pick_combos[mt]
             cb.configure(state="disabled")
             self._steam_pick_vars[mt].set("scanning…")
@@ -8991,7 +8992,7 @@ class _SpinDoctorGUI:
                 f"Steam App ID {app_id} returned no data — verify the ID at "
                 f"store.steampowered.com/app/{app_id}/",
             )
-            for mt in ("video", "snap", "artwork"):
+            for mt in ("video", "snap", "background", "artwork"):
                 self._steam_pick_vars[mt].set("— not found —")
             return
 
@@ -9001,14 +9002,15 @@ class _SpinDoctorGUI:
             self._steam_store_btn.configure(state="normal")
 
         label_map = {
-            "video":   self._steam_video_label,
-            "snap":    lambda c, i: f"{i}. {c.version or c.source_type}",
-            "artwork": lambda c, i: f"{i}. {c.source_type} ({c.format})",
-            "wheel":   lambda c, i: f"{i}. {c.source_type} ({c.format})",
+            "video":      self._steam_video_label,
+            "snap":       lambda c, i: f"{i}. {c.version or c.source_type}",
+            "background": lambda c, i: f"{i}. {c.version or c.source_type}",
+            "artwork":    lambda c, i: f"{i}. {c.source_type} ({c.format})",
+            "wheel":      lambda c, i: f"{i}. {c.source_type} ({c.format})",
         }
         _SKIP = "— do not download —"
         any_found = False
-        for mt in ("video", "snap", "artwork", "wheel"):
+        for mt in ("video", "snap", "background", "artwork", "wheel"):
             cands = meta.media_candidates.get(mt, [])
             self._steam_cands[mt] = cands
             cb = self._steam_pick_combos[mt]
@@ -9027,7 +9029,7 @@ class _SpinDoctorGUI:
                 self._steam_preview_btns[mt].configure(state="disabled")
 
         found_parts = []
-        for mt in ("video", "snap", "artwork", "wheel"):
+        for mt in ("video", "snap", "background", "artwork", "wheel"):
             n = len(self._steam_cands.get(mt, []))
             if n:
                 found_parts.append(f"{n} {mt}")
@@ -9090,7 +9092,7 @@ class _SpinDoctorGUI:
         ]
         _SKIP = "— do not download —"
         types_to_fetch = []
-        for mt in ("video", "snap", "artwork", "wheel"):
+        for mt in ("video", "snap", "background", "artwork", "wheel"):
             cands = self._steam_cands.get(mt, [])
             if not cands:
                 continue
@@ -9109,7 +9111,7 @@ class _SpinDoctorGUI:
         if not types_to_fetch:
             self.messagebox.showwarning(
                 "Nothing selected",
-                "Scan first, then pick at least one video, screenshot, artwork, or wheel.",
+                "Scan first, then pick at least one video, screenshot, background, artwork, or wheel.",
             )
             return
 

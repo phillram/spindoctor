@@ -5623,7 +5623,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
 
 # ─── fetch-steam-media ────────────────────────────────────────────────────────
 
-_STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
+_STEAM_MEDIA_TYPES = ("video", "snap", "background", "artwork", "wheel")
 
 
 @cli.command("fetch-steam-media")
@@ -5633,13 +5633,15 @@ _STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
 @click.option("--steam-id", "steam_id_raw", default=None,
               help="Steam App ID or store URL (e.g. store.steampowered.com/app/1145360/Hades/). "
                    "If omitted, the stored override value for this game is used.")
-@click.option("--types", default=",".join(("video", "snap", "artwork")),
+@click.option("--types", default=",".join(("video", "snap", "background", "artwork")),
               help=f"Comma-separated media types to fetch. Options: {', '.join(_STEAM_MEDIA_TYPES)}. "
-                   "Default: video, snap, artwork.")
+                   "Default: video, snap, background, artwork.")
 @click.option("--video-index", "video_index", type=int, default=None,
               help="1-based index of the video candidate to download without prompting.")
 @click.option("--snap-index", "snap_index", type=int, default=None,
               help="1-based index of the screenshot candidate to download without prompting.")
+@click.option("--background-index", "background_index", type=int, default=None,
+              help="1-based index of the background candidate to download without prompting.")
 @click.option("--artwork-index", "artwork_index", type=int, default=None,
               help="1-based index of the artwork candidate to download without prompting.")
 @click.option("--wheel-index", "wheel_index", type=int, default=None,
@@ -5656,17 +5658,18 @@ _STEAM_MEDIA_TYPES = ("video", "snap", "artwork", "wheel")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit downloads (default: dry-run preview).")
 def fetch_steam_media(system, game, steam_id_raw, types,
-                      video_index, snap_index, artwork_index, wheel_index,
+                      video_index, snap_index, background_index, artwork_index, wheel_index,
                       overwrite, output_dir, hls_quality, apply_changes):
     """Download media for a specific game from the Steam Store.
 
-    Fetches trailer video(s), in-game screenshots, header artwork, and/or
-    wheel image for a single game using its Steam App ID or store URL.  No
-    Steam account or API key is required.
+    Fetches trailer video(s), in-game screenshots, per-game background,
+    header artwork, and/or wheel image for a single game using its Steam
+    App ID or store URL.  No Steam account or API key is required.
 
-    When index flags (--video-index, --snap-index, --artwork-index, --wheel-index) are
-    omitted the command runs an interactive numbered picker for each
-    requested type — the same picker used by fetch-media --pick-media.
+    When index flags (--video-index, --snap-index, --background-index,
+    --artwork-index, --wheel-index) are omitted the command runs an
+    interactive numbered picker for each requested type — the same picker
+    used by fetch-media --pick-media.
 
     The stored game override (config game-override set … --steam-app-id) is
     used automatically when --steam-id is not passed on the command line.
@@ -5740,10 +5743,11 @@ def fetch_steam_media(system, game, steam_id_raw, types,
 
     # ── index map — type → provided index flag ────────────────────────────────
     index_flags: dict[str, Optional[int]] = {
-        "video":   video_index,
-        "snap":    snap_index,
-        "artwork": artwork_index,
-        "wheel":   wheel_index,
+        "video":      video_index,
+        "snap":       snap_index,
+        "background": background_index,
+        "artwork":    artwork_index,
+        "wheel":      wheel_index,
     }
 
     _HLS_HEIGHT_MAP = {"best": None, "1080p": 1080, "720p": 720, "480p": 480, "360p": 360}
