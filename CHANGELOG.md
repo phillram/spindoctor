@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Win10 zip now extracts to a versioned folder.** Extracting `spindoctor-win10-vX.Y.Z.zip` now produces `spindoctor-win10-vX.Y.Z/` instead of the bare `spindoctor-win10/` name. The zip filename was already versioned; now the folder inside matches.
+
 ## [2.9.1] - 2026-07-03
 
 ### Changed
