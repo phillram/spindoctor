@@ -8,17 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **`theme-fill` command (CLI + GUI).** `spindoctor theme-fill --system <SYSTEM> [--apply]` scans `Media\<SYSTEM>\Video\` and installs a blank full-screen theme zip for every game that has a video but no matching `Themes\<game>.zip`. Existing theme zips are never overwritten. Available in the GUI under *Metadata & Media → Fill missing game themes*.
+- **`theme-fill` command (CLI + GUI).** `spindoctor theme-fill --system <SYSTEM> [--apply]` scans `Media\<SYSTEM>\Video\` and installs a blank full-screen theme zip for every game that has a video but no matching `Themes\<game>.zip`. Pass `--all` instead of `--system` to scan every system in `Main Menu.xml` and print a per-console summary of missing themes. Existing theme zips are never overwritten. Available in the GUI under *Metadata & Media → Fill missing game themes* (the All systems checkbox applies automatically).
 
-- **`theme_blank.zip` bundled asset.** A reusable full-screen video-only HyperSpin theme zip (`Theme.xml` with a 1024×768 centred video element) shipped inside the package for use by `theme-fill` and any other per-game theme operation.
+- **`theme_blank.zip` bundled asset.** A reusable full-screen HyperSpin theme zip (`Theme.xml` with both a `<background>` element and a `<video>` element, each 1024×768 centred on the canvas) shipped inside the package for use by `theme-fill`. The background element shows the game's `Images\Backgrounds\` screenshot when present; the video element (`below="false"`) overlays the video on top when one exists.
 
-- **Recompiled games wheel.** New synthetic wheel `Recompiled` is now fully supported by `mainmenu add Recompiled --apply`. Bundled assets include: attract-mode video (`video_Recompiled.mp4`), wheel art (`wheel_art_Recompiled.png`), browse music (`music_Recompiled.wav`), navigation sound (shared `navigate_sound.mp3`), and HyperSpin theme zip (`theme_Recompiled.zip`). RocketLauncher PCLauncher settings are generated automatically on add.
+- **Recompiled games wheel.** New synthetic wheel `Recompiled` is now fully supported by `mainmenu add Recompiled --apply`. Bundled assets include: attract-mode video (`video_Recompiled.mp4`), background image (`bg_Recompiled.png`), wheel art (`wheel_art_Recompiled.png`), browse music (`music_Recompiled.mp3`), navigation sound (shared `navigate_sound.mp3`), and HyperSpin theme zip (`theme_Recompiled.zip`). RocketLauncher PCLauncher settings are generated automatically on add.
 
 ### Changed
 
 - **Synthetic wheel media refreshed (Favorites, Most Played, Recently Played, Recompiled).** Attract-mode videos and browse-music tracks replaced with new versions. Old videos archived as `assets/archive/video_*_old.mp4`.
 
-- **Background images removed from synthetic wheels.** `bg_Favorites.png`, `bg_Most_Played.png`, and `bg_Recently_Played.png` have been removed from the asset bundle and are no longer installed by `mainmenu add`. The attract-mode MP4 fills the screen for all synthetic wheels, making separate background PNGs redundant.
+- **Background images bundled for all four synthetic wheels.** `bg_Favorites.png`, `bg_Most_Played.png`, `bg_Recently_Played.png`, and `bg_Recompiled.png` are now included in the asset bundle and installed automatically by `mainmenu add`. Backgrounds are refreshed with new versions; archive copies updated to match.
 
 - **Browse music now installed by `mainmenu add`.** `_MUSIC_ASSETS` is now populated for all four synthetic wheels (all `.mp3`). The `install_system_music` installer preserves the source file extension rather than forcing `.mp3`.
 

@@ -754,11 +754,12 @@ _WHEEL_ART_ASSETS: dict[str, str] = {
 
 # System background image — displayed behind the game list while browsing.
 # HyperSpin path: Media\<SystemName>\Images\Backgrounds\<SystemName>.png
-#
-# Background files have been removed: the attract-mode MP4 visually fills the
-# screen for all synthetic wheels, so separate per-system background PNGs are
-# redundant.  Add entries here and place PNG files in assets/ to restore.
-_BACKGROUND_ASSETS: dict[str, str] = {}
+_BACKGROUND_ASSETS: dict[str, str] = {
+    "Favorites":       "bg_Favorites.png",
+    "Most Played":     "bg_Most_Played.png",
+    "Recently Played": "bg_Recently_Played.png",
+    "Recompiled":      "bg_Recompiled.png",
+}
 
 # Background music — plays while the user browses the wheel (active browsing,
 # not attract-mode idle).  HyperSpin path: Media\Main Menu\Sound\<SystemName>.*

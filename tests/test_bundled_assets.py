@@ -129,11 +129,9 @@ class TestInstallBundledSystemAssets:
     def test_all_assets_installed_for_synthetic(self, tmp_path):
         hs = _hs_dir(tmp_path)
         result = install_bundled_system_assets(hs, "Favorites", dry_run=False)
-        # "background" is no_asset — background PNGs have been removed from the
-        # bundle; the MP4 visually fills the screen for all synthetic wheels.
         expected = {
             "wheel_art":      "installed",
-            "background":     "no_asset",
+            "background":     "installed",
             "music":          "installed",
             "video":          "installed",
             "theme":          "installed",
@@ -175,11 +173,10 @@ def test_wheel_art_installs(tmp_path, system_name):
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
-def test_background_returns_no_asset(tmp_path, system_name):
-    # Background PNGs removed from bundle; MP4 fills the screen for all wheels.
+def test_background_installs(tmp_path, system_name):
     hs = _hs_dir(tmp_path)
     _, status = install_system_background(hs, system_name)
-    assert status == "no_asset"
+    assert status == "installed"
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)

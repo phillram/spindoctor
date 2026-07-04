@@ -962,6 +962,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "theme-scan --system <SYSTEM>",
     "theme-fill --system <SYSTEM>",
     "theme-fill --system <SYSTEM> --apply",
+    "theme-fill --all",
+    "theme-fill --all --apply",
     # ── Tools ─────────────────────────────────────────────────────────────────
     "─── Tools ───",
     "install-tools",
@@ -8599,24 +8601,16 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_theme_fill_preview(self) -> None:
-        sys_ = self._meta_system_var.get().strip()
-        if not sys_:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Select a system at the top of this tab first.",
-            )
+        sys_args = self._meta_system_args()
+        if sys_args is None:
             return
-        self._run_cli("spindoctor", ["theme-fill", "--system", sys_])
+        self._run_cli("spindoctor", ["theme-fill"] + sys_args)
 
     def _run_theme_fill_apply(self) -> None:
-        sys_ = self._meta_system_var.get().strip()
-        if not sys_:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Select a system at the top of this tab first.",
-            )
+        sys_args = self._meta_system_args()
+        if sys_args is None:
             return
-        self._run_cli("spindoctor", ["theme-fill", "--system", sys_, "--apply"])
+        self._run_cli("spindoctor", ["theme-fill"] + sys_args + ["--apply"])
 
     def _run_batch_edit(self) -> None:
         sys_args = self._meta_system_args()

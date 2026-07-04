@@ -580,6 +580,19 @@ spindoctor theme-pack-create D:\my-pack --target frontend
 
 Reference: [Command reference → theme-pack-create](commands.md#theme-pack-create).
 
+### `theme-fill` — fill missing per-game theme zips
+
+Installs a blank full-screen theme zip for every game that has a video or background screenshot but no per-game theme zip. Shows background from `Images\Backgrounds\` and overlays the video on top. Existing themes are never overwritten.
+
+```bat
+spindoctor theme-fill --system MAME                    :: dry-run: list missing for one console
+spindoctor theme-fill --all                            :: dry-run: per-console summary across all systems
+spindoctor theme-fill --system MAME --apply            :: write blank themes for MAME
+spindoctor theme-fill --all --apply                    :: write blank themes for every system
+```
+
+Reference: [Command reference → theme-fill](commands.md#theme-fill).
+
 ---
 
 ## LEDBlinky
