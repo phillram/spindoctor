@@ -118,6 +118,12 @@ target-version = "py38"
 # once the baseline is clean.
 select = ["F", "W"]
 
+[tool.ruff.lint.per-file-ignores]
+# The generated-.spec writer keeps an f-prefix on every line of the
+# emitted block so the lines read uniformly; F541 would force stripping
+# the prefix from only the placeholder-free lines.
+"build/build_windows.py" = ["F541"]
+
 [tool.pytest.ini_options]
 # Suppress the Python 3.12 + Tkinter + pytest tracemalloc flake.
 #

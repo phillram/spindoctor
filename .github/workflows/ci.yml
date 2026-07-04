@@ -12,6 +12,28 @@ on:
   pull_request: {}
 
 jobs:
+  lint:
+    # Ruff is the project's configured linter (see [tool.ruff] in
+    # pyproject.toml) but was never wired into CI — two F821 NameErrors
+    # (generate-config dry-run, GUI _load_games_for_system) shipped to
+    # main because nothing ran it. Tests alone can't catch an undefined
+    # name on a path no test executes; this job pins the whole repo.
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: '3.12'
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff
+        run: ruff check .
+
   test:
     name: Tests (${{ matrix.os }} / Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}

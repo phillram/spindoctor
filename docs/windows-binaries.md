@@ -36,7 +36,7 @@ Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_interna
 
 ```
 spindoctor-win10-vX.Y.Z.zip
-└── spindoctor-win10/
+└── spindoctor-win10-vX.Y.Z/
     ├── spindoctor.exe          ← full CLI (every command)
     ├── spindoctor-gui.exe      ← double-clickable GUI launcher
     ├── spindoctor-fav.exe      ← Favorites wheel manager
@@ -45,7 +45,7 @@ spindoctor-win10-vX.Y.Z.zip
     └── _internal/              ← shared Python 3.12 runtime (do not delete)
 ```
 
-Extract and keep the whole `spindoctor-win10/` folder together — the `_internal/` directory must stay next to the EXEs.
+Extract and keep the whole `spindoctor-win10-vX.Y.Z/` folder together — the `_internal/` directory must stay next to the EXEs. Rename the folder if you like (e.g. to plain `spindoctor\`); only its contents matter.
 
 ### Win7 bundle (Windows 7 SP1 and newer)
 
@@ -84,7 +84,7 @@ If you'd rather download from the command line:
 
 ```bat
 :: Use whichever URL the release page shows — example for v2.4.1:
-curl -L -o spindoctor-win10.zip ^
+curl -L -o spindoctor-win7-v2.4.1.zip ^
     https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-win7-v2.4.1.zip
 ```
 
@@ -92,7 +92,7 @@ curl -L -o spindoctor-win10.zip ^
 
 There's no installer — just extract and optionally rename.
 
-**Modern bundle:** Extract the zip. Move the entire `spindoctor-win10/` folder to a location of your choice (e.g. `C:\spindoctor\`). You should end up with:
+**Modern bundle:** Extract the zip. Move the entire `spindoctor-win10-vX.Y.Z/` folder to a location of your choice, renaming it if you like (e.g. `C:\spindoctor\`). You should end up with:
 
    ```
    C:\spindoctor\
