@@ -8,6 +8,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`generate-config` dry-run crashed with `NameError: name 're' is not defined`.** The MAME-variant ROM-path fallback added in the 2.9.x cycle called `re.search` in the dry-run preview branch, but `re` was never imported in `cli.py` — so the *default* invocation (`spindoctor generate-config`, no `--apply`) crashed for any config with `roms_dir` set, while `--apply` (which skips that branch) worked. `re` is now imported at module level, and a CLI-level regression test in `test_dry_run_gates.py` pins the dry-run path (the library-level tests all bypassed the CLI, which is why 1200+ passing tests never caught it).
+
+- **GUI: a failed database load in the Game Wheel Manager crashed instead of degrading.** The `except` handler in `_load_games_for_system` called `log.warning(...)`, but no `log` was defined anywhere in `gui.py` — so a missing or corrupt system database raised `NameError` from inside the error handler instead of returning an empty game list. It now logs via `logging.getLogger(__name__)` like the rest of the module.
+
+- **`python -m spindoctor.cli` silently did nothing.** The docs (installation, troubleshooting) recommend `python -m spindoctor.cli ...` as the fallback when console scripts aren't on PATH, but `cli.py` had no `if __name__ == "__main__"` guard — the command exited 0 with no output. The guard is now present, matching every other runnable module (`gui`, `favorites`, `recent`, `playtime`).
+
+- **GUI: the Rename / fix-exe games section now pre-selects the "PC Games" system as intended.** The code computed the PC system for exactly this purpose (per its own comment) but never wired it into the dropdown defaults, so the section pre-selected the alphabetically-first system instead.
+
+- **Lint debt cleared and ruff wired into CI.** `ruff check` (the linter configured in `pyproject.toml`) was never run by CI and had accumulated 24 errors — including the two `NameError` bugs above, which it flags as F821. All findings are fixed (dead imports in `cli.py` / `gui.py` / `playtime.py`, placeholder-less f-strings, unused test locals) and a new `lint` job in `ci.yml` runs `ruff check .` on every push and PR so undefined names can't ship again. The generated-spec block in `build/build_windows.py` keeps its uniform f-prefix style via a per-file ignore.
+
+### Docs
+
+- **`docs/windows-binaries.md` updated for the versioned Win10 extraction folder.** The bundle-layout diagram and install steps still showed the zip extracting to the bare `spindoctor-win10/` folder; they now show `spindoctor-win10-vX.Y.Z/` (with a note that renaming is fine), matching the versioned-folder fix below. Also fixed the `curl` example that saved the Win7 zip to a file named `spindoctor-win10.zip`.
+
+- **`docs/index.md` binaries row updated for the two-bundle release layout.** It still described only the old five-EXE Win7 bundle; it now mentions both the modern (Windows 10/11) and Win7 bundles, matching the README.
+
+- **Read-only command lists converged across README / `docs/index.md` / `docs/commands.md`.** The README and index were missing `check-archive-ext` and `mainmenu show` and listed `find-misplaced` and `lightgun detect` as unconditionally read-only; all three files now carry the same list with the `without --apply` qualifiers.
+
+- **Corrected stale comment-preservation claims for Main Menu saves.** `save_main_menu` deliberately strips XML comments (interleaved comments would orphan when systems reorder), but the `mainmenu.py` module docstring and the GUI's save-order docstring still claimed lossless comment preservation.
+
 - **Win10 zip now extracts to a versioned folder.** Extracting `spindoctor-win10-vX.Y.Z.zip` now produces `spindoctor-win10-vX.Y.Z/` instead of the bare `spindoctor-win10/` name. The zip filename was already versioned; now the folder inside matches.
 
 - **`spindoctor-fav.exe` and `spindoctor-recent.exe` now bundle only the media they need.** Previously both carried all four wheels' videos, backgrounds, music, wheel art, and themes (~40 MB of unused assets each). Now `spindoctor-fav.exe` bundles only Favorites assets and `spindoctor-recent.exe` only Recently Played assets; both retain the two shared files (`navigate_sound.mp3`, `theme_blank.zip`). `spindoctor.exe` is unchanged. Applies to both Win7 and Win10 builds.

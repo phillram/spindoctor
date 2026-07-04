@@ -134,7 +134,7 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 Manage individual games across any system. A single **System** picker at the top of the tab drives all four steps — pick the system once and every step below operates on that selection. The tab is the central place for day-to-day game management: reordering the wheel, removing stale entries, renaming or cloning, adding freshly installed PC games, and fixing a bad executable path.
 
-**System picker:** Select any system from the dropdown. Changing the selection automatically clears the game-wheel table (Step 1), reloads the rename/clone game list (Step 2), and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
+**System picker:** Select any system from the dropdown. When a system named “PC Games” exists it is pre-selected (this tab is used almost exclusively for PC-game repairs); otherwise the first system alphabetically is. Changing the selection automatically clears the game-wheel table (Step 1), reloads the rename/clone game list (Step 2), and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
 
 **Step 1 — Manage the game wheel:** Click **Load Games** to populate a scrollable table showing every game in that system's XML database in wheel order — position number, ROM name, and display title.
 

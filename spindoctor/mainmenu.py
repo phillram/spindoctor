@@ -4,7 +4,8 @@ The Main Menu lives at ``<hyperspin_dir>/Databases/Main Menu/Main Menu.xml``
 and lists the systems shown at the top level of the cabinet UI as
 ``<game name="..."/>`` entries.  This module loads it, lets callers
 re-order / hide / add / remove systems, and writes it back via the same
-lossless lxml round-trip used by :mod:`spindoctor.database`.
+lxml round-trip used by :mod:`spindoctor.database` (lossless except for
+XML comments, which save deliberately strips — see :func:`save_main_menu`).
 
 A ``MainMenu`` is structurally a HyperSpin database — it has a ``<menu>``
 root with a ``<header>`` and a list of ``<game>`` children.  We keep the
@@ -50,7 +51,8 @@ class MainMenu:
     xml_path: Path
     entries: list[MainMenuEntry] = field(default_factory=list)
     # Keep the loaded HyperspinDatabase so save() can reuse the lxml tree
-    # (which preserves comments and unknown attributes).
+    # (which preserves the <header> and unknown attributes; XML comments
+    # are deliberately stripped on save — see save_main_menu).
     _db: Optional[HyperspinDatabase] = None
 
     def index_of(self, system: str) -> int:

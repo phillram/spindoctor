@@ -1,7 +1,6 @@
 """scraper.log must not expose passwords in urllib3 exception strings."""
 from __future__ import annotations
 
-import pytest
 
 from spindoctor.scraper import _redact_error_str
 
