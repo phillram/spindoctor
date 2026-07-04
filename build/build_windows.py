@@ -293,7 +293,7 @@ def generate_onedir_spec(shims: dict[str, Path]) -> Path:
         "    strip=False,",
         "    upx=True,",
         "    upx_exclude=[],",
-        "    name='spindoctor-windows',",
+        "    name='spindoctor-win10',",
         ")",
     ]
 
@@ -316,7 +316,7 @@ def main() -> int:
             "Build a shared-runtime --onedir bundle for Windows 10/11 "
             "(Python 3.10+ / PyInstaller 6.x).  COLLECT deduplicates the "
             "runtime across all five EXEs into _internal/; "
-            "produces dist/spindoctor-windows/."
+            "produces dist/spindoctor-win10/."
         ),
     )
     args = ap.parse_args()
@@ -337,7 +337,7 @@ def main() -> int:
             "--workpath", str(BUILD / "work"),
             str(spec),
         ])
-        out_dir = DIST / "spindoctor-windows"
+        out_dir = DIST / "spindoctor-win10"
         suffix = ".exe" if sys.platform == "win32" else ""
         print("\nBuilt (modern --onedir):")
         for _, name, _ in TARGETS:

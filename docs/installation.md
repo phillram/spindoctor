@@ -97,10 +97,10 @@ For older / locked-down cabinets where installing Python isn't an option, every 
 
 | Bundle | File | Requires |
 |---|---|---|
-| **Modern** *(recommended)* | `spindoctor-modern-vX.Y.Z.zip` | Windows 10 / 11 |
-| **Win7** | `spindoctor-windows-vX.Y.Z.zip` | Windows 7 SP1 / 8 / 8.1 / 10 / 11 |
+| **Modern** *(recommended)* | `spindoctor-win10-vX.Y.Z.zip` | Windows 10 / 11 |
+| **Win7** | `spindoctor-win7-vX.Y.Z.zip` | Windows 7 SP1 / 8 / 8.1 / 10 / 11 |
 
-**Modern bundle** (Windows 10/11): extract → keep the whole `spindoctor-windows/` folder together → double-click `spindoctor-windows\spindoctor-gui.exe`. The shared runtime lives in `_internal/` alongside the EXEs.
+**Modern bundle** (Windows 10/11): extract → keep the whole `spindoctor-win10/` folder together → double-click `spindoctor-win10\spindoctor-gui.exe`. The shared runtime lives in `_internal/` alongside the EXEs.
 
 **Win7 bundle**: five self-contained `.exe` files. Extract → move them to a folder of your choice (e.g. `C:\spindoctor\`) → double-click `spindoctor-gui.exe`. Each binary is self-contained. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
