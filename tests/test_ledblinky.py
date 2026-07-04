@@ -1460,3 +1460,29 @@ def test_patch_settings_no_changes_when_values_match(tmp_path):
         backup=False,
     )
     assert result.changes == []
+
+
+def test_replace_color_in_colors_ini_handles_backslash_in_new_name(tmp_path):
+    """A new color name containing a backslash must be written literally.
+
+    Interpolating it into the re.subn *replacement* string treated the
+    backslash as a regex backreference and raised `re.error: bad escape \\U`
+    (the Windows-path pitfall from docs/cabinet-architecture-reference.md).
+    """
+    ini = tmp_path / COLORS_INI_NAME
+    ini.write_text("key1=Blue\n", encoding="utf-8")
+    new_text, count = ledblinky._replace_color_in_colors_ini(
+        ini, "Blue", r"C:\Users\New"
+    )
+    assert count == 1
+    assert "key1=C:\\Users\\New" in new_text
+
+
+def test_replace_color_in_controls_xml_handles_backslash_in_new_name(tmp_path):
+    xml = tmp_path / CONTROLS_XML_NAME
+    xml.write_text('<port color="Blue"/>', encoding="utf-8")
+    new_text, count = ledblinky._replace_color_in_controls_xml(
+        xml, "Blue", r"C:\Users\New"
+    )
+    assert count == 1
+    assert r'color="C:\Users\New"' in new_text

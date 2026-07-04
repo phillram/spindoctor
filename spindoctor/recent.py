@@ -117,7 +117,11 @@ def _read_stats_file(
     """
     parser = configparser.ConfigParser(strict=False, interpolation=None)
     try:
-        parser.read(path, encoding="utf-8")
+        # utf-8-sig strips the BOM RocketLauncher sometimes writes; plain
+        # utf-8 leaves it on the first section header and configparser then
+        # raises MissingSectionHeaderError, silently dropping the whole
+        # file (playtime._read_playstats_file already uses utf-8-sig).
+        parser.read(path, encoding="utf-8-sig")
     except UnicodeDecodeError:
         # RL on Windows may write game names in the system codepage
         # (e.g. accented letters like ü → 0xfc in cp1252). Retry once.
@@ -782,7 +786,7 @@ def _build_parser() -> argparse.ArgumentParser:
                        help=f"Synthetic system name (default '{DEFAULT_RECENT_SYSTEM}').")
     p_reb.add_argument("--media-mode",
                        choices=["link", "symlink", "copy", "auto", "none"],
-                       default="copy")
+                       default="auto")
     p_reb.add_argument("--apply", action="store_true",
                        help="Commit the rebuild (default: dry-run preview).")
     p_reb.add_argument("--verbose", action="store_true",
