@@ -446,9 +446,11 @@ def total_sessions(stats: Iterable[PlayStat]) -> int:
 # ─── formatting / export ──────────────────────────────────────────────────────
 
 def format_duration(seconds: int) -> str:
-    """Render *seconds* as ``1d 2h 3m`` / ``45m 12s`` / ``5s``.
+    """Render *seconds* as ``1d 2h`` / ``45m 12s`` / ``5s``.
 
-    Negative or non-numeric inputs collapse to ``0s``.
+    Coarser units suppress finer ones: minutes are dropped once the value
+    reaches a day, and seconds once it reaches an hour. Negative or
+    non-numeric inputs collapse to ``0s``.
     """
     try:
         seconds = int(seconds)
@@ -634,7 +636,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_bw.add_argument("--target-system", default=DEFAULT_PLAYED_SYSTEM)
     p_bw.add_argument("--media-mode",
                       choices=["link", "symlink", "copy", "auto", "none"],
-                      default="copy")
+                      default="auto")
     p_bw.add_argument("--apply", action="store_true",
                       help="Actually write files (default is dry-run).")
     p_bw.add_argument("--verbose", action="store_true",

@@ -521,3 +521,9 @@ def test_read_playstats_file_handles_utf8_bom(tmp_path):
     assert len(results) == 1, "BOM must not cause the first game to be silently dropped"
     assert results[0].game == "1942"
     assert results[0].times_played == 5
+
+
+def test_standalone_build_wheel_media_mode_defaults_to_auto():
+    from spindoctor.playtime import _build_parser
+    args = _build_parser().parse_args(["build-wheel"])
+    assert args.media_mode == "auto"

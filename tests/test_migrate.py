@@ -76,6 +76,19 @@ def test_plan_skips_unconfigured_components(isolated_config, tmp_path):
     assert any("ledblinky" in s for s in plan.skipped)
 
 
+def test_plan_migration_does_not_create_target_dir(isolated_config, tmp_path):
+    """Planning is a preview — a dry-run must not touch disk.
+
+    plan_migration previously called target_root.mkdir(), so `migrate`
+    without `--apply` created the destination folder.
+    """
+    cfg = _seed_library(tmp_path)
+    target = tmp_path / "new-target-does-not-exist"
+    plan = plan_migration(cfg, target, ["roms", "hyperspin"])
+    assert not plan.empty  # a real plan was produced
+    assert not target.exists()  # but nothing was written to disk
+
+
 def test_plan_full_components_marks_config_updates(isolated_config, tmp_path):
     cfg = _seed_library(tmp_path)
     target = tmp_path / "new"
