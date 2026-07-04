@@ -1698,11 +1698,13 @@ class SteamClient:
     that doesn't exist or returns a non-success response.
 
     Media slots populated:
-      * ``video``    — MP4 trailer(s) from the ``movies`` array
-      * ``snap``     — full-resolution screenshots from the ``screenshots`` array
-      * ``artwork``  — the game's header capsule image (``header_image``)
-      * ``wheel``    — same header image; rectangular banner, not a transparent logo,
-                       but usable as a wheel image when no better source exists.
+      * ``video``       — MP4 trailer(s) from the ``movies`` array
+      * ``snap``        — full-resolution screenshots from the ``screenshots`` array
+      * ``background``  — same screenshot list as ``snap``; first screenshot used as
+                          the per-game background (``Images\\Backgrounds\\``)
+      * ``artwork``     — the game's header capsule image (``header_image``)
+      * ``wheel``       — same header image; rectangular banner, not a transparent logo,
+                          but usable as a wheel image when no better source exists.
     """
 
     def __init__(self, rate_limit: float = 1.0):
@@ -1839,6 +1841,7 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
         ))
     if snap_cands:
         candidates["snap"] = snap_cands
+        candidates["background"] = snap_cands
 
     # Artwork / Wheel — single header / capsule image.
     # The header is a rectangular banner (not a transparent logo), but it can
@@ -1862,6 +1865,7 @@ def _parse_steam(app_id: str, data: dict) -> GameMetadata:
         source_id=str(app_id),
         source_url=source_url,
         snap_url=_first("snap"),
+        background_url=_first("background"),
         video_url=_first("video"),
         trailer_url=_first("trailer"),
         artwork_url=_first("artwork"),
