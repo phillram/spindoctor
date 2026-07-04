@@ -1,7 +1,7 @@
 # Synthetic Wheel Media Setup
 
-This guide covers all the visual and audio assets for the three SpinDoctor-managed
-synthetic wheels: **Favorites**, **Most Played**, and **Recently Played**.
+This guide covers all the visual and audio assets for the four SpinDoctor-managed
+synthetic wheels: **Favorites**, **Most Played**, **Recently Played**, and **Recompiled**.
 
 ---
 
@@ -31,18 +31,27 @@ Every `rebuild --apply` run installs these files without extra flags:
 | `Favorites.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
 | `Most Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
 | `Recently Played.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
+| `Recompiled.png` | `Media\Main Menu\Images\Wheel\` | Wheel logo in the system selector |
 | `Favorites.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
 | `Most Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
 | `Recently Played.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
-| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 57.7 s) |
-| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 57.9 s) |
-| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video (background image + music, 61.5 s) |
+| `Recompiled.png` | `Media\Main Menu\Images\Backgrounds\` | Background shown during attract mode |
+| `Favorites.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
+| `Most Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
+| `Recently Played.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
+| `Recompiled.mp4` | `Media\Main Menu\Video\` | Attract-mode video |
 | `Favorites.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Most Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
 | `Recently Played.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
+| `Recompiled.zip` | `Media\Main Menu\Themes\` | Theme zip — required for HyperSpin to play the video |
+| `Favorites.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
+| `Most Played.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
+| `Recently Played.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
+| `Recompiled.mp3` | `Media\Main Menu\Sound\` | Active-browsing music while scrolling the main-menu wheel |
 | `Wheel Click.mp3` | `Media\Favorites\Sound\` | Sound played on every left/right cursor move inside the Favorites wheel |
 | `Wheel Click.mp3` | `Media\Most Played\Sound\` | Sound played on every left/right cursor move inside the Most Played wheel |
 | `Wheel Click.mp3` | `Media\Recently Played\Sound\` | Sound played on every left/right cursor move inside the Recently Played wheel |
+| `Wheel Click.mp3` | `Media\Recompiled\Sound\` | Sound played on every left/right cursor move inside the Recompiled wheel |
 | `<System>.ini` | `HyperSpin\Settings\` | Lets HyperSpin open the sub-wheel |
 
 **Install condition:** every asset is only written when the destination is absent —
@@ -52,7 +61,7 @@ The rebuild summary reports each asset:
 ```
 Wheel art:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Wheel\Favorites.png
 Background:     installed → D:\Arcade\HyperSpin\Media\Main Menu\Images\Backgrounds\Favorites.png
-Music:          no bundled asset
+Music:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Sound\Favorites.mp3
 Video:          installed → D:\Arcade\HyperSpin\Media\Main Menu\Video\Favorites.mp4
 Theme zip:      installed → D:\Arcade\HyperSpin\Media\Main Menu\Themes\Favorites.zip
 Wheel Click sound: installed → D:\Arcade\HyperSpin\Media\Favorites\Sound\Wheel Click.mp3
@@ -71,11 +80,12 @@ HyperSpin's attract mode (when the cabinet is idle) cycles through every system 
    the theme zip is required for HyperSpin to play the video; the video's visual
    is hidden (1×1 px) so only its audio track plays and the background PNG shows
 4. The **active-browsing music** (`Sound\<System>.mp3`) — plays while the user
-   is *scrolling* the main-menu wheel (not during attract idle). SpinDoctor does
-   **not** bundle MP3 files — this slot plays silence during active browsing.
+   is *scrolling* the main-menu wheel (not during attract idle). SpinDoctor
+   bundles an MP3 for each of the four synthetic wheels and installs it
+   automatically.
 
-The three synthetic wheels are part of this rotation.  Items 1, 2, and 3 are
-bundled and installed automatically.  Item 4 is intentionally silent.
+All four synthetic wheels are part of this rotation.  Items 1, 2, 3, and 4 are
+all bundled and installed automatically by `rebuild --apply` / `mainmenu add --apply`.
 
 ---
 
@@ -273,40 +283,68 @@ HyperSpin\
         │   ├── Wheel\
         │   │   ├── Favorites.png          ← AUTO: wheel logo
         │   │   ├── Most Played.png        ← AUTO: wheel logo
-        │   │   └── Recently Played.png    ← AUTO: wheel logo
+        │   │   ├── Recently Played.png    ← AUTO: wheel logo
+        │   │   └── Recompiled.png         ← AUTO: wheel logo
         │   └── Backgrounds\
         │       ├── Favorites.png          ← AUTO: attract-mode background
         │       ├── Most Played.png        ← AUTO: attract-mode background
-        │       └── Recently Played.png    ← AUTO: attract-mode background
-        ├── Sound\                         ← active-browsing music (not bundled; plays silence)
+        │       ├── Recently Played.png    ← AUTO: attract-mode background
+        │       └── Recompiled.png         ← AUTO: attract-mode background
+        ├── Sound\
+        │   ├── Favorites.mp3              ← AUTO: active-browsing music
+        │   ├── Most Played.mp3            ← AUTO: active-browsing music
+        │   ├── Recently Played.mp3        ← AUTO: active-browsing music
+        │   └── Recompiled.mp3             ← AUTO: active-browsing music
         ├── Video\
-        │   ├── Favorites.mp4              ← AUTO: attract-mode video + audio (57.7 s)
-        │   ├── Most Played.mp4            ← AUTO: attract-mode video + audio (57.9 s)
-        │   ├── Recently Played.mp4        ← AUTO: attract-mode video + audio (61.5 s)
-        │   └── ...
+        │   ├── Favorites.mp4              ← AUTO: attract-mode video
+        │   ├── Most Played.mp4            ← AUTO: attract-mode video
+        │   ├── Recently Played.mp4        ← AUTO: attract-mode video
+        │   └── Recompiled.mp4             ← AUTO: attract-mode video
         └── Themes\
-            ├── Favorites.zip              ← AUTO: attract-mode theme (Theme.xml — 1×1 video, top-left)
-            ├── Most Played.zip            ← AUTO: attract-mode theme
-            ├── Recently Played.zip        ← AUTO: attract-mode theme
-            └── ...
+            ├── Favorites.zip              ← AUTO: attract-mode theme zip
+            ├── Most Played.zip            ← AUTO: attract-mode theme zip
+            ├── Recently Played.zip        ← AUTO: attract-mode theme zip
+            └── Recompiled.zip             ← AUTO: attract-mode theme zip
 
     └── Favorites\                         ← per-game media (auto-mirrored from source systems)
         ├── Images\
         │   ├── Wheel\       ← per-game logos
-        │   ├── Backgrounds\ ← per-game backgrounds
+        │   ├── Backgrounds\ ← per-game backgrounds (shown by theme-fill blank theme)
         │   ├── Artwork1\    ← per-game art (slot 1)
         │   ├── Artwork2\    ← per-game art (slot 2)
         │   ├── Artwork3\    ← per-game art (slot 3)
         │   ├── Titles\      ← title-screen captures (shown in theme side-panels)
         │   └── Letters\     ← alphabetic scroll-bar letter art
-        ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied)
+        ├── Themes\          ← per-game themes (mirrored; Default.zip fallback applied;
+        │                      theme-fill can populate missing entries with a blank theme)
         ├── Sound\
         │   └── Wheel Click.mp3 ← AUTO: cursor-move click sound
         └── Video\           ← per-game videos (.mp4 .wmv .mpeg .mpg .flv .avi .mkv …)
             └── Trailers\    ← per-game trailers
 ```
 
-**AUTO** = installed by `rebuild --apply` from bundled package assets.
+**AUTO** = installed by `rebuild --apply` / `mainmenu add --apply` from bundled package assets.
 Only written when absent — existing user files are never overwritten.
 
-> The same layout applies to `Most Played\` and `Recently Played\`.
+> The same layout applies to `Most Played\`, `Recently Played\`, and `Recompiled\`.
+
+---
+
+## Per-game blank themes (`theme-fill`)
+
+For console wheels (MAME, SNES, etc.), games sometimes have a video or background screenshot but no per-game theme zip. Without a theme zip, HyperSpin may not display the video or image when the game is highlighted.
+
+`spindoctor theme-fill` fills these gaps by installing a minimal blank theme zip for every game that has a video but no theme. The blank theme shows the game's background image from `Images\Backgrounds\` as a full-screen backdrop, then overlays the video on top when one exists:
+
+```bat
+:: See which consoles have games with missing themes
+spindoctor theme-fill --all
+
+:: Preview what would be installed for MAME
+spindoctor theme-fill --system MAME
+
+:: Write blank themes for all MAME games missing one
+spindoctor theme-fill --system MAME --apply
+```
+
+Existing theme zips are never overwritten — `theme-fill` only adds missing entries. See [Command reference → theme-fill](commands.md#theme-fill) for full options.

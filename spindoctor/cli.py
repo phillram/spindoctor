@@ -3791,27 +3791,46 @@ def theme_pack_create(output_dir, target):
 
 
 @cli.command("theme-fill")
-@click.option("--system", "-s", required=True,
-              help="HyperSpin system name (e.g. 'MAME', 'SNES').")
+@click.option("--system", "-s", default=None,
+              help="HyperSpin system name (e.g. 'MAME', 'SNES'). "
+                   "Mutually exclusive with --all.")
+@click.option("--all", "all_systems", is_flag=True,
+              help="Scan every system in Main Menu.xml and show a per-console "
+                   "summary of missing themes.")
 @click.option("--apply", is_flag=True,
               help="Write the blank theme zips. Without this flag the "
                    "command lists what would be installed (dry-run).")
-def theme_fill(system, apply):
+def theme_fill(system, all_systems, apply):
     """Install a blank theme zip for every game that has a video but no theme.
 
     \b
     Walks Media/<SYSTEM>/Video/ and for each video file that has no matching
     Media/<SYSTEM>/Themes/<game>.zip copies the bundled theme_blank.zip
-    (full-screen video, no other decoration) into place.  Existing theme zips
-    are never overwritten.
+    (background image + full-screen video overlay) into place.  Existing
+    theme zips are never overwritten.
+
+    \b
+    Without --apply the command is a dry-run: it lists what would be installed
+    but writes nothing.  With --all it scans every system in Main Menu.xml and
+    prints a per-console summary so you can see which consoles are missing
+    themes at a glance.
 
     \b
     Examples:
       spindoctor theme-fill --system MAME
       spindoctor theme-fill --system "SNES" --apply
+      spindoctor theme-fill --all
+      spindoctor theme-fill --all --apply
     """
     from pathlib import Path
-    from .rocketlauncher import fill_missing_themes
+    from .rocketlauncher import _read_main_menu_systems, fill_missing_themes
+
+    if not system and not all_systems:
+        console.print("[red]Provide --system SYSTEM or --all.[/red]")
+        raise SystemExit(1)
+    if system and all_systems:
+        console.print("[red]--system and --all are mutually exclusive.[/red]")
+        raise SystemExit(1)
 
     config = _cfg()
     _check_config(config)
@@ -3819,9 +3838,52 @@ def theme_fill(system, apply):
     if not hs_dir:
         console.print("[red]hyperspin_dir is not set.[/red] Run: spindoctor config set hyperspin_dir <PATH>")
         raise SystemExit(1)
+    hs_path = Path(hs_dir)
 
-    results = fill_missing_themes(Path(hs_dir), system, dry_run=not apply)
+    _STATUS_COLOUR = {"installed": "green", "dry_run": "cyan", "skipped": "dim", "no_asset": "red"}
 
+    def _run_one(sys_name: str) -> dict[str, str]:
+        return fill_missing_themes(hs_path, sys_name, dry_run=not apply)
+
+    def _print_system(sys_name: str, results: dict[str, str]) -> None:
+        would_install = sum(1 for s in results.values() if s == "dry_run")
+        installed_n = sum(1 for s in results.values() if s == "installed")
+        skipped_n = sum(1 for s in results.values() if s == "skipped")
+        if not results:
+            console.print(f"  [dim]{sys_name}[/dim] — no videos found")
+            return
+        if apply:
+            console.print(f"  [bold]{sys_name}[/bold]: {installed_n} installed, {skipped_n} already present")
+        else:
+            console.print(
+                f"  [bold]{sys_name}[/bold]: {would_install} would install, {skipped_n} already present"
+            )
+
+    if all_systems:
+        mm_path = hs_path / "Databases" / "Main Menu" / "Main Menu.xml"
+        systems = _read_main_menu_systems(mm_path)
+        if not systems:
+            console.print(f"[yellow]No systems found in[/yellow] [cyan]{mm_path}[/cyan]")
+            return
+        total_installed = total_would = total_skipped = 0
+        for sys_name in systems:
+            results = _run_one(sys_name)
+            _print_system(sys_name, results)
+            total_installed += sum(1 for s in results.values() if s == "installed")
+            total_would     += sum(1 for s in results.values() if s == "dry_run")
+            total_skipped   += sum(1 for s in results.values() if s == "skipped")
+        console.print()
+        if apply:
+            console.print(f"[green]✓[/green] Total: {total_installed} installed, {total_skipped} already present.")
+        else:
+            console.print(
+                f"[dim]Dry-run:[/dim] {total_would} would install across {len(systems)} system(s). "
+                f"Pass [cyan]--apply[/cyan] to write."
+            )
+        return
+
+    # Single system
+    results = _run_one(system)
     if not results:
         console.print(
             f"[yellow]No video files found[/yellow] in "
@@ -3833,20 +3895,19 @@ def theme_fill(system, apply):
     tbl.add_column("Game")
     tbl.add_column("Status")
     for game, status in sorted(results.items()):
-        colour = {"installed": "green", "dry_run": "cyan", "skipped": "dim", "no_asset": "red"}.get(status, "white")
+        colour = _STATUS_COLOUR.get(status, "white")
         tbl.add_row(game, f"[{colour}]{status}[/{colour}]")
     console.print(tbl)
 
-    installed = sum(1 for s in results.values() if s == "installed")
+    installed_n = sum(1 for s in results.values() if s == "installed")
     would_install = sum(1 for s in results.values() if s == "dry_run")
-    skipped = sum(1 for s in results.values() if s == "skipped")
-
+    skipped_n = sum(1 for s in results.values() if s == "skipped")
     if apply:
-        console.print(f"\n[green]✓[/green] {installed} theme(s) installed, {skipped} already present.")
+        console.print(f"\n[green]✓[/green] {installed_n} theme(s) installed, {skipped_n} already present.")
     else:
         console.print(
             f"\n[dim]Dry-run:[/dim] {would_install} theme(s) would be installed, "
-            f"{skipped} already present. Pass [cyan]--apply[/cyan] to write."
+            f"{skipped_n} already present. Pass [cyan]--apply[/cyan] to write."
         )
 
 

@@ -383,7 +383,7 @@ recognise, it leaves `Default_Emulator` unchanged (see note below).
 > *"Could not find an Emu_path for RetroArch"* for every game on every console.
 
 The folder-layout `Emulators.ini` for synthetic wheels (Favorites, Recently Played,
-Most Played) looks like — SpinDoctor writes these in full:
+Most Played, Recompiled) looks like — SpinDoctor writes these in full:
 
 ```ini
 [ROMS]
@@ -481,7 +481,7 @@ Key points:
 The `[PCLauncher]` section **must** have `Rom_Extension=ini`. PCLauncher "ROMs" are
 always per-game INI files stored in `Modules\PCLauncher\<system>\<game>.ini`; the actual
 application executable (`.exe`, `.lnk`, etc.) is referenced inside the INI. This applies
-to both synthetic wheels (Favorites, Recently Played, Most Played) and real PC/Windows/Steam
+to both synthetic wheels (Favorites, Recently Played, Most Played, Recompiled) and real PC/Windows/Steam
 systems.
 
 When `Rom_Extension` is missing or set to a non-ini value, RL falls back to its built-in
@@ -1103,7 +1103,7 @@ PCLauncher uses **two separate file types** for synthetic wheels. Many people co
 
 ### 1. ROM Placeholder Files — `Modules\PCLauncher\<System>\<game>.ini`
 
-For **synthetic wheels** (Favorites, Recently Played, Most Played): used only by RocketLauncher to enumerate which games exist in the wheel. PCLauncher.ahk reads the system-level INI instead (see section 2). The placeholder content is irrelevant.
+For **synthetic wheels** (Favorites, Recently Played, Most Played, Recompiled): used only by RocketLauncher to enumerate which games exist in the wheel. PCLauncher.ahk reads the system-level INI instead (see section 2). The placeholder content is irrelevant.
 
 For **PC game wheels** (PC Games, Windows, etc.): the per-game INI IS the launch config. PCLauncher.ahk reads it first (before the system-level INI) and uses `[<game_name>]` / `Application=`. See *PCLauncher Architecture — PC Game Wheels* below.
 
@@ -1270,7 +1270,7 @@ SpinDoctor's dry-run mode compares each per-game INI's `Application=` value agai
 A normal wheel (MAME, Nintendo 64, etc.) maps every entry to a single system. HyperSpin
 exits, one `RocketLauncher.exe` runs, the emulator loads. One RL instance, start to finish.
 
-A **synthetic wheel** (Favorites, Recently Played, Most Played) is a cross-system list.
+A **synthetic wheel** (Favorites, Recently Played, Most Played, Recompiled) is a cross-system list.
 A single Favorites wheel might contain a MAME game, a Zinc game, and a PC game side by
 side. HyperSpin has no native concept of cross-system wheels — it can only launch entries
 from one system using one emulator. The only mechanism available is **PCLauncher**, which
@@ -1419,7 +1419,7 @@ source system** (e.g. "MAME"), not to "Favorites". This is because PCLauncher pa
 However, if a session is somehow attributed to a synthetic system name (e.g. if RL#1 logs
 the session before RL#2 runs), SpinDoctor's stats reader (`collect_play_records` in
 `recent.py` and `load_all_playtime` in `playtime.py`) **skips** Statistics.ini files for
-the three synthetic system names:
+these system names:
 
 ```python
 SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played"})
@@ -1427,6 +1427,10 @@ SYNTHETIC_SYSTEM_NAMES = frozenset({"Favorites", "Recently Played", "Most Played
 
 This ensures that playing "Strider" from Favorites never adds it to Recently Played or
 Most Played via the synthetic wheel path — only real arcade wheel plays count.
+
+> **Note:** `Recompiled` is intentionally absent from `SYNTHETIC_SYSTEM_NAMES`. It is a
+> curated hand-picked wheel (not auto-generated from stats), so plays from it *do* count
+> toward Recently Played and Most Played. Only the three auto-generated wheels are excluded.
 
 ### Stale stats entries from failed launches (cascading failure)
 

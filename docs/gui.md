@@ -166,6 +166,8 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 **Add one local media file** (unnumbered): System + game + media-type dropdowns + file picker, drives `media-add` with optional **Move** and **Overwrite if target exists** flags. Honours the global Apply toggle — unticked shows the would-copy destination as a dry-run preview. Selecting a system auto-populates the **Game** dropdown from that system's database; click **↻** to refresh.
 
+**Fill missing game themes** (unnumbered): Installs a blank HyperSpin theme zip for every game in the selected system that has a video or background screenshot but no per-game theme zip. The blank theme shows `Images\Backgrounds\<game>.png` as a full-screen backdrop and overlays the game video on top when one is present — existing theme zips are never overwritten. **Preview missing themes** runs a dry-run; **Fill blank themes (apply)** writes. Tick **All systems** in the System row to scan all systems at once. CLI: `spindoctor theme-fill --system <SYSTEM> [--all] [--apply]`.
+
 **Per-game & override (Optional)** — appears directly below the System selector, before Step 1. Contains two related controls in one collapsible box:
 
 - **Game selector** (blank = all games): Limits every operation on the tab to one specific game. The dropdown auto-populates when a system is selected. Clear it with **✕** to run all games again.
