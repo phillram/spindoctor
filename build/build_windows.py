@@ -24,6 +24,7 @@ bootloader Windows 7 SP1 still loads.
 """
 from __future__ import annotations
 
+import fnmatch
 import os
 import shutil
 import subprocess
@@ -154,6 +155,30 @@ def write_shim(entry: str, name: str) -> Path:
     return shim
 
 
+# EXEs that must bundle deployment media (backgrounds, videos, music, wheel art,
+# themes).  spindoctor-gui shells out to spindoctor.exe for all media-installing
+# operations so it doesn't need the files itself.  spindoctor-stats never
+# installs synthetic-wheel assets.
+_MEDIA_NAMES: frozenset[str] = frozenset({
+    "spindoctor",
+    "spindoctor-fav",
+    "spindoctor-recent",
+})
+
+# Glob patterns that identify deployment media vs app assets (icon, etc.).
+_MEDIA_PATTERNS: tuple[str, ...] = (
+    "bg_*.png",
+    "*.mp3",
+    "video_*.mp4",
+    "wheel_art_*.png",
+    "theme_*.zip",
+)
+
+
+def _is_deployment_media(path: Path) -> bool:
+    return any(fnmatch.fnmatch(path.name, pat) for pat in _MEDIA_PATTERNS)
+
+
 _STANDALONE_NAMES = {"spindoctor-fav", "spindoctor-recent", "spindoctor-stats"}
 
 
@@ -175,8 +200,14 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
         # The archive/ subdir holds deprecated originals kept for reference;
         # it is excluded from pip installs and must also be excluded here
         # so it doesn't bloat every frozen exe.
+        #
+        # Deployment media (videos, backgrounds, music, themes, wheel art) is
+        # large and only bundled for EXEs in _MEDIA_NAMES.  spindoctor-gui
+        # shells out to spindoctor.exe for all media-installing operations;
+        # spindoctor-stats never touches synthetic-wheel media.
+        bundle_media = name in _MEDIA_NAMES
         for asset_file in sorted(ASSETS_DIR.iterdir()):
-            if asset_file.is_file():
+            if asset_file.is_file() and (bundle_media or not _is_deployment_media(asset_file)):
                 cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS[name]:
         cmd += ["--hidden-import", hi]
@@ -188,23 +219,146 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
     subprocess.check_call(cmd)
 
 
+def generate_onedir_spec(shims: dict[str, Path]) -> Path:
+    """Write a PyInstaller 6.x spec for the shared-runtime --onedir modern build.
+
+    PyInstaller 6.x produces a clean _internal/ subdirectory for the shared
+    runtime, which lets COLLECT deduplicate the CPython DLLs and .pyd extensions
+    across all five EXEs.  This doesn't work with PyInstaller 5.x (required for
+    Win7) because 5.x puts everything flat with no _internal/ separation.
+
+    Returns the path to the written spec file.
+    """
+    spec_dir = BUILD / "specs"
+    spec_dir.mkdir(parents=True, exist_ok=True)
+
+    lines: list[str] = ["# -*- mode: python ; coding: utf-8 -*-", ""]
+
+    for _entry, name, windowed in TARGETS:
+        safe = name.replace("-", "_")
+        bundle_media = name in _MEDIA_NAMES
+        datas: list[tuple[str, str]] = []
+        if ASSETS_DIR.exists():
+            for asset_file in sorted(ASSETS_DIR.iterdir()):
+                if asset_file.is_file() and (bundle_media or not _is_deployment_media(asset_file)):
+                    datas.append((asset_file.as_posix(), "spindoctor/assets"))
+        excludes = _STANDALONE_EXCLUDES if name in _STANDALONE_NAMES else []
+        icon_repr = repr(ICON.as_posix()) if ICON.exists() else "None"
+
+        lines += [
+            f"a_{safe} = Analysis(",
+            f"    [{shims[name].as_posix()!r}],",
+            f"    pathex=[],",
+            f"    binaries=[],",
+            f"    datas={datas!r},",
+            f"    hiddenimports={HIDDEN_IMPORTS[name]!r},",
+            f"    hookspath=[],",
+            f"    hooksconfig={{}},",
+            f"    runtime_hooks=[],",
+            f"    excludes={excludes!r},",
+            f"    noarchive=False,",
+            f")",
+            f"pyz_{safe} = PYZ(a_{safe}.pure)",
+            f"exe_{safe} = EXE(",
+            f"    pyz_{safe},",
+            f"    a_{safe}.scripts,",
+            f"    [],",
+            f"    exclude_binaries=True,",
+            f"    name={name!r},",
+            f"    debug=False,",
+            f"    bootloader_ignore_signals=False,",
+            f"    strip=False,",
+            f"    upx=True,",
+            f"    console={repr(not windowed)},",
+            f"    disable_windowed_traceback=False,",
+            f"    argv_emulation=False,",
+            f"    target_arch=None,",
+            f"    codesign_identity=None,",
+            f"    entitlements_file=None,",
+            f"    icon={icon_repr},",
+            f")",
+            "",
+        ]
+
+    # COLLECT merges all five EXEs + their binaries/datas into one output
+    # directory.  PyInstaller 6.x deduplicates the shared runtime into _internal/.
+    collect_args = []
+    for _entry, name, _windowed in TARGETS:
+        safe = name.replace("-", "_")
+        collect_args += [f"exe_{safe}", f"a_{safe}.binaries", f"a_{safe}.datas"]
+
+    lines += [
+        "coll = COLLECT(",
+        "    " + ",\n    ".join(collect_args) + ",",
+        "    strip=False,",
+        "    upx=True,",
+        "    upx_exclude=[],",
+        "    name='spindoctor-windows',",
+        ")",
+    ]
+
+    spec = spec_dir / "spindoctor.spec"
+    spec.write_text("\n".join(lines) + "\n")
+    print(f"Generated spec: {spec}", flush=True)
+    return spec
+
+
 def main() -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(
+        description="Build SpinDoctor standalone Windows executables."
+    )
+    ap.add_argument(
+        "--modern",
+        action="store_true",
+        help=(
+            "Build a shared-runtime --onedir bundle for Windows 10/11 "
+            "(Python 3.10+ / PyInstaller 6.x).  COLLECT deduplicates the "
+            "runtime across all five EXEs into _internal/; "
+            "produces dist/spindoctor-windows/."
+        ),
+    )
+    args = ap.parse_args()
+
     if DIST.exists():
         shutil.rmtree(DIST)
     if BUILD.exists():
         shutil.rmtree(BUILD)
     DIST.mkdir(parents=True, exist_ok=True)
 
-    for entry, name, windowed in TARGETS:
-        shim = write_shim(entry, name)
-        run_pyinstaller(shim, name, windowed)
+    if args.modern:
+        shims = {name: write_shim(entry, name) for entry, name, _ in TARGETS}
+        spec = generate_onedir_spec(shims)
+        subprocess.check_call([
+            sys.executable, "-m", "PyInstaller",
+            "--noconfirm",
+            "--distpath", str(DIST),
+            "--workpath", str(BUILD / "work"),
+            str(spec),
+        ])
+        out_dir = DIST / "spindoctor-windows"
+        suffix = ".exe" if sys.platform == "win32" else ""
+        print("\nBuilt (modern --onedir):")
+        for _, name, _ in TARGETS:
+            exe = out_dir / f"{name}{suffix}"
+            if exe.exists():
+                print(f"  {exe.name}  ({exe.stat().st_size // (1024 * 1024)} MB)")
+        internal = out_dir / "_internal"
+        if internal.exists():
+            total = sum(f.stat().st_size for f in internal.rglob("*") if f.is_file())
+            print(f"  _internal/  ({total // (1024 * 1024)} MB shared runtime)")
+    else:
+        for entry, name, windowed in TARGETS:
+            shim = write_shim(entry, name)
+            run_pyinstaller(shim, name, windowed)
 
-    suffix = ".exe" if sys.platform == "win32" else ""
-    print("\nBuilt:")
-    for _, name, _ in TARGETS:
-        exe = DIST / f"{name}{suffix}"
-        if exe.exists():
-            print(f"  {exe.name}  ({exe.stat().st_size // (1024 * 1024)} MB)")
+        suffix = ".exe" if sys.platform == "win32" else ""
+        print("\nBuilt (--onefile):")
+        for _, name, _ in TARGETS:
+            exe = DIST / f"{name}{suffix}"
+            if exe.exists():
+                print(f"  {exe.name}  ({exe.stat().st_size // (1024 * 1024)} MB)")
     return 0
 
 
