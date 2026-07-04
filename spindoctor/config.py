@@ -25,9 +25,18 @@ ROM_EXTENSIONS: dict[str, list[str]] = {
     "atomiswave": [".zip", ".7z", ".chd"],
     "triforce": [".zip", ".7z", ".chd"],
     # Nintendo consoles
+    # Include the canonical HyperSpin database folder names (the long form
+    # HyperSpin ships) alongside the short aliases — without these, folders
+    # named "Nintendo Entertainment System" / "Super Nintendo Entertainment
+    # System" / "Nintendo 64" fall through to the default extension list and
+    # unzipped ROMs (.nes/.sfc/.z64) are missed by audit.
     "nes": [".nes", ".zip", ".7z"],
+    "nintendoentertainmentsystem": [".nes", ".zip", ".7z"],
     "snes": [".sfc", ".smc", ".zip", ".7z"],
+    "supernintendo": [".sfc", ".smc", ".zip", ".7z"],
+    "supernintendoentertainmentsystem": [".sfc", ".smc", ".zip", ".7z"],
     "n64": [".z64", ".n64", ".v64", ".zip", ".7z"],
+    "nintendo64": [".z64", ".n64", ".v64", ".zip", ".7z"],
     "gba": [".gba", ".zip", ".7z"],
     "gameboyadvance": [".gba", ".zip", ".7z"],
     "gb": [".gb", ".zip", ".7z"],

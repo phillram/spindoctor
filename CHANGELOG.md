@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Recently Played silently dropped any system whose `Statistics.ini` had a UTF-8 BOM.** `recent._read_stats_file` read per-system stats with plain `utf-8`, so the byte-order mark RocketLauncher sometimes writes stayed on the first section header and configparser raised `MissingSectionHeaderError` — dropping that system's entire play history from the Recently Played wheel. `playtime._read_playstats_file` already read the *same files* with `utf-8-sig`, so a BOM'd system would appear in Most Played but vanish from Recently Played. Recent now uses `utf-8-sig` to match.
+
+- **`ledblinky colors edit --name <NewName>` crashed when the new name contained a backslash.** `_replace_color_in_colors_ini` and `_replace_color_in_controls_xml` interpolated the new name into `re.sub`/`re.subn` *replacement* strings, so a backslash sequence (e.g. a name pasted from a Windows path) was misread as a regex backreference and raised `re.error: bad escape \U` — the exact Windows-path pitfall documented in the architecture reference and already guarded against in `rocketlauncher.py`. Both helpers now use callable replacements so the name is written literally.
+
+- **ROM audits missed unzipped ROMs under canonically-named Nintendo folders.** `get_rom_extensions` only recognised the short aliases (`nes`, `snes`, `n64`), so folders named with HyperSpin's canonical database names — `Nintendo Entertainment System`, `Super Nintendo Entertainment System`, `Super Nintendo`, `Nintendo 64` — fell through to the default extension list, which lacks `.nes`/`.sfc`/`.smc`/`.z64`. Bare (unzipped) ROMs in those systems were therefore skipped by `audit`. Added explicit entries for the canonical long-form names.
+
+- **`stats-report build-wheel --output-dir` wrote into (and pruned) the live RocketLauncher install.** `--output-dir` staged only `hyperspin_dir`, leaving `rocketlauncher_dir` pointed at the real install — so an `--apply` "staging" run still wrote PCLauncher INIs there, and the stale-INI pruning step could **delete** live per-game launchers not present in the staged set. Staging now skips launcher writes entirely (matching `mainmenu` / `generate-config`, which only ever stage the HyperSpin tree) and prints a note that launchers were skipped.
+
+- **The generated `Refresh All.bat` swallowed mid-chain failures.** The `install-tools`-written `Refresh All.bat` only checked `errorlevel` after the *last* wheel refresh, so if Favorites failed but Most Played succeeded the window closed with no error. It now checks after every step and pauses on the first failure, matching the hand-written `scripts/Refresh All.bat`.
+
+- **`migrate` created the target directory during a dry-run.** `plan_migration` called `target_root.mkdir(...)` while *planning*, so a preview without `--apply` created the destination folder on disk — against the project-wide dry-run-is-side-effect-free rule. The directory is now created only by `apply_migration` when the plan is committed.
+
+- **A disk-full (or permission) error mid-`migrate` lost the undo manifest.** `apply_migration` only rescued partial progress on `KeyboardInterrupt`; an `OSError` mid-move skipped the manifest/config recovery, leaving completed (and, in move-mode, source-destroying) moves irreversible via `migrate --undo`. It now catches `BaseException` like `backup.apply_backup`, persisting the partial manifest for whatever completed.
+
+- **`fav remove` left mirrored media behind.** The `spindoctor fav remove` CLI command removed the store entry but not the game's mirrored files under `Media/Favorites/`, while the standalone `spindoctor-fav remove` cleaned them up — the two front-ends behaved differently. The CLI now drops the orphaned media too (the next rebuild would have pruned it, but the behaviour is now consistent).
+
+### Changed
+
+- **Boot-time wheel refreshes now hardlink media by default instead of copying.** The standalone `spindoctor-fav`, `spindoctor-recent`, and `spindoctor-stats` wheel builders defaulted `--media-mode` to `copy`, while the full CLI (and the docs) default to `auto` (hardlink, fall back to copy). The `.bat`/startup refreshes therefore duplicated media bytes where the CLI would have hardlinked. All three standalones now default to `auto`, matching the CLI and documentation.
+
+### Docs
+
+- **Renamed `scripts/Refresh Both.bat` → `scripts/Refresh All.bat`.** Every reference — `scripts/README.md`, `docs/standalone-tools.md`, `docs/gui.md`, and the `install-tools` generator — already used "Refresh All.bat"; only the shipped file kept the stale two-wheel-era name (it has refreshed all three wheels for some time). The file is now named to match.
+
+- **Corrected the "windowed alternative" note in `scripts/README.md`.** It described a non-existent "Wheels tab" with a "Refresh All Three" button; the GUI's wheel refresh lives on the **Toolkit** tab (Step 2) with per-wheel checkboxes and a **Refresh selected** button, as `docs/standalone-tools.md` already documented.
+
+- **Fixed two stale in-code notes:** the `SPINDOCTOR_NO_UPDATE_CHECK` comment said it would be documented "once the feature lands" (it is, in `docs/configuration.md` and `docs/troubleshooting.md`), and `format_duration`'s docstring gave `1d 2h 3m` as example output, which the function never produces (minutes are suppressed once the value reaches a day).
+
 ## [2.9.3] - 2026-07-04
 
 ### Fixed

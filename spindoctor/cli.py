@@ -2272,11 +2272,24 @@ def fav_add(system_name, rom_name, display_name):
 @click.argument("rom_name")
 def fav_remove(system_name, rom_name):
     """Remove a favorite from the cross-system wheel."""
-    from .favorites import load_store, remove, save_store
+    from .favorites import (
+        FavoriteEntry, _resolve_target_names, load_store, remove, save_store,
+    )
+    from .medialink import remove_target
     config = _cfg()
     store = load_store()
     if remove(store, system_name, rom_name):
         save_store(store, tmp_dir=config.effective_atomic_tmp_dir)
+        # Drop mirrored media for the removed game so we don't leave orphans
+        # behind until the next rebuild — matches the standalone
+        # `spindoctor-fav remove` behaviour.
+        if config.hyperspin_dir:
+            target_names = _resolve_target_names(store.entries + [
+                FavoriteEntry(system_name, rom_name, rom_name, "")
+            ])
+            stale = target_names.get(f"{system_name}::{rom_name}")
+            if stale:
+                remove_target(config.media_dir, store.target_system, stale)
         console.print(f"[green]-[/green] {system_name} :: {rom_name}")
     else:
         console.print(f"[yellow]not a favorite:[/yellow] {system_name} :: {rom_name}")
@@ -2390,6 +2403,15 @@ def fav_rebuild(media_mode, apply_changes, verbose):
     config = _cfg()
     _check_config(config)
     _warn_rocketlauncher_dir(config)
+    # Print the dry-run banner up front so it isn't buried under the sync
+    # step's output (sync merges HyperSpin's F-key favorites into the store
+    # and saves favorites.json — that store import is intentional and runs
+    # regardless of --apply; only the wheel rebuild below is gated).
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No wheel files will be "
+            "written. Re-run with [cyan]--apply[/cyan] to commit."
+        )
     store = load_store()
     synced, sync_warns, sync_notes = _run_native_sync(store, config, verbose)
     for w in sync_warns:
@@ -2406,11 +2428,6 @@ def fav_rebuild(media_mode, apply_changes, verbose):
         console.print(f"[dim]  note: {note}[/dim]")
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
-    if not apply_changes:
-        console.print(
-            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
-            "Re-run with [cyan]--apply[/cyan] to commit."
-        )
     summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
                       dry_run=not apply_changes, verbose=verbose)
     _print_synth_summary("Favorites", summary)
@@ -2935,10 +2952,13 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         console.print("[dim]Re-run with --apply to write changes.[/dim]")
         return
 
-    if output_dir:
-        # Honour --output-dir by routing the synthetic wheel into a
-        # staging tree.  We override the config rather than the writer
-        # signature so the same code-path handles both modes.
+    # --output-dir stages only the HyperSpin-side artifacts (Databases + Media)
+    # into a scratch tree, exactly like `mainmenu`/`generate-config`. It must
+    # never touch the live RocketLauncher install — writing (and, worse,
+    # pruning) PCLauncher INIs there would delete real per-game launchers that
+    # aren't in the staged set. So when staging we skip launcher writes.
+    staging = bool(output_dir)
+    if staging:
         from dataclasses import replace
         out = Path(output_dir)
         config = replace(
@@ -2946,7 +2966,8 @@ def stats_report_build_wheel(limit, target_system, media_mode,
             hyperspin_dir=str(out),
         )
 
-    _warn_rocketlauncher_dir(config)
+    if not staging:
+        _warn_rocketlauncher_dir(config)
     skip_media = media_mode == "none"
     mode = LinkMode.AUTO if skip_media else LinkMode(media_mode)
     summary = build_most_played_wheel(
@@ -2955,8 +2976,15 @@ def stats_report_build_wheel(limit, target_system, media_mode,
         limit=limit,
         media_mode=mode,
         skip_media=skip_media,
+        skip_launchers=staging,
         verbose=verbose,
     )
+    if staging:
+        console.print(
+            "[dim]Staging to --output-dir: wrote database + media only; "
+            "PCLauncher launcher INIs were skipped so the live RocketLauncher "
+            "install is left untouched.[/dim]"
+        )
     _print_synth_summary("Most Played", summary)
 
 
@@ -3426,11 +3454,14 @@ def _make_install_tools_bats() -> "dict[str, str]":
         ),
         "Refresh All.bat": (
             "@echo off\r\n"
+            "REM Refresh all three wheels. Pause on ANY step's failure so a\r\n"
+            "REM silent fail-and-close doesn't hide which wheel didn't rebuild.\r\n"
             f"{fav} rebuild --apply\r\n"
+            "if errorlevel 1 (echo. & echo Favorites step failed. & pause & exit /b 1)\r\n"
             f"{recent} rebuild --apply\r\n"
+            "if errorlevel 1 (echo. & echo Recently Played step failed. & pause & exit /b 1)\r\n"
             f"{stats} build-wheel --apply\r\n"
-            "if errorlevel 1 pause\r\n"
-            "exit\r\n"
+            "if errorlevel 1 (echo. & echo Most Played step failed. & pause & exit /b 1)\r\n"
         ),
     }
 

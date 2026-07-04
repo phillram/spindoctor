@@ -176,7 +176,9 @@ def plan_migration(
         plan.notes.append("No components selected.")
         return plan
 
-    target_root.mkdir(parents=True, exist_ok=True)
+    # NB: do NOT create target_root here — planning must stay side-effect-free
+    # so a dry-run (no --apply) never touches disk. apply_migration creates the
+    # target tree per move (dest.parent.mkdir) when the plan is committed.
 
     chosen_subfolders: dict[str, str] = {}  # tracks collisions in preserve mode
 
@@ -374,12 +376,20 @@ def apply_migration(
             applied.append(move)
             if progress_cb:
                 progress_cb(move, "done")
-    except KeyboardInterrupt:
-        # Ctrl+C mid-move can leave a half-copied dest. Best-effort
-        # cleanup of the in-flight dest only — never touch already-
-        # applied moves (the user may want to keep them) and never
-        # touch the src tree (a moved-and-half-deleted source is the
-        # one thing worth NOT making worse). Re-raise after cleanup.
+    except BaseException:
+        # Any failure mid-move — Ctrl+C, OSError (disk full, permissions),
+        # or a verify RuntimeError — can leave a half-copied dest and, in
+        # move-mode, destroys source folders as it goes. Persist a partial
+        # manifest + config updates for whatever DID complete so `migrate
+        # --undo` can still reverse it; without this the finished moves are
+        # irreversible. (Previously only KeyboardInterrupt was rescued, so an
+        # OSError lost the undo manifest entirely — cf. backup.apply_backup,
+        # which already caught BaseException.)
+        #
+        # Best-effort cleanup of the in-flight dest only — never touch already-
+        # applied moves (the user may want to keep them) and never touch the
+        # src tree (a moved-and-half-deleted source is the one thing worth NOT
+        # making worse). Re-raise after cleanup.
         if current_dest is not None and keep_source:
             try:
                 if current_dest.is_dir():
