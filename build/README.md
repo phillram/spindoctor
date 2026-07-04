@@ -76,7 +76,7 @@ Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and 
 - `spindoctor` — all four wheels' media (full CLI handles every wheel).
 - `spindoctor-fav` — Favorites assets only (`*_Favorites.*`) + shared files (`navigate_sound.mp3`, `theme_blank.zip`).
 - `spindoctor-recent` — Recently Played assets only (`*_Recently_Played.*`) + shared files.
-- `spindoctor-gui` / `spindoctor-stats` — no deployment media. The GUI shells out to `spindoctor.exe` for all media-installing operations; `spindoctor-stats` rebuilds the Most Played wheel XML but never installs synthetic-wheel media.
+- `spindoctor-gui` / `spindoctor-stats` — no deployment media. The GUI never reads asset files directly — it delegates every operation to a sibling binary (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, or `spindoctor-stats.exe`), which carry the media they need. `spindoctor-stats` rebuilds the Most Played wheel XML but never installs synthetic-wheel media.
 
 Generating the entry-point shims at build time (rather than committing spec files) keeps `build_windows.py` as the single source of truth for entry-points, hidden imports, and asset paths. Adding a new console script is a one-line edit to `TARGETS`.
 
