@@ -71,7 +71,12 @@ Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
 
 **Modern (`--onedir` via `--modern`):** `build_windows.py` generates a PyInstaller 6.x spec file with five `Analysis` + `EXE` objects and one `COLLECT`. PyInstaller runs once; the COLLECT deduplicates the shared runtime into `_internal/`.
 
-Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and `_MEDIA_NAMES`. Deployment media (videos, backgrounds, music, wheel art, themes) is only bundled in the three EXEs that actually install it — `spindoctor`, `spindoctor-fav`, `spindoctor-recent`. The GUI shells out to `spindoctor.exe` for all media-installing operations; `spindoctor-stats` never touches synthetic-wheel media.
+Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and `_MEDIA_WHEEL`. Deployment media (videos, backgrounds, music, wheel art, themes) is filtered per-EXE by `_bundle_asset()`:
+
+- `spindoctor` — all four wheels' media (full CLI handles every wheel).
+- `spindoctor-fav` — Favorites assets only (`*_Favorites.*`) + shared files (`navigate_sound.mp3`, `theme_blank.zip`).
+- `spindoctor-recent` — Recently Played assets only (`*_Recently_Played.*`) + shared files.
+- `spindoctor-gui` / `spindoctor-stats` — no deployment media. The GUI never reads asset files directly — it delegates every operation to a sibling binary (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, or `spindoctor-stats.exe`), which carry the media they need. `spindoctor-stats` rebuilds the Most Played wheel XML but never installs synthetic-wheel media.
 
 Generating the entry-point shims at build time (rather than committing spec files) keeps `build_windows.py` as the single source of truth for entry-points, hidden imports, and asset paths. Adding a new console script is a one-line edit to `TARGETS`.
 

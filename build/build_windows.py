@@ -155,15 +155,18 @@ def write_shim(entry: str, name: str) -> Path:
     return shim
 
 
-# EXEs that must bundle deployment media (backgrounds, videos, music, wheel art,
-# themes).  spindoctor-gui shells out to spindoctor.exe for all media-installing
-# operations so it doesn't need the files itself.  spindoctor-stats never
-# installs synthetic-wheel assets.
-_MEDIA_NAMES: frozenset[str] = frozenset({
-    "spindoctor",
-    "spindoctor-fav",
-    "spindoctor-recent",
-})
+# Maps each EXE that installs deployment media to the wheel-name suffix used
+# in its asset filenames.  None means bundle all media (the full CLI handles
+# every wheel).  EXEs absent from this dict get no deployment media.
+#
+# spindoctor-gui shells out to spindoctor.exe for all media-installing
+# operations so it never reads asset files directly.  spindoctor-stats only
+# reports playtime and never installs synthetic-wheel assets.
+_MEDIA_WHEEL: dict[str, str | None] = {
+    "spindoctor":        None,              # all wheels
+    "spindoctor-fav":    "Favorites",
+    "spindoctor-recent": "Recently_Played",
+}
 
 # Glob patterns that identify deployment media vs app assets (icon, etc.).
 _MEDIA_PATTERNS: tuple[str, ...] = (
@@ -174,9 +177,41 @@ _MEDIA_PATTERNS: tuple[str, ...] = (
     "theme_*.zip",
 )
 
+# Media filenames shared across all wheels — included in every media-bearing EXE
+# regardless of which wheel it manages.  navigate_sound is per-system but the
+# same file for all four wheels; theme_blank is used by theme-fill on any wheel.
+_SHARED_MEDIA_FILES: frozenset[str] = frozenset({
+    "navigate_sound.mp3",
+    "theme_blank.zip",
+})
+
 
 def _is_deployment_media(path: Path) -> bool:
     return any(fnmatch.fnmatch(path.name, pat) for pat in _MEDIA_PATTERNS)
+
+
+def _bundle_asset(path: Path, exe_name: str) -> bool:
+    """Return True if *path* should be added to *exe_name*'s bundle.
+
+    Non-media assets (icon.ico, icon.png) are always included.  Deployment
+    media is filtered to only the files the EXE actually needs:
+
+    * spindoctor        — all media (full CLI handles every wheel).
+    * spindoctor-fav    — Favorites assets + shared files.
+    * spindoctor-recent — Recently_Played assets + shared files.
+    * spindoctor-gui / spindoctor-stats — no deployment media.
+    """
+    if not _is_deployment_media(path):
+        return True  # icon.ico / icon.png — always bundled
+    if exe_name not in _MEDIA_WHEEL:
+        return False  # gui / stats: no deployment media
+    wheel = _MEDIA_WHEEL[exe_name]
+    if wheel is None:
+        return True  # full CLI: all media
+    return (
+        path.name in _SHARED_MEDIA_FILES
+        or fnmatch.fnmatch(path.name, f"*_{wheel}.*")
+    )
 
 
 _STANDALONE_NAMES = {"spindoctor-fav", "spindoctor-recent", "spindoctor-stats"}
@@ -200,14 +235,8 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
         # The archive/ subdir holds deprecated originals kept for reference;
         # it is excluded from pip installs and must also be excluded here
         # so it doesn't bloat every frozen exe.
-        #
-        # Deployment media (videos, backgrounds, music, themes, wheel art) is
-        # large and only bundled for EXEs in _MEDIA_NAMES.  spindoctor-gui
-        # shells out to spindoctor.exe for all media-installing operations;
-        # spindoctor-stats never touches synthetic-wheel media.
-        bundle_media = name in _MEDIA_NAMES
         for asset_file in sorted(ASSETS_DIR.iterdir()):
-            if asset_file.is_file() and (bundle_media or not _is_deployment_media(asset_file)):
+            if asset_file.is_file() and _bundle_asset(asset_file, name):
                 cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS[name]:
         cmd += ["--hidden-import", hi]
@@ -236,11 +265,10 @@ def generate_onedir_spec(shims: dict[str, Path]) -> Path:
 
     for _entry, name, windowed in TARGETS:
         safe = name.replace("-", "_")
-        bundle_media = name in _MEDIA_NAMES
         datas: list[tuple[str, str]] = []
         if ASSETS_DIR.exists():
             for asset_file in sorted(ASSETS_DIR.iterdir()):
-                if asset_file.is_file() and (bundle_media or not _is_deployment_media(asset_file)):
+                if _bundle_asset(asset_file, name):
                     datas.append((asset_file.as_posix(), "spindoctor/assets"))
         excludes = _STANDALONE_EXCLUDES if name in _STANDALONE_NAMES else []
         icon_repr = repr(ICON.as_posix()) if ICON.exists() else "None"
