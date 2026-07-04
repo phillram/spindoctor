@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Windows 10/11 (modern) release bundle grew instead of shrinking in v2.9.2, and was larger than the Win7 bundle.** The v2.9.2 fix that trimmed `spindoctor-fav.exe`/`spindoctor-recent.exe` to only their own wheel's media dropped the `.is_file()` guard from the `--onedir` spec generator's asset-filtering loop (kept intact on the Win7 `--onefile` path). `spindoctor/assets/archive/` — a ~129 MB folder of deprecated original media, deliberately excluded from every build — is a directory, so it matched none of the media-file glob patterns and fell through to "always bundle," recursively pulling the whole folder into every EXE's shared `_internal/` runtime on the modern build only. Win7 shrank as intended (202 MB → 130 MB); Win10 grew (93 MB → 137 MB) and overtook it. Both build paths now share one `iter_bundle_assets()` filter instead of maintaining the same logic twice, so they can't drift apart again; a regression test (`tests/test_build_windows.py`) pins both the shared helper and the actual `--onedir` spec output against ever referencing `archive/`.
+
 ## [2.9.2] - 2026-07-04
 
 ### Fixed

@@ -71,7 +71,7 @@ Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
 
 **Modern (`--onedir` via `--modern`):** `build_windows.py` generates a PyInstaller 6.x spec file with five `Analysis` + `EXE` objects and one `COLLECT`. PyInstaller runs once; the COLLECT deduplicates the shared runtime into `_internal/`.
 
-Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and `_MEDIA_WHEEL`. Deployment media (videos, backgrounds, music, wheel art, themes) is filtered per-EXE by `_bundle_asset()`:
+Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and `_MEDIA_WHEEL`. Both build paths list assets to bundle through the same `iter_bundle_assets()` — it excludes subdirectories (`spindoctor/assets/archive/` is ~129 MB of deprecated originals that must never be bundled) and then filters deployment media per-EXE via `_bundle_asset()`:
 
 - `spindoctor` — all four wheels' media (full CLI handles every wheel).
 - `spindoctor-fav` — Favorites assets only (`*_Favorites.*`) + shared files (`navigate_sound.mp3`, `theme_blank.zip`).
