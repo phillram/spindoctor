@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **`fetch-steam-media` now downloads per-game backgrounds.** The `background` slot is populated from Steam's `screenshots[].path_full` list (same source as `snap`) and is now part of the default `--types` set (`video,snap,background,artwork`). The first screenshot is written to `Images\Backgrounds\<game>.png`; use `--background-index N` to pick a different screenshot. Available in the GUI's Steam media panel as the **Background** dropdown. `--background-index` added as the corresponding non-interactive flag.
+
 - **`theme-fill` command (CLI + GUI).** `spindoctor theme-fill --system <SYSTEM> [--apply]` scans `Media\<SYSTEM>\Video\` and installs a blank full-screen theme zip for every game that has a video but no matching `Themes\<game>.zip`. Pass `--all` instead of `--system` to scan every system in `Main Menu.xml` and print a per-console summary of missing themes. Existing theme zips are never overwritten. Available in the GUI under *Metadata & Media → Fill missing game themes* (the All systems checkbox applies automatically).
 
 - **`theme_blank.zip` bundled asset.** A reusable full-screen HyperSpin theme zip (`Theme.xml` with both a `<background>` element and a `<video>` element, each 1024×768 centred on the canvas) shipped inside the package for use by `theme-fill`. The background element shows the game's `Images\Backgrounds\` screenshot when present; the video element (`below="false"`) overlays the video on top when one exists.
