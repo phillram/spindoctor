@@ -1354,9 +1354,22 @@ spindoctor theme-fill --system MAME --apply
 
 :: Write blank themes across every system in Main Menu.xml
 spindoctor theme-fill --all --apply
+
+:: Install one console-level default.zip fallback for MAME
+spindoctor theme-fill --system MAME --default --apply
+
+:: Install a default.zip for every console that lacks one
+spindoctor theme-fill --all --default --apply
+
+:: Dry-run with per-game detail for every console (instead of just counts)
+spindoctor theme-fill --all --verbose
 ```
 
 Without `--apply` the command is a dry-run; it lists what would be installed but writes nothing. With `--all` it reads `Databases\Main Menu\Main Menu.xml` and prints a one-line per-console summary, making it easy to see at a glance which systems still have games with no theme.
+
+With `--default` the command works at the console level instead of per-game: it checks `Media\<SYSTEM>\Themes\default.zip` and installs the same blank theme there when it is missing. HyperSpin falls back to `default.zip` for any game in the system that has no theme of its own, so one file covers the whole console. An existing `default.zip` is never overwritten. Combine with `--all` to backfill a default across every system at once.
+
+With `--verbose`, `--all` also prints the per-game status breakdown under each console (instead of just the summary line), and every other mode prints the full destination zip path for each game/console.
 
 **Options:**
 
@@ -1364,9 +1377,11 @@ Without `--apply` the command is a dry-run; it lists what would be installed but
 |--------|-------------|
 | `--system SYSTEM` | One HyperSpin system name. Mutually exclusive with `--all`. |
 | `--all` | Scan every system in Main Menu.xml. Mutually exclusive with `--system`. |
+| `--default` | Fill the console-level `Themes\default.zip` fallback instead of a per-game zip. |
 | `--apply` | Write the blank theme zips. Dry-run without this flag. |
+| `--verbose`, `-v` | Print per-game detail (with `--all`) or full destination paths (otherwise). |
 
-> **GUI alternative:** *Metadata & Media* tab → **Fill missing game themes** section. Uses the shared System / All systems selector at the top of the tab.
+> **GUI alternative:** *Metadata & Media* tab → **Fill missing game themes** (per-game) and **Fill console default theme** (`--default`) sections. Each is a single button following the tab's dry-run/Apply convention: unticked in the status bar previews, **Apply** writes, **Verbose** prints more detail. Both use the shared System / All systems selector at the top of the tab.
 
 ---
 

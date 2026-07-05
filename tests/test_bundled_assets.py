@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from spindoctor.rocketlauncher import (
+    fill_default_theme,
     fill_missing_themes,
     install_bundled_system_assets,
     install_system_background,
@@ -250,3 +251,40 @@ class TestFillMissingThemes:
         results = fill_missing_themes(hs, "SNES", dry_run=False)
         assert results["Donkey Kong Country"] == "installed"
         assert results["Super Mario World"] == "skipped"
+
+
+# ── fill_default_theme ─────────────────────────────────────────────────────────
+
+class TestFillDefaultTheme:
+
+    def _default_path(self, hs: Path, system: str) -> Path:
+        return hs / "Media" / system / "Themes" / "default.zip"
+
+    def test_installs_default_when_absent(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        status = fill_default_theme(hs, "MAME", dry_run=False)
+        assert status == "installed"
+        assert self._default_path(hs, "MAME").exists()
+
+    def test_creates_themes_dir_when_missing(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        # No Media/MAME/Themes/ directory exists yet.
+        assert not (hs / "Media" / "MAME" / "Themes").exists()
+        status = fill_default_theme(hs, "MAME", dry_run=False)
+        assert status == "installed"
+        assert self._default_path(hs, "MAME").exists()
+
+    def test_skips_when_default_present(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        dest = self._default_path(hs, "MAME")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"user-placed-default")
+        status = fill_default_theme(hs, "MAME", dry_run=False)
+        assert status == "skipped"
+        assert dest.read_bytes() == b"user-placed-default", "Existing default.zip was overwritten"
+
+    def test_dry_run_does_not_write(self, tmp_path):
+        hs = _hs_dir(tmp_path)
+        status = fill_default_theme(hs, "MAME", dry_run=True)
+        assert status == "dry_run"
+        assert not self._default_path(hs, "MAME").exists()

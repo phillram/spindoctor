@@ -348,3 +348,20 @@ spindoctor theme-fill --system MAME --apply
 ```
 
 Existing theme zips are never overwritten — `theme-fill` only adds missing entries. See [Command reference → theme-fill](commands.md#theme-fill) for full options.
+
+### Console-level default theme (`theme-fill --default`)
+
+Rather than one blank zip per game, `--default` installs a single `Media\<SYSTEM>\Themes\default.zip`. HyperSpin uses `default.zip` as the fallback theme for any game in that system without a theme of its own, so one file gives the whole console a full-screen video/background theme:
+
+```bat
+:: Preview: is MAME missing a console default.zip?
+spindoctor theme-fill --system MAME --default
+
+:: Install one default.zip fallback for MAME
+spindoctor theme-fill --system MAME --default --apply
+
+:: Backfill default.zip for every console that lacks one
+spindoctor theme-fill --all --default --apply
+```
+
+This is the lighter-touch option: use it when you want a blanket fallback for a console without writing a separate zip for every game. An existing `default.zip` is never overwritten.
