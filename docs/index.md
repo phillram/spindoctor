@@ -2,7 +2,7 @@
 
 A Tkinter GUI + CLI librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
 
-> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `doctor`, `self-doctor`, `tools-audit`, `theme-scan`, `mainmenu show`, `find-misplaced` without `--apply`, `lightgun audit`, `lightgun detect` without `--apply`) need no flag and never modify anything.
+> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. The [Command reference](commands.md) lists which commands are read-only, and [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes) maps every destructive command to its undo manifest.
 
 ## Pick your install route
 

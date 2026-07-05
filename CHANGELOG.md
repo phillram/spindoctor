@@ -17,6 +17,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`self-doctor` looked for the metadata cache in the wrong place.** `check_metadata_cache` sized `~/.spindoctor/cache/metadata/`, a path nothing writes to — the scraper's cache lives at `~/.spindoctor/metadata_cache/` — so the check always reported "Metadata cache not yet populated" no matter how large the real cache grew. It now inspects the real directory (regression-tested against `scraper.METADATA_CACHE_DIR`).
+
+- **`self-doctor`'s manifest-size check scanned two directories that don't exist.** The dir list said `curate` (the curate command writes to `~/.spindoctor/curation/`) and `restructures` (restructure manifests live inside the system's ROM folder, never under `~/.spindoctor/`), so oversized curation manifests could never trigger the 50 MB warning. The list now matches the directories the commands actually write, with a test asserting it stays in sync with each writer module's dir constant. A stale test comment and a vacuous dry-run assertion that pinned the phantom `restructures/` path were corrected alongside.
+
+- **`cleanup` described the PC-titles cache as "Rebuilt by `sync-db`"** — a command that doesn't exist. The cache is repopulated by `add-pc-system` / `pc-rename`; the category description shown by `cleanup categories` / `cleanup audit` now says so.
+
 - **Removed a duplicate `palette_size` field in `RandomizeColorsResult`.** The `ledblinky colors randomize` result dataclass declared `palette_size: int = 0` twice; the redundant second declaration was dead code (same default, single assignment site) that a linter flags and that risked masking a future rename. No behaviour change — the field list and its one populated value are unchanged.
 
 - **Recently Played silently dropped any system whose `Statistics.ini` had a UTF-8 BOM.** `recent._read_stats_file` read per-system stats with plain `utf-8`, so the byte-order mark RocketLauncher sometimes writes stayed on the first section header and configparser raised `MissingSectionHeaderError` — dropping that system's entire play history from the Recently Played wheel. `playtime._read_playstats_file` already read the *same files* with `utf-8-sig`, so a BOM'd system would appear in Most Played but vanish from Recently Played. Recent now uses `utf-8-sig` to match.
@@ -40,6 +46,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Boot-time wheel refreshes now hardlink media by default instead of copying.** The standalone `spindoctor-fav`, `spindoctor-recent`, and `spindoctor-stats` wheel builders defaulted `--media-mode` to `copy`, while the full CLI (and the docs) default to `auto` (hardlink, fall back to copy). The `.bat`/startup refreshes therefore duplicated media bytes where the CLI would have hardlinked. All three standalones now default to `auto`, matching the CLI and documentation.
 
 ### Docs
+
+- **Slimmed the README down to orientation-only content.** The long "Dry-run by default" blockquote (with its full read-only command list) and the "Don't double-click `spindoctor.exe`" callout were front-page duplicates of material that lives in the docs — the read-only list is now stated once, in [docs/commands.md](docs/commands.md), and the double-click note is folded into the CLI launch row as a link to the existing [windows-binaries troubleshooting entry](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly). The "Common starting points" section (first-run wizard, Pick subset…, per-system overrides) was dropped entirely — all three are covered in [docs/gui.md](docs/gui.md). `docs/index.md` likewise now points at the command reference instead of repeating the read-only list.
+
+- **Fixed the README's GUI tab list.** It predated the Games tab split: **Games** (wheel reorder/prune, rename/clone, add new PC games, fix-exe) was missing entirely, and rename/clone were still described as living on the Systems tab.
+
+- **Corrected `docs/spindoctor-files.md` management commands that didn't exist.** `spindoctor cleanup cache` and `spindoctor cleanup match-cache` are not commands (the real invocation is `cleanup run --include <category>`), and `match clear --all` is not a flag (bare `match clear` clears every system). Also added the previously undocumented `~/.spindoctor` entries — `favorites.json`, `gui.lock`, `media_pick_cache/`, `pc_titles_cache/`, and the six undo-manifest directories — so the file's "lists every file and directory" claim is actually true.
+
+- **Corrected the manifest map in `docs/workflows.md`.** `find-misplaced --apply` and `organize --restructure --apply` do **not** write manifests under `~/.spindoctor/` — they write `_spindoctor-misplaced-<stamp>.json` at the `roms_dir` root and `_spindoctor-restructure-<stamp>.json` inside the system's ROM folder, respectively (the GUI's manifest viewer and `cleanup` already knew this; the table didn't).
+
+- **Made the read-only command list in `docs/commands.md` precise.** `doctor`, `find-misplaced`, `lightgun detect`, and `self-doctor` are diagnostic-by-default but *can* write when passed `--apply` (or `--fix` for `self-doctor`); the list previously presented `doctor` and `self-doctor` as unconditionally read-only.
+
+- **Small accuracy fixes:** the Console-tab preset count in `docs/cli-cheatsheet.md` (~246 → 250+; actual is 259), a missing `[gui]` extra (`tkinterdnd2` drag-and-drop) in `docs/installation.md`'s à-la-carte table, and three links pointing at a non-existent `standalone-tools.md#hyperspin-tools-menu` anchor (now `#wiring-into-hyperspin-tools-menu`).
 
 - **Renamed `scripts/Refresh Both.bat` → `scripts/Refresh All.bat`.** Every reference — `scripts/README.md`, `docs/standalone-tools.md`, `docs/gui.md`, and the `install-tools` generator — already used "Refresh All.bat"; only the shipped file kept the stale two-wheel-era name (it has refreshed all three wheels for some time). The file is now named to match.
 

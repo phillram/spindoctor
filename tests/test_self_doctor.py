@@ -152,14 +152,59 @@ def test_fix_no_op_when_nothing_stale(tmp_path, isolated_config_dir):
 
 def test_manifest_dir_warning_threshold(tmp_path, isolated_config_dir):
     """Manifest dirs over 50 MB produce a WARN; small ones pass."""
-    big_dir = isolated_config_dir / "curate"
+    big_dir = isolated_config_dir / "curation"
     big_dir.mkdir(parents=True)
     # 60 MB of zero bytes is plenty to cross the 50 MB threshold.
     (big_dir / "huge.json").write_bytes(b"\0" * (60 * 1024 * 1024))
 
     report = sd.run_self_checks(Config(), fix=False)
-    chk = next(c for c in report.checks if c.name == "manifests_curate")
+    chk = next(c for c in report.checks if c.name == "manifests_curation")
     assert chk.status == sd.Status.WARN
+
+
+def test_manifest_dirs_match_writers(tmp_path, isolated_config_dir):
+    """Every dir the sizing check scans must be one a command actually
+    writes to — a renamed manifest dir (curation, not curate) silently
+    exempts that category from the size check."""
+    from spindoctor.curate import CURATION_DIR
+    from spindoctor.edit import EDIT_DIR, RENAME_DIR
+    from spindoctor.media_scan import MANIFEST_DIR as MEDIA_IMPORTS_DIR
+    from spindoctor.migrate import MIGRATIONS_DIR
+    from spindoctor.themes import THEMES_DIR
+
+    writer_dirs = {
+        p.name for p in (
+            CURATION_DIR, EDIT_DIR, RENAME_DIR,
+            MEDIA_IMPORTS_DIR, MIGRATIONS_DIR, THEMES_DIR,
+        )
+    }
+    for name in writer_dirs:
+        d = isolated_config_dir / name
+        d.mkdir(parents=True)
+        (d / "m.json").write_text("{}", encoding="utf-8")
+
+    report = sd.run_self_checks(Config(), fix=False)
+    checked = {
+        c.name[len("manifests_"):]
+        for c in report.checks if c.name.startswith("manifests_")
+    }
+    assert checked == writer_dirs
+
+
+def test_metadata_cache_check_sees_real_cache_dir(tmp_path, isolated_config_dir):
+    """The size report must look at metadata_cache/ — the dir the scraper
+    actually writes — not some other path, or it always reports empty."""
+    from spindoctor.scraper import METADATA_CACHE_DIR
+
+    cache = isolated_config_dir / METADATA_CACHE_DIR.name
+    (cache / "screenscraper" / "NES").mkdir(parents=True)
+    (cache / "screenscraper" / "NES" / "Mario.json").write_text(
+        "{}", encoding="utf-8",
+    )
+
+    report = sd.run_self_checks(Config(), fix=False)
+    chk = next(c for c in report.checks if c.name == "metadata_cache")
+    assert "1 cached scraper response" in chk.detail
 
 
 def test_manifest_dir_small_is_ok(tmp_path, isolated_config_dir):

@@ -220,14 +220,16 @@ def check_rescue_copies(report: SelfDoctorReport) -> SelfCheck:
 
 
 def check_manifest_dir_sizes(report: SelfDoctorReport) -> None:
-    """Manifest dirs (curate / migrate / edits / renames / themes /
-    media_imports / restructures) accumulate one JSON per --apply run.
+    """Manifest dirs (curation / migrations / edits / renames / themes /
+    media_imports) accumulate one JSON per --apply run.
     Most are < 1 MB total; over time, dirs over 50 MB indicate the user
     has never cleaned them up — worth surfacing but never auto-deleted
-    (manifests are the undo path)."""
+    (manifests are the undo path). Restructure and misplaced manifests
+    live in the ROM tree, not under CONFIG_DIR, so they aren't checked
+    here."""
     manifest_dirs = [
-        "curate", "migrations", "edits", "renames", "themes",
-        "media_imports", "restructures",
+        "curation", "migrations", "edits", "renames", "themes",
+        "media_imports",
     ]
     for name in manifest_dirs:
         d = CONFIG_DIR / name
@@ -396,7 +398,7 @@ def check_metadata_cache(report: SelfDoctorReport, config) -> SelfCheck:
     """The metadata cache (one JSON per scraped game) can grow into
     the hundreds of MB on a big library. INFO-level reporting — never
     a WARN, since the user explicitly configured the TTL."""
-    cache_dir = CONFIG_DIR / "cache" / "metadata"
+    cache_dir = CONFIG_DIR / "metadata_cache"
     if not cache_dir.exists():
         check = SelfCheck(
             name="metadata_cache", status=Status.OK,
