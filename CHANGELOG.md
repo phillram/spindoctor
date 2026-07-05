@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Removed a duplicate `palette_size` field in `RandomizeColorsResult`.** The `ledblinky colors randomize` result dataclass declared `palette_size: int = 0` twice; the redundant second declaration was dead code (same default, single assignment site) that a linter flags and that risked masking a future rename. No behaviour change — the field list and its one populated value are unchanged.
+
 - **Recently Played silently dropped any system whose `Statistics.ini` had a UTF-8 BOM.** `recent._read_stats_file` read per-system stats with plain `utf-8`, so the byte-order mark RocketLauncher sometimes writes stayed on the first section header and configparser raised `MissingSectionHeaderError` — dropping that system's entire play history from the Recently Played wheel. `playtime._read_playstats_file` already read the *same files* with `utf-8-sig`, so a BOM'd system would appear in Most Played but vanish from Recently Played. Recent now uses `utf-8-sig` to match.
 
 - **`ledblinky colors edit --name <NewName>` crashed when the new name contained a backslash.** `_replace_color_in_colors_ini` and `_replace_color_in_controls_xml` interpolated the new name into `re.sub`/`re.subn` *replacement* strings, so a backslash sequence (e.g. a name pasted from a Windows path) was misread as a regex backreference and raised `re.error: bad escape \U` — the exact Windows-path pitfall documented in the architecture reference and already guarded against in `rocketlauncher.py`. Both helpers now use callable replacements so the name is written literally.
