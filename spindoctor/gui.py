@@ -8059,19 +8059,15 @@ class _SpinDoctorGUI:
             text=("For each video in Media\\<System>\\Video\\ that has no "
                   "matching theme zip, install a blank full-screen theme so "
                   "HyperSpin plays the video as-is. Existing theme zips are "
-                  "never overwritten. Uses the System selected above."),
+                  "never overwritten. Uses the System selected above and the "
+                  "Apply/Verbose checkboxes in the status bar — dry-run by "
+                  "default, writes only when Apply is ticked."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 4))
-        fill_btns = self.ttk.Frame(fill_frame)
-        fill_btns.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            fill_btns, text="Preview missing themes",
-            command=self._run_theme_fill_preview,
-        ).pack(side="left")
-        self.ttk.Button(
-            fill_btns, text="Fill blank themes (apply)",
-            command=self._run_theme_fill_apply,
-        ).pack(side="left", padx=(6, 0))
+            fill_frame, text="Fill missing game themes",
+            command=self._run_theme_fill,
+        ).pack(anchor="w", padx=6, pady=(0, 6))
 
         # ── Fill console default theme ────────────────────────────────────────
         dflt_frame = self.ttk.LabelFrame(frame, text="Fill console default theme")
@@ -8082,19 +8078,15 @@ class _SpinDoctorGUI:
                   "is missing. HyperSpin falls back to default.zip for any game "
                   "in the system without its own theme, so this covers a whole "
                   "console with a single file. An existing default.zip is never "
-                  "overwritten. Uses the System selected above."),
+                  "overwritten. Uses the System selected above and the "
+                  "Apply/Verbose checkboxes in the status bar — dry-run by "
+                  "default, writes only when Apply is ticked."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 4))
-        dflt_btns = self.ttk.Frame(dflt_frame)
-        dflt_btns.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            dflt_btns, text="Preview default theme",
-            command=self._run_theme_default_preview,
-        ).pack(side="left")
-        self.ttk.Button(
-            dflt_btns, text="Fill default theme (apply)",
-            command=self._run_theme_default_apply,
-        ).pack(side="left", padx=(6, 0))
+            dflt_frame, text="Fill console default theme",
+            command=self._run_theme_default,
+        ).pack(anchor="w", padx=6, pady=(0, 6))
 
         return frame
 
@@ -8137,29 +8129,27 @@ class _SpinDoctorGUI:
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
-    def _run_theme_fill_preview(self) -> None:
+    def _run_theme_fill(self) -> None:
         sys_args = self._meta_system_args()
         if sys_args is None:
             return
-        self._run_cli("spindoctor", ["theme-fill"] + sys_args)
+        args = ["theme-fill"] + sys_args
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
-    def _run_theme_fill_apply(self) -> None:
+    def _run_theme_default(self) -> None:
         sys_args = self._meta_system_args()
         if sys_args is None:
             return
-        self._run_cli("spindoctor", ["theme-fill"] + sys_args + ["--apply"])
-
-    def _run_theme_default_preview(self) -> None:
-        sys_args = self._meta_system_args()
-        if sys_args is None:
-            return
-        self._run_cli("spindoctor", ["theme-fill", "--default"] + sys_args)
-
-    def _run_theme_default_apply(self) -> None:
-        sys_args = self._meta_system_args()
-        if sys_args is None:
-            return
-        self._run_cli("spindoctor", ["theme-fill", "--default"] + sys_args + ["--apply"])
+        args = ["theme-fill", "--default"] + sys_args
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _run_batch_edit(self) -> None:
         sys_args = self._meta_system_args()

@@ -3836,7 +3836,11 @@ def theme_pack_create(output_dir, target):
 @click.option("--apply", is_flag=True,
               help="Write the blank theme zips. Without this flag the "
                    "command lists what would be installed (dry-run).")
-def theme_fill(system, all_systems, default_theme, apply):
+@click.option("--verbose", "-v", is_flag=True,
+              help="With --all, also print the per-game table for each "
+                   "system. Otherwise print the full destination path for "
+                   "each theme zip installed or that would be installed.")
+def theme_fill(system, all_systems, default_theme, apply, verbose):
     """Install a blank theme zip for every game that has a video but no theme.
 
     \b
@@ -3865,6 +3869,7 @@ def theme_fill(system, all_systems, default_theme, apply):
       spindoctor theme-fill --all --apply
       spindoctor theme-fill --system MAME --default --apply
       spindoctor theme-fill --all --default --apply
+      spindoctor theme-fill --all --verbose
     """
     from pathlib import Path
     from .rocketlauncher import (
@@ -3908,6 +3913,9 @@ def theme_fill(system, all_systems, default_theme, apply):
             for sys_name in systems:
                 status = fill_default_theme(hs_path, sys_name, dry_run=not apply)
                 console.print(f"  [bold]{sys_name}[/bold]: {_DEFAULT_MSG.get(status, status)}")
+                if verbose:
+                    dest = hs_path / "Media" / sys_name / "Themes" / "default.zip"
+                    console.print(f"      [dim]{dest}[/dim]")
                 installed_n += status == "installed"
                 would_n     += status == "dry_run"
                 skipped_n   += status == "skipped"
@@ -3927,6 +3935,9 @@ def theme_fill(system, all_systems, default_theme, apply):
         # Single system
         status = fill_default_theme(hs_path, system, dry_run=not apply)
         console.print(f"[bold]{system}[/bold] default.zip: {_DEFAULT_MSG.get(status, status)}")
+        if verbose:
+            dest = hs_path / "Media" / system / "Themes" / "default.zip"
+            console.print(f"  [dim]{dest}[/dim]")
         if status == "dry_run":
             console.print("Pass [cyan]--apply[/cyan] to write.")
         return
@@ -3947,6 +3958,10 @@ def theme_fill(system, all_systems, default_theme, apply):
             console.print(
                 f"  [bold]{sys_name}[/bold]: {would_install} would install, {skipped_n} already present"
             )
+        if verbose:
+            for game, status in sorted(results.items()):
+                colour = _STATUS_COLOUR.get(status, "white")
+                console.print(f"      [dim]·[/dim] {game}: [{colour}]{status}[/{colour}]")
 
     if all_systems:
         mm_path = hs_path / "Databases" / "Main Menu" / "Main Menu.xml"
@@ -3987,6 +4002,10 @@ def theme_fill(system, all_systems, default_theme, apply):
         colour = _STATUS_COLOUR.get(status, "white")
         tbl.add_row(game, f"[{colour}]{status}[/{colour}]")
     console.print(tbl)
+    if verbose:
+        for game in sorted(results):
+            dest = hs_path / "Media" / system / "Themes" / f"{game}.zip"
+            console.print(f"  [dim]{dest}[/dim]")
 
     installed_n = sum(1 for s in results.values() if s == "installed")
     would_install = sum(1 for s in results.values() if s == "dry_run")
