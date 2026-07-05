@@ -215,7 +215,7 @@ Expected — the CLI binaries print `--help` and exit when run with no arguments
 
 ### "Windows protected your PC" SmartScreen warning
 
-The published binaries aren't code-signed yet, so Windows 10 / 11 may flag them as unrecognised. Click **More info** → **Run anyway**.
+The published binaries aren't code-signed, so Windows 10 / 11 may flag them as unrecognised. Click **More info** → **Run anyway**.
 
 If your IT policy blocks unsigned binaries entirely, fall back to a source install (`pip install -e .[all]`) or build the binary yourself with a code-signing certificate — see [Building from source](#building-from-source).
 

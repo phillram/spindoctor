@@ -30,7 +30,7 @@ The `.exe` was built against a Windows SDK newer than Win 7 supports. The offici
 
 ### Windows SmartScreen blocks the .exe
 
-Releases aren't code-signed yet, so Windows 10/11 may flag the binaries as unrecognised. Click **More info** → **Run anyway**. (Code signing is on the roadmap.)
+The release binaries aren't code-signed, so Windows 10/11 may flag them as unrecognised. Click **More info** → **Run anyway**. If your IT policy blocks unsigned binaries entirely, see [Windows binaries → SmartScreen warning](windows-binaries.md#windows-protected-your-pc-smartscreen-warning) for alternatives.
 
 ### Win 7: `fetch-meta` or update check fails with `EOF in violation of protocol` / `SSL: WRONG_VERSION_NUMBER`
 
