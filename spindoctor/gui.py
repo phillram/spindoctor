@@ -454,18 +454,30 @@ def _attach_combobox_typeahead(combo) -> None:
 
 
 def _walk_attach_combobox_typeahead(root_widget) -> None:
-    """Recursively attach letter-key type-ahead to every Combobox.
+    """Recursively attach letter-key type-ahead to every readonly Combobox.
 
     Called once after the whole window is built, same pattern as
     ``_walk_attach_context_menus``, so every System/Game dropdown
     across every tab gets it for free — including ones added later.
+
+    Skips editable (``state="normal"``) Comboboxes such as the Console
+    tab's command field or the metadata Game filter: those need every
+    keystroke to reach the text field untouched. Type-ahead intercepting
+    a "s" keypress there would silently discard it and jump to a preset
+    instead of letting the user type — only readonly Comboboxes (which
+    can't otherwise be typed into at all) should get this behaviour.
     """
     try:
         cls = type(root_widget).__name__
     except Exception:  # noqa: BLE001
         cls = ""
     if cls in ("Combobox", "TCombobox"):
-        _attach_combobox_typeahead(root_widget)
+        try:
+            is_readonly = str(root_widget.cget("state")) == "readonly"
+        except Exception:  # noqa: BLE001
+            is_readonly = False
+        if is_readonly:
+            _attach_combobox_typeahead(root_widget)
     try:
         children = root_widget.winfo_children()
     except Exception:  # noqa: BLE001

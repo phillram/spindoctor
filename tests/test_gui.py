@@ -825,13 +825,17 @@ def test_gui_constructs_against_real_tk():
         assert app._output is not None
         assert app._status_var is not None
 
-        # Letter-key type-ahead must reach every Combobox via the walker
-        # (not a per-call-site attach) — check a couple from different
-        # tabs so a future tab that forgets to opt in still gets it.
+        # Letter-key type-ahead must reach every *readonly* Combobox via
+        # the walker (not a per-call-site attach) — check one so a future
+        # tab that forgets to opt in still gets it.
         assert getattr(
             app._meta_system_combo, "_spindoctor_typeahead_attached", False,
         )
-        assert getattr(
+        # Editable Comboboxes (free-text entry, e.g. the Game filter here
+        # or the Console tab's command field) must NOT get type-ahead —
+        # it would swallow every keystroke via `return "break"` instead
+        # of letting the user type, which is exactly the bug this pins.
+        assert not getattr(
             app._meta_game_combo, "_spindoctor_typeahead_attached", False,
         )
 
