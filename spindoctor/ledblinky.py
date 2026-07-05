@@ -2637,10 +2637,9 @@ class RandomizeColorsResult:
     sections_skipped_old_format: int = 0  # sections using ledcolor1=/joystick= hex format
     backup_path: Optional[Path] = None
     seed: Optional[int] = None
-    palette_size: int = 0
+    palette_size: int = 0        # number of non-black colors available to draw from
     # Per-section detail for --verbose output: (section_name, button_color, coin_start_color)
     updated_details: "list[tuple[str, str, str]]" = field(default_factory=list)
-    palette_size: int = 0        # number of non-black colors available to draw from
 
 
 #: Matches P{n}_BUTTON{i} or P{n}_JOYSTICK keys — the "gameplay" button family.
