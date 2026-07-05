@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Removed
+
+- **Deleted ~500 lines of dead code (no call sites).** A vulture pass plus manual verification found code left stranded by the PR #262 tab reorg and other refactors, none of it reachable:
+  - **GUI (`gui.py`, −488):** three superseded tab builders — `_build_audit_tab`, `_build_mainmenu_tab`, `_build_diagnose_tab` (all self-marked `LEGACY`, replaced by `_build_diagnostics_tab` / `_build_systems_tab`) — plus the orphaned clear-wheels handler cluster (`_selected_clear_steps`, `_preview_clear_wheels`, `_clear_wheels_apply`) left behind when the Wheels tab merged into Tools. The dead `_build_diagnose_tab` had already **drifted** from the live Diagnostics tab (it was missing the "Check archive extensions" scan), which is exactly the rot this removal prevents.
+  - **`database.py`:** the never-called `Database.contains()` convenience method (callers use `.get()` / `in`).
+  - **`organize.py`:** the never-called `FileMove.src_path()` / `dest_path()` accessors.
+
+  The live GUI still constructs against real Tk and the full suite (1231 tests) passes unchanged.
+
 ### Fixed
 
 - **Removed a duplicate `palette_size` field in `RandomizeColorsResult`.** The `ledblinky colors randomize` result dataclass declared `palette_size: int = 0` twice; the redundant second declaration was dead code (same default, single assignment site) that a linter flags and that risked masking a future rename. No behaviour change — the field list and its one populated value are unchanged.
