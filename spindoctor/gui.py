@@ -8073,6 +8073,29 @@ class _SpinDoctorGUI:
             command=self._run_theme_fill_apply,
         ).pack(side="left", padx=(6, 0))
 
+        # ── Fill console default theme ────────────────────────────────────────
+        dflt_frame = self.ttk.LabelFrame(frame, text="Fill console default theme")
+        dflt_frame.pack(fill="x", pady=(4, 4))
+        self.ttk.Label(
+            dflt_frame,
+            text=("Install one blank Media\\<System>\\Themes\\default.zip when it "
+                  "is missing. HyperSpin falls back to default.zip for any game "
+                  "in the system without its own theme, so this covers a whole "
+                  "console with a single file. An existing default.zip is never "
+                  "overwritten. Uses the System selected above."),
+            wraplength=860, justify="left", foreground=_FG_DIM,
+        ).pack(anchor="w", padx=6, pady=(4, 4))
+        dflt_btns = self.ttk.Frame(dflt_frame)
+        dflt_btns.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Button(
+            dflt_btns, text="Preview default theme",
+            command=self._run_theme_default_preview,
+        ).pack(side="left")
+        self.ttk.Button(
+            dflt_btns, text="Fill default theme (apply)",
+            command=self._run_theme_default_apply,
+        ).pack(side="left", padx=(6, 0))
+
         return frame
 
     def _browse_media_file(self) -> None:
@@ -8125,6 +8148,18 @@ class _SpinDoctorGUI:
         if sys_args is None:
             return
         self._run_cli("spindoctor", ["theme-fill"] + sys_args + ["--apply"])
+
+    def _run_theme_default_preview(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        self._run_cli("spindoctor", ["theme-fill", "--default"] + sys_args)
+
+    def _run_theme_default_apply(self) -> None:
+        sys_args = self._meta_system_args()
+        if sys_args is None:
+            return
+        self._run_cli("spindoctor", ["theme-fill", "--default"] + sys_args + ["--apply"])
 
     def _run_batch_edit(self) -> None:
         sys_args = self._meta_system_args()

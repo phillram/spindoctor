@@ -591,6 +591,8 @@ spindoctor theme-fill --system MAME                    :: dry-run: list missing 
 spindoctor theme-fill --all                            :: dry-run: per-console summary across all systems
 spindoctor theme-fill --system MAME --apply            :: write blank themes for MAME
 spindoctor theme-fill --all --apply                    :: write blank themes for every system
+spindoctor theme-fill --system MAME --default --apply  :: install one console-level default.zip fallback
+spindoctor theme-fill --all --default --apply          :: backfill default.zip for every system
 ```
 
 Reference: [Command reference → theme-fill](commands.md#theme-fill).

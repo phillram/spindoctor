@@ -3829,10 +3829,14 @@ def theme_pack_create(output_dir, target):
 @click.option("--all", "all_systems", is_flag=True,
               help="Scan every system in Main Menu.xml and show a per-console "
                    "summary of missing themes.")
+@click.option("--default", "default_theme", is_flag=True,
+              help="Fill the console-level Themes/default.zip instead of a "
+                   "per-game zip. Installs one blank fallback theme for the "
+                   "whole system when default.zip is absent.")
 @click.option("--apply", is_flag=True,
               help="Write the blank theme zips. Without this flag the "
                    "command lists what would be installed (dry-run).")
-def theme_fill(system, all_systems, apply):
+def theme_fill(system, all_systems, default_theme, apply):
     """Install a blank theme zip for every game that has a video but no theme.
 
     \b
@@ -3840,6 +3844,12 @@ def theme_fill(system, all_systems, apply):
     Media/<SYSTEM>/Themes/<game>.zip copies the bundled theme_blank.zip
     (background image + full-screen video overlay) into place.  Existing
     theme zips are never overwritten.
+
+    \b
+    With --default the command instead fills the console-level
+    Media/<SYSTEM>/Themes/default.zip — HyperSpin's fallback theme for any
+    game in the system without a theme of its own — writing one blank zip per
+    console rather than one per game. An existing default.zip is left alone.
 
     \b
     Without --apply the command is a dry-run: it lists what would be installed
@@ -3853,9 +3863,15 @@ def theme_fill(system, all_systems, apply):
       spindoctor theme-fill --system "SNES" --apply
       spindoctor theme-fill --all
       spindoctor theme-fill --all --apply
+      spindoctor theme-fill --system MAME --default --apply
+      spindoctor theme-fill --all --default --apply
     """
     from pathlib import Path
-    from .rocketlauncher import _read_main_menu_systems, fill_missing_themes
+    from .rocketlauncher import (
+        _read_main_menu_systems,
+        fill_default_theme,
+        fill_missing_themes,
+    )
 
     if not system and not all_systems:
         console.print("[red]Provide --system SYSTEM or --all.[/red]")
@@ -3873,6 +3889,47 @@ def theme_fill(system, all_systems, apply):
     hs_path = Path(hs_dir)
 
     _STATUS_COLOUR = {"installed": "green", "dry_run": "cyan", "skipped": "dim", "no_asset": "red"}
+
+    # ── Console-level default.zip mode ────────────────────────────────────────
+    if default_theme:
+        _DEFAULT_MSG = {
+            "installed": "[green]installed[/green]",
+            "dry_run":   "[cyan]would install[/cyan]",
+            "skipped":   "[dim]already present[/dim]",
+            "no_asset":  "[red]theme_blank.zip missing from package[/red]",
+        }
+        if all_systems:
+            mm_path = hs_path / "Databases" / "Main Menu" / "Main Menu.xml"
+            systems = _read_main_menu_systems(mm_path)
+            if not systems:
+                console.print(f"[yellow]No systems found in[/yellow] [cyan]{mm_path}[/cyan]")
+                return
+            installed_n = would_n = skipped_n = 0
+            for sys_name in systems:
+                status = fill_default_theme(hs_path, sys_name, dry_run=not apply)
+                console.print(f"  [bold]{sys_name}[/bold]: {_DEFAULT_MSG.get(status, status)}")
+                installed_n += status == "installed"
+                would_n     += status == "dry_run"
+                skipped_n   += status == "skipped"
+            console.print()
+            if apply:
+                console.print(
+                    f"[green]✓[/green] Default theme: {installed_n} installed, "
+                    f"{skipped_n} already present."
+                )
+            else:
+                console.print(
+                    f"[dim]Dry-run:[/dim] {would_n} default theme(s) would be installed "
+                    f"across {len(systems)} system(s). Pass [cyan]--apply[/cyan] to write."
+                )
+            return
+
+        # Single system
+        status = fill_default_theme(hs_path, system, dry_run=not apply)
+        console.print(f"[bold]{system}[/bold] default.zip: {_DEFAULT_MSG.get(status, status)}")
+        if status == "dry_run":
+            console.print("Pass [cyan]--apply[/cyan] to write.")
+        return
 
     def _run_one(sys_name: str) -> dict[str, str]:
         return fill_missing_themes(hs_path, sys_name, dry_run=not apply)
