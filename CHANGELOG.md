@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`theme-fill --default` installs a console-level `default.zip` fallback theme.** Alongside the existing per-game fill, `theme-fill` can now check `Media\<SYSTEM>\Themes\default.zip` and, when it is missing, install the same bundled blank theme there. HyperSpin falls back to `default.zip` for any game in the system without its own theme, so a single file gives the whole console a full-screen video/background theme instead of one zip per game — a lighter-touch alternative. Works with `--system`, `--all`, `--apply` (dry-run by default), and `--verbose`, and an existing `default.zip` is never overwritten. Exposed in the GUI as the new **Fill console default theme** section on the *Metadata & Media* tab, which shells out to the same command.
+- **`theme-fill --verbose`.** `--all` now also prints the per-game status breakdown under each console instead of just the summary line; every other mode prints the full destination zip path for each game/console.
+
+### Changed
+
+- **GUI theme-fill sections now follow the tab's dry-run/Apply convention.** **Fill missing game themes** and **Fill console default theme** on *Metadata & Media* each collapse their previous two-button (Preview / Apply) layout into a single button that honours the shared status-bar **Apply** and **Verbose** checkboxes, matching every other action on the tab instead of managing their own preview/apply state.
+
 ## [2.9.4] - 2026-07-05
 
 ### Removed

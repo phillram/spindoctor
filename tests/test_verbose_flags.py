@@ -442,6 +442,71 @@ def test_ledblinky_admin_buttons_set_verbose_prints_path(tmp_path, monkeypatch):
     assert str(colors_ini) in flat
 
 
+# ─── theme-fill --verbose ─────────────────────────────────────────────────────
+
+def test_theme_fill_verbose_prints_full_path(tmp_path, monkeypatch):
+    """theme-fill --apply --verbose adds a Path column with the full
+    destination zip path, not just the game name and status."""
+    _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    video_dir = hs / "Media" / "MAME" / "Video"
+    video_dir.mkdir(parents=True)
+    (video_dir / "Galaga.mp4").write_bytes(b"fake")
+
+    cfg = Config(roms_dir=str(roms), hyperspin_dir=str(hs))
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["theme-fill", "--system", "MAME", "--apply", "--verbose"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    dest = hs / "Media" / "MAME" / "Themes" / "Galaga.zip"
+    assert str(dest) in flat
+
+
+def test_theme_fill_default_all_verbose_prints_full_path(tmp_path, monkeypatch):
+    """theme-fill --default --all --apply --verbose prints the full
+    default.zip path under each system, not just the summary line."""
+    _reset(monkeypatch, tmp_path)
+
+    hs = _make_hs(tmp_path)
+    roms = tmp_path / "roms"
+    roms.mkdir()
+
+    mm_dir = hs / "Databases" / "Main Menu"
+    mm_dir.mkdir(parents=True)
+    (mm_dir / "Main Menu.xml").write_text(
+        '<?xml version="1.0"?><menu>'
+        '<game name="MAME"></game>'
+        '</menu>',
+        encoding="utf-8",
+    )
+
+    cfg = Config(roms_dir=str(roms), hyperspin_dir=str(hs))
+    save_config(cfg)
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["theme-fill", "--default", "--all", "--apply", "--verbose"],
+        catch_exceptions=False,
+    )
+
+    assert result.exit_code == 0, result.output
+    flat = _flat(result.output)
+    dest = hs / "Media" / "MAME" / "Themes" / "default.zip"
+    assert str(dest) in flat
+
+
 # ─── ledblinky colors randomize --verbose ────────────────────────────────────
 
 def test_ledblinky_colors_randomize_verbose_prints_path(tmp_path, monkeypatch):
