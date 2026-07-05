@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **GUI theme-fill sections now follow the tab's dry-run/Apply convention.** **Fill missing game themes** and **Fill console default theme** on *Metadata & Media* each collapse their previous two-button (Preview / Apply) layout into a single button that honours the shared status-bar **Apply** and **Verbose** checkboxes, matching every other action on the tab instead of managing their own preview/apply state.
 
+### Fixed
+
+- **GUI: typing in an editable Combobox (Console tab command field, Metadata & Media's Game filter, theme-replace scope field) jumped the dropdown selection instead of typing.** `_walk_attach_combobox_typeahead` bound letter-key type-ahead to every Combobox in the window regardless of its `state`, including editable (`state="normal"`) ones meant for free-text entry. Each keypress matched against the preset list, overwrote the field with the matched value, and returned `"break"`, discarding the keystroke — making it impossible to type a custom command or filter text without the field resetting out from under you. Type-ahead is only attached to **readonly** Comboboxes now (where it's the intended substitute for native typing); editable Comboboxes receive keystrokes untouched.
+
 ## [2.9.4] - 2026-07-05
 
 ### Removed
