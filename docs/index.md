@@ -2,7 +2,7 @@
 
 A Tkinter GUI + CLI librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
 
-> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `doctor`, `self-doctor`, `tools-audit`, `theme-scan`, `mainmenu show`, `find-misplaced` without `--apply`, `lightgun audit`, `lightgun detect` without `--apply`) need no flag and never modify anything.
+> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. The [Command reference](commands.md) lists which commands are read-only, and [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes) maps every destructive command to its undo manifest.
 
 ## Pick your install route
 
@@ -10,7 +10,7 @@ SpinDoctor ships in three forms. Pick the one that fits, then either click your 
 
 | Route | Best for | Walkthrough |
 |---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python. Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1+, five standalone `.exe`s). Both include a GUI launcher. | [Windows binaries](windows-binaries.md) |
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python. Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1+, standalone `.exe`s). Both include a GUI launcher. | [Windows binaries](windows-binaries.md) |
 | 🐍 **Pip install from source** | Dev machines, custom builds, anyone already on Python 3.8+. Cross-platform. | [Installation](installation.md) |
 | 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is. | [Installation → Running without `pip install`](installation.md#running-without-pip-install) |
 

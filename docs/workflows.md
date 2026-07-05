@@ -312,14 +312,14 @@ Every XML write leaves a `.YYYYMMDD_HHMMSS.bak` next to the original. Toggle via
 
 ### Manifests + `--undo`
 
-Every destructive command writes a JSON manifest to `~/.spindoctor/<category>/`. Re-running the same command with `--undo` reverses the most recent run.
+Every destructive command writes a JSON manifest — most to a per-category folder under `~/.spindoctor/`; `find-misplaced` and `organize --restructure` write theirs into the ROM tree next to the files they moved. Re-running the same command with `--undo` reverses the most recent run.
 
-| Command | Manifest dir | Undo flag |
+| Command | Manifest location | Undo flag |
 |---|---|---|
 | `migrate` | `~/.spindoctor/migrations/` | `--undo latest` or `--undo <path>` |
 | `backup create` | `<target>/spindoctor-backup-…/manifest.json` | n/a — restore via `backup restore` |
-| `find-misplaced --apply` | `~/.spindoctor/misplaced/` | `--undo` |
-| `organize --restructure --apply` | `~/.spindoctor/restructure/` | `--undo` |
+| `find-misplaced --apply` | `<roms_dir>\_spindoctor-misplaced-<stamp>.json` | `--undo` |
+| `organize --restructure --apply` | `<roms_dir>\<System>\_spindoctor-restructure-<stamp>.json` | `--undo` |
 | `curate --apply --action archive` | `~/.spindoctor/curation/` | `--undo` |
 | `media-scan --apply` | `~/.spindoctor/media_imports/` | `--undo` |
 | `batch-edit --apply` | `~/.spindoctor/edits/` | `--undo <path>` |

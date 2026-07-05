@@ -296,7 +296,7 @@ Two numbered steps cover the lightgun setup workflow.
 
 Three numbered steps walk through the full backup / restore workflow.
 
-**Step 1 — Target folder & components:** Set the destination folder and tick the components to include (default: all seven — roms, databases, media, emulators, rocketlauncher, ledblinky, settings). **Config snapshot** preset selects settings + databases only for a lightweight backup; **Everything** ticks all.
+**Step 1 — Target folder & components:** Set the destination folder and tick the components to include (default: all of them — roms, databases, media, emulators, rocketlauncher, ledblinky, settings). **Config snapshot** preset selects settings + databases only for a lightweight backup; **Everything** ticks all.
 
 **Step 2 — Create backup:** Optional label, then **Create backup**. **List backups under target** lists existing snapshots under the same folder. CLI: `spindoctor backup create / list`.
 
@@ -310,7 +310,7 @@ Six numbered steps walk through the full migration workflow.
 
 **Step 2 — Backup before migrating:** Create a snapshot of your current setup. Strongly recommended — if anything goes wrong you can restore from it.
 
-**Step 3 — Migration settings:** Target root picker, component checkboxes (default: all five — roms, hyperspin, emulators, rocketlauncher, ledblinky), an optional systems-filter Listbox for partial-roms migrations (nothing selected = migrate all), and option toggles: `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`. Click **Start Migration** to execute. Dry-run by default. CLI: `spindoctor migrate`.
+**Step 3 — Migration settings:** Target root picker, component checkboxes (default: all of them — roms, hyperspin, emulators, rocketlauncher, ledblinky), an optional systems-filter Listbox for partial-roms migrations (nothing selected = migrate all), and option toggles: `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`. Click **Start Migration** to execute. Dry-run by default. CLI: `spindoctor migrate`.
 
 **Step 4 — Undo a previous migration:** Manifest dropdown pre-populated from `~/.spindoctor/migrations/` (with "latest" at the top). **Refresh** reloads. **List manifests** and **Undo** complete the lifecycle.
 

@@ -32,7 +32,7 @@ Each release ships **two bundles** — pick whichever matches your Windows versi
 
 ### Modern bundle (Windows 10/11)
 
-Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_internal/`; all five EXEs share it.
+Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_internal/`; all the EXEs share it.
 
 ```
 spindoctor-win10-vX.Y.Z.zip
@@ -49,7 +49,7 @@ Extract and keep the whole `spindoctor-win10-vX.Y.Z/` folder together — the `_
 
 ### Win7 bundle (Windows 7 SP1 and newer)
 
-Five self-contained `--onefile` EXEs — each is a standalone self-extracting archive. Drop them wherever you like.
+Self-contained `--onefile` EXEs — each is a standalone self-extracting archive. Drop them wherever you like.
 
 ```
 spindoctor-win7-vX.Y.Z.zip
@@ -106,7 +106,7 @@ There's no installer — just extract and optionally rename.
 
    Do not move individual EXEs out of the folder — `_internal\` must stay alongside them.
 
-**Win7 bundle:** Extract the zip. Move the five `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). Each binary is self-contained — you can place them individually or together as you prefer.
+**Win7 bundle:** Extract the zip. Move the `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). Each binary is self-contained — you can place them individually or together as you prefer.
 
    ```
    C:\spindoctor\
@@ -162,9 +162,9 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with 15 workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
+`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
-The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all five EXEs in the same folder; the GUI does not require `PATH` to be configured.
+The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all the EXEs in the same folder; the GUI does not require `PATH` to be configured.
 
 **For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
@@ -202,7 +202,7 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
 ## Updating
 
 1. Download the new zip from [Releases](https://github.com/phillram/spindoctor/releases/latest).
-2. Replace the five `.exe` files in your install folder with the newly extracted ones.
+2. Replace the `.exe` files in your install folder with the newly extracted ones.
 3. Re-run `spindoctor --version` (or relaunch `spindoctor-gui.exe` and check the title bar) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
