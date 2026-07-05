@@ -168,6 +168,8 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 **Fill missing game themes** (unnumbered): Installs a blank HyperSpin theme zip for every game in the selected system that has a video or background screenshot but no per-game theme zip. The blank theme shows `Images\Backgrounds\<game>.png` as a full-screen backdrop and overlays the game video on top when one is present — existing theme zips are never overwritten. **Preview missing themes** runs a dry-run; **Fill blank themes (apply)** writes. Tick **All systems** in the System row to scan all systems at once. CLI: `spindoctor theme-fill --system <SYSTEM> [--all] [--apply]`.
 
+**Fill console default theme** (unnumbered): Installs a single blank `Media\<System>\Themes\default.zip` when the console has none. HyperSpin falls back to `default.zip` for any game in the system without its own theme, so this covers a whole console with one file rather than one zip per game — a lighter alternative to **Fill missing game themes**. An existing `default.zip` is never overwritten. **Preview default theme** runs a dry-run; **Fill default theme (apply)** writes. Tick **All systems** to backfill a default across every console at once. CLI: `spindoctor theme-fill --default --system <SYSTEM> [--all] [--apply]`.
+
 **Per-game & override (Optional)** — appears directly below the System selector, before Step 1. Contains two related controls in one collapsible box:
 
 - **Game selector** (blank = all games): Limits every operation on the tab to one specific game. The dropdown auto-populates when a system is selected. Clear it with **✕** to run all games again.

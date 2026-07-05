@@ -1143,6 +1143,44 @@ def fill_missing_themes(
     return results
 
 
+def fill_default_theme(
+    hyperspin_dir: Path,
+    system_name: str,
+    *,
+    dry_run: bool = False,
+) -> str:
+    """Install a blank console-level ``default.zip`` theme when one is absent.
+
+    Scans ``Media/<system_name>/Themes/`` for ``default.zip`` and, when it is
+    missing, copies the bundled ``assets/theme_blank.zip`` into place.  HyperSpin
+    falls back to ``default.zip`` for any game in the system that has no theme of
+    its own, so this gives the whole console a full-screen video/background theme
+    in one file instead of one zip per game.  An existing ``default.zip`` is
+    never overwritten.
+
+    Complements :func:`fill_missing_themes`, which writes a per-game
+    ``<game>.zip`` for every video.
+
+    Returns one of:
+
+    * ``"installed"`` — blank ``default.zip`` written.
+    * ``"skipped"`` — ``default.zip`` already exists.
+    * ``"dry_run"`` — would install but *dry_run* is True.
+    * ``"no_asset"`` — ``theme_blank.zip`` is missing from the package.
+    """
+    dest = hyperspin_dir / "Media" / system_name / "Themes" / "default.zip"
+    if dest.exists():
+        return "skipped"
+    src = Path(__file__).parent / "assets" / "theme_blank.zip"
+    if not src.exists():
+        return "no_asset"
+    if dry_run:
+        return "dry_run"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    return "installed"
+
+
 # ─── HyperSpin Main Menu XML ──────────────────────────────────────────────────
 
 def _read_main_menu_systems(path: Path) -> list[str]:
