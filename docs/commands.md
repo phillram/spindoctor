@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `doctor`, `self-doctor`, `mainmenu show`, `find-misplaced` without `--apply`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. (`lightgun detect` is read-only without `--apply`; with `--apply` it seeds config.)
+Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -990,7 +990,7 @@ spindoctor install-tools --add-to-system Toolkit            :: dry-run — previ
 spindoctor install-tools --add-to-system Toolkit --apply    :: install as games inside an existing wheel
 ```
 
-Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
+Four files are produced (Refresh Favorites, Refresh Recently Played, Refresh Most Played, Refresh All). See [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 `--add-to-system <NAME>` is a second integration pattern for cabinets that already have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks). Instead of writing the bats under `Modules\HyperLaunch\Tools\spindoctor\`, this mode:
 
@@ -1002,7 +1002,7 @@ Idempotent — re-running upserts the same four entries instead of duplicating t
 
 > **Note:** The `.bat` helpers and PCLauncher INI are written immediately (they are non-HyperSpin files and safe to create); only the step that mutates the HyperSpin database XML requires `--apply`. Without `--apply`, the command prints a dry-run preview of what `<game>` entries would be added and exits cleanly.
 
-The GUI's **Toolkit** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#hyperspin-tools-menu).
+The GUI's **Toolkit** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 ### `uninstall-tools`
 
@@ -1844,7 +1844,7 @@ spindoctor doctor --apply      :: also run safe, idempotent repairs
 
 ### `self-doctor`
 
-Diagnose SpinDoctor's *own* state (not the cabinet library). Inspects `~/.spindoctor/` for orphan corrupt-config rescue copies (older than 30 days), oversized manifest dirs (curate / migrations / edits / renames / themes / media_imports / restructures over 50 MB), expired metadata cache size, broken `config.json` / `favorites.json`, stray `.part` files older than 7 days under `<HyperSpin>/Media/`, and orphan atomic-write `.tmp` files older than 5 minutes in the Databases tree or config dir (left behind after a forced shutdown mid-save). Each finding renders with the reclaimable bytes so you can decide whether a cleanup is worth it.
+Diagnose SpinDoctor's *own* state (not the cabinet library). Inspects `~/.spindoctor/` for orphan corrupt-config rescue copies (older than 30 days), oversized manifest dirs (curation / migrations / edits / renames / themes / media_imports over 50 MB), expired metadata cache size, broken `config.json` / `favorites.json`, stray `.part` files older than 7 days under `<HyperSpin>/Media/`, and orphan atomic-write `.tmp` files older than 5 minutes in the Databases tree or config dir (left behind after a forced shutdown mid-save). Each finding renders with the reclaimable bytes so you can decide whether a cleanup is worth it.
 
 ```bat
 spindoctor self-doctor              :: read-only diagnosis

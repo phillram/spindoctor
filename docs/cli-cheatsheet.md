@@ -4,7 +4,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 
 > **Looking for every flag?** This page is the fast index. The full reference — every command, every flag, every edge case — lives at [Command reference](commands.md). The deep cross-links below jump straight to the relevant section there.
 
-> **Don't want to type any of this?** The GUI's [Console tab](gui.md#tab-tour) has all of these in a curated dropdown (~246 presets). Pick, edit the `<PLACEHOLDER>` tokens, click Run.
+> **Don't want to type any of this?** The GUI's [Console tab](gui.md#tab-tour) has all of these in a curated dropdown (250+ presets). Pick, edit the `<PLACEHOLDER>` tokens, click Run.
 
 > **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. See [Recovery from mistakes](workflows.md#recovery-from-mistakes).
 
@@ -494,7 +494,7 @@ spindoctor uninstall-tools --add-to-system Toolkit     :: dry-run for Toolkit va
 spindoctor uninstall-tools --add-to-system Toolkit --apply
 ```
 
-Reference: [install-tools](commands.md#install-tools), [uninstall-tools](commands.md#uninstall-tools), [Standalone tools](standalone-tools.md#hyperspin-tools-menu).
+Reference: [install-tools](commands.md#install-tools), [uninstall-tools](commands.md#uninstall-tools), [Standalone tools](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 ---
 

@@ -29,6 +29,7 @@ pip install -e .[all]
 | `[xml]` | `lxml` | Lossless XML round-trips — preserves comments and attribute order written by HyperHQ. Strongly recommended. |
 | `[archives]` | `py7zr`, `rarfile` | `verify` and `find-dupes --by-content` can hash inside `.7z` / `.rar`. `.zip`, `.gz`, and `.chd` are built-in either way. |
 | `[preview]` | `Pillow` | `spindoctor preview --format png` builds composited PNG contact sheets. HTML mode works without it. |
+| `[gui]` | `tkinterdnd2` | Drag-a-folder-from-Explorer support on the GUI's Setup tab. The GUI works without it — Browse and paste still work. |
 | `[all]` | All of the above | Everything in one install. |
 
 ```bat
