@@ -772,11 +772,15 @@ _MUSIC_ASSETS: dict[str, str] = {
 }
 
 # Attract-mode video — static-frame MP4 containing the background image and
-# looped music at exactly 2× the music duration.  HyperSpin plays this video
-# for the system's slot during attract-mode rotation on the Main Menu, then
-# advances to the next system when playback ends.
+# looped music at a multiple of the music duration.  HyperSpin plays this
+# video for the system's slot during attract-mode rotation on the Main Menu,
+# then advances to the next system when playback ends.
 # HyperSpin path: Media\Main Menu\Video\<SystemName>.mp4
-# Durations: Favorites ≈57.7 s, Most Played ≈57.9 s, Recently Played ≈61.5 s
+# Durations: 120 s each (4x the 30 s bundled music track), all four wheels.
+# Must stay H.264 Main Profile / Level 4.0 / <=1920x1080 — Windows 7's Adobe
+# AIR runtime can't decode High Profile or Level 5.0+ (video silently drops,
+# or on some setups starts 1-2s late, while audio keeps playing normally).
+# See docs/synthetic-wheel-media.md's "Required video format" section.
 _VIDEO_ASSETS: dict[str, str] = {
     "Favorites":       "video_Favorites.mp4",
     "Most Played":     "video_Most_Played.mp4",
@@ -963,9 +967,9 @@ def install_system_video(
         <hyperspin_dir>/Media/Main Menu/Video/<system_name>.mp4
 
     The video is a static-frame MP4 (background image + looped music) whose
-    duration is exactly 2× the bundled music track.  HyperSpin plays it during
-    attract-mode rotation and advances to the next system when it ends — no
-    global timer configuration required.
+    duration is a multiple of the bundled music track.  HyperSpin plays it
+    during attract-mode rotation and advances to the next system when it
+    ends — no global timer configuration required.
 
     When *overwrite* is ``False`` (default) the file is skipped if present.
     When *overwrite* is ``True`` (``mainmenu add``) it is always written.

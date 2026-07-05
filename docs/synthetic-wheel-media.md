@@ -96,15 +96,16 @@ all bundled and installed automatically by `rebuild --apply` / `mainmenu add --a
 > **Already bundled.** SpinDoctor installs attract-mode videos automatically.
 > Follow these instructions only if you want to replace them with your own.
 
-Each video is a static-frame MP4 (background image + music looped to exactly 2× the
+Each video is a static-frame MP4 (background image + music looped to a multiple of the
 music track duration).  HyperSpin plays the video and advances to the next system in
 the attract rotation when it ends — no global timer setting is required.
 
 | Wheel | Duration |
 |-------|---------|
-| Favorites | 57.7 s (2 × 28.8 s) |
-| Most Played | 57.9 s (2 × 29.0 s) |
-| Recently Played | 61.5 s (2 × 30.8 s) |
+| Favorites | 120 s (4 × 30 s) |
+| Most Played | 120 s (4 × 30 s) |
+| Recently Played | 120 s (4 × 30 s) |
+| Recompiled | 120 s (4 × 30 s) |
 
 **File:** `Media\Main Menu\Video\<SystemName>.mp4`
 
