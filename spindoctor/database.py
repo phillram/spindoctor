@@ -291,10 +291,6 @@ class HyperspinDatabase:
         self._ensure_loaded()
         return self._games.get(name)
 
-    def contains(self, name: str) -> bool:
-        self._ensure_loaded()
-        return name in self._games
-
     def update_game(self, game: GameEntry) -> None:
         self._ensure_loaded()
         if game.name in self._games:
