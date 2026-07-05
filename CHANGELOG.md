@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.9.4] - 2026-07-05
+
 ### Removed
 
 - **Deleted ~500 lines of dead code (no call sites).** A vulture pass plus manual verification found code left stranded by the PR #262 tab reorg and other refactors, none of it reachable:
@@ -2061,7 +2063,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.3...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.4...HEAD
+[2.9.4]: https://github.com/phillram/spindoctor/compare/v2.9.3...v2.9.4
 [2.9.3]: https://github.com/phillram/spindoctor/compare/v2.9.2...v2.9.3
 [2.9.2]: https://github.com/phillram/spindoctor/compare/v2.9.1...v2.9.2
 [2.9.1]: https://github.com/phillram/spindoctor/compare/v2.9.0...v2.9.1
