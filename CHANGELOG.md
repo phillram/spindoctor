@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.9.5] - 2026-07-05
+
 ### Added
 
 - **`theme-fill --default` installs a console-level `default.zip` fallback theme.** Alongside the existing per-game fill, `theme-fill` can now check `Media\<SYSTEM>\Themes\default.zip` and, when it is missing, install the same bundled blank theme there. HyperSpin falls back to `default.zip` for any game in the system without its own theme, so a single file gives the whole console a full-screen video/background theme instead of one zip per game — a lighter-touch alternative. Works with `--system`, `--all`, `--apply` (dry-run by default), and `--verbose`, and an existing `default.zip` is never overwritten. Exposed in the GUI as the new **Fill console default theme** section on the *Metadata & Media* tab, which shells out to the same command.
@@ -2078,7 +2080,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.4...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.5...HEAD
+[2.9.5]: https://github.com/phillram/spindoctor/compare/v2.9.4...v2.9.5
 [2.9.4]: https://github.com/phillram/spindoctor/compare/v2.9.3...v2.9.4
 [2.9.3]: https://github.com/phillram/spindoctor/compare/v2.9.2...v2.9.3
 [2.9.2]: https://github.com/phillram/spindoctor/compare/v2.9.1...v2.9.2
