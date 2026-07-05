@@ -377,7 +377,7 @@ Press `Ctrl+Shift+F` (`Cmd+Shift+F` on macOS) to open a filter bar above the tab
 
 ## Dropdown letter-key jump
 
-Every dropdown in the GUI (system pickers, the Metadata & Media Game dropdown, etc.) supports letter-key type-ahead: with the dropdown focused, pressing a letter jumps straight to the next entry starting with that letter — no need to scroll a list of hundreds of games by hand. Pressing the same letter again moves to the next match instead of looping back to the first one. This is wired up once, globally, so any dropdown added in the future gets it automatically.
+Every **readonly** dropdown in the GUI (system pickers, etc.) supports letter-key type-ahead: with the dropdown focused, pressing a letter jumps straight to the next entry starting with that letter — no need to scroll a list of hundreds of games by hand. Pressing the same letter again moves to the next match instead of looping back to the first one. This is wired up once, globally, so any readonly dropdown added in the future gets it automatically. The handful of *editable* dropdowns (free-text entry with suggestions, e.g. the Metadata & Media Game filter or the Console tab's command field) deliberately don't get this — every keystroke there goes straight into the text field instead.
 
 ## "(Not in wheel)" system and game badges
 
