@@ -61,6 +61,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **README GUI section is now a use-case table.** Each tab row says what the tab is *for* (no CLI command names) and links to that tab's section of `docs/gui.md` for the deep dive.
 
+- **README flow pass.** The 60-word feature run-on is now a scannable "What it does" list (which also gains LEDBlinky — previously missing from the summary entirely); the Documentation map moved below the GUI/CLI sections so the top of the page reads install → quick start → explore; every CLI "greatest hit" carries a `::` comment; "Reporting issues" points at Troubleshooting before the issue tracker; and the docs map gains rows for `migrating-from-1.x.md` and `spindoctor-files.md`.
+
 - **Small accuracy fixes:** a missing `[gui]` extra (`tkinterdnd2` drag-and-drop) in `docs/installation.md`'s à-la-carte table, and three links pointing at a non-existent `standalone-tools.md#hyperspin-tools-menu` anchor (now `#wiring-into-hyperspin-tools-menu`).
 
 - **Renamed `scripts/Refresh Both.bat` → `scripts/Refresh All.bat`.** Every reference — `scripts/README.md`, `docs/standalone-tools.md`, `docs/gui.md`, and the `install-tools` generator — already used "Refresh All.bat"; only the shipped file kept the stale two-wheel-era name (it has refreshed all three wheels for some time). The file is now named to match.
