@@ -47,6 +47,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Docs
 
+- **Removed roadmap promises from the docs.** Both SmartScreen troubleshooting entries said the binaries "aren't code-signed *yet*", and `troubleshooting.md` added "(Code signing is on the roadmap.)" — docs describe what the software does today, not what it might do later. Both now state the plain fact (unsigned binaries) and the troubleshooting entry links to the windows-binaries alternatives (source install, or self-build with your own certificate) for locked-down machines. A sweep for other forward-looking phrasings ("planned", "coming soon", "future release", "not yet implemented", …) found no others.
+
 - **Slimmed the README down to orientation-only content.** The long "Dry-run by default" blockquote (with its full read-only command list) and the "Don't double-click `spindoctor.exe`" callout were front-page duplicates of material that lives in the docs — the read-only list is now stated once, in [docs/commands.md](docs/commands.md), and the double-click note is folded into the CLI launch row as a link to the existing [windows-binaries troubleshooting entry](docs/windows-binaries.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly). The "Common starting points" section (first-run wizard, Pick subset…, per-system overrides) was dropped entirely — all three are covered in [docs/gui.md](docs/gui.md). `docs/index.md` likewise now points at the command reference instead of repeating the read-only list.
 
 - **Fixed the README's GUI tab list.** It predated the Games tab split: **Games** (wheel reorder/prune, rename/clone, add new PC games, fix-exe) was missing entirely, and rename/clone were still described as living on the Systems tab.
