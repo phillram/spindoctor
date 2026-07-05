@@ -57,12 +57,6 @@ class FileMove:
     src: str  # absolute path string (JSON-friendly)
     dest: str
 
-    def src_path(self) -> Path:
-        return Path(self.src)
-
-    def dest_path(self) -> Path:
-        return Path(self.dest)
-
 
 @dataclass
 class FileCreate:
