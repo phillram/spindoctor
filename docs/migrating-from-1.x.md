@@ -100,7 +100,7 @@ Neither change affects anything that wasn't internal-only.
 
 - **All 1.x CLI commands and flags** behave identically — same arguments, same output structure, same exit codes.
 - **All 1.x `config.json` keys** are still honoured. New keys default to their 1.x-equivalent behaviour.
-- **All 1.x on-disk manifests** under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced,restructures}/` are unchanged — your existing undo paths still work.
+- **All 1.x on-disk manifests** under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes}/` — plus the `_spindoctor-misplaced-*.json` / `_spindoctor-restructure-*.json` manifests in the ROM tree — are unchanged; your existing undo paths still work.
 - **All 1.x integration patterns** (HyperSpin Tools menu, in-cabinet wheel system, Task Scheduler auto-refresh) still work without any changes.
 - **The Windows-binary install layout** (`spindoctor.exe`, `spindoctor-gui.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, `spindoctor-stats.exe` together in one folder) is unchanged. Drop the new zip on top of the old install folder.
 

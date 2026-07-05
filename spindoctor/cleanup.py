@@ -122,7 +122,7 @@ def _pc_titles_cache(config: Config) -> CategoryReport:
     return CategoryReport(
         key="pc-titles-cache",
         label="PC/Steam title confirmations",
-        description="Cached title confirmations for PC/Windows/Steam scans. Rebuilt by `sync-db`.",
+        description="Cached title confirmations for PC/Windows/Steam scans. Rebuilt by `add-pc-system` / `pc-rename`.",
         location=str(d),
         safe=True,
         files=_scan_glob(d, "*.json"),

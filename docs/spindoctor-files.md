@@ -17,6 +17,7 @@ explorer %USERPROFILE%\.spindoctor
 
 :: Individual files
 %USERPROFILE%\.spindoctor\config.json
+%USERPROFILE%\.spindoctor\favorites.json
 %USERPROFILE%\.spindoctor\scraper.log
 %USERPROFILE%\.spindoctor\scraper.log.1
 %USERPROFILE%\.spindoctor\scraper.log.2
@@ -150,7 +151,8 @@ Each file is a JSON object with a `cached_at` timestamp. Entries older than `met
 ```bat
 spindoctor fetch-meta --no-cache           :: bypass cache for this run only
 spindoctor fetch-meta --clear-cache        :: wipe all cached entries for the system
-spindoctor cleanup cache                   :: interactive cleanup across all caches
+spindoctor cleanup run --include metadata-cache          :: preview cache deletion
+spindoctor cleanup run --include metadata-cache --apply  :: delete it
 ```
 
 The cache can be deleted manually — SpinDoctor will re-populate it on next run. There is no risk of data loss.
@@ -171,9 +173,10 @@ One JSON file per system. Each entry maps a ROM name to the chosen metadata sour
 **Management commands:**
 
 ```bat
-spindoctor match clear --system "Nintendo Gamecube"   :: clear decisions for one system
-spindoctor match clear --all                           :: clear all decisions
-spindoctor cleanup match-cache                         :: remove stale/corrupt entries
+spindoctor match list                                  :: show every cached decision
+spindoctor match clear --system "Nintendo Gamecube"    :: clear decisions for one system
+spindoctor match clear                                 :: clear all decisions (prompts; --yes to skip)
+spindoctor cleanup run --include match-cache --apply   :: same, via the cleanup tool
 ```
 
 Clearing match decisions only resets which candidate was chosen — it does **not** roll back any metadata already written to the HyperSpin databases. To undo writes, restore from the `.bak` backup next to the XML file.
@@ -188,6 +191,40 @@ Clearing match decisions only resets which candidate was chosen — it does **no
 ```
 
 The cache is automatically invalidated when the MAME executable is newer than the cached file (modification time comparison). Safe to delete — SpinDoctor will regenerate on next `ledblinky generate` run.
+
+### Other caches
+
+| Path | What it holds | Safe to delete? |
+|------|---------------|-----------------|
+| `media_pick_cache\` | Media-asset selections you made during `fetch-media` (one JSON per system) | Yes — you'll just be asked again |
+| `pc_titles_cache\` | Confirmed display titles from `add-pc-system` / `pc-rename` title review (one JSON per system) | Yes — the review re-prompts on the next run |
+
+Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache` and `pc-titles-cache`).
+
+### `favorites.json`
+
+**The cross-system Favorites store** — one `(system, rom_name)` pair per favorited game. Read and written by `spindoctor fav add / remove / sync / rebuild / clear` and the GUI's Toolkit tab. Deleting it empties your Favorites (the generated wheel itself lives in the HyperSpin tree and is rebuilt by `fav rebuild --apply`). See [Commands → Custom wheels](commands.md#custom-wheels).
+
+### `gui.lock`
+
+**The GUI's single-instance lock.** Taken on `spindoctor-gui` startup so two windows can't write the same HyperSpin XML simultaneously; released automatically when the process exits, including after a crash. See [Troubleshooting → Install / startup](troubleshooting.md#install--startup).
+
+### Undo manifest directories
+
+Every destructive command records what it changed as a JSON manifest so `--undo` can reverse it. Most manifests live in per-category folders here:
+
+| Directory | Written by |
+|-----------|-----------|
+| `curation\` | `curate --apply --action archive` |
+| `edits\` | `batch-edit --apply` |
+| `renames\` | `rename` / `clone --apply` |
+| `migrations\` | `migrate --apply` |
+| `media_imports\` | `media-scan --apply` |
+| `themes\` | `theme-apply --apply` (manifest + a `backup\` mirror of every overwritten file) |
+
+Two commands write their manifests into the ROM tree instead, next to the files they moved: `find-misplaced --apply` (`_spindoctor-misplaced-<stamp>.json` at the `roms_dir` root) and `organize --restructure --apply` (`_spindoctor-restructure-<stamp>.json` inside the system's ROM folder).
+
+Manifests are small and are never deleted automatically — they are the undo path. The full command ↔ manifest ↔ undo map is at [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes); `spindoctor cleanup run` can prune old ones once you're sure you won't roll back.
 
 ---
 
@@ -293,6 +330,8 @@ SpinDoctor reads these but will **never write or delete** them:
 ```
 C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always here)
 ├── config.json                         ← main settings
+├── favorites.json                      ← cross-system Favorites store
+├── gui.lock                            ← GUI single-instance lock (auto-released)
 ├── scraper.log                         ← API request log (current)
 ├── scraper.log.1                       ← API request log (previous rotation)
 ├── scraper.log.2                       ← API request log (oldest rotation)
@@ -302,8 +341,16 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 │   └── combined\<System>\*.json
 ├── match_cache\                        ← manual match decisions
 │   └── <System>.json
-└── mame_listxml_cache\                 ← MAME listxml cache (auto-invalidated)
-    └── MAME.xml
+├── media_pick_cache\                   ← media-asset picks from fetch-media
+├── pc_titles_cache\                    ← confirmed PC/Steam display titles
+├── mame_listxml_cache\                 ← MAME listxml cache (auto-invalidated)
+│   └── MAME.xml
+├── curation\                           ← undo manifests: curate --action archive
+├── edits\                              ← undo manifests: batch-edit
+├── renames\                            ← undo manifests: rename / clone
+├── migrations\                         ← undo manifests: migrate
+├── media_imports\                      ← undo manifests: media-scan
+└── themes\                             ← theme-apply manifests + file backups
 
 C:\SpinDoctor\                          ← SpinDoctor output (configured in config.json)
 ├── output\                             ← generated files staging area

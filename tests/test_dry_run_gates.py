@@ -53,11 +53,9 @@ def isolated_config(tmp_path, monkeypatch):
     monkeypatch.setattr(
         media_scan_mod, "MANIFEST_DIR", home / "media_imports",
     )
-    # `organize --restructure` writes manifests under CONFIG_DIR / "restructures"
-    # — that dir is computed from the live CONFIG_DIR at call time, so
-    # re-homing CONFIG_DIR above is enough.
-    # `find-misplaced --apply` writes into roms_dir, not CONFIG_DIR,
-    # so no extra rebinding needed.
+    # `organize --restructure` writes its manifest into the system's ROM
+    # folder and `find-misplaced --apply` into roms_dir — both live under
+    # the test's tmp_path, so no extra rebinding needed.
     _ = misplaced_mod  # touch the import so the linter doesn't strip it
     config_mod.reset_override_cache()
     yield home
@@ -201,7 +199,6 @@ def test_organize_restructure_dry_run_does_not_touch_disk(
     roms_dir = Path(cfg.roms_dir)
 
     before = _snapshot(hs_dir, roms_dir)
-    manifests_dir = isolated_config / "restructures"
 
     runner = CliRunner()
     result = runner.invoke(
@@ -210,7 +207,8 @@ def test_organize_restructure_dry_run_does_not_touch_disk(
 
     assert result.exit_code == 0, result.output
     assert _snapshot(hs_dir, roms_dir) == before
-    assert not (manifests_dir.exists() and list(manifests_dir.glob("*.json")))
+    # Restructure manifests land inside the system's ROM folder.
+    assert not list(roms_dir.rglob("_spindoctor-restructure-*.json"))
 
 
 # ─── media-scan ──────────────────────────────────────────────────────────────
