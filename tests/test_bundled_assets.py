@@ -6,12 +6,16 @@ install_system_video, install_system_theme, and install_bundled_system_assets.
 
 from __future__ import annotations
 
+import json
+import shutil
+import subprocess
 import zipfile
 from pathlib import Path
 
 import pytest
 
 from spindoctor.rocketlauncher import (
+    _VIDEO_ASSETS,
     fill_default_theme,
     fill_missing_themes,
     install_bundled_system_assets,
@@ -192,6 +196,47 @@ def test_video_installs(tmp_path, system_name):
     hs = _hs_dir(tmp_path)
     _, status = install_system_video(hs, system_name)
     assert status == "installed"
+
+
+# ── bundled video codec compliance ──────────────────────────────────────────────
+#
+# docs/synthetic-wheel-media.md documents that HyperSpin's Windows 7 Adobe AIR
+# runtime can only decode H.264 up to Main Profile, Level 4.0 — anything higher
+# (e.g. High Profile, or Level 5.0 forced by a >1920x1080 source) drops the video
+# track while audio keeps playing, or on some setups starts 1-2s late. A synthetic-
+# wheel media refresh once re-bundled all four videos at High Profile / Level 5.0,
+# regressing exactly this. Pinned here so a future media refresh can't repeat it.
+
+_FFPROBE = shutil.which("ffprobe")
+
+
+@pytest.mark.skipif(_FFPROBE is None, reason="ffprobe not available")
+@pytest.mark.parametrize("system_name", SYNTHETIC)
+def test_bundled_video_is_windows7_compatible_h264(system_name):
+    asset_path = Path(__file__).parent.parent / "spindoctor" / "assets" / _VIDEO_ASSETS[system_name]
+    assert asset_path.exists(), f"bundled asset missing: {asset_path}"
+    out = subprocess.run(
+        [
+            _FFPROBE, "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,profile,level,width,height",
+            "-of", "json", str(asset_path),
+        ],
+        capture_output=True, text=True, check=True,
+    )
+    stream = json.loads(out.stdout)["streams"][0]
+    assert stream["codec_name"] == "h264"
+    assert stream["profile"] == "Main", (
+        f"{system_name}: profile is {stream['profile']!r}, must be Main — "
+        "Windows 7's Adobe AIR runtime silently drops High Profile video"
+    )
+    assert stream["level"] <= 40, (
+        f"{system_name}: level is {stream['level']}, must be <=40 (4.0) — "
+        "higher levels silently drop the video track on Windows 7"
+    )
+    assert stream["width"] <= 1920 and stream["height"] <= 1080, (
+        f"{system_name}: resolution {stream['width']}x{stream['height']} exceeds "
+        "1920x1080, which forces a level above 4.0"
+    )
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)
