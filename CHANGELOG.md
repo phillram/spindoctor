@@ -57,7 +57,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Made the read-only command list in `docs/commands.md` precise.** `doctor`, `find-misplaced`, `lightgun detect`, and `self-doctor` are diagnostic-by-default but *can* write when passed `--apply` (or `--fix` for `self-doctor`); the list previously presented `doctor` and `self-doctor` as unconditionally read-only.
 
-- **Small accuracy fixes:** the Console-tab preset count in `docs/cli-cheatsheet.md` (~246 → 250+; actual is 259), a missing `[gui]` extra (`tkinterdnd2` drag-and-drop) in `docs/installation.md`'s à-la-carte table, and three links pointing at a non-existent `standalone-tools.md#hyperspin-tools-menu` anchor (now `#wiring-into-hyperspin-tools-menu`).
+- **Removed drifting inventory counts from the README and docs.** Hard numbers that rot as the product grows — the Console-tab preset count (stale at "~246"), the tab count in `windows-binaries.md` (stale at "15"; the GUI has 13), "five standalone `.exe` files", "~25 known tools", the `scraper.py` platform-dict entry counts, and "all five/seven —" prefixes before already-named component lists — are replaced with general wording. Counts of things that change with normal development don't belong in prose; the named lists and the code stay authoritative.
+
+- **README GUI section is now a use-case table.** Each tab row says what the tab is *for* (no CLI command names) and links to that tab's section of `docs/gui.md` for the deep dive.
+
+- **Small accuracy fixes:** a missing `[gui]` extra (`tkinterdnd2` drag-and-drop) in `docs/installation.md`'s à-la-carte table, and three links pointing at a non-existent `standalone-tools.md#hyperspin-tools-menu` anchor (now `#wiring-into-hyperspin-tools-menu`).
 
 - **Renamed `scripts/Refresh Both.bat` → `scripts/Refresh All.bat`.** Every reference — `scripts/README.md`, `docs/standalone-tools.md`, `docs/gui.md`, and the `install-tools` generator — already used "Refresh All.bat"; only the shipped file kept the stale two-wheel-era name (it has refreshed all three wheels for some time). The file is now named to match.
 

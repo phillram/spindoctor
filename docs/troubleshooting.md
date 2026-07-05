@@ -445,7 +445,7 @@ Searches every configured system's HyperSpin database. Substring match by defaul
 spindoctor tools-audit
 ```
 
-Read-only. Scans `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, the emulators tree, Program Files, and the Start Menu for ~25 known tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, HyperT00ls, Don's HyperTools, Hypersearch, Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput, …) and reports which spindoctor command replaces each one.
+Read-only. Scans `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, the emulators tree, Program Files, and the Start Menu for a registry of known tools (Tur-RemoveDupes, FatMatch, FuzzyRename, HyperSync, HyperT00ls, Don's HyperTools, Hypersearch, Sinden, DemulShooter, XPadder, JoyToKey, DS4Windows, XOutput, …) and reports which spindoctor command replaces each one.
 
 Add `--extra-path "C:\custom-tools"` for non-standard install locations. Pass `--show-unknown` to list `.exe` files the registry doesn't recognise — useful for telling the project what to add next.
 

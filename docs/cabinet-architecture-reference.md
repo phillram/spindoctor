@@ -1669,7 +1669,7 @@ The file content is a real PNG/JPEG/MP4. `MediaDownloader._download_to` must **n
 
 ### Platform / system ID maps
 
-SpinDoctor has two lookup dicts in `scraper.py`: `SCREENSCRAPER_SYSTEMS` (237 entries, covering all 249 ScreenScraper systems) and `THEGAMESDB_PLATFORMS` (235 entries, covering all 153 TheGamesDB platforms). These were verified against the live APIs on 2026-06-14.
+SpinDoctor has two lookup dicts in `scraper.py`: `SCREENSCRAPER_SYSTEMS` and `THEGAMESDB_PLATFORMS`, covering the full system/platform catalogs of both APIs (verified against the live APIs on 2026-06-14).
 
 Common cabinet systems for quick reference:
 

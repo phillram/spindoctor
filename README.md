@@ -14,7 +14,7 @@ SpinDoctor ships in three forms — pick whichever matches your cabinet:
 
 | | Best for | What you get | Walkthrough |
 |---|---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1 and newer, five standalone `.exe` files). Both include a windowed GUI launcher and the full CLI. | [docs/windows-binaries.md](docs/windows-binaries.md) |
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1 and newer, standalone `.exe` files). Both include a windowed GUI launcher and the full CLI. | [docs/windows-binaries.md](docs/windows-binaries.md) |
 | 🐍 **Pip install from source** | Dev machines, custom builds, anyone already running Python 3.8+ | Same CLI plus `spindoctor-gui` console script, importable as a package. Cross-platform (Windows / macOS / Linux). | [docs/installation.md](docs/installation.md) |
 | 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is | The `.py` wrappers in [`scripts/`](scripts/) run directly from a checkout via `python scripts\spindoctor-fav.py …`. | [docs/installation.md#running-without-pip-install](docs/installation.md#running-without-pip-install) |
 
@@ -29,7 +29,7 @@ Then pick how you want to *use* it:
 
 1. Grab the right zip from the [latest release](https://github.com/phillram/spindoctor/releases):
    - **Windows 10/11** → `spindoctor-win10-vX.Y.Z.zip` (shared runtime, recommended)
-   - **Windows 7 SP1 / 8 / 8.1 or 10/11** → `spindoctor-win7-vX.Y.Z.zip` (five standalone `.exe` files)
+   - **Windows 7 SP1 / 8 / 8.1 or 10/11** → `spindoctor-win7-vX.Y.Z.zip` (standalone `.exe` files)
 2. Extract the zip and move the folder (or EXEs) to a location of your choice (e.g. `C:\spindoctor\`). Optionally add that folder to `PATH` for CLI use. See [docs/windows-binaries.md](docs/windows-binaries.md) for the layout of each bundle.
 3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done.
 
@@ -75,20 +75,23 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 
 ## What's in the GUI
 
-Dedicated tabs cover the most-used workflows directly, plus a free-form **Console** tab whose dropdown ships hundreds of canonical CLI invocations — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI. Tabs appear in new-user journey order:
+Dedicated tabs cover the most-used workflows directly, plus a free-form **Console** tab whose preset dropdown covers the full CLI surface — anything in the [CLI cheatsheet](docs/cli-cheatsheet.md) also works as a click from inside the GUI. Tabs appear in new-user journey order; each one links to its section of the [GUI walkthrough](docs/gui.md):
 
-- **Setup** — first-run wizard, paths, scraper credentials with a **Test credentials** button.
-- **Diagnostics** — one-click cabinet health check, per-system audit, library-wide scans, search & verify. Everything read-only.
-- **Systems** — interactive Main Menu carousel (reorder / show-hide / sort), add a new arcade or PC system, organize a system, per-system overrides.
-- **Games** — per-game management within a system: reorder or prune the wheel, rename / clone, add newly installed PC games, fix a game that launches the wrong executable.
-- **Metadata & Media** — full metadata refresh chain in one click, or `fetch-meta` / `fetch-media` / `media-scan` / `update-db` / `generate-config` as individual steps.
-- **Maintenance** — region/revision thinning with interactive per-row preview, cache cleanup, ignore lifecycle.
-- **Toolkit** — import HyperSpin F-key favorites, refresh custom wheels, register them in HyperSpin, scrub/restore.
-- **LEDBlinky** — step-by-step controls/colors workflow, brightness, randomize, backup.
-- **Lightgun** — Sinden + DemulShooter detection and per-system wiring.
-- **Backup & Restore** / **Migration** — dated backups, restores, and whole-library moves with undo.
-- **Console** — type-or-pick any CLI invocation from categorized presets.
-- **History** — per-run timeline tagging each row DRY-RUN / OK / FAIL.
+| Tab | Use it to… |
+|---|---|
+| [Setup](docs/gui.md#setup) | Enter cabinet paths and scraper credentials, test them, and run the first-run wizard |
+| [Diagnostics](docs/gui.md#diagnostics) | Check cabinet health and scan the whole library — everything read-only |
+| [Systems](docs/gui.md#systems) | Curate HyperSpin's main-menu carousel, add new arcade or PC systems, and teach SpinDoctor about niche systems |
+| [Games](docs/gui.md#games) | Manage games within a system — reorder or prune the wheel, rename or clone a game, add newly installed PC games, fix one that launches the wrong program |
+| [Metadata & Media](docs/gui.md#metadata--media) | Download game descriptions and artwork — the whole refresh chain in one click, or step by step |
+| [Maintenance](docs/gui.md#maintenance) | Thin region/revision duplicates with a per-row preview, and clean up caches |
+| [Toolkit](docs/gui.md#toolkit) | Build the Favorites / Recently Played / Most Played wheels and wire them into HyperSpin |
+| [LEDBlinky](docs/gui.md#ledblinky) | Generate and tune button-lighting controls and colors |
+| [Lightgun](docs/gui.md#lightgun) | Detect light-gun software and wire it up per system |
+| [Backup & Restore](docs/gui.md#backup--restore) | Take dated backups of any part of the library, and restore from them |
+| [Migration](docs/gui.md#migration) | Move the whole library to a new drive or PC, with undo |
+| [Console](docs/gui.md#console) | Run any CLI command from categorized, editable presets |
+| [History](docs/gui.md#history) | Review every run this session — dry-run, success, or failure |
 
 The full tour — including the menubar, keyboard shortcuts, find bar, dark mode, and per-tab details — is at [docs/gui.md](docs/gui.md).
 
