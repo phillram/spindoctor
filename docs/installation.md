@@ -103,6 +103,6 @@ For older / locked-down cabinets where installing Python isn't an option, every 
 
 **Modern bundle** (Windows 10/11): extract → keep the whole `spindoctor-win10/` folder together → double-click `spindoctor-win10\spindoctor-gui.exe`. The shared runtime lives in `_internal/` alongside the EXEs.
 
-**Win7 bundle**: five self-contained `.exe` files. Extract → move them to a folder of your choice (e.g. `C:\spindoctor\`) → double-click `spindoctor-gui.exe`. Each binary is self-contained. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
+**Win7 bundle**: self-contained `.exe` files. Extract → move them to a folder of your choice (e.g. `C:\spindoctor\`) → double-click `spindoctor-gui.exe`. Each binary is self-contained. Runs on Windows 7 SP1 / 8 / 8.1 / 10 / 11.
 
 Full walkthrough — including a tour of the GUI tabs, troubleshooting (SmartScreen, antivirus, missing SP1), HyperSpin Tools menu wiring, and self-build instructions — at [Windows binaries](windows-binaries.md).
