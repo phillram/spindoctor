@@ -1383,15 +1383,23 @@ The game keeps running (orphaned); the user must ALT+TAB.
 uses case-insensitive partial matching and works regardless of child-process hierarchy.
 `AppWaitExe.Process("WaitClose")` then handles exit detection cleanly.
 
-SpinDoctor writes `FadeTitle=` and `FadeTitleTimeout=30` into the system-level PCLauncher
+SpinDoctor writes `FadeTitle=` and `FadeTitleTimeout=300` into the system-level PCLauncher
 INI for every synthetic wheel entry. The default value is the emulator's registered name
 (e.g. `FadeTitle=MAME` for a MAME game, `FadeTitle=Supermodel` for a Model 3 game). AHK's
 `WinWait` uses case-insensitive partial matching, so "MAME" matches "MAME [1942 (World)]",
 "Supermodel" matches "Supermodel 3.1 UI", and so on — no configuration needed for the
 vast majority of emulators.
 
-`FadeTitleTimeout=30` prevents an infinite hang if the emulator crashes before showing a
-window: PCLauncher errors after 30 seconds instead of waiting forever.
+`FadeTitleTimeout=300` prevents an infinite hang if the emulator crashes before showing a
+window: PCLauncher errors after 5 minutes instead of waiting forever. PCLauncher proceeds
+immediately when the window appears, so fast-loading games are not delayed.
+
+SpinDoctor also ships a built-in correction table for emulators whose window titles diverge
+from their registered name. Notable entries: `"Dolphin Ishiiruka"` → `"Dolphin"` (Qt-based
+Dolphin 5.0 builds dropped "Ishiiruka" from the title; without this correction, launching
+any Dolphin game from a synthetic wheel hits the timeout while the game plays in the
+background). User corrections via `emulator-title set` take precedence over the built-in
+table.
 
 **Exception — PCLauncher-based source systems** (e.g. "PC Games", "Windows"): the source
 system's emulator is PCLauncher itself, which has no identifiable window of its own. These
@@ -1404,7 +1412,7 @@ its registered name (e.g. emulator registered as "Model2" but window shows
 spindoctor emulator-title set "Model2" "Sega Model 2"
 ```
 This stores the correction in `config.json` under `emulator_window_titles`. User
-corrections take precedence over the built-in default.
+corrections take precedence over the built-in correction table described above.
 
 ---
 
