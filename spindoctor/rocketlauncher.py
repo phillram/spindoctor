@@ -261,16 +261,21 @@ EMULATOR_EXTENSIONS: dict[str, str] = {
 # field in :class:`~spindoctor.config.Config` provides user-level overrides
 # with the same semantics (user entries take precedence over this table).
 EMULATOR_WINDOW_TITLES: dict[str, str] = {
-    "ZiNc": "ZiNc",   # window title: "ZiNc 1.1 (C)1997-2005 Drunken Muppets ..."
-                       # name and title match so this is a no-op, but kept as a
-                       # documented example of the correction format.
+    "ZiNc": "ZiNc",           # window title: "ZiNc 1.1 (C)1997-2005 Drunken Muppets ..."
+                               # name and title match so this is a no-op, but kept as a
+                               # documented example of the correction format.
+    "Dolphin Ishiiruka": "Dolphin",  # Qt-based builds (5.0+) title their window
+                                     # "Dolphin 5.0-NNNNN | ... | FPS: ..." — the
+                                     # "Ishiiruka" fork name no longer appears.
 }
 
 # Safety timeout (seconds) for FadeTitle window detection.
 # If the emulator's window hasn't appeared within this many seconds of
 # PCLauncher launching the Application, PCLauncher errors out.  This prevents
 # an infinite hang if the emulator crashes before showing a window.
-_FADE_TITLE_TIMEOUT = 30
+# 300 s (5 min) is the maximum wait — PCLauncher proceeds the instant the
+# window appears, so fast-loading games are not delayed.
+_FADE_TITLE_TIMEOUT = 300
 
 
 # ─── Global Emulators.ini ─────────────────────────────────────────────────────
