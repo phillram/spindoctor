@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dolphin games in Favorites / Recently Played / Most Played timed out with "error waiting for window Dolphin Ishiiruka" even though the game loaded successfully.** The outer PCLauncher module was configured with `FadeTitle=Dolphin Ishiiruka`, looking for a window title that no longer exists. Qt-based Dolphin 5.0 builds title their window `"Dolphin 5.0-NNNNN | … | FPS: …"` — the "Ishiiruka" fork name was dropped from the title. PCLauncher would hit its 30-second timeout and throw a ScriptError while the game was already running fine in the background. Added `"Dolphin Ishiiruka": "Dolphin"` to `EMULATOR_WINDOW_TITLES` so SpinDoctor now generates `FadeTitle=Dolphin`, which matches the actual running window. Increased `_FADE_TITLE_TIMEOUT` from 30 s to 300 s (5 min) for all emulators — PCLauncher proceeds immediately when the window appears, so fast-loading games are not delayed.
+
 ## [2.9.5] - 2026-07-05
 
 ### Added
