@@ -122,6 +122,7 @@ filters only support H.264 up to **Main Profile, Level 4.0**.
 | Profile | **Main** (not High) |
 | Level | **4.0** (not 5.0+) |
 | Resolution | **1920×1080** (HyperSpin scales to fit; large resolutions force higher levels) |
+| B-frames | **0** (`-bf 0`) — see note below |
 | Pixel format | yuv420p |
 | Audio codec | AAC |
 
@@ -130,12 +131,21 @@ filters only support H.264 up to **Main Profile, Level 4.0**.
 > track is silently dropped while audio still plays.  Encoding at 1920×1080 keeps
 > the level at 4.0 and plays correctly on all tested HyperSpin setups.
 
+> **Why no B-frames?**  These videos run at a very low 2 fps.  B-frames require
+> the decoder to hold a reorder buffer of several frames before it can display
+> the first one — at 2 fps, a 3-frame reorder buffer alone is ~1.5s.  The
+> practical symptom is audio starting immediately while the video stays blank
+> for a second or two before appearing.  `-bf 0` removes the reordering
+> entirely; at this frame rate B-frames provide no compression benefit anyway
+> (nothing here needs bidirectional prediction), so there's no quality/size
+> tradeoff for disabling them.
+
 **If you replace with your own video:** encode with the settings above.  An ffmpeg
 one-liner that produces a compatible file:
 
 ```bat
 ffmpeg -loop 1 -i background.png -stream_loop -1 -i music.mp3 -t 57.7 ^
-  -vf scale=1920:1080 -c:v libx264 -profile:v main -level 4.0 -crf 28 ^
+  -vf scale=1920:1080 -c:v libx264 -profile:v main -level 4.0 -bf 0 -crf 28 ^
   -c:a aac -b:a 192k -pix_fmt yuv420p -movflags +faststart Favorites.mp4
 ```
 
