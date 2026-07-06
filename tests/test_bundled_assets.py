@@ -206,6 +206,12 @@ def test_video_installs(tmp_path, system_name):
 # track while audio keeps playing, or on some setups starts 1-2s late. A synthetic-
 # wheel media refresh once re-bundled all four videos at High Profile / Level 5.0,
 # regressing exactly this. Pinned here so a future media refresh can't repeat it.
+#
+# Separately, B-frames cause their own startup latency at these videos' low
+# (2 fps) frame rate: a decoder with a 3-frame reorder buffer must hold back
+# ~1.5s of playback before it can display frame 0. That's a second, independent
+# way to reproduce "audio starts immediately, video is late" even on a fully
+# compatible profile/level, so it's pinned here too (`has_b_frames == 0`).
 
 _FFPROBE = shutil.which("ffprobe")
 
@@ -218,13 +224,18 @@ def test_bundled_video_is_windows7_compatible_h264(system_name):
     out = subprocess.run(
         [
             _FFPROBE, "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "stream=codec_name,profile,level,width,height",
+            "-show_entries", "stream=codec_name,profile,level,width,height,has_b_frames",
             "-of", "json", str(asset_path),
         ],
         capture_output=True, text=True, check=True,
     )
     stream = json.loads(out.stdout)["streams"][0]
     assert stream["codec_name"] == "h264"
+    assert stream["has_b_frames"] == 0, (
+        f"{system_name}: has_b_frames is {stream['has_b_frames']}, must be 0 — "
+        "B-frames force decoder reorder buffering that, at this video's low "
+        "frame rate, delays the first displayed frame by up to ~1.5s"
+    )
     assert stream["profile"] == "Main", (
         f"{system_name}: profile is {stream['profile']!r}, must be Main — "
         "Windows 7's Adobe AIR runtime silently drops High Profile video"
