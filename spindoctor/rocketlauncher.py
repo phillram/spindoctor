@@ -777,10 +777,13 @@ _MUSIC_ASSETS: dict[str, str] = {
 # then advances to the next system when playback ends.
 # HyperSpin path: Media\Main Menu\Video\<SystemName>.mp4
 # Durations: 120 s each (4x the 30 s bundled music track), all four wheels.
-# Must stay H.264 Main Profile / Level 4.0 / <=1920x1080 — Windows 7's Adobe
-# AIR runtime can't decode High Profile or Level 5.0+ (video silently drops,
-# or on some setups starts 1-2s late, while audio keeps playing normally).
-# See docs/synthetic-wheel-media.md's "Required video format" section.
+# Must stay H.264 Main Profile / Level 4.0 / <=1920x1080 / no B-frames —
+# Windows 7's Adobe AIR runtime can't decode High Profile or Level 5.0+
+# (video silently drops while audio keeps playing); separately, B-frames at
+# this video's low 2fps force a multi-frame decoder reorder buffer that
+# delays the first displayed frame by a second or more, even when the
+# profile/level are otherwise compatible. See docs/synthetic-wheel-media.md's
+# "Required video format" section.
 _VIDEO_ASSETS: dict[str, str] = {
     "Favorites":       "video_Favorites.mp4",
     "Most Played":     "video_Most_Played.mp4",
