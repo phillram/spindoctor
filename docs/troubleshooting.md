@@ -743,12 +743,14 @@ emuGameWindow.WaitActive()
 Change to:
 
 ```ahk
-emuGameWindow.Wait(120)
+emuGameWindow.Wait(300)
 emuGameWindow.Get("ID")
 ```
 
-Two changes: add a 120-second explicit timeout so the wait outlasts the animation, and
-**remove `WaitActive` entirely** (see next entry for why).
+Two changes: add a 300-second explicit timeout so the wait outlasts even the slowest-booting
+Wii titles, and **remove `WaitActive` entirely** (see next entry for why). 120 seconds is
+enough for most GameCube games but heavy Wii titles can take 2–3 minutes — 300 s covers all
+cases without a noticeable difference on fast-loading games.
 
 ---
 
