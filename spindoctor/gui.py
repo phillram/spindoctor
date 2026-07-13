@@ -8063,42 +8063,32 @@ class _SpinDoctorGUI:
             command=self._run_media_add,
         ).pack(side="left")
 
-        # ── Fill missing game themes ──────────────────────────────────────────
-        fill_frame = self.ttk.LabelFrame(frame, text="Fill missing game themes")
+        # ── Fill theme zips ────────────────────────────────────────────────────
+        fill_frame = self.ttk.LabelFrame(frame, text="Fill theme zips")
         fill_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             fill_frame,
-            text=("For each video in Media\\<System>\\Video\\ that has no "
-                  "matching theme zip, install a blank full-screen theme so "
-                  "HyperSpin plays the video as-is. Existing theme zips are "
-                  "never overwritten. Uses the System selected above and the "
-                  "Apply/Verbose checkboxes in the status bar — dry-run by "
-                  "default, writes only when Apply is ticked."),
+            text=("Install blank full-screen themes so HyperSpin plays videos "
+                  "as-is, using the System selected above and the Apply/Verbose "
+                  "checkboxes in the status bar — dry-run by default, writes "
+                  "only when Apply is ticked. \"Fill missing game themes\" adds "
+                  "one per video in Media\\<System>\\Video\\ that has no "
+                  "matching theme zip. \"Fill console default theme\" installs "
+                  "a single Media\\<System>\\Themes\\default.zip that HyperSpin "
+                  "falls back to for any game in the system without its own "
+                  "theme. Existing theme zips are never overwritten."),
             wraplength=860, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", padx=6, pady=(4, 4))
+        fill_btns = self.ttk.Frame(fill_frame)
+        fill_btns.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            fill_frame, text="Fill missing game themes",
+            fill_btns, text="Fill missing game themes",
             command=self._run_theme_fill,
-        ).pack(anchor="w", padx=6, pady=(0, 6))
-
-        # ── Fill console default theme ────────────────────────────────────────
-        dflt_frame = self.ttk.LabelFrame(frame, text="Fill console default theme")
-        dflt_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
-            dflt_frame,
-            text=("Install one blank Media\\<System>\\Themes\\default.zip when it "
-                  "is missing. HyperSpin falls back to default.zip for any game "
-                  "in the system without its own theme, so this covers a whole "
-                  "console with a single file. An existing default.zip is never "
-                  "overwritten. Uses the System selected above and the "
-                  "Apply/Verbose checkboxes in the status bar — dry-run by "
-                  "default, writes only when Apply is ticked."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 4))
+        ).pack(side="left")
         self.ttk.Button(
-            dflt_frame, text="Fill console default theme",
+            fill_btns, text="Fill console default theme",
             command=self._run_theme_default,
-        ).pack(anchor="w", padx=6, pady=(0, 6))
+        ).pack(side="left", padx=(8, 0))
 
         return frame
 
