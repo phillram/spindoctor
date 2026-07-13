@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **GUI: Metadata & Media's "Fill missing game themes" and "Fill console default theme" sections merged into one "Fill theme zips" box.** Both were separate `LabelFrame`s with near-identical descriptions and a single action button each; they now share one frame and description with two buttons side by side. No change in behavior — `theme-fill` and `theme-fill --default` are invoked exactly as before.
+
+### Fixed
+
+- **Favorites and Recompiled backgrounds showed only the top-left quarter of the image instead of the full picture, even at 1920×1080 display resolution.** `bg_Favorites.png` and `bg_Recompiled.png` were bundled at their raw 2752×1536 export resolution — HyperSpin renders Main Menu backgrounds at 1:1 pixels rather than scaling to fit, so anything larger than the screen only shows its top-left corner. `bg_Most_Played.png` and `bg_Recently_Played.png` were already correctly sized; this same bug was fixed once for all three original wheels (v2.9.0-era) but Favorites was later restored from its raw source and Recompiled was added from raw source, both reintroducing the crop. Re-generated both from the archived originals: center-cropped to 16:9 and downscaled to 1920×1080 with LANCZOS resampling, matching the other two backgrounds. Added `test_bundled_background_is_1920x1080` (`tests/test_bundled_assets.py`), which asserts all four bundled backgrounds are exactly 1920×1080, so a future media refresh can't silently regress this a third time.
+
 ## [2.9.6] - 2026-07-05
 
 ### Fixed
