@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from spindoctor.rocketlauncher import (
+    _BACKGROUND_ASSETS,
     _VIDEO_ASSETS,
     fill_default_theme,
     fill_missing_themes,
@@ -248,6 +249,29 @@ def test_bundled_video_is_windows7_compatible_h264(system_name):
         f"{system_name}: resolution {stream['width']}x{stream['height']} exceeds "
         "1920x1080, which forces a level above 4.0"
     )
+
+
+# ── bundled background image resolution ─────────────────────────────────────────
+#
+# HyperSpin's Main Menu renders the background PNG at 1:1 pixels rather than
+# scaling it to fit the screen, so a source image larger than the display
+# resolution only shows its top-left corner. A synthetic-wheel media refresh
+# once restored the raw (2752x1536) source exports over the resized (1920x1080)
+# assets, silently reintroducing this crop for two of the four wheels. Pinned
+# here so a future media refresh can't repeat it.
+
+@pytest.mark.parametrize("system_name", SYNTHETIC)
+def test_bundled_background_is_1920x1080(system_name):
+    from PIL import Image
+
+    asset_path = Path(__file__).parent.parent / "spindoctor" / "assets" / _BACKGROUND_ASSETS[system_name]
+    assert asset_path.exists(), f"bundled asset missing: {asset_path}"
+    with Image.open(asset_path) as im:
+        assert im.size == (1920, 1080), (
+            f"{system_name}: background is {im.size}, must be 1920x1080 — "
+            "HyperSpin renders backgrounds at 1:1 px, so a larger source image "
+            "only shows its top-left corner on screen"
+        )
 
 
 @pytest.mark.parametrize("system_name", SYNTHETIC)

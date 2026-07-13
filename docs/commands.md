@@ -1381,7 +1381,7 @@ With `--verbose`, `--all` also prints the per-game status breakdown under each c
 | `--apply` | Write the blank theme zips. Dry-run without this flag. |
 | `--verbose`, `-v` | Print per-game detail (with `--all`) or full destination paths (otherwise). |
 
-> **GUI alternative:** *Metadata & Media* tab → **Fill missing game themes** (per-game) and **Fill console default theme** (`--default`) sections. Each is a single button following the tab's dry-run/Apply convention: unticked in the status bar previews, **Apply** writes, **Verbose** prints more detail. Both use the shared System / All systems selector at the top of the tab.
+> **GUI alternative:** *Metadata & Media* tab → **Fill theme zips** section, with **Fill missing game themes** (per-game) and **Fill console default theme** (`--default`) buttons side by side. Both follow the tab's dry-run/Apply convention: unticked in the status bar previews, **Apply** writes, **Verbose** prints more detail, and both use the shared System / All systems selector at the top of the tab.
 
 ---
 
