@@ -12811,9 +12811,14 @@ class _SpinDoctorGUI:
         list_lf = self.ttk.LabelFrame(frame, text="Videos")
         list_lf.pack(fill="both", expand=True, pady=(0, 8))
 
+        tree_frame = self.ttk.Frame(list_lf)
+        tree_frame.pack(fill="both", expand=True, padx=6, pady=(6, 4))
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
         columns = ("disk", "registered", "size")
         tree = self.ttk.Treeview(
-            list_lf, columns=columns, show="tree headings", height=12,
+            tree_frame, columns=columns, show="tree headings", height=12,
             selectmode="extended",
         )
         tree.heading("#0", text="File")
@@ -12825,11 +12830,11 @@ class _SpinDoctorGUI:
         tree.column("registered", width=100, anchor="center")
         tree.column("size", width=90, anchor="e")
         tscroll = self.ttk.Scrollbar(
-            list_lf, orient="vertical", command=tree.yview,
+            tree_frame, orient="vertical", command=tree.yview,
         )
         tree.configure(yscrollcommand=tscroll.set)
-        tree.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
-        tscroll.pack(side="right", fill="y", padx=(0, 6), pady=6)
+        tree.grid(row=0, column=0, sticky="nsew")
+        tscroll.grid(row=0, column=1, sticky="ns")
         self._introvideo_tree = tree
 
         btn_row = self.ttk.Frame(list_lf)
