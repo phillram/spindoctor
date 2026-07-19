@@ -203,7 +203,7 @@ Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache`
 
 ### `favorites.json`
 
-**The cross-system Favorites store** — one `(system, rom_name)` pair per favorited game. Read and written by `spindoctor fav add / remove / sync / rebuild / clear` and the GUI's Toolkit tab. Deleting it empties your Favorites (the generated wheel itself lives in the HyperSpin tree and is rebuilt by `fav rebuild --apply`). See [Commands → Custom wheels](commands.md#custom-wheels).
+**The cross-system Favorites store** — one `(system, rom_name)` pair per favorited game. Read and written by `spindoctor fav add / remove / sync / rebuild / clear` and the GUI's Custom Wheels tab. Deleting it empties your Favorites (the generated wheel itself lives in the HyperSpin tree and is rebuilt by `fav rebuild --apply`). See [Commands → Custom wheels](commands.md#custom-wheels).
 
 ### `gui.lock`
 

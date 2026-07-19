@@ -2066,7 +2066,7 @@ class _SpinDoctorGUI:
     # "unmapped checks don't badge any tab" behaviour).
     _HEALTH_TO_TABS: dict[str, tuple[str, ...]] = {
         "Paths":                  ("Setup",),
-        "External binaries":      ("Toolkit", "Setup"),
+        "External binaries":      ("Custom Wheels", "Setup"),
         "HyperSpin databases":    ("Diagnostics",),
         "Match cache":            ("Maintenance",),
         "Global Emulators.ini":   ("Metadata & Media",),
@@ -2325,7 +2325,7 @@ class _SpinDoctorGUI:
         # read-only, so it's safe to explore before touching anything),
         # then build out systems (Systems), enrich metadata
         # (Metadata & Media), curate (Maintenance), manage cross-system
-        # wheels (Toolkit), then peripheral hardware (LEDBlinky /
+        # wheels (Custom Wheels), then peripheral hardware (LEDBlinky /
         # Lightgun), then infrastructure (Backup → Migration), and finally
         # power-user escapes (Console) and the session log (History)
         # at the very end.
@@ -2335,7 +2335,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_games_tab,        "Games")
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
-        self._add_scrollable_tab(nb, self._build_tools_tab,        "Toolkit")
+        self._add_scrollable_tab(nb, self._build_tools_tab,        "Custom Wheels")
         self._add_scrollable_tab(nb, self._build_introvideo_tab,   "Intro Video")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")

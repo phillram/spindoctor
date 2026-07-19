@@ -870,7 +870,7 @@ Open the GUI and use **`File → View logs & manifests…`**. The window groups 
 
 `spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
-### Toolkit tab → Schedule auto-refresh fails with "access denied"
+### Custom Wheels tab → Schedule auto-refresh fails with "access denied"
 
 `schtasks.exe` writes to a system-wide Task Scheduler store that requires admin rights. Run SpinDoctor as Administrator (right-click `spindoctor-gui.exe` → **Run as administrator**) and click Schedule auto-refresh again. The GUI now translates `schtasks` failures into one-line actionable messages: "access is denied" → run as Administrator; "already exists" → use the Remove button first; "specified task does not exist" → there's no task to remove yet; anything else falls back to the raw `schtasks` output so power users can diagnose obscure error codes.
 
