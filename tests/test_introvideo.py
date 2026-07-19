@@ -151,6 +151,30 @@ def test_add_video_existing_file_not_overwritten(layout, tmp_path):
     assert dest.read_bytes() == original_bytes
 
 
+def test_add_video_case_insensitive_on_disk_lookup_no_duplicate(layout, tmp_path):
+    # Regression: the on-disk "already there?" check must not rely on the
+    # host filesystem's own case-folding (Path.exists() case-folds on
+    # Windows/NTFS and macOS/APFS, masking this on a dev box, but NOT on a
+    # case-sensitive filesystem such as Linux/ext4 — where it would let a
+    # re-add under different casing slip past and copy a second physical
+    # file with only one ini entry pointing at the original).
+    cfg, randomizer_dir, videos_dir, _ = layout
+    existing = videos_dir / "Capcom Intro.mp4"
+    original_bytes = existing.read_bytes()
+    source = tmp_path / "capcom intro.mp4"  # different case, different content
+    source.write_bytes(b"a different file that happens to share a differently-cased name")
+
+    result = add_video(cfg, source, apply=True)
+
+    assert result.copied is False
+    assert result.already_registered is True
+    assert result.dest == existing
+    # Exactly one file for this video — no case-variant duplicate created.
+    on_disk = sorted(p.name for p in videos_dir.iterdir() if p.name.lower() == "capcom intro.mp4")
+    assert on_disk == ["Capcom Intro.mp4"]
+    assert existing.read_bytes() == original_bytes
+
+
 def test_add_video_missing_source_raises(layout, tmp_path):
     cfg, *_ = layout
     with pytest.raises(RandomizerIniError):
