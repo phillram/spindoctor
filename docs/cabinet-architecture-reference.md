@@ -259,11 +259,11 @@ RandomList=Arcade Loading Screen.mp4|Capcom Intro.mp4
 ### How SpinDoctor edits it (`introvideo.py`)
 
 - **Read** (`load_randomizer`) — line-based scan of the `[Randomize1]` section (not `configparser`, to sidestep its lower-casing of keys); `FileList=`/`RandomList=` are split on `|`.
-- **Write** (`add_video` / `remove_video`) — surgical: only the `FileList=` and `RandomList=` lines are rewritten, using the same verbatim-preserving technique as `rocketlauncher.rewrite_pclauncher_application`. Every other line, key, comment, and the file's original key casing survive untouched.
-- **`introvideo add <file>`** copies the source file into `Folder=` (skip, never overwrite, if a same-named file is already there) and appends the filename to both lists. Dry-run by default; `--apply` commits.
-- **`introvideo remove <filename>`** only edits the two INI lists — **the video file on disk is never deleted**. This keeps the operation non-destructive and trivially reversible: `introvideo add <path-to-the-still-present-file>` re-registers it.
+- **Write** (`add_videos` / `remove_videos`, `add_video`/`remove_video` are single-item wrappers around them) — surgical: only the `FileList=` and `RandomList=` lines are rewritten, using the same verbatim-preserving technique as `rocketlauncher.rewrite_pclauncher_application`. Every other line, key, comment, and the file's original key casing survive untouched.
+- **`introvideo add <file>...`** copies each source file into `Folder=` (skip, never overwrite, if a same-named file is already there) and appends the filename to both lists. Accepts one or more files in a single call. Dry-run by default; `--apply` commits.
+- **`introvideo remove <filename>...`** only edits the two INI lists — **the video file(s) on disk are never deleted**. This keeps the operation non-destructive and trivially reversible: `introvideo add <path-to-the-still-present-file>` re-registers it. Accepts one or more filenames in a single call.
 - **`introvideo list`** unions the on-disk video files (scanning `Folder=`, excluding the `Backup\` subfolder — non-recursive, so nothing under `Backup\` is ever considered) with the INI's `FileList=`/`RandomList=` entries, surfacing both orphaned disk files (present on disk, not registered) and dangling INI references (registered, missing from disk).
-- **Backups** — before either write, if `config.backup_before_modify` is on (the default), a timestamped copy of `Random.ini` is written to `config.backup_dir/IntroVideoRandomizer/` (or next to the file if `backup_dir` is unset) — see the backup-routing table above.
+- **Backups** — before either write, if `config.backup_before_modify` is on (the default), a timestamped copy of `Random.ini` is written to `config.backup_dir/IntroVideoRandomizer/` (or next to the file if `backup_dir` is unset) — see the backup-routing table above. A multi-file `add`/`remove` call shares a single backup across the whole batch rather than writing one per file.
 
 ---
 

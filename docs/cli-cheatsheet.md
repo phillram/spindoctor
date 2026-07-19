@@ -507,11 +507,13 @@ Manage which videos a third-party boot-time randomizer script picks from (`Rando
 spindoctor introvideo list                                        :: on disk / registered / size
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"         :: dry-run preview
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy + register
+spindoctor introvideo add "C:\A.mp4" "C:\B.mp4" --apply           :: add several in one call
 spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
+spindoctor introvideo remove "A.mp4" "B.mp4" --apply              :: remove several in one call
 ```
 
-> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video…** (file picker) and **Remove selected** wrap the commands above.
+> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)…** (multi-select file picker) and **Remove selected** (Ctrl/Shift-click for several) wrap the commands above.
 
 Reference: [introvideo](commands.md#intro-video-randomizer), [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 

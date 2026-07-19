@@ -7,10 +7,12 @@ from spindoctor.config import Config
 from spindoctor.introvideo import (
     RandomizerIniError,
     add_video,
+    add_videos,
     get_ini_path,
     list_videos,
     load_randomizer,
     remove_video,
+    remove_videos,
 )
 
 
@@ -294,3 +296,87 @@ def test_remove_then_readd_round_trip(layout, tmp_path):
     state2 = load_randomizer(get_ini_path(cfg))
     assert "Capcom Intro.mp4" in state2.file_list
     assert "Capcom Intro.mp4" in state2.random_list
+
+
+def test_add_videos_batch_registers_all_and_shares_one_backup(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    cfg.backup_before_modify = True
+    source_a = tmp_path / "a.mp4"
+    source_a.write_bytes(b"a")
+    source_b = tmp_path / "b.mp4"
+    source_b.write_bytes(b"b")
+
+    results = add_videos(cfg, [source_a, source_b], apply=True)
+
+    assert len(results) == 2
+    assert (videos_dir / "a.mp4").exists()
+    assert (videos_dir / "b.mp4").exists()
+    state = load_randomizer(get_ini_path(cfg))
+    assert "a.mp4" in state.file_list and "a.mp4" in state.random_list
+    assert "b.mp4" in state.file_list and "b.mp4" in state.random_list
+    # One shared backup for the whole batch, not one per file.
+    assert results[0].backup_path is not None
+    assert results[0].backup_path == results[1].backup_path
+    backups = list((tmp_path / "backups" / "IntroVideoRandomizer").glob("*.bak"))
+    assert len(backups) == 1
+
+
+def test_add_videos_dry_run_touches_nothing(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    source_a = tmp_path / "a.mp4"
+    source_a.write_bytes(b"a")
+    source_b = tmp_path / "b.mp4"
+    source_b.write_bytes(b"b")
+    before = (randomizer_dir / "Random.ini").read_text()
+
+    results = add_videos(cfg, [source_a, source_b], apply=False)
+
+    assert all(r.copied for r in results)
+    assert not (videos_dir / "a.mp4").exists()
+    assert not (videos_dir / "b.mp4").exists()
+    assert (randomizer_dir / "Random.ini").read_text() == before
+
+
+def test_add_videos_missing_source_raises_before_partial_registration(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    source_a = tmp_path / "a.mp4"
+    source_a.write_bytes(b"a")
+
+    with pytest.raises(RandomizerIniError):
+        add_videos(cfg, [source_a, tmp_path / "missing.mp4"], apply=True)
+
+    # Random.ini is untouched — the batch write only happens after every
+    # source has been validated and copied.
+    state = load_randomizer(get_ini_path(cfg))
+    assert "a.mp4" not in state.file_list
+
+
+def test_remove_videos_batch_drops_all_and_shares_one_backup(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    cfg.backup_before_modify = True
+
+    results = remove_videos(
+        cfg, ["Capcom Intro.mp4", "FF16 Victory Theme.mp4"], apply=True,
+    )
+
+    assert len(results) == 2
+    assert all(r.changed for r in results)
+    state = load_randomizer(get_ini_path(cfg))
+    assert state.file_list == []
+    assert state.random_list == []
+    assert results[0].backup_path is not None
+    assert results[0].backup_path == results[1].backup_path
+    backups = list((tmp_path / "backups" / "IntroVideoRandomizer").glob("*.bak"))
+    assert len(backups) == 1
+
+
+def test_remove_videos_mixed_registered_and_unregistered(layout):
+    cfg, randomizer_dir, videos_dir, _ = layout
+
+    results = remove_videos(cfg, ["Capcom Intro.mp4", "Ghost.mp4"], apply=True)
+
+    assert results[0].changed is True
+    assert results[1].changed is False
+    state = load_randomizer(get_ini_path(cfg))
+    assert "Capcom Intro.mp4" not in state.file_list
+    assert "FF16 Victory Theme.mp4" in state.file_list

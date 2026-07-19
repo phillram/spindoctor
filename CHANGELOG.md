@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`introvideo add`/`introvideo remove` accept multiple files/filenames in one call.** `spindoctor introvideo add a.mp4 b.mp4 --apply` and `spindoctor introvideo remove a.mp4 b.mp4 --apply` now batch — each file/filename gets its own per-item result line, but the whole batch shares a single `Random.ini` backup and a single surgical rewrite instead of one of each per file. The single-file call still works unchanged. GUI: the Intro Video tab's **Add video(s)…** file picker is now multi-select, and **Remove selected** honors multi-row selection (Ctrl/Shift-click) in the Videos table.
+
+### Fixed
+
+- **GUI: Intro Video tab's video table had no vertical scrollbar.** The Treeview listing on-disk/registered intro videos relied only on `fill="both", expand=True` with no `Scrollbar`, so cabinets with more videos than fit the visible height (or smaller screens, e.g. 1024×768) couldn't reach the rest of the list. Added the same `ttk.Scrollbar` + `yscrollcommand` pairing already used by every other Treeview/Listbox in the GUI (Backup diffs, Migration, LEDBlinky colors, etc.).
+
 ## [2.10.0] - 2026-07-19
 
 ### Added
