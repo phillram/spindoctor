@@ -254,8 +254,22 @@ def add_video(config: Config, source: Path, *, apply: bool = False) -> AddResult
     if not source.exists() or not source.is_file():
         raise RandomizerIniError(f"Source video not found: {source}")
 
+    # Case-insensitive on-disk lookup — Path.exists() case-folds on
+    # Windows/NTFS and macOS/APFS (the common dev/prod targets) but not on
+    # a case-sensitive filesystem (e.g. Linux/ext4, where part of CI runs),
+    # which would otherwise let a re-add under different casing slip past
+    # the "already there" check and copy a duplicate file. Scanning
+    # ourselves keeps this decision independent of the host filesystem.
     dest = state.folder / source.name
-    already_on_disk = dest.exists()
+    existing_match = None
+    if state.folder.exists():
+        for p in state.folder.iterdir():
+            if p.is_file() and p.name.lower() == source.name.lower():
+                existing_match = p
+                break
+    if existing_match is not None:
+        dest = existing_match
+    already_on_disk = existing_match is not None
     # Case-insensitive membership check (Windows/NTFS filesystems are) so an
     # existing "capcom intro.mp4" entry isn't treated as distinct from a
     # newly-added "Capcom Intro.mp4".
