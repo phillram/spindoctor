@@ -173,7 +173,7 @@ def test_health_to_tabs_only_references_real_tab_labels():
     # Kept in sync manually — mirroring the order in `_build_layout`.
     expected_tabs = {
         "Setup", "Diagnostics", "Metadata & Media", "Maintenance",
-        "Toolkit", "Systems", "Games", "LEDBlinky", "Lightgun",
+        "Custom Wheels", "Systems", "Games", "LEDBlinky", "Lightgun",
         "Backup & Restore", "Migration", "History", "Console",
     }
     for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
@@ -813,7 +813,7 @@ def test_gui_constructs_against_real_tk():
             "Games",
             "Metadata & Media",
             "Maintenance",
-            "Toolkit",
+            "Custom Wheels",
             "Intro Video",
             "LEDBlinky",
             "Lightgun",
@@ -1107,7 +1107,7 @@ def test_gui_survives_missing_keysym_in_bind_all():
                 "Games",
                 "Metadata & Media",
                 "Maintenance",
-                "Toolkit",
+                "Custom Wheels",
                 "Intro Video",
                 "LEDBlinky",
                 "Lightgun",
@@ -2297,7 +2297,7 @@ def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         # Move focus elsewhere first so the assertion below is meaningful.
-        tools_idx = app._tab_base_names.index("Toolkit")
+        tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         # Now run startup health checks — should snap back to Setup.
         # Stub out the threaded doctor pass to keep the test deterministic.
@@ -2321,7 +2321,7 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
-        tools_idx = app._tab_base_names.index("Toolkit")
+        tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         app._startup_health_checks()
         # Tab choice preserved.
