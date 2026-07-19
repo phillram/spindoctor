@@ -8,6 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
+- **GUI: Console tab's preset dropdown was missing an Intro Video Randomizer section entirely** — every other command group (`ledblinky`, `lightgun`, `emulator-title`, etc.) has one, but `introvideo` shipped in v2.10.0 without ever being added. Added a **─── Intro Video Randomizer ───** section with `list`, `add` (single and multi-file, dry-run and `--apply`), and `remove` (single and multi-file, dry-run and `--apply`) presets.
 - **GUI: Intro Video tab's new "Register selected" button registers already on-disk videos without re-browsing to them.** A video landing in the randomizer's folder without going through SpinDoctor (dropped in directly, restored from a backup, etc.) shows up as on disk ✓ but Registered `-`. Previously the only way to register it was **Add video(s)**, which always opens a file picker regardless of the table's own selection — confusing when the exact file is already sitting right there in the row you clicked. **Register selected** reuses the same `introvideo add` command pointed at the file's real on-disk path instead, which `add_video`'s existing "never overwrite an existing destination" behavior turns into a pure registration with no copy.
 
 ### Changed

@@ -153,6 +153,8 @@ def test_custom_command_presets_contains_canonical_examples():
         "mainmenu show",
         "backup create --target <PATH>",
         "migrate --target <PATH> --apply",
+        "introvideo list",
+        "introvideo add <PATH> --apply",
     ):
         assert expected in presets, f"missing preset: {expected}"
 
