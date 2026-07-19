@@ -8,7 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Added
 
-- **GUI: Intro Video tab's new "Register selected" button registers already on-disk videos without re-browsing to them.** A video landing in the randomizer's folder without going through SpinDoctor (dropped in directly, restored from a backup, etc.) shows up as on disk ✓ but Registered `-`. Previously the only way to register it was **Add video(s)…**, which always opens a file picker regardless of the table's own selection — confusing when the exact file is already sitting right there in the row you clicked. **Register selected** reuses the same `introvideo add` command pointed at the file's real on-disk path instead, which `add_video`'s existing "never overwrite an existing destination" behavior turns into a pure registration with no copy.
+- **GUI: Intro Video tab's new "Register selected" button registers already on-disk videos without re-browsing to them.** A video landing in the randomizer's folder without going through SpinDoctor (dropped in directly, restored from a backup, etc.) shows up as on disk ✓ but Registered `-`. Previously the only way to register it was **Add video(s)**, which always opens a file picker regardless of the table's own selection — confusing when the exact file is already sitting right there in the row you clicked. **Register selected** reuses the same `introvideo add` command pointed at the file's real on-disk path instead, which `add_video`'s existing "never overwrite an existing destination" behavior turns into a pure registration with no copy.
+
+### Changed
+
+- **GUI: Intro Video tab polish.** "Add video(s)…" renamed to "Add video(s)" (the trailing ellipsis didn't match any other button in the GUI); its file picker now defaults to the randomizer's own video folder instead of the user's home directory; "Remove selected" no longer pops a confirmation dialog before running — the global **Apply** checkbox (dry-run preview when unticked) is the only gate now, consistent with how every other `--apply`-gated command in this tab already works, and removing only ever edits `Random.ini`, never a file on disk.
 
 ### Fixed
 
