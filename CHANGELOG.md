@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-07-19
+
 ### Added
 
 - **`spindoctor introvideo` — manage the Intro Video Randomizer's video pool.** New `list` / `add` / `remove` subcommands read and write a third-party boot-time randomizer's `Random.ini` (its `FileList=`/`RandomList=` pipe-delimited entries), configured via the new `intro_randomizer_dir` config key. `introvideo add <file>` copies a video into the randomizer's folder and registers it (never overwrites an existing same-named file); `introvideo remove <filename>` only edits `Random.ini` — the video file itself is never deleted, so it can be re-registered later. Filename matching is case-insensitive (NTFS is), so an on-disk `Capcom Intro.mp4` and an INI entry `capcom intro.mp4` are recognized as the same video. Both are `--apply`-gated (dry-run by default) and back up `Random.ini` to `backup_dir/IntroVideoRandomizer/` first when `backup_before_modify` is on. Writes are surgical — only the two list lines change, every other line/comment/casing in `Random.ini` survives untouched. Exposed in the GUI as a new **Intro Video** tab (video table with on-disk/registered status, Add via file picker, Remove with confirmation). See [Command reference → Intro Video Randomizer](docs/commands.md#intro-video-randomizer) and [Cabinet Architecture Reference → Intro Video Randomizer](docs/cabinet-architecture-reference.md#intro-video-randomizer).
@@ -2102,7 +2104,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.9.6...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.0...HEAD
+[2.10.0]: https://github.com/phillram/spindoctor/compare/v2.9.6...v2.10.0
 [2.9.6]: https://github.com/phillram/spindoctor/compare/v2.9.5...v2.9.6
 [2.9.5]: https://github.com/phillram/spindoctor/compare/v2.9.4...v2.9.5
 [2.9.4]: https://github.com/phillram/spindoctor/compare/v2.9.3...v2.9.4
