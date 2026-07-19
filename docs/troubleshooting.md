@@ -389,6 +389,28 @@ Both read the same RocketLauncher `Statistics.ini` files. **Recently Played** so
 
 Automatic — `spindoctor recent rebuild --apply` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher writes on every game launch). Schedule it at log-on or run from the Tools menu — see [Standalone tools](standalone-tools.md).
 
+## Intro Video Randomizer
+
+### `introvideo` commands fail with "intro_randomizer_dir is not set"
+
+Configure the **Intro Video Randomizer directory** — the folder that *contains* `Random.ini`, not the video folder itself — on the Setup tab, or `spindoctor config set intro_randomizer_dir <path>`. See [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer).
+
+### "Random.ini not found" / "\[Randomize1\] is missing key(s): folder, filetorandomize"
+
+`intro_randomizer_dir` is pointed at the wrong folder, or the third-party randomizer script hasn't been installed/run there yet — SpinDoctor never creates `Random.ini` itself, it only reads and edits one that already exists. Confirm the path in File Explorer, and confirm `Random.ini` has a `[Randomize1]` section with `Folder=` and `FileToRandomize=` keys (SpinDoctor doesn't require `FileList=`/`RandomList=` to already have entries, just the keys to be present — see [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the expected format).
+
+### A video I dropped straight into the folder shows "on disk" but never plays
+
+It's on disk but not registered — SpinDoctor found the file when scanning `Folder=`, but it isn't in `Random.ini`'s `FileList=`/`RandomList=` yet, so the randomizer script doesn't know about it. In the GUI, select that row on the Intro Video tab and click **Register selected** (no re-browsing needed — it registers the file where it already sits). From the CLI, re-run `introvideo add` pointed at the file's existing path: `spindoctor introvideo add "<Folder=>\<filename>" --apply` — since the destination already matches the source, this only registers it, it doesn't copy anything.
+
+### `introvideo add`/`remove` fails with a `backup_dir` error instead of silently backing up somewhere else
+
+`backup_before_modify` is on (the default) and `backup_dir` is configured, but SpinDoctor couldn't actually write to it — an unmounted drive, a permission problem, a typo in the path. This is intentional: rather than silently falling back to writing the backup next to `Random.ini` (surprising, and easy to miss), or letting the underlying error crash with a bare traceback, SpinDoctor raises a clear message naming the exact destination that failed. Fix `backup_dir` (Setup tab, or `spindoctor config set backup_dir <path>`), or turn off `backup_before_modify` if you don't want backups for this cabinet. Nothing is left half-done — for `add`, this is checked *before* any file is copied, so a bad `backup_dir` can't leave a video copied onto disk without being registered.
+
+### Where does the `Random.ini` backup actually go?
+
+`<backup_dir>\IntroVideoRandomizer\Random.ini.<timestamp>.bak` when `backup_dir` is configured; next to `Random.ini` itself (in the Intro Video Randomizer directory) if `backup_dir` is blank. This is the same routing every other SpinDoctor backup uses (LEDBlinky, RocketLauncher configs, HyperSpin XML) — see [Where SpinDoctor stores its files → `backup_dir`](spindoctor-files.md#backup_dir). A multi-file `add`/`remove` call writes one shared backup for the whole batch, not one per file.
+
 ## Light guns
 
 ### `spindoctor lightgun detect` reports "DemulShooter not found"
