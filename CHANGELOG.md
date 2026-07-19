@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.10.1] - 2026-07-19
+
 ### Added
 
 - **`introvideo add`/`introvideo remove` accept multiple files/filenames in one call.** `spindoctor introvideo add a.mp4 b.mp4 --apply` and `spindoctor introvideo remove a.mp4 b.mp4 --apply` now batch — each file/filename gets its own per-item result line, but the whole batch shares a single `Random.ini` backup and a single surgical rewrite instead of one of each per file. The single-file call still works unchanged. GUI: the Intro Video tab's **Add video(s)…** file picker is now multi-select, and **Remove selected** honors multi-row selection (Ctrl/Shift-click) in the Videos table.
@@ -2113,7 +2115,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.1...HEAD
+[2.10.1]: https://github.com/phillram/spindoctor/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/phillram/spindoctor/compare/v2.9.6...v2.10.0
 [2.9.6]: https://github.com/phillram/spindoctor/compare/v2.9.5...v2.9.6
 [2.9.5]: https://github.com/phillram/spindoctor/compare/v2.9.4...v2.9.5
