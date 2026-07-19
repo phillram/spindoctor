@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`introvideo add` could copy a file to disk without registering it if a later file in the same batch failed.** The multi-file batching added above copied each source immediately per-item but only backed up and rewrote `Random.ini` after the whole batch finished without error. A missing file (or a copy failure — disk full, permission denied, a locked file) anywhere but the first item left every earlier file physically copied into the randomizer's folder but never added to `FileList=`/`RandomList=`, with no indication of what had already happened. `add_videos` now validates every source exists up front, before copying any of them, so a missing file aborts the whole batch cleanly with nothing copied and `Random.ini` untouched. (A copy failing mid-write for a reason that can't be pre-validated — disk full, a locked file — can still leave earlier files in that call copied-but-unregistered; that risk predates batching and isn't new here.)
 - **GUI: Intro Video tab's video table had no vertical scrollbar.** The Treeview listing on-disk/registered intro videos relied only on `fill="both", expand=True` with no `Scrollbar`, so cabinets with more videos than fit the visible height (or smaller screens, e.g. 1024×768) couldn't reach the rest of the list. Added the same `ttk.Scrollbar` + `yscrollcommand` pairing already used by every other Treeview/Listbox in the GUI (Backup diffs, Migration, LEDBlinky colors, etc.).
 
 ## [2.10.0] - 2026-07-19

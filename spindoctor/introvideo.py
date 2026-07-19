@@ -254,10 +254,24 @@ def add_videos(
     Disk copies happen per-file (so a later duplicate name in the same
     batch correctly sees the earlier copy as already-on-disk), but
     Random.ini gets a single backup and a single surgical rewrite for the
-    whole batch rather than one per file.
+    whole batch rather than one per file. Every source is validated
+    up front — before any copy happens — so a missing file anywhere in
+    the batch aborts cleanly with nothing copied and Random.ini
+    untouched, instead of leaving earlier files copied-but-unregistered.
+    A copy failure partway through (disk full, permission denied, a
+    locked file) can't be pre-validated away the same way and will still
+    leave earlier files in that call copied but unregistered; that risk
+    predates batching (a single `add_video` copy could always raise) and
+    isn't new here, just still present.
     """
     ini_path = get_ini_path(config)
     state = load_randomizer(ini_path)
+
+    # Validate every source before touching disk or Random.ini — see the
+    # docstring above for why this ordering matters for a multi-file batch.
+    for source in sources:
+        if not source.exists() or not source.is_file():
+            raise RandomizerIniError(f"Source video not found: {source}")
 
     new_file_list = list(state.file_list)
     new_random_list = list(state.random_list)
@@ -265,9 +279,6 @@ def add_videos(
     any_list_change = False
 
     for source in sources:
-        if not source.exists() or not source.is_file():
-            raise RandomizerIniError(f"Source video not found: {source}")
-
         # Case-insensitive on-disk lookup — Path.exists() case-folds on
         # Windows/NTFS and macOS/APFS (the common dev/prod targets) but not
         # on a case-sensitive filesystem (e.g. Linux/ext4, where part of CI
