@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI: Intro Video tab's video table had no vertical scrollbar.** The Treeview listing on-disk/registered intro videos relied only on `fill="both", expand=True` with no `Scrollbar`, so cabinets with more videos than fit the visible height (or smaller screens, e.g. 1024×768) couldn't reach the rest of the list. Added the same `ttk.Scrollbar` + `yscrollcommand` pairing already used by every other Treeview/Listbox in the GUI (Backup diffs, Migration, LEDBlinky colors, etc.).
+
 ## [2.10.0] - 2026-07-19
 
 ### Added
