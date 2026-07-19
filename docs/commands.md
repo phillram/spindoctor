@@ -15,6 +15,7 @@ Most destructive commands write a manifest under `~/.spindoctor/<category>/` and
 - [Library generation](#library-generation) — `generate-config`, `mainmenu`, `organize`, `add-system`, `add-pc-system`, `pc-rename`, `pc-fix-exe`, `migrate`, `backup`
 - [Health & integrity](#health--integrity) — `find-dupes`, `find-misplaced`, `curate`, `find-orphan-media`, `check-discs`, `check-archive-ext`, `verify`, `stats`, `preview`
 - [Custom wheels](#custom-wheels) — `fav`, `recent`, `install-tools`, `uninstall-tools`
+- [Intro Video Randomizer](#intro-video-randomizer) — `introvideo`
 - [Playtime stats](#playtime-stats) — `stats-report`
 - [Resetting cabinet data](#resetting-cabinet-data) — `scrub`
 - [Themes](#themes) — `theme-scan`, `theme-apply`, `theme-pack-create`
@@ -1025,6 +1026,30 @@ When `--add-to-system <SYSTEM>` is given:
 3. Deletes the four SpinDoctor `<game>` entries from `<HyperSpin>/Databases/<SYSTEM>/<SYSTEM>.xml`.
 
 Only files and entries that exist are touched — missing ones are silently skipped.
+
+---
+
+## Intro Video Randomizer
+
+Manages the pool of startup videos a third-party AutoHotkey randomizer script picks from on every HyperSpin boot. SpinDoctor doesn't run the randomizer itself — it only reads and edits the `Random.ini` file the randomizer reads, and copies video files into the folder it scans.
+
+Configure the **Intro Video Randomizer directory** (the folder containing `Random.ini`, e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`) once via `spindoctor config set intro_randomizer_dir <path>` or the Setup tab. See [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the exact file layout and `Random.ini` format.
+
+### `introvideo`
+
+```bat
+spindoctor introvideo list                                    :: table of every video: on disk / registered / size
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"      :: dry-run preview
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply   :: copy the file into Folder= and register it
+spindoctor introvideo remove "Capcom Intro.mp4"                :: dry-run preview
+spindoctor introvideo remove "Capcom Intro.mp4" --apply        :: drop it from Random.ini (file stays on disk)
+```
+
+`add` copies the given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both writes touch only the `FileList=`/`RandomList=` lines; every other line, key, and comment in `Random.ini` is left byte-for-byte as-is. A timestamped backup of `Random.ini` is written to `<backup_dir>/IntroVideoRandomizer/` first when `backup_before_modify` is enabled (the default).
+
+The `Backup\` subfolder inside the videos folder (if the randomizer or a user creates one) is never scanned, copied into, or otherwise touched.
+
+> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a file picker) and `introvideo remove` (via the list). See [GUI walkthrough](gui.md).
 
 ---
 
