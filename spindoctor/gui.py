@@ -875,6 +875,15 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "rename --list-manifests",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM>",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM> --apply",
+    # ── Intro Video Randomizer ──────────────────────────────────────────────────
+    "─── Intro Video Randomizer ───",
+    "introvideo list",
+    "introvideo add <PATH>",
+    "introvideo add <PATH> --apply",
+    "introvideo add <PATH> <PATH> --apply",
+    "introvideo remove <FILENAME>",
+    "introvideo remove <FILENAME> --apply",
+    "introvideo remove <FILENAME> <FILENAME> --apply",
     # ── LEDBlinky ─────────────────────────────────────────────────────────────
     "─── LEDBlinky ───",
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
