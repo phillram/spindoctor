@@ -16,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`introvideo add`/`introvideo remove` failed with a raw, unhandled traceback if the configured `backup_dir` couldn't actually be written to** (an unmounted drive, a permission problem) — the underlying `OSError` from `_backup()`'s `mkdir`/copy wasn't caught anywhere. Now raises a clear `RandomizerIniError` explaining exactly what failed and how to fix it (fix `backup_dir`, or turn off `backup_before_modify`), same as every other error path in this command. `add_videos` additionally pre-flights that the backup destination is writable *before* copying any source file, closing the same class of orphaned-copy bug fixed for missing sources above — previously a bad `backup_dir` discovered only after files were already copied would leave them copied but unregistered.
 - **GUI: Intro Video tab's Refresh/Add/Remove buttons rendered squeezed into a ~30px sliver on the right edge of the Videos table instead of below it.** The vertical scrollbar added in v2.10.0 packed the Treeview and Scrollbar directly into the same `LabelFrame` as the button row using `side="left"`/`side="right"`, which starves the button row's `pack()` (default `side="top"`) of cavity space. Moved the tree + scrollbar into their own sub-frame using `grid` (matching the Games tab's Step 1 table), so the button row now packs cleanly below the full-width table — same layout as every other table-with-buttons section in the GUI.
 
 ## [2.10.1] - 2026-07-19
