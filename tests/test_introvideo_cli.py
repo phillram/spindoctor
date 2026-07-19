@@ -78,6 +78,34 @@ def test_introvideo_remove_unregistered_reports_noop(cabinet):
     assert "not registered" in result.output
 
 
+def test_introvideo_add_multiple_sources_in_one_call(cabinet, tmp_path):
+    source_a = tmp_path / "a.mp4"
+    source_a.write_bytes(b"a")
+    source_b = tmp_path / "b.mp4"
+    source_b.write_bytes(b"b")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        cli, ["introvideo", "add", str(source_a), str(source_b), "--apply"],
+    )
+    assert result.exit_code == 0, result.output
+    assert (cabinet["videos_dir"] / "a.mp4").exists()
+    assert (cabinet["videos_dir"] / "b.mp4").exists()
+    assert result.output.count("registered in Random.ini") == 2
+
+
+def test_introvideo_remove_multiple_filenames_in_one_call(cabinet):
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["introvideo", "remove", "Existing.mp4", "Ghost.mp4", "--apply"],
+    )
+    assert result.exit_code == 0, result.output
+    assert "file left on disk" in result.output
+    assert "not registered" in result.output
+    ini_text = (cabinet["randomizer_dir"] / "Random.ini").read_text()
+    assert "Existing.mp4" not in ini_text.split("\n")[4]  # FileList= line
+
+
 def test_introvideo_unconfigured_errors_cleanly(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
