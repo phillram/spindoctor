@@ -1041,15 +1041,17 @@ Configure the **Intro Video Randomizer directory** (the folder containing `Rando
 spindoctor introvideo list                                    :: table of every video: on disk / registered / size
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"      :: dry-run preview
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply   :: copy the file into Folder= and register it
+spindoctor introvideo add "C:\Downloads\A.mp4" "C:\Downloads\B.mp4" --apply  :: add several in one call
 spindoctor introvideo remove "Capcom Intro.mp4"                :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply        :: drop it from Random.ini (file stays on disk)
+spindoctor introvideo remove "A.mp4" "B.mp4" --apply           :: remove several in one call
 ```
 
-`add` copies the given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both writes touch only the `FileList=`/`RandomList=` lines; every other line, key, and comment in `Random.ini` is left byte-for-byte as-is. A timestamped backup of `Random.ini` is written to `<backup_dir>/IntroVideoRandomizer/` first when `backup_before_modify` is enabled (the default).
+`add` copies each given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both commands accept one or more files/filenames in a single call; a multi-file `add`/`remove` still only touches the `FileList=`/`RandomList=` lines, and writes a single shared timestamped backup of `Random.ini` to `<backup_dir>/IntroVideoRandomizer/` for the whole batch (not one per file) when `backup_before_modify` is enabled (the default). Every other line, key, and comment in `Random.ini` is left byte-for-byte as-is.
 
 The `Backup\` subfolder inside the videos folder (if the randomizer or a user creates one) is never scanned, copied into, or otherwise touched.
 
-> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a file picker) and `introvideo remove` (via the list). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker) and `introvideo remove` (via the list, Ctrl/Shift-click to select several). See [GUI walkthrough](gui.md).
 
 ---
 
