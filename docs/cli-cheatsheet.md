@@ -15,6 +15,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 - [Metadata & media](#metadata--media)
 - [Backup, diff, migrate](#backup-diff-migrate)
 - [Custom wheels](#custom-wheels)
+- [Intro Video Randomizer](#intro-video-randomizer)
 - [Resetting cabinet data](#resetting-cabinet-data)
 - [Themes & art](#themes--art)
 - [LEDBlinky](#ledblinky)
@@ -495,6 +496,24 @@ spindoctor uninstall-tools --add-to-system Toolkit --apply
 ```
 
 Reference: [install-tools](commands.md#install-tools), [uninstall-tools](commands.md#uninstall-tools), [Standalone tools](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+
+---
+
+## Intro Video Randomizer
+
+Manage which videos a third-party boot-time randomizer script picks from (`Random.ini`). Requires `intro_randomizer_dir` to be configured first.
+
+```bat
+spindoctor introvideo list                                        :: on disk / registered / size
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"         :: dry-run preview
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy + register
+spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
+spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
+```
+
+> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video…** (file picker) and **Remove selected** wrap the commands above.
+
+Reference: [introvideo](commands.md#intro-video-randomizer), [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 
 ---
 

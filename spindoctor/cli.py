@@ -2718,6 +2718,134 @@ def _print_synth_summary(label: str, summary) -> None:
             console.print(f"  [red]·[/red] {e}")
 
 
+@cli.group("introvideo")
+def introvideo_group():
+    """Manage HyperSpin's Intro Video Randomizer pool.
+
+    \b
+    Reads/writes Random.ini (the [Randomize1] section) at
+    <intro_randomizer_dir>/Random.ini. Videos live in the Folder= path
+    recorded in that INI; its Backup\\ subfolder is never scanned. 'add'
+    copies a video into that folder and registers it in FileList/RandomList;
+    'remove' drops it from those lists without deleting the file on disk.
+    """
+
+
+@introvideo_group.command("list")
+def introvideo_list():
+    """List every intro video — on disk, registered, or both."""
+    from .introvideo import RandomizerIniError, get_ini_path, list_videos, load_randomizer
+
+    config = _cfg()
+    try:
+        ini_path = get_ini_path(config)
+        state = load_randomizer(ini_path)
+        videos = list_videos(state)
+    except RandomizerIniError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if not videos:
+        console.print(f"[dim]No intro videos found in {state.folder}[/dim]")
+        return
+
+    tbl = Table(title=f"Intro videos — {state.folder}", box=box.ROUNDED)
+    tbl.add_column("File", style="cyan")
+    tbl.add_column("On disk")
+    tbl.add_column("Registered")
+    tbl.add_column("Size", justify="right")
+    for v in videos:
+        disk = "[green]✓[/green]" if v.on_disk else "[red]missing[/red]"
+        if v.registered:
+            registered = "[green]✓[/green]"
+        elif v.in_file_list or v.in_random_list:
+            registered = "[yellow]partial[/yellow]"
+        else:
+            registered = "[dim]-[/dim]"
+        size = f"{v.size_bytes / 1_048_576:.1f} MB" if v.size_bytes else "-"
+        tbl.add_row(v.filename, disk, registered, size)
+    console.print(tbl)
+    active = sum(1 for v in videos if v.in_random_list)
+    console.print(f"\n[dim]{len(videos)} video(s) — {active} active in the randomizer[/dim]")
+
+
+@introvideo_group.command("add")
+@click.argument("source", type=click.Path(exists=True, dir_okay=False))
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Copy the file and update Random.ini. Without this flag, "
+                   "only a preview is printed.")
+def introvideo_add(source, apply_changes):
+    """Add a video to the intro randomizer pool."""
+    from .introvideo import RandomizerIniError, add_video
+
+    config = _cfg()
+    try:
+        result = add_video(config, Path(source), apply=apply_changes)
+    except RandomizerIniError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if not apply_changes:
+        if result.copied:
+            console.print(f"Would copy to [cyan]{result.dest}[/cyan]")
+        else:
+            console.print(f"Already on disk at [cyan]{result.dest}[/cyan]")
+        if result.already_registered:
+            console.print("[yellow]Already registered in Random.ini — nothing to change.[/yellow]")
+        else:
+            console.print("Would register in FileList / RandomList.")
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+        return
+
+    console.print(
+        f"[green]+[/green] {result.dest.name}"
+        + (" (copied)" if result.copied else " (already on disk)")
+    )
+    if result.file_list_changed or result.random_list_changed:
+        console.print("[green]✓[/green] registered in Random.ini")
+        if result.backup_path:
+            console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
+    else:
+        console.print("[yellow]already registered[/yellow]")
+
+
+@introvideo_group.command("remove")
+@click.argument("filename")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Update Random.ini. Without this flag, only a preview is "
+                   "printed. The video file itself is never deleted.")
+def introvideo_remove(filename, apply_changes):
+    """Remove a video from the intro randomizer pool.
+
+    Only edits Random.ini's FileList/RandomList — the video file is left
+    on disk and can be re-registered later with 'introvideo add'.
+    """
+    from .introvideo import RandomizerIniError, remove_video
+
+    config = _cfg()
+    try:
+        result = remove_video(config, filename, apply=apply_changes)
+    except RandomizerIniError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if not result.changed:
+        console.print(f"[yellow]not registered:[/yellow] {filename}")
+        return
+
+    if not apply_changes:
+        console.print(f"Would remove [cyan]{filename}[/cyan] from Random.ini.")
+        console.print(
+            "[dim]Re-run with --apply to commit. The video file on disk "
+            "is never deleted.[/dim]"
+        )
+        return
+
+    console.print(f"[green]-[/green] {filename} (Random.ini updated; file left on disk)")
+    if result.backup_path:
+        console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
+
+
 @cli.group("stats-report", invoke_without_command=True)
 @click.option("--system", default=None,
               help="Restrict the view to one source system.")

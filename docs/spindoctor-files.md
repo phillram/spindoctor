@@ -249,10 +249,12 @@ C:\SpinDoctor\backups\
 ├── LEDBlinky\
 │   ├── Colors.ini.20260614_174635.bak
 │   └── controls.ini.20260614_174635.bak
-└── RocketLauncher\
-    └── Settings\
-        └── Nintendo Gamecube\
-            └── Emulators.ini.20260614_174635.bak
+├── RocketLauncher\
+│   └── Settings\
+│       └── Nintendo Gamecube\
+│           └── Emulators.ini.20260614_174635.bak
+└── IntroVideoRandomizer\
+    └── Random.ini.20260614_174635.bak
 ```
 
 If `backup_dir` is not configured, `.bak` files are written **next to the source file** instead (e.g. `Nintendo Gamecube.xml.20260614_174635.bak` in the same folder as `Nintendo Gamecube.xml`).
@@ -310,6 +312,8 @@ These files live inside your HyperSpin / RocketLauncher directories. SpinDoctor 
 | LEDBlinky Colors.ini | `ledblinky_dir\Colors.ini` | ✅ | ✅ (ledblinky generate, colors sync-players) |
 | LEDBlinky Controls.xml | `ledblinky_dir\LEDBlinkyControls.xml` | ✅ | ✅ (ledblinky generate, fix) |
 | LEDBlinky Settings.ini | `ledblinky_dir\Settings.ini` | ✅ | ✅ (ledblinky patch-settings) |
+| Intro Video Randomizer's Random.ini | `intro_randomizer_dir\Random.ini` | ✅ | ✅ (introvideo add/remove — `FileList=`/`RandomList=` lines only) |
+| Intro Video Randomizer's video pool | `Random.ini`'s `Folder=` path (e.g. `intro_randomizer_dir\Intro Videos\`) | ✅ | ✅ (introvideo add — copies in; never deletes) |
 
 ---
 

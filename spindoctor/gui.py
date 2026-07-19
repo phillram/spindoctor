@@ -502,6 +502,7 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
     ("backup_dir",            "Backup root directory",                r"D:\Backups",                 True),
     ("atomic_tmp_dir",        "Atomic write temp directory",          r"D:\SpinDoctorTemp",          True),
+    ("intro_randomizer_dir",  "Intro Video Randomizer directory",     r"D:\Arcade\Media\Frontend\Video\Intro Video Randomizer", True),
 )
 
 # Scraper credential fields shown below the path fields in the Setup tab.
@@ -2335,6 +2336,7 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_metadata_tab,     "Metadata & Media")
         self._add_scrollable_tab(nb, self._build_maintenance_tab,  "Maintenance")
         self._add_scrollable_tab(nb, self._build_tools_tab,        "Toolkit")
+        self._add_scrollable_tab(nb, self._build_introvideo_tab,   "Intro Video")
         self._add_scrollable_tab(nb, self._build_ledblinky_tab,    "LEDBlinky")
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
@@ -12778,6 +12780,146 @@ class _SpinDoctorGUI:
         self._run_history.append(record)
         self._refresh_logs_tab()
         self._flash_status(msg)
+
+    # ── Intro Video tab ───────────────────────────────────────────────────────
+
+    def _build_introvideo_tab(self, parent):
+        frame = self.ttk.Frame(parent, padding=12)
+        self.ttk.Label(
+            frame,
+            text=("Manage the pool of startup videos HyperSpin's Intro "
+                  "Video Randomizer picks from on boot. Reads and writes "
+                  "Random.ini in the Intro Video Randomizer directory "
+                  "(set on the Setup tab); videos live in that INI's "
+                  "Folder= path, and its Backup\\ subfolder is never "
+                  "scanned or modified. 'Add' copies a video into that "
+                  "folder and registers it; 'Remove' only edits Random.ini "
+                  "— the file itself is left on disk."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", pady=(0, 10))
+
+        if not (load_config().intro_randomizer_dir or "").strip():
+            self.ttk.Label(
+                frame,
+                text=("Set 'Intro Video Randomizer directory' on the Setup "
+                      "tab first (the folder containing Random.ini)."),
+                foreground=_FG_DIM, wraplength=860, justify="left",
+            ).pack(anchor="w", pady=(0, 10))
+
+        list_lf = self.ttk.LabelFrame(frame, text="Videos")
+        list_lf.pack(fill="both", expand=True, pady=(0, 8))
+
+        columns = ("disk", "registered", "size")
+        tree = self.ttk.Treeview(
+            list_lf, columns=columns, show="tree headings", height=12,
+        )
+        tree.heading("#0", text="File")
+        tree.heading("disk", text="On disk")
+        tree.heading("registered", text="Registered")
+        tree.heading("size", text="Size")
+        tree.column("#0", width=340)
+        tree.column("disk", width=80, anchor="center")
+        tree.column("registered", width=100, anchor="center")
+        tree.column("size", width=90, anchor="e")
+        tree.pack(fill="both", expand=True, padx=6, pady=6)
+        self._introvideo_tree = tree
+
+        btn_row = self.ttk.Frame(list_lf)
+        btn_row.pack(anchor="w", padx=6, pady=(0, 8))
+        self.ttk.Button(
+            btn_row, text="↻ Refresh",
+            command=self._refresh_introvideo_list,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Add video…",
+            command=self._introvideo_add,
+        ).pack(side="left", padx=6)
+        self.ttk.Button(
+            btn_row, text="Remove selected",
+            command=self._introvideo_remove,
+        ).pack(side="left")
+
+        self._refresh_introvideo_list()
+        return frame
+
+    def _refresh_introvideo_list(self) -> None:
+        tree = getattr(self, "_introvideo_tree", None)
+        if tree is None:
+            return
+        tree.delete(*tree.get_children())
+        from .introvideo import RandomizerIniError, get_ini_path, list_videos, load_randomizer
+
+        config = load_config()
+        try:
+            ini_path = get_ini_path(config)
+            state = load_randomizer(ini_path)
+            videos = list_videos(state)
+        except RandomizerIniError as exc:
+            tree.insert("", "end", text=str(exc), values=("", "", ""))
+            return
+
+        if not videos:
+            tree.insert(
+                "", "end", text=f"No videos found in {state.folder}",
+                values=("", "", ""),
+            )
+            return
+        for v in videos:
+            disk = "✓" if v.on_disk else "missing"
+            if v.registered:
+                registered = "✓"
+            elif v.in_file_list or v.in_random_list:
+                registered = "partial"
+            else:
+                registered = "-"
+            size = f"{v.size_bytes / 1_048_576:.1f} MB" if v.size_bytes else "-"
+            tree.insert("", "end", text=v.filename, values=(disk, registered, size))
+
+    def _introvideo_add(self) -> None:
+        path = self.filedialog.askopenfilename(
+            title="Select an intro video to add",
+            initialdir=str(Path.home()),
+            filetypes=[
+                ("Video files", "*.mp4 *.avi *.wmv *.mkv *.mov *.m4v *.flv"),
+                ("All files", "*.*"),
+            ],
+        )
+        if not path:
+            return
+        args = ["introvideo", "add", str(Path(path))]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_list(),
+        )
+
+    def _introvideo_remove(self) -> None:
+        tree = getattr(self, "_introvideo_tree", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showwarning(
+                "No selection", "Pick a video in the list first.",
+            )
+            return
+        filename = tree.item(sel[0], "text")
+        if not self.messagebox.askyesno(
+            "Remove from randomizer?",
+            f"Remove {filename!r} from Random.ini's FileList/RandomList?\n\n"
+            "The video file itself is left on disk — this only stops the "
+            "randomizer from picking it. Add it back any time with "
+            "'Add video…'.",
+        ):
+            return
+        args = ["introvideo", "remove", filename]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_list(),
+        )
 
     # ── Custom command tab ────────────────────────────────────────────────────
 
