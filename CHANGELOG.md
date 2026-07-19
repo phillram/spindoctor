@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **GUI: Intro Video tab's Refresh/Add/Remove buttons rendered squeezed into a ~30px sliver on the right edge of the Videos table instead of below it.** The vertical scrollbar added in v2.10.0 packed the Treeview and Scrollbar directly into the same `LabelFrame` as the button row using `side="left"`/`side="right"`, which starves the button row's `pack()` (default `side="top"`) of cavity space. Moved the tree + scrollbar into their own sub-frame using `grid` (matching the Games tab's Step 1 table), so the button row now packs cleanly below the full-width table — same layout as every other table-with-buttons section in the GUI.
+
 ## [2.10.1] - 2026-07-19
 
 ### Added
