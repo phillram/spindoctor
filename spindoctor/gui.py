@@ -12821,7 +12821,12 @@ class _SpinDoctorGUI:
         tree.column("disk", width=80, anchor="center")
         tree.column("registered", width=100, anchor="center")
         tree.column("size", width=90, anchor="e")
-        tree.pack(fill="both", expand=True, padx=6, pady=6)
+        tscroll = self.ttk.Scrollbar(
+            list_lf, orient="vertical", command=tree.yview,
+        )
+        tree.configure(yscrollcommand=tscroll.set)
+        tree.pack(side="left", fill="both", expand=True, padx=(6, 0), pady=6)
+        tscroll.pack(side="right", fill="y", padx=(0, 6), pady=6)
         self._introvideo_tree = tree
 
         btn_row = self.ttk.Frame(list_lf)
