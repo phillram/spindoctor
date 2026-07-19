@@ -21,7 +21,7 @@ For checkouts where neither is present, run the `.py` wrappers directly via `pyt
 
 Full documentation — including how to wire these into the HyperSpin Tools menu and Windows startup, and what to do when you can't run `pip install` on the cabinet — lives at [`docs/standalone-tools.md`](../docs/standalone-tools.md).
 
-> **Prefer a window over a `.bat` file?** `spindoctor-gui` (or `spindoctor-gui.exe` from the binary release) has a **Toolkit** tab (Step 2 — Refresh custom wheels) with a checkbox per wheel (all pre-ticked) and a **Refresh selected** button. Same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some — no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes. See [`docs/windows-binaries.md#gui-launcher`](../docs/windows-binaries.md#gui-launcher).
+> **Prefer a window over a `.bat` file?** `spindoctor-gui` (or `spindoctor-gui.exe` from the binary release) has a **Custom Wheels** tab (Step 2 — Refresh custom wheels) with a checkbox per wheel (all pre-ticked) and a **Refresh selected** button. Same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some — no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes. See [`docs/windows-binaries.md#gui-launcher`](../docs/windows-binaries.md#gui-launcher).
 
 ## Other commands without standalone wrappers
 
