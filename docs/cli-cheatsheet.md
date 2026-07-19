@@ -508,6 +508,7 @@ spindoctor introvideo list                                        :: on disk / r
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"         :: dry-run preview
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy + register
 spindoctor introvideo add "C:\A.mp4" "C:\B.mp4" --apply           :: add several in one call
+spindoctor introvideo add "<Folder=>\Capcom Intro.mp4" --apply    :: already on disk, unregistered? same command, registers with no copy
 spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
 spindoctor introvideo remove "A.mp4" "B.mp4" --apply              :: remove several in one call
