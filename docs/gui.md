@@ -78,7 +78,7 @@ The doctor pass runs on a worker thread on launch (doesn't delay first paint) an
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Toolkit), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
 
 Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
 
@@ -187,7 +187,7 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 
 **Metadata-match cache:** **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
 
-### Toolkit
+### Custom Wheels
 
 Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 

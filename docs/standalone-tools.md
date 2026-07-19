@@ -31,7 +31,7 @@ The `.py` wrappers in `scripts/` themselves require a Python install — they're
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
-> **Want a windowed alternative to the `.bat` files?** The **Toolkit** tab in `spindoctor-gui` (Step 2 — Refresh custom wheels) has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
+> **Want a windowed alternative to the `.bat` files?** The **Custom Wheels** tab in `spindoctor-gui` (Step 2 — Refresh custom wheels) has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
 
 ## `spindoctor-fav`
 
@@ -102,13 +102,13 @@ spindoctor-stats build-wheel --apply
 
 Three integration patterns, in roughly increasing order of "how much you want it to feel like part of HyperSpin":
 
-1. **HyperHQ → Tools menu (default).** The GUI's **Toolkit** tab → "Install for HyperHQ → Tools menu" runs:
+1. **HyperHQ → Tools menu (default).** The GUI's **Custom Wheels** tab → "Install for HyperHQ → Tools menu" runs:
    ```bat
    spindoctor install-tools
    ```
    Writes four `.bat` files into `<RocketLauncher>/Modules/HyperLaunch/Tools/spindoctor/`. Open `HyperHQ.exe`, go to the Tools tab, click Add, and point each entry at the matching `.bat`. They appear inside HyperSpin's in-cabinet Tools menu as `Refresh Favorites`, `Refresh Recently Played`, `Refresh Most Played`, and `Refresh All`.
 
-2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Toolkit** tab → "Install into an existing wheel system" runs:
+2. **As games inside an existing wheel system (`--add-to-system`).** If you've built a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. The GUI's **Custom Wheels** tab → "Install into an existing wheel system" runs:
    ```bat
    spindoctor install-tools --add-to-system Toolkit
    ```
@@ -120,7 +120,7 @@ Three integration patterns, in roughly increasing order of "how much you want it
 
 ## Wiring into Windows startup
 
-The GUI's **Toolkit** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Schedule auto-refresh* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Remove scheduled task* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required.
+The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Schedule auto-refresh* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Remove scheduled task* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required.
 
 **This is the recommended method.** The GUI generates two companion files:
 

@@ -1003,7 +1003,7 @@ Idempotent — re-running upserts the same four entries instead of duplicating t
 
 > **Note:** The `.bat` helpers and PCLauncher INI are written immediately (they are non-HyperSpin files and safe to create); only the step that mutates the HyperSpin database XML requires `--apply`. Without `--apply`, the command prints a dry-run preview of what `<game>` entries would be added and exits cleanly.
 
-The GUI's **Toolkit** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
+The GUI's **Custom Wheels** tab covers both modes plus a Windows-only "Auto-refresh on cabinet startup" panel that wraps `schtasks.exe` (Schedule / Remove / Check Status buttons) — see [Standalone tools → Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
 
 ### `uninstall-tools`
 
