@@ -345,8 +345,14 @@ def test_add_videos_missing_source_raises_before_partial_registration(layout, tm
     with pytest.raises(RandomizerIniError):
         add_videos(cfg, [source_a, tmp_path / "missing.mp4"], apply=True)
 
-    # Random.ini is untouched — the batch write only happens after every
-    # source has been validated and copied.
+    # Every source is validated up front, before any copy happens, so a
+    # missing file anywhere in the batch aborts with nothing copied and
+    # Random.ini untouched — not just unregistered, but not on disk at
+    # all. (Regression check: a first cut of batching validated lazily,
+    # per-item, which let a.mp4 get copied to disk before the missing
+    # second file aborted the batch, orphaning it — copied but never
+    # registered.)
+    assert not (videos_dir / "a.mp4").exists()
     state = load_randomizer(get_ini_path(cfg))
     assert "a.mp4" not in state.file_list
 
