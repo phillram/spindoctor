@@ -228,6 +228,45 @@ This is called in `fav rebuild` (`favorites.py`) and `recent rebuild` / `stats b
 
 ---
 
+## Intro Video Randomizer
+
+A separate, third-party AutoHotkey/launcher script (not part of HyperSpin, RocketLauncher, or SpinDoctor) that runs on cabinet boot and copies a randomly-chosen video over HyperSpin's startup video, so the intro clip varies between sessions. SpinDoctor does not run this script — `spindoctor introvideo` only manages the pool of candidate videos and the INI file the script reads. See [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) for the CLI.
+
+### File paths (example cabinet)
+
+```
+D:\Arcade\Media\Frontend\Video\Intro.mp4                                  ← FileToRandomize: the file HyperSpin actually plays on boot
+D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Random.ini          ← the randomizer's own config (config.intro_randomizer_dir points here)
+D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\       ← Folder: the pool of candidate videos
+D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Backup\  ← never scanned or touched by SpinDoctor
+```
+
+`config.intro_randomizer_dir` is the folder containing `Random.ini` — set once via the Setup tab or `spindoctor config set intro_randomizer_dir <path>`. The video pool folder (`Folder=`) and the boot-video target (`FileToRandomize=`) are **not** separate config fields; SpinDoctor reads both out of `Random.ini` itself on every command, since the randomizer script already treats that INI as the single source of truth for its own paths.
+
+### `Random.ini` format
+
+```ini
+[Randomize1]
+Option=1
+Folder=D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos
+FileToRandomize=D:\Arcade\Media\Frontend\Video\Intro.mp4
+FileList=Arcade Loading Screen.mp4|5 Second loading bar.mp4|Capcom Intro.mp4
+RandomList=Arcade Loading Screen.mp4|Capcom Intro.mp4
+```
+
+`FileList=` and `RandomList=` are pipe (`|`) delimited filename lists (bare filenames, no path). SpinDoctor treats them as one concept — "is this video in rotation" — and keeps them in sync: `introvideo add` appends a filename to both, `introvideo remove` drops it from both. Nothing in SpinDoctor currently relies on a file being present in one list but not the other.
+
+### How SpinDoctor edits it (`introvideo.py`)
+
+- **Read** (`load_randomizer`) — line-based scan of the `[Randomize1]` section (not `configparser`, to sidestep its lower-casing of keys); `FileList=`/`RandomList=` are split on `|`.
+- **Write** (`add_video` / `remove_video`) — surgical: only the `FileList=` and `RandomList=` lines are rewritten, using the same verbatim-preserving technique as `rocketlauncher.rewrite_pclauncher_application`. Every other line, key, comment, and the file's original key casing survive untouched.
+- **`introvideo add <file>`** copies the source file into `Folder=` (skip, never overwrite, if a same-named file is already there) and appends the filename to both lists. Dry-run by default; `--apply` commits.
+- **`introvideo remove <filename>`** only edits the two INI lists — **the video file on disk is never deleted**. This keeps the operation non-destructive and trivially reversible: `introvideo add <path-to-the-still-present-file>` re-registers it.
+- **`introvideo list`** unions the on-disk video files (scanning `Folder=`, excluding the `Backup\` subfolder — non-recursive, so nothing under `Backup\` is ever considered) with the INI's `FileList=`/`RandomList=` entries, surfacing both orphaned disk files (present on disk, not registered) and dangling INI references (registered, missing from disk).
+- **Backups** — before either write, if `config.backup_before_modify` is on (the default), a timestamped copy of `Random.ini` is written to `config.backup_dir/IntroVideoRandomizer/` (or next to the file if `backup_dir` is unset) — see the backup-routing table above.
+
+---
+
 ## RocketLauncher Play Statistics
 
 ### File location
@@ -2063,6 +2102,7 @@ Auto-backups are routed to subsystem-specific subfolders under `config.backup_di
 | LEDBlinky (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) | `config.backup_dir/LEDBlinky/` |
 | HyperSpin database saves (update-db, batch-edit, fav/recent/stats rebuild) | `config.backup_dir/HyperSpin/` |
 | RocketLauncher INI writes (generate-config) | `config.backup_dir/RocketLauncher/` |
+| Intro Video Randomizer (`introvideo add` / `introvideo remove`) | `config.backup_dir/IntroVideoRandomizer/` |
 
 If `backup_dir` is not configured, backups land next to the source file (timestamped `.bak` sibling).
 
