@@ -357,6 +357,40 @@ def test_add_videos_missing_source_raises_before_partial_registration(layout, tm
     assert "a.mp4" not in state.file_list
 
 
+def test_add_videos_unwritable_backup_dir_raises_before_any_copy(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    cfg.backup_before_modify = True
+    # A *file* sitting where backup_dir should be a directory reliably
+    # fails mkdir() cross-platform, without needing chmod tricks.
+    blocked = tmp_path / "blocked_backup_dir"
+    blocked.write_bytes(b"not a directory")
+    cfg.backup_dir = str(blocked)
+    source_a = tmp_path / "a.mp4"
+    source_a.write_bytes(b"a")
+
+    with pytest.raises(RandomizerIniError, match="backup_dir isn't writable"):
+        add_videos(cfg, [source_a], apply=True)
+
+    # Pre-flighted before any copy, so nothing was orphaned on disk.
+    assert not (videos_dir / "a.mp4").exists()
+    state = load_randomizer(get_ini_path(cfg))
+    assert "a.mp4" not in state.file_list
+
+
+def test_remove_videos_unwritable_backup_dir_raises_and_leaves_ini_untouched(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, _ = layout
+    cfg.backup_before_modify = True
+    blocked = tmp_path / "blocked_backup_dir"
+    blocked.write_bytes(b"not a directory")
+    cfg.backup_dir = str(blocked)
+    before = (randomizer_dir / "Random.ini").read_text()
+
+    with pytest.raises(RandomizerIniError, match="writing the Random.ini backup"):
+        remove_videos(cfg, ["Capcom Intro.mp4"], apply=True)
+
+    assert (randomizer_dir / "Random.ini").read_text() == before
+
+
 def test_remove_videos_batch_drops_all_and_shares_one_backup(layout, tmp_path):
     cfg, randomizer_dir, videos_dir, _ = layout
     cfg.backup_before_modify = True
