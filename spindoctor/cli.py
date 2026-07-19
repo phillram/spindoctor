@@ -229,6 +229,9 @@ def config_set(key: str, value: str):
                                 temp files out of the HyperSpin tree. Must be on the
                                 same drive as hyperspin_dir; cross-drive paths fall
                                 back silently to the default behaviour.
+      intro_randomizer_dir      Folder containing the Intro Video Randomizer's
+                                Random.ini (third-party boot-video script). Used
+                                by `spindoctor introvideo`.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key

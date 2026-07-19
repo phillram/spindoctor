@@ -25,6 +25,7 @@ Common end-to-end flows. Each one is a recipe — copy, paste, edit paths to mat
 - [Auditing legacy arcade tools](#auditing-legacy-arcade-tools)
 - [Replacing controller-glyph art](#replacing-controller-glyph-art)
 - [Wiring light guns](#wiring-light-guns)
+- [Managing intro videos](#managing-intro-videos)
 
 ---
 
@@ -306,9 +307,9 @@ Be aware before assuming the new drive / PC is fully wired up:
 
 Almost everything SpinDoctor writes is reversible. The mechanics:
 
-### `.bak` files (XML round-trips)
+### `.bak` files (XML/INI round-trips)
 
-Every XML write leaves a `.YYYYMMDD_HHMMSS.bak` next to the original. Toggle via `backup_before_modify` (default `true`). To restore, copy the `.bak` over the live file. To clear old `.bak`s once you're confident: `spindoctor cleanup run --include db-backups --keep-recent 5 --apply`.
+Every in-place XML or INI write — HyperSpin database XML, LEDBlinky's `Colors.ini`/`Settings.ini`, RocketLauncher configs, the Intro Video Randomizer's `Random.ini` — leaves a `.YYYYMMDD_HHMMSS.bak` next to the original, or under `backup_dir` if configured (see [Where SpinDoctor stores its files → `backup_dir`](spindoctor-files.md#backup_dir)). Toggle via `backup_before_modify` (default `true`). To restore, copy the `.bak` over the live file. To clear old `.bak`s once you're confident: `spindoctor cleanup run --include db-backups --keep-recent 5 --apply`. If `backup_dir` is configured but not actually writable, the write is aborted with a clear error rather than silently backing up elsewhere or leaving a half-applied change.
 
 ### Manifests + `--undo`
 
@@ -532,3 +533,32 @@ spindoctor lightgun audit
 Auto-targeted systems include MAME, Sega Naomi/Atomiswave/Dreamcast, Model 2, Model 3 (Supermodel), Flycast, ChiHiro, Triforce, Lindbergh. Pass `--target <name>` to override for anything else.
 
 The wiring lives in `RocketLauncher\Settings\<System>.ini` as `Pre_Launch_App` (start DemulShooter) and `Post_Launch_App` (taskkill DemulShooter on exit). Module `.ahk` files are never modified, so a stock Tur build remains intact.
+
+---
+
+## Managing intro videos
+
+For cabinets running a third-party boot-time Intro Video Randomizer (an AutoHotkey/launcher script, not part of HyperSpin/RocketLauncher/SpinDoctor, that swaps HyperSpin's startup video on every boot). Full reference at [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) and [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
+
+> **GUI alternative:** the **Intro Video** tab lists every video with on-disk/registered status. **Add video(s)** (multi-select file picker), **Register selected** (on-disk-but-unregistered rows, no picker/no copy), and **Remove selected** (Ctrl/Shift-click for several) wrap the commands below — no confirmation dialogs, the global **Apply** checkbox is the gate.
+
+```bat
+:: 0. One-time: point SpinDoctor at the folder containing Random.ini.
+spindoctor config set intro_randomizer_dir "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer"
+
+:: 1. See what's there — on disk, registered, or both.
+spindoctor introvideo list
+
+:: 2. Add new videos from outside the folder (copies in, then registers).
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply
+spindoctor introvideo add "C:\Downloads\A.mp4" "C:\Downloads\B.mp4" --apply   :: several at once
+
+:: 3. A video already sitting in the folder but not showing up in rotation?
+::    Same command, pointed at its existing path — registers without copying.
+spindoctor introvideo add "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Capcom Intro.mp4" --apply
+
+:: 4. Retire a video from rotation without deleting the file.
+spindoctor introvideo remove "Capcom Intro.mp4" --apply
+```
+
+Every write is dry-run by default (drop `--apply` to preview) and backed up first — see [Recovery from mistakes → `.bak` files](#bak-files-xmlini-round-trips) — but there's no `--undo` flag for `introvideo`; restore by copying the `.bak` back over `Random.ini`. Removed videos are never deleted from disk, so `introvideo add` on the same path re-registers them any time.

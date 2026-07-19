@@ -144,17 +144,34 @@ def _config_backup_dir(config: Config) -> Optional[Path]:
 
 
 def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
-    """Timestamped backup of *path*, mirroring ledblinky._backup's shape."""
+    """Timestamped backup of *path*, mirroring ledblinky._backup's shape.
+
+    Raises RandomizerIniError — instead of letting a raw OSError escape —
+    if backup_dir was explicitly configured but writing to it fails (an
+    unmounted drive, a permission problem). A misconfigured/unavailable
+    backup destination should be a clear, actionable error, not a bare
+    traceback the user has to scroll past to understand what happened.
+    """
     if not path.exists():
         return None
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if backup_dir:
         dest_dir = backup_dir / "IntroVideoRandomizer"
-        dest_dir.mkdir(parents=True, exist_ok=True)
         dest = dest_dir / f"{path.name}.{stamp}.bak"
+        try:
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(path, dest)
+        except OSError as exc:
+            raise RandomizerIniError(
+                f"backup_before_modify is on, but writing the Random.ini "
+                f"backup to the configured backup_dir failed: {dest_dir} "
+                f"({exc}). Nothing was changed — fix backup_dir (Setup tab, "
+                f"or `spindoctor config set backup_dir <path>`), or turn off "
+                f"backup_before_modify, then try again."
+            ) from exc
     else:
         dest = path.with_suffix(path.suffix + f".{stamp}.bak")
-    shutil.copy2(path, dest)
+        shutil.copy2(path, dest)
     return dest
 
 
@@ -254,15 +271,16 @@ def add_videos(
     Disk copies happen per-file (so a later duplicate name in the same
     batch correctly sees the earlier copy as already-on-disk), but
     Random.ini gets a single backup and a single surgical rewrite for the
-    whole batch rather than one per file. Every source is validated
-    up front — before any copy happens — so a missing file anywhere in
-    the batch aborts cleanly with nothing copied and Random.ini
-    untouched, instead of leaving earlier files copied-but-unregistered.
-    A copy failure partway through (disk full, permission denied, a
-    locked file) can't be pre-validated away the same way and will still
-    leave earlier files in that call copied but unregistered; that risk
-    predates batching (a single `add_video` copy could always raise) and
-    isn't new here, just still present.
+    whole batch rather than one per file. Every source — and, if a backup
+    will actually be needed, the configured backup destination — is
+    validated up front, before any copy happens, so a missing source file
+    or an unwritable backup_dir (unmounted drive, permission problem)
+    aborts cleanly with nothing copied and Random.ini untouched, instead
+    of leaving earlier files copied-but-unregistered. A copy failure
+    partway through for a reason that can't be pre-validated (disk full,
+    a locked file) can still leave earlier files in that call copied but
+    unregistered; that risk predates batching (a single `add_video` copy
+    could always raise) and isn't new here, just still present.
     """
     ini_path = get_ini_path(config)
     state = load_randomizer(ini_path)
@@ -272,6 +290,25 @@ def add_videos(
     for source in sources:
         if not source.exists() or not source.is_file():
             raise RandomizerIniError(f"Source video not found: {source}")
+
+    # Same reasoning for the backup destination: if this call will actually
+    # try to back Random.ini up, make sure that destination is writable
+    # *before* copying any source — otherwise a bad backup_dir would be
+    # discovered only after files were already copied, orphaning them the
+    # same way a missing source used to.
+    if apply and config.backup_before_modify:
+        backup_dir = _config_backup_dir(config)
+        if backup_dir:
+            try:
+                (backup_dir / "IntroVideoRandomizer").mkdir(parents=True, exist_ok=True)
+            except OSError as exc:
+                raise RandomizerIniError(
+                    f"backup_before_modify is on, but the configured "
+                    f"backup_dir isn't writable: {backup_dir} ({exc}). Fix "
+                    f"backup_dir (Setup tab, or `spindoctor config set "
+                    f"backup_dir <path>`), or turn off backup_before_modify, "
+                    f"then try again."
+                ) from exc
 
     new_file_list = list(state.file_list)
     new_random_list = list(state.random_list)
