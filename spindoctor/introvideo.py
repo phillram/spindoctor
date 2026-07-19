@@ -244,104 +244,145 @@ def list_videos(state: RandomizerState) -> list[VideoStatus]:
     return out
 
 
+def add_videos(
+    config: Config, sources: list[Path], *, apply: bool = False,
+) -> list[AddResult]:
+    """Copy each of *sources* into the randomizer's Folder and register it
+    in FileList/RandomList. Non-destructive: an existing file at a
+    destination is never overwritten.
+
+    Disk copies happen per-file (so a later duplicate name in the same
+    batch correctly sees the earlier copy as already-on-disk), but
+    Random.ini gets a single backup and a single surgical rewrite for the
+    whole batch rather than one per file.
+    """
+    ini_path = get_ini_path(config)
+    state = load_randomizer(ini_path)
+
+    new_file_list = list(state.file_list)
+    new_random_list = list(state.random_list)
+    results: list[AddResult] = []
+    any_list_change = False
+
+    for source in sources:
+        if not source.exists() or not source.is_file():
+            raise RandomizerIniError(f"Source video not found: {source}")
+
+        # Case-insensitive on-disk lookup — Path.exists() case-folds on
+        # Windows/NTFS and macOS/APFS (the common dev/prod targets) but not
+        # on a case-sensitive filesystem (e.g. Linux/ext4, where part of CI
+        # runs), which would otherwise let a re-add under different casing
+        # slip past the "already there" check and copy a duplicate file.
+        # Scanning ourselves keeps this decision independent of the host
+        # filesystem.
+        dest = state.folder / source.name
+        existing_match = None
+        if state.folder.exists():
+            for p in state.folder.iterdir():
+                if p.is_file() and p.name.lower() == source.name.lower():
+                    existing_match = p
+                    break
+        if existing_match is not None:
+            dest = existing_match
+        already_on_disk = existing_match is not None
+        # Case-insensitive membership check (Windows/NTFS filesystems are)
+        # so an existing "capcom intro.mp4" entry isn't treated as distinct
+        # from a newly-added "Capcom Intro.mp4", and against the
+        # accumulated batch lists so two same-named files in one batch
+        # don't both register.
+        source_key = source.name.lower()
+        file_list_changed = source_key not in {n.lower() for n in new_file_list}
+        random_list_changed = source_key not in {n.lower() for n in new_random_list}
+        already_registered = not file_list_changed and not random_list_changed
+
+        copied = False
+        if apply:
+            if not already_on_disk:
+                state.folder.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, dest)
+                copied = True
+        else:
+            copied = not already_on_disk
+
+        if file_list_changed:
+            new_file_list.append(source.name)
+        if random_list_changed:
+            new_random_list.append(source.name)
+        any_list_change = any_list_change or file_list_changed or random_list_changed
+
+        results.append(AddResult(
+            dest=dest,
+            copied=copied,
+            already_registered=already_registered,
+            file_list_changed=file_list_changed,
+            random_list_changed=random_list_changed,
+        ))
+
+    if apply and any_list_change:
+        backup_path = None
+        if config.backup_before_modify:
+            backup_path = _backup(ini_path, _config_backup_dir(config))
+        _rewrite_lists(ini_path, new_file_list, new_random_list)
+        for result in results:
+            if result.file_list_changed or result.random_list_changed:
+                result.backup_path = backup_path
+
+    return results
+
+
 def add_video(config: Config, source: Path, *, apply: bool = False) -> AddResult:
     """Copy *source* into the randomizer's Folder and register it in
     FileList/RandomList. Non-destructive: an existing file at the
     destination is never overwritten.
     """
+    return add_videos(config, [source], apply=apply)[0]
+
+
+def remove_videos(
+    config: Config, filenames: list[str], *, apply: bool = False,
+) -> list[RemoveResult]:
+    """Drop each of *filenames* from FileList/RandomList. The video files
+    on disk are never deleted — this only stops the randomizer from
+    picking them. A single Random.ini backup and rewrite covers the whole
+    batch rather than one per file.
+    """
     ini_path = get_ini_path(config)
     state = load_randomizer(ini_path)
-    if not source.exists() or not source.is_file():
-        raise RandomizerIniError(f"Source video not found: {source}")
 
-    # Case-insensitive on-disk lookup — Path.exists() case-folds on
-    # Windows/NTFS and macOS/APFS (the common dev/prod targets) but not on
-    # a case-sensitive filesystem (e.g. Linux/ext4, where part of CI runs),
-    # which would otherwise let a re-add under different casing slip past
-    # the "already there" check and copy a duplicate file. Scanning
-    # ourselves keeps this decision independent of the host filesystem.
-    dest = state.folder / source.name
-    existing_match = None
-    if state.folder.exists():
-        for p in state.folder.iterdir():
-            if p.is_file() and p.name.lower() == source.name.lower():
-                existing_match = p
-                break
-    if existing_match is not None:
-        dest = existing_match
-    already_on_disk = existing_match is not None
-    # Case-insensitive membership check (Windows/NTFS filesystems are) so an
-    # existing "capcom intro.mp4" entry isn't treated as distinct from a
-    # newly-added "Capcom Intro.mp4".
-    source_key = source.name.lower()
-    file_list_changed = source_key not in {n.lower() for n in state.file_list}
-    random_list_changed = source_key not in {n.lower() for n in state.random_list}
-    already_registered = not file_list_changed and not random_list_changed
+    new_file_list = list(state.file_list)
+    new_random_list = list(state.random_list)
+    results: list[RemoveResult] = []
+    any_change = False
 
-    if not apply:
-        return AddResult(
-            dest=dest,
-            copied=not already_on_disk,
-            already_registered=already_registered,
+    for filename in filenames:
+        target = filename.lower()
+        file_list_changed = any(f.lower() == target for f in new_file_list)
+        random_list_changed = any(f.lower() == target for f in new_random_list)
+        if file_list_changed:
+            new_file_list = [f for f in new_file_list if f.lower() != target]
+        if random_list_changed:
+            new_random_list = [f for f in new_random_list if f.lower() != target]
+        any_change = any_change or file_list_changed or random_list_changed
+        results.append(RemoveResult(
+            filename=filename,
             file_list_changed=file_list_changed,
             random_list_changed=random_list_changed,
-        )
+        ))
 
-    state.folder.mkdir(parents=True, exist_ok=True)
-    copied = False
-    if not already_on_disk:
-        shutil.copy2(source, dest)
-        copied = True
-
-    backup_path = None
-    if file_list_changed or random_list_changed:
+    if apply and any_change:
+        backup_path = None
         if config.backup_before_modify:
             backup_path = _backup(ini_path, _config_backup_dir(config))
-        new_file_list = list(state.file_list)
-        if file_list_changed:
-            new_file_list.append(source.name)
-        new_random_list = list(state.random_list)
-        if random_list_changed:
-            new_random_list.append(source.name)
         _rewrite_lists(ini_path, new_file_list, new_random_list)
+        for result in results:
+            if result.changed:
+                result.backup_path = backup_path
 
-    return AddResult(
-        dest=dest,
-        copied=copied,
-        already_registered=already_registered,
-        file_list_changed=file_list_changed,
-        random_list_changed=random_list_changed,
-        backup_path=backup_path,
-    )
+    return results
 
 
 def remove_video(config: Config, filename: str, *, apply: bool = False) -> RemoveResult:
     """Drop *filename* from FileList/RandomList. The video file on disk is
     never deleted — this only stops the randomizer from picking it.
     """
-    ini_path = get_ini_path(config)
-    state = load_randomizer(ini_path)
-    target = filename.lower()
-    file_list_changed = any(f.lower() == target for f in state.file_list)
-    random_list_changed = any(f.lower() == target for f in state.random_list)
-
-    if not apply or not (file_list_changed or random_list_changed):
-        return RemoveResult(
-            filename=filename,
-            file_list_changed=file_list_changed,
-            random_list_changed=random_list_changed,
-        )
-
-    backup_path = None
-    if config.backup_before_modify:
-        backup_path = _backup(ini_path, _config_backup_dir(config))
-    new_file_list = [f for f in state.file_list if f.lower() != target]
-    new_random_list = [f for f in state.random_list if f.lower() != target]
-    _rewrite_lists(ini_path, new_file_list, new_random_list)
-
-    return RemoveResult(
-        filename=filename,
-        file_list_changed=file_list_changed,
-        random_list_changed=random_list_changed,
-        backup_path=backup_path,
-    )
+    return remove_videos(config, [filename], apply=apply)[0]

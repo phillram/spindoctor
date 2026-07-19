@@ -2770,80 +2770,92 @@ def introvideo_list():
 
 
 @introvideo_group.command("add")
-@click.argument("source", type=click.Path(exists=True, dir_okay=False))
+@click.argument("sources", nargs=-1, required=True,
+                 type=click.Path(exists=True, dir_okay=False))
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Copy the file and update Random.ini. Without this flag, "
-                   "only a preview is printed.")
-def introvideo_add(source, apply_changes):
-    """Add a video to the intro randomizer pool."""
-    from .introvideo import RandomizerIniError, add_video
+              help="Copy the file(s) and update Random.ini. Without this "
+                   "flag, only a preview is printed.")
+def introvideo_add(sources, apply_changes):
+    """Add one or more videos to the intro randomizer pool."""
+    from .introvideo import RandomizerIniError, add_videos
 
     config = _cfg()
     try:
-        result = add_video(config, Path(source), apply=apply_changes)
+        results = add_videos(config, [Path(s) for s in sources], apply=apply_changes)
     except RandomizerIniError as exc:
         err_console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
-    if not apply_changes:
-        if result.copied:
-            console.print(f"Would copy to [cyan]{result.dest}[/cyan]")
-        else:
-            console.print(f"Already on disk at [cyan]{result.dest}[/cyan]")
-        if result.already_registered:
-            console.print("[yellow]Already registered in Random.ini — nothing to change.[/yellow]")
-        else:
-            console.print("Would register in FileList / RandomList.")
-        console.print("[dim]Re-run with --apply to commit.[/dim]")
-        return
+    backup_path = None
+    for result in results:
+        if not apply_changes:
+            if result.copied:
+                console.print(f"Would copy to [cyan]{result.dest}[/cyan]")
+            else:
+                console.print(f"Already on disk at [cyan]{result.dest}[/cyan]")
+            if result.already_registered:
+                console.print("[yellow]Already registered in Random.ini — nothing to change.[/yellow]")
+            else:
+                console.print("Would register in FileList / RandomList.")
+            continue
 
-    console.print(
-        f"[green]+[/green] {result.dest.name}"
-        + (" (copied)" if result.copied else " (already on disk)")
-    )
-    if result.file_list_changed or result.random_list_changed:
-        console.print("[green]✓[/green] registered in Random.ini")
-        if result.backup_path:
-            console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
-    else:
-        console.print("[yellow]already registered[/yellow]")
+        console.print(
+            f"[green]+[/green] {result.dest.name}"
+            + (" (copied)" if result.copied else " (already on disk)")
+        )
+        if result.file_list_changed or result.random_list_changed:
+            console.print("[green]✓[/green] registered in Random.ini")
+            backup_path = backup_path or result.backup_path
+        else:
+            console.print("[yellow]already registered[/yellow]")
+
+    if not apply_changes:
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+    elif backup_path:
+        console.print(f"[dim]Backed up Random.ini to {backup_path}[/dim]")
 
 
 @introvideo_group.command("remove")
-@click.argument("filename")
+@click.argument("filenames", nargs=-1, required=True)
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Update Random.ini. Without this flag, only a preview is "
                    "printed. The video file itself is never deleted.")
-def introvideo_remove(filename, apply_changes):
-    """Remove a video from the intro randomizer pool.
+def introvideo_remove(filenames, apply_changes):
+    """Remove one or more videos from the intro randomizer pool.
 
     Only edits Random.ini's FileList/RandomList — the video file is left
     on disk and can be re-registered later with 'introvideo add'.
     """
-    from .introvideo import RandomizerIniError, remove_video
+    from .introvideo import RandomizerIniError, remove_videos
 
     config = _cfg()
     try:
-        result = remove_video(config, filename, apply=apply_changes)
+        results = remove_videos(config, list(filenames), apply=apply_changes)
     except RandomizerIniError as exc:
         err_console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
-    if not result.changed:
-        console.print(f"[yellow]not registered:[/yellow] {filename}")
-        return
+    backup_path = None
+    any_changed = False
+    for result in results:
+        if not result.changed:
+            console.print(f"[yellow]not registered:[/yellow] {result.filename}")
+            continue
+        any_changed = True
+        if not apply_changes:
+            console.print(f"Would remove [cyan]{result.filename}[/cyan] from Random.ini.")
+            continue
+        console.print(f"[green]-[/green] {result.filename} (Random.ini updated; file left on disk)")
+        backup_path = backup_path or result.backup_path
 
     if not apply_changes:
-        console.print(f"Would remove [cyan]{filename}[/cyan] from Random.ini.")
-        console.print(
-            "[dim]Re-run with --apply to commit. The video file on disk "
-            "is never deleted.[/dim]"
-        )
-        return
-
-    console.print(f"[green]-[/green] {filename} (Random.ini updated; file left on disk)")
-    if result.backup_path:
-        console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
+        if any_changed:
+            console.print(
+                "[dim]Re-run with --apply to commit. The video file on disk "
+                "is never deleted.[/dim]"
+            )
+    elif backup_path:
+        console.print(f"[dim]Backed up Random.ini to {backup_path}[/dim]")
 
 
 @cli.group("stats-report", invoke_without_command=True)

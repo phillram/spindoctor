@@ -12792,9 +12792,11 @@ class _SpinDoctorGUI:
                   "Random.ini in the Intro Video Randomizer directory "
                   "(set on the Setup tab); videos live in that INI's "
                   "Folder= path, and its Backup\\ subfolder is never "
-                  "scanned or modified. 'Add' copies a video into that "
-                  "folder and registers it; 'Remove' only edits Random.ini "
-                  "— the file itself is left on disk."),
+                  "scanned or modified. 'Add video(s)…' copies one or more "
+                  "videos into that folder and registers them; 'Remove "
+                  "selected' only edits Random.ini for the selected row(s) "
+                  "(Ctrl/Shift-click to select several) — the files "
+                  "themselves are left on disk."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -12812,6 +12814,7 @@ class _SpinDoctorGUI:
         columns = ("disk", "registered", "size")
         tree = self.ttk.Treeview(
             list_lf, columns=columns, show="tree headings", height=12,
+            selectmode="extended",
         )
         tree.heading("#0", text="File")
         tree.heading("disk", text="On disk")
@@ -12836,7 +12839,7 @@ class _SpinDoctorGUI:
             command=self._refresh_introvideo_list,
         ).pack(side="left")
         self.ttk.Button(
-            btn_row, text="Add video…",
+            btn_row, text="Add video(s)…",
             command=self._introvideo_add,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -12881,17 +12884,17 @@ class _SpinDoctorGUI:
             tree.insert("", "end", text=v.filename, values=(disk, registered, size))
 
     def _introvideo_add(self) -> None:
-        path = self.filedialog.askopenfilename(
-            title="Select an intro video to add",
+        paths = self.filedialog.askopenfilenames(
+            title="Select intro video(s) to add",
             initialdir=str(Path.home()),
             filetypes=[
                 ("Video files", "*.mp4 *.avi *.wmv *.mkv *.mov *.m4v *.flv"),
                 ("All files", "*.*"),
             ],
         )
-        if not path:
+        if not paths:
             return
-        args = ["introvideo", "add", str(Path(path))]
+        args = ["introvideo", "add"] + [str(Path(p)) for p in paths]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
@@ -12906,19 +12909,29 @@ class _SpinDoctorGUI:
         sel = tree.selection()
         if not sel:
             self.messagebox.showwarning(
-                "No selection", "Pick a video in the list first.",
+                "No selection", "Pick one or more videos in the list first.",
             )
             return
-        filename = tree.item(sel[0], "text")
-        if not self.messagebox.askyesno(
-            "Remove from randomizer?",
-            f"Remove {filename!r} from Random.ini's FileList/RandomList?\n\n"
-            "The video file itself is left on disk — this only stops the "
-            "randomizer from picking it. Add it back any time with "
-            "'Add video…'.",
-        ):
+        filenames = [tree.item(iid, "text") for iid in sel]
+        if len(filenames) == 1:
+            prompt = (
+                f"Remove {filenames[0]!r} from Random.ini's FileList/RandomList?\n\n"
+                "The video file itself is left on disk — this only stops the "
+                "randomizer from picking it. Add it back any time with "
+                "'Add video(s)…'."
+            )
+        else:
+            listing = "\n".join(f"  • {f}" for f in filenames)
+            prompt = (
+                f"Remove these {len(filenames)} videos from Random.ini's "
+                f"FileList/RandomList?\n\n{listing}\n\n"
+                "The video files themselves are left on disk — this only "
+                "stops the randomizer from picking them. Add them back any "
+                "time with 'Add video(s)…'."
+            )
+        if not self.messagebox.askyesno("Remove from randomizer?", prompt):
             return
-        args = ["introvideo", "remove", filename]
+        args = ["introvideo", "remove"] + filenames
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
