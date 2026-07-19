@@ -102,8 +102,8 @@ the attract rotation when it ends — no global timer setting is required.
 
 | Wheel | Duration |
 |-------|---------|
-| Favorites | 120 s (4 × 30 s) |
-| Most Played | 120 s (4 × 30 s) |
+| Favorites | 120 s |
+| Most Played | 117 s |
 | Recently Played | 120 s (4 × 30 s) |
 | Recompiled | 120 s (4 × 30 s) |
 
