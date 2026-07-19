@@ -208,6 +208,12 @@ Four numbered steps cover building and wiring up the custom wheels; the remainin
 
 **Reset wheel data (scrub):** Permanently delete favorites and/or play statistics to start fresh. Backup folder field creates a restorable snapshot before scrubbing. Statistics.ini files cannot be regenerated — always back up first. **Restore** button recovers from a previous scrub backup.
 
+### Intro Video
+
+Manages the pool of startup videos a third-party randomizer script picks from on cabinet boot (`Random.ini` — see [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the file format and paths). Requires the **Intro Video Randomizer directory** to be set on the Setup tab first.
+
+The **Videos** table lists every video found either on disk (in `Random.ini`'s `Folder=` path, excluding its `Backup\` subfolder) or registered in `Random.ini`, with columns for on-disk presence, registration status (✓ / partial / -), and file size. **↻ Refresh** re-scans. **Add video…** opens a file picker; the chosen file is copied into the randomizer's folder and registered — CLI: `introvideo add`. **Remove selected** drops the selected row from `Random.ini` (after a confirmation dialog) without deleting the video file itself — CLI: `introvideo remove`. Both buttons respect the global **Apply** checkbox; leaving it unticked runs a dry-run preview in the Output panel.
+
 ### LEDBlinky
 
 The LEDBlinky tab is organized as a numbered step-by-step workflow. Follow the sections top to bottom when setting up LED colors for the first time. Steps 1 and 2 are one-time setup; Steps 3 onward are the regular ongoing workflow.

@@ -169,6 +169,12 @@ class Config:
     ledblinky_dir: str = ""
     output_dir: str = ""
     auto_audit_export_dir: str = ""
+    # Folder containing the Intro Video Randomizer's Random.ini (e.g.
+    # "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer"). The video
+    # pool folder and the file HyperSpin actually plays on boot are read
+    # from Random.ini itself (Folder= / FileToRandomize=), not derived
+    # from this path.
+    intro_randomizer_dir: str = ""
 
     # External binaries
     mame_executable: str = ""
