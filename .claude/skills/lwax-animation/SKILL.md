@@ -44,20 +44,39 @@ The CLI only builds a **uniform color-cycle fade** across the chosen controls. F
 
 ### This cabinet's layout groups
 
-Getting this right from a text description alone is genuinely hard — the first attempt at this (an ASCII table) needed two rounds of correction against a rendered visual preview before it matched the real hardware. **Render a visual diagram (HTML artifact, one cell per control, grouped/colored by player) and get explicit confirmation before generating more than one or two files against a layout description**, especially for anything ring/perimeter-based where one wrong position skews everything derived from it. Don't trust an ASCII table's column alignment across different rows as meaningful — cross-row alignment in a markdown table is usually accidental spacing, not physical position (confirmed on this cabinet: several admin-row cells lined up with button-row cells that aren't actually above them).
+Getting this right from a text description alone is genuinely hard. Three attempts, in order of how well each worked:
 
-Confirmed layout (2 correction rounds in): the trackball sits in the **same row** as the joysticks/action buttons — not the admin row — but in the column between `SELECT` and `EXIT`. Start/Coin are their own outboard columns, not stacked above the joystick/B1 columns. Left Click/Right Click sit next to `SELECT`, not next to the trackball.
+1. **An ASCII table** — needed two rounds of correction against a rendered visual preview before it was even close. Don't trust an ASCII table's column alignment *across different rows* as meaningful — cross-row alignment in a markdown table is usually accidental spacing from typing it out, not a claim about physical position (confirmed here: admin-row cells lined up in the same text-column as button-row cells several rows below that aren't actually above them).
+2. **A rendered HTML diagram, confirmed against the ASCII table** — better, but still wrong, because it was only as good as the (flawed) text description underneath it. Two rounds of "no, that's not right" on Start/Coin placement.
+3. **An actual photo of the panel** — got it right in one shot. Where a photo is available, prefer parsing it directly over any text/table description, even one that's already been through a visual-preview round.
+
+**Whenever a photo is available, ask for it first, rather than starting from a text/table description at all.** If only text is available, still render a visual diagram and get it confirmed before generating more than one or two files against it — a ring/perimeter-derived effect in particular means one wrong position skews everything built on top of it.
+
+**Confirmed layout (from the panel photo):**
+
+- P1 Start sits directly above P1's joystick; P1 Coin sits directly above P1 Button 1.
+- P2 Start sits above P2 Button 2; P2 Coin sits above P2 Button 3 — **not mirrored** to P1's pattern (P1 uses joystick+B1, P2 uses B2+B3). Both sides read Start-then-Coin left to right; neither side is Coin-then-Start.
+- The trackball sits in the same row as the joysticks and action buttons — not the admin row above it — in the column between `SELECT` and `EXIT`.
+- Left Click/Right Click sit next to `SELECT`, not next to the trackball.
+- The admin row (`LMOUSE`/`RMOUSE`/`SELECT`/`EXIT`/`SEARCH`/`PAUSE`) is evenly spaced with no real gap — the empty column between `SELECT` and `EXIT` in any rendering that shares one grid across all tiers is just where the trackball happens to align from the row below, not a real gap in the admin row itself.
 
 ```python
-# Left-to-right column order. Single source of truth: ROWS, RADIAL_RINGS, and
-# CYCLONE_LOOP below are all derived from this instead of hand-listed, so a
-# future correction only has to happen in one place.
+# Left-to-right column order, as ordered GROUPS (a position can hold more
+# than one label when two controls are lit at the same physical spot --
+# e.g. P1 Coin shares P1B1's position). Single source of truth: ROWS,
+# RADIAL_RINGS, and CYCLONE_LOOP below are all derived from this instead of
+# hand-listed, so a future correction only has to happen in one place.
 LEFT_RIGHT_ORDER = [
-    "P1START", "P1COIN",
-    "P1B1", "P1B2", "P1B3", "P1B4",
-    "LMOUSE", "RMOUSE", "SELECT", "TRACKBALL", "EXIT", "SEARCH", "PAUSE",
-    "P2B1", "P2B2", "P2B3", "P2B4",
-    "P2COIN", "P2START",
+    ["P1START"],                  # above P1's joystick (no LED there itself)
+    ["P1COIN", "P1B1"],            # directly above P1B1
+    ["P1B2"], ["P1B3"], ["P1B4"],
+    ["LMOUSE"], ["RMOUSE"], ["SELECT"],
+    ["TRACKBALL"],
+    ["EXIT"], ["SEARCH"], ["PAUSE"],
+    ["P2B1"],
+    ["P2B2", "P2START"],           # P2START above P2B2 (not mirrored to P1)
+    ["P2B3", "P2COIN"],            # P2COIN above P2B3
+    ["P2B4"],
 ]
 
 # 3 vertical bands -- this cabinet's button grid only has 2 rows per player,
@@ -69,10 +88,13 @@ ROWS = [ROW_ABOVE, ROW_TOP, ROW_BOTTOM]
 
 # Symmetric distance-from-trackball rings, derived from LEFT_RIGHT_ORDER --
 # don't hand-list these, they're easy to get subtly wrong by inspection.
-TRACKBALL_INDEX = LEFT_RIGHT_ORDER.index("TRACKBALL")
+# Note the group list is uneven either side of the trackball (8 groups
+# before it, 7 after), since P2's Start/Coin sit closer to center than
+# P1's -- rings on the far side simply run out one step sooner.
+TRACKBALL_INDEX = next(i for i, g in enumerate(LEFT_RIGHT_ORDER) if "TRACKBALL" in g)
 _ring_map = {}
-for i, label in enumerate(LEFT_RIGHT_ORDER):
-    _ring_map.setdefault(abs(i - TRACKBALL_INDEX), []).append(label)
+for i, group in enumerate(LEFT_RIGHT_ORDER):
+    _ring_map.setdefault(abs(i - TRACKBALL_INDEX), []).extend(group)
 RADIAL_RINGS = [_ring_map[d] for d in sorted(_ring_map)]
 
 # Racetrack loop for a "cyclone"/spinning effect: across the top row, then
@@ -89,6 +111,10 @@ RAIN_DROP_GROUPS = [
     ["SELECT"], ["EXIT"], ["SEARCH"], ["PAUSE"], ["P2COIN"], ["P2START"],
 ]
 ```
+
+`build_rainbow_scroll()` also takes grouped positions (not a flat label list), for the same reason — two labels sharing a spot should get the identical hue, not two neighboring-but-different ones.
+
+Two side effects of the grouped model worth knowing about: (1) when two independent effects need to run on either side of an uneven split (e.g. `p1_vs_p2_race`, where P1's side has 8 groups and P2's has 7), cross the `frames_per_step` values (`len(other_side)`) so both `build_wave` calls land on the exact same total frame count before `merge_animations()` — no padding needed. (2) `build_fill`/`build_wave` naturally light co-grouped labels together, which is correct for a spot two controls share.
 
 A worked example generating 16 effects (4 directional sweeps, rainfall, radial pulse in/out, a ping-pong "breathing" pulse, confetti, a two-color race from center, a rainbow scroll, a Cylon scanner, cyclone loops both directions, an accumulating combo-meter fill, and a heartbeat brightness pulse) lives in this session's history — recreate similarly: parse the real `LEDBlinkyInputMap.xml`, derive groups from `LEFT_RIGHT_ORDER` as above, call the relevant `build_*` function(s), validate with `xml.etree.ElementTree.fromstring()` before handing files over.
 
