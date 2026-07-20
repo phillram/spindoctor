@@ -875,6 +875,15 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "rename --list-manifests",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM>",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM> --apply",
+    # ── Intro Video Randomizer ──────────────────────────────────────────────────
+    "─── Intro Video Randomizer ───",
+    "introvideo list",
+    "introvideo add <PATH>",
+    "introvideo add <PATH> --apply",
+    "introvideo add <PATH> <PATH> --apply",
+    "introvideo remove <FILENAME>",
+    "introvideo remove <FILENAME> --apply",
+    "introvideo remove <FILENAME> <FILENAME> --apply",
     # ── LEDBlinky ─────────────────────────────────────────────────────────────
     "─── LEDBlinky ───",
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
@@ -12792,11 +12801,16 @@ class _SpinDoctorGUI:
                   "Random.ini in the Intro Video Randomizer directory "
                   "(set on the Setup tab); videos live in that INI's "
                   "Folder= path, and its Backup\\ subfolder is never "
-                  "scanned or modified. 'Add video(s)…' copies one or more "
-                  "videos into that folder and registers them; 'Remove "
-                  "selected' only edits Random.ini for the selected row(s) "
-                  "(Ctrl/Shift-click to select several) — the files "
-                  "themselves are left on disk."),
+                  "scanned or modified. On disk / Registered show two "
+                  "independent things a video can be — a file with "
+                  "on disk ✓ but Registered - has already been found in "
+                  "that folder but isn't in the randomizer's rotation yet. "
+                  "'Add video(s)' opens a file picker to copy new video(s) "
+                  "in from elsewhere and registers them; 'Register selected' "
+                  "registers already on-disk row(s) as-is, with no picker "
+                  "and no copy; 'Remove selected' only edits Random.ini for "
+                  "the selected row(s) (Ctrl/Shift-click to select "
+                  "several) — the files themselves are left on disk."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -12844,13 +12858,17 @@ class _SpinDoctorGUI:
             command=self._refresh_introvideo_list,
         ).pack(side="left")
         self.ttk.Button(
-            btn_row, text="Add video(s)…",
+            btn_row, text="Add video(s)",
             command=self._introvideo_add,
         ).pack(side="left", padx=6)
         self.ttk.Button(
+            btn_row, text="Register selected",
+            command=self._introvideo_register,
+        ).pack(side="left")
+        self.ttk.Button(
             btn_row, text="Remove selected",
             command=self._introvideo_remove,
-        ).pack(side="left")
+        ).pack(side="left", padx=(6, 0))
 
         self._refresh_introvideo_list()
         return frame
@@ -12868,8 +12886,14 @@ class _SpinDoctorGUI:
             state = load_randomizer(ini_path)
             videos = list_videos(state)
         except RandomizerIniError as exc:
+            self._introvideo_folder = None
             tree.insert("", "end", text=str(exc), values=("", "", ""))
             return
+
+        # Remembered so 'Register selected' can build the on-disk path for
+        # a selected row directly, without re-asking the user to browse to
+        # a file that's already sitting right here.
+        self._introvideo_folder = state.folder
 
         if not videos:
             tree.insert(
@@ -12889,9 +12913,10 @@ class _SpinDoctorGUI:
             tree.insert("", "end", text=v.filename, values=(disk, registered, size))
 
     def _introvideo_add(self) -> None:
+        folder = getattr(self, "_introvideo_folder", None)
         paths = self.filedialog.askopenfilenames(
             title="Select intro video(s) to add",
-            initialdir=str(Path.home()),
+            initialdir=str(folder) if folder else str(Path.home()),
             filetypes=[
                 ("Video files", "*.mp4 *.avi *.wmv *.mkv *.mov *.m4v *.flv"),
                 ("All files", "*.*"),
@@ -12900,6 +12925,58 @@ class _SpinDoctorGUI:
         if not paths:
             return
         args = ["introvideo", "add"] + [str(Path(p)) for p in paths]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_list(),
+        )
+
+    def _introvideo_register(self) -> None:
+        """Register already-on-disk row(s) without re-browsing to them.
+
+        A video can land in the randomizer's folder without SpinDoctor's
+        help (dropped in directly, restored from a backup, etc.) and show
+        up as on-disk but unregistered ('-' in the Registered column).
+        'Add video(s)' always opens a file picker, which is a confusing
+        extra step when the exact file is already sitting right there in
+        the table — this reuses the same `introvideo add` command, just
+        pointed at the file's real on-disk path, so it registers instead
+        of re-copying (`add_video` never overwrites an existing file at
+        the same destination).
+        """
+        tree = getattr(self, "_introvideo_tree", None)
+        folder = getattr(self, "_introvideo_folder", None)
+        if tree is None or not folder:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showwarning(
+                "No selection", "Pick one or more on-disk videos in the list first.",
+            )
+            return
+        on_disk, missing = [], []
+        for iid in sel:
+            filename = tree.item(iid, "text")
+            if tree.item(iid, "values")[0] == "✓":
+                on_disk.append(filename)
+            else:
+                missing.append(filename)
+        if not on_disk:
+            self.messagebox.showwarning(
+                "Not on disk",
+                "None of the selected rows are on disk — there's nothing to "
+                "register. Use 'Add video(s)' to copy a file in first.",
+            )
+            return
+        if missing:
+            self.messagebox.showinfo(
+                "Skipping missing file(s)",
+                "These selected rows aren't on disk, so they can't be "
+                "registered — skipping them:\n\n"
+                + "\n".join(f"  • {f}" for f in missing),
+            )
+        args = ["introvideo", "add"] + [str(folder / f) for f in on_disk]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
@@ -12917,25 +12994,13 @@ class _SpinDoctorGUI:
                 "No selection", "Pick one or more videos in the list first.",
             )
             return
+        # No confirmation dialog: the global Apply checkbox is the gate —
+        # unticked runs a dry-run preview in the Output panel first, same
+        # as every other command this tab shells out to. Removing only
+        # edits Random.ini's FileList/RandomList; the video files
+        # themselves are never touched, so there's nothing here a preview
+        # doesn't already cover.
         filenames = [tree.item(iid, "text") for iid in sel]
-        if len(filenames) == 1:
-            prompt = (
-                f"Remove {filenames[0]!r} from Random.ini's FileList/RandomList?\n\n"
-                "The video file itself is left on disk — this only stops the "
-                "randomizer from picking it. Add it back any time with "
-                "'Add video(s)…'."
-            )
-        else:
-            listing = "\n".join(f"  • {f}" for f in filenames)
-            prompt = (
-                f"Remove these {len(filenames)} videos from Random.ini's "
-                f"FileList/RandomList?\n\n{listing}\n\n"
-                "The video files themselves are left on disk — this only "
-                "stops the randomizer from picking them. Add them back any "
-                "time with 'Add video(s)…'."
-            )
-        if not self.messagebox.askyesno("Remove from randomizer?", prompt):
-            return
         args = ["introvideo", "remove"] + filenames
         if self._global_apply_var.get():
             args.append("--apply")
