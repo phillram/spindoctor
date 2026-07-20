@@ -366,6 +366,120 @@ def build_rain(
     return animation
 
 
+def build_rainbow_scroll(
+    controllers: list[LwaxController],
+    order: "list[str]",
+    total_frames: int = 96,
+    cycles: int = 1,
+    duration_ms: int = 40,
+    saturation: float = 1.0,
+    value: float = 1.0,
+) -> LwaxAnimation:
+    """A continuous hue gradient across ``order`` (one label per position)
+    that scrolls over time, instead of one solid color sweeping.
+
+    Each position's hue is offset from its neighbors by ``1 / len(order)``
+    of the color wheel; every frame nudges the whole gradient forward by
+    ``1 / total_frames`` of a cycle, so after ``total_frames`` frames it has
+    scrolled exactly ``cycles`` full trips around the wheel and loops
+    seamlessly.
+    """
+    import colorsys
+
+    if not order:
+        raise ValueError("Need at least 1 label in order.")
+    animation = LwaxAnimation(controllers)
+    unknown = set(order) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+
+    n = len(order)
+    for frame in range(total_frames):
+        phase = (frame / total_frames) * cycles
+        colors = {}
+        for i, label in enumerate(order):
+            hue = ((i / n) + phase) % 1.0
+            r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
+            colors[label] = (round(r * 48), round(g * 48), round(b * 48))
+        animation.add_frame(duration_ms, colors)
+    return animation
+
+
+def build_fill(
+    controllers: list[LwaxController],
+    groups: "list[list[str]]",
+    fill_color: Color,
+    flash_color: "Optional[Color]" = (48, 48, 48),
+    frames_per_step: int = 4,
+    duration_ms: int = 40,
+    hold_frames: int = 20,
+    flash_cycles: int = 2,
+    flash_frames: int = 6,
+) -> LwaxAnimation:
+    """Fills ``groups`` in order (each already-lit group stays lit as the
+    next one joins — an accumulating bar, not a moving dot), holds at full
+    for ``hold_frames``, flashes ``flash_color`` a few times, then the whole
+    animation loops back to empty and starts filling again.
+
+    Pass ``flash_color=None`` to skip the flash and just hold, then reset.
+    """
+    if not groups:
+        raise ValueError("Need at least 1 group.")
+    animation = LwaxAnimation(controllers)
+    all_labels = [label for group in groups for label in group]
+    unknown = set(all_labels) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+
+    off = (0, 0, 0)
+    lit_so_far: "list[str]" = []
+    for group in groups:
+        lit_so_far.extend(group)
+        for _ in range(frames_per_step):
+            colors = {label: off for label in all_labels}
+            for label in lit_so_far:
+                colors[label] = fill_color
+            animation.add_frame(duration_ms, colors)
+
+    full = {label: fill_color for label in all_labels}
+    empty = {label: off for label in all_labels}
+    for _ in range(hold_frames):
+        animation.add_frame(duration_ms, full)
+
+    if flash_color is not None:
+        flash = {label: flash_color for label in all_labels}
+        for _ in range(flash_cycles):
+            for _ in range(flash_frames):
+                animation.add_frame(duration_ms, flash)
+            for _ in range(flash_frames):
+                animation.add_frame(duration_ms, empty)
+    return animation
+
+
+def merge_animations(animation: LwaxAnimation, *others: LwaxAnimation) -> LwaxAnimation:
+    """Combine frame-synchronized animations (same controllers, same frame
+    count and per-frame durations) into one, by layering each frame's
+    per-label colors — later animations' non-off colors take precedence on
+    a shared label. Useful for independent effects meant to play at once,
+    e.g. two waves racing outward from a shared center in opposite
+    directions with different colors.
+    """
+    all_animations = (animation, *others)
+    lengths = {len(a.frames) for a in all_animations}
+    if len(lengths) != 1:
+        raise ValueError(f"All animations must have the same frame count, got {sorted(lengths)}")
+
+    merged = LwaxAnimation(animation.controllers)
+    resolved_lists = [a._resolved_colors() for a in all_animations]
+    off = (0, 0, 0)
+    for i in range(len(animation.frames)):
+        combined: "dict[str, Color]" = {}
+        for resolved in resolved_lists:
+            combined.update({k: v for k, v in resolved[i].items() if v != off})
+        merged.add_frame(animation.frames[i].duration_ms, combined)
+    return merged
+
+
 def resolve_input_map_path(config: Config) -> Path:
     if not config.ledblinky_dir:
         raise ValueError(
