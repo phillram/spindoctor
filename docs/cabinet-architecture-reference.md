@@ -1834,10 +1834,10 @@ Key points (these are the things the old ASCII diagram got wrong or omitted):
 | P1 Button 1 | `P1B1` | pin35 | `A` | 1 : 28-30 | `input_player1_b` |
 | P1 Button 2 | `P1B2` | pin34 | `B` | 1 : 25-27 | `input_player1_a` |
 | P1 Button 3 | `P1B3` | pin33 | `C` | 1 : 22-24 | `input_player1_y` |
-| P1 Button 4 | `P1B4` | pin32 | `V` | 1 : 40-42 | — |
-| P1 Button 5 | `P1B5` | pin29 | `D` | 1 : 37-39 | `input_player1_x` |
-| P1 Button 6 | `P1B6` | pin28 | `E` | 1 : 34-36 | `input_player1_l` |
-| P1 Button 7 | `P1B7` | pin27 | `F` | 1 : 19-21 | `input_player1_r` |
+| P1 Button 4 | `P1B4` | pin32 | `V` | 1 : 19-21 | — |
+| P1 Button 5 | `P1B5` | pin29 | `D` | 1 : 40-42 | `input_player1_x` |
+| P1 Button 6 | `P1B6` | pin28 | `E` | 1 : 37-39 | `input_player1_l` |
+| P1 Button 7 | `P1B7` | pin27 | `F` | 1 : 34-36 | `input_player1_r` |
 | P1 Button 8 | `P1B8` | pin26 | `W` | 1 : 31-33 | — |
 | P2 Joystick Up | *(no LED)* | pin17 | `N` | — | `input_player2_up` |
 | P2 Joystick Down | *(no LED)* | pin16 | `Q` | — | `input_player2_down` |
@@ -1848,15 +1848,19 @@ Key points (these are the things the old ASCII diagram got wrong or omitted):
 | P2 Button 1 | `P2B1` | pin15 | `G` | 2 : 16-18 | `input_player2_b` |
 | P2 Button 2 | `P2B2` | pin14 | `H` | 2 : 19-21 | `input_player2_a` |
 | P2 Button 3 | `P2B3` | pin13 | `I` | 2 : 22-24 | `input_player2_y` |
-| P2 Button 4 | `P2B4` | pin12 | `Y` | 2 : 28-30 | — |
-| P2 Button 5 | `P2B5` | pin09 | `J` | 2 : 31-33 | `input_player2_x` |
-| P2 Button 6 | `P2B6` | pin08 | `K` | 2 : 34-36 | `input_player2_l` |
-| P2 Button 7 | `P2B7` | pin07 | `L` | 2 : 25-27 | `input_player2_r` |
+| P2 Button 4 | `P2B4` | pin12 | `Y` | 2 : 25-27 | — |
+| P2 Button 5 | `P2B5` | pin09 | `J` | 2 : 28-30 | `input_player2_x` |
+| P2 Button 6 | `P2B6` | pin08 | `K` | 2 : 31-33 | `input_player2_l` |
+| P2 Button 7 | `P2B7` | pin07 | `L` | 2 : 34-36 | `input_player2_r` |
 | P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
 
 35 rows: the 27 LED-equipped controls plus the 8 joystick-direction keys, which have a pin/key but no LED to drive. "PAC-LED64 board:ports" is `<board Id> : <port range>` straight from `LEDBlinkyInputMap.xml` — the exact addressing every `.lwax` builder in `spindoctor/lwax.py` uses. If this table, the physical position table above, and `LEDBlinkyInputMap.xml` itself ever disagree on a control's board/port, trust `LEDBlinkyInputMap.xml` (it's what the animation tooling actually reads) and treat this table as stale — file it the same way the earlier bugs on this page were caught.
 
-**Provenance and the one known upstream error.** The pin/key columns were **independently confirmed by direct button-press testing** — every value verified by physically pressing each button and checking what key it sends, not just decoded from the WinIPAC EEPROM export. This resolved a real-looking discrepancy: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute disagrees with this table for Buttons 4-6 on both players (it records `KEYCODE_D` for the port labeled `P1B4`, where testing confirms Button 4 sends `V` and `D` belongs to Button 5; Buttons 1-3 already agreed). **This table is correct; `LEDBlinkyInputMap.xml`'s `inputCodes` field is wrong for Buttons 4-6 on both players.** That field is optional metadata the LedBlinky Animation Editor uses for its own reference (*"For the animation editor, Input Codes are not required"*) — nothing that drives real-time LED lighting or any `.lwax` animation reads it (those address ports by `label`/position, never `inputCodes`), so the error is harmless. Worth fixing in `LEDBlinkyInputMap.xml` for hygiene, but nothing depends on it.
+**Provenance and a corrected error — Buttons 4/5/6/7's PAC-LED64 ports were mislabeled.** The pin/key columns were **independently confirmed by direct button-press testing** — every value verified by physically pressing each button and checking what key it sends, not just decoded from the WinIPAC EEPROM export. Pin/key were never wrong.
+
+The **board:ports** column for `P1B4`/`P1B5`/`P1B6`/`P1B7` and `P2B4`/`P2B5`/`P2B6`/`P2B7` *was* wrong, in both boards' `LEDBlinkyInputMap.xml`, in the same pattern: each of those four labels sat one port-group off from where it actually lit — `P1B4`'s LED was really wired to the port labeled `P1B5`, `P1B5`'s to `P1B6`, `P1B6`'s to `P1B7`, and `P1B7`'s to `P1B4` (a 4-way rotation; same rotation on both boards). `P1B8`/`P2B8` and Buttons 1-3 were never affected.
+
+This was first hinted at, then missed: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute for the port labeled `P1B4` records `KEYCODE_D`, but direct testing had already confirmed Button 4 sends `V` and `D` belongs to Button 5. At the time, `inputCodes` was judged to be the stale field, since it's optional metadata the Animation Editor uses for its own reference and nothing that drives real-time LED lighting reads it — that conclusion was backwards. **`inputCodes` was correctly reporting which physical button that port really lights; the port's `label` attribute — the field every `.lwax` animation actually addresses by — was the one that was wrong.** Confirmed conclusively via a one-at-a-time calibration `.lwax` (every LED-equipped control lit alone in sequence, watched live on the cabinet): the reported lighting order matched the `inputCodes` hint exactly, an independent third confirmation alongside the pin/key testing and the `inputCodes` values themselves. Fixed by correcting the `label` attribute on the affected ports in `LEDBlinkyInputMap.xml` (and this table); no `inputCodes` values needed to change. All animations regenerated against the corrected map.
 
 **RetroArch action notes.** RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) that map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on. Buttons 4 and 8 for both players have no RetroArch binding yet (shown as `—`) — they send unique keys (`V`/`W`/`Y`/`X`) and can be bound to any action in a system cfg.
 
