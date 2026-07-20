@@ -36,37 +36,52 @@ The CLI only builds a **uniform color-cycle fade** across the chosen controls. F
 
 - `LwaxAnimation.add_frame(duration_ms, {label: (r, g, b), ...})` — fully generic per-frame, per-control primitive. Everything else is built on this.
 - `build_color_cycle(controllers, colors, steps_per_leg, duration_ms, labels)` — uniform fade through N colors (what the CLI wraps).
-- `build_wave(controllers, groups, lead_color, trail_color=None, lag=1, frames_per_step, duration_ms)` — moves a leading color (plus an optional trailing second color a few groups behind) across an ordered list of label-groups, wrapping continuously. `groups[i]` is "whatever occupies position i" — reuse this same function for left/right sweeps, up/down sweeps, *and* radial pulses; direction is entirely the order `groups` is passed in (reverse the list to reverse direction, no separate flag).
-- `build_rain(controllers, drop_groups, colors, frames_per_step, total_frames, min_gap_frames, max_gap_frames, seed)` — independent, randomly-timed drop sequences per group (each lights its labels in order, e.g. top-then-bottom), so multiple columns flash out of sync. Deterministic given `seed` — regenerating with "make it slower" just means changing one parameter, output is otherwise identical.
+- `build_wave(controllers, groups, lead_color, trail_color=None, lag=1, frames_per_step, duration_ms)` — moves a leading color (plus an optional trailing second color a few groups behind) across an ordered list of label-groups, wrapping continuously. `groups[i]` is "whatever occupies position i" — reuse this same function for left/right sweeps, up/down sweeps, radial pulses, a Cylon-style scanner (double the group list as `groups + groups[-2:0:-1]` to ping-pong instead of wrap), and a "cyclone"/racetrack loop (concatenate two parallel rows, one forward + one reversed).
+- `build_rain(controllers, drop_groups, colors, frames_per_step, total_frames, min_gap_frames, max_gap_frames, seed)` — independent, randomly-timed drop sequences per group (each lights its labels in order, e.g. top-then-bottom), so multiple columns flash out of sync. Deterministic given `seed` — regenerating with "make it slower" just means changing one parameter, output is otherwise identical. Passing one-label-per-group (instead of multi-row columns) turns this into a confetti/twinkle effect instead of rain.
+- `build_rainbow_scroll(controllers, order, total_frames, cycles, duration_ms, saturation, value)` — a continuous hue gradient across `order`, scrolling over time (uses `colorsys.hsv_to_rgb`), instead of one solid color sweeping.
+- `build_fill(controllers, groups, fill_color, flash_color, frames_per_step, hold_frames, flash_cycles, flash_frames)` — accumulating fill (each group joins and *stays* lit, unlike `build_wave`), holds full, flashes, then the whole file loops back to empty and refills.
+- `merge_animations(animation, *others)` — layers multiple frame-synchronized animations into one (later non-off colors win per label). Use for independent effects meant to play at once, e.g. two `build_wave` calls racing outward from a shared center in different colors.
 
-### This cabinet's layout groups (inferred from the panel diagram + pin table in the arch doc — confirm with the user before trusting blindly, cheap to redo if wrong)
+### This cabinet's layout groups
 
-**Columns, left to right** (14 groups — use for left/right sweeps, and as the ring order for a trackball-centered radial pulse: ring 0 = column 1):
+Getting this right from a text description alone is genuinely hard — the first attempt at this (an ASCII table) needed two rounds of correction against a rendered visual preview before it matched the real hardware. **Render a visual diagram (HTML artifact, one cell per control, grouped/colored by player) and get explicit confirmation before generating more than one or two files against a layout description**, especially for anything ring/perimeter-based where one wrong position skews everything derived from it. Don't trust an ASCII table's column alignment across different rows as meaningful — cross-row alignment in a markdown table is usually accidental spacing, not physical position (confirmed on this cabinet: several admin-row cells lined up with button-row cells that aren't actually above them).
+
+Confirmed layout (2 correction rounds in): the trackball sits in the **same row** as the joysticks/action buttons — not the admin row — but in the column between `SELECT` and `EXIT`. Start/Coin are their own outboard columns, not stacked above the joystick/B1 columns. Left Click/Right Click sit next to `SELECT`, not next to the trackball.
 
 ```python
-COLUMNS = [
-    ["TRACKBALL", "LMOUSE", "RMOUSE"],
-    ["P1COIN"], ["P1START"],
-    ["P1B1", "P1B5"], ["P1B2", "P1B6"], ["P1B3", "P1B7"], ["P1B4", "P1B8"],
-    ["SELECT", "EXIT", "SEARCH", "PAUSE"],
-    ["P2B1", "P2B5"], ["P2B2", "P2B6"], ["P2B3", "P2B7"], ["P2B4", "P2B8"],
-    ["P2COIN"], ["P2START"],
+# Left-to-right column order. Single source of truth: ROWS, RADIAL_RINGS, and
+# CYCLONE_LOOP below are all derived from this instead of hand-listed, so a
+# future correction only has to happen in one place.
+LEFT_RIGHT_ORDER = [
+    "P1START", "P1COIN",
+    "P1B1", "P1B2", "P1B3", "P1B4",
+    "LMOUSE", "RMOUSE", "SELECT", "TRACKBALL", "EXIT", "SEARCH", "PAUSE",
+    "P2B1", "P2B2", "P2B3", "P2B4",
+    "P2COIN", "P2START",
 ]
-```
 
-**Rows, top to bottom** (only 3 bands exist — this cabinet's button grid has just 2 rows per player):
-
-```python
-ROW_ABOVE = ["TRACKBALL", "LMOUSE", "RMOUSE", "P1COIN", "P1START",
-             "SELECT", "EXIT", "SEARCH", "PAUSE", "P2COIN", "P2START"]
-ROW_TOP = ["P1B1", "P1B2", "P1B3", "P1B4", "P2B1", "P2B2", "P2B3", "P2B4"]
+# 3 vertical bands -- this cabinet's button grid only has 2 rows per player,
+# so a real up/down sweep only ever has 3 meaningfully distinct steps.
+ROW_ABOVE = ["P1START", "P1COIN", "LMOUSE", "RMOUSE", "SELECT", "EXIT", "SEARCH", "PAUSE", "P2COIN", "P2START"]
+ROW_TOP = ["P1B1", "P1B2", "P1B3", "P1B4", "TRACKBALL", "P2B1", "P2B2", "P2B3", "P2B4"]
 ROW_BOTTOM = ["P1B5", "P1B6", "P1B7", "P1B8", "P2B5", "P2B6", "P2B7", "P2B8"]
 ROWS = [ROW_ABOVE, ROW_TOP, ROW_BOTTOM]
-```
 
-**Rain drop groups** (top-to-bottom per column; single-row controls get a degenerate 1-element "drop" so the whole panel participates, not just the two player button grids):
+# Symmetric distance-from-trackball rings, derived from LEFT_RIGHT_ORDER --
+# don't hand-list these, they're easy to get subtly wrong by inspection.
+TRACKBALL_INDEX = LEFT_RIGHT_ORDER.index("TRACKBALL")
+_ring_map = {}
+for i, label in enumerate(LEFT_RIGHT_ORDER):
+    _ring_map.setdefault(abs(i - TRACKBALL_INDEX), []).append(label)
+RADIAL_RINGS = [_ring_map[d] for d in sorted(_ring_map)]
 
-```python
+# Racetrack loop for a "cyclone"/spinning effect: across the top row, then
+# back across the bottom row. Reverse the whole list for the other direction.
+CYCLONE_LOOP = [[l] for l in ROW_TOP] + [[l] for l in ROW_BOTTOM[::-1]]
+
+# Rain/confetti drop groups: top-to-bottom per 2-row column, plus a
+# degenerate 1-element "drop" for every single-row control so the whole
+# panel participates, not just the two player button grids.
 RAIN_DROP_GROUPS = [
     ["P1B1", "P1B5"], ["P1B2", "P1B6"], ["P1B3", "P1B7"], ["P1B4", "P1B8"],
     ["P2B1", "P2B5"], ["P2B2", "P2B6"], ["P2B3", "P2B7"], ["P2B4", "P2B8"],
@@ -75,7 +90,7 @@ RAIN_DROP_GROUPS = [
 ]
 ```
 
-A worked example generating 7 effects (4 directional sweeps, rain, and an outward/inward radial pulse) lives in this session's history — recreate similarly: parse the real `LEDBlinkyInputMap.xml`, call `build_wave`/`build_rain` with the groups above and whatever colors/timings are requested, validate with `xml.etree.ElementTree.fromstring()` before handing the file over.
+A worked example generating 16 effects (4 directional sweeps, rainfall, radial pulse in/out, a ping-pong "breathing" pulse, confetti, a two-color race from center, a rainbow scroll, a Cylon scanner, cyclone loops both directions, an accumulating combo-meter fill, and a heartbeat brightness pulse) lives in this session's history — recreate similarly: parse the real `LEDBlinkyInputMap.xml`, derive groups from `LEFT_RIGHT_ORDER` as above, call the relevant `build_*` function(s), validate with `xml.etree.ElementTree.fromstring()` before handing files over.
 
 ## Step 2 — sign it (manual, on the cabinet, every time)
 
@@ -96,4 +111,4 @@ If the resulting animation looks right except some buttons stay a static color (
 
 ## Tests
 
-`tests/test_lwax.py` covers the parser, the generic builder, and all three presets (`build_color_cycle`, `build_wave`, `build_rain`) against a small synthetic `LEDBlinkyInputMap.xml`. Run `python3 -m pytest tests/test_lwax.py -q` after touching `spindoctor/lwax.py`.
+`tests/test_lwax.py` covers the parser, the generic builder, and all presets (`build_color_cycle`, `build_wave`, `build_rain`, `build_rainbow_scroll`, `build_fill`, `merge_animations`) against a small synthetic `LEDBlinkyInputMap.xml`. Run `python3 -m pytest tests/test_lwax.py -q` after touching `spindoctor/lwax.py`.

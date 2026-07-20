@@ -9,9 +9,12 @@ import pytest
 from spindoctor.lwax import (
     LwaxAnimation,
     build_color_cycle,
+    build_fill,
     build_rain,
+    build_rainbow_scroll,
     build_wave,
     controls_by_label,
+    merge_animations,
     parse_input_map,
 )
 
@@ -284,3 +287,107 @@ def test_build_rain_rejects_unknown_label(input_map_path):
     controllers = parse_input_map(input_map_path)
     with pytest.raises(ValueError, match="Unknown control label"):
         build_rain(controllers, [["NOPE"]], colors=[(48, 0, 0)])
+
+
+# ─── build_rainbow_scroll ───────────────────────────────────────────────────────
+
+def test_build_rainbow_scroll_frame_count(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    anim = build_rainbow_scroll(controllers, ["P1B1", "P1B2", "COIN"], total_frames=30)
+    assert len(anim.frames) == 30
+
+
+def test_build_rainbow_scroll_hues_spread_across_labels(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    anim = build_rainbow_scroll(controllers, ["P1B1", "P1B2", "COIN"], total_frames=12)
+    resolved = anim._resolved_colors()
+    # At frame 0, the 3 labels should have 3 distinct colors (spread evenly
+    # around the hue wheel), not all the same.
+    frame0_colors = {resolved[0]["P1B1"], resolved[0]["P1B2"], resolved[0]["COIN"]}
+    assert len(frame0_colors) == 3
+
+
+def test_build_rainbow_scroll_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_rainbow_scroll(controllers, ["NOPE"])
+
+
+def test_build_rainbow_scroll_rejects_empty_order(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 label"):
+        build_rainbow_scroll(controllers, [])
+
+
+# ─── build_fill ────────────────────────────────────────────────────────────────
+
+def test_build_fill_accumulates_without_clearing_earlier_groups(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red = (48, 0, 0)
+    anim = build_fill(
+        controllers, [["P1B1"], ["P1B2"], ["COIN"]], fill_color=red,
+        frames_per_step=1, hold_frames=1, flash_color=None,
+    )
+    resolved = anim._resolved_colors()
+    # After the 3rd group joins, all 3 should still be lit (accumulating fill).
+    assert resolved[2]["P1B1"] == red
+    assert resolved[2]["P1B2"] == red
+    assert resolved[2]["COIN"] == red
+    # Before the 2nd group joins, only the 1st should be lit.
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["P1B2"] == (0, 0, 0)
+
+
+def test_build_fill_flashes_then_holds(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red, white = (48, 0, 0), (48, 48, 48)
+    anim = build_fill(
+        controllers, [["P1B1"]], fill_color=red, flash_color=white,
+        frames_per_step=1, hold_frames=2, flash_cycles=1, flash_frames=2,
+    )
+    # 1 fill frame + 2 hold frames + 2 flash-on + 2 flash-off = 7 frames.
+    assert len(anim.frames) == 7
+    resolved = anim._resolved_colors()
+    assert resolved[0]["P1B1"] == red        # filling
+    assert resolved[1]["P1B1"] == red        # holding
+    assert resolved[3]["P1B1"] == white       # flash on
+    assert resolved[5]["P1B1"] == (0, 0, 0)  # flash off
+
+
+def test_build_fill_rejects_empty_groups(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 group"):
+        build_fill(controllers, [], fill_color=(48, 0, 0))
+
+
+def test_build_fill_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_fill(controllers, [["NOPE"]], fill_color=(48, 0, 0))
+
+
+# ─── merge_animations ───────────────────────────────────────────────────────────
+
+def test_merge_animations_combines_disjoint_labels(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red, blue = (48, 0, 0), (0, 0, 48)
+    anim1 = build_wave(controllers, [["P1B1"], ["P1B2"]], lead_color=red, frames_per_step=1)
+    anim2 = build_wave(controllers, [["COIN"]], lead_color=blue, frames_per_step=1)
+    # anim2 only has 1 group -> 1 frame; pad it to match anim1's 2 frames by
+    # building with a repeated group instead.
+    anim2 = build_wave(controllers, [["COIN"], ["COIN"]], lead_color=blue, frames_per_step=1)
+
+    merged = merge_animations(anim1, anim2)
+    resolved = merged._resolved_colors()
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["COIN"] == blue
+    assert resolved[1]["P1B2"] == red
+    assert resolved[1]["COIN"] == blue
+
+
+def test_merge_animations_rejects_mismatched_frame_counts(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    anim1 = build_wave(controllers, [["P1B1"], ["P1B2"]], lead_color=(48, 0, 0), frames_per_step=1)
+    anim2 = build_wave(controllers, [["COIN"]], lead_color=(0, 0, 48), frames_per_step=1)
+    with pytest.raises(ValueError, match="same frame count"):
+        merge_animations(anim1, anim2)

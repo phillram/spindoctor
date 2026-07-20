@@ -2382,3 +2382,18 @@ The stuck buttons were exactly HyperSpin's front-end navigation set (Select, Exi
 **Trade-off is real and inherent, not a limitation of this cabinet's config:** with `LightFEControls=1`, the overridden buttons always show a *static* color (whatever the FE Controls Editor defines, default white if undefined) — never the running animation. There is no combination of settings that lets a button both show a custom "this button is usable" color *and* participate in the synced animation loop; it's Fixed-color to indicate usability (`LightFEControls=1`) or full-panel synced animation (`LightFEControls=0`), not both at once. SpinDoctor does not currently manage the FE Controls Editor's `LEDBlinkyControls.xml` section — only the per-game/per-emulator sections via `ledblinky generate`/`fill-defaults`/`colors sync-players`.
 
 Separately, the Animation Editor's own **Run LED Animation** live-preview button flashed/didn't fade cleanly on this cabinet, while playback through the real HyperSpin/LedBlinky.exe path was smooth. Treat the editor's live-hardware preview as unreliable for judging timing — verify by assigning the file and watching it play through the actual frontend instead.
+
+### Physical control panel layout (for sweeps, rain, radial pulses, and other spatial animations)
+
+`LEDBlinkyInputMap.xml` gives port/label assignments but says nothing about physical *position* — no coordinates, no notion of which controls are adjacent. Building anything spatial (a left-to-right sweep, a pulse radiating from the trackball, rain falling top-to-bottom) needs that position data from somewhere else.
+
+**This turned out to be genuinely hard to convey in text.** The first attempt — an ASCII table — needed two rounds of correction against a rendered visual diagram before it matched the real hardware. Lesson for next time: **render a visual diagram (an HTML artifact with one cell per control, grouped/colored by player) and get it confirmed before generating more than one or two files against a layout description** — especially before anything ring/perimeter-derived, where a single wrong position skews everything built on top of it. Also: don't trust an ASCII table's column alignment *across different rows* as meaningful. Several admin-row cells in the first draft happened to land in the same text-column as button-row cells several rows below — that was incidental spacing from typing a markdown table, not a claim about physical position, and reading it as intentional produced a wrong first guess (an oversized trackball glyph incorrectly drawn spanning up into the admin row).
+
+**Confirmed layout** (2 correction rounds in):
+
+- The trackball sits in the **same row** as the joysticks and the 4 action buttons — not the admin row above it — in the column between `SELECT` and `EXIT`.
+- `P1START`/`P1COIN` (and mirrored `P2COIN`/`P2START`) are their own outboard columns, further out than the joystick/B1 columns — not stacked directly above them.
+- `LMOUSE`/`RMOUSE` (Left/Right Click) sit immediately next to `SELECT`, not next to the trackball.
+- The button grid is only 2 rows deep per player, so an up/down sweep only ever has 3 meaningfully distinct vertical bands: an "above" strip (trackball's row is *not* part of this — see above), the top button row, and the bottom button row.
+
+The reference groupings derived from this (`LEFT_RIGHT_ORDER`, `ROWS`, `RADIAL_RINGS`, `CYCLONE_LOOP`, `RAIN_DROP_GROUPS`) live in `.claude/skills/lwax-animation/SKILL.md` rather than duplicated here, since they're consumed directly as Python data when generating new animations.
