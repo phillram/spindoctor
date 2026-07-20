@@ -1790,16 +1790,16 @@ The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). I
 
 > **Confirmed against an actual photo of the panel** — a hand-drawn ASCII diagram was the original source here and got the Coin/Start order and Player 2's Coin/Start position wrong; box-drawing characters are also just hard to keep precisely column-aligned by hand. A table is the more reliable format for something this position-sensitive, so it replaced the diagram. See [LEDBlinky Animation Files (.lwax) → Physical control panel layout](#ledblinky-animation-files-lwax) for the story of how that got sorted out (short version: ask for a photo before trusting any text description of hardware layout, even one already confirmed once against a rendered diagram).
 
-**This is one of the two source-of-truth tables for this cabinet's controls.** It owns *physical position only* — where each control sits. Every other per-control fact (the key it sends, its Mini-PAC pin, its PAC-LED64 board/port, its RetroArch action) lives in exactly one other place, the [Master control reference](#master-control-reference) directly below. Keeping position separate from the rest, each fact stated once, is deliberate: every wrong-data problem on this page came from the same fact being restated in two tables that then silently drifted apart.
+**This is one of the two source-of-truth tables for this cabinet's controls.** It owns *physical position*, and, for convenience, repeats each control's key underneath its name. Every other per-control fact (Mini-PAC pin, PAC-LED64 board/port, RetroArch action) lives in exactly one place, the [Master control reference](#master-control-reference) directly below — **and if the key shown here ever disagrees with the key in that table, the Master control reference wins**; this table's key is a convenience copy, not a second source of truth for it.
 
-Left to right, by column. A cell spanning two rows in the same column means those controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick). Cells use each control's name as it appears in the Master control reference below — look a control up there for its key, pin, LED port, and RetroArch action.
+Left to right, by column. A cell spanning two rows in the same column means those controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick). Cells use each control's name as it appears in the Master control reference below, with the key it sends in parentheses — look a control up there for its pin, LED port, and RetroArch action.
 
 | Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Admin** | | | | | | Left Click | Right Click | Select | | Exit | Search | Pause | | | | | |
-| **Coin / Start** | P1 Start | P1 Coin | | | | | | | | | | | | | P2 Start | P2 Coin | |
-| **Top** (joystick, B1–4, trackball) | P1 Joystick | P1 B1 | P1 B2 | P1 B3 | P1 B4 | | | | Trackball | | | | P2 Joystick | P2 B1 | P2 B2 | P2 B3 | P2 B4 |
-| **Bottom** (B5–8) | | P1 B5 | P1 B6 | P1 B7 | P1 B8 | | | | | | | | | P2 B5 | P2 B6 | P2 B7 | P2 B8 |
+| **Admin** | | | | | | Left Click | Right Click | Select (`Enter`) | | Exit (`Escape`) | Search (`/`) | Pause (`P`) | | | | | |
+| **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
+| **Top** (joystick, B1–4, trackball) | P1 Joystick (`↑↓←→`) | P1 B1 (`A`) | P1 B2 (`B`) | P1 B3 (`C`) | P1 B4 (`V`) | | | | Trackball | | | | P2 Joystick (`N`/`Q`/`M`/`O`) | P2 B1 (`G`) | P2 B2 (`H`) | P2 B3 (`I`) | P2 B4 (`Y`) |
+| **Bottom** (B5–8) | | P1 B5 (`D`) | P1 B6 (`E`) | P1 B7 (`F`) | P1 B8 (`W`) | | | | | | | | | P2 B5 (`J`) | P2 B6 (`K`) | P2 B7 (`L`) | P2 B8 (`X`) |
 
 Key points (these are the things the old ASCII diagram got wrong or omitted):
 
