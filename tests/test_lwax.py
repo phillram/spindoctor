@@ -9,6 +9,8 @@ import pytest
 from spindoctor.lwax import (
     LwaxAnimation,
     build_color_cycle,
+    build_rain,
+    build_wave,
     controls_by_label,
     parse_input_map,
 )
@@ -185,3 +187,100 @@ def test_build_color_cycle_rejects_unknown_label(input_map_path):
     controllers = parse_input_map(input_map_path)
     with pytest.raises(ValueError, match="Unknown control label"):
         build_color_cycle(controllers, [(48, 0, 0), (0, 48, 0)], labels=["NOPE"])
+
+
+# ─── build_wave ────────────────────────────────────────────────────────────────
+
+def test_build_wave_leading_edge_advances_through_groups(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    groups = [["P1B1"], ["P1B2"], ["COIN"]]
+    red = (48, 0, 0)
+    anim = build_wave(controllers, groups, lead_color=red, frames_per_step=2)
+
+    assert len(anim.frames) == 3 * 2  # 3 groups * 2 frames_per_step
+    resolved = anim._resolved_colors()
+    # Frames 0-1: P1B1 lit. Frames 2-3: P1B2 lit, P1B1 off (no trail set).
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["P1B2"] == (0, 0, 0)
+    assert resolved[2]["P1B2"] == red
+    assert resolved[2]["P1B1"] == (0, 0, 0)
+    assert resolved[4]["COIN"] == red
+
+
+def test_build_wave_trail_color_follows_behind(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    groups = [["P1B1"], ["P1B2"], ["COIN"]]
+    red, blue = (48, 0, 0), (0, 0, 48)
+    anim = build_wave(
+        controllers, groups, lead_color=red, trail_color=blue, lag=1, frames_per_step=1
+    )
+    resolved = anim._resolved_colors()
+    # At position 1 (P1B2 leads), the trail (lag=1) should be on P1B1.
+    assert resolved[1]["P1B2"] == red
+    assert resolved[1]["P1B1"] == blue
+    # Wraps around: at position 0 (P1B1 leads), trail wraps to the last group (COIN).
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["COIN"] == blue
+
+
+def test_build_wave_reversed_groups_reverses_direction(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    groups = [["P1B1"], ["P1B2"], ["COIN"]]
+    red = (48, 0, 0)
+    forward = build_wave(controllers, groups, lead_color=red, frames_per_step=1)
+    backward = build_wave(controllers, groups[::-1], lead_color=red, frames_per_step=1)
+
+    forward_resolved = forward._resolved_colors()
+    backward_resolved = backward._resolved_colors()
+    assert forward_resolved[0]["P1B1"] == red
+    assert backward_resolved[0]["COIN"] == red
+
+
+def test_build_wave_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_wave(controllers, [["NOPE"]], lead_color=(48, 0, 0))
+
+
+def test_build_wave_rejects_empty_groups(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 group"):
+        build_wave(controllers, [], lead_color=(48, 0, 0))
+
+
+# ─── build_rain ────────────────────────────────────────────────────────────────
+
+def test_build_rain_is_deterministic_given_seed(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    groups = [["P1B1"], ["P1B2"]]
+    red = (48, 0, 0)
+    anim1 = build_rain(controllers, groups, colors=[red], total_frames=50, seed=42)
+    anim2 = build_rain(controllers, groups, colors=[red], total_frames=50, seed=42)
+    assert anim1._resolved_colors() == anim2._resolved_colors()
+
+
+def test_build_rain_different_seeds_differ(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    groups = [["P1B1"], ["P1B2"]]
+    red = (48, 0, 0)
+    anim1 = build_rain(controllers, groups, colors=[red], total_frames=200, seed=1)
+    anim2 = build_rain(controllers, groups, colors=[red], total_frames=200, seed=2)
+    assert anim1._resolved_colors() != anim2._resolved_colors()
+
+
+def test_build_rain_produces_correct_frame_count(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    anim = build_rain(controllers, [["P1B1"]], colors=[(48, 0, 0)], total_frames=123)
+    assert len(anim.frames) == 123
+
+
+def test_build_rain_rejects_empty_colors(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 color"):
+        build_rain(controllers, [["P1B1"]], colors=[])
+
+
+def test_build_rain_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_rain(controllers, [["NOPE"]], colors=[(48, 0, 0)])
