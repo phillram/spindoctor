@@ -262,6 +262,110 @@ def build_color_cycle(
     return animation
 
 
+def build_wave(
+    controllers: list[LwaxController],
+    groups: "list[list[str]]",
+    lead_color: Color,
+    trail_color: "Optional[Color]" = None,
+    lag: int = 1,
+    frames_per_step: int = 6,
+    duration_ms: int = 40,
+) -> LwaxAnimation:
+    """A traveling front over ``groups``, in the order given, wrapping
+    around continuously (LedBlinky loops a full animation file, confirmed
+    by observing this cabinet's existing FE-active fade).
+
+    ``groups[i]`` is the list of control labels occupying "position i" —
+    e.g. one visual column for a left/right sweep, one row for up/down, or
+    one concentric ring for a radial pulse. Direction is entirely encoded
+    by the order of ``groups``: pass the same groups reversed to reverse
+    the sweep/pulse direction, no separate flag needed.
+
+    With ``trail_color`` set, a second color follows ``lag`` positions
+    behind the leading one (a two-color chase); leave it ``None`` for a
+    single traveling color with nothing following it (a bare pulse/comet).
+    Every label not currently at the front or trail position is off.
+    """
+    animation = LwaxAnimation(controllers)
+    n = len(groups)
+    if n == 0:
+        raise ValueError("Need at least 1 group.")
+    all_labels = [label for group in groups for label in group]
+    unknown = set(all_labels) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+    off = (0, 0, 0)
+
+    for pos in range(n):
+        for _step in range(frames_per_step):
+            colors = {label: off for label in all_labels}
+            for label in groups[pos % n]:
+                colors[label] = lead_color
+            if trail_color is not None:
+                for label in groups[(pos - lag) % n]:
+                    colors[label] = trail_color
+            animation.add_frame(duration_ms, colors)
+    return animation
+
+
+def build_rain(
+    controllers: list[LwaxController],
+    drop_groups: "list[list[str]]",
+    colors: "list[Color]",
+    frames_per_step: int = 5,
+    duration_ms: int = 40,
+    total_frames: int = 600,
+    min_gap_frames: int = 10,
+    max_gap_frames: int = 60,
+    seed: int = 0,
+) -> LwaxAnimation:
+    """Independent, randomly-timed "drops" per group, each lighting its
+    labels in order (e.g. top button then bottom button) a step at a time,
+    to simulate rain falling out of sync across the panel.
+
+    ``drop_groups[i]`` is one drop's ordered label sequence (top to
+    bottom). Each group gets its own randomized schedule of drop start
+    times spaced ``min_gap_frames``-``max_gap_frames`` apart; drops from
+    different groups overlap freely, which is what reads as "rain" rather
+    than a synchronized chase. ``colors`` is a palette — each drop picks
+    one at random. Deterministic given ``seed``, so a request to "make it
+    slower" or "add more colors" can be regenerated exactly except for the
+    requested change.
+    """
+    import random
+
+    if not colors:
+        raise ValueError("Need at least 1 color.")
+    animation = LwaxAnimation(controllers)
+    all_labels = [label for group in drop_groups for label in group]
+    unknown = set(all_labels) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+
+    rng = random.Random(seed)
+    off = (0, 0, 0)
+    # schedule[i] = list of (start_frame, color) for drop_groups[i]
+    schedule: "list[list[tuple[int, Color]]]" = []
+    for _ in drop_groups:
+        drops = []
+        t = rng.randint(0, max_gap_frames)
+        while t < total_frames:
+            drops.append((t, colors[rng.randrange(len(colors))]))
+            t += rng.randint(min_gap_frames, max_gap_frames)
+        schedule.append(drops)
+
+    for frame in range(total_frames):
+        frame_colors = {label: off for label in all_labels}
+        for group, drops in zip(drop_groups, schedule):
+            for start, color in drops:
+                elapsed = frame - start
+                step = elapsed // frames_per_step
+                if 0 <= step < len(group):
+                    frame_colors[group[step]] = color
+        animation.add_frame(duration_ms, frame_colors)
+    return animation
+
+
 def resolve_input_map_path(config: Config) -> Path:
     if not config.ledblinky_dir:
         raise ValueError(
