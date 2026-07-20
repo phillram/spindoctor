@@ -1790,164 +1790,31 @@ The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). I
 
 > **Confirmed against an actual photo of the panel** — a hand-drawn ASCII diagram was the original source here and got the Coin/Start order and Player 2's Coin/Start position wrong; box-drawing characters are also just hard to keep precisely column-aligned by hand. A table is the more reliable format for something this position-sensitive, so it replaced the diagram. See [LEDBlinky Animation Files (.lwax) → Physical control panel layout](#ledblinky-animation-files-lwax) for the story of how that got sorted out (short version: ask for a photo before trusting any text description of hardware layout, even one already confirmed once against a rendered diagram).
 
-Left to right, by column. A cell spanning two rows in the same column means those two controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick).
+**This is one of the two source-of-truth tables for this cabinet's controls.** It owns *physical position only* — where each control sits. Every other per-control fact (the key it sends, its Mini-PAC pin, its PAC-LED64 board/port, its RetroArch action) lives in exactly one other place, the [Master control reference](#master-control-reference) directly below. Keeping position separate from the rest, each fact stated once, is deliberate: every wrong-data problem on this page came from the same fact being restated in two tables that then silently drifted apart.
+
+Left to right, by column. A cell spanning two rows in the same column means those controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick). Cells use each control's name as it appears in the Master control reference below — look a control up there for its key, pin, LED port, and RetroArch action.
 
 | Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Admin** | | | | | | Left Click | Right Click | Select (`Enter`) | | Exit (`Esc`) | Search (`/`) | Pause (`P`) | | | | | |
-| **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
-| **Top** (joystick, B1–4, trackball) | P1 Joystick † | B1 (`A`) | B2 (`B`) | B3 (`C`) | B4 (`V`) | | | | Trackball | | | | P2 Joystick † | B1 (`G`) | B2 (`H`) | B3 (`I`) | B4 (`Y`) |
-| **Bottom** (B5–8) | | B5 (`D`) | B6 (`E`) | B7 (`F`) | B8 (`W`) | | | | | | | | | B5 (`J`) | B6 (`K`) | B7 (`L`) | B8 (`X`) |
+| **Admin** | | | | | | Left Click | Right Click | Select | | Exit | Search | Pause | | | | | |
+| **Coin / Start** | P1 Start | P1 Coin | | | | | | | | | | | | | P2 Start | P2 Coin | |
+| **Top** (joystick, B1–4, trackball) | P1 Joystick | P1 B1 | P1 B2 | P1 B3 | P1 B4 | | | | Trackball | | | | P2 Joystick | P2 B1 | P2 B2 | P2 B3 | P2 B4 |
+| **Bottom** (B5–8) | | P1 B5 | P1 B6 | P1 B7 | P1 B8 | | | | | | | | | P2 B5 | P2 B6 | P2 B7 | P2 B8 |
 
-† Each joystick has 4 direction keys, not 1 — see the **Joystick keybinds** table just below rather than trying to cram 4 keys into one grid cell.
+Key points (these are the things the old ASCII diagram got wrong or omitted):
 
-Key points the old diagram got wrong or omitted:
-
-- **Player 1**: Start sits above the joystick, Coin above Button 1 (column 1 and 2).
+- **Player 1**: Start sits above the joystick, Coin above Button 1 (columns 1 and 2).
 - **Player 2 is not a mirror image of Player 1.** Start sits above Button 2, Coin above Button 3 (columns 15 and 16) — two columns further in from the edge than Player 1's arrangement, not lined up with the joystick/B1.
 - **Both sides read Start-then-Coin left to right.** Neither side is Coin-then-Start — the previous diagram showed Player 1 as `[S][R]` (Coin, Start), which had the order backwards.
 - The trackball sits in the **same row** as the joysticks and action buttons (column 9), not off to the side or in the admin row.
-- The admin row (Left Click through Pause) is evenly spaced with no real gap — the empty column 9 in that row here is just the trackball's column showing through from the row below, not an actual gap in the admin row.
-
-Letters/keys in parentheses above are the Mini-PAC key assignments — cross-reference the [pin-to-key mapping](#pin-to-key-mapping) below for the full pin/key table.
-
-> **Fixed a pre-existing internal inconsistency while writing this table**: the Pin-to-key mapping table had pin42 listed as "Mouse Middle Button," while the Button function reference table further down already had the same pin correctly as "Right Mouse Button" / "Right click" — consistent with `LEDBlinkyInputMap.xml`'s `RMOUSE` port label and the panel photo. Not a real hardware ambiguity, just a stale typo in one of the two tables that went unnoticed until this table pulled from the wrong one. Pin-to-key mapping corrected to match.
-
-##### Joystick keybinds
-
-Each joystick has its own 4 keys — Player 1 uses the arrow keys, Player 2 uses letter keys (already part of the same A–Y letter scheme used for the buttons above):
-
-| Direction | P1 key | P2 key |
-|---|---|---|
-| Up | `↑` (Up Arrow) | `N` |
-| Down | `↓` (Down Arrow) | `Q` |
-| Left | `←` (Left Arrow) | `M` |
-| Right | `→` (Right Arrow) | `O` |
-
-> **Swop key**: hold P1 Coin (`S`) + Joystick Up/Down for Volume Up/Down, or + Select for the RetroArch Quick Menu. See [Button function reference](#button-function-reference) below for the full list.
-
-#### Letter assignments
-
-Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y  
-Letters free: Z
-
-#### Pin-to-key mapping
-
-> **Independently confirmed by direct button-press testing** (not just decoded from the WinIPAC EEPROM export — every value below was verified by physically pressing each button and checking what key it sends). This resolves an investigation that started with a genuine-looking discrepancy: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute disagrees with this table for Buttons 4-6 on both players (e.g. it records `KEYCODE_D` for the port labeled `P1B4`, where this table — now confirmed — has Button 4 sending `V` and `D` belonging to Button 5). Buttons 1-3 already agreed between the two sources; only 4+ was ever in question.
->
-> **This table is correct; `LEDBlinkyInputMap.xml`'s `inputCodes` field is wrong for Buttons 4-6 on both players.** That field is optional metadata the LedBlinky Animation Editor uses for its own reference — *"For the animation editor, Input Codes are not required"* — not something that drives real-time per-game LED lighting or anything built in the `.lwax` section below (those address LED ports by their `label`/physical position, never by `inputCodes`, so this discrepancy has no effect on any generated animation). Worth correcting in `LEDBlinkyInputMap.xml` itself at some point for hygiene, but nothing here or in the animation tooling depends on it being right.
-
-All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → key names):
-
-| Pin | Key | Logical function |
-|-----|-----|-----------------|
-| pin02 | Enter | Select / confirm |
-| pin03 | Escape | Exit |
-| pin04 | `/` | Search |
-| pin05 | P | Pause |
-| pin06 | X | P2 Button 8 |
-| pin07 | L | P2 Button 7 |
-| pin08 | K | P2 Button 6 |
-| pin09 | J | P2 Button 5 |
-| pin12 | Y | P2 Button 4 |
-| pin13 | I | P2 Button 3 |
-| pin14 | H | P2 Button 2 |
-| pin15 | G | P2 Button 1 |
-| pin16 | Q | P2 Down |
-| pin17 | N | P2 Up |
-| pin18 | M | P2 Left |
-| pin19 | O | P2 Right |
-| pin22 | U | P2 Coin |
-| pin23 | S *(shift/swop key)* | P1 Coin |
-| pin24 | T | P2 Start |
-| pin25 | R | P1 Start |
-| pin26 | W | P1 Button 8 |
-| pin27 | F | P1 Button 7 |
-| pin28 | E | P1 Button 6 |
-| pin29 | D | P1 Button 5 |
-| pin32 | V | P1 Button 4 |
-| pin33 | C | P1 Button 3 |
-| pin34 | B | P1 Button 2 |
-| pin35 | A | P1 Button 1 |
-| pin36 | ↓ Down Arrow | P1 Down |
-| pin37 | ↑ Up Arrow | P1 Up |
-| pin38 | ← Left Arrow | P1 Left |
-| pin39 | → Right Arrow | P1 Right |
-| pin42 | Right Click | Right Click |
-| pin43 | Left Click | Left Click |
-
-Trackball ball movement itself (as opposed to its two click buttons above) moves the mouse cursor, handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
-
-#### Button function reference
-
-**Swop (secondary) key functions**
-
-Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second button to trigger its secondary function:
-
-| Combination | Secondary key | Function |
-|-------------|--------------|---------|
-| P1 Coin + Joystick Up (pin37) | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Joystick Down (pin36) | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Select (pin02) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
-
-**Admin buttons**
-
-| Mini-PAC pin | Key | Function |
-|-------------|-----|---------|
-| pin02 | Enter | Select |
-| pin03 | Escape | Exit |
-| pin04 | `/` (Forward-Slash) | Search |
-| pin05 | `p` | Pause |
-| pin42 | Right Mouse Button | Right click |
-| pin43 | Left Mouse Button | Left click |
-
-**Player 1**
-
-| Mini-PAC pin | Key | Function | RetroArch action |
-|-------------|-----|---------|-----------------|
-| pin23 | `s` | Coin | `input_player1_select` |
-| pin25 | `r` | Start | `input_player1_start` |
-| pin26 | `w` | Button 8 | — |
-| pin27 | `f` | Button 7 | `input_player1_r` |
-| pin28 | `e` | Button 6 | `input_player1_l` |
-| pin29 | `d` | Button 5 | `input_player1_x` |
-| pin32 | `v` | Button 4 | — |
-| pin33 | `c` | Button 3 | `input_player1_y` |
-| pin34 | `b` | Button 2 | `input_player1_a` |
-| pin35 | `a` | Button 1 | `input_player1_b` |
-| pin36 | `↓` (Down arrow) | Down | `input_player1_down` |
-| pin37 | `↑` (Up arrow) | Up | `input_player1_up` |
-| pin38 | `←` (Left arrow) | Left | `input_player1_left` |
-| pin39 | `→` (Right arrow) | Right | `input_player1_right` |
-
-**Player 2**
-
-| Mini-PAC pin | Key | Function | RetroArch action |
-|-------------|-----|---------|-----------------|
-| pin06 | `x` | Button 8 | — |
-| pin07 | `l` | Button 7 | `input_player2_r` |
-| pin08 | `k` | Button 6 | `input_player2_l` |
-| pin09 | `j` | Button 5 | `input_player2_x` |
-| pin12 | `y` | Button 4 | — |
-| pin13 | `i` | Button 3 | `input_player2_y` |
-| pin14 | `h` | Button 2 | `input_player2_a` |
-| pin15 | `g` | Button 1 | `input_player2_b` |
-| pin16 | `q` | Down | `input_player2_down` |
-| pin17 | `n` | Up | `input_player2_up` |
-| pin18 | `m` | Left | `input_player2_left` |
-| pin19 | `o` | Right | `input_player2_right` |
-| pin22 | `u` | Coin | `input_player2_select` |
-| pin24 | `t` | Start | `input_player2_start` |
-
-RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
-
-Buttons 4 and 8 for both players have no RetroArch binding yet — they send unique keys (`v`, `w`, `y`, `x`) and can be bound to any action in a system cfg.
+- The admin row (Left Click through Pause) is evenly spaced with no real gap — the empty column 9 in that row is just the trackball's column showing through from the row below, not an actual gap in the admin row.
+- The two joysticks have no LEDs, so they carry no PAC-LED64 port — but each still sends four direction keys (P1 arrows, P2 `N`/`Q`/`M`/`O`), listed in the Master control reference.
 
 #### Master control reference
 
-Everything above lives split across four places — the physical position table, the Mini-PAC pin-to-key table, the button function reference tables, and the PAC-LED64 channel map in the [`.lwax` section](#ledblinky-animation-files-lwax) — because each was written at a different time to answer a different question. That split is exactly how the Mouse Right/Middle typo and the missing-bottom-row bug both went unnoticed until they were confirmed on real hardware: no single place made a contradiction between two of these facts visible. This table exists to make that kind of drift easier to catch — one row per physical control, every fact that doesn't change per-game in one place.
+**This is the second source-of-truth table**, paired with the [Physical button layout](#physical-button-layout) above (which owns position). This one owns every per-control fact that doesn't change per game: LedBlinky label, Mini-PAC pin, key sent, PAC-LED64 board/port, and RetroArch action. It replaces what used to be four separate tables (a pin-to-key table, admin/P1/P2 button-function tables, and a per-board LED channel map) — that split was exactly how the Mouse Right/Middle typo and the missing-bottom-row bug both went unnoticed, because no single place made a contradiction between two of these facts visible.
 
-**"LED color" is deliberately not a column here** — unlike everything else in this table, a control's color isn't fixed. It's assigned dynamically per ROM/emulator via `Colors.ini` (see [`Colors.ini` — multi-player and admin key naming](#colorsini--multi-player-and-admin-key-naming)), or, for the front-end/idle context specifically, via LedBlinky Config's Controls Editor FE edit mode (see the `LightFEControls` gotcha below). What's fixed, and what this table gives you, is *which PAC-LED64 board and port range* carries that color — the thing the `.lwax` generator actually addresses.
+**"LED color" is deliberately not a column here** — unlike everything else in this table, a control's color isn't fixed. It's assigned dynamically per ROM/emulator via `Colors.ini` (see [`Colors.ini` — multi-player and admin key naming](#colorsini--multi-player-and-admin-key-naming)), or, for the front-end/idle context specifically, via LedBlinky Config's Controls Editor FE edit mode (see the `LightFEControls` gotcha below). What's fixed, and what this table gives you, is *which PAC-LED64 board and port range* carries that color — the thing the `.lwax` generator actually addresses. Each board/port range is the control's 3 consecutive R,G,B ports (see [Hardware: two PAC-LED64 boards](#hardware-two-pac-led64-boards-rgb-per-control) in the `.lwax` section for why it's a triplet).
 
 | Physical control | LedBlinky label | Mini-PAC pin | Key sent | PAC-LED64 board:ports | RetroArch action |
 |---|---|---|---|---|---|
@@ -1988,6 +1855,20 @@ Everything above lives split across four places — the physical position table,
 | P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
 
 35 rows: the 27 LED-equipped controls plus the 8 joystick-direction keys, which have a pin/key but no LED to drive. "PAC-LED64 board:ports" is `<board Id> : <port range>` straight from `LEDBlinkyInputMap.xml` — the exact addressing every `.lwax` builder in `spindoctor/lwax.py` uses. If this table, the physical position table above, and `LEDBlinkyInputMap.xml` itself ever disagree on a control's board/port, trust `LEDBlinkyInputMap.xml` (it's what the animation tooling actually reads) and treat this table as stale — file it the same way the earlier bugs on this page were caught.
+
+**Provenance and the one known upstream error.** The pin/key columns were **independently confirmed by direct button-press testing** — every value verified by physically pressing each button and checking what key it sends, not just decoded from the WinIPAC EEPROM export. This resolved a real-looking discrepancy: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute disagrees with this table for Buttons 4-6 on both players (it records `KEYCODE_D` for the port labeled `P1B4`, where testing confirms Button 4 sends `V` and `D` belongs to Button 5; Buttons 1-3 already agreed). **This table is correct; `LEDBlinkyInputMap.xml`'s `inputCodes` field is wrong for Buttons 4-6 on both players.** That field is optional metadata the LedBlinky Animation Editor uses for its own reference (*"For the animation editor, Input Codes are not required"*) — nothing that drives real-time LED lighting or any `.lwax` animation reads it (those address ports by `label`/position, never `inputCodes`), so the error is harmless. Worth fixing in `LEDBlinkyInputMap.xml` for hygiene, but nothing depends on it.
+
+**RetroArch action notes.** RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) that map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on. Buttons 4 and 8 for both players have no RetroArch binding yet (shown as `—`) — they send unique keys (`V`/`W`/`Y`/`X`) and can be bound to any action in a system cfg.
+
+**Swop (secondary) key functions.** P1 Coin (pin23, key `S`) doubles as a shift/swop key — hold it and press a second button for a secondary function:
+
+| Combination | Secondary key | Function |
+|-------------|--------------|---------|
+| P1 Coin + Joystick Up | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Joystick Down | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Select | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
+
+**Key/letter inventory.** Every letter A–Y is assigned (see the Key sent column); only `Z` is free for future expansion. Trackball ball movement itself (as opposed to its two click buttons) moves the mouse cursor via the Mini-PAC's analog axes (Axis1/Axis2), not a pin-mapped key.
 
 ### Xbox 360 button numbers (winxinput driver)
 
@@ -2356,44 +2237,9 @@ spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, li
 
 ### Hardware: two PAC-LED64 boards, RGB per control
 
-Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" id="…" name="PACLED64">`). Each physical control uses **3 consecutive output ports** (R, G, B in that order) — these are full RGB button LEDs, not single-color.
+Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" id="…" name="PACLED64">`). Two boards, `Id="1"` and `Id="2"`. Each physical control uses **3 consecutive output ports** (R, G, B in that order) — these are full RGB button LEDs, not single-color. So a control's `board:ports` entry of `1 : 4-6` means board `Id="1"`, port 4 = red, 5 = green, 6 = blue.
 
-**Board `Id="1"`** (ports 1-42 used, 43-64 unwired):
-
-| Ports | Control |
-|---|---|
-| 1-3 | TRACKBALL |
-| 4-6 | SELECT |
-| 7-9 | RMOUSE |
-| 10-12 | LMOUSE |
-| 13-15 | P1COIN |
-| 16-18 | P1START |
-| 19-21 | P1B7 |
-| 22-24 | P1B3 |
-| 25-27 | P1B2 |
-| 28-30 | P1B1 |
-| 31-33 | P1B8 |
-| 34-36 | P1B6 |
-| 37-39 | P1B5 |
-| 40-42 | P1B4 |
-
-**Board `Id="2"`** (ports 1-39 used, 40-64 unwired):
-
-| Ports | Control |
-|---|---|
-| 1-3 | EXIT |
-| 4-6 | SEARCH |
-| 7-9 | PAUSE |
-| 10-12 | P2START |
-| 13-15 | P2COIN |
-| 16-18 | P2B1 |
-| 19-21 | P2B2 |
-| 22-24 | P2B3 |
-| 25-27 | P2B7 |
-| 28-30 | P2B4 |
-| 31-33 | P2B5 |
-| 34-36 | P2B6 |
-| 37-39 | P2B8 |
+**The full control → board:port mapping lives in exactly one place: the [Master control reference](#master-control-reference)** (its "PAC-LED64 board:ports" column). It's not repeated here — a per-board copy is what let earlier bugs hide. Board `Id="1"` uses ports 1-42 (43-64 unwired); board `Id="2"` uses ports 1-39 (40-64 unwired). Note the two boards split the panel by player-ish grouping but not cleanly — board 1 carries the trackball, the P1 buttons, and the Select/mouse-click admin cluster; board 2 carries Exit/Search/Pause and all P2 buttons — so always read the actual board from the Master control reference rather than assuming "board 1 = Player 1."
 
 > **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** This cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
 
