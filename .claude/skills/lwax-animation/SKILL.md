@@ -64,16 +64,20 @@ Getting this right from a text description alone is genuinely hard. Three attemp
 
 > **Bug fixed after real-hardware testing**: `LEFT_RIGHT_ORDER` originally only spanned the admin/start-coin/top-row tier — it never included the bottom row (`P1B5-8`/`P2B5-8`) at all, so any effect built from it (or from `RADIAL_RINGS`, which derives from it: sweeps left/right, both radial pulses, the breathing pulse, the P1-vs-P2 race, the rainbow scroll, the combo-meter fill, the countdown/fuse) silently skipped 8 of the 27 controls. Confirmed on the cabinet via `pulse_outward_from_trackball_toxic.lwax` never lighting Buttons 5-8. Fixed by folding each bottom-row button into its top-row column-mate's group below — `ROWS`/`CYCLONE_LOOP`/`RAIN_DROP_GROUPS` were never affected (they already included the bottom row through a different path) and didn't need touching. Ring/column *spacing* (how many steps the admin row takes vs. how soon player buttons appear) was checked against real hardware too and confirmed correct as index-based — not compressed to account for the admin row's tighter physical spacing.
 
+> **Deliberate stylistic override, not a physical-position claim**: `P1START` is physically its own column (above P1's joystick — see the confirmed layout above), but by user request it's grouped with `P1COIN`/`P1B1`/`P1B5` below anyway so it never fires as an isolated single-control blip in animations built from this list. This is the one place `LEFT_RIGHT_ORDER` deliberately diverges from the [Physical button layout](../../../docs/cabinet-architecture-reference.md#physical-button-layout) table — that table still (correctly) shows P1START one column over. Don't "fix" this back to match the physical table without checking with the user first. Side effect (welcome, not incidental): this also makes `RADIAL_RINGS` come out perfectly symmetric — 7 groups on each side of the trackball instead of the previous 8-vs-7 split.
+
 ```python
 # Left-to-right column order, as ordered GROUPS (a position can hold more
 # than one label when two controls are lit at the same physical spot --
 # e.g. P1 Coin and P1's bottom-row counterpart both share P1B1's position).
+# P1START is folded into that same first group by deliberate request even
+# though it's physically one column over (see the callout above) -- don't
+# revert this to match the physical table without checking first.
 # Single source of truth: ROWS, RADIAL_RINGS, and CYCLONE_LOOP below are all
 # derived from this instead of hand-listed, so a future correction only has
 # to happen in one place.
 LEFT_RIGHT_ORDER = [
-    ["P1START"],                          # above P1's joystick (no LED there itself)
-    ["P1COIN", "P1B1", "P1B5"],            # directly above P1B1; P1B5 is P1B1's bottom-row partner
+    ["P1START", "P1COIN", "P1B1", "P1B5"], # P1START pulled in from its own column by request
     ["P1B2", "P1B6"],
     ["P1B3", "P1B7"],
     ["P1B4", "P1B8"],
@@ -95,9 +99,9 @@ ROWS = [ROW_ABOVE, ROW_TOP, ROW_BOTTOM]
 
 # Symmetric distance-from-trackball rings, derived from LEFT_RIGHT_ORDER --
 # don't hand-list these, they're easy to get subtly wrong by inspection.
-# Note the group list is uneven either side of the trackball (8 groups
-# before it, 7 after), since P2's Start/Coin sit closer to center than
-# P1's -- rings on the far side simply run out one step sooner.
+# The group list is exactly 7 groups either side of the trackball (folding
+# P1START into P1COIN/P1B1/P1B5 above made both sides even -- it used to be
+# 8 vs. 7 before that merge).
 TRACKBALL_INDEX = next(i for i, g in enumerate(LEFT_RIGHT_ORDER) if "TRACKBALL" in g)
 _ring_map = {}
 for i, group in enumerate(LEFT_RIGHT_ORDER):
