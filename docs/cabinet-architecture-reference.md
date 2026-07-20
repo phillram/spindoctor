@@ -1794,7 +1794,7 @@ Left to right, by column. A cell spanning two rows in the same column means thos
 
 | Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Admin** | | | | | | Left Click (`Mouse L`) | Right Click (`Mouse R`) | Select (`Enter`) | | Exit (`Esc`) | Search (`/`) | Pause (`P`) | | | | | |
+| **Admin** | | | | | | Left Click | Right Click | Select (`Enter`) | | Exit (`Esc`) | Search (`/`) | Pause (`P`) | | | | | |
 | **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
 | **Top** (joystick, B1–4, trackball) | P1 Joystick † | B1 (`A`) | B2 (`B`) | B3 (`C`) | B4 (`V`) | | | | Trackball | | | | P2 Joystick † | B1 (`G`) | B2 (`H`) | B3 (`I`) | B4 (`Y`) |
 | **Bottom** (B5–8) | | B5 (`D`) | B6 (`E`) | B7 (`F`) | B8 (`W`) | | | | | | | | | B5 (`J`) | B6 (`K`) | B7 (`L`) | B8 (`X`) |
@@ -1833,6 +1833,10 @@ Letters free: Z
 
 #### Pin-to-key mapping
 
+> **Independently confirmed by direct button-press testing** (not just decoded from the WinIPAC EEPROM export — every value below was verified by physically pressing each button and checking what key it sends). This resolves an investigation that started with a genuine-looking discrepancy: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute disagrees with this table for Buttons 4-6 on both players (e.g. it records `KEYCODE_D` for the port labeled `P1B4`, where this table — now confirmed — has Button 4 sending `V` and `D` belonging to Button 5). Buttons 1-3 already agreed between the two sources; only 4+ was ever in question.
+>
+> **This table is correct; `LEDBlinkyInputMap.xml`'s `inputCodes` field is wrong for Buttons 4-6 on both players.** That field is optional metadata the LedBlinky Animation Editor uses for its own reference — *"For the animation editor, Input Codes are not required"* — not something that drives real-time per-game LED lighting or anything built in the `.lwax` section below (those address LED ports by their `label`/physical position, never by `inputCodes`, so this discrepancy has no effect on any generated animation). Worth correcting in `LEDBlinkyInputMap.xml` itself at some point for hygiene, but nothing here or in the animation tooling depends on it being right.
+
 All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → key names):
 
 | Pin | Key | Logical function |
@@ -1869,10 +1873,10 @@ All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → k
 | pin37 | ↑ Up Arrow | P1 Up |
 | pin38 | ← Left Arrow | P1 Left |
 | pin39 | → Right Arrow | P1 Right |
-| pin42 | Mouse Right Button | Trackball button |
-| pin43 | Mouse Left Button | Trackball button |
+| pin42 | Right Click | Right Click |
+| pin43 | Left Click | Left Click |
 
-Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
+Trackball ball movement itself (as opposed to its two click buttons above) moves the mouse cursor, handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
 
 #### Button function reference
 
