@@ -1049,9 +1049,19 @@ spindoctor introvideo remove "A.mp4" "B.mp4" --apply           :: remove several
 
 `add` copies each given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both commands accept one or more files/filenames in a single call; a multi-file `add`/`remove` still only touches the `FileList=`/`RandomList=` lines, and writes a single shared timestamped backup of `Random.ini` to `<backup_dir>/IntroVideoRandomizer/` for the whole batch (not one per file) when `backup_before_modify` is enabled (the default). Every other line, key, and comment in `Random.ini` is left byte-for-byte as-is.
 
+**Registering a video that's already on disk** (dropped into `Folder=` directly, restored from a backup, whatever put it there without going through SpinDoctor) is the exact same `add` command, just pointed at the file's *existing* path instead of a file living elsewhere:
+
+```bat
+spindoctor introvideo add "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Capcom Intro.mp4" --apply
+```
+
+`add` never overwrites a file at its own destination, so this only registers it in `FileList=`/`RandomList=` — no copy happens. `spindoctor introvideo list` shows on disk ✓ / Registered `-` for exactly this case.
+
 The `Backup\` subfolder inside the videos folder (if the randomizer or a user creates one) is never scanned, copied into, or otherwise touched.
 
-> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker) and `introvideo remove` (via the list, Ctrl/Shift-click to select several). See [GUI walkthrough](gui.md).
+If `backup_before_modify` is on and `backup_dir` is configured but not actually writable (an unmounted drive, a permission problem), `add`/`remove` fail with a clear error explaining what to fix — they don't silently write the backup somewhere else, and `add` won't have copied any file yet when this happens (checked before any copy, for a multi-file batch too).
+
+> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker), registering an on-disk-but-unregistered row via **Register selected** (no picker, no copy), and `introvideo remove` (via the list, Ctrl/Shift-click to select several). See [GUI walkthrough](gui.md).
 
 ---
 
