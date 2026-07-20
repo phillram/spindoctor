@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **PAC-LED64 dual-board channel map and `.lwax` animation file signature blocker documented.** New "LEDBlinky Animation Files (.lwax)" section in `cabinet-architecture-reference.md` covering: this cabinet's two PAC-LED64 boards (`Id="1"`/`Id="2"`, each with a 3-port-per-control RGB channel map, decoded from `LEDBlinkyInputMap.xml`); the `.lwax` frame/Intensity/State format inferred from sample animation files, including the discovery that channel values persist frame-to-frame unless redeclared; and an unresolved blocker where LedBlinky rejects hand-built `.lwax` files with a "Missing Signature" error — confirmed to be a real, portable, content-derived signature (not machine-specific) that couldn't be reproduced against a known-working file under common hash algorithms, meaning new animations currently require LedBlinky's own Animation Editor tool rather than hand-authored XML. Marked provisional pending resolution.
+
 ### Fixed
 
 - **GUI: Intro Video tab's Refresh/Add/Remove buttons rendered squeezed into a ~30px sliver on the right edge of the Videos table instead of below it.** The vertical scrollbar added in v2.10.0 packed the Treeview and Scrollbar directly into the same `LabelFrame` as the button row using `side="left"`/`side="right"`, which starves the button row's `pack()` (default `side="top"`) of cavity space. Moved the tree + scrollbar into their own sub-frame using `grid` (matching the Games tab's Step 1 table), so the button row now packs cleanly below the full-width table — same layout as every other table-with-buttons section in the GUI.
