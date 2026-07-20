@@ -1782,7 +1782,7 @@ The cabinet uses two Ultimarc boards over USB:
 | **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
 | **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
-> **This cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-board RGB channel map: [LEDBlinky Animation Files (.lwax)](#ledblinky-animation-files-lwax) below.
+> **This cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
 
 The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
 
@@ -2030,7 +2030,7 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
-**Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:</p>
+**Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:
 
 ```bat
 :: Re-color all uniform entries to White without adding new keys

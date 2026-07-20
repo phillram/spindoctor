@@ -144,4 +144,4 @@ If the resulting animation looks right except some buttons stay a static color (
 
 ## Tests
 
-`tests/test_lwax.py` covers the parser, the generic builder, and all presets (`build_color_cycle`, `build_wave`, `build_rain`, `build_rainbow_scroll`, `build_fill`, `merge_animations`) against a small synthetic `LEDBlinkyInputMap.xml`. Run `python3 -m pytest tests/test_lwax.py -q` after touching `spindoctor/lwax.py`.
+`tests/test_lwax.py` covers the parser, the generic builder, and all presets (`build_color_cycle`, `build_wave`, `build_rain`, `build_rainbow_scroll`, `build_fill`, `build_drain`, `build_alternate`, `merge_animations`) against a small synthetic `LEDBlinkyInputMap.xml`. Run `python3 -m pytest tests/test_lwax.py -q` after touching `spindoctor/lwax.py`.
