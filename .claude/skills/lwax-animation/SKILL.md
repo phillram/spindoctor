@@ -62,23 +62,28 @@ Getting this right from a text description alone is genuinely hard. Three attemp
 - Left Click/Right Click sit next to `SELECT`, not next to the trackball.
 - The admin row (`LMOUSE`/`RMOUSE`/`SELECT`/`EXIT`/`SEARCH`/`PAUSE`) is evenly spaced with no real gap — the empty column between `SELECT` and `EXIT` in any rendering that shares one grid across all tiers is just where the trackball happens to align from the row below, not a real gap in the admin row itself.
 
+> **Bug fixed after real-hardware testing**: `LEFT_RIGHT_ORDER` originally only spanned the admin/start-coin/top-row tier — it never included the bottom row (`P1B5-8`/`P2B5-8`) at all, so any effect built from it (or from `RADIAL_RINGS`, which derives from it: sweeps left/right, both radial pulses, the breathing pulse, the P1-vs-P2 race, the rainbow scroll, the combo-meter fill, the countdown/fuse) silently skipped 8 of the 27 controls. Confirmed on the cabinet via `pulse_outward_from_trackball_toxic.lwax` never lighting Buttons 5-8. Fixed by folding each bottom-row button into its top-row column-mate's group below — `ROWS`/`CYCLONE_LOOP`/`RAIN_DROP_GROUPS` were never affected (they already included the bottom row through a different path) and didn't need touching. Ring/column *spacing* (how many steps the admin row takes vs. how soon player buttons appear) was checked against real hardware too and confirmed correct as index-based — not compressed to account for the admin row's tighter physical spacing.
+
 ```python
 # Left-to-right column order, as ordered GROUPS (a position can hold more
 # than one label when two controls are lit at the same physical spot --
-# e.g. P1 Coin shares P1B1's position). Single source of truth: ROWS,
-# RADIAL_RINGS, and CYCLONE_LOOP below are all derived from this instead of
-# hand-listed, so a future correction only has to happen in one place.
+# e.g. P1 Coin and P1's bottom-row counterpart both share P1B1's position).
+# Single source of truth: ROWS, RADIAL_RINGS, and CYCLONE_LOOP below are all
+# derived from this instead of hand-listed, so a future correction only has
+# to happen in one place.
 LEFT_RIGHT_ORDER = [
-    ["P1START"],                  # above P1's joystick (no LED there itself)
-    ["P1COIN", "P1B1"],            # directly above P1B1
-    ["P1B2"], ["P1B3"], ["P1B4"],
+    ["P1START"],                          # above P1's joystick (no LED there itself)
+    ["P1COIN", "P1B1", "P1B5"],            # directly above P1B1; P1B5 is P1B1's bottom-row partner
+    ["P1B2", "P1B6"],
+    ["P1B3", "P1B7"],
+    ["P1B4", "P1B8"],
     ["LMOUSE"], ["RMOUSE"], ["SELECT"],
     ["TRACKBALL"],
     ["EXIT"], ["SEARCH"], ["PAUSE"],
-    ["P2B1"],
-    ["P2B2", "P2START"],           # P2START above P2B2 (not mirrored to P1)
-    ["P2B3", "P2COIN"],            # P2COIN above P2B3
-    ["P2B4"],
+    ["P2B1", "P2B5"],
+    ["P2B2", "P2START", "P2B6"],           # P2START above P2B2 (not mirrored to P1)
+    ["P2B3", "P2COIN", "P2B7"],            # P2COIN above P2B3
+    ["P2B4", "P2B8"],
 ]
 
 # 3 vertical bands -- this cabinet's button grid only has 2 rows per player,
