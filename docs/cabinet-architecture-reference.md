@@ -2367,6 +2367,8 @@ A hand-built `.lwax` (well-formed XML, correct channel map, no other errors, no 
 3. **Animation → Save As** — no edits needed. The editor rewrites `Device="PACLED64" Id="0"` to the real `LedHwType="3" Id="1"` / `Id="2"` pairing (read from the loaded `LEDBlinkyInputMap.xml`) and adds the three-line signed header.
 4. Copy the result into `<ledblinky_dir>\lwa\` and assign it in `Settings.ini`.
 
+**`spindoctor ledblinky lwax fade`** automates step 1 generically — it parses the real `LEDBlinkyInputMap.xml` (any board/controller layout, not hardcoded to this cabinet's two PACLED64 boards) and emits a raw, correctly-addressed, unsigned `.lwax` fading through a list of colors. Steps 2-4 (Open → Save As → copy → assign) are still manual; the signing step can't be automated without either the real signature algorithm or fragile GUI automation, neither of which was worth the complexity given how quick the manual round-trip is. See `docs/commands.md` → `ledblinky lwax fade` for usage. The exact fade this section documents (`rgbfade.lwax`, confirmed working after signing) round-trips byte-for-byte identical through this command.
+
 ### Gotcha: `LightFEControls=1` overrides some buttons during FE-active animations — confirmed
 
 After getting a signed animation running, some buttons showed the correct fade while others stayed locked to solid white — both live in HyperSpin and, once frozen, after exiting to Windows (LED controllers hold their last-written state indefinitely with nothing actively updating them, so a frozen white button just means white was the last color sent, not that something is still driving it).
