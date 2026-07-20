@@ -465,6 +465,91 @@ def build_fill(
     return animation
 
 
+def build_drain(
+    controllers: list[LwaxController],
+    groups: "list[list[str]]",
+    fill_color: Color,
+    flash_color: "Optional[Color]" = (48, 0, 0),
+    frames_per_step: int = 4,
+    duration_ms: int = 40,
+    hold_full_frames: int = 15,
+    hold_empty_frames: int = 10,
+    flash_cycles: int = 2,
+    flash_frames: int = 6,
+) -> LwaxAnimation:
+    """The inverse of :func:`build_fill`: starts fully lit, then extinguishes
+    ``groups`` one at a time in the order given — a countdown/fuse-burning-down
+    effect — holds empty, flashes ``flash_color`` a few times as an alert,
+    then the whole animation loops back to full and starts draining again.
+
+    Pass ``flash_color=None`` to skip the flash and just hold empty, then reset.
+    """
+    if not groups:
+        raise ValueError("Need at least 1 group.")
+    animation = LwaxAnimation(controllers)
+    all_labels = [label for group in groups for label in group]
+    unknown = set(all_labels) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+
+    off = (0, 0, 0)
+    full = {label: fill_color for label in all_labels}
+    empty = {label: off for label in all_labels}
+
+    for _ in range(hold_full_frames):
+        animation.add_frame(duration_ms, full)
+
+    remaining = list(all_labels)
+    for group in groups:
+        for label in group:
+            remaining.remove(label)
+        for _ in range(frames_per_step):
+            colors = {label: off for label in all_labels}
+            for label in remaining:
+                colors[label] = fill_color
+            animation.add_frame(duration_ms, colors)
+
+    for _ in range(hold_empty_frames):
+        animation.add_frame(duration_ms, empty)
+
+    if flash_color is not None:
+        flash = {label: flash_color for label in all_labels}
+        for _ in range(flash_cycles):
+            for _ in range(flash_frames):
+                animation.add_frame(duration_ms, flash)
+            for _ in range(flash_frames):
+                animation.add_frame(duration_ms, empty)
+    return animation
+
+
+def build_alternate(
+    controllers: list[LwaxController],
+    group_a: "list[str]",
+    group_b: "list[str]",
+    color_a: Color,
+    color_b: Color,
+    hold_ms: int = 400,
+    cycles: int = 6,
+) -> LwaxAnimation:
+    """A synchronized two-phase color swap between ``group_a`` and
+    ``group_b`` — no motion, just a rhythmic alternation (e.g. a
+    checkerboard blink: half the panel is ``color_a`` while the other half
+    is ``color_b``, then they swap, in lockstep).
+    """
+    animation = LwaxAnimation(controllers)
+    all_labels = list(group_a) + list(group_b)
+    unknown = set(all_labels) - set(animation.labels)
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
+
+    phase1 = {**{label: color_a for label in group_a}, **{label: color_b for label in group_b}}
+    phase2 = {**{label: color_b for label in group_a}, **{label: color_a for label in group_b}}
+    for _ in range(cycles):
+        animation.add_frame(hold_ms, phase1)
+        animation.add_frame(hold_ms, phase2)
+    return animation
+
+
 def merge_animations(animation: LwaxAnimation, *others: LwaxAnimation) -> LwaxAnimation:
     """Combine frame-synchronized animations (same controllers, same frame
     count and per-frame durations) into one, by layering each frame's

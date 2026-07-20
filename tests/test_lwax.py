@@ -8,7 +8,9 @@ import pytest
 
 from spindoctor.lwax import (
     LwaxAnimation,
+    build_alternate,
     build_color_cycle,
+    build_drain,
     build_fill,
     build_rain,
     build_rainbow_scroll,
@@ -401,3 +403,81 @@ def test_merge_animations_rejects_mismatched_frame_counts(input_map_path):
     anim2 = build_wave(controllers, [["COIN"]], lead_color=(0, 0, 48), frames_per_step=1)
     with pytest.raises(ValueError, match="same frame count"):
         merge_animations(anim1, anim2)
+
+
+# ─── build_drain ───────────────────────────────────────────────────────────────
+
+def test_build_drain_extinguishes_in_order_without_relighting(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red = (48, 0, 0)
+    anim = build_drain(
+        controllers, [["P1B1"], ["P1B2"], ["COIN"]], fill_color=red,
+        frames_per_step=1, hold_full_frames=1, hold_empty_frames=1, flash_color=None,
+    )
+    resolved = anim._resolved_colors()
+    # Frame 0: everything still lit (hold_full).
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["P1B2"] == red
+    assert resolved[0]["COIN"] == red
+    # After P1B1's group drains (frame 1): P1B1 off, rest still lit.
+    assert resolved[1]["P1B1"] == (0, 0, 0)
+    assert resolved[1]["P1B2"] == red
+    assert resolved[1]["COIN"] == red
+    # After all 3 drain: everything off.
+    assert resolved[3]["P1B1"] == (0, 0, 0)
+    assert resolved[3]["P1B2"] == (0, 0, 0)
+    assert resolved[3]["COIN"] == (0, 0, 0)
+
+
+def test_build_drain_flashes_after_emptying(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red, white = (48, 0, 0), (48, 48, 48)
+    anim = build_drain(
+        controllers, [["P1B1"]], fill_color=red, flash_color=white,
+        frames_per_step=1, hold_full_frames=1, hold_empty_frames=1,
+        flash_cycles=1, flash_frames=1,
+    )
+    # 1 hold-full + 1 drain step + 1 hold-empty + 1 flash-on + 1 flash-off = 5 frames.
+    assert len(anim.frames) == 5
+    resolved = anim._resolved_colors()
+    assert resolved[0]["P1B1"] == red    # holding full
+    assert resolved[1]["P1B1"] == (0, 0, 0)  # drained
+    assert resolved[3]["P1B1"] == white  # flash on
+    assert resolved[4]["P1B1"] == (0, 0, 0)  # flash off
+
+
+def test_build_drain_rejects_empty_groups(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="at least 1 group"):
+        build_drain(controllers, [], fill_color=(48, 0, 0))
+
+
+def test_build_drain_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_drain(controllers, [["NOPE"]], fill_color=(48, 0, 0))
+
+
+# ─── build_alternate ────────────────────────────────────────────────────────────
+
+def test_build_alternate_swaps_colors_in_lockstep(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    red, blue = (48, 0, 0), (0, 0, 48)
+    anim = build_alternate(
+        controllers, group_a=["P1B1"], group_b=["P1B2"],
+        color_a=red, color_b=blue, hold_ms=100, cycles=2,
+    )
+    assert len(anim.frames) == 4  # 2 phases * 2 cycles
+    resolved = anim._resolved_colors()
+    assert resolved[0]["P1B1"] == red
+    assert resolved[0]["P1B2"] == blue
+    assert resolved[1]["P1B1"] == blue
+    assert resolved[1]["P1B2"] == red
+    assert resolved[2]["P1B1"] == red
+    assert resolved[2]["P1B2"] == blue
+
+
+def test_build_alternate_rejects_unknown_label(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    with pytest.raises(ValueError, match="Unknown control label"):
+        build_alternate(controllers, group_a=["NOPE"], group_b=["P1B2"], color_a=(48, 0, 0), color_b=(0, 0, 48))
