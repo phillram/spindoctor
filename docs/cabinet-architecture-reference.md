@@ -1788,25 +1788,30 @@ The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). I
 
 #### Physical button layout
 
-```
- ┌─────────────────────────────────────────────────────────────────┐
- │                    PLAYER 1              PLAYER 2               │
- │                                                                 │
- │  Joystick            [↑]                    [N]                │
- │                   [←][↓][→]             [M][Q][O]              │
- │                                                                 │
- │  Coin / Start      [S]  [R]             [U]  [T]               │
- │                                                                 │
- │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
- │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
- │                                                                 │
- │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
- │  Trackball:  [Mouse L]  [Mouse M]                              │
- │                                                                 │
- │  Hold [S] (P1 Coin) +                                          │
- │    [↑] → Volume Up     [↓] → Volume Down    [Enter] → RetroArch Menu │
- └─────────────────────────────────────────────────────────────────┘
-```
+> **Confirmed against an actual photo of the panel** — a hand-drawn ASCII diagram was the original source here and got the Coin/Start order and Player 2's Coin/Start position wrong; box-drawing characters are also just hard to keep precisely column-aligned by hand. A table is the more reliable format for something this position-sensitive, so it replaced the diagram. See [LEDBlinky Animation Files (.lwax) → Physical control panel layout](#ledblinky-animation-files-lwax) for the story of how that got sorted out (short version: ask for a photo before trusting any text description of hardware layout, even one already confirmed once against a rendered diagram).
+
+Left to right, by column. A cell spanning two rows in the same column means those two controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick).
+
+| Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Admin** | | | | | | Left Click | Right Click | Select | | Exit | Search | Pause | | | | | |
+| **Coin / Start** | P1 Start | P1 Coin | | | | | | | | | | | | | P2 Start | P2 Coin | |
+| **Top** (joystick, B1–4, trackball) | P1 Joystick | B1 (`A`) | B2 (`B`) | B3 (`C`) | B4 (`V`) | | | | Trackball | | | | P2 Joystick | B1 (`G`) | B2 (`H`) | B3 (`I`) | B4 (`Y`) |
+| **Bottom** (B5–8) | | B5 (`D`) | B6 (`E`) | B7 (`F`) | B8 (`W`) | | | | | | | | | B5 (`J`) | B6 (`K`) | B7 (`L`) | B8 (`X`) |
+
+Key points the old diagram got wrong or omitted:
+
+- **Player 1**: Start sits above the joystick, Coin above Button 1 (column 1 and 2).
+- **Player 2 is not a mirror image of Player 1.** Start sits above Button 2, Coin above Button 3 (columns 15 and 16) — two columns further in from the edge than Player 1's arrangement, not lined up with the joystick/B1.
+- **Both sides read Start-then-Coin left to right.** Neither side is Coin-then-Start — the previous diagram showed Player 1 as `[S][R]` (Coin, Start), which had the order backwards.
+- The trackball sits in the **same row** as the joysticks and action buttons (column 9), not off to the side or in the admin row.
+- The admin row (Left Click through Pause) is evenly spaced with no real gap — the empty column 9 in that row here is just the trackball's column showing through from the row below, not an actual gap in the admin row.
+
+Letters in parentheses above are the Mini-PAC key assignments — cross-reference the [pin-to-key mapping](#pin-to-key-mapping) below for the full pin/key table.
+
+> **Swop key**: hold P1 Coin (`S`) + Joystick Up/Down for Volume Up/Down, or + Select for the RetroArch Quick Menu. See [Button function reference](#button-function-reference) below for the full list.
+
+#### Letter assignments
 
 Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y  
 Letters free: Z
@@ -2389,13 +2394,9 @@ Separately, the Animation Editor's own **Run LED Animation** live-preview button
 
 **This turned out to be genuinely hard to convey in text — a real photo of the panel resolved it in one pass where two rounds of text/diagram correction hadn't.** Progression: (1) an ASCII table, wrong in multiple ways; (2) a rendered visual diagram built from that table, confirmed and corrected twice, but still wrong on Start/Coin placement because it inherited the table's flawed premise; (3) an actual photo of the panel, which nailed it immediately. **Lesson: ask whether a photo of the hardware exists before starting from any text description at all.** When only text is available, still render a visual diagram (an HTML artifact with one cell per control, grouped/colored by player) and get it confirmed before generating more than one or two files against it — especially before anything ring/perimeter-derived, where a single wrong position skews everything built on top of it. Also: don't trust an ASCII table's column alignment *across different rows* as meaningful — it's usually incidental spacing from typing the table out, not a claim about physical position (several admin-row cells in the first draft happened to land in the same text-column as button-row cells several rows below that aren't actually above them).
 
-**Confirmed layout** (from the panel photo):
+**Confirmed layout** (from the panel photo) — full position table: [Physical button layout](#physical-button-layout), under Mini-PAC/PAC-LED64 hardware above. That table covers every physical control (including the joysticks, which have no LEDs and don't appear below); this section only adds what's specific to *animating* the LED-equipped subset of it:
 
-- P1 Start sits directly above P1's joystick; P1 Coin sits directly above P1 Button 1.
-- P2 Start sits above P2 Button 2; P2 Coin sits above P2 Button 3 — **not mirrored** to P1's pattern. Both sides read Start-then-Coin left to right (neither side is Coin-then-Start). An earlier guess had Start/Coin as symmetric outboard columns on both sides — wrong; the real layout isn't symmetric between P1 and P2 here.
-- The trackball sits in the **same row** as the joysticks and the 4 action buttons — not the admin row above it — in the column between `SELECT` and `EXIT`.
-- `LMOUSE`/`RMOUSE` (Left/Right Click) sit immediately next to `SELECT`, not next to the trackball.
-- The admin row (`LMOUSE`/`RMOUSE`/`SELECT`/`EXIT`/`SEARCH`/`PAUSE`) is evenly spaced with no real gap — an apparent gap between `SELECT` and `EXIT` in a shared-grid rendering is just the trackball's row aligning underneath, not a real gap in the admin row itself.
 - The button grid is only 2 rows deep per player, so an up/down sweep only ever has 3 meaningfully distinct vertical bands: an "above" strip (trackball's row is *not* part of this), the top button row, and the bottom button row.
+- `LEFT_RIGHT_ORDER` below only includes LED-equipped controls — the two joysticks are skipped entirely (no LED to drive), even though they occupy real columns in the full physical table.
 
 The reference groupings derived from this (`LEFT_RIGHT_ORDER`, `ROWS`, `RADIAL_RINGS`, `CYCLONE_LOOP`, `RAIN_DROP_GROUPS`) live in `.claude/skills/lwax-animation/SKILL.md` rather than duplicated here, since they're consumed directly as Python data when generating new animations. `LEFT_RIGHT_ORDER` is a list of *groups*, not flat labels — two controls that share a physical spot (e.g. P1 Coin sharing P1 Button 1's position) belong in the same group so they're always treated identically (same color, same hue in a rainbow effect, same timing in a sweep).
