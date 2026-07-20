@@ -293,29 +293,39 @@ def test_build_rain_rejects_unknown_label(input_map_path):
 
 def test_build_rainbow_scroll_frame_count(input_map_path):
     controllers = parse_input_map(input_map_path)
-    anim = build_rainbow_scroll(controllers, ["P1B1", "P1B2", "COIN"], total_frames=30)
+    anim = build_rainbow_scroll(controllers, [["P1B1"], ["P1B2"], ["COIN"]], total_frames=30)
     assert len(anim.frames) == 30
 
 
-def test_build_rainbow_scroll_hues_spread_across_labels(input_map_path):
+def test_build_rainbow_scroll_hues_spread_across_groups(input_map_path):
     controllers = parse_input_map(input_map_path)
-    anim = build_rainbow_scroll(controllers, ["P1B1", "P1B2", "COIN"], total_frames=12)
+    anim = build_rainbow_scroll(controllers, [["P1B1"], ["P1B2"], ["COIN"]], total_frames=12)
     resolved = anim._resolved_colors()
-    # At frame 0, the 3 labels should have 3 distinct colors (spread evenly
+    # At frame 0, the 3 groups should have 3 distinct colors (spread evenly
     # around the hue wheel), not all the same.
     frame0_colors = {resolved[0]["P1B1"], resolved[0]["P1B2"], resolved[0]["COIN"]}
     assert len(frame0_colors) == 3
 
 
+def test_build_rainbow_scroll_colocated_labels_share_hue(input_map_path):
+    controllers = parse_input_map(input_map_path)
+    # P1B1 and P1B2 share one group -- they should always match exactly,
+    # unlike two labels in separate groups which only differ by a hue step.
+    anim = build_rainbow_scroll(controllers, [["P1B1", "P1B2"], ["COIN"]], total_frames=10)
+    resolved = anim._resolved_colors()
+    for frame_colors in resolved:
+        assert frame_colors["P1B1"] == frame_colors["P1B2"]
+
+
 def test_build_rainbow_scroll_rejects_unknown_label(input_map_path):
     controllers = parse_input_map(input_map_path)
     with pytest.raises(ValueError, match="Unknown control label"):
-        build_rainbow_scroll(controllers, ["NOPE"])
+        build_rainbow_scroll(controllers, [["NOPE"]])
 
 
-def test_build_rainbow_scroll_rejects_empty_order(input_map_path):
+def test_build_rainbow_scroll_rejects_empty_groups(input_map_path):
     controllers = parse_input_map(input_map_path)
-    with pytest.raises(ValueError, match="at least 1 label"):
+    with pytest.raises(ValueError, match="at least 1 group"):
         build_rainbow_scroll(controllers, [])
 
 

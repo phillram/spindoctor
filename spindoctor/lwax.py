@@ -368,17 +368,23 @@ def build_rain(
 
 def build_rainbow_scroll(
     controllers: list[LwaxController],
-    order: "list[str]",
+    groups: "list[list[str]]",
     total_frames: int = 96,
     cycles: int = 1,
     duration_ms: int = 40,
     saturation: float = 1.0,
     value: float = 1.0,
 ) -> LwaxAnimation:
-    """A continuous hue gradient across ``order`` (one label per position)
-    that scrolls over time, instead of one solid color sweeping.
+    """A continuous hue gradient across ``groups`` that scrolls over time,
+    instead of one solid color sweeping.
 
-    Each position's hue is offset from its neighbors by ``1 / len(order)``
+    Takes ordered label-groups (same convention as :func:`build_wave` —
+    ``groups[i]`` is "whatever occupies position i") rather than a flat
+    label list, so labels that share a physical position (e.g. a Start
+    button lit at the same spot as an action button) get the identical
+    hue instead of two slightly-different neighboring ones.
+
+    Each position's hue is offset from its neighbors by ``1 / len(groups)``
     of the color wheel; every frame nudges the whole gradient forward by
     ``1 / total_frames`` of a cycle, so after ``total_frames`` frames it has
     scrolled exactly ``cycles`` full trips around the wheel and loops
@@ -386,21 +392,24 @@ def build_rainbow_scroll(
     """
     import colorsys
 
-    if not order:
-        raise ValueError("Need at least 1 label in order.")
+    if not groups:
+        raise ValueError("Need at least 1 group.")
     animation = LwaxAnimation(controllers)
-    unknown = set(order) - set(animation.labels)
+    all_labels = [label for group in groups for label in group]
+    unknown = set(all_labels) - set(animation.labels)
     if unknown:
         raise ValueError(f"Unknown control label(s): {sorted(unknown)}")
 
-    n = len(order)
+    n = len(groups)
     for frame in range(total_frames):
         phase = (frame / total_frames) * cycles
         colors = {}
-        for i, label in enumerate(order):
+        for i, group in enumerate(groups):
             hue = ((i / n) + phase) % 1.0
             r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)
-            colors[label] = (round(r * 48), round(g * 48), round(b * 48))
+            color = (round(r * 48), round(g * 48), round(b * 48))
+            for label in group:
+                colors[label] = color
         animation.add_frame(duration_ms, colors)
     return animation
 
