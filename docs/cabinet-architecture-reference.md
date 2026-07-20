@@ -1794,7 +1794,7 @@ Left to right, by column. A cell spanning two rows in the same column means thos
 
 | Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Admin** | | | | | | Left Click (`Mouse L`) | Right Click (`Mouse M`) | Select (`Enter`) | | Exit (`Esc`) | Search (`/`) | Pause (`P`) | | | | | |
+| **Admin** | | | | | | Left Click (`Mouse L`) | Right Click (`Mouse R`) | Select (`Enter`) | | Exit (`Esc`) | Search (`/`) | Pause (`P`) | | | | | |
 | **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
 | **Top** (joystick, B1–4, trackball) | P1 Joystick † | B1 (`A`) | B2 (`B`) | B3 (`C`) | B4 (`V`) | | | | Trackball | | | | P2 Joystick † | B1 (`G`) | B2 (`H`) | B3 (`I`) | B4 (`Y`) |
 | **Bottom** (B5–8) | | B5 (`D`) | B6 (`E`) | B7 (`F`) | B8 (`W`) | | | | | | | | | B5 (`J`) | B6 (`K`) | B7 (`L`) | B8 (`X`) |
@@ -1809,7 +1809,9 @@ Key points the old diagram got wrong or omitted:
 - The trackball sits in the **same row** as the joysticks and action buttons (column 9), not off to the side or in the admin row.
 - The admin row (Left Click through Pause) is evenly spaced with no real gap — the empty column 9 in that row here is just the trackball's column showing through from the row below, not an actual gap in the admin row.
 
-Letters/keys in parentheses above are the Mini-PAC key assignments — cross-reference the [pin-to-key mapping](#pin-to-key-mapping) below for the full pin/key table. Note: the Pin-to-key table calls pin42 "Mouse Middle Button," while `LEDBlinkyInputMap.xml`'s port labels for the same two trackball buttons are `RMOUSE`/`LMOUSE` (Right/Left) — that naming mismatch between the two source files hasn't been independently reconciled; "Left Click"/"Right Click" above follow what's physically printed on the panel per the photo, not the pin table's "Middle" wording.
+Letters/keys in parentheses above are the Mini-PAC key assignments — cross-reference the [pin-to-key mapping](#pin-to-key-mapping) below for the full pin/key table.
+
+> **Fixed a pre-existing internal inconsistency while writing this table**: the Pin-to-key mapping table had pin42 listed as "Mouse Middle Button," while the Button function reference table further down already had the same pin correctly as "Right Mouse Button" / "Right click" — consistent with `LEDBlinkyInputMap.xml`'s `RMOUSE` port label and the panel photo. Not a real hardware ambiguity, just a stale typo in one of the two tables that went unnoticed until this table pulled from the wrong one. Pin-to-key mapping corrected to match.
 
 ##### Joystick keybinds
 
@@ -1867,7 +1869,7 @@ All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → k
 | pin37 | ↑ Up Arrow | P1 Up |
 | pin38 | ← Left Arrow | P1 Left |
 | pin39 | → Right Arrow | P1 Right |
-| pin42 | Mouse Middle Button | Trackball button |
+| pin42 | Mouse Right Button | Trackball button |
 | pin43 | Mouse Left Button | Trackball button |
 
 Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
