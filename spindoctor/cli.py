@@ -9141,6 +9141,118 @@ def ledblinky_admin_buttons_set(
             console.print(f"[dim][verbose] no sections updated (player=P{result.admin_player})[/dim]")
 
 
+# ─── ledblinky lwax ────────────────────────────────────────────────────────────
+
+@ledblinky_group.group("lwax")
+def ledblinky_lwax_group():
+    """Build raw (unsigned) .lwax animation files from LEDBlinkyInputMap.xml.
+
+    \b
+    Subcommands:
+      fade   Generate a color-cycle fade animation across wired controls
+
+    IMPORTANT: the output is NOT signed and will not load in LedBlinky as-is.
+    LedBlinky Config validates a per-file signature that cannot be reproduced
+    outside its own tooling. To finish: open the generated file in
+    LEDBlinkyAnimationEditor.exe (ships in <ledblinky_dir>\\Plugins\\LEDBlinky\\)
+    and use Animation -> Save As with no edits -- the editor signs whatever it
+    saves and rewrites the board IDs/attribute format to match its own
+    LEDBlinkyInputMap.xml. See docs/cabinet-architecture-reference.md ->
+    "LEDBlinky Animation Files (.lwax)" for the full story.
+    """
+
+
+def _parse_lwax_hex_color(value: str) -> "tuple[int, int, int]":
+    from .ledblinky import ColorEntry
+
+    entry = ColorEntry.from_hex("", value)
+    return (entry.r, entry.g, entry.b)
+
+
+@ledblinky_lwax_group.command("fade")
+@click.option("--color", "hex_colors", multiple=True, required=True,
+              help="Hex color (RRGGBB) to cycle through -- pass at least twice, "
+                   "e.g. --color FF0000 --color 00FF00 --color 0000FF. "
+                   "The animation loops back to the first color at the end.")
+@click.option("--labels", default=None,
+              help="Comma-separated control labels to animate (e.g. 'P1B1,P1B2'). "
+                   "Default: every wired control found in LEDBlinkyInputMap.xml.")
+@click.option("--steps-per-leg", default=48, show_default=True, type=int,
+              help="Frames generated per color-to-color transition (higher = smoother/slower).")
+@click.option("--duration-ms", default=40, show_default=True, type=int,
+              help="Milliseconds each frame holds.")
+@click.option("--name", default="fade", show_default=True,
+              help="Base filename (without extension) when --output is not given.")
+@click.option("--output", "output_path", type=click.Path(), default=None,
+              help="Write to this exact path instead of <output_dir>/LEDBlinky/lwax/<name>.lwax.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the file (default: dry-run preview).")
+def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, output_path, apply_changes):
+    """Generate a raw .lwax color-cycle fade animation.
+
+    \b
+    spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF
+    spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --labels P1B1,P1B2 --apply
+    """
+    config = _cfg()
+
+    if len(hex_colors) < 2:
+        err_console.print("[red]Need at least 2 --color values to cycle between.[/red]")
+        sys.exit(1)
+
+    from .lwax import build_color_cycle, parse_input_map, resolve_input_map_path
+
+    try:
+        input_map_path = resolve_input_map_path(config)
+        controllers = parse_input_map(input_map_path)
+        colors = [_parse_lwax_hex_color(c) for c in hex_colors]
+        label_list = [s.strip() for s in labels.split(",")] if labels else None
+        animation = build_color_cycle(
+            controllers,
+            colors,
+            steps_per_leg=steps_per_leg,
+            duration_ms=duration_ms,
+            labels=label_list,
+        )
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if output_path:
+        out_path = Path(output_path)
+    elif config.output_dir:
+        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
+    else:
+        err_console.print(
+            "[red]Pass --output PATH, or configure output_dir "
+            "(spindoctor config set output_dir <path>).[/red]"
+        )
+        sys.exit(1)
+
+    target_labels = label_list if label_list is not None else animation.labels
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    console.print(f"Controllers  : {len(controllers)} ({', '.join(c.name + ' Id=' + c.id for c in controllers)})")
+    console.print(f"Controls     : [cyan]{len(target_labels)}[/cyan] ({', '.join(sorted(target_labels))})")
+    console.print(f"Colors       : {' -> '.join(hex_colors)} -> (loop)")
+    console.print(f"Frames       : [cyan]{len(animation.frames)}[/cyan] @ {duration_ms}ms")
+
+    if not apply_changes:
+        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
+        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(animation.render(), encoding="utf-8", newline="")
+    console.print(f"\n[green]Wrote:[/green] {out_path}")
+    console.print(
+        "\n[yellow]This file is not signed yet.[/yellow] Open it in "
+        "[cyan]LEDBlinkyAnimationEditor.exe[/cyan] "
+        "(<ledblinky_dir>\\Plugins\\LEDBlinky\\) and use "
+        "[cyan]Animation -> Save As[/cyan] with no edits to sign it, "
+        "then copy the result into <ledblinky_dir>\\lwa\\."
+    )
+
+
 # ─── add-system ───────────────────────────────────────────────────────────────
 
 # HyperSpin Main Menu media slots that we know how to fetch from ScreenScraper.

@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky lwax fade`** — generates a raw (unsigned) `.lwax` LedBlinky animation that fades wired controls uniformly through a list of colors, looping back to the first. Reads the board/port layout directly from `<ledblinky_dir>\LEDBlinkyInputMap.xml`, so it works for any controller/board configuration, not just this cabinet's two-PACLED64 layout. `--labels` targets a subset of controls; `--steps-per-leg`/`--duration-ms` tune fade smoothness/speed. Output still needs one manual Open → Save As round-trip through LedBlinky's bundled `LEDBlinkyAnimationEditor.exe` to get signed (see the Docs entry below) — the command prints that reminder on write.
+
 ### Docs
 
 - **PAC-LED64 dual-board channel map and `.lwax` animation file signing documented and resolved.** New "LEDBlinky Animation Files (.lwax)" section in `cabinet-architecture-reference.md` covering: this cabinet's two PAC-LED64 boards (`Id="1"`/`Id="2"`, each with a 3-port-per-control RGB channel map, decoded from `LEDBlinkyInputMap.xml`); the `.lwax` frame/Intensity/State format, confirmed against a real Animation-Editor-signed file, including that channel values persist frame-to-frame unless redeclared and that current-format files use `LedHwType=<code>` rather than the `Device=<Name>` form seen in third-party sample packs; the "Missing Signature" load error and its resolution — build/edit `.lwax` files with LedBlinky's bundled Animation Editor (`<ledblinky_dir>\Plugins\LEDBlinky\LEDBlinkyAnimationEditor.exe`), which signs whatever it saves, rather than hand-authoring XML; and a `LightFEControls=1` gotcha where HyperSpin's active navigation buttons override an FE animation's colors on exactly those buttons.

@@ -21,7 +21,8 @@ env/
 *.bak
 
 # Tooling
-.claude/
+.claude/*
+!.claude/skills/
 .pytest_cache/
 
 .DS_Store
