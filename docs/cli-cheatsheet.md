@@ -508,12 +508,13 @@ spindoctor introvideo list                                        :: on disk / r
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"         :: dry-run preview
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy + register
 spindoctor introvideo add "C:\A.mp4" "C:\B.mp4" --apply           :: add several in one call
+spindoctor introvideo add "<Folder=>\Capcom Intro.mp4" --apply    :: already on disk, unregistered? same command, registers with no copy
 spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
 spindoctor introvideo remove "A.mp4" "B.mp4" --apply              :: remove several in one call
 ```
 
-> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)…** (multi-select file picker) and **Remove selected** (Ctrl/Shift-click for several) wrap the commands above.
+> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)** (multi-select file picker), **Register selected** (already on-disk, unregistered rows — no picker, no copy), and **Remove selected** (Ctrl/Shift-click for several) wrap the commands above. No confirmation dialogs — the global **Apply** checkbox is the gate.
 
 Reference: [introvideo](commands.md#intro-video-randomizer), [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 
