@@ -21,9 +21,15 @@ needs to expose.
 Writes are surgical: only the ``FileList=``/``RandomList=`` lines are
 replaced in place (same approach as ``rocketlauncher.rewrite_pclauncher_application``)
 so every other line, comment, and the file's key casing survive untouched.
+
+``shuffle_videos`` reorders both lists to a fresh random order (membership
+untouched) — useful because the third-party randomizer script may not
+itself randomize on every boot, so a pre-shuffled list is the only way to
+vary playback order across sessions.
 """
 from __future__ import annotations
 
+import random
 import re
 import shutil
 from dataclasses import dataclass, field
@@ -88,6 +94,14 @@ class RemoveResult:
     @property
     def changed(self) -> bool:
         return self.file_list_changed or self.random_list_changed
+
+
+@dataclass
+class ShuffleResult:
+    old_order: list[str]
+    new_order: list[str]
+    changed: bool
+    backup_path: Optional[Path] = None
 
 
 def get_ini_path(config: Config) -> Path:
@@ -434,3 +448,48 @@ def remove_video(config: Config, filename: str, *, apply: bool = False) -> Remov
     never deleted — this only stops the randomizer from picking it.
     """
     return remove_videos(config, [filename], apply=apply)[0]
+
+
+def shuffle_videos(
+    config: Config, *, seed: Optional[int] = None, apply: bool = False,
+) -> ShuffleResult:
+    """Randomize the playback order of the registered videos in Random.ini.
+
+    FileList and RandomList are shuffled to the same new order; a filename
+    present in only one of the two lists (dangling INI entries can happen —
+    see :func:`list_videos`) is shuffled separately within that list so
+    membership in each list is preserved exactly, just reordered. No video
+    file, and no FileList/RandomList *membership*, is added, removed, or
+    otherwise touched — this only changes the order names are listed in.
+
+    ``seed`` makes the shuffle reproducible (mainly for tests); omit it for a
+    fresh random order every call.
+    """
+    ini_path = get_ini_path(config)
+    state = load_randomizer(ini_path)
+    rng = random.Random(seed)
+
+    new_file_list = list(state.file_list)
+    rng.shuffle(new_file_list)
+
+    file_set = set(state.file_list)
+    random_set = set(state.random_list)
+    new_random_list = [name for name in new_file_list if name in random_set]
+    random_only = [name for name in state.random_list if name not in file_set]
+    rng.shuffle(random_only)
+    new_random_list += random_only
+
+    changed = new_file_list != state.file_list or new_random_list != state.random_list
+
+    result = ShuffleResult(
+        old_order=state.file_list,
+        new_order=new_file_list,
+        changed=changed,
+    )
+
+    if apply and changed:
+        if config.backup_before_modify:
+            result.backup_path = _backup(ini_path, _config_backup_dir(config))
+        _rewrite_lists(ini_path, new_file_list, new_random_list)
+
+    return result
