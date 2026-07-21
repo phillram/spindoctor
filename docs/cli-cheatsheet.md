@@ -512,9 +512,11 @@ spindoctor introvideo add "<Folder=>\Capcom Intro.mp4" --apply    :: already on 
 spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
 spindoctor introvideo remove "A.mp4" "B.mp4" --apply              :: remove several in one call
+spindoctor introvideo shuffle                                     :: preview a fresh random playback order
+spindoctor introvideo shuffle --apply                             :: commit it — reorders only, adds/removes nothing
 ```
 
-> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)** (multi-select file picker), **Register selected** (already on-disk, unregistered rows — no picker, no copy), and **Remove selected** (Ctrl/Shift-click for several) wrap the commands above. No confirmation dialogs — the global **Apply** checkbox is the gate.
+> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)** (multi-select file picker), **Register selected** (already on-disk, unregistered rows — no picker, no copy), **Remove selected** (Ctrl/Shift-click for several), and **Shuffle order** wrap the commands above. No confirmation dialogs — the global **Apply** checkbox is the gate.
 
 Reference: [introvideo](commands.md#intro-video-randomizer), [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 
@@ -693,6 +695,7 @@ spindoctor ledblinky patch-settings --apply                                     
 spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply                       :: play animation on unused buttons instead
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: set FE active animation
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                                       :: static colors while browsing
+spindoctor ledblinky patch-settings --fe-lwa "<Random>" --apply                              :: different FE animation every time (LedBlinky picks)
 spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both FE active and screen saver animations
 spindoctor ledblinky patch-settings --apply --verbose                                         :: show each key changed with old→new value
