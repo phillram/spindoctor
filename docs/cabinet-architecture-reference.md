@@ -2188,6 +2188,13 @@ Controls the animation played during the HyperSpin screen saver. Uses the same f
 
 SpinDoctor patches all three keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change. In the GUI's LedBlinky tab, `<Random>` is a real, selectable choice for all three dropdowns and is written to `Settings.ini` literally; it's distinct from the FE/screen-saver dropdowns' separate `(leave unchanged)` sentinel, which omits the flag from the `patch-settings` call entirely rather than writing anything.
 
+**Other literal values LedBlinky recognizes beyond `<Random>`** (per LedBlinky's own readme/changelog — not independently confirmed on this cabinet, but they're plain strings SpinDoctor's patcher never validates, so they already work if passed to `--fe-lwa`/`--ss-lwa`/`--game-lwa` or typed into the GUI's editable comboboxes):
+
+- **`<Random Montage>`** — strings multiple animations together in random order (one full loop of each before moving to the next), rather than picking one animation to loop. Documented for `FEScreenSaverLWAFile` (screen saver) and `PauseLWAFile` (game pause — a key SpinDoctor doesn't currently manage at all). Not documented for `FELWAFile` or `GamePlayLWAFile`.
+- **`<Audio Animation>`** — syncs LED timing to audio playback instead of looping a fixed animation. Documented for `FELWAFile` (FE start-up / FE active) and `GameStartLWAFile` (also unmanaged by SpinDoctor).
+
+The GUI pre-populates `<Random Montage>` in the Screen Saver dropdown and `<Audio Animation>` in the FE active dropdown, matching the keys LedBlinky documents support for each — but any of the three values can be typed into any of the three dropdowns regardless, since they're free-text comboboxes.
+
 ```bat
 spindoctor ledblinky patch-settings --apply                                                   :: fix in-game unused-button flash
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: set FE active animation
@@ -2291,6 +2298,8 @@ A hand-built `.lwax` (well-formed XML, correct channel map, no other errors, no 
 2. **Animation → Open** in the Animation Editor, select the file.
 3. **Animation → Save As** — no edits needed. The editor rewrites `Device="PACLED64" Id="0"` to the real `LedHwType="3" Id="1"` / `Id="2"` pairing (read from the loaded `LEDBlinkyInputMap.xml`) and adds the three-line signed header.
 4. Copy the result into `<ledblinky_dir>\lwa\` and assign it in `Settings.ini`.
+
+**Confirmed: the signature check only gates LedBlinky Config's own UI, not runtime playback.** Assigning a raw, unsigned `.lwax` directly to `FELWAFile`/`FEScreenSaverLWAFile`/`GamePlayLWAFile` in `Settings.ini` and launching HyperSpin plays the animation correctly — the "missing or invalid signature" error only surfaces when LedBlinky Config itself tries to load/browse/select the file within its own animation-management UI. The Open → Save As round-trip above is therefore only necessary if you want to manage the file *through LedBlinky Config* without it erroring — it is not a prerequisite for the animation to actually run.
 
 **`spindoctor ledblinky lwax fade`** automates step 1 generically — it parses the real `LEDBlinkyInputMap.xml` (any board/controller layout, not hardcoded to this cabinet's two PACLED64 boards) and emits a raw, correctly-addressed, unsigned `.lwax` fading through a list of colors. Steps 2-4 (Open → Save As → copy → assign) are still manual; the signing step can't be automated without either the real signature algorithm or fragile GUI automation, neither of which was worth the complexity given how quick the manual round-trip is. See `docs/commands.md` → `ledblinky lwax fade` for usage. The exact fade this section documents (`rgbfade.lwax`, confirmed working after signing) round-trips byte-for-byte identical through this command.
 

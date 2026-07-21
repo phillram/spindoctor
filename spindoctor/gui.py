@@ -11380,7 +11380,8 @@ class _SpinDoctorGUI:
             sp_frame,
             text="Animation while actively browsing HyperSpin (FELWAFile). "
                  "Leave blank for static colors, pick <Random> to have LedBlinky "
-                 "choose a different animation each time, or pick a specific file. "
+                 "choose a different animation each time, <Audio Animation> to sync "
+                 "LEDs to audio instead, or pick a specific file. "
                  "Use Refresh list to populate from your LEDBlinky folder.",
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
@@ -11398,7 +11399,8 @@ class _SpinDoctorGUI:
             sp_frame,
             text="Animation during the HyperSpin screen saver (FEScreenSaverLWAFile). "
                  "Leave blank to silence, pick <Random> to have LedBlinky choose a "
-                 f"different animation each time, or pick a specific file. Leave as "
+                 "different animation each time, <Random Montage> to string several "
+                 "animations together in random order, or pick a specific file. Leave as "
                  f"\"{_LWA_LEAVE_UNCHANGED}\" to not touch this key at all.",
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
@@ -11699,16 +11701,24 @@ class _SpinDoctorGUI:
             current = {}
         # Blank (silence/static) and <Random> (LedBlinky's own "pick a
         # different animation each time" value) are always offered alongside
-        # whatever .lwa/.lwax files are on disk. FE/SS additionally offer the
-        # "leave unchanged" sentinel, since those two keys support omitting
-        # the flag entirely; GamePlayLWAFile has no such omit path.
-        values = ["", "<Random>"] + lwa_files
-        fe_ss_values = [_LWA_LEAVE_UNCHANGED] + values
-        self._led_fe_lwa_combo["values"] = fe_ss_values
+        # whatever .lwa/.lwax files are on disk. <Random Montage> (string
+        # several animations together) and <Audio Animation> (sync to audio)
+        # are additional literal values LedBlinky recognizes, but only for
+        # specific keys per LedBlinky's own docs — Random Montage for the
+        # screen saver, Audio Animation for FE active — so each combo only
+        # pre-populates the one(s) that key actually supports; either can
+        # still be typed into any combo by hand since they're editable.
+        # FE/SS additionally offer the "leave unchanged" sentinel, since
+        # those two keys support omitting the flag entirely; GamePlayLWAFile
+        # has no such omit path.
+        base_values = ["", "<Random>"] + lwa_files
+        fe_values = [_LWA_LEAVE_UNCHANGED, "", "<Random>", "<Audio Animation>"] + lwa_files
+        ss_values = [_LWA_LEAVE_UNCHANGED, "", "<Random>", "<Random Montage>"] + lwa_files
+        self._led_fe_lwa_combo["values"] = fe_values
         if hasattr(self, "_led_ss_lwa_combo"):
-            self._led_ss_lwa_combo["values"] = fe_ss_values
+            self._led_ss_lwa_combo["values"] = ss_values
         if hasattr(self, "_led_game_lwa_combo"):
-            self._led_game_lwa_combo["values"] = values
+            self._led_game_lwa_combo["values"] = base_values
         # Pre-select current values from Settings.ini; fall back to defaults if
         # the key is missing (ledblinky_dir not set, file absent, etc.).
         if "FELWAFile" in current:

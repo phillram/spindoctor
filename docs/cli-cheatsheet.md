@@ -696,7 +696,9 @@ spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply          
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: set FE active animation
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                                       :: static colors while browsing
 spindoctor ledblinky patch-settings --fe-lwa "<Random>" --apply                              :: different FE animation every time (LedBlinky picks)
+spindoctor ledblinky patch-settings --fe-lwa "<Audio Animation>" --apply                     :: sync FE animation to audio
 spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
+spindoctor ledblinky patch-settings --ss-lwa "<Random Montage>" --apply                      :: screen saver strings several animations together
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both FE active and screen saver animations
 spindoctor ledblinky patch-settings --apply --verbose                                         :: show each key changed with old→new value
 
