@@ -2730,7 +2730,9 @@ def introvideo_group():
     <intro_randomizer_dir>/Random.ini. Videos live in the Folder= path
     recorded in that INI; its Backup\\ subfolder is never scanned. 'add'
     copies a video into that folder and registers it in FileList/RandomList;
-    'remove' drops it from those lists without deleting the file on disk.
+    'remove' drops it from those lists without deleting the file on disk;
+    'shuffle' randomizes the order videos are listed in without adding,
+    removing, or deleting any video.
     """
 
 
@@ -2816,6 +2818,48 @@ def introvideo_add(sources, apply_changes):
         console.print("[dim]Re-run with --apply to commit.[/dim]")
     elif backup_path:
         console.print(f"[dim]Backed up Random.ini to {backup_path}[/dim]")
+
+
+@introvideo_group.command("shuffle")
+@click.option("--seed", type=int, default=None,
+              help="Random seed, for a reproducible shuffle (mainly for testing). "
+                   "Omit for a fresh random order every run.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the new order to Random.ini. Without this flag, only "
+                   "a preview is printed.")
+def introvideo_shuffle(seed, apply_changes):
+    """Randomize the playback order of registered videos in Random.ini.
+
+    Reorders FileList/RandomList to a fresh random order — no video is
+    added, removed, or deleted; only the order changes. Useful when the
+    Intro Video Randomizer script itself doesn't randomize on every boot,
+    so pre-shuffling the list is what actually varies playback order.
+    """
+    from .introvideo import RandomizerIniError, shuffle_videos
+
+    config = _cfg()
+    try:
+        result = shuffle_videos(config, seed=seed, apply=apply_changes)
+    except RandomizerIniError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if not result.changed:
+        console.print(
+            "[yellow]Nothing to shuffle[/yellow] — fewer than 2 videos are "
+            "registered, or the new random order happened to match the old one."
+        )
+        return
+
+    verb = "Would reorder" if not apply_changes else "Reordered"
+    console.print(f"{verb} to:")
+    for name in result.new_order:
+        console.print(f"  {name}")
+
+    if not apply_changes:
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+    elif result.backup_path:
+        console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
 
 
 @introvideo_group.command("remove")

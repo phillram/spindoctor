@@ -129,6 +129,14 @@ _FG_DIMMER        = "#7a7a7a"  # disabled-look text (replaces #888 / "gray")
 _DARK_BORDER      = "#3c3c3c"
 _DARK_ACCENT      = "#007acc"  # focus ring / progress bar / hyperlink-ish
 
+# Sentinel shown in the LedBlinky FE/screen-saver animation comboboxes to mean
+# "don't touch this Settings.ini key at all" (patch_ledblinky_settings's
+# fe_lwa_file/ss_lwa_file=None). Deliberately distinct from the literal string
+# "<Random>", which LedBlinky itself treats as a real value meaning "pick a
+# random animation" — conflating the two used to make "<Random>" unselectable
+# as an actual choice.
+_LWA_LEAVE_UNCHANGED = "(leave unchanged)"
+
 # Scrollbar thumb (the draggable rectangle) needs noticeably more contrast
 # against the trough than the regular button face — picked by eye so the
 # thumb reads as "obviously the grabby part" without yelling.
@@ -884,6 +892,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "introvideo remove <FILENAME>",
     "introvideo remove <FILENAME> --apply",
     "introvideo remove <FILENAME> <FILENAME> --apply",
+    "introvideo shuffle",
+    "introvideo shuffle --apply",
     # ── LEDBlinky ─────────────────────────────────────────────────────────────
     "─── LEDBlinky ───",
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
@@ -11356,7 +11366,7 @@ class _SpinDoctorGUI:
         self.ttk.Label(sp_frame, text="FE active animation").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
-        self._led_fe_lwa_var = self.tk.StringVar(value="<Random>")
+        self._led_fe_lwa_var = self.tk.StringVar(value=_LWA_LEAVE_UNCHANGED)
         self._led_fe_lwa_combo = self.ttk.Combobox(
             sp_frame, textvariable=self._led_fe_lwa_var, width=36,
         )
@@ -11369,14 +11379,17 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             sp_frame,
             text="Animation while actively browsing HyperSpin (FELWAFile). "
-                 "Leave blank for static colors. Use Refresh list to populate from your LEDBlinky folder.",
+                 "Leave blank for static colors, pick <Random> to have LedBlinky "
+                 "choose a different animation each time, <Audio Animation> to sync "
+                 "LEDs to audio instead, or pick a specific file. "
+                 "Use Refresh list to populate from your LEDBlinky folder.",
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
         self.ttk.Label(sp_frame, text="Screen saver animation").grid(
             row=3, column=0, sticky="w", padx=6, pady=2,
         )
-        self._led_ss_lwa_var = self.tk.StringVar(value="<Random>")
+        self._led_ss_lwa_var = self.tk.StringVar(value=_LWA_LEAVE_UNCHANGED)
         self._led_ss_lwa_combo = self.ttk.Combobox(
             sp_frame, textvariable=self._led_ss_lwa_var, width=36,
         )
@@ -11385,7 +11398,10 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             sp_frame,
             text="Animation during the HyperSpin screen saver (FEScreenSaverLWAFile). "
-                 "Leave blank to silence. Omit (leave as <Random>) to leave unchanged.",
+                 "Leave blank to silence, pick <Random> to have LedBlinky choose a "
+                 "different animation each time, <Random Montage> to string several "
+                 "animations together in random order, or pick a specific file. Leave as "
+                 f"\"{_LWA_LEAVE_UNCHANGED}\" to not touch this key at all.",
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
@@ -11401,8 +11417,8 @@ class _SpinDoctorGUI:
         self.ttk.Label(
             sp_frame,
             text=("Leave blank to turn unused buttons off during gameplay (recommended). "
-                  "Select an animation to play on all unmapped buttons instead — "
-                  "applies globally to every game on every system."),
+                  "Pick <Random> for a random animation on unmapped buttons, or select a "
+                  "specific animation instead — applies globally to every game on every system."),
             wraplength=700, justify="left", foreground=_FG_DIM,
         ).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
 
@@ -11683,13 +11699,26 @@ class _SpinDoctorGUI:
         except Exception:
             lwa_files = []
             current = {}
-        # Always include a blank entry (silent / no animation).
-        values = [""] + lwa_files
-        self._led_fe_lwa_combo["values"] = values
+        # Blank (silence/static) and <Random> (LedBlinky's own "pick a
+        # different animation each time" value) are always offered alongside
+        # whatever .lwa/.lwax files are on disk. <Random Montage> (string
+        # several animations together) and <Audio Animation> (sync to audio)
+        # are additional literal values LedBlinky recognizes, but only for
+        # specific keys per LedBlinky's own docs — Random Montage for the
+        # screen saver, Audio Animation for FE active — so each combo only
+        # pre-populates the one(s) that key actually supports; either can
+        # still be typed into any combo by hand since they're editable.
+        # FE/SS additionally offer the "leave unchanged" sentinel, since
+        # those two keys support omitting the flag entirely; GamePlayLWAFile
+        # has no such omit path.
+        base_values = ["", "<Random>"] + lwa_files
+        fe_values = [_LWA_LEAVE_UNCHANGED, "", "<Random>", "<Audio Animation>"] + lwa_files
+        ss_values = [_LWA_LEAVE_UNCHANGED, "", "<Random>", "<Random Montage>"] + lwa_files
+        self._led_fe_lwa_combo["values"] = fe_values
         if hasattr(self, "_led_ss_lwa_combo"):
-            self._led_ss_lwa_combo["values"] = values
+            self._led_ss_lwa_combo["values"] = ss_values
         if hasattr(self, "_led_game_lwa_combo"):
-            self._led_game_lwa_combo["values"] = values
+            self._led_game_lwa_combo["values"] = base_values
         # Pre-select current values from Settings.ini; fall back to defaults if
         # the key is missing (ledblinky_dir not set, file absent, etc.).
         if "FELWAFile" in current:
@@ -11702,10 +11731,12 @@ class _SpinDoctorGUI:
     def _run_led_patch_settings(self) -> None:
         fe_lwa = self._led_fe_lwa_var.get().strip()
         ss_lwa = self._led_ss_lwa_var.get().strip()
-        # Treat "<Random>" sentinel as "leave unchanged" (None) so an accidental
-        # click doesn't write "<Random>" literally into Settings.ini.
-        fe_lwa_arg = None if fe_lwa == "<Random>" else fe_lwa
-        ss_lwa_arg = None if ss_lwa == "<Random>" else ss_lwa
+        # Only the dedicated "(leave unchanged)" sentinel skips the flag —
+        # "<Random>" is a real, selectable value that gets written to
+        # Settings.ini literally, matching LedBlinky's own random-animation
+        # feature (see docs/cabinet-architecture-reference.md).
+        fe_lwa_arg = None if fe_lwa == _LWA_LEAVE_UNCHANGED else fe_lwa
+        ss_lwa_arg = None if ss_lwa == _LWA_LEAVE_UNCHANGED else ss_lwa
 
         game_lwa = self._led_game_lwa_var.get().strip()
         args = ["ledblinky", "patch-settings", "--game-lwa", game_lwa]
@@ -12810,7 +12841,10 @@ class _SpinDoctorGUI:
                   "registers already on-disk row(s) as-is, with no picker "
                   "and no copy; 'Remove selected' only edits Random.ini for "
                   "the selected row(s) (Ctrl/Shift-click to select "
-                  "several) — the files themselves are left on disk."),
+                  "several) — the files themselves are left on disk; "
+                  "'Shuffle order' randomizes the order every registered "
+                  "video is listed in, without adding, removing, or "
+                  "deleting anything."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
@@ -12868,6 +12902,10 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             btn_row, text="Remove selected",
             command=self._introvideo_remove,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            btn_row, text="Shuffle order",
+            command=self._introvideo_shuffle,
         ).pack(side="left", padx=(6, 0))
 
         self._refresh_introvideo_list()
@@ -13002,6 +13040,19 @@ class _SpinDoctorGUI:
         # doesn't already cover.
         filenames = [tree.item(iid, "text") for iid in sel]
         args = ["introvideo", "remove"] + filenames
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_list(),
+        )
+
+    def _introvideo_shuffle(self) -> None:
+        """Randomize the order registered videos are listed in — no video is
+        added, removed, or deleted. Same Apply-checkbox gate as every other
+        action on this tab: unticked previews the new order, ticked commits it.
+        """
+        args = ["introvideo", "shuffle"]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(

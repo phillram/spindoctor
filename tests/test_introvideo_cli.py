@@ -106,6 +106,35 @@ def test_introvideo_remove_multiple_filenames_in_one_call(cabinet):
     assert "Existing.mp4" not in ini_text.split("\n")[4]  # FileList= line
 
 
+def test_introvideo_shuffle_dry_run_then_apply(cabinet):
+    randomizer_dir = cabinet["randomizer_dir"]
+    (cabinet["videos_dir"] / "Second.mp4").write_bytes(b"y" * 10)
+    (randomizer_dir / "Random.ini").write_text(
+        (randomizer_dir / "Random.ini").read_text()
+        .replace("FileList=Existing.mp4", "FileList=Existing.mp4|Second.mp4")
+        .replace("RandomList=Existing.mp4", "RandomList=Existing.mp4|Second.mp4"),
+        encoding="utf-8",
+    )
+    before = (randomizer_dir / "Random.ini").read_text()
+    runner = CliRunner()
+
+    dry = runner.invoke(cli, ["introvideo", "shuffle", "--seed", "42"])
+    assert dry.exit_code == 0, dry.output
+    assert (randomizer_dir / "Random.ini").read_text() == before
+
+    applied = runner.invoke(cli, ["introvideo", "shuffle", "--seed", "42", "--apply"])
+    assert applied.exit_code == 0, applied.output
+    assert "Existing.mp4" in applied.output
+    assert "Second.mp4" in applied.output
+
+
+def test_introvideo_shuffle_single_video_reports_noop(cabinet):
+    runner = CliRunner()
+    result = runner.invoke(cli, ["introvideo", "shuffle", "--apply"])
+    assert result.exit_code == 0, result.output
+    assert "Nothing to shuffle" in result.output
+
+
 def test_introvideo_unconfigured_errors_cleanly(tmp_path, monkeypatch):
     home = tmp_path / "home"
     home.mkdir()
