@@ -1487,6 +1487,33 @@ spindoctor ledblinky fill-defaults --apply --verbose  :: also list each ROM adde
 spindoctor ledblinky colors list           :: show all Color-RGB.ini definitions
 spindoctor ledblinky colors edit Blue      :: inspect current Blue definition
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply  :: rename + recolor
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF          :: preview a Red->Green->Blue fade animation
+spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --apply                 :: write the raw (unsigned) .lwax file
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --labels P1B1,P1B2 --apply :: animate only specific controls
+```
+
+### `ledblinky lwax fade`
+
+Builds a raw `.lwax` animation file that fades every wired control (or a `--labels` subset) uniformly through a list of colors, looping back to the first. Reads the board/port layout straight from `<ledblinky_dir>\LEDBlinkyInputMap.xml` — works for any number of controllers/boards, not just this cabinet's two-PACLED64 layout.
+
+**The output is not signed and will not load in LedBlinky as-is.** LedBlinky Config validates a per-file signature that cannot be reproduced outside its own tooling (see the "LEDBlinky Animation Files (.lwax)" section of `cabinet-architecture-reference.md` for the full investigation). To finish:
+
+1. Open the generated file in `LEDBlinkyAnimationEditor.exe` (ships in `<ledblinky_dir>\Plugins\LEDBlinky\` — no separate install needed).
+2. **Animation → Save As**, same filename, no edits. The editor signs whatever it saves and rewrites the board IDs/attribute format to match its own `LEDBlinkyInputMap.xml`.
+3. Copy the signed file into `<ledblinky_dir>\lwa\` and assign it to `FELWAFile` / `FEScreenSaverLWAFile` / `GamePlayLWAFile` via `ledblinky patch-settings`, or select it directly in LedBlinky Config.
+
+```bat
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF
+:: preview: lists detected controllers/controls and frame count, writes nothing
+
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF --apply
+:: writes <output_dir>/LEDBlinky/lwax/fade.lwax
+
+spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --name mypattern --output D:\temp\mypattern.lwax --apply
+:: custom name / exact output path
+
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 --duration-ms 60 --apply
+:: faster steps, slower per-frame hold -- tune to taste
 ```
 
 ### `ledblinky setup`

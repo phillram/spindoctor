@@ -1782,140 +1782,99 @@ The cabinet uses two Ultimarc boards over USB:
 | **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
 | **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
+> **This cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
+
 The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
 
 #### Physical button layout
 
-```
- ┌─────────────────────────────────────────────────────────────────┐
- │                    PLAYER 1              PLAYER 2               │
- │                                                                 │
- │  Joystick            [↑]                    [N]                │
- │                   [←][↓][→]             [M][Q][O]              │
- │                                                                 │
- │  Coin / Start      [S]  [R]             [U]  [T]               │
- │                                                                 │
- │  Top row      [A] [B] [C] [V]      [G] [H] [I] [Y]            │
- │  Bottom row   [D] [E] [F] [W]      [J] [K] [L] [X]            │
- │                                                                 │
- │  Admin:  [Enter]  [Esc]  [/]  [P]                              │
- │  Trackball:  [Mouse L]  [Mouse M]                              │
- │                                                                 │
- │  Hold [S] (P1 Coin) +                                          │
- │    [↑] → Volume Up     [↓] → Volume Down    [Enter] → RetroArch Menu │
- └─────────────────────────────────────────────────────────────────┘
-```
+> **Confirmed against an actual photo of the panel** — a hand-drawn ASCII diagram was the original source here and got the Coin/Start order and Player 2's Coin/Start position wrong; box-drawing characters are also just hard to keep precisely column-aligned by hand. A table is the more reliable format for something this position-sensitive, so it replaced the diagram. See [LEDBlinky Animation Files (.lwax) → Physical control panel layout](#ledblinky-animation-files-lwax) for the story of how that got sorted out (short version: ask for a photo before trusting any text description of hardware layout, even one already confirmed once against a rendered diagram).
 
-Letters in use: A B C D E F G H I J K L M N O P Q R S T U V W X Y  
-Letters free: Z
+**This is one of the two source-of-truth tables for this cabinet's controls.** It owns *physical position*, and, for convenience, repeats each control's key underneath its name. Every other per-control fact (Mini-PAC pin, PAC-LED64 board/port, RetroArch action) lives in exactly one place, the [Master control reference](#master-control-reference) directly below — **and if the key shown here ever disagrees with the key in that table, the Master control reference wins**; this table's key is a convenience copy, not a second source of truth for it.
 
-#### Pin-to-key mapping
+Left to right, by column. A cell spanning two rows in the same column means those controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick). Cells use each control's name as it appears in the Master control reference below, with the key it sends in parentheses — look a control up there for its pin, LED port, and RetroArch action.
 
-All 34 input pins decoded from the WinIPAC EEPROM export (USB HID keycodes → key names):
+| Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Admin** | | | | | | Left Click | Right Click | Select (`Enter`) | | Exit (`Escape`) | Search (`/`) | Pause (`P`) | | | | | |
+| **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
+| **Top** (joystick, B1–4, trackball) | P1 Joystick (`↑↓←→`) | P1 B1 (`A`) | P1 B2 (`B`) | P1 B3 (`C`) | P1 B4 (`V`) | | | | Trackball | | | | P2 Joystick (`N`/`Q`/`M`/`O`) | P2 B1 (`G`) | P2 B2 (`H`) | P2 B3 (`I`) | P2 B4 (`Y`) |
+| **Bottom** (B5–8) | | P1 B5 (`D`) | P1 B6 (`E`) | P1 B7 (`F`) | P1 B8 (`W`) | | | | | | | | | P2 B5 (`J`) | P2 B6 (`K`) | P2 B7 (`L`) | P2 B8 (`X`) |
 
-| Pin | Key | Logical function |
-|-----|-----|-----------------|
-| pin02 | Enter | Select / confirm |
-| pin03 | Escape | Exit |
-| pin04 | `/` | Search |
-| pin05 | P | Pause |
-| pin06 | X | P2 Button 8 |
-| pin07 | L | P2 Button 7 |
-| pin08 | K | P2 Button 6 |
-| pin09 | J | P2 Button 5 |
-| pin12 | Y | P2 Button 4 |
-| pin13 | I | P2 Button 3 |
-| pin14 | H | P2 Button 2 |
-| pin15 | G | P2 Button 1 |
-| pin16 | Q | P2 Down |
-| pin17 | N | P2 Up |
-| pin18 | M | P2 Left |
-| pin19 | O | P2 Right |
-| pin22 | U | P2 Coin |
-| pin23 | S *(shift/swop key)* | P1 Coin |
-| pin24 | T | P2 Start |
-| pin25 | R | P1 Start |
-| pin26 | W | P1 Button 8 |
-| pin27 | F | P1 Button 7 |
-| pin28 | E | P1 Button 6 |
-| pin29 | D | P1 Button 5 |
-| pin32 | V | P1 Button 4 |
-| pin33 | C | P1 Button 3 |
-| pin34 | B | P1 Button 2 |
-| pin35 | A | P1 Button 1 |
-| pin36 | ↓ Down Arrow | P1 Down |
-| pin37 | ↑ Up Arrow | P1 Up |
-| pin38 | ← Left Arrow | P1 Left |
-| pin39 | → Right Arrow | P1 Right |
-| pin42 | Mouse Middle Button | Trackball button |
-| pin43 | Mouse Left Button | Trackball button |
+Key points (these are the things the old ASCII diagram got wrong or omitted):
 
-Trackball movement is handled by the Mini-PAC's analog axes (Axis1/Axis2), not by pin-mapped keys.
+- **Player 1**: Start sits above the joystick, Coin above Button 1 (columns 1 and 2).
+- **Player 2 is not a mirror image of Player 1.** Start sits above Button 2, Coin above Button 3 (columns 15 and 16) — two columns further in from the edge than Player 1's arrangement, not lined up with the joystick/B1.
+- **Both sides read Start-then-Coin left to right.** Neither side is Coin-then-Start — the previous diagram showed Player 1 as `[S][R]` (Coin, Start), which had the order backwards.
+- The trackball sits in the **same row** as the joysticks and action buttons (column 9), not off to the side or in the admin row.
+- The admin row (Left Click through Pause) is evenly spaced with no real gap — the empty column 9 in that row is just the trackball's column showing through from the row below, not an actual gap in the admin row.
+- The two joysticks have no LEDs, so they carry no PAC-LED64 port — but each still sends four direction keys (P1 arrows, P2 `N`/`Q`/`M`/`O`), listed in the Master control reference.
 
-#### Button function reference
+#### Master control reference
 
-**Swop (secondary) key functions**
+**This is the second source-of-truth table**, paired with the [Physical button layout](#physical-button-layout) above (which owns position). This one owns every per-control fact that doesn't change per game: LedBlinky label, Mini-PAC pin, key sent, PAC-LED64 board/port, and RetroArch action. It replaces what used to be four separate tables (a pin-to-key table, admin/P1/P2 button-function tables, and a per-board LED channel map) — that split was exactly how the Mouse Right/Middle typo and the missing-bottom-row bug both went unnoticed, because no single place made a contradiction between two of these facts visible.
 
-Pin23 (P1 Coin, key `s`) acts as a shift/swop key. Hold it and press a second button to trigger its secondary function:
+**"LED color" is deliberately not a column here** — unlike everything else in this table, a control's color isn't fixed. It's assigned dynamically per ROM/emulator via `Colors.ini` (see [`Colors.ini` — multi-player and admin key naming](#colorsini--multi-player-and-admin-key-naming)), or, for the front-end/idle context specifically, via LedBlinky Config's Controls Editor FE edit mode (see the `LightFEControls` gotcha below). What's fixed, and what this table gives you, is *which PAC-LED64 board and port range* carries that color — the thing the `.lwax` generator actually addresses. Each board/port range is the control's 3 consecutive R,G,B ports (see [Hardware: two PAC-LED64 boards](#hardware-two-pac-led64-boards-rgb-per-control) in the `.lwax` section for why it's a triplet).
+
+| Physical control | LedBlinky label | Mini-PAC pin | Key sent | PAC-LED64 board:ports | RetroArch action |
+|---|---|---|---|---|---|
+| Select | `SELECT` | pin02 | `Enter` | 1 : 4-6 | — |
+| Exit | `EXIT` | pin03 | `Escape` | 2 : 1-3 | — |
+| Search | `SEARCH` | pin04 | `/` | 2 : 4-6 | — |
+| Pause | `PAUSE` | pin05 | `P` | 2 : 7-9 | — |
+| Left Click | `LMOUSE` | pin43 | Left Click | 1 : 10-12 | — |
+| Right Click | `RMOUSE` | pin42 | Right Click | 1 : 7-9 | — |
+| Trackball (ball movement) | `TRACKBALL` | — (analog axes) | moves mouse cursor | 1 : 1-3 | — |
+| P1 Joystick Up | *(no LED)* | pin37 | `↑` | — | `input_player1_up` |
+| P1 Joystick Down | *(no LED)* | pin36 | `↓` | — | `input_player1_down` |
+| P1 Joystick Left | *(no LED)* | pin38 | `←` | — | `input_player1_left` |
+| P1 Joystick Right | *(no LED)* | pin39 | `→` | — | `input_player1_right` |
+| P1 Start | `P1START` | pin25 | `R` | 1 : 16-18 | `input_player1_start` |
+| P1 Coin | `P1COIN` | pin23 | `S` *(swop key)* | 1 : 13-15 | `input_player1_select` |
+| P1 Button 1 | `P1B1` | pin35 | `A` | 1 : 28-30 | `input_player1_b` |
+| P1 Button 2 | `P1B2` | pin34 | `B` | 1 : 25-27 | `input_player1_a` |
+| P1 Button 3 | `P1B3` | pin33 | `C` | 1 : 22-24 | `input_player1_y` |
+| P1 Button 4 | `P1B4` | pin32 | `V` | 1 : 19-21 | — |
+| P1 Button 5 | `P1B5` | pin29 | `D` | 1 : 40-42 | `input_player1_x` |
+| P1 Button 6 | `P1B6` | pin28 | `E` | 1 : 37-39 | `input_player1_l` |
+| P1 Button 7 | `P1B7` | pin27 | `F` | 1 : 34-36 | `input_player1_r` |
+| P1 Button 8 | `P1B8` | pin26 | `W` | 1 : 31-33 | — |
+| P2 Joystick Up | *(no LED)* | pin17 | `N` | — | `input_player2_up` |
+| P2 Joystick Down | *(no LED)* | pin16 | `Q` | — | `input_player2_down` |
+| P2 Joystick Left | *(no LED)* | pin18 | `M` | — | `input_player2_left` |
+| P2 Joystick Right | *(no LED)* | pin19 | `O` | — | `input_player2_right` |
+| P2 Start | `P2START` | pin24 | `T` | 2 : 10-12 | `input_player2_start` |
+| P2 Coin | `P2COIN` | pin22 | `U` | 2 : 13-15 | `input_player2_select` |
+| P2 Button 1 | `P2B1` | pin15 | `G` | 2 : 16-18 | `input_player2_b` |
+| P2 Button 2 | `P2B2` | pin14 | `H` | 2 : 19-21 | `input_player2_a` |
+| P2 Button 3 | `P2B3` | pin13 | `I` | 2 : 22-24 | `input_player2_y` |
+| P2 Button 4 | `P2B4` | pin12 | `Y` | 2 : 25-27 | — |
+| P2 Button 5 | `P2B5` | pin09 | `J` | 2 : 28-30 | `input_player2_x` |
+| P2 Button 6 | `P2B6` | pin08 | `K` | 2 : 31-33 | `input_player2_l` |
+| P2 Button 7 | `P2B7` | pin07 | `L` | 2 : 34-36 | `input_player2_r` |
+| P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
+
+35 rows: the 27 LED-equipped controls plus the 8 joystick-direction keys, which have a pin/key but no LED to drive. "PAC-LED64 board:ports" is `<board Id> : <port range>` straight from `LEDBlinkyInputMap.xml` — the exact addressing every `.lwax` builder in `spindoctor/lwax.py` uses. If this table, the physical position table above, and `LEDBlinkyInputMap.xml` itself ever disagree on a control's board/port, trust `LEDBlinkyInputMap.xml` (it's what the animation tooling actually reads) and treat this table as stale — file it the same way the earlier bugs on this page were caught.
+
+**Provenance and a corrected error — Buttons 4/5/6/7's PAC-LED64 ports were mislabeled.** The pin/key columns were **independently confirmed by direct button-press testing** — every value verified by physically pressing each button and checking what key it sends, not just decoded from the WinIPAC EEPROM export. Pin/key were never wrong.
+
+The **board:ports** column for `P1B4`/`P1B5`/`P1B6`/`P1B7` and `P2B4`/`P2B5`/`P2B6`/`P2B7` *was* wrong, in both boards' `LEDBlinkyInputMap.xml`, in the same pattern: each of those four labels sat one port-group off from where it actually lit — `P1B4`'s LED was really wired to the port labeled `P1B5`, `P1B5`'s to `P1B6`, `P1B6`'s to `P1B7`, and `P1B7`'s to `P1B4` (a 4-way rotation; same rotation on both boards). `P1B8`/`P2B8` and Buttons 1-3 were never affected.
+
+This was first hinted at, then missed: `LEDBlinkyInputMap.xml`'s `inputCodes` attribute for the port labeled `P1B4` records `KEYCODE_D`, but direct testing had already confirmed Button 4 sends `V` and `D` belongs to Button 5. At the time, `inputCodes` was judged to be the stale field, since it's optional metadata the Animation Editor uses for its own reference and nothing that drives real-time LED lighting reads it — that conclusion was backwards. **`inputCodes` was correctly reporting which physical button that port really lights; the port's `label` attribute — the field every `.lwax` animation actually addresses by — was the one that was wrong.** Confirmed via a one-at-a-time calibration `.lwax` (every LED-equipped control lit alone in sequence, watched live on the cabinet): the reported lighting order matched the `inputCodes` hint exactly, an independent third confirmation alongside the pin/key testing and the `inputCodes` values themselves. Fixed by correcting the `label` attribute on the affected ports in `LEDBlinkyInputMap.xml` (and this table); no `inputCodes` values needed to change.
+
+**Confirmed resolved on the real cabinet, not just derived from testing**: the corrected `LEDBlinkyInputMap.xml` (the same file, with only these 8 `label` attributes changed) was installed on the cabinet in place of the original, and every button now lights in the correct position — verified by re-running the calibration animation and `pulse_outward_from_trackball_toxic.lwax` against the live file. All 67 generated animations were regenerated against the corrected map before this. Since this is the same file LedBlinky's own runtime reads to route per-ROM `Colors.ini` colors to physical ports (not just something the Animation Editor and `.lwax` files use), this fix should also correct any wrong in-game LED color on Buttons 4-7 that predates this PR — worth a quick check next time a ROM with distinct per-button colors is played.
+
+**RetroArch action notes.** RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) that map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on. Buttons 4 and 8 for both players have no RetroArch binding yet (shown as `—`) — they send unique keys (`V`/`W`/`Y`/`X`) and can be bound to any action in a system cfg.
+
+**Swop (secondary) key functions.** P1 Coin (pin23, key `S`) doubles as a shift/swop key — hold it and press a second button for a secondary function:
 
 | Combination | Secondary key | Function |
 |-------------|--------------|---------|
-| P1 Coin + Joystick Up (pin37) | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Joystick Down (pin36) | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Select (pin02) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
+| P1 Coin + Joystick Up | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Joystick Down | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
+| P1 Coin + Select | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
 
-**Admin buttons**
-
-| Mini-PAC pin | Key | Function |
-|-------------|-----|---------|
-| pin02 | Enter | Select |
-| pin03 | Escape | Exit |
-| pin04 | `/` (Forward-Slash) | Search |
-| pin05 | `p` | Pause |
-| pin42 | Right Mouse Button | Right click |
-| pin43 | Left Mouse Button | Left click |
-
-**Player 1**
-
-| Mini-PAC pin | Key | Function | RetroArch action |
-|-------------|-----|---------|-----------------|
-| pin23 | `s` | Coin | `input_player1_select` |
-| pin25 | `r` | Start | `input_player1_start` |
-| pin26 | `w` | Button 8 | — |
-| pin27 | `f` | Button 7 | `input_player1_r` |
-| pin28 | `e` | Button 6 | `input_player1_l` |
-| pin29 | `d` | Button 5 | `input_player1_x` |
-| pin32 | `v` | Button 4 | — |
-| pin33 | `c` | Button 3 | `input_player1_y` |
-| pin34 | `b` | Button 2 | `input_player1_a` |
-| pin35 | `a` | Button 1 | `input_player1_b` |
-| pin36 | `↓` (Down arrow) | Down | `input_player1_down` |
-| pin37 | `↑` (Up arrow) | Up | `input_player1_up` |
-| pin38 | `←` (Left arrow) | Left | `input_player1_left` |
-| pin39 | `→` (Right arrow) | Right | `input_player1_right` |
-
-**Player 2**
-
-| Mini-PAC pin | Key | Function | RetroArch action |
-|-------------|-----|---------|-----------------|
-| pin06 | `x` | Button 8 | — |
-| pin07 | `l` | Button 7 | `input_player2_r` |
-| pin08 | `k` | Button 6 | `input_player2_l` |
-| pin09 | `j` | Button 5 | `input_player2_x` |
-| pin12 | `y` | Button 4 | — |
-| pin13 | `i` | Button 3 | `input_player2_y` |
-| pin14 | `h` | Button 2 | `input_player2_a` |
-| pin15 | `g` | Button 1 | `input_player2_b` |
-| pin16 | `q` | Down | `input_player2_down` |
-| pin17 | `n` | Up | `input_player2_up` |
-| pin18 | `m` | Left | `input_player2_left` |
-| pin19 | `o` | Right | `input_player2_right` |
-| pin22 | `u` | Coin | `input_player2_select` |
-| pin24 | `t` | Start | `input_player2_start` |
-
-RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) which map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on.
-
-Buttons 4 and 8 for both players have no RetroArch binding yet — they send unique keys (`v`, `w`, `y`, `x`) and can be bound to any action in a system cfg.
+**Key/letter inventory.** Every letter A–Y is assigned (see the Key sent column); only `Z` is free for future expansion. Trackball ball movement itself (as opposed to its two click buttons) moves the mouse cursor via the Mini-PAC's analog axes (Axis1/Axis2), not a pin-mapped key.
 
 ### Xbox 360 button numbers (winxinput driver)
 
@@ -2077,7 +2036,7 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
-**Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:</p>
+**Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:
 
 ```bat
 :: Re-color all uniform entries to White without adding new keys
@@ -2275,3 +2234,90 @@ spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, li
 ```
 
 `inspect-rom` reports what LedBlinky would see for a specific ROM, flags any mismatches, and prints the path to `LEDBlinkyLog.txt` with instructions on what to search for.
+
+---
+
+## LEDBlinky Animation Files (.lwax)
+
+> **Status: signing blocker resolved; format details confirmed against a real signed file.** Built and successfully ran a custom animation on this cabinet. Everything below is now cross-checked against an actual `LEDBlinkyAnimationEditor.exe`-signed `.lwax` file, this cabinet's `LEDBlinkyInputMap.xml`, and the official Animation Editor help document (`Animation Editor.pdf`, v8.3) — not just inference from third-party sample files anymore.
+
+### Hardware: two PAC-LED64 boards, RGB per control
+
+Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" id="…" name="PACLED64">`). Two boards, `Id="1"` and `Id="2"`. Each physical control uses **3 consecutive output ports** (R, G, B in that order) — these are full RGB button LEDs, not single-color. So a control's `board:ports` entry of `1 : 4-6` means board `Id="1"`, port 4 = red, 5 = green, 6 = blue.
+
+**The full control → board:port mapping lives in exactly one place: the [Master control reference](#master-control-reference)** (its "PAC-LED64 board:ports" column). It's not repeated here — a per-board copy is what let earlier bugs hide. Board `Id="1"` uses ports 1-42 (43-64 unwired); board `Id="2"` uses ports 1-39 (40-64 unwired). Note the two boards split the panel by player-ish grouping but not cleanly — board 1 carries the trackball, the P1 buttons, and the Select/mouse-click admin cluster; board 2 carries Exit/Search/Pause and all P2 buttons — so always read the actual board from the Master control reference rather than assuming "board 1 = Player 1."
+
+> **Buttons 4-7 on both players had a real port-label bug — found, fixed, and confirmed resolved on the actual cabinet.** `LEDBlinkyInputMap.xml`'s port `label` attribute for `P1B4`/`P1B5`/`P1B6`/`P1B7` and `P2B4`/`P2B5`/`P2B6`/`P2B7` was wrong on both boards — see the Master control reference's provenance note below for the full story (a 4-way rotation per board, found by decoding a real generated `.lwax` against what a one-at-a-time calibration animation actually lit on the cabinet). Fixed in the table and in the map used for generation; every animation was regenerated against the corrected data, and the corrected `LEDBlinkyInputMap.xml` has since been installed on the real cabinet in place of the original — confirmed working, all 27 controls light in their correct position.
+
+> **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** This cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
+
+### File format
+
+`.lwax` is plain UTF-8 XML, CRLF line endings. This is what a file actually signed and saved by `LEDBlinkyAnimationEditor.exe` (v8.2.2.0 / v8.3) looks like:
+
+```xml
+<?xml version="1.0"?>
+<!-- (40-hex-char signature) -->
+<!-- File created by LEDBlinkyAnimationEditor.exe -->
+<!-- DO NOT EDIT THIS FILE MANUALLY -->
+<LEDAnimation>
+	<Frame Number="1" Duration="40">
+		<Intensity LedHwType="3" Id="1" Value="48, 0, 0,48, 0, 0,...(64 values, 0-48 brightness)"/>
+		<State LedHwType="3" Id="1" Value=" 1, 1, 1, 1,...(64 values, 0/1 on-off)"/>
+		<Intensity LedHwType="3" Id="2" Value="..."/>
+		<State LedHwType="3" Id="2" Value="..."/>
+	</Frame>
+	<Frame Number="2" Duration="40">
+		...
+	</Frame>
+</LEDAnimation>
+```
+
+- `Frame Duration` is milliseconds the frame holds.
+- `Intensity` = per-port brightness, 0-48 (not 0-255).
+- `State` = per-port on/off, 0/1. Present for every device type observed (`LEDWiz`, `PACDrive`, `PACLED64`) — an earlier version of this doc incorrectly said State was LEDWiz-only; that was a mix-up with `GlobalPulse`, which genuinely is LEDWiz-only (a hardware pulse-profile selector with no PACLED64/PACDrive equivalent).
+- **Real Animation-Editor-signed files use `LedHwType="<numeric-type-code>"` instead of `Device="<Name>"`.** The numeric code matches the `type=` attribute in `LEDBlinkyInputMap.xml`'s `<ledController type="3" ...>` tag (`3` = PACLED64 on this cabinet). Third-party/community sample `.lwax` packs found online use the older `Device="PACLED64"` string form instead — the Animation Editor transparently reads and auto-upgrades either form on Save As, so a file built with `Device=`/`Id="0"` attributes imports fine and re-saves in the current `LedHwType=` form with the real board IDs.
+- **Values persist frame-to-frame unless redeclared** — confirmed both by inspecting `slowfadeupdown.lwax` (this cabinet's shipped, working `FELWAFile`/`FEScreenSaverLWAFile`) and by the Animation Editor's own help document: *"When displaying the xml for an individual frame, both the Intensity and State values are listed... When the animation is saved to a .LWAX file, the Intensity values are optimized – they are only included for a frame if the values differ from the prior frame."* This is how a smooth fade (redeclare Intensity every frame) is distinguished from a hard on/off chase (redeclare State, leave Intensity alone) in the same format.
+- Other devices seen in third-party example files (not present on this cabinet): `LEDWiz` (32 ports, variable intensity), `PACDrive` (16 ports, on/off only, no `Intensity`).
+
+### Signature: resolved — must be built with LedBlinky's own Animation Editor
+
+A hand-built `.lwax` (well-formed XML, correct channel map, no other errors, no signature comment) fails to load in LedBlinky Config with *"Animation File has a missing or invalid signature..."* / `Missing Signature [<filename>]` in `LBC_Errors.log`. This is a real, portable, content-derived check — not machine-specific (an unmodified third-party pack file loads fine here; a different third-party file previously hit the identical error) — but the exact algorithm behind the 40-hex-char signature comment could not be reproduced against a known-good file under SHA-1/MD5/SHA-224/256/384/512/RIPEMD-160 across a dozen canonicalizations. Most likely a keyed signature (HMAC or similar) baked into LedBlinky's binary.
+
+**Resolution:** this doesn't matter in practice. `LEDBlinkyAnimationEditor.exe` ships bundled with every LedBlinky install (`<ledblinky_dir>\Plugins\LEDBlinky\LEDBlinkyAnimationEditor.exe` — no separate download or version upgrade needed) and signs whatever it saves. Workflow that worked on this cabinet:
+
+1. Generate a `.lwax` with any tooling, using placeholder `Device="PACLED64" Id="0"` attributes (board ID doesn't need to be correct yet).
+2. **Animation → Open** in the Animation Editor, select the file.
+3. **Animation → Save As** — no edits needed. The editor rewrites `Device="PACLED64" Id="0"` to the real `LedHwType="3" Id="1"` / `Id="2"` pairing (read from the loaded `LEDBlinkyInputMap.xml`) and adds the three-line signed header.
+4. Copy the result into `<ledblinky_dir>\lwa\` and assign it in `Settings.ini`.
+
+**`spindoctor ledblinky lwax fade`** automates step 1 generically — it parses the real `LEDBlinkyInputMap.xml` (any board/controller layout, not hardcoded to this cabinet's two PACLED64 boards) and emits a raw, correctly-addressed, unsigned `.lwax` fading through a list of colors. Steps 2-4 (Open → Save As → copy → assign) are still manual; the signing step can't be automated without either the real signature algorithm or fragile GUI automation, neither of which was worth the complexity given how quick the manual round-trip is. See `docs/commands.md` → `ledblinky lwax fade` for usage. The exact fade this section documents (`rgbfade.lwax`, confirmed working after signing) round-trips byte-for-byte identical through this command.
+
+### Gotcha: `LightFEControls=1` overrides some buttons during FE-active animations — confirmed
+
+After getting a signed animation running, some buttons showed the correct fade while others stayed locked to solid white — both live in HyperSpin and, once frozen, after exiting to Windows (LED controllers hold their last-written state indefinitely with nothing actively updating them, so a frozen white button just means white was the last color sent, not that something is still driving it).
+
+The stuck buttons were exactly HyperSpin's front-end navigation set (Select, Exit, P1 Start, both players' Buttons 1/2/3/5/6) — everything else (mouse clicks, trackball, Search, Pause, both Coin buttons, P2 Start, Buttons 4/7/8) faded correctly. The UI checkbox behind this key is labeled **"Light HyperSpin Controls"** in LedBlinky Config's FE Options tab (`Install and Config.pdf` p.32-33) — the `Settings.ini` key name (`LightFEControls`) doesn't match the UI label, which cost some searching. **Confirmed fix:** setting `LightFEControls=0` and rebooting made every button fade in perfect sync, no exceptions.
+
+**Why it happens:** the Animation Editor help doc describes the identical override mechanism for the Game Play equivalent of this setting — *"the active buttons will take precedence over the animated buttons... the single frame animation would only be used to light the inactive buttons"* — and `LightFEControls` applies the same logic to whatever controls the current HyperSpin menu considers active, overriding the `FELWAFile`/`FEScreenSaverLWAFile` animation on exactly those buttons for as long as that menu context is showing.
+
+**The overridden color is not hardcoded to white and is independently configurable.** LedBlinky Config's Controls Editor has a dedicated **"FE" edit mode** (separate from the ROM/Game and Emulator edit modes) — select your front-end from the Controls Editor's FE menu, then edit each control under the "Common" tab exactly like a game control (color, intensity, Always Active, Voice Action, etc.), per `Install and Config.pdf` p.71-74, "Edit Front-end (FE) and Controls." This is stored in `LEDBlinkyControls.xml` but as its own FE-designated section, not as a `<emulator emuname="Main Menu">` entry — the exact tag name wasn't confirmed against this cabinet's actual XML as of this writing.
+
+**Trade-off is real and inherent, not a limitation of this cabinet's config:** with `LightFEControls=1`, the overridden buttons always show a *static* color (whatever the FE Controls Editor defines, default white if undefined) — never the running animation. There is no combination of settings that lets a button both show a custom "this button is usable" color *and* participate in the synced animation loop; it's Fixed-color to indicate usability (`LightFEControls=1`) or full-panel synced animation (`LightFEControls=0`), not both at once. SpinDoctor does not currently manage the FE Controls Editor's `LEDBlinkyControls.xml` section — only the per-game/per-emulator sections via `ledblinky generate`/`fill-defaults`/`colors sync-players`.
+
+Separately, the Animation Editor's own **Run LED Animation** live-preview button flashed/didn't fade cleanly on this cabinet, while playback through the real HyperSpin/LedBlinky.exe path was smooth. Treat the editor's live-hardware preview as unreliable for judging timing — verify by assigning the file and watching it play through the actual frontend instead.
+
+### Physical control panel layout (for sweeps, rain, radial pulses, and other spatial animations)
+
+`LEDBlinkyInputMap.xml` gives port/label assignments but says nothing about physical *position* — no coordinates, no notion of which controls are adjacent. Building anything spatial (a left-to-right sweep, a pulse radiating from the trackball, rain falling top-to-bottom) needs that position data from somewhere else.
+
+**This turned out to be genuinely hard to convey in text — a real photo of the panel resolved it in one pass where two rounds of text/diagram correction hadn't.** Progression: (1) an ASCII table, wrong in multiple ways; (2) a rendered visual diagram built from that table, confirmed and corrected twice, but still wrong on Start/Coin placement because it inherited the table's flawed premise; (3) an actual photo of the panel, which nailed it immediately. **Lesson: ask whether a photo of the hardware exists before starting from any text description at all.** When only text is available, still render a visual diagram (an HTML artifact with one cell per control, grouped/colored by player) and get it confirmed before generating more than one or two files against it — especially before anything ring/perimeter-derived, where a single wrong position skews everything built on top of it. Also: don't trust an ASCII table's column alignment *across different rows* as meaningful — it's usually incidental spacing from typing the table out, not a claim about physical position (several admin-row cells in the first draft happened to land in the same text-column as button-row cells several rows below that aren't actually above them).
+
+**Confirmed layout** (from the panel photo) — full position table: [Physical button layout](#physical-button-layout), under Mini-PAC/PAC-LED64 hardware above. That table covers every physical control (including the joysticks, which have no LEDs and don't appear below); this section only adds what's specific to *animating* the LED-equipped subset of it:
+
+- The button grid is only 2 rows deep per player, so an up/down sweep only ever has 3 meaningfully distinct vertical bands: an "above" strip (trackball's row is *not* part of this), the top button row, and the bottom button row.
+- `LEFT_RIGHT_ORDER` below only includes LED-equipped controls — the two joysticks are skipped entirely (no LED to drive), even though they occupy real columns in the full physical table.
+
+The reference groupings derived from this (`LEFT_RIGHT_ORDER`, `ROWS`, `RADIAL_RINGS`, `CYCLONE_LOOP`, `RAIN_DROP_GROUPS`) live in `.claude/skills/lwax-animation/SKILL.md` rather than duplicated here, since they're consumed directly as Python data when generating new animations. `LEFT_RIGHT_ORDER` is a list of *groups*, not flat labels — two controls that share a physical spot (e.g. P1 Coin sharing P1 Button 1's position) belong in the same group so they're always treated identically (same color, same hue in a rainbow effect, same timing in a sweep).
+
+> **Bug found via real-hardware testing, fixed**: `LEFT_RIGHT_ORDER` originally only spanned the admin/start-coin/top-row tier — the bottom row (`P1B5-8`/`P2B5-8`) was never included at all, so every effect derived from it (sweeps left/right, both radial pulses, the breathing pulse, the P1-vs-P2 race, the rainbow scroll, the combo-meter fill, the countdown/fuse) silently skipped 8 of the 27 controls. Caught by testing `pulse_outward_from_trackball_toxic.lwax` on the cabinet — Buttons 5-8 never lit. Fixed by folding each bottom-row button into its top-row column-mate's group. Confirmed on hardware afterward that the resulting ring/column *spacing* didn't need adjusting (index-based distance, not physical-inches-based) — the admin row legitimately takes several ring-steps before reaching the first player-button column, even though its buttons are packed more tightly together than the wider player-button columns.

@@ -712,6 +712,16 @@ spindoctor ledblinky fix --menus Search,Genre,Favorites --apply           :: all
 spindoctor ledblinky inspect-rom 005
 spindoctor ledblinky inspect-rom 1942
 
+:: ── Animation files (.lwax) — generate a raw color-cycle fade ───────────────
+:: Output is unsigned: open it in LEDBlinkyAnimationEditor.exe (Animation → Open,
+:: then Save As) before LedBlinky will load it. See "LEDBlinky Animation Files
+:: (.lwax)" in cabinet-architecture-reference.md for the full signing story.
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF          :: preview
+spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --apply                 :: write <output_dir>/LEDBlinky/lwax/fade.lwax
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --labels P1B1,P1B2 --apply :: only specific controls
+spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --name mypattern --output D:\temp\mypattern.lwax --apply :: custom name/path
+spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 --duration-ms 60 --apply :: tune fade smoothness/speed
+
 :: ── Audit / coverage ─────────────────────────────────────────────────────────
 spindoctor ledblinky audit
 spindoctor ledblinky audit --report D:\ledblinky_audit.csv    :: save CSV (rom, status, coverage flags)
