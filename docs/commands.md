@@ -1601,10 +1601,10 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 | Key | Section | Default | Effect |
 |-----|---------|---------|--------|
 | `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Pass `""` to silence unused buttons during gameplay (dark/off). Pass a `.lwa` filename (e.g. `Slow Fade.lwa`) to play that animation on all unmapped buttons — globally, every game, every system. Pass `<Random>` to have LedBlinky pick a random animation on unmapped buttons instead. |
-| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Animation while actively browsing HyperSpin. Pass a `.lwa` filename, `""` for static colors, or `<Random>` for LedBlinky to pick a different animation every time; omit flag to leave unchanged. |
-| `FEScreenSaverLWAFile` | `[FEOptions]` | _(optional — specify `--ss-lwa`)_ | Animation during the HyperSpin screen saver. Pass a `.lwa` filename, `""` to silence, or `<Random>` for LedBlinky to pick a different animation every time; omit flag to leave unchanged. |
+| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Animation while actively browsing HyperSpin. Pass a `.lwa` filename, `""` for static colors, `<Random>` for LedBlinky to pick a different animation every time, or `<Audio Animation>` to sync LEDs to audio instead; omit flag to leave unchanged. |
+| `FEScreenSaverLWAFile` | `[FEOptions]` | _(optional — specify `--ss-lwa`)_ | Animation during the HyperSpin screen saver. Pass a `.lwa` filename, `""` to silence, `<Random>` for LedBlinky to pick a different animation every time, or `<Random Montage>` to string several animations together in random order; omit flag to leave unchanged. |
 
-`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. The **Refresh list** button in the GUI and `list_lwa_files()` both return filenames relative to the `lwa\` subfolder (e.g. `Slow Fade.lwa`, not `lwa\Slow Fade.lwa`) — LedBlinky prepends `lwa\` itself when reading these keys from `Settings.ini`. `<Random>` is a literal value LedBlinky itself recognizes — it isn't a filename and doesn't get the `lwa\` prefix.
+`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. The **Refresh list** button in the GUI and `list_lwa_files()` both return filenames relative to the `lwa\` subfolder (e.g. `Slow Fade.lwa`, not `lwa\Slow Fade.lwa`) — LedBlinky prepends `lwa\` itself when reading these keys from `Settings.ini`. `<Random>`, `<Random Montage>`, and `<Audio Animation>` are literal values LedBlinky itself recognizes — none is a filename, and none gets the `lwa\` prefix. `patch-settings` never validates the string passed to `--fe-lwa`/`--ss-lwa`/`--game-lwa`, so any of the three works regardless of which flag it's passed to — the table above reflects which keys LedBlinky's own docs say each value is intended for.
 
 ```bat
 spindoctor ledblinky patch-settings --apply                                                   :: silence in-game unused-button flash
@@ -1612,7 +1612,9 @@ spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply          
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                                       :: static colors while browsing
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: smooth fade while browsing
 spindoctor ledblinky patch-settings --fe-lwa "<Random>" --apply                              :: different FE animation every time
+spindoctor ledblinky patch-settings --fe-lwa "<Audio Animation>" --apply                     :: sync FE animation to audio
 spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
+spindoctor ledblinky patch-settings --ss-lwa "<Random Montage>" --apply                      :: screen saver strings several animations together
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both FE and screen saver animations
 ```
 
