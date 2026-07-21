@@ -13,6 +13,7 @@ from spindoctor.introvideo import (
     load_randomizer,
     remove_video,
     remove_videos,
+    shuffle_videos,
 )
 
 
@@ -408,6 +409,101 @@ def test_remove_videos_batch_drops_all_and_shares_one_backup(layout, tmp_path):
     assert results[0].backup_path == results[1].backup_path
     backups = list((tmp_path / "backups" / "IntroVideoRandomizer").glob("*.bak"))
     assert len(backups) == 1
+
+
+def test_shuffle_videos_preserves_membership_and_matches_seeded_algorithm(layout):
+    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
+    # A third video so a 3-item shuffle isn't a coin flip on order-changed.
+    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
+    _write_ini(
+        randomizer_dir, videos_dir, intro_mp4,
+        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+    )
+
+    result = shuffle_videos(cfg, seed=42, apply=False)
+
+    import random as random_mod
+    expected = ["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"]
+    random_mod.Random(42).shuffle(expected)
+    assert result.new_order == expected
+    assert set(result.new_order) == set(result.old_order)
+
+
+def test_shuffle_videos_dry_run_does_not_touch_ini(layout):
+    cfg, randomizer_dir, *_ = layout
+    before = (randomizer_dir / "Random.ini").read_text()
+
+    shuffle_videos(cfg, seed=42, apply=False)
+
+    assert (randomizer_dir / "Random.ini").read_text() == before
+
+
+def test_shuffle_videos_applies_new_order_to_both_lists(layout):
+    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
+    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
+    _write_ini(
+        randomizer_dir, videos_dir, intro_mp4,
+        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+    )
+
+    result = shuffle_videos(cfg, seed=42, apply=True)
+
+    assert result.changed is True
+    state = load_randomizer(get_ini_path(cfg))
+    assert state.file_list == result.new_order
+    assert state.random_list == result.new_order
+
+
+def test_shuffle_videos_keeps_dangling_random_list_only_entry(layout):
+    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
+    # "Orphan.mp4" is registered in RandomList but not FileList — shuffle
+    # must not drop it or move it into FileList.
+    _write_ini(
+        randomizer_dir, videos_dir, intro_mp4,
+        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4"],
+        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Orphan.mp4"],
+    )
+
+    result = shuffle_videos(cfg, seed=1, apply=True)
+
+    state = load_randomizer(get_ini_path(cfg))
+    assert "Orphan.mp4" not in state.file_list
+    assert "Orphan.mp4" in state.random_list
+    assert result.new_order == state.file_list
+
+
+def test_shuffle_videos_fewer_than_two_is_noop(layout):
+    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
+    _write_ini(
+        randomizer_dir, videos_dir, intro_mp4,
+        file_list=["Capcom Intro.mp4"],
+        random_list=["Capcom Intro.mp4"],
+    )
+    before = (randomizer_dir / "Random.ini").read_text()
+
+    result = shuffle_videos(cfg, seed=42, apply=True)
+
+    assert result.changed is False
+    assert (randomizer_dir / "Random.ini").read_text() == before
+
+
+def test_shuffle_videos_backs_up_ini_when_configured(layout, tmp_path):
+    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
+    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
+    _write_ini(
+        randomizer_dir, videos_dir, intro_mp4,
+        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
+    )
+    cfg.backup_before_modify = True
+
+    result = shuffle_videos(cfg, seed=42, apply=True)
+
+    assert result.backup_path is not None
+    assert result.backup_path.exists()
+    assert result.backup_path.parent.name == "IntroVideoRandomizer"
 
 
 def test_remove_videos_mixed_registered_and_unregistered(layout):

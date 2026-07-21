@@ -1045,6 +1045,9 @@ spindoctor introvideo add "C:\Downloads\A.mp4" "C:\Downloads\B.mp4" --apply  :: 
 spindoctor introvideo remove "Capcom Intro.mp4"                :: dry-run preview
 spindoctor introvideo remove "Capcom Intro.mp4" --apply        :: drop it from Random.ini (file stays on disk)
 spindoctor introvideo remove "A.mp4" "B.mp4" --apply           :: remove several in one call
+spindoctor introvideo shuffle                                  :: preview a fresh random playback order
+spindoctor introvideo shuffle --apply                          :: commit it to Random.ini
+spindoctor introvideo shuffle --seed 42 --apply                :: reproducible shuffle (mainly for testing)
 ```
 
 `add` copies each given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both commands accept one or more files/filenames in a single call; a multi-file `add`/`remove` still only touches the `FileList=`/`RandomList=` lines, and writes a single shared timestamped backup of `Random.ini` to `<backup_dir>/IntroVideoRandomizer/` for the whole batch (not one per file) when `backup_before_modify` is enabled (the default). Every other line, key, and comment in `Random.ini` is left byte-for-byte as-is.
@@ -1061,7 +1064,9 @@ The `Backup\` subfolder inside the videos folder (if the randomizer or a user cr
 
 If `backup_before_modify` is on and `backup_dir` is configured but not actually writable (an unmounted drive, a permission problem), `add`/`remove` fail with a clear error explaining what to fix — they don't silently write the backup somewhere else, and `add` won't have copied any file yet when this happens (checked before any copy, for a multi-file batch too).
 
-> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker), registering an on-disk-but-unregistered row via **Register selected** (no picker, no copy), and `introvideo remove` (via the list, Ctrl/Shift-click to select several). See [GUI walkthrough](gui.md).
+`shuffle` randomizes the order videos are listed in in `FileList=`/`RandomList=` — it never adds, removes, or deletes a video, only reorders the existing ones. This matters because the third-party randomizer script may not itself vary its pick from one boot to the next; pre-shuffling the list is what actually changes playback order across sessions. `--seed` makes the new order reproducible (mainly useful for testing) — omit it for a fresh random order every run.
+
+> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker), registering an on-disk-but-unregistered row via **Register selected** (no picker, no copy), `introvideo remove` (via the list, Ctrl/Shift-click to select several), and `introvideo shuffle` via a **Shuffle order** button. See [GUI walkthrough](gui.md).
 
 ---
 
@@ -1595,17 +1600,18 @@ The global `<hyperspin_dir>/Settings/Settings.ini` is never touched — LEDBlink
 
 | Key | Section | Default | Effect |
 |-----|---------|---------|--------|
-| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Pass `""` to silence unused buttons during gameplay (dark/off). Pass a `.lwa` filename (e.g. `Slow Fade.lwa`) to play that animation on all unmapped buttons — globally, every game, every system. |
-| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Animation while actively browsing HyperSpin. Pass a `.lwa` filename or `""` for static colors; omit flag to leave unchanged. |
-| `FEScreenSaverLWAFile` | `[FEOptions]` | _(optional — specify `--ss-lwa`)_ | Animation during the HyperSpin screen saver. Pass a `.lwa` filename or `""` to silence; omit flag to leave unchanged. |
+| `GamePlayLWAFile` | `[GameOptions]` | `""` (empty) | Pass `""` to silence unused buttons during gameplay (dark/off). Pass a `.lwa` filename (e.g. `Slow Fade.lwa`) to play that animation on all unmapped buttons — globally, every game, every system. Pass `<Random>` to have LedBlinky pick a random animation on unmapped buttons instead. |
+| `FELWAFile` | `[FEOptions]` | _(optional — specify `--fe-lwa`)_ | Animation while actively browsing HyperSpin. Pass a `.lwa` filename, `""` for static colors, or `<Random>` for LedBlinky to pick a different animation every time; omit flag to leave unchanged. |
+| `FEScreenSaverLWAFile` | `[FEOptions]` | _(optional — specify `--ss-lwa`)_ | Animation during the HyperSpin screen saver. Pass a `.lwa` filename, `""` to silence, or `<Random>` for LedBlinky to pick a different animation every time; omit flag to leave unchanged. |
 
-`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. The **Refresh list** button in the GUI and `list_lwa_files()` both return filenames relative to the `lwa\` subfolder (e.g. `Slow Fade.lwa`, not `lwa\Slow Fade.lwa`) — LedBlinky prepends `lwa\` itself when reading these keys from `Settings.ini`.
+`.lwa` files live under `<ledblinky_dir>\lwa\` and its subdirectories. The **Refresh list** button in the GUI and `list_lwa_files()` both return filenames relative to the `lwa\` subfolder (e.g. `Slow Fade.lwa`, not `lwa\Slow Fade.lwa`) — LedBlinky prepends `lwa\` itself when reading these keys from `Settings.ini`. `<Random>` is a literal value LedBlinky itself recognizes — it isn't a filename and doesn't get the `lwa\` prefix.
 
 ```bat
 spindoctor ledblinky patch-settings --apply                                                   :: silence in-game unused-button flash
 spindoctor ledblinky patch-settings --game-lwa "Slow Fade.lwa" --apply                       :: play animation on unused buttons
 spindoctor ledblinky patch-settings --fe-lwa "" --apply                                       :: static colors while browsing
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --apply                         :: smooth fade while browsing
+spindoctor ledblinky patch-settings --fe-lwa "<Random>" --apply                              :: different FE animation every time
 spindoctor ledblinky patch-settings --ss-lwa "Slow Fade.lwa" --apply                         :: set screen saver animation
 spindoctor ledblinky patch-settings --fe-lwa "Slow Fade.lwa" --ss-lwa "Slow Fade.lwa" --apply :: set both FE and screen saver animations
 ```
