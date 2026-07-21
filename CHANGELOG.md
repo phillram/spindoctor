@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.10.2] - 2026-07-20
+
 ### Added
 
 - **GUI: `<Random Montage>` (Screen Saver dropdown) and `<Audio Animation>` (FE active dropdown)** — two more literal values LedBlinky itself recognizes for its animation keys, alongside `<Random>`. `<Random Montage>` strings several animations together in random order instead of looping one; `<Audio Animation>` syncs LED timing to audio playback instead of looping a fixed animation. Pre-populated only in the dropdown(s) LedBlinky's own docs say each value applies to, but `patch-settings` never validates the string, so either can be typed into any of the three dropdowns.
@@ -2150,7 +2152,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.1...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.2...HEAD
+[2.10.2]: https://github.com/phillram/spindoctor/compare/v2.10.1...v2.10.2
 [2.10.1]: https://github.com/phillram/spindoctor/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/phillram/spindoctor/compare/v2.9.6...v2.10.0
 [2.9.6]: https://github.com/phillram/spindoctor/compare/v2.9.5...v2.9.6
