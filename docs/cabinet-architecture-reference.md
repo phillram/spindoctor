@@ -2404,3 +2404,65 @@ Separately, the Animation Editor's own **Run LED Animation** live-preview button
 The reference groupings derived from this (`LEFT_RIGHT_ORDER`, `ROWS`, `RADIAL_RINGS`, `CYCLONE_LOOP`, `RAIN_DROP_GROUPS`) live in `.claude/skills/lwax-animation/SKILL.md` rather than duplicated here, since they're consumed directly as Python data when generating new animations. `LEFT_RIGHT_ORDER` is a list of *groups*, not flat labels — two controls that share a physical spot (e.g. P1 Coin sharing P1 Button 1's position) belong in the same group so they're always treated identically (same color, same hue in a rainbow effect, same timing in a sweep).
 
 > **Bug found via real-hardware testing, fixed**: `LEFT_RIGHT_ORDER` originally only spanned the admin/start-coin/top-row tier — the bottom row (`P1B5-8`/`P2B5-8`) was never included at all, so every effect derived from it (sweeps left/right, both radial pulses, the breathing pulse, the P1-vs-P2 race, the rainbow scroll, the combo-meter fill, the countdown/fuse) silently skipped 8 of the 27 controls. Caught by testing `pulse_outward_from_trackball_toxic.lwax` on the cabinet — Buttons 5-8 never lit. Fixed by folding each bottom-row button into its top-row column-mate's group. Confirmed on hardware afterward that the resulting ring/column *spacing* didn't need adjusting (index-based distance, not physical-inches-based) — the admin row legitimately takes several ring-steps before reaching the first player-button column, even though its buttons are packed more tightly together than the wider player-button columns.
+
+---
+
+## HyperSpin Startup/Exit Orchestration
+
+HyperSpin has a built-in **Startup Program** setting (configured in HyperHQ)
+that runs one helper program when the frontend opens, and a matching **Exit
+Program** slot that runs one program on close. Many cabinets point this at the
+community **"HyperSpin Startup Script"** — a compiled AutoHotkey tool that
+lives in `…\Utilities\Startup and Exit\` next to a plain-text `.ini` of the
+same base name. HyperSpin only ever launches the one `.exe`; the `.ini` is read
+by that `.exe` at launch, so editing the INI never touches HyperHQ's Startup/Exit
+Program setting itself.
+
+The INI has two relevant sections:
+
+- `[Startup]` — a numbered list of `Program_To_Run_Target_N` /
+  `Program_To_Run_Working_Dir_N` / `Program_To_Run_MaxMinHide_N` triples,
+  launched in order when HyperSpin opens.
+- `[Exit]` — a numbered list of `Process_Name_To_Close_N` entries to kill,
+  plus its own optional `Program_To_Run_Target_1` (typically an exit `.bat`),
+  run when HyperSpin closes.
+
+This is what "starts my tools and kills them when I quit" on a cabinet — it's
+HyperSpin launching one orchestrator script at boot/exit, not per-game
+RocketLauncher behavior. It's also the mechanism that starts (and kills)
+DS4Windows on many cabinets; see [Controller input — DS4Windows and
+XInput](#controller-input--ds4windows-and-xinput) above for why tying
+DS4Windows' lifetime to HyperSpin's is a problem for mid-session use, and the
+fix (start DS4Windows independently instead of through this script).
+
+### Input stack (typical layered setup)
+
+A cabinet commonly layers two independent input paths on top of each other:
+
+```
+Physical controller ─▶ DS4Windows ─▶ virtual Xbox pad ─▶ mapper ─▶ keystrokes ─▶ HyperSpin menu
+                                                    (Xpadder / antimicro /
+                                                     HyperSpin joystick nav)
+Arcade panel (Mini-PAC) ────────────────────────────────────────▶ keystrokes ─▶ HyperSpin menu
+```
+
+- **HyperSpin's own menus read keyboard input only**, unless the startup
+  script's native joystick navigation is enabled (`Joysticks_Enabled=true` in
+  its INI). A controller therefore needs a mapper (Xpadder, antimicro, or the
+  script's own joystick nav) to translate button presses into the keystrokes
+  HyperSpin expects — inside a game, emulators generally read the pad
+  directly instead (see [RetroArch Input Architecture](#retroarch-input-architecture)
+  above for that path).
+- Running **more than one** of Xpadder / antimicro / the script's built-in
+  joystick nav at once is redundant and causes double-navigation (one button
+  press moves the menu cursor twice). Pick exactly one.
+
+### Tool inventory (common startup-script payload)
+
+| Tool | Purpose | Needed? |
+|---|---|---|
+| **DS4Windows** | Maps a PS4 pad to XInput | Only if using a PS4 controller. Let it auto-start with Windows *or* the startup script — not both, or it won't stay minimized (and see the lifetime problem above). |
+| **Xpadder** | Controller → keyboard mapper (paid) | Optional — only for controller menu navigation. Drop it if the arcade panel drives menu navigation. |
+| **antimicro / antimicroX** | Controller → keyboard mapper (free) | Redundant with Xpadder — keep at most one. |
+| **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |
+| **HyperSearch** | Search-the-wheel add-on for HyperSpin | Keep if wheel search is used. |
