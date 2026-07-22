@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **Dolphin/GameCube: documented the Qt 6 window-class mismatch (`Qt651QWindowIcon`) that causes RocketLauncher to lose focus back to HyperSpin ~2 minutes into a game that's still running fine in the background.** Same root cause as the earlier wx→Qt5 module fix, one Dolphin generation further along (CalVer builds, Qt 6.5.1). Added a generic diagnostic recipe — read `MiscUtils.GetActiveWindowStatus` in `RocketLauncher.log` right before the `ScriptError` line to find the emulator's actual current window class after any future Dolphin upgrade, instead of re-deriving this by trial and error each time. See [troubleshooting.md](docs/troubleshooting.md#gamecube-games-fail-with-error-waiting-for-the-window-fps-ahk_class--any-variant) and [cabinet-architecture-reference.md](docs/cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation). Also corrected the emulator-version table to note the cabinet's OS moved from Windows 7 to Windows 10, which lifts the constraint that previously pinned Dolphin to the last Windows-7-compatible build range.
+
 ## [2.10.2] - 2026-07-20
 
 ### Added

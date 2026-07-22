@@ -873,15 +873,18 @@ This is done once per game. After completion, both keys stay `false` permanently
 
 ### Emulator version on this cabinet
 
-| Slot | Version | Path | Supports RVZ |
-|------|---------|------|--------------|
-| Active | **Dolphin 5.0-16101** | `D:\Arcade\Emulators\Dolphin Ishiiruka\Dolphin.exe` | Yes |
-| Original | Dolphin Ishiiruka (2017) | replaced by above | No |
+| Slot | Version | Path | UI Framework | Window Class |
+|------|---------|------|--------------|--------------|
+| Active | **Dolphin 2606** (CalVer, confirmed via RocketLauncher.log 2026-07-22) | `D:\Arcade\Emulators\Dolphin Ishiiruka\Dolphin.exe` | Qt 6.5.1 | `Qt651QWindowIcon` |
+| Previous | Dolphin 5.0-16101 | replaced by above | Qt 5.15.0 | `Qt5150QWindowIcon` |
+| Original | Dolphin Ishiiruka (2017) | replaced | wxWidgets | `wxWindowNR` |
 
-The original Dolphin Ishiiruka build (dated 2017) was replaced with Dolphin 5.0-16101.
-This is the **last Dolphin dev build that runs on Windows 7** — Windows 7 support was
-removed from Dolphin in July 2023. RVZ support was added in Dolphin 5.0-12188 (December 2020),
-so any build in the range 5.0-12188 through ~5.0-17000 supports both RVZ and Windows 7.
+**Cabinet OS was upgraded from Windows 7 to Windows 10 (confirmed July 2026).** This removed
+the Windows-7-only constraint that previously pinned Dolphin to the 5.0-12188…~17000 dev-build
+range (the last generation that ran on Windows 7, before Windows 7 support was dropped in
+July 2023). On Windows 10, current Dolphin builds (Qt 6, CalVer version numbers like `2606` =
+2026-06) are usable, and RVZ support (added in 5.0-12188, December 2020) is unaffected by the
+OS bump.
 
 The emulator folder name (`Dolphin Ishiiruka`) was kept intentionally so that
 `Global Emulators.ini` needs no changes — it still points to the same path.
@@ -940,20 +943,44 @@ To replace the Dolphin executable while keeping all settings and controller prof
 ### RL module compatibility when upgrading build generation
 
 Old Dolphin builds used the **wxWidgets** UI framework (window class `wxWindowNR`).
-Dolphin 5.0-12188+ switched to **Qt** (window class `Qt5150QWindowIcon`).
+Dolphin 5.0-12188+ switched to **Qt 5** (window class `Qt5150QWindowIcon`, encoding Qt
+5.15.0). Dolphin's later CalVer builds (e.g. `2606`) moved to **Qt 6** — this cabinet's
+current build registers as `Qt651QWindowIcon` (Qt 6.5.1). Each Qt *minor* version bump can
+change this string again, because Qt bakes its own version into the class name.
 RocketLauncher's `Dolphin.ahk` module detects game windows by class name, so upgrading
-from a wx build to a Qt build without updating the module causes two failures:
+Dolphin without updating the module to match causes two failures:
 
 | Symptom | Cause |
 |---------|-------|
-| RL fade-in completes, then error: *"There was an error waiting for the window FPS ahk\_class wxWindowNR"* | Module looks for `wxWindowNR`; Qt Dolphin registers as `Qt5150QWindowIcon` |
+| RL fade-in completes, then error: *"There was an error waiting for the window FPS ahk\_class wxWindowNR"* (or `Qt5150QWindowIcon`, `Qt651QWindowIcon`, etc.) — appears almost immediately | Module is looking for the *previous* generation's window class; Dolphin now registers under a different one |
+| Game plays fine in the background for ~2 minutes, then RocketLauncher errors *"error waiting for the window FPS ahk\_class ..."* and HyperSpin regains focus while the game keeps running (audible, reachable via Alt-Tab) | Same root cause, but the module's `emuGameWindow.Wait()` call already has the `Wait(120)` explicit-timeout fix applied (see next section) — so it waits the full 120 s instead of failing at the fade animation's ~45–60 s mark |
 | Dolphin opens to the game browser instead of launching the selected game | Old Windows-style flags (`/b /e`) are not parsed by Qt-based Dolphin; use POSIX-style (`-b -e`) |
+
+**Diagnosing the current window class after any Dolphin upgrade — no external tools needed:**
+RocketLauncher.log already records the live window's title and class every time it polls,
+via `MiscUtils.GetActiveWindowStatus`. After a failed launch, search the log for the line
+immediately before the `ScriptError` line:
+
+```
+MD | DEBUG | ... | MiscUtils.GetActiveWindowStatus - Title: Dolphin 2606 | ... | Class: Qt651QWindowIcon | ...
+MD | ERROR | ... | ScriptError - There was an error waiting for the window "FPS ahk_class Qt5150QWindowIcon". ...
+```
+
+The `GetActiveWindowStatus` line shows what the window *actually* is; the `ScriptError` line
+shows what the module *expected*. Whenever these two class names differ, that mismatch is
+the bug — update `Dolphin.ahk` (see below) to the class shown in `GetActiveWindowStatus`. This
+works for any future Dolphin/Qt upgrade, not just the Qt5→Qt6 jump — no need to reproduce the
+issue with AutoHotkey's Window Spy tool.
 
 **Three edits are needed in `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`:**
 
-1. **All window class references** — replace every occurrence of `wxWindowNR` with
-   `Qt5150QWindowIcon`. There are 7 occurrences (primary window × 3, game window × 3,
-   NetPlay windows × 2 across several conditional blocks).
+1. **All window class references** — do a global find/replace of the *old* class string
+   (whatever the module currently contains) with the *current* one (from the diagnostic
+   recipe above). Originally this was `wxWindowNR` → `Qt5150QWindowIcon` (~7 occurrences:
+   primary window × 3, game window × 3, NetPlay windows × 2 across several conditional
+   blocks). For this cabinet's current upgrade it is `Qt5150QWindowIcon` → `Qt651QWindowIcon`
+   — replace **all** occurrences (use "Replace All" rather than counting instances by hand;
+   the exact count can shift between module versions).
 
 2. **Launch flags** — find the line that runs the emulator:
    ```ahk
