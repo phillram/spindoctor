@@ -670,18 +670,20 @@ Any time Dolphin is upgraded across a Qt version boundary, this string changes a
 module needs to be updated to match — see the diagnostic recipe below rather than assuming
 it's always the wx→Qt5 jump.
 
-**Fix:**
-1. Find the current class: open `RocketLauncher.log`, and look at the
-   `MiscUtils.GetActiveWindowStatus` debug line right before the `ScriptError` line — it
-   shows the game window's *actual* current title/class. (No need to reproduce with
-   AutoHotkey's Window Spy — the log already has it.)
-2. Edit `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` and replace every occurrence
-   of the old class string with the one from step 1 (e.g. `Qt5150QWindowIcon` →
-   `Qt651QWindowIcon`). Use "Replace All" — don't assume a fixed occurrence count.
-
-See the
+**Fix — stop matching on the window class entirely.** Rather than swapping in the new Qt
+class string (which just breaks again on the next Dolphin upgrade), edit
+`D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` to match Dolphin's window by **process
+name** (`ahk_exe Dolphin.exe`) instead of by class. The exe name can't change across
+Dolphin/Qt versions, so this survives future upgrades with no further edits. See the
 [Dolphin architecture section](cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation)
-for the full list of edits and worked example.
+for the exact block to replace and the reasoning (including a related dead-code bug this
+also fixes).
+
+If you'd rather do the minimal-diff version instead (swap the class string and accept it'll
+need updating again next time): open `RocketLauncher.log` and look at the
+`MiscUtils.GetActiveWindowStatus` debug line right before the `ScriptError` line — it shows
+the game window's *actual* current title/class, no AutoHotkey Window Spy needed — then
+replace every occurrence of the old class string in `Dolphin.ahk` with that one.
 
 ---
 
