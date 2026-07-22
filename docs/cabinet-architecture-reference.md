@@ -1112,9 +1112,19 @@ will not register correctly.
 
 #### DS4Windows must run independently of HyperSpin
 
-DS4Windows is started alongside HyperSpin and exits when HyperSpin exits. If DS4Windows
-closes during an active Dolphin session — or its process lifetime is tied to HyperSpin —
-the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
+> **Resolved on this cabinet** — DS4Windows now starts at Windows login and is no
+> longer tied to HyperSpin's process lifetime, and menu navigation is handled by
+> a DS4Windows **Auto Profiles** keyboard mapping instead of a separate
+> mapper/joystick-nav layer. See
+> [Controller input: PS4 pad, dual-mode via DS4Windows Auto Profiles](controller-input.md)
+> for the full current setup. The failure mode below is what an older config
+> (DS4Windows launched by the HyperSpin Startup Script INI, tied to HyperSpin's
+> lifetime) looks like — kept here since other cabinets may still be on that setup.
+
+If DS4Windows's process lifetime is tied to HyperSpin (e.g. launched from the
+HyperSpin Startup Script's `[Startup]` list and killed from its `[Exit]` list) and it
+closes during an active Dolphin session — or simply isn't running yet when a game
+launches — the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
 
 ```
 [disconnected] DInput/0/Wireless Controller
@@ -1122,8 +1132,8 @@ the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
 
 The controller does not recover until DS4Windows is restarted or the machine is rebooted.
 
-**Fix:** Configure DS4Windows to start at Windows login (Startup folder or Task Scheduler),
-independent of HyperSpin's process lifetime.
+**Fix:** Configure DS4Windows to start at Windows login (Startup folder or Task Scheduler)
+instead of via the HyperSpin Startup Script, independent of HyperSpin's process lifetime.
 
 #### LED colour change is normal
 
@@ -2462,11 +2472,15 @@ The INI has two relevant sections:
 
 This is what "starts my tools and kills them when I quit" on a cabinet — it's
 HyperSpin launching one orchestrator script at boot/exit, not per-game
-RocketLauncher behavior. It's also the mechanism that starts (and kills)
-DS4Windows on many cabinets; see [Controller input — DS4Windows and
+RocketLauncher behavior. On many cabinets this script is (or was) also what
+starts and kills DS4Windows; see [Controller input — DS4Windows and
 XInput](#controller-input--ds4windows-and-xinput) above for why tying
-DS4Windows' lifetime to HyperSpin's is a problem for mid-session use, and the
-fix (start DS4Windows independently instead of through this script).
+DS4Windows' lifetime to HyperSpin's is a problem for mid-session use. **This
+cabinet has since moved DS4Windows, Xpadder, and antimicro entirely out of
+this script** in favor of DS4Windows Auto Profiles started at Windows login —
+see [Controller input: PS4 pad, dual-mode via DS4Windows Auto
+Profiles](controller-input.md#4-hyperspin-startup-script-changes) for the
+resulting simplified `[Startup]`/`[Exit]` INI.
 
 ### Input stack (typical layered setup)
 
@@ -2475,27 +2489,36 @@ A cabinet commonly layers two independent input paths on top of each other:
 ```
 Physical controller ─▶ DS4Windows ─▶ virtual Xbox pad ─▶ mapper ─▶ keystrokes ─▶ HyperSpin menu
                                                     (Xpadder / antimicro /
-                                                     HyperSpin joystick nav)
+                                                     HyperSpin joystick nav /
+                                                     DS4Windows Auto Profiles)
 Arcade panel (Mini-PAC) ────────────────────────────────────────▶ keystrokes ─▶ HyperSpin menu
 ```
 
 - **HyperSpin's own menus read keyboard input only**, unless the startup
   script's native joystick navigation is enabled (`Joysticks_Enabled=true` in
-  its INI). A controller therefore needs a mapper (Xpadder, antimicro, or the
-  script's own joystick nav) to translate button presses into the keystrokes
-  HyperSpin expects — inside a game, emulators generally read the pad
-  directly instead (see [RetroArch Input Architecture](#retroarch-input-architecture)
+  its INI). A controller therefore needs something to translate button presses
+  into the keystrokes HyperSpin expects: a separate mapper (Xpadder,
+  antimicro), the script's own joystick nav, or — the setup that ended up
+  working reliably on this cabinet — **DS4Windows Auto Profiles**, which binds
+  the pad's buttons directly to keyboard output while HyperSpin has focus and
+  switches to a normal XInput mapping the moment a game launches, with no
+  separate mapper process at all. See
+  [Controller input](controller-input.md) for why the two older approaches
+  (native joystick nav, a separate Xpadder/antimicro mapper) were dropped in
+  favor of it. Inside a game, emulators generally read the pad directly
+  instead (see [RetroArch Input Architecture](#retroarch-input-architecture)
   above for that path).
 - Running **more than one** of Xpadder / antimicro / the script's built-in
-  joystick nav at once is redundant and causes double-navigation (one button
-  press moves the menu cursor twice). Pick exactly one.
+  joystick nav / DS4Windows Auto Profiles at once is redundant and causes
+  double-navigation (one button press moves the menu cursor twice). Pick
+  exactly one.
 
 ### Tool inventory (common startup-script payload)
 
 | Tool | Purpose | Needed? |
 |---|---|---|
-| **DS4Windows** | Maps a PS4 pad to XInput | Only if using a PS4 controller. Let it auto-start with Windows *or* the startup script — not both, or it won't stay minimized (and see the lifetime problem above). |
-| **Xpadder** | Controller → keyboard mapper (paid) | Optional — only for controller menu navigation. Drop it if the arcade panel drives menu navigation. |
-| **antimicro / antimicroX** | Controller → keyboard mapper (free) | Redundant with Xpadder — keep at most one. |
+| **DS4Windows** | Maps a PS4 pad to XInput, and (via Auto Profiles) keystrokes in HyperSpin's menus | Only if using a PS4 controller. Recommended: start at Windows login, **not** from this script — see [Controller input](controller-input.md). Don't run it from both places, or it won't stay minimized. |
+| **Xpadder** | Controller → keyboard mapper (paid) | Only needed if not using DS4Windows Auto Profiles for menu navigation. Redundant with, and superseded on this cabinet by, Auto Profiles — see [Controller input §1](controller-input.md#1-why-not-the-two-obvious-alternatives). |
+| **antimicro / antimicroX** | Controller → keyboard mapper (free) | Same as Xpadder — redundant with Auto Profiles, keep at most one mapper active regardless of which tool. |
 | **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |
 | **HyperSearch** | Search-the-wheel add-on for HyperSpin | Keep if wheel search is used. |

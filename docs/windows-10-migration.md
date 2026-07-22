@@ -149,5 +149,8 @@ unavailable and the emulator's `d3d` renderer draws nothing.
 - [Cabinet architecture reference → HyperSpin Startup/Exit Orchestration](cabinet-architecture-reference.md#hyperspin-startupexit-orchestration) —
   what the startup script INI referenced in §4/§6 actually does, and how the
   controller-mapper stack (DS4Windows/Xpadder/antimicro) layers under it.
+- [Controller input: PS4 pad, dual-mode via DS4Windows Auto Profiles](controller-input.md) —
+  re-establishing controller menu nav + in-game input after the reinstall in §4,
+  without the redundant Xpadder/antimicro mapper stack.
 - [Troubleshooting](troubleshooting.md) — general error lookup once the cabinet
   is back up.
