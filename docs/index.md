@@ -26,6 +26,7 @@ Then pick how to launch:
 | If you want to… | Read |
 |---|---|
 | Stand up a cabinet from a blank Windows PC | [First-time setup](setup.md) |
+| Move a cabinet from Windows 7 to Windows 10, with a hardware upgrade | [Windows 7 → 10 migration](windows-10-migration.md) |
 | Find a control on the GUI launcher | [GUI walkthrough](gui.md) |
 | Upgrade from SpinDoctor 1.x | [Migrating from 1.x](migrating-from-1.x.md) |
 | Get the punchy copy-paste cheatsheet for the most-used commands | [CLI cheatsheet](cli-cheatsheet.md) |

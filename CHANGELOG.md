@@ -6,6 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+<<<<<<< HEAD
 ### Added
 
 - **`introvideo swap`** — picks a random enabled video from the pool and copies it over `intro_video_target`. A live scan + a fresh random pick every run, not a pre-computed order. GUI: new **Swap now** button on the Intro Video tab — the fastest way to confirm the pool/target config actually works without waiting for a reboot.
@@ -31,6 +32,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Docs
 
 - **Dolphin/GameCube: documented the Qt 6 window-class mismatch (`Qt651QWindowIcon`) that causes RocketLauncher to lose focus back to HyperSpin ~2 minutes into a game that's still running fine in the background, and the permanent fix for it.** Same root cause as the earlier wx→Qt5 module fix, one Dolphin generation further along (CalVer builds, Qt 6.5.1) — diagnosed from a user-supplied `RocketLauncher.log`. Rather than documenting another one-off class-string swap that would break again on the next Dolphin/Qt upgrade, the recommended fix now matches `Dolphin.ahk`'s game window by `ahk_exe Dolphin.exe` (process name) instead of `ahk_class`, which cannot change across emulator versions — the module's own VBA-Link code already used this exact technique (PID-based matching) elsewhere, so this isn't a new pattern for the file. This edit also removes a latent dead-code bug: an `If (renderToMain = "true") {} Else {}` block was immediately overwritten by an unconditional AHK ternary assignment right after it (the same `If ... ? ... :` quirk already worked around for `Fullscreen` in this module, but not for `HideMouse` — flagged as a possible live bug, not yet fixed). Added a diagnostic recipe as a fallback for the minimal-diff path — read `MiscUtils.GetActiveWindowStatus` in `RocketLauncher.log` right before the `ScriptError` line to find the emulator's actual current window class/title. See [troubleshooting.md](docs/troubleshooting.md#gamecube-games-fail-with-error-waiting-for-the-window-fps-ahk_class--any-variant) and [cabinet-architecture-reference.md](docs/cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation). Also corrected the emulator-version table to note the cabinet's OS moved from Windows 7 to Windows 10, which lifts the constraint that previously pinned Dolphin to the last Windows-7-compatible build range.
+- **New guide: migrating a cabinet from Windows 7 to Windows 10 with a hardware upgrade** (`docs/windows-10-migration.md`) — SFF GPU/SSD constraints, full-disk cloning, a Legacy/MBR Windows 10 install, the post-install recovery checklist, the HyperSpin `sxs.dll` silent-exit fix, and the white-screen/GPU-driver cause. Linked from `docs/index.md`.
+- **`cabinet-architecture-reference.md`** — new *HyperSpin Startup/Exit Orchestration* section documenting the community "HyperSpin Startup Script" INI (the `[Startup]`/`[Exit]` mechanism many cabinets use to launch/kill DS4Windows, Xpadder, antimicro, CabVol, HyperSearch around HyperSpin) and the typical layered input stack (controller → mapper → keystrokes vs. arcade panel → keystrokes), cross-linked with the existing DS4Windows and RetroArch input sections.
 
 ## [2.10.2] - 2026-07-20
 
