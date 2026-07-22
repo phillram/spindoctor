@@ -1951,6 +1951,39 @@ This was first hinted at, then missed: `LEDBlinkyInputMap.xml`'s `inputCodes` at
 
 **Key/letter inventory.** Every letter A–Y is assigned (see the Key sent column); only `Z` is free for future expansion. Trackball ball movement itself (as opposed to its two click buttons) moves the mouse cursor via the Mini-PAC's analog axes (Axis1/Axis2), not a pin-mapped key.
 
+### HyperSpin frontend menu controls (Player 1 / Player 2)
+
+The Master control reference above is the *physical control → key sent*
+mapping (what the Mini-PAC does). Separately, **HyperSpin's own frontend**
+(its wheel/menu navigation — configured via HyperHQ's Controls screen, not
+the Mini-PAC and not the "HyperSpin Startup Script" INI covered in
+[HyperSpin Startup/Exit Orchestration](#hyperspin-startupexit-orchestration))
+listens for specific keys per player action. Confirmed cabinet config:
+
+| Action | Player 1 key | P1 physical control | Player 2 key | P2 physical control |
+|---|---|---|---|---|
+| Up | `↑` | P1 Joystick Up | `N` | P2 Joystick Up |
+| Down | `↓` | P1 Joystick Down | `Q` | P2 Joystick Down |
+| Skip Up | `←` | P1 Joystick Left | `M` | P2 Joystick Left |
+| Skip Down | `→` | P1 Joystick Right | `O` | P2 Joystick Right |
+| Skip Up (by number) | `D` | P1 Button 5 | `J` | P2 Button 5 |
+| Skip Down (by number) | `E` | P1 Button 6 | `K` | P2 Button 6 |
+| HyperSpin (back to main wheel) | `C` | P1 Button 3 | `I` | P2 Button 3 |
+| Genre | `B` | P1 Button 2 | `H` | P2 Button 2 |
+| Favorites | `A` | P1 Button 1 | `G` | P2 Button 1 |
+| Start (launch highlighted game) | `Enter` | Select (admin) | `R` | P1 Start |
+| Exit | `Escape` | Exit (admin) | `Escape` | Exit (admin) |
+
+Every row lines up with that player's own physical controls — **except
+Start**. Player 1's HyperSpin "Start" action fires on `Enter` (the admin
+**Select** button), not P1's own physical Start button (`R`), and Player 2's
+"Start" action fires on `R` — P1's physical Start button, not P2's own
+(`T`). This is the confirmed live cabinet config, not a bug fixed in the
+docs; not independently verified as intentional. Functionally it isn't a
+problem either way — HyperSpin treats any of its configured "Start" keys as
+"launch the highlighted game," so P1 Start, P2 Start, and the admin Select
+button all launch a game regardless of which physical player pressed it.
+
 ### Xbox 360 button numbers (winxinput driver)
 
 | Button | `_btn` value | Notes |
