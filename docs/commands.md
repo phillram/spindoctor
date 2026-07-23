@@ -1031,42 +1031,42 @@ Only files and entries that exist are touched — missing ones are silently skip
 
 ## Intro Video Randomizer
 
-Manages the pool of startup videos a third-party AutoHotkey randomizer script picks from on every HyperSpin boot. SpinDoctor doesn't run the randomizer itself — it only reads and edits the `Random.ini` file the randomizer reads, and copies video files into the folder it scans.
+Manages the pool of startup videos HyperSpin plays on boot, and performs the swap itself. The pool folder **is** the database — every video file directly inside it is enabled/in rotation, no separate list file to keep in sync. This replaces a third-party tool ("Randomizer", a 2015 HyperSpin-forum tool wired into HyperHQ's Startup/Exit tab) — SpinDoctor no longer reads or writes that tool's `Random.ini` format at all. See [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the full background and file layout.
 
-Configure the **Intro Video Randomizer directory** (the folder containing `Random.ini`, e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`) once via `spindoctor config set intro_randomizer_dir <path>` or the Setup tab. See [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the exact file layout and `Random.ini` format.
+Configure two paths once (Setup tab or `spindoctor config set`):
+
+- **`intro_randomizer_dir`** — the pool folder, e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`. Videos live directly inside it; a `Disabled\` subfolder (created on demand) holds videos taken out of rotation.
+- **`intro_video_target`** — the full path to the file HyperSpin actually plays on boot, e.g. `D:\Arcade\Media\Frontend\Video\Intro.mp4`.
 
 ### `introvideo`
 
 ```bat
-spindoctor introvideo list                                    :: table of every video: on disk / registered / size
-spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"      :: dry-run preview
-spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply   :: copy the file into Folder= and register it
+spindoctor introvideo list                                     :: table of every video: enabled / disabled / size
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"       :: dry-run preview
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply    :: copy the file into the pool
 spindoctor introvideo add "C:\Downloads\A.mp4" "C:\Downloads\B.mp4" --apply  :: add several in one call
-spindoctor introvideo remove "Capcom Intro.mp4"                :: dry-run preview
-spindoctor introvideo remove "Capcom Intro.mp4" --apply        :: drop it from Random.ini (file stays on disk)
-spindoctor introvideo remove "A.mp4" "B.mp4" --apply           :: remove several in one call
-spindoctor introvideo shuffle                                  :: preview a fresh random playback order
-spindoctor introvideo shuffle --apply                          :: commit it to Random.ini
-spindoctor introvideo shuffle --seed 42 --apply                :: reproducible shuffle (mainly for testing)
+spindoctor introvideo remove "Capcom Intro.mp4"                 :: dry-run preview
+spindoctor introvideo remove "Capcom Intro.mp4" --apply         :: move it to Disabled\ (file is never deleted)
+spindoctor introvideo restore "Capcom Intro.mp4"                :: dry-run preview
+spindoctor introvideo restore "Capcom Intro.mp4" --apply        :: move it back from Disabled\ into rotation
+spindoctor introvideo swap                                      :: preview which video would be picked
+spindoctor introvideo swap --apply                              :: pick a random enabled video and copy it over intro_video_target
+spindoctor introvideo install-autorun                           :: preview the Windows logon task that runs 'swap --apply'
+spindoctor introvideo install-autorun --apply                   :: write the launcher files and register the task
+spindoctor introvideo uninstall-autorun --apply                 :: remove the task
 ```
 
-`add` copies each given file into `Random.ini`'s `Folder=` path (skipping the copy if a file with that name already exists there — it never overwrites) and appends the filename to both `FileList=` and `RandomList=`. `remove` only edits those two pipe-delimited lists in `Random.ini` — **the video file itself is never deleted**, so removed videos can be re-registered later with `introvideo add <path-to-the-file-still-on-disk>`. Both commands accept one or more files/filenames in a single call; a multi-file `add`/`remove` still only touches the `FileList=`/`RandomList=` lines, and writes a single shared timestamped backup of `Random.ini` to `<backup_dir>/IntroVideoRandomizer/` for the whole batch (not one per file) when `backup_before_modify` is enabled (the default). Every other line, key, and comment in `Random.ini` is left byte-for-byte as-is.
+`add` copies each given file into the pool folder — skipping the copy if a file with that name already exists there, it never overwrites. `remove` moves the named file into a `Disabled\` subfolder — **the video file itself is never deleted**; `restore` moves it back. Both `add`/`remove`/`restore` accept one or more files/filenames in a single call. Filename matching is case-insensitive (NTFS is).
 
-**Registering a video that's already on disk** (dropped into `Folder=` directly, restored from a backup, whatever put it there without going through SpinDoctor) is the exact same `add` command, just pointed at the file's *existing* path instead of a file living elsewhere:
+**Re-enabling a video that's already sitting in the pool folder** (dropped in directly, without going through SpinDoctor) needs no special command — since the folder itself is the list, it's already enabled the moment it's there. `introvideo list` shows it immediately.
 
-```bat
-spindoctor introvideo add "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Capcom Intro.mp4" --apply
-```
+`swap` does a live scan of the pool folder, picks one enabled video uniformly at random, and copies it over `intro_video_target`. It's re-randomized on every single run — there's no persisted order, so nothing to keep in sync or go stale. An empty pool is a clean no-op, not an error (this matters because it's also what the unattended logon task runs). Run it by hand any time to verify your `intro_randomizer_dir`/`intro_video_target` config actually works, without waiting for a reboot.
 
-`add` never overwrites a file at its own destination, so this only registers it in `FileList=`/`RandomList=` — no copy happens. `spindoctor introvideo list` shows on disk ✓ / Registered `-` for exactly this case.
+`install-autorun` registers a Windows Task Scheduler logon task (`ONLOGON` trigger, task name `SpinDoctor Intro Swap`) that runs `introvideo swap --apply` automatically at every login — a small hidden script, no console window. This has **no dependency on HyperSpin, RocketLauncher, or HyperHQ**: the swap is a plain file copy and Task Scheduler is a plain Windows mechanism. `uninstall-autorun` removes the task (the launcher files are left behind — harmless). `--delay-minutes` on `install-autorun` maps to `schtasks /DELAY`, rarely needed.
 
-The `Backup\` subfolder inside the videos folder (if the randomizer or a user creates one) is never scanned, copied into, or otherwise touched.
+**Ordering caveat:** the logon task and however HyperSpin itself currently auto-launches (e.g. a shortcut in `shell:startup`) both fire around login with no strict ordering guarantee between the two OS mechanisms. In practice the swap — a small file copy — finishes well before HyperSpin's own (multi-second, Adobe AIR) boot sequence gets to reading its intro video, but this isn't a hard guarantee, and SpinDoctor deliberately does not touch your existing Startup-folder entry or chain-launch HyperSpin itself to avoid the much larger risk of SpinDoctor guessing wrong about something that gates whether the cabinet boots at all.
 
-If `backup_before_modify` is on and `backup_dir` is configured but not actually writable (an unmounted drive, a permission problem), `add`/`remove` fail with a clear error explaining what to fix — they don't silently write the backup somewhere else, and `add` won't have copied any file yet when this happens (checked before any copy, for a multi-file batch too).
-
-`shuffle` randomizes the order videos are listed in in `FileList=`/`RandomList=` — it never adds, removes, or deletes a video, only reorders the existing ones. This matters because the third-party randomizer script may not itself vary its pick from one boot to the next; pre-shuffling the list is what actually changes playback order across sessions. `--seed` makes the new order reproducible (mainly useful for testing) — omit it for a fresh random order every run.
-
-> **GUI alternative:** the **Intro Video** tab lists every video with its on-disk/registered status, and wraps `introvideo add` (via a multi-select file picker), registering an on-disk-but-unregistered row via **Register selected** (no picker, no copy), `introvideo remove` (via the list, Ctrl/Shift-click to select several), and `introvideo shuffle` via a **Shuffle order** button. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Intro Video** tab lists every video with its enabled/disabled status, and wraps `introvideo add` (multi-select file picker), `introvideo remove`/`restore` (via the list, Ctrl/Shift-click to select several), and `introvideo swap` via a **Swap now** button. A separate "Auto-run on Windows login" section shows the current status and wraps `install-autorun`/`uninstall-autorun` via Enable/Disable buttons. See [GUI walkthrough](gui.md).
 
 ---
 

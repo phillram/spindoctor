@@ -309,7 +309,7 @@ Almost everything SpinDoctor writes is reversible. The mechanics:
 
 ### `.bak` files (XML/INI round-trips)
 
-Every in-place XML or INI write — HyperSpin database XML, LEDBlinky's `Colors.ini`/`Settings.ini`, RocketLauncher configs, the Intro Video Randomizer's `Random.ini` — leaves a `.YYYYMMDD_HHMMSS.bak` next to the original, or under `backup_dir` if configured (see [Where SpinDoctor stores its files → `backup_dir`](spindoctor-files.md#backup_dir)). Toggle via `backup_before_modify` (default `true`). To restore, copy the `.bak` over the live file. To clear old `.bak`s once you're confident: `spindoctor cleanup run --include db-backups --keep-recent 5 --apply`. If `backup_dir` is configured but not actually writable, the write is aborted with a clear error rather than silently backing up elsewhere or leaving a half-applied change.
+Every in-place XML or INI write — HyperSpin database XML, LEDBlinky's `Colors.ini`/`Settings.ini`, RocketLauncher configs — leaves a `.YYYYMMDD_HHMMSS.bak` next to the original, or under `backup_dir` if configured (see [Where SpinDoctor stores its files → `backup_dir`](spindoctor-files.md#backup_dir)). Toggle via `backup_before_modify` (default `true`). To restore, copy the `.bak` over the live file. To clear old `.bak`s once you're confident: `spindoctor cleanup run --include db-backups --keep-recent 5 --apply`. If `backup_dir` is configured but not actually writable, the write is aborted with a clear error rather than silently backing up elsewhere or leaving a half-applied change. (The Intro Video pool doesn't use this mechanism — `introvideo add`/`remove`/`restore` only ever copy or move video files, which are trivially reversible by doing the opposite operation; see [Managing intro videos](#managing-intro-videos).)
 
 ### Manifests + `--undo`
 
@@ -538,27 +538,33 @@ The wiring lives in `RocketLauncher\Settings\<System>.ini` as `Pre_Launch_App` (
 
 ## Managing intro videos
 
-For cabinets running a third-party boot-time Intro Video Randomizer (an AutoHotkey/launcher script, not part of HyperSpin/RocketLauncher/SpinDoctor, that swaps HyperSpin's startup video on every boot). Full reference at [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) and [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
+SpinDoctor manages the pool of videos HyperSpin plays on boot, and can swap between them itself — no third-party tool required. Full reference at [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) and [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 
-> **GUI alternative:** the **Intro Video** tab lists every video with on-disk/registered status. **Add video(s)** (multi-select file picker), **Register selected** (on-disk-but-unregistered rows, no picker/no copy), and **Remove selected** (Ctrl/Shift-click for several) wrap the commands below — no confirmation dialogs, the global **Apply** checkbox is the gate.
+> **GUI alternative:** the **Intro Video** tab lists every video with enabled/disabled status. **Add video(s)** (multi-select file picker), **Remove selected** / **Restore selected** (Ctrl/Shift-click for several), and **Swap now** wrap the commands below — no confirmation dialogs, the global **Apply** checkbox is the gate. A separate "Auto-run on Windows login" section wraps `install-autorun`/`uninstall-autorun`.
 
 ```bat
-:: 0. One-time: point SpinDoctor at the folder containing Random.ini.
+:: 0. One-time: point SpinDoctor at the pool folder and the boot-video target.
 spindoctor config set intro_randomizer_dir "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer"
+spindoctor config set intro_video_target "D:\Arcade\Media\Frontend\Video\Intro.mp4"
 
-:: 1. See what's there — on disk, registered, or both.
+:: 1. See what's there — enabled (in rotation) or disabled.
 spindoctor introvideo list
 
-:: 2. Add new videos from outside the folder (copies in, then registers).
+:: 2. Add new videos from outside the pool folder.
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply
 spindoctor introvideo add "C:\Downloads\A.mp4" "C:\Downloads\B.mp4" --apply   :: several at once
 
-:: 3. A video already sitting in the folder but not showing up in rotation?
-::    Same command, pointed at its existing path — registers without copying.
-spindoctor introvideo add "D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Capcom Intro.mp4" --apply
-
-:: 4. Retire a video from rotation without deleting the file.
+:: 3. Retire a video from rotation without deleting the file.
 spindoctor introvideo remove "Capcom Intro.mp4" --apply
+
+:: 4. Changed your mind? Move it back into rotation.
+spindoctor introvideo restore "Capcom Intro.mp4" --apply
+
+:: 5. Try one swap by hand — confirms the config actually works.
+spindoctor introvideo swap --apply
+
+:: 6. Register a Windows logon task that runs step 5 automatically at every login.
+spindoctor introvideo install-autorun --apply
 ```
 
-Every write is dry-run by default (drop `--apply` to preview) and backed up first — see [Recovery from mistakes → `.bak` files](#bak-files-xmlini-round-trips) — but there's no `--undo` flag for `introvideo`; restore by copying the `.bak` back over `Random.ini`. Removed videos are never deleted from disk, so `introvideo add` on the same path re-registers them any time.
+Add/remove/restore are dry-run by default (drop `--apply` to preview). There's no separate list file to back up or `--undo` — `add` only ever copies a file in (skip-if-exists, never overwrites), and `remove`/`restore` only ever move a file between the pool root and its `Disabled\` subfolder, so every write is trivially reversible by doing the opposite operation. Removed videos are never deleted from disk.
