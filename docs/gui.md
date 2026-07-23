@@ -334,6 +334,8 @@ Ticking **Apply** pops a confirmation dialog before running — the wording adap
 
 Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
+Quoting values with spaces (e.g. `emulator-title set "Model 2" "Sega Model 2"`) works the same as on the command line — the quote characters themselves are stripped before the arguments reach the CLI, so `"Daphne"` and `Daphne` are equivalent input here.
+
 ### History
 
 Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
