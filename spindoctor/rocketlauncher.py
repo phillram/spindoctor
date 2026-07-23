@@ -267,6 +267,16 @@ EMULATOR_WINDOW_TITLES: dict[str, str] = {
     "Dolphin Ishiiruka": "Dolphin",  # Qt-based builds (5.0+) title their window
                                      # "Dolphin 5.0-NNNNN | ... | FPS: ..." — the
                                      # "Ishiiruka" fork name no longer appears.
+    "Daphne": "SDL_app",  # Daphne is an SDL 1.2 app that never sets a window caption,
+                          # so SDL fills in its built-in default title, "SDL_app", for
+                          # every game — the emulator name "Daphne" never appears in it.
+                          # Without this entry, FadeTitle=Daphne never matches, so
+                          # PCLauncher's loading overlay never clears when Daphne is
+                          # launched from a synthetic wheel (Favorites/Recently Played/
+                          # Most Played) — the game plays audibly behind a frozen
+                          # "Loading Complete" screen. Confirmed stable across every
+                          # Daphne 1.0.x build (the emulator has been unmaintained
+                          # since 2013, so this isn't expected to drift).
 }
 
 # Safety timeout (seconds) for FadeTitle window detection.

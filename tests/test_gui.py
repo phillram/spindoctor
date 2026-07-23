@@ -455,6 +455,73 @@ def test_dry_run_capable_invocations_are_not_read_only(args):
     assert gui._is_read_only_invocation(args) is False
 
 
+# ─── Custom Command Console: Windows quote handling ────────────────────────────
+#
+# _run_custom uses shlex.split(raw, posix=False) on Windows so that a quoted
+# token like "foo bar" stays one argv element and backslashes in Windows
+# paths survive intact — but posix=False does NOT strip the quote characters
+# themselves. _dequote_windows_shlex_tokens removes exactly one matching
+# pair of surrounding quotes per token afterward, without touching interior
+# characters (so backslashes and embedded quotes are left alone).
+
+def test_dequote_strips_matching_double_quotes():
+    assert gui._dequote_windows_shlex_tokens(['"Daphne"', '"SDL_app"']) == [
+        "Daphne", "SDL_app",
+    ]
+
+
+def test_dequote_strips_matching_single_quotes():
+    assert gui._dequote_windows_shlex_tokens(["'Daphne'"]) == ["Daphne"]
+
+
+def test_dequote_leaves_unquoted_tokens_alone():
+    assert gui._dequote_windows_shlex_tokens(["emulator-title", "set", "Daphne"]) == [
+        "emulator-title", "set", "Daphne",
+    ]
+
+
+def test_dequote_preserves_windows_path_backslashes():
+    """A quoted Windows path must survive with its backslashes intact —
+    this is the exact scenario posix=False was chosen to protect, so the
+    dequote step must not regress it.
+    """
+    tok = '"D:\\Arcade\\RocketLauncher\\RocketLauncher.exe"'
+    assert gui._dequote_windows_shlex_tokens([tok]) == [
+        "D:\\Arcade\\RocketLauncher\\RocketLauncher.exe",
+    ]
+
+
+def test_dequote_leaves_lone_quote_character_alone():
+    # A single stray quote character (len 1) has no matching pair to strip.
+    assert gui._dequote_windows_shlex_tokens(['"']) == ['"']
+
+
+def test_run_custom_dequotes_emulator_title_command(monkeypatch):
+    """End-to-end regression for the bug: typing a quoted emulator-title
+    command in the Console must reach _run_cli with clean argv, not argv
+    containing literal quote characters (which silently corrupted the
+    stored config key — see CHANGELOG).
+    """
+    captured = {}
+
+    class _FakeGui:
+        _custom_var = type("V", (), {"get": staticmethod(lambda: (
+            'emulator-title set "Daphne" "SDL_app"'
+        ))})()
+
+        def _flash_validation(self, *_a, **_k):
+            raise AssertionError("should not hit a validation error")
+
+        def _run_cli(self, binary, args, **_k):
+            captured["binary"] = binary
+            captured["args"] = args
+
+    monkeypatch.setattr(gui.sys, "platform", "win32")
+    gui._SpinDoctorGUI._run_custom(_FakeGui())
+    assert captured["binary"] == "spindoctor"
+    assert captured["args"] == ["emulator-title", "set", "Daphne", "SDL_app"]
+
+
 # ─── Folder-open helpers ──────────────────────────────────────────────────────
 
 def test_open_path_uses_platform_specific_command(monkeypatch, tmp_path):
