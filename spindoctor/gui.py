@@ -695,6 +695,29 @@ def _is_read_only_invocation(args: tuple) -> bool:
     return False
 
 
+def _dequote_windows_shlex_tokens(tokens: list[str]) -> list[str]:
+    """Strip one layer of matching surrounding quotes from each token.
+
+    ``shlex.split(..., posix=False)`` is used on Windows (see
+    ``_run_custom``) so that backslashes in Windows paths survive intact —
+    but unlike POSIX mode, it does NOT strip the quote characters
+    themselves from a quoted token, it just keeps `"foo bar"` together as
+    one token *including the quotes*. Passed straight through to a
+    subprocess argv, those literal quote characters become part of the
+    value: ``emulator-title set "Daphne" "SDL_app"`` was stored as the key
+    ``'"Daphne"'`` (quotes and all), which never matched the emulator name
+    ``Daphne`` at lookup time — a silent no-op that took several rounds of
+    log analysis to track down.
+    """
+    result = []
+    for tok in tokens:
+        if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "\"'":
+            result.append(tok[1:-1])
+        else:
+            result.append(tok)
+    return result
+
+
 # Curated dropdown for the Custom Command tab. Each entry is the argv
 # string the user would type after `spindoctor` on the command line, in
 # canonical form. Picking one populates the entry field; the user can
@@ -13170,8 +13193,13 @@ class _SpinDoctorGUI:
             return
         try:
             # posix=False matches Windows quoting (`"foo bar"` stays one token,
-            # backslashes in paths don't get eaten as escapes).
-            args = shlex.split(raw, posix=(sys.platform != "win32"))
+            # backslashes in paths don't get eaten as escapes) — but it leaves
+            # the quote characters themselves in the token, so strip those off
+            # separately (see _dequote_windows_shlex_tokens).
+            win = sys.platform == "win32"
+            args = shlex.split(raw, posix=not win)
+            if win:
+                args = _dequote_windows_shlex_tokens(args)
         except ValueError as exc:
             self.messagebox.showerror(
                 "Couldn't parse arguments",
