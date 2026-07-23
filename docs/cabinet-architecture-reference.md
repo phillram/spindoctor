@@ -230,41 +230,45 @@ This is called in `fav rebuild` (`favorites.py`) and `recent rebuild` / `stats b
 
 ## Intro Video Randomizer
 
-A separate, third-party AutoHotkey/launcher script (not part of HyperSpin, RocketLauncher, or SpinDoctor) that runs on cabinet boot and copies a randomly-chosen video over HyperSpin's startup video, so the intro clip varies between sessions. SpinDoctor does not run this script — `spindoctor introvideo` only manages the pool of candidate videos and the INI file the script reads. See [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) for the CLI.
+SpinDoctor manages the pool of videos HyperSpin plays on boot, **and** performs the swap itself — no third-party tool, no dependency on HyperSpin, RocketLauncher, or HyperHQ. See [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer) for the CLI.
+
+### Historical background — the tool this replaces
+
+Before this, the cabinet used a small third-party tool called **"Randomizer"**, posted to the HyperSpin forums in 2015 by a user going by **Tempest** (`hyperspin-fe.com/files/file/7402-random-intro-video-randomizer/`). It's a standalone EXE, not an AutoHotkey script: you point it at your original intro video and a folder of candidates once, and it writes an INI (`Random.ini`, `[Randomize1]` section — `Option=`, `Folder=`, `FileToRandomize=`, pipe-delimited `FileList=`/`RandomList=`) recording those paths. It's wired in via **HyperHQ → Startup/Exit tab → Exit Program**, with `Parameters=1` — so it runs when HyperSpin *closes*, copying a newly-picked video over the boot video ready for the *next* launch. Nothing about its mechanism (INI edit + file copy) is Windows-version-specific, so a stopped-working report after a Windows 10 migration is more likely a stale HyperHQ Exit Program path or a decade-old unsigned EXE getting blocked than an actual OS incompatibility — but regardless of root cause, it's unmaintained and opaque, which is why it was replaced outright rather than debugged.
+
+SpinDoctor's earlier `introvideo` implementation (shipped in v2.10.2, replaced by this one the same day) read and wrote that same `Random.ini` format. That's gone now — SpinDoctor no longer touches `Random.ini` or HyperHQ at all.
+
+### How it works now
+
+The pool folder **is** the database: every video file directly inside `config.intro_randomizer_dir` is enabled (in rotation). A `Disabled\` subfolder (created on demand) holds videos taken out of rotation by `introvideo remove` — nothing is ever deleted, and `introvideo restore` moves a file back. There's no separate list file to keep in sync with what's actually on disk, and no persisted playback order (each `introvideo swap` call is a live directory scan + a fresh uniform-random pick, so there's nothing to "shuffle").
 
 ### File paths (example cabinet)
 
 ```
-D:\Arcade\Media\Frontend\Video\Intro.mp4                                  ← FileToRandomize: the file HyperSpin actually plays on boot
-D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Random.ini          ← the randomizer's own config (config.intro_randomizer_dir points here)
-D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\       ← Folder: the pool of candidate videos
-D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos\Backup\  ← never scanned or touched by SpinDoctor
+D:\Arcade\Media\Frontend\Video\Intro.mp4                                  ← intro_video_target: the file HyperSpin actually plays on boot
+D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\                    ← intro_randomizer_dir: the pool — videos live directly here
+D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Disabled\           ← videos taken out of rotation by 'introvideo remove'; never scanned as candidates
 ```
 
-`config.intro_randomizer_dir` is the folder containing `Random.ini` — set once via the Setup tab or `spindoctor config set intro_randomizer_dir <path>`. The video pool folder (`Folder=`) and the boot-video target (`FileToRandomize=`) are **not** separate config fields; SpinDoctor reads both out of `Random.ini` itself on every command, since the randomizer script already treats that INI as the single source of truth for its own paths.
+`config.intro_randomizer_dir` and `config.intro_video_target` are two independent config fields (Setup tab, or `spindoctor config set intro_randomizer_dir <path>` / `spindoctor config set intro_video_target <path>`) — unlike the old `Random.ini`-based design, neither is derived by reading another file.
 
-### `Random.ini` format
+### `spindoctor/introvideo.py`
 
-```ini
-[Randomize1]
-Option=1
-Folder=D:\Arcade\Media\Frontend\Video\Intro Video Randomizer\Intro Videos
-FileToRandomize=D:\Arcade\Media\Frontend\Video\Intro.mp4
-FileList=Arcade Loading Screen.mp4|5 Second loading bar.mp4|Capcom Intro.mp4
-RandomList=Arcade Loading Screen.mp4|Capcom Intro.mp4
-```
+- **`list_videos`** — non-recursive scan of the pool root (enabled) and its `Disabled\` subfolder (disabled), video extensions only (`.mp4`, `.avi`, `.wmv`, `.mkv`, `.mov`, `.m4v`, `.flv`).
+- **`add_videos`/`add_video`** — copies each source file into the pool root; skips (never overwrites) if a same-named file is already there (case-insensitive, matching Windows/NTFS). Every source in a batch is validated up front, before any copy happens.
+- **`remove_videos`/`remove_video`** — moves the named file(s) from the pool root into `Disabled\`. Refuses (reports a `"conflict"` reason, doesn't touch either file) if a same-named file already exists in `Disabled\`, rather than silently clobbering it.
+- **`restore_videos`/`restore_video`** — the inverse: moves file(s) back from `Disabled\` into the pool root, same conflict handling.
+- **`swap_video`** — the actual swap: live-scans the pool root, `random.choice`s one filename, `shutil.copy2`s it over `intro_video_target`. Deliberately **does not** back up the target file first (unlike every other write in this module) — the target is a disposable, constantly-replaced file by design, not user data. An empty pool returns a clean no-op result rather than raising, because this is also the function the unattended Windows logon task calls, and it must never crash.
+- **`install_autorun`/`uninstall_autorun`/`autorun_status`** — see below.
+- No backups, no `RandomizerIniError`/`Random.ini` handling remain in this module — writes are either a file copy (`add`) or a file move (`remove`/`restore`), both trivially reversible by construction, so there's nothing to snapshot first.
 
-`FileList=` and `RandomList=` are pipe (`|`) delimited filename lists (bare filenames, no path). SpinDoctor treats them as one concept — "is this video in rotation" — and keeps them in sync: `introvideo add` appends a filename to both, `introvideo remove` drops it from both. Nothing in SpinDoctor currently relies on a file being present in one list but not the other.
+### Windows logon auto-run (`install-autorun` / `uninstall-autorun`)
 
-### How SpinDoctor edits it (`introvideo.py`)
+Registers a Windows Task Scheduler **`ONLOGON`** task (task name `SpinDoctor Intro Swap`, distinct from the GUI's existing `SpinDoctor Refresh Wheels` wheel-refresh task so the two can be enabled independently) that runs `spindoctor introvideo swap --apply` automatically at every login. Reuses [`spindoctor/autostart.py`](../spindoctor/autostart.py) (a thin `schtasks.exe` wrapper — deliberately no `pywin32` dependency) and mirrors the bat + hidden-VBS-shim pattern the GUI's wheel-refresh auto-run feature already uses (`gui.py`'s `_write_refresh_bat`/`_write_vbs_shim`): a `.bat` calling `introvideo swap --apply` (frozen installs resolve a sibling `spindoctor.exe`; source installs call `spindoctor` on `PATH`), wrapped in a `.vbs` shim so the scheduled run never flashes a console window. Written to `~/.spindoctor/` for source installs, or next to the frozen exe.
 
-- **Read** (`load_randomizer`) — line-based scan of the `[Randomize1]` section (not `configparser`, to sidestep its lower-casing of keys); `FileList=`/`RandomList=` are split on `|`.
-- **Write** (`add_videos` / `remove_videos`, `add_video`/`remove_video` are single-item wrappers around them) — surgical: only the `FileList=` and `RandomList=` lines are rewritten, using the same verbatim-preserving technique as `rocketlauncher.rewrite_pclauncher_application`. Every other line, key, comment, and the file's original key casing survive untouched.
-- **`introvideo add <file>...`** copies each source file into `Folder=` (skip, never overwrite, if a same-named file is already there) and appends the filename to both lists. Accepts one or more files in a single call. Every source is validated up front — before any copy happens — so a missing file anywhere in the batch aborts cleanly with nothing copied and `Random.ini` untouched, rather than leaving earlier files in that call copied but unregistered. Dry-run by default; `--apply` commits.
-- **`introvideo remove <filename>...`** only edits the two INI lists — **the video file(s) on disk are never deleted**. This keeps the operation non-destructive and trivially reversible: `introvideo add <path-to-the-still-present-file>` re-registers it. Accepts one or more filenames in a single call.
-- **`introvideo shuffle`** (`shuffle_videos`) reorders `FileList=`/`RandomList=` to a fresh random order — membership is untouched, only order changes. A filename present in only one of the two lists (a dangling entry — see `list_videos` above) is shuffled separately within that list, so it can't accidentally cross into the other list or get dropped. This exists because the third-party randomizer script itself may not vary its pick from one boot to the next — pre-shuffling the list order is what actually changes playback order across sessions. `--seed` makes the shuffle reproducible (used by tests); omit it for a fresh random order every run. Dry-run by default; `--apply` commits.
-- **`introvideo list`** unions the on-disk video files (scanning `Folder=`, excluding the `Backup\` subfolder — non-recursive, so nothing under `Backup\` is ever considered) with the INI's `FileList=`/`RandomList=` entries, surfacing both orphaned disk files (present on disk, not registered) and dangling INI references (registered, missing from disk).
-- **Backups** — before any write, if `config.backup_before_modify` is on (the default), a timestamped copy of `Random.ini` is written to `config.backup_dir/IntroVideoRandomizer/` (or next to the file if `backup_dir` is unset entirely) — see the backup-routing table above. A multi-file `add`/`remove` call shares a single backup across the whole batch rather than writing one per file. If `backup_dir` **is** set but isn't actually writable (unmounted drive, permission problem), that's a clear `RandomizerIniError`, not a silent fallback or a bare traceback — `add` checks this before copying any source file, so a bad `backup_dir` can't leave copied-but-unregistered orphans the way a missing source file used to.
+**Deliberately out of scope: HyperHQ / RocketLauncher integration.** The swap is a plain file copy and Task Scheduler is a plain Windows mechanism — this has zero dependency on HyperSpin, RocketLauncher, or HyperHQ, and SpinDoctor does not edit HyperHQ's own config to wire anything in (there's no HyperHQ config file in this repo to safely, surgically edit, unlike `Random.ini` used to be).
+
+**Deliberate, disclosed tradeoff — no ordering guarantee, and SpinDoctor doesn't try to force one.** The logon task and however HyperSpin itself currently auto-launches (commonly a shortcut dropped directly in `shell:startup`) both fire around login with no strict ordering guarantee between the two OS mechanisms. In practice the swap (a small file copy) finishes well before HyperSpin's own multi-second Adobe AIR boot sequence reaches the point of reading its intro video — but it isn't a hard guarantee. SpinDoctor intentionally does **not** try to eliminate this by scanning/moving the user's existing Startup-folder entry or chain-launching HyperSpin itself from the swap task: guessing wrong about an unfamiliar Startup-folder shortcut, or replacing however HyperSpin currently launches, risks breaking whether the cabinet boots at all — a far worse failure mode than an occasional stale intro video. `introvideo swap --apply` (CLI or the GUI's **Swap now** button) lets you verify the mechanism works by hand at any time without waiting for a reboot.
 
 ---
 
@@ -2132,7 +2136,6 @@ Auto-backups are routed to subsystem-specific subfolders under `config.backup_di
 | LEDBlinky (fill-defaults, patch-settings, normalize, colors edit, brightness, admin-buttons set) | `config.backup_dir/LEDBlinky/` |
 | HyperSpin database saves (update-db, batch-edit, fav/recent/stats rebuild) | `config.backup_dir/HyperSpin/` |
 | RocketLauncher INI writes (generate-config) | `config.backup_dir/RocketLauncher/` |
-| Intro Video Randomizer (`introvideo add` / `introvideo remove`) | `config.backup_dir/IntroVideoRandomizer/` |
 
 If `backup_dir` is not configured, backups land next to the source file (timestamped `.bak` sibling).
 

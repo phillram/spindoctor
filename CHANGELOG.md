@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`introvideo swap`** — picks a random enabled video from the pool and copies it over `intro_video_target`. A live scan + a fresh random pick every run, not a pre-computed order. GUI: new **Swap now** button on the Intro Video tab — the fastest way to confirm the pool/target config actually works without waiting for a reboot.
+- **`introvideo restore`** — moves a video back from `Disabled\` into rotation. GUI: new **Restore selected** button (replaces "Register selected", which no longer applies now that presence in the pool folder *is* registration).
+- **`introvideo install-autorun` / `uninstall-autorun`** — registers (or removes) a Windows Task Scheduler logon task (task name `SpinDoctor Intro Swap`) that runs `introvideo swap --apply` automatically at every login, via the same `schtasks.exe` wrapper (`spindoctor/autostart.py`) the GUI's wheel-refresh auto-run feature already uses. No dependency on HyperSpin, RocketLauncher, or HyperHQ — this replaces wiring a third-party tool into HyperHQ's Startup/Exit tab. GUI: new "Auto-run on Windows login" section on the Intro Video tab with a status label and Enable/Disable buttons.
+
+### Changed
+
+- **Intro Video: dropped the `Random.ini` dependency entirely — the pool folder itself is now the database.** `spindoctor introvideo` no longer reads or writes a third-party `Random.ini` (the file format a 2015 HyperSpin-forum tool called "Randomizer" used, wired into HyperHQ's Startup/Exit tab). Every video file directly inside `intro_randomizer_dir` is enabled/in rotation — no separate list to keep in sync or go stale. New config key `intro_video_target` replaces `Random.ini`'s `FileToRandomize=`: set it once (Setup tab or `spindoctor config set intro_video_target <path>`) to the file HyperSpin actually plays on boot.
+- **`introvideo remove` now moves the video into a `Disabled\` subfolder instead of editing an INI list** — same non-destructive guarantee (the file is never deleted), reversible with the new `introvideo restore`.
+
+### Removed
+
+- **`introvideo shuffle`** (added earlier in v2.10.2) — no longer meaningful now that `swap` does a fresh random pick on every run; there's no persisted playback order left to shuffle.
+
 ### Fixed
 
 - **Daphne games launched from a synthetic wheel (Favorites/Recently Played/Most Played) played with sound but never showed the picture** — RocketLauncher's fade/loading overlay stayed on screen (always-on-top, so Alt-Tab couldn't recover it) while the game ran audibly behind it. Root cause: SpinDoctor's default `FadeTitle=` value is the emulator's registered name, which works for the overwhelming majority of emulators because their window title contains it — but Daphne is an SDL 1.2 app that never sets a window caption, so every Daphne game's window is titled the SDL default, `SDL_app`, with no overlap with "Daphne" at all. `FadeTitle=Daphne` never matched, so RocketLauncher's PCLauncher instance never saw the emulator's window and never cleared its overlay. Added `"Daphne": "SDL_app"` to the built-in `EMULATOR_WINDOW_TITLES` correction table (same mechanism already used for Dolphin's Qt-build window-title drift) — fixed automatically for every Daphne game after the next synthetic-wheel rebuild, no manual `emulator-title set` override needed. See [Cabinet Architecture Reference → `FadeTitle=` required](docs/cabinet-architecture-reference.md#critical-fadetitle-required-to-fix-error-waiting-for-window-ahk_pid-xxxx) and [Troubleshooting](docs/troubleshooting.md) for the full mechanism and a manual-override path for any other emulator with the same kind of window-title mismatch.

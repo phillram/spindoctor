@@ -501,22 +501,23 @@ Reference: [install-tools](commands.md#install-tools), [uninstall-tools](command
 
 ## Intro Video Randomizer
 
-Manage which videos a third-party boot-time randomizer script picks from (`Random.ini`). Requires `intro_randomizer_dir` to be configured first.
+Manage the pool of videos HyperSpin plays on boot, and swap between them — no third-party tool, no `Random.ini`. Requires `intro_randomizer_dir` and `intro_video_target` to be configured first.
 
 ```bat
-spindoctor introvideo list                                        :: on disk / registered / size
+spindoctor introvideo list                                        :: enabled / disabled / size
 spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4"         :: dry-run preview
-spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy + register
+spindoctor introvideo add "C:\Downloads\Capcom Intro.mp4" --apply :: copy into the pool
 spindoctor introvideo add "C:\A.mp4" "C:\B.mp4" --apply           :: add several in one call
-spindoctor introvideo add "<Folder=>\Capcom Intro.mp4" --apply    :: already on disk, unregistered? same command, registers with no copy
 spindoctor introvideo remove "Capcom Intro.mp4"                   :: dry-run preview
-spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: unregister only — file stays on disk
-spindoctor introvideo remove "A.mp4" "B.mp4" --apply              :: remove several in one call
-spindoctor introvideo shuffle                                     :: preview a fresh random playback order
-spindoctor introvideo shuffle --apply                             :: commit it — reorders only, adds/removes nothing
+spindoctor introvideo remove "Capcom Intro.mp4" --apply           :: move to Disabled\ — file is never deleted
+spindoctor introvideo restore "Capcom Intro.mp4" --apply          :: move back from Disabled\ into rotation
+spindoctor introvideo swap                                        :: preview which video would be picked
+spindoctor introvideo swap --apply                                :: pick a random enabled video, copy over intro_video_target
+spindoctor introvideo install-autorun --apply                     :: register a Windows logon task that runs 'swap --apply' automatically
+spindoctor introvideo uninstall-autorun --apply                   :: remove that task
 ```
 
-> **GUI:** Intro Video tab — table of every video with on-disk/registered status; **Add video(s)** (multi-select file picker), **Register selected** (already on-disk, unregistered rows — no picker, no copy), **Remove selected** (Ctrl/Shift-click for several), and **Shuffle order** wrap the commands above. No confirmation dialogs — the global **Apply** checkbox is the gate.
+> **GUI:** Intro Video tab — table of every video with enabled/disabled status; **Add video(s)** (multi-select file picker), **Remove selected** / **Restore selected** (Ctrl/Shift-click for several), and **Swap now** wrap the commands above. A separate "Auto-run on Windows login" section shows current status and wraps **install-autorun**/**uninstall-autorun** via Enable/Disable buttons. No confirmation dialogs — the global **Apply** checkbox is the gate.
 
 Reference: [introvideo](commands.md#intro-video-randomizer), [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer).
 
