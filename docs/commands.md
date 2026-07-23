@@ -4,7 +4,7 @@ The full per-command reference: every command, every flag, every option. If you 
 
 Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
 
-Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests…` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
+Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
 **Interrupting a long run is safe.** Hitting `Ctrl+C` (or the GUI's Stop button) mid-`backup`, mid-`migrate`, or mid-`curate` cleans up the in-flight component and writes a *partial manifest* for whatever finished. The backup still appears in the Restore picker; an interrupted move-mode migrate is reversible via `migrate --undo`; an interrupted curate-archive is reversible via `curate --undo`. The completed work is committed by design — the manifest exists so *you* can decide whether to roll it back.
 
@@ -799,7 +799,7 @@ spindoctor find-misplaced --undo                 :: reverse the most recent --ap
 
 ### `curate`
 
-> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)…** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore…** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Curate** tab wraps `curate`, `cleanup`, and the `ignore` add/remove/list lifecycle in three sections of the same tab. The Curate section also has a **Preview (interactive)** button that opens a Toplevel where every retirement candidate appears with a `☑/☐` checkbox — Space or double-click toggles a row, vetoing that file's retirement before you commit. The Ignore section gains a **View / un-ignore** button that lists every currently-ignored entry in a multi-select listbox so you can un-ignore games with a click. See [GUI walkthrough](gui.md).
 
 Where `find-dupes` only reports collisions, `curate` actively picks one canonical variant per game (by region preference and revision number) and groups the rest as retirement candidates.
 
@@ -1293,7 +1293,7 @@ Inventory, back up, and replace HyperSpin's frontend overlay art — the control
 
 For per-game console wheel themes, see [`theme-fill`](#theme-fill) — it fills any game that has a video (or background screenshot) but no theme zip with a minimal blank theme so HyperSpin plays its media.
 
-> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack…" button on that window opens a Plan/Apply window for swapping a community pack, with a scope picker that accepts comma-separated system names for multi-system swaps. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo, a **Show diff** button that renders the swap table as a before/after grid, and a **Revert just \<SYSTEM\>…** button for per-system partial rollback.
+> **GUI alternative:** **`File → Browse HyperSpin themes`** opens a sortable Treeview with a live filter box; double-click a row to open the file in your OS image viewer. The "Apply replacement pack" button on that window opens a Plan/Apply window for swapping a community pack, with a scope picker that accepts comma-separated system names for multi-system swaps. The Logs & Manifests viewer's **Theme swaps** category surfaces previous applies for one-click undo, a **Show diff** button that renders the swap table as a before/after grid, and a **Revert just \<SYSTEM\>** button for per-system partial rollback.
 
 ### `theme-scan`
 
@@ -1959,7 +1959,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 ### `ignore`
 
-> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore…** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
 
 Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
 

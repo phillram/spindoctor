@@ -289,7 +289,7 @@ GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click 
 
 > **Emulators don't need to move.** `generate-config` only updates where your ROMs live. Emulator paths (`Emu_Path=`) in your `Global Emulators.ini` are separate and are never touched. If your emulators are still on D:\ and only your ROMs moved to J:\, no emulator configuration changes are needed.
 
-> **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup…** button in the GUI (Step 4: Metadata & Media → next to **Update RocketLauncher INIs**), or re-run `generate-config --apply` after correcting `roms_dir`.
+> **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup** button in the GUI (Step 4: Metadata & Media → next to **Update RocketLauncher INIs**), or re-run `generate-config --apply` after correcting `roms_dir`.
 
 ### Things `migrate` does *not* move
 
@@ -329,7 +329,7 @@ Every destructive command writes a JSON manifest — most to a per-category fold
 
 Most also accept `--list-manifests` to show every run on disk.
 
-> **GUI alternative:** **`File → View logs & manifests…`** in `spindoctor-gui` lists every manifest above (categorised, newest first) and has an **Undo this run** button that runs the matching `--undo` command for the selected row. For commands that always reverse the most recent run (curate, media-scan), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
+> **GUI alternative:** **`File → View logs & manifests`** in `spindoctor-gui` lists every manifest above (categorised, newest first) and has an **Undo this run** button that runs the matching `--undo` command for the selected row. For commands that always reverse the most recent run (curate, media-scan), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 `curate --action delete` is permanent (no manifest). `find-orphan-media --apply` is permanent (prompts first).
 
@@ -484,7 +484,7 @@ Use `--show-unknown` when you've installed something not in the registry — pas
 
 The Xbox glyphs at the bottom of the HyperSpin frontend annoying you on a PlayStation-themed cabinet? Or want arcade button hints instead? SpinDoctor swaps overlay PNGs for any community pack with full undo support.
 
-> **GUI alternative:** **`File → Browse HyperSpin themes…`** opens a sortable inventory; the **Apply replacement pack…** button on that window opens a Plan/Apply window that wraps the same flow.
+> **GUI alternative:** **`File → Browse HyperSpin themes`** opens a sortable inventory; the **Apply replacement pack** button on that window opens a Plan/Apply window that wraps the same flow.
 
 ```bat
 :: 1. See what's currently on disk — narrow with --keyword to find
