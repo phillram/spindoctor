@@ -30,7 +30,7 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 
 The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the three standalone wheel binaries on Windows) for every command. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
 
-**Async startup.** The window paints immediately, then runs the library scan (populating every system combobox across every tab from your HyperSpin Databases directory) and the startup health checks (config validation + CLI-binary probe) in the background. While the scan is in flight the status bar reads "Scanning library…"; once it finishes the bar lands on either "Ready." or the first detected problem (e.g. "Setup incomplete — N path(s) need attention"). On a slow NAS-mounted library this avoids the "is it frozen?" beat the older synchronous behaviour had on launch.
+**Async startup.** The window paints immediately, then runs the library scan (populating every system combobox across every tab from your HyperSpin Databases directory) and the startup health checks (config validation + CLI-binary probe) in the background. While the scan is in flight the status bar reads "Scanning library"; once it finishes the bar lands on either "Ready." or the first detected problem (e.g. "Setup incomplete — N path(s) need attention"). On a slow NAS-mounted library this avoids the "is it frozen?" beat the older synchronous behaviour had on launch.
 
 **Fresh-install Setup focus.** When no `config.json` exists yet, the GUI auto-selects the Setup tab so a brand-new cabinet owner lands on the form that needs filling. Once any config has been saved, your last-active tab (`gui_last_active_tab`) is restored as usual.
 
@@ -38,10 +38,10 @@ The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the thr
 
 ## First-run wizard
 
-The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Run first-run wizard…** button at the top of the Setup tab; the same dialog is also available from **Help → First-run setup…** at any time. A three-step modal opens:
+The wizard is opt-in — it does not auto-fire at launch. New cabinet owners reach it from the **Run first-run wizard** button at the top of the Setup tab; the same dialog is also available from **Help → First-run setup** at any time. A three-step modal opens:
 
 1. **Welcome** — a one-sentence intro and a "Skip" / "Next" pair.
-2. **Pick paths** — required: `roms_dir` and `hyperspin_dir`. Browse… buttons next to each field; drag-and-drop a folder from Explorer / Finder also fills the field.
+2. **Pick paths** — required: `roms_dir` and `hyperspin_dir`. Browse buttons next to each field; drag-and-drop a folder from Explorer / Finder also fills the field.
 3. **Run Health Check** — runs `spindoctor doctor` inline against the just-saved paths and renders the per-check ✓/⚠/✗ summary so you can fix anything obvious before clicking Finish.
 
 Existing installs and re-runs use the same dialog. There is no auto-open behaviour and no `first_run_complete` flag — start it when you want it.
@@ -50,7 +50,7 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 A single window with a workflow-ordered tab strip across the top, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom showing the current command and control buttons. Every tab scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
 
-The status bar text is automatically truncated with … when a command string is too long to fit — the right-side buttons and checkboxes are always visible regardless of command length.
+The status bar text is automatically truncated when a command string is too long to fit — the right-side buttons and checkboxes are always visible regardless of command length.
 
 ### Global Apply, Verbose, and Save Log checkboxes
 
@@ -84,9 +84,9 @@ Most action tabs use numbered **Step N** sections that read top-to-bottom — fo
 
 ### Setup
 
-A **Run first-run wizard…** button sits at the very top — the friendliest entry point for a brand-new cabinet owner (also reachable any time from **Help → First-run setup…**).
+A **Run first-run wizard** button sits at the very top — the friendliest entry point for a brand-new cabinet owner (also reachable any time from **Help → First-run setup**).
 
-Below it, every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run), grouped into **Core paths** (ROMs, HyperSpin, Emulators, RocketLauncher — what every feature relies on) and **Optional paths** (LEDBlinky, MAME executable, output/backup/audit-export/temp dirs — fine to leave blank until a feature needs them). Each row has a **Browse…** button (native folder picker) and an **Open** button (jumps to the path in Explorer / Finder to verify your choice). When `tkinterdnd2` is available (Windows binary install or `pip install spindoctor[gui]` / `[all]`), drag a folder from Explorer / Finder onto any path field to fill it in.
+Below it, every path-based config key in a single form, pre-populated with your current `config.json` values (or sensible Windows defaults on first run), grouped into **Core paths** (ROMs, HyperSpin, Emulators, RocketLauncher — what every feature relies on) and **Optional paths** (LEDBlinky, MAME executable, output/backup/audit-export/temp dirs — fine to leave blank until a feature needs them). Each row has a **Browse** button (native folder picker) and an **Open** button (jumps to the path in Explorer / Finder to verify your choice). When `tkinterdnd2` is available (Windows binary install or `pip install spindoctor[gui]` / `[all]`), drag a folder from Explorer / Finder onto any path field to fill it in.
 
 Below the path fields, a **Scraper credentials** section stores your ScreenScraper username, ScreenScraper password, and TheGamesDB API key — password and key fields are masked (`***`) with a Show/Hide eyeball toggle. A **Test credentials** button pings both endpoints and reports ✓ / ✗ inline before you click Save.
 
@@ -96,9 +96,9 @@ Click **Save configuration** to validate and write everything to `config.json` i
 
 The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Four numbered steps cover the main diagnostic workflow.
 
-**Step 1 — Cabinet health check (no inputs needed):** Three one-click, library-wide checks that need nothing filled in first — the natural next stop straight after Setup. **Preflight check…** chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone. **Run Health Check** and **Check Installed Tools** run the individual checks.
+**Step 1 — Cabinet health check (no inputs needed):** Three one-click, library-wide checks that need nothing filled in first — the natural next stop straight after Setup. **Preflight check** chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone. **Run Health Check** and **Check Installed Tools** run the individual checks.
 
-**Step 2 — Audit a system:** Pick a system from the dropdown, then **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse… button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
+**Step 2 — Audit a system:** Pick a system from the dropdown, then **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
 
 **Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
@@ -154,7 +154,7 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 **Step 2 — Fetch metadata:** Wraps `fetch-meta` with `--auto-best` / `--all-games` / `--no-cache`, a **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default), and a **Threshold** entry (client-side validated 0.0–1.0). "Both (SS primary)" is the recommended default — ScreenScraper is tried first and TheGamesDB fills any gaps.
 
-**Multi-system fetch-meta** (added in 2.0): the **Pick subset…** button opens a modal multi-select Listbox. The **Download for Selected Systems…** button chains `fetch-meta --system X` once per picked system, aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
+**Multi-system fetch-meta** (added in 2.0): the **Pick subset** button opens a modal multi-select Listbox. The **Download for Selected Systems** button chains `fetch-meta --system X` once per picked system, aborting on the first non-zero exit code. Designed for cabinets with 20+ systems where the user wants to refresh a handful after a scraper-data improvement.
 
 **Step 3 — Fetch media:** Media-type checkboxes (wheel, background, snap, video, trailer, title, theme, fade, sound — defaulting to wheel + background), plus `--overwrite`. The **Source** dropdown (`both (SS primary)` / `screenscraper` / `thegamesdb` / config default) controls which provider is queried. With "both", ScreenScraper fills slots first; TheGamesDB fills any that SS missed — including clearlogos (→ wheel) and screenshots (→ snap). Video, title, fade, sound, and theme require ScreenScraper. See [commands.md → fetch-media provider capabilities](commands.md#fetch-media) for the full comparison table. If **Game** is selected in the shared header, only that game's media is touched. If the Output panel shows `metadata error: … NameResolutionError` or `Network unreachable`, the cabinet's internet connection was down — see [Troubleshooting → fetch-media reports "Failed: 500"](troubleshooting.md#fetch-media-reports-failed-500-with-no-explanation).
 
@@ -179,13 +179,13 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
 
-**Step 1 — Curate region/revision variants:** Wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes persist across launches via the `gui_curate_regions` config key. The **Preview (interactive)…** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog.
+**Step 1 — Curate region/revision variants:** Wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes persist across launches via the `gui_curate_regions` config key. The **Preview (interactive)** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog.
 
 **Cache cleanup:** 13 per-category checkboxes — the 9 safe caches pre-checked; the 4 unsafe categories (migration / restructure undo manifests, HyperSpin DB backups, LEDBlinky file backups) unchecked with a warning. **Check Cache Status** shows disk usage before you commit.
 
-**Ignore list:** Wires up `ignore add / remove / list` with system dropdown + game-name dropdown (auto-populated from the selected system's database; click **↻** to refresh), plus a **View / un-ignore…** button.
+**Ignore list:** Wires up `ignore add / remove / list` with system dropdown + game-name dropdown (auto-populated from the selected system's database; click **↻** to refresh), plus a **View / un-ignore** button.
 
-**Metadata-match cache:** **List cached matches** and **Clear cache…** buttons drive `spindoctor match list|clear` with an optional system filter.
+**Metadata-match cache:** **List cached matches** and **Clear cache** buttons drive `spindoctor match list|clear` with an optional system filter.
 
 ### Custom Wheels
 
@@ -193,7 +193,7 @@ Four numbered steps cover building and wiring up the custom wheels; the remainin
 
 **Step 1 — Import HyperSpin favorites (optional):** **Sync favorites from HyperSpin** imports HyperSpin's per-system F-key favorites into SpinDoctor's store so the Step 2 rebuild includes them. Skip this if you only manage favorites from this tab. (It leads the tab because the import must happen *before* the rebuild reads the store — the previous layout placed it after the rebuild while its own tooltip said to run it first.) The favorites import scans every console for favorite markers; with the global **Verbose** toggle ticked, the Output panel lists each console as it is scanned and which ones contributed favorites. The scan only parses a console's database when a favorites source is actually present, so consoles with no favorites cost almost nothing.
 
-**Step 2 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;…" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. With **Verbose** ticked, the rebuild additionally lists each media file mirrored and each console scanned during the favorites import. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
+**Step 2 — Refresh custom wheels:** Three checkboxes (Favorites / Recently Played / Most Played, all ticked by default) plus a **Refresh selected** button that rebuilds only the ticked wheels. The progress bar pulses continuously while the rebuild runs; the status bar shows "Step N/M: &lt;wheel&gt;" so you can track which wheel is active. Each wheel streams phase-by-phase updates to the Output panel (`building wheel`, `writing database`, `mirroring media`, `PCLauncher INIs done`, etc.) — rebuilding a large Favorites collection can take several minutes, so watch the Output panel rather than waiting for silence. With **Verbose** ticked, the rebuild additionally lists each media file mirrored and each console scanned during the favorites import. CLI: `spindoctor-fav rebuild --apply` / `spindoctor-recent rebuild --apply` / `spindoctor-stats build-wheel --apply`.
 
 **Step 3 — Register in HyperSpin main menu:** **Add wheels to Main Menu** chains `mainmenu add` for each ticked wheel (Favorites and Recently Played need this; Most Played auto-registers). As of v2.4.25, this also regenerates the RocketLauncher system settings files (`Settings/<system>.ini` and `Settings/<system>/Emulators.ini`) with `Rom_Extension=ini` and installs the bundled wheel media — so clicking the button is sufficient to fully restore a synthetic wheel that has been accidentally removed (e.g. by running generate-config after a ROM drive migration).
 
@@ -310,7 +310,7 @@ Three numbered steps walk through the full backup / restore workflow.
 
 **Step 2 — Create backup:** Optional label, then **Create backup**. **List backups under target** lists existing snapshots under the same folder. CLI: `spindoctor backup create / list`.
 
-**Step 3 — Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse…** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
+**Step 3 — Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
 
 ### Migration
 
@@ -336,13 +336,13 @@ Anything the dedicated tabs don't cover. The entry field is an editable Combobox
 
 ### History
 
-Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output…** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
+Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
 
 The History tab captures both CLI subprocess invocations *and* in-process GUI operations that write data: Save configuration, Save Main Menu order, Theme-apply Apply, Curate Apply, Ignore viewer Remove, and the three Task Scheduler actions (Schedule / Remove / Check status). Everything that changes state on disk appears here.
 
-The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests…**.
+The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests**.
 
-A **Browse manifests / undo…** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
+A **Browse manifests / undo** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
 
 ## Menubar
 
@@ -351,14 +351,14 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **File → Open config.json** — opens `~/.spindoctor/config.json` in your OS default editor.
 - **File → Open SpinDoctor folder** — opens `~/.spindoctor/` in Explorer / Finder / xdg-open.
 - **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`.
-- **File → View logs & manifests…** — opens a Toplevel listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. Three buttons at the bottom: **Undo this run** (runs the matching `--undo` for the selected manifest), **Show diff** (renders changes as a before/after table), **Revert just \<SYSTEM\>…** (theme swaps only — one-system revert via `--revert-system`).
-- **File → Browse HyperSpin themes…** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
+- **File → View logs & manifests** — opens a Toplevel listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. Three buttons at the bottom: **Undo this run** (runs the matching `--undo` for the selected manifest), **Show diff** (renders changes as a before/after table), **Revert just \<SYSTEM\>** (theme swaps only — one-system revert via `--revert-system`).
+- **File → Browse HyperSpin themes** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
 - **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel. State persists across restarts via the `output_visible` config key.
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
 - **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
-- **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. If you're already on the latest tag, the result is surfaced in the status bar ("vX.Y.Z is the latest release.") rather than a modal — only newer-available results pop a dialog so you can decide whether to open the release page. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download…** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
-- **Help → First-run setup…** — re-opens the first-run wizard manually.
+- **Help → Check for updates** — pings GitHub Releases and reports if a newer tag is available, with a yes/no dialog that opens the release page on accept. If you're already on the latest tag, the result is surfaced in the status bar ("vX.Y.Z is the latest release.") rather than a modal — only newer-available results pop a dialog so you can decide whether to open the release page. The same check runs silently in the background on every launch — when newer, the status bar shows "Update available: vX.Y.Z" plus a one-click **Download** button. Set `SPINDOCTOR_NO_UPDATE_CHECK=1` to disable for cabinets behind a strict firewall.
+- **Help → First-run setup** — re-opens the first-run wizard manually.
 
 ## Keyboard shortcuts
 
@@ -428,7 +428,7 @@ Long-running single commands and chained wheel rebuilds use a **pulsing (indeter
 Routine GUI outcomes are surfaced in the status bar at the bottom of the window rather than a modal you have to click through. Two patterns:
 
 - **Status flash** (`_flash_status`): "Configuration saved.", "Auto-refresh task deleted.", "vX.Y.Z is the latest release.", etc. The bar shows the message and auto-reverts to "Ready." after 6 seconds. No click-through.
-- **Validation flash** (`_flash_validation`): "No subset picked — click 'Pick subset…' first.", "Nothing to apply — every retirement is unchecked.", "Pick a PC system first.", etc. Same status-bar update, plus an audible bell — so a user focused on a form widget at the top of the window doesn't miss the bottom-of-window feedback.
+- **Validation flash** (`_flash_validation`): "No subset picked — click 'Pick subset' first.", "Nothing to apply — every retirement is unchecked.", "Pick a PC system first.", etc. Same status-bar update, plus an audible bell — so a user focused on a form widget at the top of the window doesn't miss the bottom-of-window feedback.
 
 Modal dialogs are reserved for: multi-line result summaries (Preflight passed, Curate done with manifest path, Auto-refresh scheduled with reboot instructions), destructive-action confirmations (Backup restore, Migrate apply, Curate delete), and errors. Up-to-date update checks, save successes, "nothing selected" prompts, and similar one-line outcomes go through the status bar instead.
 
@@ -447,7 +447,7 @@ The **Stop** button in the bottom-right of the window terminates the current sub
 Interrupting a long-running `backup`, `migrate`, or `curate` operation is safe — the CLI cleans up the in-flight component and writes a *partial manifest* of whatever finished before it died. That means:
 
 - An interrupted **backup** still shows up in the Restore picker, and you can replay it like any other backup. Only the partially-copied component is missing.
-- An interrupted **move-mode migrate** is reversible via `Logs → Browse manifests… → Undo`. The completed moves are recorded; the source folders that were already migrated can be put back. (Move-mode is the one operation where Stop without this safety net would be unrecoverable, since the source is destroyed during the move.)
+- An interrupted **move-mode migrate** is reversible via `Logs → Browse manifests / undo → Undo`. The completed moves are recorded; the source folders that were already migrated can be put back. (Move-mode is the one operation where Stop without this safety net would be unrecoverable, since the source is destroyed during the move.)
 - An interrupted **curate** in archive mode is reversible the same way — files moved to `_retired/` before the interrupt are recorded in the partial manifest.
 
 Stopping does not roll back work already committed — a manifest exists so that *you* can roll it back if you choose to.

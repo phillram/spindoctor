@@ -872,7 +872,7 @@ Yes — RocketUI uses the same HyperSpin `Databases/` and `Media/` structure.
 
 ### Recovering from any apply
 
-Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests…` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
+Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 ## GUI launcher
 
@@ -886,11 +886,11 @@ Set the `SPINDOCTOR_NO_UPDATE_CHECK=1` environment variable before launching the
 
 ### Where do my manifests live? How do I read one?
 
-Open the GUI and use **`File → View logs & manifests…`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
+Open the GUI and use **`File → View logs & manifests`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
 
 ### My controller-glyph swap looks wrong / I want to revert it
 
-`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
+`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
 ### Custom Wheels tab → Schedule auto-refresh fails with "access denied"
 
