@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-07-23
+
 ### Added
 
 - **`introvideo swap`** — picks a random enabled video from the pool and copies it over `intro_video_target`. A live scan + a fresh random pick every run, not a pre-computed order. GUI: new **Swap now** button on the Intro Video tab — the fastest way to confirm the pool/target config actually works without waiting for a reboot.
@@ -2181,7 +2183,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.10.2...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.11.0...HEAD
+[2.11.0]: https://github.com/phillram/spindoctor/compare/v2.10.2...v2.11.0
 [2.10.2]: https://github.com/phillram/spindoctor/compare/v2.10.1...v2.10.2
 [2.10.1]: https://github.com/phillram/spindoctor/compare/v2.10.0...v2.10.1
 [2.10.0]: https://github.com/phillram/spindoctor/compare/v2.9.6...v2.10.0
