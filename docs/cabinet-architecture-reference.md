@@ -1112,9 +1112,19 @@ will not register correctly.
 
 #### DS4Windows must run independently of HyperSpin
 
-DS4Windows is started alongside HyperSpin and exits when HyperSpin exits. If DS4Windows
-closes during an active Dolphin session — or its process lifetime is tied to HyperSpin —
-the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
+> **Resolved on this cabinet** — DS4Windows now starts at Windows login and is no
+> longer tied to HyperSpin's process lifetime, and menu navigation is handled by
+> a DS4Windows **Auto Profiles** keyboard mapping instead of a separate
+> mapper/joystick-nav layer. See
+> [Controller input: PS4 pad, dual-mode via DS4Windows Auto Profiles](controller-input.md)
+> for the full current setup. The failure mode below is what an older config
+> (DS4Windows launched by the HyperSpin Startup Script INI, tied to HyperSpin's
+> lifetime) looks like — kept here since other cabinets may still be on that setup.
+
+If DS4Windows's process lifetime is tied to HyperSpin (e.g. launched from the
+HyperSpin Startup Script's `[Startup]` list and killed from its `[Exit]` list) and it
+closes during an active Dolphin session — or simply isn't running yet when a game
+launches — the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
 
 ```
 [disconnected] DInput/0/Wireless Controller
@@ -1122,8 +1132,8 @@ the virtual `XInput/0/Gamepad` device disappears and Dolphin shows:
 
 The controller does not recover until DS4Windows is restarted or the machine is rebooted.
 
-**Fix:** Configure DS4Windows to start at Windows login (Startup folder or Task Scheduler),
-independent of HyperSpin's process lifetime.
+**Fix:** Configure DS4Windows to start at Windows login (Startup folder or Task Scheduler)
+instead of via the HyperSpin Startup Script, independent of HyperSpin's process lifetime.
 
 #### LED colour change is normal
 
@@ -1871,10 +1881,10 @@ Left to right, by column. A cell spanning two rows in the same column means thos
 
 | Tier | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Admin** | | | | | | Left Click | Right Click | Select (`Enter`) | | Exit (`Escape`) | Search (`/`) | Pause (`P`) | | | | | |
-| **Coin / Start** | P1 Start (`R`) | P1 Coin (`S`) | | | | | | | | | | | | | P2 Start (`T`) | P2 Coin (`U`) | |
-| **Top** (joystick, B1–4, trackball) | P1 Joystick (`↑↓←→`) | P1 B1 (`A`) | P1 B2 (`B`) | P1 B3 (`C`) | P1 B4 (`V`) | | | | Trackball | | | | P2 Joystick (`N`/`Q`/`M`/`O`) | P2 B1 (`G`) | P2 B2 (`H`) | P2 B3 (`I`) | P2 B4 (`Y`) |
-| **Bottom** (B5–8) | | P1 B5 (`D`) | P1 B6 (`E`) | P1 B7 (`F`) | P1 B8 (`W`) | | | | | | | | | P2 B5 (`J`) | P2 B6 (`K`) | P2 B7 (`L`) | P2 B8 (`X`) |
+| **Admin** | | | | | | [Left Click](#ctl-left-click) | [Right Click](#ctl-right-click) | [Select](#ctl-select) (`Enter`) | | [Exit](#ctl-exit) (`Escape`) | [Search](#ctl-search) (`/`) | [Pause](#ctl-pause) (`P`) | | | | | |
+| **Coin / Start** | [P1 Start](#ctl-p1-start) (`R`) | [P1 Coin](#ctl-p1-coin) (`S`) | | | | | | | | | | | | | [P2 Start](#ctl-p2-start) (`T`) | [P2 Coin](#ctl-p2-coin) (`U`) | |
+| **Top** (joystick, B1–4, trackball) | P1 Joystick (`↑↓←→`) | [P1 B1](#ctl-p1-button-1) (`A`) | [P1 B2](#ctl-p1-button-2) (`B`) | [P1 B3](#ctl-p1-button-3) (`C`) | [P1 B4](#ctl-p1-button-4) (`V`) | | | | [Trackball](#ctl-trackball) | | | | P2 Joystick (`N`/`Q`/`M`/`O`) | [P2 B1](#ctl-p2-button-1) (`G`) | [P2 B2](#ctl-p2-button-2) (`H`) | [P2 B3](#ctl-p2-button-3) (`I`) | [P2 B4](#ctl-p2-button-4) (`Y`) |
+| **Bottom** (B5–8) | | [P1 B5](#ctl-p1-button-5) (`D`) | [P1 B6](#ctl-p1-button-6) (`E`) | [P1 B7](#ctl-p1-button-7) (`F`) | [P1 B8](#ctl-p1-button-8) (`W`) | | | | | | | | | [P2 B5](#ctl-p2-button-5) (`J`) | [P2 B6](#ctl-p2-button-6) (`K`) | [P2 B7](#ctl-p2-button-7) (`L`) | [P2 B8](#ctl-p2-button-8) (`X`) |
 
 Key points (these are the things the old ASCII diagram got wrong or omitted):
 
@@ -1893,41 +1903,41 @@ Key points (these are the things the old ASCII diagram got wrong or omitted):
 
 | Physical control | LedBlinky label | Mini-PAC pin | Key sent | PAC-LED64 board:ports | RetroArch action |
 |---|---|---|---|---|---|
-| Select | `SELECT` | pin02 | `Enter` | 1 : 4-6 | — |
-| Exit | `EXIT` | pin03 | `Escape` | 2 : 1-3 | — |
-| Search | `SEARCH` | pin04 | `/` | 2 : 4-6 | — |
-| Pause | `PAUSE` | pin05 | `P` | 2 : 7-9 | — |
-| Left Click | `LMOUSE` | pin43 | Left Click | 1 : 10-12 | — |
-| Right Click | `RMOUSE` | pin42 | Right Click | 1 : 7-9 | — |
-| Trackball (ball movement) | `TRACKBALL` | — (analog axes) | moves mouse cursor | 1 : 1-3 | — |
-| P1 Joystick Up | *(no LED)* | pin37 | `↑` | — | `input_player1_up` |
-| P1 Joystick Down | *(no LED)* | pin36 | `↓` | — | `input_player1_down` |
-| P1 Joystick Left | *(no LED)* | pin38 | `←` | — | `input_player1_left` |
-| P1 Joystick Right | *(no LED)* | pin39 | `→` | — | `input_player1_right` |
-| P1 Start | `P1START` | pin25 | `R` | 1 : 16-18 | `input_player1_start` |
-| P1 Coin | `P1COIN` | pin23 | `S` *(swop key)* | 1 : 13-15 | `input_player1_select` |
-| P1 Button 1 | `P1B1` | pin35 | `A` | 1 : 28-30 | `input_player1_b` |
-| P1 Button 2 | `P1B2` | pin34 | `B` | 1 : 25-27 | `input_player1_a` |
-| P1 Button 3 | `P1B3` | pin33 | `C` | 1 : 22-24 | `input_player1_y` |
-| P1 Button 4 | `P1B4` | pin32 | `V` | 1 : 19-21 | — |
-| P1 Button 5 | `P1B5` | pin29 | `D` | 1 : 40-42 | `input_player1_x` |
-| P1 Button 6 | `P1B6` | pin28 | `E` | 1 : 37-39 | `input_player1_l` |
-| P1 Button 7 | `P1B7` | pin27 | `F` | 1 : 34-36 | `input_player1_r` |
-| P1 Button 8 | `P1B8` | pin26 | `W` | 1 : 31-33 | — |
-| P2 Joystick Up | *(no LED)* | pin17 | `N` | — | `input_player2_up` |
-| P2 Joystick Down | *(no LED)* | pin16 | `Q` | — | `input_player2_down` |
-| P2 Joystick Left | *(no LED)* | pin18 | `M` | — | `input_player2_left` |
-| P2 Joystick Right | *(no LED)* | pin19 | `O` | — | `input_player2_right` |
-| P2 Start | `P2START` | pin24 | `T` | 2 : 10-12 | `input_player2_start` |
-| P2 Coin | `P2COIN` | pin22 | `U` | 2 : 13-15 | `input_player2_select` |
-| P2 Button 1 | `P2B1` | pin15 | `G` | 2 : 16-18 | `input_player2_b` |
-| P2 Button 2 | `P2B2` | pin14 | `H` | 2 : 19-21 | `input_player2_a` |
-| P2 Button 3 | `P2B3` | pin13 | `I` | 2 : 22-24 | `input_player2_y` |
-| P2 Button 4 | `P2B4` | pin12 | `Y` | 2 : 25-27 | — |
-| P2 Button 5 | `P2B5` | pin09 | `J` | 2 : 28-30 | `input_player2_x` |
-| P2 Button 6 | `P2B6` | pin08 | `K` | 2 : 31-33 | `input_player2_l` |
-| P2 Button 7 | `P2B7` | pin07 | `L` | 2 : 34-36 | `input_player2_r` |
-| P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
+| <a id="ctl-select"></a>Select | `SELECT` | pin02 | `Enter` | 1 : 4-6 | — |
+| <a id="ctl-exit"></a>Exit | `EXIT` | pin03 | `Escape` | 2 : 1-3 | — |
+| <a id="ctl-search"></a>Search | `SEARCH` | pin04 | `/` | 2 : 4-6 | — |
+| <a id="ctl-pause"></a>Pause | `PAUSE` | pin05 | `P` | 2 : 7-9 | — |
+| <a id="ctl-left-click"></a>Left Click | `LMOUSE` | pin43 | Left Click | 1 : 10-12 | — |
+| <a id="ctl-right-click"></a>Right Click | `RMOUSE` | pin42 | Right Click | 1 : 7-9 | — |
+| <a id="ctl-trackball"></a>Trackball (ball movement) | `TRACKBALL` | — (analog axes) | moves mouse cursor | 1 : 1-3 | — |
+| <a id="ctl-p1-joystick-up"></a>P1 Joystick Up | *(no LED)* | pin37 | `↑` | — | `input_player1_up` |
+| <a id="ctl-p1-joystick-down"></a>P1 Joystick Down | *(no LED)* | pin36 | `↓` | — | `input_player1_down` |
+| <a id="ctl-p1-joystick-left"></a>P1 Joystick Left | *(no LED)* | pin38 | `←` | — | `input_player1_left` |
+| <a id="ctl-p1-joystick-right"></a>P1 Joystick Right | *(no LED)* | pin39 | `→` | — | `input_player1_right` |
+| <a id="ctl-p1-start"></a>P1 Start | `P1START` | pin25 | `R` | 1 : 16-18 | `input_player1_start` |
+| <a id="ctl-p1-coin"></a>P1 Coin | `P1COIN` | pin23 | `S` *(swop key)* | 1 : 13-15 | `input_player1_select` |
+| <a id="ctl-p1-button-1"></a>P1 Button 1 | `P1B1` | pin35 | `A` | 1 : 28-30 | `input_player1_b` |
+| <a id="ctl-p1-button-2"></a>P1 Button 2 | `P1B2` | pin34 | `B` | 1 : 25-27 | `input_player1_a` |
+| <a id="ctl-p1-button-3"></a>P1 Button 3 | `P1B3` | pin33 | `C` | 1 : 22-24 | `input_player1_y` |
+| <a id="ctl-p1-button-4"></a>P1 Button 4 | `P1B4` | pin32 | `V` | 1 : 19-21 | — |
+| <a id="ctl-p1-button-5"></a>P1 Button 5 | `P1B5` | pin29 | `D` | 1 : 40-42 | `input_player1_x` |
+| <a id="ctl-p1-button-6"></a>P1 Button 6 | `P1B6` | pin28 | `E` | 1 : 37-39 | `input_player1_l` |
+| <a id="ctl-p1-button-7"></a>P1 Button 7 | `P1B7` | pin27 | `F` | 1 : 34-36 | `input_player1_r` |
+| <a id="ctl-p1-button-8"></a>P1 Button 8 | `P1B8` | pin26 | `W` | 1 : 31-33 | — |
+| <a id="ctl-p2-joystick-up"></a>P2 Joystick Up | *(no LED)* | pin17 | `N` | — | `input_player2_up` |
+| <a id="ctl-p2-joystick-down"></a>P2 Joystick Down | *(no LED)* | pin16 | `Q` | — | `input_player2_down` |
+| <a id="ctl-p2-joystick-left"></a>P2 Joystick Left | *(no LED)* | pin18 | `M` | — | `input_player2_left` |
+| <a id="ctl-p2-joystick-right"></a>P2 Joystick Right | *(no LED)* | pin19 | `O` | — | `input_player2_right` |
+| <a id="ctl-p2-start"></a>P2 Start | `P2START` | pin24 | `T` | 2 : 10-12 | `input_player2_start` |
+| <a id="ctl-p2-coin"></a>P2 Coin | `P2COIN` | pin22 | `U` | 2 : 13-15 | `input_player2_select` |
+| <a id="ctl-p2-button-1"></a>P2 Button 1 | `P2B1` | pin15 | `G` | 2 : 16-18 | `input_player2_b` |
+| <a id="ctl-p2-button-2"></a>P2 Button 2 | `P2B2` | pin14 | `H` | 2 : 19-21 | `input_player2_a` |
+| <a id="ctl-p2-button-3"></a>P2 Button 3 | `P2B3` | pin13 | `I` | 2 : 22-24 | `input_player2_y` |
+| <a id="ctl-p2-button-4"></a>P2 Button 4 | `P2B4` | pin12 | `Y` | 2 : 25-27 | — |
+| <a id="ctl-p2-button-5"></a>P2 Button 5 | `P2B5` | pin09 | `J` | 2 : 28-30 | `input_player2_x` |
+| <a id="ctl-p2-button-6"></a>P2 Button 6 | `P2B6` | pin08 | `K` | 2 : 31-33 | `input_player2_l` |
+| <a id="ctl-p2-button-7"></a>P2 Button 7 | `P2B7` | pin07 | `L` | 2 : 34-36 | `input_player2_r` |
+| <a id="ctl-p2-button-8"></a>P2 Button 8 | `P2B8` | pin06 | `X` | 2 : 37-39 | — |
 
 35 rows: the 27 LED-equipped controls plus the 8 joystick-direction keys, which have a pin/key but no LED to drive. "PAC-LED64 board:ports" is `<board Id> : <port range>` straight from `LEDBlinkyInputMap.xml` — the exact addressing every `.lwax` builder in `spindoctor/lwax.py` uses. If this table, the physical position table above, and `LEDBlinkyInputMap.xml` itself ever disagree on a control's board/port, trust `LEDBlinkyInputMap.xml` (it's what the animation tooling actually reads) and treat this table as stale — file it the same way the earlier bugs on this page were caught.
 
@@ -1941,15 +1951,48 @@ This was first hinted at, then missed: `LEDBlinkyInputMap.xml`'s `inputCodes` at
 
 **RetroArch action notes.** RetroArch uses SNES button names (`a`, `b`, `x`, `y`, `l`, `r`) that map differently from physical layout — `input_player1_b` is the "first/primary" action button, `input_player1_a` is "second", and so on. Buttons 4 and 8 for both players have no RetroArch binding yet (shown as `—`) — they send unique keys (`V`/`W`/`Y`/`X`) and can be bound to any action in a system cfg.
 
-**Swop (secondary) key functions.** P1 Coin (pin23, key `S`) doubles as a shift/swop key — hold it and press a second button for a secondary function:
+**Swop (secondary) key functions.** [P1 Coin](#ctl-p1-coin) (pin23, key `S`) doubles as a shift/swop key — hold it and press a second button for a secondary function:
 
 | Combination | Secondary key | Function |
 |-------------|--------------|---------|
-| P1 Coin + Joystick Up | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Joystick Down | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
-| P1 Coin + Select | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
+| [P1 Coin](#ctl-p1-coin) + Joystick Up | Volume Up | Windows system volume up (consumer HID control — visible in Windows mixer) |
+| [P1 Coin](#ctl-p1-coin) + Joystick Down | Volume Down | Windows system volume down (consumer HID control — visible in Windows mixer) |
+| [P1 Coin](#ctl-p1-coin) + [Select](#ctl-select) | Tab | RetroArch Quick Menu (cabinet uses Tab instead of the default F1) |
 
 **Key/letter inventory.** Every letter A–Y is assigned (see the Key sent column); only `Z` is free for future expansion. Trackball ball movement itself (as opposed to its two click buttons) moves the mouse cursor via the Mini-PAC's analog axes (Axis1/Axis2), not a pin-mapped key.
+
+### HyperSpin frontend menu controls (Player 1 / Player 2)
+
+The [Master control reference](#master-control-reference) above is the
+*physical control → key sent* mapping (what the Mini-PAC does). Separately, **HyperSpin's own frontend**
+(its wheel/menu navigation — configured via HyperHQ's Controls screen, not
+the Mini-PAC and not the "HyperSpin Startup Script" INI covered in
+[HyperSpin Startup/Exit Orchestration](#hyperspin-startupexit-orchestration))
+listens for specific keys per player action. Confirmed cabinet config:
+
+| Action | Player 1 key | P1 physical control | Player 2 key | P2 physical control |
+|---|---|---|---|---|
+| Up | `↑` | [P1 Joystick Up](#ctl-p1-joystick-up) | `N` | [P2 Joystick Up](#ctl-p2-joystick-up) |
+| Down | `↓` | [P1 Joystick Down](#ctl-p1-joystick-down) | `Q` | [P2 Joystick Down](#ctl-p2-joystick-down) |
+| Skip Up | `←` | [P1 Joystick Left](#ctl-p1-joystick-left) | `M` | [P2 Joystick Left](#ctl-p2-joystick-left) |
+| Skip Down | `→` | [P1 Joystick Right](#ctl-p1-joystick-right) | `O` | [P2 Joystick Right](#ctl-p2-joystick-right) |
+| Skip Up (by number) | `D` | [P1 Button 5](#ctl-p1-button-5) | `J` | [P2 Button 5](#ctl-p2-button-5) |
+| Skip Down (by number) | `E` | [P1 Button 6](#ctl-p1-button-6) | `K` | [P2 Button 6](#ctl-p2-button-6) |
+| HyperSpin (back to main wheel) | `C` | [P1 Button 3](#ctl-p1-button-3) | `I` | [P2 Button 3](#ctl-p2-button-3) |
+| Genre | `B` | [P1 Button 2](#ctl-p1-button-2) | `H` | [P2 Button 2](#ctl-p2-button-2) |
+| Favorites | `A` | [P1 Button 1](#ctl-p1-button-1) | `G` | [P2 Button 1](#ctl-p2-button-1) |
+| Start (launch highlighted game) | `Enter` | [Select](#ctl-select) (admin) | `R` | [P1 Start](#ctl-p1-start) |
+| Exit | `Escape` | [Exit](#ctl-exit) (admin) | `Escape` | [Exit](#ctl-exit) (admin) |
+
+Every row lines up with that player's own physical controls — **except
+Start**. Player 1's HyperSpin "Start" action fires on `Enter` (the admin
+**Select** button), not P1's own physical Start button (`R`), and Player 2's
+"Start" action fires on `R` — P1's physical Start button, not P2's own
+(`T`). This is the confirmed live cabinet config, not a bug fixed in the
+docs; not independently verified as intentional. Functionally it isn't a
+problem either way — HyperSpin treats any of its configured "Start" keys as
+"launch the highlighted game," so P1 Start, P2 Start, and the admin Select
+button all launch a game regardless of which physical player pressed it.
 
 ### Xbox 360 button numbers (winxinput driver)
 
@@ -2404,3 +2447,78 @@ Separately, the Animation Editor's own **Run LED Animation** live-preview button
 The reference groupings derived from this (`LEFT_RIGHT_ORDER`, `ROWS`, `RADIAL_RINGS`, `CYCLONE_LOOP`, `RAIN_DROP_GROUPS`) live in `.claude/skills/lwax-animation/SKILL.md` rather than duplicated here, since they're consumed directly as Python data when generating new animations. `LEFT_RIGHT_ORDER` is a list of *groups*, not flat labels — two controls that share a physical spot (e.g. P1 Coin sharing P1 Button 1's position) belong in the same group so they're always treated identically (same color, same hue in a rainbow effect, same timing in a sweep).
 
 > **Bug found via real-hardware testing, fixed**: `LEFT_RIGHT_ORDER` originally only spanned the admin/start-coin/top-row tier — the bottom row (`P1B5-8`/`P2B5-8`) was never included at all, so every effect derived from it (sweeps left/right, both radial pulses, the breathing pulse, the P1-vs-P2 race, the rainbow scroll, the combo-meter fill, the countdown/fuse) silently skipped 8 of the 27 controls. Caught by testing `pulse_outward_from_trackball_toxic.lwax` on the cabinet — Buttons 5-8 never lit. Fixed by folding each bottom-row button into its top-row column-mate's group. Confirmed on hardware afterward that the resulting ring/column *spacing* didn't need adjusting (index-based distance, not physical-inches-based) — the admin row legitimately takes several ring-steps before reaching the first player-button column, even though its buttons are packed more tightly together than the wider player-button columns.
+
+---
+
+## HyperSpin Startup/Exit Orchestration
+
+HyperSpin has a built-in **Startup Program** setting (configured in HyperHQ)
+that runs one helper program when the frontend opens, and a matching **Exit
+Program** slot that runs one program on close. Many cabinets point this at the
+community **"HyperSpin Startup Script"** — a compiled AutoHotkey tool that
+lives in `…\Utilities\Startup and Exit\` next to a plain-text `.ini` of the
+same base name. HyperSpin only ever launches the one `.exe`; the `.ini` is read
+by that `.exe` at launch, so editing the INI never touches HyperHQ's Startup/Exit
+Program setting itself.
+
+The INI has two relevant sections:
+
+- `[Startup]` — a numbered list of `Program_To_Run_Target_N` /
+  `Program_To_Run_Working_Dir_N` / `Program_To_Run_MaxMinHide_N` triples,
+  launched in order when HyperSpin opens.
+- `[Exit]` — a numbered list of `Process_Name_To_Close_N` entries to kill,
+  plus its own optional `Program_To_Run_Target_1` (typically an exit `.bat`),
+  run when HyperSpin closes.
+
+This is what "starts my tools and kills them when I quit" on a cabinet — it's
+HyperSpin launching one orchestrator script at boot/exit, not per-game
+RocketLauncher behavior. On many cabinets this script is (or was) also what
+starts and kills DS4Windows; see [Controller input — DS4Windows and
+XInput](#controller-input--ds4windows-and-xinput) above for why tying
+DS4Windows' lifetime to HyperSpin's is a problem for mid-session use. **This
+cabinet has since moved DS4Windows, Xpadder, and antimicro entirely out of
+this script** in favor of DS4Windows Auto Profiles started at Windows login —
+see [Controller input: PS4 pad, dual-mode via DS4Windows Auto
+Profiles](controller-input.md#4-hyperspin-startup-script-changes) for the
+resulting simplified `[Startup]`/`[Exit]` INI.
+
+### Input stack (typical layered setup)
+
+A cabinet commonly layers two independent input paths on top of each other:
+
+```
+Physical controller ─▶ DS4Windows ─▶ virtual Xbox pad ─▶ mapper ─▶ keystrokes ─▶ HyperSpin menu
+                                                    (Xpadder / antimicro /
+                                                     HyperSpin joystick nav /
+                                                     DS4Windows Auto Profiles)
+Arcade panel (Mini-PAC) ────────────────────────────────────────▶ keystrokes ─▶ HyperSpin menu
+```
+
+- **HyperSpin's own menus read keyboard input only**, unless the startup
+  script's native joystick navigation is enabled (`Joysticks_Enabled=true` in
+  its INI). A controller therefore needs something to translate button presses
+  into the keystrokes HyperSpin expects: a separate mapper (Xpadder,
+  antimicro), the script's own joystick nav, or — the setup that ended up
+  working reliably on this cabinet — **DS4Windows Auto Profiles**, which binds
+  the pad's buttons directly to keyboard output while HyperSpin has focus and
+  switches to a normal XInput mapping the moment a game launches, with no
+  separate mapper process at all. See
+  [Controller input](controller-input.md) for why the two older approaches
+  (native joystick nav, a separate Xpadder/antimicro mapper) were dropped in
+  favor of it. Inside a game, emulators generally read the pad directly
+  instead (see [RetroArch Input Architecture](#retroarch-input-architecture)
+  above for that path).
+- Running **more than one** of Xpadder / antimicro / the script's built-in
+  joystick nav / DS4Windows Auto Profiles at once is redundant and causes
+  double-navigation (one button press moves the menu cursor twice). Pick
+  exactly one.
+
+### Tool inventory (common startup-script payload)
+
+| Tool | Purpose | Needed? |
+|---|---|---|
+| **DS4Windows** | Maps a PS4 pad to XInput, and (via Auto Profiles) keystrokes in HyperSpin's menus | Only if using a PS4 controller. Recommended: start at Windows login, **not** from this script — see [Controller input](controller-input.md). Don't run it from both places, or it won't stay minimized. |
+| **Xpadder** | Controller → keyboard mapper (paid) | Only needed if not using DS4Windows Auto Profiles for menu navigation. Redundant with, and superseded on this cabinet by, Auto Profiles — see [Controller input §1](controller-input.md#1-why-not-the-two-obvious-alternatives). |
+| **antimicro / antimicroX** | Controller → keyboard mapper (free) | Same as Xpadder — redundant with Auto Profiles, keep at most one mapper active regardless of which tool. |
+| **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |
+| **HyperSearch** | Search-the-wheel add-on for HyperSpin | Keep if wheel search is used. |
