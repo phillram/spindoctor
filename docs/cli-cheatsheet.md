@@ -239,7 +239,7 @@ Auto-detection scans the game folder and all subfolders. Candidates are ranked: 
 
 Reference: [Command reference → pc-fix-exe](commands.md#pc-fix-exe).
 
-> **GUI:** Games tab → Step 4 (**Fix a game that launches the wrong executable**) — select the system and game using the pickers, choose the correct candidate from the ranked list (or Browse…), then click **Apply fix**.
+> **GUI:** Games tab → Step 4 (**Fix a game that launches the wrong executable**) — select the system and game using the pickers, choose the correct candidate from the ranked list (or Browse), then click **Apply fix**.
 
 ### `game` — list, reorder, or remove games in a wheel
 
@@ -798,7 +798,7 @@ Reference: [Configuration](configuration.md).
 ## Tips
 
 - **Always preview first.** Run the command without `--apply` to see what would happen, then re-run with `--apply` to commit. The dry-run output is the exact plan that will be executed.
-- **`--undo` exists for almost everything destructive.** Look for "writes a manifest under `~/.spindoctor/<category>/`" in [Command reference](commands.md); those commands all accept `--undo latest --apply` to roll back. The GUI's *File → View logs & manifests…* window has a one-click Undo for any selected run.
+- **`--undo` exists for almost everything destructive.** Look for "writes a manifest under `~/.spindoctor/<category>/`" in [Command reference](commands.md); those commands all accept `--undo latest --apply` to roll back. The GUI's *File → View logs & manifests* window has a one-click Undo for any selected run.
 - **GUI parity.** Anything on this page works identically from the GUI's [Console tab](gui.md#tab-tour); the dropdown lists the canonical invocations above. Pick → edit `<PLACEHOLDER>` tokens → Run.
 - **Output formats.** Most read-only commands accept `--report <path>` or `--format csv|json` so you can dump results to a spreadsheet or pipe to another tool.
 - **Long runs are interruptible.** Hitting `Ctrl+C` mid-`backup` / `migrate` / `curate` is safe — the partial manifest survives and the run is replayable / undoable. See [Workflows → Interrupting a long run](workflows.md#recovery-from-mistakes).

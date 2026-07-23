@@ -22,11 +22,11 @@ Wheels → Main Menu → Systems → LEDBlinky → Lightgun →
 Backup & Restore → Tools → Migrate → Logs → Custom Command
 ```
 
-If you have muscle memory for the old order, the keyboard shortcut `Ctrl+1`…`Ctrl+9` still jumps to the Nth tab — just the Nth has changed.
+If you have muscle memory for the old order, the keyboard shortcut `Ctrl+1`–`Ctrl+9` still jumps to the Nth tab — just the Nth has changed.
 
 ### First-run wizard (opt-in)
 
-A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) is available from the **Setup tab → Run first-run wizard…** button and from **Help → First-run setup…**. It does NOT auto-fire at launch (an early 2.0 build did; cabinet owners didn't need a modal between them and the Setup tab). Existing 1.x installs see nothing on first launch — open the wizard manually whenever you like.
+A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) is available from the **Setup tab → Run first-run wizard** button and from **Help → First-run setup**. It does NOT auto-fire at launch (an early 2.0 build did; cabinet owners didn't need a modal between them and the Setup tab). Existing 1.x installs see nothing on first launch — open the wizard manually whenever you like.
 
 ### New GUI config keys
 
@@ -36,7 +36,7 @@ Seven new keys in `config.json`:
 |---|---|---|
 | `gui_window_geometry` | unset | Last `WIDTHxHEIGHT+X+Y` the GUI window was at when it closed. Restored on the next launch. |
 | `gui_last_active_tab` | unset | Index of the tab that was open the last time the GUI closed. Restored on the next launch. |
-| `gui_meta_subset` | `[]` | Last-picked subset of systems for the Metadata & Media tab's "Pick subset…" picker. Restored on next launch. |
+| `gui_meta_subset` | `[]` | Last-picked subset of systems for the Metadata & Media tab's "Pick subset" picker. Restored on next launch. |
 | `gui_curate_regions` | `[]` | Curate-tab region tickboxes (USA, Japan, Europe, …). Empty list = use the top-level `region_preferences`. |
 | `gui_meta_auto_best` | `true` | Persisted state of the Metadata & Media tab's "Auto-pick best match" checkbox. |
 | `gui_meta_all_games` | `false` | Persisted state of the "Refresh complete entries too" checkbox. |
@@ -56,15 +56,15 @@ None of these change existing behaviour — they're additive:
 - **Per-system overrides form** on the Systems tab — surfaces `config system set` as a form instead of CLI flags.
 - **Preflight check** button on Audit & Doctor — chains `doctor` → `tools-audit` → `audit --all` with a verdict messagebox.
 - **Persistent window geometry + last-active tab** — see config keys above.
-- **One-click "Download…"** button in the status-bar update notification.
+- **One-click "Download"** button in the status-bar update notification.
 - **Determinate progress bar** for chained workflows (Refresh all wheels, Full metadata refresh, etc.).
 - **Single-instance lock** — a second `spindoctor-gui` on the same machine refuses to start so two windows can't race on the same HyperSpin XML. Override with `SPINDOCTOR_DISABLE_SINGLETON=1` if you genuinely need both open.
 - **Help → Keyboard shortcuts** dialog — in-app reference for the shortcut map; no more digging through docs.
-- **Safe-to-Stop long operations** — interrupting a backup, move-mode migrate, or curate-archive run now leaves a *partial manifest* describing what completed before the interrupt. The backup is still visible in the Restore picker; the migrate is reversible via `Logs → Browse manifests… → Undo`. See `docs/gui.md → Stopping a long-running command` for the full story.
+- **Safe-to-Stop long operations** — interrupting a backup, move-mode migrate, or curate-archive run now leaves a *partial manifest* describing what completed before the interrupt. The backup is still visible in the Restore picker; the migrate is reversible via `Logs → Browse manifests / undo → Undo`. See `docs/gui.md → Stopping a long-running command` for the full story.
 - **`fetch-meta --skip-ambiguous`** wired into the GUI — unticking "Auto-pick best match" no longer hangs the subprocess on an interactive `input()` prompt; ambiguous matches are logged for the next `audit` pass instead.
 - **Migrate confirm dialog** — Apply now pops a confirmation modal before shelling out, with distinct wording for `--keep-source` (copy, originals stay) and the destructive move (warns explicitly that originals will be removed and points at the undo-manifest escape hatch). Cancel and nothing runs.
 - **Main Menu.xml parse errors surface as a modal** — previously the failure was a single line in the Output pane and the Treeview kept showing stale rows from the last successful load. Now the table empties on failure and a modal names the file path + the parser's error so you can't miss it.
-- **Async startup** — the GUI window paints immediately, then runs the library scan (system combo population) and the startup health checks in the background. Status bar shows "Scanning library…" while it works. On a slow NAS-mounted Databases directory this avoids the "is it frozen?" beat the old synchronous behaviour had.
+- **Async startup** — the GUI window paints immediately, then runs the library scan (system combo population) and the startup health checks in the background. Status bar shows "Scanning library" while it works. On a slow NAS-mounted Databases directory this avoids the "is it frozen?" beat the old synchronous behaviour had.
 - **Fresh-install Setup focus** — on first launch (no `config.json` yet) the GUI auto-selects the Setup tab so a brand-new cabinet owner lands on the form that needs filling. Existing users' `gui_last_active_tab` is restored as usual.
 - **Routine popups demoted to the status bar** — "Saved", "Removed", "Up to date", "No subset picked", "Nothing to apply", etc. now flash in the status bar (auto-reverts to "Ready." after 6 s; validation prompts also ring the system bell) instead of forcing a click-through modal. Multi-line result modals (Preflight passed, Curate done with manifest path, Scheduled with reboot instructions) and destructive-action confirmations stay as modals.
 - **Curate delete confirmation rewritten** — the final destructive-confirm now lists the target system, the regions kept, and the revision preference up front so you can re-verify intent at a glance. Explicit "no undo for delete mode" wording with an archive-mode pointer.

@@ -38,7 +38,7 @@ Then pick how you want to *use* it:
    - **Windows 10/11** → `spindoctor-win10-vX.Y.Z.zip` (shared runtime, recommended)
    - **Windows 7 SP1 / 8 / 8.1 or 10/11** → `spindoctor-win7-vX.Y.Z.zip` (standalone `.exe` files)
 2. Extract the zip and move the folder (or EXEs) to a location of your choice (e.g. `C:\spindoctor\`). Optionally add that folder to `PATH` for CLI use. See [docs/windows-binaries.md](docs/windows-binaries.md) for the layout of each bundle.
-3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done. Prefer to be walked through it? Click **Run first-run wizard…** at the top of that tab ([details](docs/gui.md#first-run-wizard)).
+3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done. Prefer to be walked through it? Click **Run first-run wizard** at the top of that tab ([details](docs/gui.md#first-run-wizard)).
 
 ### Five-minute quick start (pip)
 
