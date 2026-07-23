@@ -697,21 +697,49 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 
 ## Dolphin / GameCube
 
-### GameCube games fail with "error waiting for the window FPS ahk_class wxWindowNR"
+### GameCube games fail with "error waiting for the window FPS ahk_class ..." (any variant)
 
-**Symptom:** Dolphin opens, the game starts running (visible on the taskbar), but
-RocketLauncher times out and shows *"There was an error waiting for the window FPS
-ahk_class wxWindowNR"*. Games work fine when launched directly from Dolphin.
+**Symptom A (fails almost immediately):** Dolphin opens, the game starts running (visible on
+the taskbar), but RocketLauncher times out within seconds/at the fade animation's end and
+shows *"There was an error waiting for the window FPS ahk_class ..."*. Games work fine when
+launched directly from Dolphin.
 
-**Cause:** Dolphin was upgraded from a 2017-era Ishiiruka build (wxWidgets UI,
-window class `wxWindowNR`) to an official 5.0-12188+ build (Qt UI, window class
-`Qt5150QWindowIcon`). The RL module (`Dolphin.ahk`) still looks for the old class and
-never finds the game window.
+**Symptom B (fails after ~2 minutes):** The game launches and plays completely normally —
+audio, controls, everything works — for about two minutes. Then RocketLauncher pops the same
+*"error waiting for the window"* error, plays an error sound, and HyperSpin snaps back to the
+foreground. The game is still running behind it: audible, and Alt-Tabbing to it works fine.
+This is the same underlying bug as Symptom A, just observed on a cabinet where the
+`Wait(120)` timeout fix (below) is already applied — RL keeps polling for the full 120 seconds
+before giving up, instead of failing right when the fade animation ends.
 
-**Fix:** Edit `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` and replace
-all 7 occurrences of `wxWindowNR` with `Qt5150QWindowIcon`. See the
+**Cause:** Dolphin's window class name changed because the emulator build was upgraded, but
+`Dolphin.ahk` still looks for the previous build generation's class string. This has happened
+across at least three Dolphin generations on this cabinet:
+
+| Generation | UI framework | Window class |
+|---|---|---|
+| 2017-era Ishiiruka | wxWidgets | `wxWindowNR` |
+| 5.0-12188 … 5.0-17000ish | Qt 5.15 | `Qt5150QWindowIcon` |
+| CalVer builds (e.g. `2606`) | Qt 6.5.1 | `Qt651QWindowIcon` |
+
+Any time Dolphin is upgraded across a Qt version boundary, this string changes again and the
+module needs to be updated to match — see the diagnostic recipe below rather than assuming
+it's always the wx→Qt5 jump.
+
+**Fix — stop matching on the window class entirely.** Rather than swapping in the new Qt
+class string (which just breaks again on the next Dolphin upgrade), edit
+`D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` to match Dolphin's window by **process
+name** (`ahk_exe Dolphin.exe`) instead of by class. The exe name can't change across
+Dolphin/Qt versions, so this survives future upgrades with no further edits. See the
 [Dolphin architecture section](cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation)
-for the full list of edits.
+for the exact block to replace and the reasoning (including a related dead-code bug this
+also fixes).
+
+If you'd rather do the minimal-diff version instead (swap the class string and accept it'll
+need updating again next time): open `RocketLauncher.log` and look at the
+`MiscUtils.GetActiveWindowStatus` debug line right before the `ScriptError` line — it shows
+the game window's *actual* current title/class, no AutoHotkey Window Spy needed — then
+replace every occurrence of the old class string in `Dolphin.ahk` with that one.
 
 ---
 
@@ -928,7 +956,7 @@ Yes — RocketUI uses the same HyperSpin `Databases/` and `Media/` structure.
 
 ### Recovering from any apply
 
-Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests…` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
+Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 ## GUI launcher
 
@@ -942,11 +970,11 @@ Set the `SPINDOCTOR_NO_UPDATE_CHECK=1` environment variable before launching the
 
 ### Where do my manifests live? How do I read one?
 
-Open the GUI and use **`File → View logs & manifests…`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
+Open the GUI and use **`File → View logs & manifests`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
 
 ### My controller-glyph swap looks wrong / I want to revert it
 
-`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
+`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
 ### Custom Wheels tab → Schedule auto-refresh fails with "access denied"
 

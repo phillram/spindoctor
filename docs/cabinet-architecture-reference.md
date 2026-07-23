@@ -873,15 +873,18 @@ This is done once per game. After completion, both keys stay `false` permanently
 
 ### Emulator version on this cabinet
 
-| Slot | Version | Path | Supports RVZ |
-|------|---------|------|--------------|
-| Active | **Dolphin 5.0-16101** | `D:\Arcade\Emulators\Dolphin Ishiiruka\Dolphin.exe` | Yes |
-| Original | Dolphin Ishiiruka (2017) | replaced by above | No |
+| Slot | Version | Path | UI Framework | Window Class |
+|------|---------|------|--------------|--------------|
+| Active | **Dolphin 2606** (CalVer, confirmed via RocketLauncher.log 2026-07-22) | `D:\Arcade\Emulators\Dolphin Ishiiruka\Dolphin.exe` | Qt 6.5.1 | `Qt651QWindowIcon` |
+| Previous | Dolphin 5.0-16101 | replaced by above | Qt 5.15.0 | `Qt5150QWindowIcon` |
+| Original | Dolphin Ishiiruka (2017) | replaced | wxWidgets | `wxWindowNR` |
 
-The original Dolphin Ishiiruka build (dated 2017) was replaced with Dolphin 5.0-16101.
-This is the **last Dolphin dev build that runs on Windows 7** — Windows 7 support was
-removed from Dolphin in July 2023. RVZ support was added in Dolphin 5.0-12188 (December 2020),
-so any build in the range 5.0-12188 through ~5.0-17000 supports both RVZ and Windows 7.
+**Cabinet OS was upgraded from Windows 7 to Windows 10 (confirmed July 2026).** This removed
+the Windows-7-only constraint that previously pinned Dolphin to the 5.0-12188…~17000 dev-build
+range (the last generation that ran on Windows 7, before Windows 7 support was dropped in
+July 2023). On Windows 10, current Dolphin builds (Qt 6, CalVer version numbers like `2606` =
+2026-06) are usable, and RVZ support (added in 5.0-12188, December 2020) is unaffected by the
+OS bump.
 
 The emulator folder name (`Dolphin Ishiiruka`) was kept intentionally so that
 `Global Emulators.ini` needs no changes — it still points to the same path.
@@ -940,41 +943,102 @@ To replace the Dolphin executable while keeping all settings and controller prof
 ### RL module compatibility when upgrading build generation
 
 Old Dolphin builds used the **wxWidgets** UI framework (window class `wxWindowNR`).
-Dolphin 5.0-12188+ switched to **Qt** (window class `Qt5150QWindowIcon`).
+Dolphin 5.0-12188+ switched to **Qt 5** (window class `Qt5150QWindowIcon`, encoding Qt
+5.15.0). Dolphin's later CalVer builds (e.g. `2606`) moved to **Qt 6** — this cabinet's
+current build registers as `Qt651QWindowIcon` (Qt 6.5.1). Each Qt *minor* version bump can
+change this string again, because Qt bakes its own version into the class name.
 RocketLauncher's `Dolphin.ahk` module detects game windows by class name, so upgrading
-from a wx build to a Qt build without updating the module causes two failures:
+Dolphin without updating the module to match causes two failures:
 
 | Symptom | Cause |
 |---------|-------|
-| RL fade-in completes, then error: *"There was an error waiting for the window FPS ahk\_class wxWindowNR"* | Module looks for `wxWindowNR`; Qt Dolphin registers as `Qt5150QWindowIcon` |
+| RL fade-in completes, then error: *"There was an error waiting for the window FPS ahk\_class wxWindowNR"* (or `Qt5150QWindowIcon`, `Qt651QWindowIcon`, etc.) — appears almost immediately | Module is looking for the *previous* generation's window class; Dolphin now registers under a different one |
+| Game plays fine in the background for ~2 minutes, then RocketLauncher errors *"error waiting for the window FPS ahk\_class ..."* and HyperSpin regains focus while the game keeps running (audible, reachable via Alt-Tab) | Same root cause, but the module's `emuGameWindow.Wait()` call already has the `Wait(120)` explicit-timeout fix applied (see next section) — so it waits the full 120 s instead of failing at the fade animation's ~45–60 s mark |
 | Dolphin opens to the game browser instead of launching the selected game | Old Windows-style flags (`/b /e`) are not parsed by Qt-based Dolphin; use POSIX-style (`-b -e`) |
 
-**Three edits are needed in `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`:**
+**Diagnosing the current window class after any Dolphin upgrade — no external tools needed:**
+RocketLauncher.log already records the live window's title and class every time it polls,
+via `MiscUtils.GetActiveWindowStatus`. After a failed launch, search the log for the line
+immediately before the `ScriptError` line:
 
-1. **All window class references** — replace every occurrence of `wxWindowNR` with
-   `Qt5150QWindowIcon`. There are 7 occurrences (primary window × 3, game window × 3,
-   NetPlay windows × 2 across several conditional blocks).
+```
+MD | DEBUG | ... | MiscUtils.GetActiveWindowStatus - Title: Dolphin 2606 | ... | Class: Qt651QWindowIcon | ...
+MD | ERROR | ... | ScriptError - There was an error waiting for the window "FPS ahk_class Qt5150QWindowIcon". ...
+```
 
-2. **Launch flags** — find the line that runs the emulator:
-   ```ahk
-   primaryExe.Run(" /b /e """ . romPath . "\" . romName . romExtension . """")
-   ```
-   Change `/b /e` to `-b -e`:
-   ```ahk
-   primaryExe.Run(" -b -e """ . romPath . "\" . romName . romExtension . """")
-   ```
+The `GetActiveWindowStatus` line shows what the window *actually* is; the `ScriptError` line
+shows what the module *expected*. This is useful for diagnosing *any* window-matching failure
+on this cabinet, not just Dolphin — but for Dolphin specifically, the recommended fix below
+avoids needing this diagnostic on every future Dolphin upgrade in the first place.
 
-3. **Render_To_Main module setting** — the module's game-window detection relies on a
-   separate render window titled `FPS`. In newer Dolphin builds this window may not
-   appear as a separate top-level window. If the game still fails to launch after the
-   above two fixes, set `Render_To_Main=true` in
-   `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ini`:
-   ```ini
-   [Settings]
-   Render_To_Main=true
-   ```
-   The module will then write `RenderToMain=True` into Dolphin's own `Dolphin.ini`
-   and wait for the main Dolphin window instead of the separate FPS render window.
+**Recommended fix — match by process name instead of window class (survives all future
+upgrades):** rather than re-deriving and swapping in a new class string each time Dolphin
+changes Qt version, replace the class-based match entirely with an `ahk_exe`-based one, since
+the executable is always named `Dolphin.exe` regardless of UI framework or Qt version. In
+`D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk`, find the block that instantiates
+`emuPrimaryWindow` / `emuGameWindow` / the NetPlay windows (originally around line 92):
+
+```ahk
+If (renderToMain = "true") {
+	emuPrimaryWindow := new Window(new WindowTitle("Dolphin","Qt5150QWindowIcon"))
+	emuGameWindow := emuPrimaryWindow
+} Else {
+	emuPrimaryWindow := new Window(new WindowTitle("Dolphin","Qt5150QWindowIcon"))
+	emuPrimaryWindow.ExcludeTitle := "FPS"
+	emuGameWindow := new Window(new WindowTitle("FPS","Qt5150QWindowIcon"))
+}
+emuPrimaryWindow := new Window(new WindowTitle("Dolphin","Qt5150QWindowIcon"))
+emuGameWindow := If renderToMain = "true" ? emuPrimaryWindow : new Window(new WindowTitle("FPS","Qt5150QWindowIcon"))
+emuScanningWindow := new Window(new WindowTitle("Scanning for ISOs","#32770"))
+emuNetPlaySetupWindow := new Window(new WindowTitle("Dolphin NetPlay Setup","Qt5150QWindowIcon"))
+emuNetPlayWindow := new Window(new WindowTitle("Dolphin NetPlay","Qt5150QWindowIcon"))
+```
+
+Replace it with:
+
+```ahk
+; Matched by ahk_exe (process name) instead of ahk_class: unlike the window class, which Qt
+; bakes its own version number into (wxWindowNR -> Qt5150QWindowIcon -> Qt651QWindowIcon and
+; counting), "Dolphin.exe" cannot change across emulator/UI-framework upgrades. This also drops
+; the "FPS"-titled-window assumption: current Dolphin builds render to a single top-level
+; window regardless of Render_To_Main, so emuPrimaryWindow and emuGameWindow are simply the
+; same window now.
+emuPrimaryWindow := new Window(new WindowTitle(,,"Dolphin.exe"))
+emuGameWindow := emuPrimaryWindow
+emuScanningWindow := new Window(new WindowTitle("Scanning for ISOs","#32770"))
+emuNetPlaySetupWindow := new Window(new WindowTitle("Dolphin NetPlay Setup",,"Dolphin.exe"))
+emuNetPlayWindow := new Window(new WindowTitle("Dolphin NetPlay",,"Dolphin.exe"))
+```
+
+The `WindowTitle` constructor's positional args are `(title, class, exe, id, pid)` — confirmed
+from the module's own VBA-Link code (`new WindowTitle(,,,,VBA%currentScreen%Exe.PID)`, matching
+purely by PID). Passing `exe` in the 3rd slot and leaving `class` blank drops the Qt-version
+dependency entirely.
+
+This edit also removes a latent bug: the `If (renderToMain = "true") { } Else { }` block above
+was immediately overwritten by the unconditional `emuGameWindow := If ... ? ... :` ternary
+assignment right after it — meaning the `renderToMain` branch never actually took effect,
+regardless of the `Render_To_Main` module setting. This is the same AHK 1.1
+ternary-in-assignment quirk documented below for `Fullscreen`/`HideMouse`; `Fullscreen` already
+has a hardcoded-literal workaround in the shipped module (`dolphinINI.Write("True", ...)`
+instead of the `Fullscreen` variable), but `HideMouse` does not — worth checking whether the
+mouse cursor is actually being hidden during gameplay on builds using this module.
+
+**If a future Dolphin build reintroduces a genuinely separate render window** (unlikely, but
+possible), give it its own `WindowTitle(,,"Dolphin.exe")` match distinct from
+`emuPrimaryWindow` and reintroduce an `ExcludeTitle` differentiator — the diagnostic recipe
+above will show whether this is needed by comparing `GetActiveWindowStatus`'s title against
+`emuPrimaryWindow`'s.
+
+Also update the launch flags in the same file if migrating from a wx-era module — find:
+```ahk
+primaryExe.Run(" /b /e """ . romPath . "\" . romName . romExtension . """")
+```
+and change `/b /e` to `-b -e` (POSIX-style flags; Qt-based Dolphin ignores the old
+Windows-style ones and opens its game browser instead of launching directly):
+```ahk
+primaryExe.Run(" -b -e """ . romPath . "\" . romName . romExtension . """")
+```
 
 > **CRC warning is harmless.** Editing `Dolphin.ahk` causes RL to log
 > *"CRC does not match official module"* — this is a WARNING, not an error, and

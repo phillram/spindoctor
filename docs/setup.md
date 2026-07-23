@@ -111,7 +111,7 @@ spindoctor-gui
 
 On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. From there:
 
-- **Run first-run wizard…** (optional, opt-in) — guided 3-step flow: Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the per-check ✓/⚠/✗ summary. Also reachable any time from **Help → First-run setup…**.
+- **Run first-run wizard** (optional, opt-in) — guided 3-step flow: Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor` and read the per-check ✓/⚠/✗ summary. Also reachable any time from **Help → First-run setup**.
 - **Per-field Browse button** — pick the folder graphically; the **Open** button next to each field jumps to that path in Explorer / Finder so you can verify you picked the right one.
 - **Drag-and-drop** — drag a folder from Explorer / Finder straight onto any path field (Windows binary install; pip users need `pip install spindoctor[gui]` or `[all]`).
 - **Save configuration** — writes everything to `config.json` and you're done.
