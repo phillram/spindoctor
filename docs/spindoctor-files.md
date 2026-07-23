@@ -249,13 +249,13 @@ C:\SpinDoctor\backups\
 ├── LEDBlinky\
 │   ├── Colors.ini.20260614_174635.bak
 │   └── controls.ini.20260614_174635.bak
-├── RocketLauncher\
-│   └── Settings\
-│       └── Nintendo Gamecube\
-│           └── Emulators.ini.20260614_174635.bak
-└── IntroVideoRandomizer\
-    └── Random.ini.20260614_174635.bak
+└── RocketLauncher\
+    └── Settings\
+        └── Nintendo Gamecube\
+            └── Emulators.ini.20260614_174635.bak
 ```
+
+(The Intro Video pool doesn't use `backup_dir` — `introvideo add`/`remove`/`restore` only ever copy or move video files, both trivially reversible by doing the opposite operation, so there's nothing to snapshot first.)
 
 If `backup_dir` is not configured, `.bak` files are written **next to the source file** instead (e.g. `Nintendo Gamecube.xml.20260614_174635.bak` in the same folder as `Nintendo Gamecube.xml`).
 
@@ -312,8 +312,9 @@ These files live inside your HyperSpin / RocketLauncher directories. SpinDoctor 
 | LEDBlinky Colors.ini | `ledblinky_dir\Colors.ini` | ✅ | ✅ (ledblinky generate, colors sync-players) |
 | LEDBlinky Controls.xml | `ledblinky_dir\LEDBlinkyControls.xml` | ✅ | ✅ (ledblinky generate, fix) |
 | LEDBlinky Settings.ini | `ledblinky_dir\Settings.ini` | ✅ | ✅ (ledblinky patch-settings) |
-| Intro Video Randomizer's Random.ini | `intro_randomizer_dir\Random.ini` | ✅ | ✅ (introvideo add/remove — `FileList=`/`RandomList=` lines only) |
-| Intro Video Randomizer's video pool | `Random.ini`'s `Folder=` path (e.g. `intro_randomizer_dir\Intro Videos\`) | ✅ | ✅ (introvideo add — copies in; never deletes) |
+| Intro video pool | `intro_randomizer_dir\` (and its `Disabled\` subfolder) | ✅ | ✅ (introvideo add — copies in, never overwrites; remove/restore — moves between pool root and `Disabled\`, never deletes) |
+| Intro video target | `intro_video_target` (e.g. `Intro.mp4`) | ✗ | ✅ (introvideo swap — overwritten on every swap, by design) |
+| Intro-swap launcher bat/vbs | next to the frozen exe, or `~/.spindoctor/` for source installs | ✗ | ✅ (introvideo install-autorun) |
 
 ---
 

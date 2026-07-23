@@ -30,7 +30,8 @@ spindoctor config set <key> <value>
 | `ledblinky_dir` | LEDBlinky install directory |
 | `output_dir` | Default output folder (blank = write in-place) |
 | `auto_audit_export_dir` | Auto-export an audit CSV here after every write operation |
-| `intro_randomizer_dir` | Folder containing the Intro Video Randomizer's `Random.ini` (e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`). Used by `spindoctor introvideo` — see [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer). |
+| `intro_randomizer_dir` | Folder holding the pool of intro videos (e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`) — videos live directly in it. Used by `spindoctor introvideo` — see [Command reference → Intro Video Randomizer](commands.md#intro-video-randomizer). |
+| `intro_video_target` | Full path to the file HyperSpin plays on boot (e.g. `D:\Arcade\Media\Frontend\Video\Intro.mp4`). Overwritten by `spindoctor introvideo swap`. |
 | `screenscraper_user` / `screenscraper_pass` | ScreenScraper credentials |
 | `screenscraper_devid` / `screenscraper_devpassword` | **Advanced.** ScreenScraper's per-app developer credential pair, sent on every request alongside the user credentials. Default `"SpinDoctor"` / `"SpinDoctor"` — the historical baked-in values. Override only if ScreenScraper has issued you a real registered developer credential or starts rejecting the default pair with HTTP 403. No Setup-tab field; set from the Console tab with `config set screenscraper_devid <value>`. See also [Troubleshooting → 403 from ScreenScraper or TheGamesDB](troubleshooting.md#403-from-screenscraper-or-thegamesdb). |
 | `thegamesdb_key` | TheGamesDB API key |

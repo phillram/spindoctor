@@ -510,7 +510,8 @@ _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
     ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
     ("backup_dir",            "Backup root directory",                r"D:\Backups",                 True),
     ("atomic_tmp_dir",        "Atomic write temp directory",          r"D:\SpinDoctorTemp",          True),
-    ("intro_randomizer_dir",  "Intro Video Randomizer directory",     r"D:\Arcade\Media\Frontend\Video\Intro Video Randomizer", True),
+    ("intro_randomizer_dir",  "Intro video pool directory",           r"D:\Arcade\Media\Frontend\Video\Intro Video Randomizer", True),
+    ("intro_video_target",    "Intro video target file",              r"D:\Arcade\Media\Frontend\Video\Intro.mp4", True),
 )
 
 # Scraper credential fields shown below the path fields in the Setup tab.
@@ -906,17 +907,22 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "rename --list-manifests",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM>",
     "rename --system <SYSTEM> --game <ROM> --to <NEW_ROM> --apply",
-    # ── Intro Video Randomizer ──────────────────────────────────────────────────
-    "─── Intro Video Randomizer ───",
+    # ── Intro Video pool ──────────────────────────────────────────────────────
+    "─── Intro Video ───",
     "introvideo list",
     "introvideo add <PATH>",
     "introvideo add <PATH> --apply",
     "introvideo add <PATH> <PATH> --apply",
     "introvideo remove <FILENAME>",
     "introvideo remove <FILENAME> --apply",
-    "introvideo remove <FILENAME> <FILENAME> --apply",
-    "introvideo shuffle",
-    "introvideo shuffle --apply",
+    "introvideo restore <FILENAME>",
+    "introvideo restore <FILENAME> --apply",
+    "introvideo swap",
+    "introvideo swap --apply",
+    "introvideo install-autorun",
+    "introvideo install-autorun --apply",
+    "introvideo uninstall-autorun",
+    "introvideo uninstall-autorun --apply",
     # ── LEDBlinky ─────────────────────────────────────────────────────────────
     "─── LEDBlinky ───",
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
@@ -4721,10 +4727,16 @@ class _SpinDoctorGUI:
 
     def _browse_dir(self, var, key: str) -> None:
         initial = self._resolve_initialdir(var.get())
-        # mame_executable is a file, not a directory; everything else is a dir.
+        # mame_executable / intro_video_target are files, not directories;
+        # everything else in _SETUP_FIELDS is a dir.
         if key == "mame_executable":
             path = self.filedialog.askopenfilename(
                 title="Select MAME executable",
+                initialdir=initial,
+            )
+        elif key == "intro_video_target":
+            path = self.filedialog.askopenfilename(
+                title="Select the intro video file HyperSpin plays on boot",
                 initialdir=initial,
             )
         else:
@@ -12871,32 +12883,31 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self.ttk.Label(
             frame,
-            text=("Manage the pool of startup videos HyperSpin's Intro "
-                  "Video Randomizer picks from on boot. Reads and writes "
-                  "Random.ini in the Intro Video Randomizer directory "
-                  "(set on the Setup tab); videos live in that INI's "
-                  "Folder= path, and its Backup\\ subfolder is never "
-                  "scanned or modified. On disk / Registered show two "
-                  "independent things a video can be — a file with "
-                  "on disk ✓ but Registered - has already been found in "
-                  "that folder but isn't in the randomizer's rotation yet. "
+            text=("Manage the pool of videos HyperSpin plays on boot. The "
+                  "pool folder (set on the Setup tab) IS the list — every "
+                  "video file directly inside it is enabled (in rotation). "
                   "'Add video(s)' opens a file picker to copy new video(s) "
-                  "in from elsewhere and registers them; 'Register selected' "
-                  "registers already on-disk row(s) as-is, with no picker "
-                  "and no copy; 'Remove selected' only edits Random.ini for "
-                  "the selected row(s) (Ctrl/Shift-click to select "
-                  "several) — the files themselves are left on disk; "
-                  "'Shuffle order' randomizes the order every registered "
-                  "video is listed in, without adding, removing, or "
-                  "deleting anything."),
+                  "in from elsewhere. 'Remove selected' moves a video into "
+                  "a Disabled\\ subfolder instead of deleting it "
+                  "(Ctrl/Shift-click to select several); 'Restore selected' "
+                  "moves it back into rotation. 'Swap now' runs one swap "
+                  "immediately — picks a random enabled video and copies it "
+                  "over the intro video target file — the fastest way to "
+                  "confirm everything's wired up correctly without waiting "
+                  "for a reboot."),
             wraplength=860, justify="left",
         ).pack(anchor="w", pady=(0, 10))
 
-        if not (load_config().intro_randomizer_dir or "").strip():
+        cfg = load_config()
+        missing = []
+        if not (cfg.intro_randomizer_dir or "").strip():
+            missing.append("'Intro video pool directory'")
+        if not (cfg.intro_video_target or "").strip():
+            missing.append("'Intro video target file'")
+        if missing:
             self.ttk.Label(
                 frame,
-                text=("Set 'Intro Video Randomizer directory' on the Setup "
-                      "tab first (the folder containing Random.ini)."),
+                text=f"Set {' and '.join(missing)} on the Setup tab first.",
                 foreground=_FG_DIM, wraplength=860, justify="left",
             ).pack(anchor="w", pady=(0, 10))
 
@@ -12908,18 +12919,16 @@ class _SpinDoctorGUI:
         tree_frame.columnconfigure(0, weight=1)
         tree_frame.rowconfigure(0, weight=1)
 
-        columns = ("disk", "registered", "size")
+        columns = ("status", "size")
         tree = self.ttk.Treeview(
             tree_frame, columns=columns, show="tree headings", height=12,
             selectmode="extended",
         )
         tree.heading("#0", text="File")
-        tree.heading("disk", text="On disk")
-        tree.heading("registered", text="Registered")
+        tree.heading("status", text="Status")
         tree.heading("size", text="Size")
-        tree.column("#0", width=340)
-        tree.column("disk", width=80, anchor="center")
-        tree.column("registered", width=100, anchor="center")
+        tree.column("#0", width=380)
+        tree.column("status", width=100, anchor="center")
         tree.column("size", width=90, anchor="e")
         tscroll = self.ttk.Scrollbar(
             tree_frame, orient="vertical", command=tree.yview,
@@ -12940,19 +12949,51 @@ class _SpinDoctorGUI:
             command=self._introvideo_add,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Register selected",
-            command=self._introvideo_register,
-        ).pack(side="left")
-        self.ttk.Button(
             btn_row, text="Remove selected",
             command=self._introvideo_remove,
+        ).pack(side="left")
+        self.ttk.Button(
+            btn_row, text="Restore selected",
+            command=self._introvideo_restore,
         ).pack(side="left", padx=(6, 0))
         self.ttk.Button(
-            btn_row, text="Shuffle order",
-            command=self._introvideo_shuffle,
+            btn_row, text="Swap now",
+            command=self._introvideo_swap,
+        ).pack(side="left", padx=(6, 0))
+
+        # ── Auto-run on Windows login ─────────────────────────────────────
+        autorun_lf = self.ttk.LabelFrame(frame, text="Auto-run on Windows login")
+        autorun_lf.pack(fill="x", pady=(0, 8))
+        self.ttk.Label(
+            autorun_lf,
+            text=("Registers a Windows Task Scheduler task (Windows-only) "
+                  "that runs a swap automatically every time you log in — "
+                  "no HyperSpin, RocketLauncher, or HyperHQ configuration "
+                  "needed, it's a plain login task that copies a file. "
+                  "Note: this task and however HyperSpin itself currently "
+                  "auto-launches (e.g. a shortcut in shell:startup) both "
+                  "fire around login with no strict ordering guarantee "
+                  "between the two — in practice the swap finishes first, "
+                  "but it isn't a hard guarantee."),
+            wraplength=860, justify="left",
+        ).pack(anchor="w", padx=6, pady=(6, 6))
+        status_row = self.ttk.Frame(autorun_lf)
+        status_row.pack(anchor="w", padx=6, pady=(0, 8))
+        self._introvideo_autorun_status_label = self.ttk.Label(
+            status_row, text="Status: checking…",
+        )
+        self._introvideo_autorun_status_label.pack(side="left")
+        self.ttk.Button(
+            status_row, text="Enable auto-run",
+            command=self._introvideo_install_autorun,
+        ).pack(side="left", padx=(12, 0))
+        self.ttk.Button(
+            status_row, text="Disable auto-run",
+            command=self._introvideo_uninstall_autorun,
         ).pack(side="left", padx=(6, 0))
 
         self._refresh_introvideo_list()
+        self._refresh_introvideo_autorun_status()
         return frame
 
     def _refresh_introvideo_list(self) -> None:
@@ -12960,45 +13001,45 @@ class _SpinDoctorGUI:
         if tree is None:
             return
         tree.delete(*tree.get_children())
-        from .introvideo import RandomizerIniError, get_ini_path, list_videos, load_randomizer
+        from .introvideo import IntroVideoError, list_videos
 
         config = load_config()
         try:
-            ini_path = get_ini_path(config)
-            state = load_randomizer(ini_path)
-            videos = list_videos(state)
-        except RandomizerIniError as exc:
-            self._introvideo_folder = None
-            tree.insert("", "end", text=str(exc), values=("", "", ""))
+            videos = list_videos(config)
+        except IntroVideoError as exc:
+            tree.insert("", "end", text=str(exc), values=("", ""))
             return
-
-        # Remembered so 'Register selected' can build the on-disk path for
-        # a selected row directly, without re-asking the user to browse to
-        # a file that's already sitting right here.
-        self._introvideo_folder = state.folder
 
         if not videos:
             tree.insert(
-                "", "end", text=f"No videos found in {state.folder}",
-                values=("", "", ""),
+                "", "end", text=f"No videos found in {config.intro_randomizer_dir}",
+                values=("", ""),
             )
             return
         for v in videos:
-            disk = "✓" if v.on_disk else "missing"
-            if v.registered:
-                registered = "✓"
-            elif v.in_file_list or v.in_random_list:
-                registered = "partial"
-            else:
-                registered = "-"
+            status = "enabled" if v.enabled else "disabled"
             size = f"{v.size_bytes / 1_048_576:.1f} MB" if v.size_bytes else "-"
-            tree.insert("", "end", text=v.filename, values=(disk, registered, size))
+            tree.insert("", "end", text=v.filename, values=(status, size))
+
+    def _refresh_introvideo_autorun_status(self) -> None:
+        label = getattr(self, "_introvideo_autorun_status_label", None)
+        if label is None:
+            return
+        from . import autostart
+        from .introvideo import autorun_status
+        try:
+            enabled = autorun_status()
+        except autostart.NotSupportedError:
+            label.configure(text="Status: not available (Windows only)")
+            return
+        label.configure(text=f"Status: {'enabled' if enabled else 'disabled'}")
 
     def _introvideo_add(self) -> None:
-        folder = getattr(self, "_introvideo_folder", None)
+        cfg = load_config()
+        folder = cfg.intro_randomizer_dir
         paths = self.filedialog.askopenfilenames(
             title="Select intro video(s) to add",
-            initialdir=str(folder) if folder else str(Path.home()),
+            initialdir=folder if folder else str(Path.home()),
             filetypes=[
                 ("Video files", "*.mp4 *.avi *.wmv *.mkv *.mov *.m4v *.flv"),
                 ("All files", "*.*"),
@@ -13014,58 +13055,6 @@ class _SpinDoctorGUI:
             on_complete=lambda _rc: self._refresh_introvideo_list(),
         )
 
-    def _introvideo_register(self) -> None:
-        """Register already-on-disk row(s) without re-browsing to them.
-
-        A video can land in the randomizer's folder without SpinDoctor's
-        help (dropped in directly, restored from a backup, etc.) and show
-        up as on-disk but unregistered ('-' in the Registered column).
-        'Add video(s)' always opens a file picker, which is a confusing
-        extra step when the exact file is already sitting right there in
-        the table — this reuses the same `introvideo add` command, just
-        pointed at the file's real on-disk path, so it registers instead
-        of re-copying (`add_video` never overwrites an existing file at
-        the same destination).
-        """
-        tree = getattr(self, "_introvideo_tree", None)
-        folder = getattr(self, "_introvideo_folder", None)
-        if tree is None or not folder:
-            return
-        sel = tree.selection()
-        if not sel:
-            self.messagebox.showwarning(
-                "No selection", "Pick one or more on-disk videos in the list first.",
-            )
-            return
-        on_disk, missing = [], []
-        for iid in sel:
-            filename = tree.item(iid, "text")
-            if tree.item(iid, "values")[0] == "✓":
-                on_disk.append(filename)
-            else:
-                missing.append(filename)
-        if not on_disk:
-            self.messagebox.showwarning(
-                "Not on disk",
-                "None of the selected rows are on disk — there's nothing to "
-                "register. Use 'Add video(s)' to copy a file in first.",
-            )
-            return
-        if missing:
-            self.messagebox.showinfo(
-                "Skipping missing file(s)",
-                "These selected rows aren't on disk, so they can't be "
-                "registered — skipping them:\n\n"
-                + "\n".join(f"  • {f}" for f in missing),
-            )
-        args = ["introvideo", "add"] + [str(folder / f) for f in on_disk]
-        if self._global_apply_var.get():
-            args.append("--apply")
-        self._run_cli(
-            "spindoctor", args,
-            on_complete=lambda _rc: self._refresh_introvideo_list(),
-        )
-
     def _introvideo_remove(self) -> None:
         tree = getattr(self, "_introvideo_tree", None)
         if tree is None:
@@ -13073,15 +13062,14 @@ class _SpinDoctorGUI:
         sel = tree.selection()
         if not sel:
             self.messagebox.showwarning(
-                "No selection", "Pick one or more videos in the list first.",
+                "No selection", "Pick one or more enabled videos in the list first.",
             )
             return
         # No confirmation dialog: the global Apply checkbox is the gate —
         # unticked runs a dry-run preview in the Output panel first, same
         # as every other command this tab shells out to. Removing only
-        # edits Random.ini's FileList/RandomList; the video files
-        # themselves are never touched, so there's nothing here a preview
-        # doesn't already cover.
+        # moves the file into Disabled\ — it's never deleted, and
+        # 'Restore selected' reverses it.
         filenames = [tree.item(iid, "text") for iid in sel]
         args = ["introvideo", "remove"] + filenames
         if self._global_apply_var.get():
@@ -13091,17 +13079,52 @@ class _SpinDoctorGUI:
             on_complete=lambda _rc: self._refresh_introvideo_list(),
         )
 
-    def _introvideo_shuffle(self) -> None:
-        """Randomize the order registered videos are listed in — no video is
-        added, removed, or deleted. Same Apply-checkbox gate as every other
-        action on this tab: unticked previews the new order, ticked commits it.
-        """
-        args = ["introvideo", "shuffle"]
+    def _introvideo_restore(self) -> None:
+        tree = getattr(self, "_introvideo_tree", None)
+        if tree is None:
+            return
+        sel = tree.selection()
+        if not sel:
+            self.messagebox.showwarning(
+                "No selection", "Pick one or more disabled videos in the list first.",
+            )
+            return
+        filenames = [tree.item(iid, "text") for iid in sel]
+        args = ["introvideo", "restore"] + filenames
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(
             "spindoctor", args,
             on_complete=lambda _rc: self._refresh_introvideo_list(),
+        )
+
+    def _introvideo_swap(self) -> None:
+        """Manually trigger one swap right now — pick a random enabled
+        video and copy it over the target file. The quickest way to verify
+        the pool/target config actually works without waiting for a
+        reboot or the scheduled logon task to fire.
+        """
+        args = ["introvideo", "swap"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _introvideo_install_autorun(self) -> None:
+        args = ["introvideo", "install-autorun"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_autorun_status(),
+        )
+
+    def _introvideo_uninstall_autorun(self) -> None:
+        args = ["introvideo", "uninstall-autorun"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda _rc: self._refresh_introvideo_autorun_status(),
         )
 
     # ── Custom command tab ────────────────────────────────────────────────────

@@ -19,6 +19,7 @@ from pathlib import Path
 
 import pytest
 
+import spindoctor.autostart as autostart_mod
 from spindoctor import __app_name__, __version__
 from spindoctor import gui
 
@@ -975,6 +976,7 @@ def test_gui_menu_commands_are_safe_to_invoke(monkeypatch):
                         lambda *_a, **_k: None, raising=False)
     from spindoctor import update_check
     monkeypatch.setattr(update_check, "check_for_update", lambda _v: None)
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
     # The heavy Toplevel-opening menu commands spawn worker threads
     # that hit the filesystem and call ``root.after`` — neither is
     # safe in a unit test that destroys the root immediately after.
@@ -1278,6 +1280,10 @@ def _build_gui_for_test(monkeypatch):
                         lambda *_a, **_k: None, raising=False)
     from spindoctor import update_check
     monkeypatch.setattr(update_check, "check_for_update", lambda _v: None)
+    # Intro Video tab construction queries Task Scheduler autorun status,
+    # which on Windows shells out to real schtasks.exe via the stubbed
+    # Popen above (raising TypeError there) — stub it like test_introvideo*.
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     return app, tk
