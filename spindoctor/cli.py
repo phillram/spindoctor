@@ -229,9 +229,11 @@ def config_set(key: str, value: str):
                                 temp files out of the HyperSpin tree. Must be on the
                                 same drive as hyperspin_dir; cross-drive paths fall
                                 back silently to the default behaviour.
-      intro_randomizer_dir      Folder containing the Intro Video Randomizer's
-                                Random.ini (third-party boot-video script). Used
-                                by `spindoctor introvideo`.
+      intro_randomizer_dir      Folder holding the pool of intro videos
+                                `spindoctor introvideo swap` picks from.
+      intro_video_target        Full path to the file HyperSpin plays on boot
+                                (e.g. D:/Arcade/Media/Frontend/Video/Intro.mp4).
+                                Overwritten by `spindoctor introvideo swap`.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
@@ -2723,186 +2725,277 @@ def _print_synth_summary(label: str, summary) -> None:
 
 @cli.group("introvideo")
 def introvideo_group():
-    """Manage HyperSpin's Intro Video Randomizer pool.
+    """Manage the pool of intro videos HyperSpin plays on boot.
 
     \b
-    Reads/writes Random.ini (the [Randomize1] section) at
-    <intro_randomizer_dir>/Random.ini. Videos live in the Folder= path
-    recorded in that INI; its Backup\\ subfolder is never scanned. 'add'
-    copies a video into that folder and registers it in FileList/RandomList;
-    'remove' drops it from those lists without deleting the file on disk;
-    'shuffle' randomizes the order videos are listed in without adding,
-    removing, or deleting any video.
+    The pool folder (intro_randomizer_dir) IS the database: every video
+    file directly inside it is enabled (in rotation). 'remove' moves a
+    video into a Disabled\\ subfolder — nothing is ever deleted — and
+    'restore' moves it back. 'swap' does a live scan + a fresh random pick
+    + a copy over intro_video_target every time it runs, so there's no
+    persisted order to keep in sync or shuffle.
+
+    \b
+    'install-autorun' / 'uninstall-autorun' register (or remove) a Windows
+    Task Scheduler logon task that runs 'swap --apply' automatically —
+    no dependency on HyperSpin, RocketLauncher, or HyperHQ.
     """
 
 
 @introvideo_group.command("list")
 def introvideo_list():
-    """List every intro video — on disk, registered, or both."""
-    from .introvideo import RandomizerIniError, get_ini_path, list_videos, load_randomizer
+    """List every intro video — enabled (in rotation) or disabled."""
+    from .introvideo import IntroVideoError, list_videos
 
     config = _cfg()
     try:
-        ini_path = get_ini_path(config)
-        state = load_randomizer(ini_path)
-        videos = list_videos(state)
-    except RandomizerIniError as exc:
+        videos = list_videos(config)
+    except IntroVideoError as exc:
         err_console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
     if not videos:
-        console.print(f"[dim]No intro videos found in {state.folder}[/dim]")
+        console.print(f"[dim]No intro videos found in {config.intro_randomizer_dir}[/dim]")
         return
 
-    tbl = Table(title=f"Intro videos — {state.folder}", box=box.ROUNDED)
+    tbl = Table(title=f"Intro videos — {config.intro_randomizer_dir}", box=box.ROUNDED)
     tbl.add_column("File", style="cyan")
-    tbl.add_column("On disk")
-    tbl.add_column("Registered")
+    tbl.add_column("Status")
     tbl.add_column("Size", justify="right")
     for v in videos:
-        disk = "[green]✓[/green]" if v.on_disk else "[red]missing[/red]"
-        if v.registered:
-            registered = "[green]✓[/green]"
-        elif v.in_file_list or v.in_random_list:
-            registered = "[yellow]partial[/yellow]"
-        else:
-            registered = "[dim]-[/dim]"
+        status = "[green]enabled[/green]" if v.enabled else "[dim]disabled[/dim]"
         size = f"{v.size_bytes / 1_048_576:.1f} MB" if v.size_bytes else "-"
-        tbl.add_row(v.filename, disk, registered, size)
+        tbl.add_row(v.filename, status, size)
     console.print(tbl)
-    active = sum(1 for v in videos if v.in_random_list)
-    console.print(f"\n[dim]{len(videos)} video(s) — {active} active in the randomizer[/dim]")
+    enabled_n = sum(1 for v in videos if v.enabled)
+    console.print(f"\n[dim]{len(videos)} video(s) — {enabled_n} enabled (in rotation)[/dim]")
 
 
 @introvideo_group.command("add")
 @click.argument("sources", nargs=-1, required=True,
                  type=click.Path(exists=True, dir_okay=False))
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Copy the file(s) and update Random.ini. Without this "
-                   "flag, only a preview is printed.")
+              help="Copy the file(s) into the pool. Without this flag, "
+                   "only a preview is printed.")
 def introvideo_add(sources, apply_changes):
-    """Add one or more videos to the intro randomizer pool."""
-    from .introvideo import RandomizerIniError, add_videos
+    """Add one or more videos to the intro pool."""
+    from .introvideo import IntroVideoError, add_videos
 
     config = _cfg()
     try:
         results = add_videos(config, [Path(s) for s in sources], apply=apply_changes)
-    except RandomizerIniError as exc:
+    except IntroVideoError as exc:
         err_console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
-    backup_path = None
     for result in results:
-        if not apply_changes:
-            if result.copied:
-                console.print(f"Would copy to [cyan]{result.dest}[/cyan]")
-            else:
-                console.print(f"Already on disk at [cyan]{result.dest}[/cyan]")
-            if result.already_registered:
-                console.print("[yellow]Already registered in Random.ini — nothing to change.[/yellow]")
-            else:
-                console.print("Would register in FileList / RandomList.")
+        if result.already_present:
+            console.print(f"[yellow]already in pool:[/yellow] {result.dest}")
             continue
-
-        console.print(
-            f"[green]+[/green] {result.dest.name}"
-            + (" (copied)" if result.copied else " (already on disk)")
-        )
-        if result.file_list_changed or result.random_list_changed:
-            console.print("[green]✓[/green] registered in Random.ini")
-            backup_path = backup_path or result.backup_path
+        if not apply_changes:
+            console.print(f"Would copy to [cyan]{result.dest}[/cyan]")
         else:
-            console.print("[yellow]already registered[/yellow]")
+            console.print(f"[green]+[/green] {result.dest.name}")
 
     if not apply_changes:
         console.print("[dim]Re-run with --apply to commit.[/dim]")
-    elif backup_path:
-        console.print(f"[dim]Backed up Random.ini to {backup_path}[/dim]")
-
-
-@introvideo_group.command("shuffle")
-@click.option("--seed", type=int, default=None,
-              help="Random seed, for a reproducible shuffle (mainly for testing). "
-                   "Omit for a fresh random order every run.")
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Write the new order to Random.ini. Without this flag, only "
-                   "a preview is printed.")
-def introvideo_shuffle(seed, apply_changes):
-    """Randomize the playback order of registered videos in Random.ini.
-
-    Reorders FileList/RandomList to a fresh random order — no video is
-    added, removed, or deleted; only the order changes. Useful when the
-    Intro Video Randomizer script itself doesn't randomize on every boot,
-    so pre-shuffling the list is what actually varies playback order.
-    """
-    from .introvideo import RandomizerIniError, shuffle_videos
-
-    config = _cfg()
-    try:
-        result = shuffle_videos(config, seed=seed, apply=apply_changes)
-    except RandomizerIniError as exc:
-        err_console.print(f"[red]{exc}[/red]")
-        sys.exit(1)
-
-    if not result.changed:
-        console.print(
-            "[yellow]Nothing to shuffle[/yellow] — fewer than 2 videos are "
-            "registered, or the new random order happened to match the old one."
-        )
-        return
-
-    verb = "Would reorder" if not apply_changes else "Reordered"
-    console.print(f"{verb} to:")
-    for name in result.new_order:
-        console.print(f"  {name}")
-
-    if not apply_changes:
-        console.print("[dim]Re-run with --apply to commit.[/dim]")
-    elif result.backup_path:
-        console.print(f"[dim]Backed up Random.ini to {result.backup_path}[/dim]")
 
 
 @introvideo_group.command("remove")
 @click.argument("filenames", nargs=-1, required=True)
 @click.option("--apply", "apply_changes", is_flag=True,
-              help="Update Random.ini. Without this flag, only a preview is "
-                   "printed. The video file itself is never deleted.")
+              help="Move the file(s) into Disabled\\. Without this flag, "
+                   "only a preview is printed. The video file itself is "
+                   "never deleted.")
 def introvideo_remove(filenames, apply_changes):
-    """Remove one or more videos from the intro randomizer pool.
-
-    Only edits Random.ini's FileList/RandomList — the video file is left
-    on disk and can be re-registered later with 'introvideo add'.
-    """
-    from .introvideo import RandomizerIniError, remove_videos
+    """Take one or more videos out of rotation (moved to Disabled\\, never deleted)."""
+    from .introvideo import IntroVideoError, remove_videos
 
     config = _cfg()
     try:
         results = remove_videos(config, list(filenames), apply=apply_changes)
-    except RandomizerIniError as exc:
+    except IntroVideoError as exc:
         err_console.print(f"[red]{exc}[/red]")
         sys.exit(1)
 
-    backup_path = None
-    any_changed = False
+    any_moved = False
     for result in results:
-        if not result.changed:
-            console.print(f"[yellow]not registered:[/yellow] {result.filename}")
+        if result.reason == "not_found":
+            console.print(f"[yellow]not found (enabled):[/yellow] {result.filename}")
             continue
-        any_changed = True
-        if not apply_changes:
-            console.print(f"Would remove [cyan]{result.filename}[/cyan] from Random.ini.")
+        if result.reason == "conflict":
+            console.print(
+                f"[red]skipped:[/red] {result.filename} — a file with that "
+                "name already exists in Disabled\\"
+            )
             continue
-        console.print(f"[green]-[/green] {result.filename} (Random.ini updated; file left on disk)")
-        backup_path = backup_path or result.backup_path
+        any_moved = True
+        verb = "Would move" if not apply_changes else "[green]-[/green] Moved"
+        console.print(f"{verb} [cyan]{result.filename}[/cyan] to Disabled\\")
+
+    if not apply_changes and any_moved:
+        console.print(
+            "[dim]Re-run with --apply to commit. The video file is never "
+            "deleted — 'introvideo restore' moves it back.[/dim]"
+        )
+
+
+@introvideo_group.command("restore")
+@click.argument("filenames", nargs=-1, required=True)
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Move the file(s) back into rotation. Without this "
+                   "flag, only a preview is printed.")
+def introvideo_restore(filenames, apply_changes):
+    """Put one or more disabled videos back into rotation."""
+    from .introvideo import IntroVideoError, restore_videos
+
+    config = _cfg()
+    try:
+        results = restore_videos(config, list(filenames), apply=apply_changes)
+    except IntroVideoError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    any_moved = False
+    for result in results:
+        if result.reason == "not_found":
+            console.print(f"[yellow]not found (disabled):[/yellow] {result.filename}")
+            continue
+        if result.reason == "conflict":
+            console.print(
+                f"[red]skipped:[/red] {result.filename} — a file with that "
+                "name already exists in the pool"
+            )
+            continue
+        any_moved = True
+        verb = "Would restore" if not apply_changes else "[green]+[/green] Restored"
+        console.print(f"{verb} [cyan]{result.filename}[/cyan] to the pool")
+
+    if not apply_changes and any_moved:
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+
+
+@introvideo_group.command("swap")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Copy the picked video over intro_video_target. Without "
+                   "this flag, only a preview pick is printed.")
+def introvideo_swap(apply_changes):
+    """Pick a random enabled video and copy it over intro_video_target.
+
+    \b
+    A live scan + a fresh random pick every run — the same thing the
+    Windows logon task (see 'install-autorun') runs automatically. Handy
+    for testing the swap by hand without waiting for a reboot.
+    """
+    from .introvideo import IntroVideoError, swap_video
+
+    config = _cfg()
+    try:
+        result = swap_video(config, apply=apply_changes)
+    except IntroVideoError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+
+    if result.picked is None:
+        console.print("[yellow]No videos in the pool — nothing to swap.[/yellow]")
+        return
+
+    verb = "Would copy" if not apply_changes else "[green]✓[/green] Copied"
+    console.print(f"{verb} [cyan]{result.picked}[/cyan] → {result.target}")
+    if not apply_changes:
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+
+
+@introvideo_group.command("install-autorun")
+@click.option("--delay-minutes", type=int, default=None,
+              help="Delay the logon task by this many minutes (schtasks "
+                   "/DELAY). Rarely needed — the swap is a small file copy "
+                   "that normally finishes well before HyperSpin's own "
+                   "boot sequence gets around to reading its intro video.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the launcher files and register the Windows "
+                   "Task Scheduler task. Without this flag, only a "
+                   "preview is printed.")
+def introvideo_install_autorun(delay_minutes, apply_changes):
+    """Register a Windows logon task that runs 'swap --apply' automatically.
+
+    \b
+    No dependency on HyperSpin, RocketLauncher, or HyperHQ — this is a
+    plain Windows Task Scheduler entry (task name 'SpinDoctor Intro Swap')
+    that runs a small hidden script at every login. Windows-only.
+
+    \b
+    Note: this task and however HyperSpin itself currently auto-launches
+    (e.g. a shortcut in shell:startup) both fire around login with no
+    strict ordering guarantee between the two OS mechanisms. In practice
+    the swap (a small file copy) finishes well before HyperSpin's own
+    multi-second boot sequence gets to reading its intro video, but it
+    isn't a hard guarantee.
+    """
+    from . import autostart
+    from .introvideo import IntroVideoError, install_autorun
+
+    config = _cfg()
+    try:
+        result = install_autorun(config, apply=apply_changes, delay_minutes=delay_minutes)
+    except IntroVideoError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    except autostart.NotSupportedError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    except (ValueError, RuntimeError) as exc:
+        err_console.print(f"[red]Could not register the logon task:[/red] {exc}")
+        sys.exit(1)
 
     if not apply_changes:
-        if any_changed:
-            console.print(
-                "[dim]Re-run with --apply to commit. The video file on disk "
-                "is never deleted.[/dim]"
-            )
-    elif backup_path:
-        console.print(f"[dim]Backed up Random.ini to {backup_path}[/dim]")
+        console.print(f"Would write [cyan]{result.bat_path}[/cyan] and [cyan]{result.vbs_path}[/cyan]")
+        console.print(f"Would register Task Scheduler task [cyan]{result.task_name}[/cyan] (ONLOGON)")
+        console.print("[dim]Re-run with --apply to commit.[/dim]")
+        return
+
+    console.print(f"[green]✓[/green] wrote {result.bat_path}")
+    console.print(f"[green]✓[/green] wrote {result.vbs_path}")
+    console.print(f"[green]✓[/green] registered Task Scheduler task [cyan]{result.task_name}[/cyan]")
+    if result.output:
+        console.print(f"[dim]{result.output}[/dim]")
+    console.print(
+        "\n[dim]Note: this and HyperSpin's own startup entry (e.g. a "
+        "shortcut in shell:startup) both fire at login with no strict "
+        "ordering guarantee — a file copy normally finishes first, but "
+        "it isn't a hard guarantee.[/dim]"
+    )
+
+
+@introvideo_group.command("uninstall-autorun")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Remove the Windows Task Scheduler task. Without this "
+                   "flag, only the current status is printed.")
+def introvideo_uninstall_autorun(apply_changes):
+    """Remove the Windows logon task registered by 'install-autorun'."""
+    from . import autostart
+    from .introvideo import uninstall_autorun
+
+    try:
+        result = uninstall_autorun(apply=apply_changes)
+    except autostart.NotSupportedError as exc:
+        err_console.print(f"[red]{exc}[/red]")
+        sys.exit(1)
+    except RuntimeError as exc:
+        err_console.print(f"[red]Could not remove the logon task:[/red] {exc}")
+        sys.exit(1)
+
+    if not apply_changes:
+        if result.registered:
+            console.print(f"Would remove Task Scheduler task [cyan]{result.task_name}[/cyan]")
+            console.print("[dim]Re-run with --apply to commit.[/dim]")
+        else:
+            console.print(f"[dim]Task '{result.task_name}' is not registered — nothing to remove.[/dim]")
+        return
+
+    console.print(f"[green]✓[/green] removed Task Scheduler task [cyan]{result.task_name}[/cyan]")
+    if result.output:
+        console.print(f"[dim]{result.output}[/dim]")
 
 
 @cli.group("stats-report", invoke_without_command=True)

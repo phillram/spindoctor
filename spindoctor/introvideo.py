@@ -1,495 +1,398 @@
-"""Intro Video Randomizer — manage the pool of startup videos HyperSpin's
-Random.ini-driven randomizer picks from.
+"""Intro Video pool — manage the videos HyperSpin plays on boot, and the
+Windows logon task that swaps between them.
 
-The randomizer (a third-party AutoHotkey/launcher script, not part of
-SpinDoctor) reads a single INI file on every boot::
+The pool folder (``config.intro_randomizer_dir``) *is* the database: every
+video file directly inside it is "enabled" (eligible to be picked); a
+``Disabled\\`` subfolder (created on demand) holds videos taken out of
+rotation by ``remove`` — nothing is ever deleted, and ``restore`` moves a
+file back. There is no separate list file to keep in sync with what's
+actually on disk.
 
-    [Randomize1]
-    Option=1
-    Folder=D:\\Arcade\\Media\\Frontend\\Video\\Intro Video Randomizer\\Intro Videos
-    FileToRandomize=D:\\Arcade\\Media\\Frontend\\Video\\Intro.mp4
-    FileList=a.mp4|b.mp4|c.mp4
-    RandomList=a.mp4|c.mp4
+``swap_video`` performs the actual boot-video swap: a live scan of the pool
+root, a uniform random pick, and a copy over ``config.intro_video_target``
+(the file HyperSpin itself reads, e.g. ``Intro.mp4``). It's re-randomized
+on every call — no persisted order to shuffle or go stale.
 
-``Folder`` is where the candidate video files live; ``FileToRandomize`` is
-the file HyperSpin actually plays on boot (the randomizer copies a chosen
-video over it). ``FileList`` and ``RandomList`` are pipe-delimited filename
-lists — this module keeps them identical, since "remove" means "the
-randomizer should stop using this file" rather than a distinction SpinDoctor
-needs to expose.
+``install_autorun``/``uninstall_autorun`` register (or remove) a Windows
+Task Scheduler logon task that runs ``spindoctor introvideo swap --apply``
+automatically, via :mod:`spindoctor.autostart` — the same ``schtasks.exe``
+wrapper already used by the GUI's wheel-refresh auto-run feature. This has
+no dependency on HyperSpin, RocketLauncher, or HyperHQ: the swap is a plain
+file copy, and Task Scheduler is a plain Windows mechanism, so it can be
+wired up (and torn down) without touching any cabinet-specific config.
 
-Writes are surgical: only the ``FileList=``/``RandomList=`` lines are
-replaced in place (same approach as ``rocketlauncher.rewrite_pclauncher_application``)
-so every other line, comment, and the file's key casing survive untouched.
-
-``shuffle_videos`` reorders both lists to a fresh random order (membership
-untouched) — useful because the third-party randomizer script may not
-itself randomize on every boot, so a pre-shuffled list is the only way to
-vary playback order across sessions.
+Earlier versions of this module read/wrote a third-party ``Random.ini``
+(the file format a 2015 forum tool called "Randomizer" used, wired into
+HyperHQ's Startup/Exit tab). That's gone — this module no longer reads or
+writes ``Random.ini`` at all.
 """
 from __future__ import annotations
 
 import random
-import re
 import shutil
-from dataclasses import dataclass, field
-from datetime import datetime
+import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from . import autostart
 from .config import Config
 
-INI_FILENAME = "Random.ini"
-SECTION = "Randomize1"
-BACKUP_SUBFOLDER = "Backup"
+DISABLED_SUBFOLDER = "Disabled"
 VIDEO_EXTENSIONS = frozenset({
     ".mp4", ".avi", ".wmv", ".mkv", ".mov", ".m4v", ".flv",
 })
 
+#: Windows Task Scheduler task name for the logon-triggered swap. Distinct
+#: from autostart.DEFAULT_LOGON_TASK (the wheel-refresh task) so the two
+#: features can be enabled/disabled independently.
+AUTORUN_TASK_NAME = "SpinDoctor Intro Swap"
+SWAP_BAT_FILENAME = "spindoctor-intro-swap.bat"
 
-class RandomizerIniError(Exception):
-    """Random.ini is unset, missing, or missing a required key."""
 
-
-@dataclass
-class RandomizerState:
-    ini_path: Path
-    option: str
-    folder: Path
-    file_to_randomize: Path
-    file_list: list[str] = field(default_factory=list)
-    random_list: list[str] = field(default_factory=list)
+class IntroVideoError(Exception):
+    """intro_randomizer_dir / intro_video_target unset, or a source file is missing."""
 
 
 @dataclass
 class VideoStatus:
     filename: str
-    in_file_list: bool
-    in_random_list: bool
-    on_disk: bool
-    size_bytes: Optional[int] = None
-
-    @property
-    def registered(self) -> bool:
-        return self.in_file_list and self.in_random_list
+    enabled: bool  # True = pool root ("in rotation"), False = Disabled\
+    size_bytes: int
 
 
 @dataclass
 class AddResult:
     dest: Path
     copied: bool
-    already_registered: bool
-    file_list_changed: bool
-    random_list_changed: bool
-    backup_path: Optional[Path] = None
+    already_present: bool
 
 
 @dataclass
 class RemoveResult:
     filename: str
-    file_list_changed: bool
-    random_list_changed: bool
-    backup_path: Optional[Path] = None
-
-    @property
-    def changed(self) -> bool:
-        return self.file_list_changed or self.random_list_changed
+    moved: bool
+    reason: Optional[str] = None  # "not_found" | "conflict" (set iff not moved)
 
 
 @dataclass
-class ShuffleResult:
-    old_order: list[str]
-    new_order: list[str]
-    changed: bool
-    backup_path: Optional[Path] = None
+class RestoreResult:
+    filename: str
+    moved: bool
+    reason: Optional[str] = None  # "not_found" | "conflict" (set iff not moved)
 
 
-def get_ini_path(config: Config) -> Path:
+@dataclass
+class SwapResult:
+    picked: Optional[str]  # None iff the pool is empty
+    target: Path
+    pool_size: int
+
+
+@dataclass
+class AutorunResult:
+    bat_path: Path
+    vbs_path: Path
+    task_name: str
+    registered: bool
+    output: str = ""
+
+
+def _pool_dir(config: Config) -> Path:
     if not config.intro_randomizer_dir:
-        raise RandomizerIniError(
-            "intro_randomizer_dir is not set — configure the Intro Video "
-            "Randomizer directory (the folder containing Random.ini) via "
-            "the Setup tab or `spindoctor config set intro_randomizer_dir <path>`."
+        raise IntroVideoError(
+            "intro_randomizer_dir is not set — configure the folder holding "
+            "your intro videos via the Setup tab or "
+            "`spindoctor config set intro_randomizer_dir <path>`."
         )
-    return Path(config.intro_randomizer_dir) / INI_FILENAME
+    return Path(config.intro_randomizer_dir)
 
 
-def _split_list(value: str) -> list[str]:
-    return [v for v in value.split("|") if v]
-
-
-def _join_list(items: list[str]) -> str:
-    return "|".join(items)
-
-
-def load_randomizer(ini_path: Path) -> RandomizerState:
-    if not ini_path.exists():
-        raise RandomizerIniError(f"Random.ini not found: {ini_path}")
-    text = ini_path.read_text(encoding="utf-8", errors="replace")
-    in_section = False
-    values: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        stripped = raw_line.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            in_section = stripped[1:-1].strip().lower() == SECTION.lower()
-            continue
-        if not in_section or "=" not in stripped:
-            continue
-        key, _, val = stripped.partition("=")
-        values[key.strip().lower()] = val
-
-    missing = [k for k in ("folder", "filetorandomize") if k not in values]
-    if missing:
-        raise RandomizerIniError(
-            f"[{SECTION}] in {ini_path} is missing key(s): {', '.join(missing)}"
+def _target_file(config: Config) -> Path:
+    if not config.intro_video_target:
+        raise IntroVideoError(
+            "intro_video_target is not set — configure the full path to the "
+            "video HyperSpin plays on boot via the Setup tab or "
+            "`spindoctor config set intro_video_target <path>`."
         )
-    return RandomizerState(
-        ini_path=ini_path,
-        option=values.get("option", "1"),
-        folder=Path(values["folder"]),
-        file_to_randomize=Path(values["filetorandomize"]),
-        file_list=_split_list(values.get("filelist", "")),
-        random_list=_split_list(values.get("randomlist", "")),
-    )
+    return Path(config.intro_video_target)
 
 
-def _config_backup_dir(config: Config) -> Optional[Path]:
-    return Path(config.backup_dir) if getattr(config, "backup_dir", None) else None
+def _disabled_dir(pool: Path) -> Path:
+    return pool / DISABLED_SUBFOLDER
 
 
-def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
-    """Timestamped backup of *path*, mirroring ledblinky._backup's shape.
+def _list_dir_videos(d: Path) -> "dict[str, int]":
+    """{filename (on-disk casing): size_bytes} — non-recursive, video exts only."""
+    out: "dict[str, int]" = {}
+    if not d.exists():
+        return out
+    for p in d.iterdir():
+        if p.is_file() and p.suffix.lower() in VIDEO_EXTENSIONS:
+            out[p.name] = p.stat().st_size
+    return out
 
-    Raises RandomizerIniError — instead of letting a raw OSError escape —
-    if backup_dir was explicitly configured but writing to it fails (an
-    unmounted drive, a permission problem). A misconfigured/unavailable
-    backup destination should be a clear, actionable error, not a bare
-    traceback the user has to scroll past to understand what happened.
-    """
-    if not path.exists():
+
+def _find_case_insensitive(d: Path, filename: str) -> Optional[Path]:
+    if not d.exists():
         return None
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if backup_dir:
-        dest_dir = backup_dir / "IntroVideoRandomizer"
-        dest = dest_dir / f"{path.name}.{stamp}.bak"
-        try:
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, dest)
-        except OSError as exc:
-            raise RandomizerIniError(
-                f"backup_before_modify is on, but writing the Random.ini "
-                f"backup to the configured backup_dir failed: {dest_dir} "
-                f"({exc}). Nothing was changed — fix backup_dir (Setup tab, "
-                f"or `spindoctor config set backup_dir <path>`), or turn off "
-                f"backup_before_modify, then try again."
-            ) from exc
-    else:
-        dest = path.with_suffix(path.suffix + f".{stamp}.bak")
-        shutil.copy2(path, dest)
-    return dest
+    target = filename.lower()
+    for p in d.iterdir():
+        if p.is_file() and p.name.lower() == target:
+            return p
+    return None
 
 
-def _rewrite_lists(
-    ini_path: Path, file_list: list[str], random_list: list[str],
-) -> bool:
-    """Replace only the FileList=/RandomList= lines of [Randomize1], verbatim otherwise."""
-    lines = ini_path.read_text(encoding="utf-8", errors="replace").splitlines(keepends=True)
-    in_section = False
-    saw_file_list = False
-    saw_random_list = False
-    new_lines: list[str] = []
-    changed = False
-    for line in lines:
-        stripped = line.rstrip("\r\n")
-        eol = line[len(stripped):]
-        head = stripped.strip()
-        if head.startswith("[") and head.endswith("]"):
-            in_section = head[1:-1].strip().lower() == SECTION.lower()
-        if in_section and re.match(r"(?i)^FileList\s*=", stripped):
-            saw_file_list = True
-            want = f"FileList={_join_list(file_list)}"
-            if stripped != want:
-                new_lines.append(want + eol)
-                changed = True
-                continue
-        if in_section and re.match(r"(?i)^RandomList\s*=", stripped):
-            saw_random_list = True
-            want = f"RandomList={_join_list(random_list)}"
-            if stripped != want:
-                new_lines.append(want + eol)
-                changed = True
-                continue
-        new_lines.append(line)
+# ── pool management ──────────────────────────────────────────────────────────
 
-    if not (saw_file_list and saw_random_list):
-        raise RandomizerIniError(
-            f"[{SECTION}] in {ini_path} is missing FileList=/RandomList= — "
-            "cannot update the randomizer pool."
-        )
-    if changed:
-        ini_path.write_text("".join(new_lines), encoding="utf-8")
-    return changed
-
-
-def list_videos(state: RandomizerState) -> list[VideoStatus]:
-    """Every video on disk (excluding the Backup\\ subfolder) union every
-    filename registered in FileList/RandomList — surfaces orphaned disk
-    files and dangling INI references alike.
-
-    Matching is case-insensitive (Windows/NTFS filesystems are), so a
-    ``Random.ini`` entry that differs only in case from the on-disk
-    filename is treated as the same video, not a second missing one.
-    """
-    on_disk: dict[str, int] = {}      # lower(name) -> size
-    on_disk_names: dict[str, str] = {}  # lower(name) -> actual on-disk casing
-    if state.folder.exists():
-        for p in state.folder.iterdir():
-            if not p.is_file() or p.suffix.lower() not in VIDEO_EXTENSIONS:
-                continue
-            key = p.name.lower()
-            on_disk[key] = p.stat().st_size
-            on_disk_names[key] = p.name
-
-    file_list_lower = {n.lower() for n in state.file_list}
-    random_list_lower = {n.lower() for n in state.random_list}
-
-    # Prefer the on-disk casing for display; fall back to whatever casing
-    # the INI used for entries that don't exist on disk.
-    canonical: dict[str, str] = {}
-    for name in state.file_list + state.random_list:
-        canonical.setdefault(name.lower(), name)
-    canonical.update(on_disk_names)
-
-    keys = set(on_disk) | file_list_lower | random_list_lower
-    out = [
-        VideoStatus(
-            filename=canonical[key],
-            in_file_list=key in file_list_lower,
-            in_random_list=key in random_list_lower,
-            on_disk=key in on_disk,
-            size_bytes=on_disk.get(key),
-        )
-        for key in keys
-    ]
+def list_videos(config: Config) -> "list[VideoStatus]":
+    """Every enabled (pool root) and disabled (``Disabled\\``) video, sorted by name."""
+    pool = _pool_dir(config)
+    enabled = _list_dir_videos(pool)
+    disabled = _list_dir_videos(_disabled_dir(pool))
+    out = [VideoStatus(filename=n, enabled=True, size_bytes=s) for n, s in enabled.items()]
+    out += [VideoStatus(filename=n, enabled=False, size_bytes=s) for n, s in disabled.items()]
     out.sort(key=lambda v: v.filename.lower())
     return out
 
 
 def add_videos(
-    config: Config, sources: list[Path], *, apply: bool = False,
-) -> list[AddResult]:
-    """Copy each of *sources* into the randomizer's Folder and register it
-    in FileList/RandomList. Non-destructive: an existing file at a
-    destination is never overwritten.
+    config: Config, sources: "list[Path]", *, apply: bool = False,
+) -> "list[AddResult]":
+    """Copy each of *sources* into the pool root. Never overwrites an existing file.
 
-    Disk copies happen per-file (so a later duplicate name in the same
-    batch correctly sees the earlier copy as already-on-disk), but
-    Random.ini gets a single backup and a single surgical rewrite for the
-    whole batch rather than one per file. Every source — and, if a backup
-    will actually be needed, the configured backup destination — is
-    validated up front, before any copy happens, so a missing source file
-    or an unwritable backup_dir (unmounted drive, permission problem)
-    aborts cleanly with nothing copied and Random.ini untouched, instead
-    of leaving earlier files copied-but-unregistered. A copy failure
-    partway through for a reason that can't be pre-validated (disk full,
-    a locked file) can still leave earlier files in that call copied but
-    unregistered; that risk predates batching (a single `add_video` copy
-    could always raise) and isn't new here, just still present.
+    Every source is validated up front — before any copy happens — so a
+    missing file anywhere in the batch aborts cleanly with nothing copied,
+    rather than leaving earlier files in the batch copied but the rest
+    silently skipped.
     """
-    ini_path = get_ini_path(config)
-    state = load_randomizer(ini_path)
-
-    # Validate every source before touching disk or Random.ini — see the
-    # docstring above for why this ordering matters for a multi-file batch.
+    pool = _pool_dir(config)
     for source in sources:
         if not source.exists() or not source.is_file():
-            raise RandomizerIniError(f"Source video not found: {source}")
+            raise IntroVideoError(f"Source video not found: {source}")
 
-    # Same reasoning for the backup destination: if this call will actually
-    # try to back Random.ini up, make sure that destination is writable
-    # *before* copying any source — otherwise a bad backup_dir would be
-    # discovered only after files were already copied, orphaning them the
-    # same way a missing source used to.
-    if apply and config.backup_before_modify:
-        backup_dir = _config_backup_dir(config)
-        if backup_dir:
-            try:
-                (backup_dir / "IntroVideoRandomizer").mkdir(parents=True, exist_ok=True)
-            except OSError as exc:
-                raise RandomizerIniError(
-                    f"backup_before_modify is on, but the configured "
-                    f"backup_dir isn't writable: {backup_dir} ({exc}). Fix "
-                    f"backup_dir (Setup tab, or `spindoctor config set "
-                    f"backup_dir <path>`), or turn off backup_before_modify, "
-                    f"then try again."
-                ) from exc
-
-    new_file_list = list(state.file_list)
-    new_random_list = list(state.random_list)
-    results: list[AddResult] = []
-    any_list_change = False
-
+    results = []
     for source in sources:
-        # Case-insensitive on-disk lookup — Path.exists() case-folds on
-        # Windows/NTFS and macOS/APFS (the common dev/prod targets) but not
-        # on a case-sensitive filesystem (e.g. Linux/ext4, where part of CI
-        # runs), which would otherwise let a re-add under different casing
-        # slip past the "already there" check and copy a duplicate file.
-        # Scanning ourselves keeps this decision independent of the host
-        # filesystem.
-        dest = state.folder / source.name
-        existing_match = None
-        if state.folder.exists():
-            for p in state.folder.iterdir():
-                if p.is_file() and p.name.lower() == source.name.lower():
-                    existing_match = p
-                    break
-        if existing_match is not None:
-            dest = existing_match
-        already_on_disk = existing_match is not None
-        # Case-insensitive membership check (Windows/NTFS filesystems are)
-        # so an existing "capcom intro.mp4" entry isn't treated as distinct
-        # from a newly-added "Capcom Intro.mp4", and against the
-        # accumulated batch lists so two same-named files in one batch
-        # don't both register.
-        source_key = source.name.lower()
-        file_list_changed = source_key not in {n.lower() for n in new_file_list}
-        random_list_changed = source_key not in {n.lower() for n in new_random_list}
-        already_registered = not file_list_changed and not random_list_changed
-
+        existing = _find_case_insensitive(pool, source.name)
+        already_present = existing is not None
+        dest = existing if existing is not None else pool / source.name
         copied = False
         if apply:
-            if not already_on_disk:
-                state.folder.mkdir(parents=True, exist_ok=True)
+            if not already_present:
+                pool.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, dest)
                 copied = True
         else:
-            copied = not already_on_disk
-
-        if file_list_changed:
-            new_file_list.append(source.name)
-        if random_list_changed:
-            new_random_list.append(source.name)
-        any_list_change = any_list_change or file_list_changed or random_list_changed
-
-        results.append(AddResult(
-            dest=dest,
-            copied=copied,
-            already_registered=already_registered,
-            file_list_changed=file_list_changed,
-            random_list_changed=random_list_changed,
-        ))
-
-    if apply and any_list_change:
-        backup_path = None
-        if config.backup_before_modify:
-            backup_path = _backup(ini_path, _config_backup_dir(config))
-        _rewrite_lists(ini_path, new_file_list, new_random_list)
-        for result in results:
-            if result.file_list_changed or result.random_list_changed:
-                result.backup_path = backup_path
-
+            copied = not already_present
+        results.append(AddResult(dest=dest, copied=copied, already_present=already_present))
     return results
 
 
 def add_video(config: Config, source: Path, *, apply: bool = False) -> AddResult:
-    """Copy *source* into the randomizer's Folder and register it in
-    FileList/RandomList. Non-destructive: an existing file at the
-    destination is never overwritten.
-    """
     return add_videos(config, [source], apply=apply)[0]
 
 
 def remove_videos(
-    config: Config, filenames: list[str], *, apply: bool = False,
-) -> list[RemoveResult]:
-    """Drop each of *filenames* from FileList/RandomList. The video files
-    on disk are never deleted — this only stops the randomizer from
-    picking them. A single Random.ini backup and rewrite covers the whole
-    batch rather than one per file.
+    config: Config, filenames: "list[str]", *, apply: bool = False,
+) -> "list[RemoveResult]":
+    """Move each named, currently-enabled video into ``Disabled\\``.
+
+    The video file is never deleted — ``restore`` moves it back later.
     """
-    ini_path = get_ini_path(config)
-    state = load_randomizer(ini_path)
-
-    new_file_list = list(state.file_list)
-    new_random_list = list(state.random_list)
-    results: list[RemoveResult] = []
-    any_change = False
-
+    pool = _pool_dir(config)
+    disabled = _disabled_dir(pool)
+    results = []
     for filename in filenames:
-        target = filename.lower()
-        file_list_changed = any(f.lower() == target for f in new_file_list)
-        random_list_changed = any(f.lower() == target for f in new_random_list)
-        if file_list_changed:
-            new_file_list = [f for f in new_file_list if f.lower() != target]
-        if random_list_changed:
-            new_random_list = [f for f in new_random_list if f.lower() != target]
-        any_change = any_change or file_list_changed or random_list_changed
-        results.append(RemoveResult(
-            filename=filename,
-            file_list_changed=file_list_changed,
-            random_list_changed=random_list_changed,
-        ))
-
-    if apply and any_change:
-        backup_path = None
-        if config.backup_before_modify:
-            backup_path = _backup(ini_path, _config_backup_dir(config))
-        _rewrite_lists(ini_path, new_file_list, new_random_list)
-        for result in results:
-            if result.changed:
-                result.backup_path = backup_path
-
+        match = _find_case_insensitive(pool, filename)
+        if match is None:
+            results.append(RemoveResult(filename=filename, moved=False, reason="not_found"))
+            continue
+        dest = disabled / match.name
+        if _find_case_insensitive(disabled, match.name) is not None:
+            results.append(RemoveResult(filename=filename, moved=False, reason="conflict"))
+            continue
+        if apply:
+            disabled.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(match), str(dest))
+        results.append(RemoveResult(filename=filename, moved=True))
     return results
 
 
 def remove_video(config: Config, filename: str, *, apply: bool = False) -> RemoveResult:
-    """Drop *filename* from FileList/RandomList. The video file on disk is
-    never deleted — this only stops the randomizer from picking it.
-    """
     return remove_videos(config, [filename], apply=apply)[0]
 
 
-def shuffle_videos(
-    config: Config, *, seed: Optional[int] = None, apply: bool = False,
-) -> ShuffleResult:
-    """Randomize the playback order of the registered videos in Random.ini.
+def restore_videos(
+    config: Config, filenames: "list[str]", *, apply: bool = False,
+) -> "list[RestoreResult]":
+    """Move each named, currently-disabled video back to the pool root."""
+    pool = _pool_dir(config)
+    disabled = _disabled_dir(pool)
+    results = []
+    for filename in filenames:
+        match = _find_case_insensitive(disabled, filename)
+        if match is None:
+            results.append(RestoreResult(filename=filename, moved=False, reason="not_found"))
+            continue
+        dest = pool / match.name
+        if _find_case_insensitive(pool, match.name) is not None:
+            results.append(RestoreResult(filename=filename, moved=False, reason="conflict"))
+            continue
+        if apply:
+            pool.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(match), str(dest))
+        results.append(RestoreResult(filename=filename, moved=True))
+    return results
 
-    FileList and RandomList are shuffled to the same new order; a filename
-    present in only one of the two lists (dangling INI entries can happen —
-    see :func:`list_videos`) is shuffled separately within that list so
-    membership in each list is preserved exactly, just reordered. No video
-    file, and no FileList/RandomList *membership*, is added, removed, or
-    otherwise touched — this only changes the order names are listed in.
 
-    ``seed`` makes the shuffle reproducible (mainly for tests); omit it for a
-    fresh random order every call.
+def restore_video(config: Config, filename: str, *, apply: bool = False) -> RestoreResult:
+    return restore_videos(config, [filename], apply=apply)[0]
+
+
+# ── the swap itself ──────────────────────────────────────────────────────────
+
+def swap_video(
+    config: Config, *, apply: bool = False, rng: "Optional[random.Random]" = None,
+) -> SwapResult:
+    """Pick a random enabled video and copy it over ``intro_video_target``.
+
+    A live directory scan every call — no persisted order, nothing to go
+    stale. An empty pool is a clean no-op (never raises): this is the
+    function the unattended logon task calls, and it must never crash.
+    *rng* lets callers (tests) pass a seeded ``random.Random`` instead of
+    the module-level RNG.
     """
-    ini_path = get_ini_path(config)
-    state = load_randomizer(ini_path)
-    rng = random.Random(seed)
+    pool = _pool_dir(config)
+    target = _target_file(config)
+    candidates = sorted(_list_dir_videos(pool).keys())
+    if not candidates:
+        return SwapResult(picked=None, target=target, pool_size=0)
+    picker = rng if rng is not None else random
+    picked = picker.choice(candidates)
+    if apply:
+        shutil.copy2(pool / picked, target)
+    return SwapResult(picked=picked, target=target, pool_size=len(candidates))
 
-    new_file_list = list(state.file_list)
-    rng.shuffle(new_file_list)
 
-    file_set = set(state.file_list)
-    random_set = set(state.random_list)
-    new_random_list = [name for name in new_file_list if name in random_set]
-    random_only = [name for name in state.random_list if name not in file_set]
-    rng.shuffle(random_only)
-    new_random_list += random_only
+# ── Windows logon auto-run ───────────────────────────────────────────────────
 
-    changed = new_file_list != state.file_list or new_random_list != state.random_list
+def _sibling_spindoctor_exe() -> str:
+    """Resolve the `spindoctor` executable, frozen or dev install.
 
-    result = ShuffleResult(
-        old_order=state.file_list,
-        new_order=new_file_list,
-        changed=changed,
+    Mirrors gui.py's `_write_refresh_bat` branching so both auto-run
+    features resolve executables the same way.
+    """
+    if getattr(sys, "frozen", False):
+        sibling = Path(sys.executable).parent / "spindoctor.exe"
+        if sibling.exists():
+            return f'"{sibling}"'
+    return "spindoctor"
+
+
+def _swap_bat_dir() -> Path:
+    """Directory the swap bat/vbs live in — next to the exe when frozen,
+    ``~/.spindoctor/`` for source installs. Does NOT create the directory;
+    only :func:`_write_swap_bat` does that, so computing a preview path
+    (dry-run) never touches disk.
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).parent
+    return Path.home() / ".spindoctor"
+
+
+def _swap_bat_path() -> Path:
+    return _swap_bat_dir() / SWAP_BAT_FILENAME
+
+
+def _write_swap_bat() -> Path:
+    """Write the .bat the logon task runs — one line, `introvideo swap --apply`."""
+    exe = _sibling_spindoctor_exe()
+    lines = (
+        "@echo off\r\n"
+        f'start /LOW /B /WAIT "" {exe} introvideo swap --apply\r\n'
+    )
+    bat_dir = _swap_bat_dir()
+    bat_dir.mkdir(parents=True, exist_ok=True)
+    bat_path = bat_dir / SWAP_BAT_FILENAME
+    bat_path.write_text(lines, encoding="utf-8")
+    return bat_path
+
+
+def _write_swap_vbs(bat_path: Path) -> Path:
+    """Hidden-window shim so the logon task never flashes a console window.
+
+    Same shape as gui.py's `_write_vbs_shim` for the wheel-refresh task.
+    """
+    vbs_content = (
+        "' SpinDoctor intro-swap hidden launcher\r\n"
+        "' Generated by spindoctor introvideo install-autorun — do not edit.\r\n"
+        'Set ws = CreateObject("WScript.Shell")\r\n'
+        "Dim batPath\r\n"
+        'batPath = Left(WScript.ScriptFullName, '
+        'InStrRev(WScript.ScriptFullName, "\\\\")) '
+        f'& "{bat_path.name}"\r\n'
+        "ws.Run Chr(34) & batPath & Chr(34), 0, True\r\n"
+    )
+    vbs_path = bat_path.with_suffix(".vbs")
+    vbs_path.write_text(vbs_content, encoding="utf-8")
+    return vbs_path
+
+
+def _autorun_command(vbs_path: Path) -> str:
+    return f'wscript.exe //B "{vbs_path}"'
+
+
+def install_autorun(
+    config: Config, *, apply: bool = False, delay_minutes: Optional[int] = None,
+) -> AutorunResult:
+    """Register a Windows logon task that runs `introvideo swap --apply`.
+
+    Validates intro_randomizer_dir / intro_video_target are configured
+    first (same pre-flight `swap_video` does), so install can't succeed
+    against a config the swap itself would immediately fail against.
+    Dry-run previews the bat/vbs paths and task name without writing
+    anything or touching Task Scheduler — the only step that needs
+    Windows is the `--apply` registration itself.
+    """
+    _pool_dir(config)
+    _target_file(config)
+    bat_path = _swap_bat_path()
+    vbs_path = bat_path.with_suffix(".vbs")
+    if not apply:
+        return AutorunResult(
+            bat_path=bat_path, vbs_path=vbs_path,
+            task_name=AUTORUN_TASK_NAME, registered=False,
+        )
+
+    bat_path = _write_swap_bat()
+    vbs_path = _write_swap_vbs(bat_path)
+    result = autostart.create_logon_task(
+        _autorun_command(vbs_path), name=AUTORUN_TASK_NAME, delay_minutes=delay_minutes,
+    )
+    return AutorunResult(
+        bat_path=bat_path, vbs_path=vbs_path, task_name=AUTORUN_TASK_NAME,
+        registered=True, output=result.output,
     )
 
-    if apply and changed:
-        if config.backup_before_modify:
-            result.backup_path = _backup(ini_path, _config_backup_dir(config))
-        _rewrite_lists(ini_path, new_file_list, new_random_list)
 
-    return result
+def uninstall_autorun(*, apply: bool = False) -> AutorunResult:
+    """Remove the logon task. Leaves the bat/vbs files (harmless leftovers)."""
+    bat_path = _swap_bat_path()
+    vbs_path = bat_path.with_suffix(".vbs")
+    exists = autostart.task_exists(name=AUTORUN_TASK_NAME)
+    if not apply:
+        return AutorunResult(
+            bat_path=bat_path, vbs_path=vbs_path,
+            task_name=AUTORUN_TASK_NAME, registered=exists,
+        )
+    output = autostart.delete_logon_task(name=AUTORUN_TASK_NAME) if exists else ""
+    return AutorunResult(
+        bat_path=bat_path, vbs_path=vbs_path, task_name=AUTORUN_TASK_NAME,
+        registered=False, output=output,
+    )
+
+
+def autorun_status() -> bool:
+    """Whether the logon task is currently registered. Windows-only —
+    raises `autostart.NotSupportedError` elsewhere, same as autostart.py."""
+    return autostart.task_exists(name=AUTORUN_TASK_NAME)

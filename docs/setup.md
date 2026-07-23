@@ -86,9 +86,9 @@ Skip this unless the cabinet has Sinden (or compatible) light guns. If you do:
 
 SpinDoctor wires Sinden + DemulShooter into RocketLauncher per-system *after* you've done `config init` — see step 12 below. Module `.ahk` files (typically Tur-built) are never modified.
 
-## 7c. (Optional) Intro Video Randomizer
+## 7c. (Optional) Intro video randomization
 
-Skip this unless the cabinet runs a third-party boot-time video randomizer (an AutoHotkey/launcher script that swaps HyperSpin's startup video on every boot — not part of HyperSpin, RocketLauncher, or SpinDoctor). If it's already installed, note the folder containing its `Random.ini` (e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`) — you'll point `intro_randomizer_dir` at it in step 9. See [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the file layout, and [Workflows → Managing intro videos](workflows.md#managing-intro-videos) for day-to-day use once configured.
+Skip this unless you want HyperSpin's boot video to vary between sessions — SpinDoctor manages the pool and performs the swap itself, no third-party tool needed. Note two paths, which you'll set as `intro_randomizer_dir` and `intro_video_target` in step 9: the folder you want to hold candidate videos (create it now if it doesn't exist, e.g. `D:\Arcade\Media\Frontend\Video\Intro Video Randomizer`), and the full path to the file HyperSpin actually plays on boot (e.g. `D:\Arcade\Media\Frontend\Video\Intro.mp4`). See [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the background, and [Workflows → Managing intro videos](workflows.md#managing-intro-videos) for day-to-day use once configured.
 
 ## 8. Install SpinDoctor
 
@@ -122,7 +122,7 @@ On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. From 
 spindoctor config init    :: CLI wizard equivalent of the Setup tab
 ```
 
-`spindoctor config init` prompts for the 8 core paths (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled — press Enter to accept, type `-` to leave an optional one blank. The **GUI Setup tab has three more fields** the CLI wizard doesn't prompt for: **Backup root directory** (`backup_dir`), **Atomic write temp directory** (`atomic_tmp_dir`), and **Intro Video Randomizer directory** (`intro_randomizer_dir`, step 7c above) — all optional, all skippable, all settable later from either route via `spindoctor config set <key> <value>`.
+`spindoctor config init` prompts for the 8 core paths (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled — press Enter to accept, type `-` to leave an optional one blank. The **GUI Setup tab has four more fields** the CLI wizard doesn't prompt for: **Backup root directory** (`backup_dir`), **Atomic write temp directory** (`atomic_tmp_dir`), and **Intro video pool directory** / **Intro video target file** (`intro_randomizer_dir` / `intro_video_target`, step 7c above) — all optional, all skippable, all settable later from either route via `spindoctor config set <key> <value>`.
 
 **All paths must already exist** — that's why steps 2–7c come first. If a path is rejected, create the folder and re-run.
 

@@ -68,7 +68,7 @@ Dedicated tabs cover the most-used workflows directly, plus a free-form **Consol
 | [Metadata & Media](docs/gui.md#metadata--media) | Download game descriptions and artwork — the whole refresh chain in one click, or step by step |
 | [Maintenance](docs/gui.md#maintenance) | Thin region/revision duplicates with a per-row preview, and clean up caches |
 | [Custom Wheels](docs/gui.md#custom-wheels) | Build the Favorites / Recently Played / Most Played wheels and wire them into HyperSpin |
-| [Intro Video](docs/gui.md#intro-video) | Manage which videos HyperSpin's boot-time intro randomizer picks from |
+| [Intro Video](docs/gui.md#intro-video) | Manage which videos HyperSpin's boot-time intro plays from, swap between them, and auto-run the swap on Windows login |
 | [LEDBlinky](docs/gui.md#ledblinky) | Generate and tune button-lighting controls and colors |
 | [Lightgun](docs/gui.md#lightgun) | Detect light-gun software and wire it up per system |
 | [Backup & Restore](docs/gui.md#backup--restore) | Take dated backups of any part of the library, and restore from them |

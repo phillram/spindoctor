@@ -1,518 +1,317 @@
-"""Intro Video Randomizer — Random.ini parsing, add/remove, list."""
+"""Intro Video pool — folder-as-database add/remove/restore/list/swap,
+plus the Windows logon auto-run install/uninstall."""
 from __future__ import annotations
+
+import random
+from pathlib import Path
 
 import pytest
 
+import spindoctor.autostart as autostart_mod
 from spindoctor.config import Config
 from spindoctor.introvideo import (
-    RandomizerIniError,
+    AUTORUN_TASK_NAME,
+    IntroVideoError,
     add_video,
     add_videos,
-    get_ini_path,
+    autorun_status,
+    install_autorun,
     list_videos,
-    load_randomizer,
     remove_video,
     remove_videos,
-    shuffle_videos,
+    restore_video,
+    restore_videos,
+    swap_video,
+    uninstall_autorun,
 )
-
-
-def _write_ini(randomizer_dir, videos_dir, intro_mp4, file_list, random_list, extra_lines=""):
-    randomizer_dir.mkdir(parents=True, exist_ok=True)
-    text = (
-        "[Randomize1]\n"
-        "Option=1\n"
-        f"Folder={videos_dir}\n"
-        f"FileToRandomize={intro_mp4}\n"
-        f"FileList={'|'.join(file_list)}\n"
-        f"RandomList={'|'.join(random_list)}\n"
-        f"{extra_lines}"
-    )
-    (randomizer_dir / "Random.ini").write_text(text, encoding="utf-8")
 
 
 @pytest.fixture
 def layout(tmp_path):
-    randomizer_dir = tmp_path / "Intro Video Randomizer"
-    videos_dir = randomizer_dir / "Intro Videos"
-    videos_dir.mkdir(parents=True)
-    (videos_dir / "Backup").mkdir()
-    (videos_dir / "Backup" / "stale.mp4").write_bytes(b"stale")
-    (videos_dir / "Capcom Intro.mp4").write_bytes(b"a" * 100)
-    (videos_dir / "FF16 Victory Theme.mp4").write_bytes(b"b" * 200)
-    intro_mp4 = tmp_path / "Intro.mp4"
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4"],
-        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4"],
-    )
+    pool_dir = tmp_path / "Intro Video Randomizer"
+    pool_dir.mkdir(parents=True)
+    (pool_dir / "Capcom Intro.mp4").write_bytes(b"a" * 100)
+    (pool_dir / "FF16 Victory Theme.mp4").write_bytes(b"b" * 200)
+    target = tmp_path / "Intro.mp4"
     cfg = Config()
-    cfg.intro_randomizer_dir = str(randomizer_dir)
-    cfg.backup_dir = str(tmp_path / "backups")
-    return cfg, randomizer_dir, videos_dir, intro_mp4
+    cfg.intro_randomizer_dir = str(pool_dir)
+    cfg.intro_video_target = str(target)
+    return cfg, pool_dir, target
 
 
-def test_get_ini_path_requires_config():
-    with pytest.raises(RandomizerIniError):
-        get_ini_path(Config())
+# ── pool management ──────────────────────────────────────────────────────────
+
+def test_list_videos_requires_pool_dir():
+    with pytest.raises(IntroVideoError):
+        list_videos(Config())
 
 
-def test_load_randomizer_parses_pipe_lists(layout):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    state = load_randomizer(get_ini_path(cfg))
-    assert state.option == "1"
-    assert state.folder == videos_dir
-    assert state.file_list == ["Capcom Intro.mp4", "FF16 Victory Theme.mp4"]
-    assert state.random_list == ["Capcom Intro.mp4", "FF16 Victory Theme.mp4"]
+def test_list_videos_shows_enabled(layout):
+    cfg, _pool_dir, _target = layout
+    videos = list_videos(cfg)
+    names = {v.filename: v.enabled for v in videos}
+    assert names == {"Capcom Intro.mp4": True, "FF16 Victory Theme.mp4": True}
 
 
-def test_load_randomizer_missing_file_raises(tmp_path):
-    cfg = Config()
-    cfg.intro_randomizer_dir = str(tmp_path / "nope")
-    with pytest.raises(RandomizerIniError):
-        load_randomizer(get_ini_path(cfg))
+def test_list_videos_shows_disabled_separately(layout):
+    cfg, pool_dir, _target = layout
+    remove_video(cfg, "Capcom Intro.mp4", apply=True)
+    videos = list_videos(cfg)
+    names = {v.filename: v.enabled for v in videos}
+    assert names == {"Capcom Intro.mp4": False, "FF16 Victory Theme.mp4": True}
 
 
-def test_load_randomizer_missing_keys_raises(tmp_path):
-    randomizer_dir = tmp_path / "rand"
-    randomizer_dir.mkdir()
-    (randomizer_dir / "Random.ini").write_text("[Randomize1]\nOption=1\n", encoding="utf-8")
-    cfg = Config()
-    cfg.intro_randomizer_dir = str(randomizer_dir)
-    with pytest.raises(RandomizerIniError):
-        load_randomizer(get_ini_path(cfg))
-
-
-def test_list_videos_excludes_backup_subfolder(layout):
-    cfg, *_ = layout
-    state = load_randomizer(get_ini_path(cfg))
-    videos = list_videos(state)
-    assert {v.filename for v in videos} == {"Capcom Intro.mp4", "FF16 Victory Theme.mp4"}
-    assert all(v.registered for v in videos)
-
-
-def test_list_videos_surfaces_orphans_and_dangling_entries(layout):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    (videos_dir / "Unregistered.mp4").write_bytes(b"c" * 50)
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "Missing From Disk.mp4"],
-        random_list=["Capcom Intro.mp4"],
-    )
-    state = load_randomizer(get_ini_path(cfg))
-    by_name = {v.filename: v for v in list_videos(state)}
-    assert by_name["Unregistered.mp4"].on_disk is True
-    assert by_name["Unregistered.mp4"].in_file_list is False
-    assert by_name["Missing From Disk.mp4"].on_disk is False
-    assert by_name["Missing From Disk.mp4"].in_file_list is True
-    assert by_name["Capcom Intro.mp4"].registered is True
-
-
-def test_add_video_dry_run_does_not_touch_disk(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
+def test_add_video_dry_run_does_not_copy(layout, tmp_path):
+    cfg, pool_dir, _target = layout
     source = tmp_path / "new.mp4"
     source.write_bytes(b"new")
-    before = (randomizer_dir / "Random.ini").read_text()
-
     result = add_video(cfg, source, apply=False)
-
-    assert result.copied is True
-    assert result.file_list_changed is True
-    assert not (videos_dir / "new.mp4").exists()
-    assert (randomizer_dir / "Random.ini").read_text() == before
+    assert result.copied is True  # preview: "would copy"
+    assert not (pool_dir / "new.mp4").exists()
 
 
-def test_add_video_applies_copy_and_registers(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
+def test_add_video_apply_copies(layout, tmp_path):
+    cfg, pool_dir, _target = layout
     source = tmp_path / "new.mp4"
     source.write_bytes(b"new")
-
     result = add_video(cfg, source, apply=True)
-
     assert result.copied is True
-    assert (videos_dir / "new.mp4").exists()
-    state = load_randomizer(get_ini_path(cfg))
-    assert "new.mp4" in state.file_list
-    assert "new.mp4" in state.random_list
-    # Every other line survives untouched.
-    text = (randomizer_dir / "Random.ini").read_text()
-    assert "Option=1" in text
-    assert f"Folder={videos_dir}" in text
+    assert (pool_dir / "new.mp4").read_bytes() == b"new"
 
 
-def test_add_video_existing_file_not_overwritten(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    dest = videos_dir / "Capcom Intro.mp4"
-    original_bytes = dest.read_bytes()
+def test_add_video_never_overwrites_existing(layout, tmp_path):
+    cfg, pool_dir, _target = layout
     source = tmp_path / "Capcom Intro.mp4"
-    source.write_bytes(b"different content, same name")
-
+    source.write_bytes(b"different bytes")
     result = add_video(cfg, source, apply=True)
-
+    assert result.already_present is True
     assert result.copied is False
-    assert result.already_registered is True
-    assert dest.read_bytes() == original_bytes
-
-
-def test_add_video_case_insensitive_on_disk_lookup_no_duplicate(layout, tmp_path):
-    # Regression: the on-disk "already there?" check must not rely on the
-    # host filesystem's own case-folding (Path.exists() case-folds on
-    # Windows/NTFS and macOS/APFS, masking this on a dev box, but NOT on a
-    # case-sensitive filesystem such as Linux/ext4 — where it would let a
-    # re-add under different casing slip past and copy a second physical
-    # file with only one ini entry pointing at the original).
-    cfg, randomizer_dir, videos_dir, _ = layout
-    existing = videos_dir / "Capcom Intro.mp4"
-    original_bytes = existing.read_bytes()
-    source = tmp_path / "capcom intro.mp4"  # different case, different content
-    source.write_bytes(b"a different file that happens to share a differently-cased name")
-
-    result = add_video(cfg, source, apply=True)
-
-    assert result.copied is False
-    assert result.already_registered is True
-    assert result.dest == existing
-    # Exactly one file for this video — no case-variant duplicate created.
-    on_disk = sorted(p.name for p in videos_dir.iterdir() if p.name.lower() == "capcom intro.mp4")
-    assert on_disk == ["Capcom Intro.mp4"]
-    assert existing.read_bytes() == original_bytes
+    assert (pool_dir / "Capcom Intro.mp4").read_bytes() == b"a" * 100
 
 
 def test_add_video_missing_source_raises(layout, tmp_path):
-    cfg, *_ = layout
-    with pytest.raises(RandomizerIniError):
-        add_video(cfg, tmp_path / "does-not-exist.mp4", apply=True)
+    cfg, _pool_dir, _target = layout
+    with pytest.raises(IntroVideoError):
+        add_video(cfg, tmp_path / "nope.mp4", apply=True)
 
 
-def test_add_video_backs_up_ini_when_configured(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    source = tmp_path / "new.mp4"
-    source.write_bytes(b"new")
-    cfg.backup_before_modify = True
-
-    result = add_video(cfg, source, apply=True)
-
-    assert result.backup_path is not None
-    assert result.backup_path.exists()
-    assert result.backup_path.parent.name == "IntroVideoRandomizer"
+def test_add_videos_batch_validates_all_before_copying(layout, tmp_path):
+    cfg, pool_dir, _target = layout
+    good = tmp_path / "good.mp4"
+    good.write_bytes(b"g")
+    with pytest.raises(IntroVideoError):
+        add_videos(cfg, [good, tmp_path / "missing.mp4"], apply=True)
+    assert not (pool_dir / "good.mp4").exists()
 
 
-def test_remove_video_dry_run_does_not_touch_ini(layout):
-    cfg, randomizer_dir, *_ = layout
-    before = (randomizer_dir / "Random.ini").read_text()
-
+def test_remove_video_dry_run_does_not_move(layout):
+    cfg, pool_dir, _target = layout
     result = remove_video(cfg, "Capcom Intro.mp4", apply=False)
+    assert result.moved is True  # preview: "would move"
+    assert (pool_dir / "Capcom Intro.mp4").exists()
+    assert not (pool_dir / "Disabled" / "Capcom Intro.mp4").exists()
 
-    assert result.changed is True
-    assert (randomizer_dir / "Random.ini").read_text() == before
 
-
-def test_remove_video_applies_without_deleting_file(layout):
-    cfg, randomizer_dir, videos_dir, _ = layout
-
+def test_remove_video_apply_moves_to_disabled(layout):
+    cfg, pool_dir, _target = layout
     result = remove_video(cfg, "Capcom Intro.mp4", apply=True)
-
-    assert result.changed is True
-    state = load_randomizer(get_ini_path(cfg))
-    assert "Capcom Intro.mp4" not in state.file_list
-    assert "Capcom Intro.mp4" not in state.random_list
-    assert "FF16 Victory Theme.mp4" in state.file_list
-    assert (videos_dir / "Capcom Intro.mp4").exists()
+    assert result.moved is True
+    assert not (pool_dir / "Capcom Intro.mp4").exists()
+    assert (pool_dir / "Disabled" / "Capcom Intro.mp4").read_bytes() == b"a" * 100
 
 
-def test_remove_video_not_registered_is_noop(layout):
-    cfg, randomizer_dir, *_ = layout
-    before = (randomizer_dir / "Random.ini").read_text()
-
-    result = remove_video(cfg, "Never Heard Of It.mp4", apply=True)
-
-    assert result.changed is False
-    assert (randomizer_dir / "Random.ini").read_text() == before
+def test_remove_video_not_found(layout):
+    cfg, _pool_dir, _target = layout
+    result = remove_video(cfg, "Ghost.mp4", apply=True)
+    assert result.moved is False
+    assert result.reason == "not_found"
 
 
-def test_list_videos_matches_case_insensitively(tmp_path):
-    # Regression: Random.ini stores one case variant, the on-disk file
-    # (and NTFS lookups) use another — must be treated as the same video,
-    # not one "on disk, unregistered" plus one "registered, missing".
-    randomizer_dir = tmp_path / "rand"
-    videos_dir = randomizer_dir / "Intro Videos"
-    videos_dir.mkdir(parents=True)
-    (videos_dir / "Capcom Intro.mp4").write_bytes(b"data")
-    _write_ini(
-        randomizer_dir, videos_dir, tmp_path / "Intro.mp4",
-        file_list=["capcom intro.mp4"],
-        random_list=["capcom intro.mp4"],
-    )
-    cfg = Config()
-    cfg.intro_randomizer_dir = str(randomizer_dir)
-
-    videos = list_videos(load_randomizer(get_ini_path(cfg)))
-
-    assert len(videos) == 1
-    v = videos[0]
-    assert v.on_disk is True
-    assert v.registered is True
-    # On-disk casing wins for display.
-    assert v.filename == "Capcom Intro.mp4"
+def test_remove_video_case_insensitive(layout):
+    cfg, pool_dir, _target = layout
+    result = remove_video(cfg, "capcom intro.mp4", apply=True)
+    assert result.moved is True
+    assert (pool_dir / "Disabled" / "Capcom Intro.mp4").exists()
 
 
-def test_add_video_case_insensitive_already_registered(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    # FileList/RandomList have "Capcom Intro.mp4"; adding a source with a
-    # different case for the same name must be recognized as already
-    # registered, not appended as a near-duplicate entry.
-    source = tmp_path / "capcom intro.mp4"
-    source.write_bytes(b"a" * 100)
-
-    result = add_video(cfg, source, apply=True)
-
-    assert result.already_registered is True
-    assert result.file_list_changed is False
-    assert result.random_list_changed is False
-    state = load_randomizer(get_ini_path(cfg))
-    assert state.file_list.count("Capcom Intro.mp4") == 1
-    assert "capcom intro.mp4" not in state.file_list
-
-
-def test_remove_video_case_insensitive_match(layout):
-    cfg, randomizer_dir, videos_dir, _ = layout
-
-    result = remove_video(cfg, "CAPCOM INTRO.MP4", apply=True)
-
-    assert result.changed is True
-    state = load_randomizer(get_ini_path(cfg))
-    assert "Capcom Intro.mp4" not in state.file_list
-    assert (videos_dir / "Capcom Intro.mp4").exists()
-
-
-def test_remove_then_readd_round_trip(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
+def test_restore_video_moves_back(layout):
+    cfg, pool_dir, _target = layout
     remove_video(cfg, "Capcom Intro.mp4", apply=True)
-    state = load_randomizer(get_ini_path(cfg))
-    assert "Capcom Intro.mp4" not in state.random_list
-
-    # File is still on disk, so re-adding just re-registers it.
-    result = add_video(cfg, videos_dir / "Capcom Intro.mp4", apply=True)
-    assert result.copied is False
-    state2 = load_randomizer(get_ini_path(cfg))
-    assert "Capcom Intro.mp4" in state2.file_list
-    assert "Capcom Intro.mp4" in state2.random_list
+    result = restore_video(cfg, "Capcom Intro.mp4", apply=True)
+    assert result.moved is True
+    assert (pool_dir / "Capcom Intro.mp4").exists()
+    assert not (pool_dir / "Disabled" / "Capcom Intro.mp4").exists()
 
 
-def test_add_videos_batch_registers_all_and_shares_one_backup(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    cfg.backup_before_modify = True
-    source_a = tmp_path / "a.mp4"
-    source_a.write_bytes(b"a")
-    source_b = tmp_path / "b.mp4"
-    source_b.write_bytes(b"b")
-
-    results = add_videos(cfg, [source_a, source_b], apply=True)
-
-    assert len(results) == 2
-    assert (videos_dir / "a.mp4").exists()
-    assert (videos_dir / "b.mp4").exists()
-    state = load_randomizer(get_ini_path(cfg))
-    assert "a.mp4" in state.file_list and "a.mp4" in state.random_list
-    assert "b.mp4" in state.file_list and "b.mp4" in state.random_list
-    # One shared backup for the whole batch, not one per file.
-    assert results[0].backup_path is not None
-    assert results[0].backup_path == results[1].backup_path
-    backups = list((tmp_path / "backups" / "IntroVideoRandomizer").glob("*.bak"))
-    assert len(backups) == 1
+def test_restore_video_not_found(layout):
+    cfg, _pool_dir, _target = layout
+    result = restore_video(cfg, "Ghost.mp4", apply=True)
+    assert result.moved is False
+    assert result.reason == "not_found"
 
 
-def test_add_videos_dry_run_touches_nothing(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    source_a = tmp_path / "a.mp4"
-    source_a.write_bytes(b"a")
-    source_b = tmp_path / "b.mp4"
-    source_b.write_bytes(b"b")
-    before = (randomizer_dir / "Random.ini").read_text()
-
-    results = add_videos(cfg, [source_a, source_b], apply=False)
-
-    assert all(r.copied for r in results)
-    assert not (videos_dir / "a.mp4").exists()
-    assert not (videos_dir / "b.mp4").exists()
-    assert (randomizer_dir / "Random.ini").read_text() == before
+def test_remove_never_deletes_the_file(layout):
+    cfg, pool_dir, _target = layout
+    remove_videos(cfg, ["Capcom Intro.mp4", "FF16 Victory Theme.mp4"], apply=True)
+    disabled = pool_dir / "Disabled"
+    assert {p.name for p in disabled.iterdir()} == {
+        "Capcom Intro.mp4", "FF16 Victory Theme.mp4",
+    }
 
 
-def test_add_videos_missing_source_raises_before_partial_registration(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    source_a = tmp_path / "a.mp4"
-    source_a.write_bytes(b"a")
-
-    with pytest.raises(RandomizerIniError):
-        add_videos(cfg, [source_a, tmp_path / "missing.mp4"], apply=True)
-
-    # Every source is validated up front, before any copy happens, so a
-    # missing file anywhere in the batch aborts with nothing copied and
-    # Random.ini untouched — not just unregistered, but not on disk at
-    # all. (Regression check: a first cut of batching validated lazily,
-    # per-item, which let a.mp4 get copied to disk before the missing
-    # second file aborted the batch, orphaning it — copied but never
-    # registered.)
-    assert not (videos_dir / "a.mp4").exists()
-    state = load_randomizer(get_ini_path(cfg))
-    assert "a.mp4" not in state.file_list
+def test_restore_conflict_when_pool_already_has_same_name(layout):
+    cfg, pool_dir, _target = layout
+    remove_video(cfg, "Capcom Intro.mp4", apply=True)
+    # A different file lands back in the pool under the same name.
+    (pool_dir / "Capcom Intro.mp4").write_bytes(b"conflict")
+    result = restore_video(cfg, "Capcom Intro.mp4", apply=True)
+    assert result.moved is False
+    assert result.reason == "conflict"
+    # Neither copy was touched.
+    assert (pool_dir / "Capcom Intro.mp4").read_bytes() == b"conflict"
+    assert (pool_dir / "Disabled" / "Capcom Intro.mp4").read_bytes() == b"a" * 100
 
 
-def test_add_videos_unwritable_backup_dir_raises_before_any_copy(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    cfg.backup_before_modify = True
-    # A *file* sitting where backup_dir should be a directory reliably
-    # fails mkdir() cross-platform, without needing chmod tricks.
-    blocked = tmp_path / "blocked_backup_dir"
-    blocked.write_bytes(b"not a directory")
-    cfg.backup_dir = str(blocked)
-    source_a = tmp_path / "a.mp4"
-    source_a.write_bytes(b"a")
+# ── swap ──────────────────────────────────────────────────────────────────────
 
-    with pytest.raises(RandomizerIniError, match="backup_dir isn't writable"):
-        add_videos(cfg, [source_a], apply=True)
-
-    # Pre-flighted before any copy, so nothing was orphaned on disk.
-    assert not (videos_dir / "a.mp4").exists()
-    state = load_randomizer(get_ini_path(cfg))
-    assert "a.mp4" not in state.file_list
+def test_swap_video_requires_target(tmp_path):
+    cfg = Config()
+    cfg.intro_randomizer_dir = str(tmp_path)
+    with pytest.raises(IntroVideoError):
+        swap_video(cfg, apply=True)
 
 
-def test_remove_videos_unwritable_backup_dir_raises_and_leaves_ini_untouched(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    cfg.backup_before_modify = True
-    blocked = tmp_path / "blocked_backup_dir"
-    blocked.write_bytes(b"not a directory")
-    cfg.backup_dir = str(blocked)
-    before = (randomizer_dir / "Random.ini").read_text()
-
-    with pytest.raises(RandomizerIniError, match="writing the Random.ini backup"):
-        remove_videos(cfg, ["Capcom Intro.mp4"], apply=True)
-
-    assert (randomizer_dir / "Random.ini").read_text() == before
+def test_swap_video_empty_pool_is_clean_noop(tmp_path):
+    cfg = Config()
+    cfg.intro_randomizer_dir = str(tmp_path / "empty")
+    (tmp_path / "empty").mkdir()
+    cfg.intro_video_target = str(tmp_path / "Intro.mp4")
+    result = swap_video(cfg, apply=True)
+    assert result.picked is None
+    assert result.pool_size == 0
+    assert not Path(cfg.intro_video_target).exists()
 
 
-def test_remove_videos_batch_drops_all_and_shares_one_backup(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, _ = layout
-    cfg.backup_before_modify = True
-
-    results = remove_videos(
-        cfg, ["Capcom Intro.mp4", "FF16 Victory Theme.mp4"], apply=True,
-    )
-
-    assert len(results) == 2
-    assert all(r.changed for r in results)
-    state = load_randomizer(get_ini_path(cfg))
-    assert state.file_list == []
-    assert state.random_list == []
-    assert results[0].backup_path is not None
-    assert results[0].backup_path == results[1].backup_path
-    backups = list((tmp_path / "backups" / "IntroVideoRandomizer").glob("*.bak"))
-    assert len(backups) == 1
+def test_swap_video_dry_run_does_not_copy(layout):
+    cfg, _pool_dir, target = layout
+    result = swap_video(cfg, apply=False)
+    assert result.picked in {"Capcom Intro.mp4", "FF16 Victory Theme.mp4"}
+    assert not target.exists()
 
 
-def test_shuffle_videos_preserves_membership_and_matches_seeded_algorithm(layout):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    # A third video so a 3-item shuffle isn't a coin flip on order-changed.
-    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-    )
-
-    result = shuffle_videos(cfg, seed=42, apply=False)
-
-    import random as random_mod
-    expected = ["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"]
-    random_mod.Random(42).shuffle(expected)
-    assert result.new_order == expected
-    assert set(result.new_order) == set(result.old_order)
+def test_swap_video_apply_copies_picked_file(layout):
+    cfg, pool_dir, target = layout
+    result = swap_video(cfg, apply=True, rng=random.Random(1))
+    assert target.read_bytes() == (pool_dir / result.picked).read_bytes()
 
 
-def test_shuffle_videos_dry_run_does_not_touch_ini(layout):
-    cfg, randomizer_dir, *_ = layout
-    before = (randomizer_dir / "Random.ini").read_text()
-
-    shuffle_videos(cfg, seed=42, apply=False)
-
-    assert (randomizer_dir / "Random.ini").read_text() == before
-
-
-def test_shuffle_videos_applies_new_order_to_both_lists(layout):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-    )
-
-    result = shuffle_videos(cfg, seed=42, apply=True)
-
-    assert result.changed is True
-    state = load_randomizer(get_ini_path(cfg))
-    assert state.file_list == result.new_order
-    assert state.random_list == result.new_order
+def test_swap_video_only_considers_enabled_videos(layout):
+    cfg, pool_dir, target = layout
+    remove_video(cfg, "Capcom Intro.mp4", apply=True)
+    result = swap_video(cfg, apply=True, rng=random.Random(1))
+    assert result.picked == "FF16 Victory Theme.mp4"
+    assert result.pool_size == 1
 
 
-def test_shuffle_videos_keeps_dangling_random_list_only_entry(layout):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    # "Orphan.mp4" is registered in RandomList but not FileList — shuffle
-    # must not drop it or move it into FileList.
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4"],
-        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Orphan.mp4"],
-    )
-
-    result = shuffle_videos(cfg, seed=1, apply=True)
-
-    state = load_randomizer(get_ini_path(cfg))
-    assert "Orphan.mp4" not in state.file_list
-    assert "Orphan.mp4" in state.random_list
-    assert result.new_order == state.file_list
+def test_swap_video_uses_rng_for_reproducibility(layout):
+    cfg, _pool_dir, _target = layout
+    picks = {swap_video(cfg, apply=False, rng=random.Random(seed)).picked for seed in range(20)}
+    # Both files should show up across enough seeds — proves it's a real
+    # pick over the pool, not always returning the same/first entry.
+    assert picks == {"Capcom Intro.mp4", "FF16 Victory Theme.mp4"}
 
 
-def test_shuffle_videos_fewer_than_two_is_noop(layout):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4"],
-        random_list=["Capcom Intro.mp4"],
-    )
-    before = (randomizer_dir / "Random.ini").read_text()
+# ── Windows logon auto-run ───────────────────────────────────────────────────
 
-    result = shuffle_videos(cfg, seed=42, apply=True)
+def test_install_autorun_dry_run_does_not_touch_autostart(layout, monkeypatch):
+    cfg, _pool_dir, _target = layout
 
-    assert result.changed is False
-    assert (randomizer_dir / "Random.ini").read_text() == before
+    def _boom(*a, **k):
+        raise AssertionError("dry-run must not touch Task Scheduler")
+    monkeypatch.setattr(autostart_mod, "create_logon_task", _boom)
 
-
-def test_shuffle_videos_backs_up_ini_when_configured(layout, tmp_path):
-    cfg, randomizer_dir, videos_dir, intro_mp4 = layout
-    (videos_dir / "Third.mp4").write_bytes(b"c" * 30)
-    _write_ini(
-        randomizer_dir, videos_dir, intro_mp4,
-        file_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-        random_list=["Capcom Intro.mp4", "FF16 Victory Theme.mp4", "Third.mp4"],
-    )
-    cfg.backup_before_modify = True
-
-    result = shuffle_videos(cfg, seed=42, apply=True)
-
-    assert result.backup_path is not None
-    assert result.backup_path.exists()
-    assert result.backup_path.parent.name == "IntroVideoRandomizer"
+    result = install_autorun(cfg, apply=False)
+    assert result.registered is False
+    assert result.task_name == AUTORUN_TASK_NAME
 
 
-def test_remove_videos_mixed_registered_and_unregistered(layout):
-    cfg, randomizer_dir, videos_dir, _ = layout
+def test_install_autorun_requires_pool_and_target():
+    with pytest.raises(IntroVideoError):
+        install_autorun(Config(), apply=False)
 
-    results = remove_videos(cfg, ["Capcom Intro.mp4", "Ghost.mp4"], apply=True)
 
-    assert results[0].changed is True
-    assert results[1].changed is False
-    state = load_randomizer(get_ini_path(cfg))
-    assert "Capcom Intro.mp4" not in state.file_list
-    assert "FF16 Victory Theme.mp4" in state.file_list
+def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path, monkeypatch):
+    cfg, _pool_dir, _target = layout
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+
+    calls = {}
+
+    def _fake_create(command, *, name, delay_minutes=None):
+        calls["command"] = command
+        calls["name"] = name
+        calls["delay_minutes"] = delay_minutes
+        return autostart_mod.TaskCreateResult(name=name, command=command, output="SUCCESS")
+    monkeypatch.setattr(autostart_mod, "create_logon_task", _fake_create)
+
+    result = install_autorun(cfg, apply=True, delay_minutes=2)
+    assert result.registered is True
+    assert result.bat_path.exists()
+    assert result.vbs_path.exists()
+    assert "introvideo swap --apply" in result.bat_path.read_text()
+    assert result.bat_path.name in result.vbs_path.read_text()
+    assert calls["name"] == AUTORUN_TASK_NAME
+    assert calls["delay_minutes"] == 2
+    assert "wscript.exe" in calls["command"]
+
+
+def test_uninstall_autorun_dry_run_reports_status_without_deleting(monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+
+    def _boom(*a, **k):
+        raise AssertionError("dry-run must not delete the task")
+    monkeypatch.setattr(autostart_mod, "delete_logon_task", _boom)
+
+    result = uninstall_autorun(apply=False)
+    assert result.registered is True
+
+
+def test_uninstall_autorun_apply_deletes_when_registered(monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    calls = {}
+
+    def _fake_delete(name):
+        calls["name"] = name
+        return "SUCCESS"
+    monkeypatch.setattr(autostart_mod, "delete_logon_task", _fake_delete)
+
+    result = uninstall_autorun(apply=True)
+    assert result.registered is False
+    assert calls["name"] == AUTORUN_TASK_NAME
+
+
+def test_uninstall_autorun_apply_noop_when_not_registered(monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
+
+    def _boom(*a, **k):
+        raise AssertionError("must not call delete when nothing is registered")
+    monkeypatch.setattr(autostart_mod, "delete_logon_task", _boom)
+
+    result = uninstall_autorun(apply=True)
+    assert result.registered is False
+
+
+def test_autorun_status_reflects_task_exists(monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    assert autorun_status() is True
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
+    assert autorun_status() is False
+
+
+def test_autorun_status_not_supported_propagates(monkeypatch):
+    def _raise(name=None):
+        raise autostart_mod.NotSupportedError("Windows only")
+    monkeypatch.setattr(autostart_mod, "task_exists", _raise)
+    with pytest.raises(autostart_mod.NotSupportedError):
+        autorun_status()
