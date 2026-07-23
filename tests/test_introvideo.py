@@ -20,7 +20,6 @@ from spindoctor.introvideo import (
     remove_video,
     remove_videos,
     restore_video,
-    restore_videos,
     swap_video,
     uninstall_autorun,
 )
