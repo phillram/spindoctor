@@ -641,21 +641,49 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 
 ## Dolphin / GameCube
 
-### GameCube games fail with "error waiting for the window FPS ahk_class wxWindowNR"
+### GameCube games fail with "error waiting for the window FPS ahk_class ..." (any variant)
 
-**Symptom:** Dolphin opens, the game starts running (visible on the taskbar), but
-RocketLauncher times out and shows *"There was an error waiting for the window FPS
-ahk_class wxWindowNR"*. Games work fine when launched directly from Dolphin.
+**Symptom A (fails almost immediately):** Dolphin opens, the game starts running (visible on
+the taskbar), but RocketLauncher times out within seconds/at the fade animation's end and
+shows *"There was an error waiting for the window FPS ahk_class ..."*. Games work fine when
+launched directly from Dolphin.
 
-**Cause:** Dolphin was upgraded from a 2017-era Ishiiruka build (wxWidgets UI,
-window class `wxWindowNR`) to an official 5.0-12188+ build (Qt UI, window class
-`Qt5150QWindowIcon`). The RL module (`Dolphin.ahk`) still looks for the old class and
-never finds the game window.
+**Symptom B (fails after ~2 minutes):** The game launches and plays completely normally —
+audio, controls, everything works — for about two minutes. Then RocketLauncher pops the same
+*"error waiting for the window"* error, plays an error sound, and HyperSpin snaps back to the
+foreground. The game is still running behind it: audible, and Alt-Tabbing to it works fine.
+This is the same underlying bug as Symptom A, just observed on a cabinet where the
+`Wait(120)` timeout fix (below) is already applied — RL keeps polling for the full 120 seconds
+before giving up, instead of failing right when the fade animation ends.
 
-**Fix:** Edit `D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` and replace
-all 7 occurrences of `wxWindowNR` with `Qt5150QWindowIcon`. See the
+**Cause:** Dolphin's window class name changed because the emulator build was upgraded, but
+`Dolphin.ahk` still looks for the previous build generation's class string. This has happened
+across at least three Dolphin generations on this cabinet:
+
+| Generation | UI framework | Window class |
+|---|---|---|
+| 2017-era Ishiiruka | wxWidgets | `wxWindowNR` |
+| 5.0-12188 … 5.0-17000ish | Qt 5.15 | `Qt5150QWindowIcon` |
+| CalVer builds (e.g. `2606`) | Qt 6.5.1 | `Qt651QWindowIcon` |
+
+Any time Dolphin is upgraded across a Qt version boundary, this string changes again and the
+module needs to be updated to match — see the diagnostic recipe below rather than assuming
+it's always the wx→Qt5 jump.
+
+**Fix — stop matching on the window class entirely.** Rather than swapping in the new Qt
+class string (which just breaks again on the next Dolphin upgrade), edit
+`D:\Arcade\RocketLauncher\Modules\Dolphin\Dolphin.ahk` to match Dolphin's window by **process
+name** (`ahk_exe Dolphin.exe`) instead of by class. The exe name can't change across
+Dolphin/Qt versions, so this survives future upgrades with no further edits. See the
 [Dolphin architecture section](cabinet-architecture-reference.md#rl-module-compatibility-when-upgrading-build-generation)
-for the full list of edits.
+for the exact block to replace and the reasoning (including a related dead-code bug this
+also fixes).
+
+If you'd rather do the minimal-diff version instead (swap the class string and accept it'll
+need updating again next time): open `RocketLauncher.log` and look at the
+`MiscUtils.GetActiveWindowStatus` debug line right before the `ScriptError` line — it shows
+the game window's *actual* current title/class, no AutoHotkey Window Spy needed — then
+replace every occurrence of the old class string in `Dolphin.ahk` with that one.
 
 ---
 
