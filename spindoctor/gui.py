@@ -1249,7 +1249,7 @@ class _SpinDoctorGUI:
         # Status-bar message keeps the user informed; the work then
         # populates the system combos and writes the real status when
         # done. See _initial_scan for the orchestration.
-        self._set_status("Scanning library…")
+        self._set_status("Scanning library")
         self.root.after_idle(self._initial_scan)
         # 50 ms polling is fast enough to feel real-time without busy-looping.
         # Track the `after` id so _on_close can cancel it; otherwise the
@@ -1899,7 +1899,7 @@ class _SpinDoctorGUI:
                 "paths SpinDoctor needs, then run a quick health check. "
                 "Takes about 90 seconds.\n\n"
                 "You can change everything later from the Setup tab, "
-                "and re-open this wizard from Help → First-run setup…"
+                "and re-open this wizard from Help → First-run setup"
             ),
             wraplength=560, justify="left",
         ).pack(anchor="w", pady=(0, 8))
@@ -1932,7 +1932,7 @@ class _SpinDoctorGUI:
                 side="left", padx=6, fill="x", expand=True,
             )
             self.ttk.Button(
-                row, text="Browse…",
+                row, text="Browse",
                 command=lambda v=var, k=key: self._browse_dir(v, k),
             ).pack(side="left")
 
@@ -1954,7 +1954,7 @@ class _SpinDoctorGUI:
             doctor, height=14, wrap="word", font="TkFixedFont",
         )
         doctor_txt.pack(fill="both", expand=True, pady=(0, 4))
-        doctor_txt.insert("end", "Running doctor…\n")
+        doctor_txt.insert("end", "Running doctor\n")
         doctor_txt.configure(state="disabled")
         state["doctor_text"] = doctor_txt
 
@@ -2391,7 +2391,7 @@ class _SpinDoctorGUI:
         # width=1 prevents the label from demanding wide space when the
         # status text is long (e.g. a full CLI command string). fill="x"
         # + expand=True still give it all remaining space after the
-        # right-side widgets. _set_status() truncates with … so the
+        # right-side widgets. _set_status() truncates the text so the
         # checkboxes and buttons are never hidden.
         self._status_label = self.ttk.Label(
             bar, textvariable=self._status_var, anchor="w", width=1,
@@ -2692,7 +2692,7 @@ class _SpinDoctorGUI:
                   "buffer is in-memory only — restarting the GUI "
                   "clears it. Manifest-based history (apply runs that "
                   "wrote a JSON manifest under ~/.spindoctor/) lives in "
-                  "File → View logs & manifests…"),
+                  "File → View logs & manifests"),
             wraplength=900, justify="left", padding=(6, 4),
         )
         intro.pack(fill="x")
@@ -2770,7 +2770,7 @@ class _SpinDoctorGUI:
             command=self._copy_selected_log,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Save selected output…",
+            btn_row, text="Save selected output",
             command=self._save_selected_log,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -2778,7 +2778,7 @@ class _SpinDoctorGUI:
             command=self._clear_logs,
         ).pack(side="left", padx=6)
         # The in-memory log doesn't track manifest paths, but the
-        # File → View logs & manifests… modal does — and it has the
+        # File → View logs & manifests modal does — and it has the
         # "Undo this run" button per manifest. Surface a shortcut here
         # so users discovering the Logs tab for the first time don't
         # have to hunt through the menu for the undo workflow.
@@ -2786,7 +2786,7 @@ class _SpinDoctorGUI:
             side="left", fill="y", padx=6,
         )
         self.ttk.Button(
-            btn_row, text="Browse manifests / undo…",
+            btn_row, text="Browse manifests / undo",
             command=self._show_log_viewer,
         ).pack(side="left")
 
@@ -2926,10 +2926,10 @@ class _SpinDoctorGUI:
         )
         file_menu.add_separator()
         file_menu.add_command(
-            label="View logs & manifests…", command=self._show_log_viewer,
+            label="View logs & manifests", command=self._show_log_viewer,
         )
         file_menu.add_command(
-            label="Browse HyperSpin themes…",
+            label="Browse HyperSpin themes",
             command=self._show_theme_browser,
         )
         file_menu.add_separator()
@@ -2989,7 +2989,7 @@ class _SpinDoctorGUI:
             label="Check for updates", command=self._manual_update_check,
         )
         help_menu.add_command(
-            label="First-run setup…", command=self._show_first_run_wizard,
+            label="First-run setup", command=self._show_first_run_wizard,
         )
         menubar.add_cascade(label="Help", menu=help_menu)
 
@@ -3079,7 +3079,7 @@ class _SpinDoctorGUI:
         ).pack(anchor="w", pady=(0, 8))
 
         shortcuts = [
-            ("Ctrl+1 … Ctrl+9", "Jump to notebook tab 1–9"),
+            ("Ctrl+1 – Ctrl+9", "Jump to notebook tab 1–9"),
             ("Ctrl+=  /  Ctrl++", "Zoom in (larger UI)"),
             ("Ctrl+-", "Zoom out (smaller UI)"),
             ("Ctrl+0", "Reset zoom to 1.0×"),
@@ -3169,7 +3169,7 @@ class _SpinDoctorGUI:
             self._status_bar_frame
             if hasattr(self, "_status_bar_frame")
             else self._stop_btn.master,
-            text="Download…",
+            text="Download",
             command=lambda u=url: self._open_url(u),
         )
         # Sit immediately to the left of Stop so it's the first thing
@@ -3189,7 +3189,7 @@ class _SpinDoctorGUI:
         """
         from . import update_check
 
-        self._set_status("Checking for updates…")
+        self._set_status("Checking for updates")
 
         def worker() -> None:
             try:
@@ -3558,7 +3558,7 @@ class _SpinDoctorGUI:
             command=lambda: self._show_manifest_diff(tree, item_meta),
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Revert just <SYSTEM>…",
+            btn_row, text="Revert just <SYSTEM>",
             command=lambda: self._revert_system_from_manifest(tree, item_meta),
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -3936,7 +3936,7 @@ class _SpinDoctorGUI:
             filter_row, textvariable=filter_var,
         )
         filter_entry.pack(side="left", fill="x", expand=True, padx=6)
-        count_var = self.tk.StringVar(value="Loading…")
+        count_var = self.tk.StringVar(value="Loading")
         self.ttk.Label(filter_row, textvariable=count_var, width=24).pack(
             side="right",
         )
@@ -4082,7 +4082,7 @@ class _SpinDoctorGUI:
             command=open_folder,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Apply replacement pack…",
+            btn_row, text="Apply replacement pack",
             command=self._show_theme_apply,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -4133,7 +4133,7 @@ class _SpinDoctorGUI:
             src_row, textvariable=src_var,
         ).pack(side="left", fill="x", expand=True, padx=6)
         self.ttk.Button(
-            src_row, text="Browse…",
+            src_row, text="Browse",
             command=lambda: self._browse_backup_dir(
                 src_var, "Pick theme replacement folder",
             ),
@@ -4199,7 +4199,7 @@ class _SpinDoctorGUI:
                 self.messagebox.showwarning(
                     "Source folder required",
                     "Pick the folder containing the replacement images "
-                    "first (Browse…).",
+                    "first (Browse).",
                 )
                 return
             src_path = Path(src)
@@ -4330,7 +4330,7 @@ class _SpinDoctorGUI:
             # the main thread via root.after(0, …) (Tk widget calls are
             # only safe from the main thread).
             self._set_status(
-                f"Applying {len(plans_holder)} theme swap(s)…"
+                f"Applying {len(plans_holder)} theme swap(s)"
             )
             _apply_started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -4374,7 +4374,7 @@ class _SpinDoctorGUI:
                         "Theme applied",
                         f"Swapped {result.swapped} file(s).\n\n"
                         + (f"Manifest: {result.manifest_path}\n"
-                           "Undo via File → View logs & manifests… → Theme "
+                           "Undo via File → View logs & manifests → Theme "
                            "swaps → Undo this run."
                            if result.manifest_path else
                            "No manifest written."),
@@ -4432,7 +4432,7 @@ class _SpinDoctorGUI:
         # new cabinet owner, so it sits at the very top of the very first
         # tab rather than buried in the button row at the bottom (where
         # it previously lived, after Save). Also reachable any time from
-        # Help → First-run setup….
+        # Help → First-run setup.
         wizard_row = self.ttk.Frame(frame)
         wizard_row.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
         self.ttk.Label(
@@ -4442,7 +4442,7 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left")
         self.ttk.Button(
-            wizard_row, text="Run first-run wizard…",
+            wizard_row, text="Run first-run wizard",
             command=self._show_first_run_wizard,
         ).pack(side="left", padx=(8, 0))
 
@@ -4477,13 +4477,13 @@ class _SpinDoctorGUI:
             btn_cell = self.ttk.Frame(frame)
             btn_cell.grid(row=row, column=2, sticky="w", pady=2)
             self.ttk.Button(
-                btn_cell, text="Browse…",
+                btn_cell, text="Browse",
                 command=lambda v=var, k=key: self._browse_dir(v, k),
             ).pack(side="left")
             # Open-folder button — lets the user verify what they
             # configured by jumping to it in Explorer/Finder. Common
             # post-setup workflow: "did I really pick the right HyperSpin
-            # folder?" Previously required clicking Browse… and reading
+            # folder?" Previously required clicking Browse and reading
             # the dialog's current selection. Disabled visually-only via
             # the `?` label when the path is blank.
             self.ttk.Button(
@@ -4676,7 +4676,7 @@ class _SpinDoctorGUI:
     def _open_setup_path(self, var, key: str) -> None:
         """Open the path currently in *var* in Explorer / Finder.
 
-        Mirrors the Browse… button next to it, but for verification:
+        Mirrors the Browse button next to it, but for verification:
         a cabinet owner who has just typed (or pasted) a path can
         confirm visually that it points where they expect — no need
         to re-open the file dialog.
@@ -4684,7 +4684,7 @@ class _SpinDoctorGUI:
         path = var.get().strip()
         if not path:
             self._flash_validation(
-                f"The {key} field is empty — use Browse… or type a "
+                f"The {key} field is empty — use Browse or type a "
                 "path first."
             )
             return
@@ -4697,16 +4697,17 @@ class _SpinDoctorGUI:
         self._open_path(target, missing_label=key)
 
     def _browse_dir(self, var, key: str) -> None:
+        initial = self._resolve_initialdir(var.get())
         # mame_executable is a file, not a directory; everything else is a dir.
         if key == "mame_executable":
             path = self.filedialog.askopenfilename(
                 title="Select MAME executable",
-                initialdir=var.get() or str(Path.home()),
+                initialdir=initial,
             )
         else:
             path = self.filedialog.askdirectory(
                 title=f"Select {key}",
-                initialdir=var.get() or str(Path.home()),
+                initialdir=initial,
             )
         if path:
             # Tk's filedialog returns POSIX-style separators even on Windows
@@ -4714,6 +4715,26 @@ class _SpinDoctorGUI:
             # config matches what Windows tools expect ("D:\Arcade") and
             # downstream path comparisons don't trip over the mix.
             var.set(str(Path(path)))
+
+    @staticmethod
+    def _resolve_initialdir(path_str: str) -> str:
+        """Find a real directory to point a file dialog at.
+
+        Passing a nonexistent initialdir (an unfilled field's hardcoded
+        Windows default, a typo, a drive that isn't mounted) makes
+        askdirectory/askopenfilename silently fall back to whatever
+        directory the dialog last happened to be in — that's what reads
+        as "Browse opens a random folder". Walk up to the nearest
+        existing ancestor instead, falling back to the home directory
+        if nothing in the chain exists.
+        """
+        candidate = Path(path_str) if path_str else None
+        while candidate is not None:
+            if candidate.is_dir():
+                return str(candidate)
+            parent = candidate.parent
+            candidate = parent if parent != candidate else None
+        return str(Path.home())
 
     def _setup_mark_dirty(self) -> None:
         """Flip the Save button label to indicate unsaved edits.
@@ -4954,7 +4975,7 @@ class _SpinDoctorGUI:
             args += ["--tgdb-key", tgdb_key]
 
         btn.configure(state="disabled", text="Testing\u2026")
-        self._set_status("Contacting ScreenScraper and TheGamesDB…")
+        self._set_status("Contacting ScreenScraper and TheGamesDB")
 
         def _on_done(rc: int) -> None:
             try:
@@ -5117,7 +5138,7 @@ class _SpinDoctorGUI:
                 return
             step_num = total - len(remaining) + 1
             name, binary, args = remaining[0]
-            self._set_status(f"Step {step_num}/{total}: {name}…")
+            self._set_status(f"Step {step_num}/{total}: {name}")
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
 
         run_next(steps, 0)
@@ -5166,7 +5187,7 @@ class _SpinDoctorGUI:
             step_num = total - len(remaining) + 1
             self._chain_advance(step_num)
             name, args = remaining[0]
-            self._set_status(f"Preflight step {step_num}/{total}: {name}…")
+            self._set_status(f"Preflight step {step_num}/{total}: {name}")
             self._append_output(
                 f"\n--- Preflight {step_num}/{total}: spindoctor {name} ---\n"
             )
@@ -5242,7 +5263,7 @@ class _SpinDoctorGUI:
         health_row = self.ttk.Frame(health_lf)
         health_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            health_row, text="✈  Preflight check…",
+            health_row, text="✈  Preflight check",
             command=self._run_preflight,
         ).pack(side="left")
         self.ttk.Button(health_row, text="Run Health Check",
@@ -5299,7 +5320,7 @@ class _SpinDoctorGUI:
         )
         _rep_entry.pack(side="left", padx=6, fill="x", expand=True)
         self.ttk.Button(
-            opts_row, text="Browse…",
+            opts_row, text="Browse",
             command=self._browse_audit_report,
         ).pack(side="left")
 
@@ -5408,7 +5429,7 @@ class _SpinDoctorGUI:
         _verify_entry.pack(side="left", fill="x", expand=True, padx=6)
         _verify_entry.bind("<Return>", lambda _e: self._run_verify())
         self.ttk.Button(
-            verify_row, text="Browse…",
+            verify_row, text="Browse",
             command=self._browse_verify_dat,
         ).pack(side="left")
         self.ttk.Button(
@@ -5462,7 +5483,7 @@ class _SpinDoctorGUI:
 
     def _browse_audit_report(self) -> None:
         path = self.filedialog.asksaveasfilename(
-            title="Save audit CSV as…",
+            title="Save audit CSV as",
             defaultextension=".csv",
             initialfile="audit.csv",
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
@@ -5704,7 +5725,7 @@ class _SpinDoctorGUI:
             row=0, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
         self.ttk.Button(
-            cfg_frame, text="Browse…",
+            cfg_frame, text="Browse",
             command=lambda: self._browse_backup_dir(self._backup_target_var,
                                                    "Pick backup target folder"),
         ).grid(row=0, column=3, sticky="w", pady=2)
@@ -5802,7 +5823,7 @@ class _SpinDoctorGUI:
             command=self._scan_backup_folders,
         ).pack(side="left", padx=(0, 4))
         self.ttk.Button(
-            restore_btn_frame, text="Browse…",
+            restore_btn_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._backup_restore_path_var, "Pick backup folder to restore",
             ),
@@ -6199,7 +6220,7 @@ class _SpinDoctorGUI:
             pre_bkp_frame, textvariable=self._pre_migrate_backup_var, width=50,
         ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
-            pre_bkp_frame, text="Browse…",
+            pre_bkp_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._pre_migrate_backup_var, "Pick backup target folder",
             ),
@@ -6225,7 +6246,7 @@ class _SpinDoctorGUI:
             row=0, column=1, columnspan=2, sticky="ew", padx=6, pady=2,
         )
         self.ttk.Button(
-            mig_frame, text="Browse…",
+            mig_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._migrate_target_var, "Pick migration target root",
             ),
@@ -6434,7 +6455,7 @@ class _SpinDoctorGUI:
             repath_frame, textvariable=self._repath_path_var, width=60,
         ).grid(row=2, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
-            repath_frame, text="Browse…",
+            repath_frame, text="Browse",
             command=self._browse_repath_path,
         ).grid(row=2, column=2, sticky="w", pady=2)
 
@@ -6512,7 +6533,7 @@ class _SpinDoctorGUI:
                     "location, and config paths will be updated to "
                     "point at the new drive.\n\n"
                     "Reversible only via the matching undo manifest "
-                    "(Logs → Browse manifests… → Undo, or "
+                    "(Logs → Browse manifests / undo → Undo, or "
                     "`spindoctor migrate --undo`).\n\n"
                     "Continue?"
                 )
@@ -6927,7 +6948,7 @@ class _SpinDoctorGUI:
             fixexe_path_row, textvariable=self._fixexe_path_var, width=55,
         ).pack(side="left", padx=6, fill="x", expand=True)
         self.ttk.Button(
-            fixexe_path_row, text="Browse…",
+            fixexe_path_row, text="Browse",
             command=self._fixexe_browse,
         ).pack(side="left", padx=(0, 2))
 
@@ -7133,7 +7154,7 @@ class _SpinDoctorGUI:
         # vars can't be touched from a worker. Order matters: the new
         # ``entries`` list mirrors this list.
         data_snapshot = [dict(entry) for entry in self._mm_data]
-        self._set_status(f"Saving {xml_path.name}…")
+        self._set_status(f"Saving {xml_path.name}")
 
         record = _RunRecord(
             started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -7486,7 +7507,7 @@ class _SpinDoctorGUI:
             _persisted_subset = []
         self._meta_subset: list[str] = _persisted_subset
         self.ttk.Button(
-            sys_row, text="Pick subset…",
+            sys_row, text="Pick subset",
             command=self._pick_meta_subset,
         ).pack(side="left", padx=(10, 6))
         self._meta_subset_label_var = self.tk.StringVar(
@@ -7836,11 +7857,11 @@ class _SpinDoctorGUI:
             command=self._run_fetch_meta,
         ).pack(side="left")
         self.ttk.Button(
-            meta_run_row, text="Download for Selected Systems…",
+            meta_run_row, text="Download for Selected Systems",
             command=self._run_fetch_meta_subset,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            meta_run_row, text="Restore DB backup…",
+            meta_run_row, text="Restore DB backup",
             command=self._meta_restore_db_from_backup,
         ).pack(side="left", padx=6)
 
@@ -7896,7 +7917,7 @@ class _SpinDoctorGUI:
             scan_row, textvariable=self._meta_scan_dir_var,
         ).pack(side="left", fill="x", expand=True, padx=6)
         self.ttk.Button(
-            scan_row, text="Browse…",
+            scan_row, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._meta_scan_dir_var, "Pick media folder to scan",
             ),
@@ -7949,11 +7970,11 @@ class _SpinDoctorGUI:
             command=self._run_generate_config,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            btn_row, text="Restore DB backup…",
+            btn_row, text="Restore DB backup",
             command=self._meta_restore_db_from_backup,
         ).pack(side="left", padx=(18, 0))
         self.ttk.Button(
-            btn_row, text="Restore RL INI backup…",
+            btn_row, text="Restore RL INI backup",
             command=self._meta_restore_rl_ini_from_backup,
         ).pack(side="left", padx=6)
 
@@ -8060,7 +8081,7 @@ class _SpinDoctorGUI:
             madd_row2, textvariable=self._madd_file_var,
         ).pack(side="left", fill="x", expand=True, padx=6)
         self.ttk.Button(
-            madd_row2, text="Browse…",
+            madd_row2, text="Browse",
             command=self._browse_media_file,
         ).pack(side="left")
 
@@ -8358,7 +8379,7 @@ class _SpinDoctorGUI:
             )
             return
 
-        self._set_status(f"Searching Steam for '{game_name}'…")
+        self._set_status(f"Searching Steam for '{game_name}'")
 
         def _worker() -> None:
             try:
@@ -8398,7 +8419,7 @@ class _SpinDoctorGUI:
                 label = best["name"]
                 self.root.after(0, lambda u=store_url, n=label, a=app_id: (
                     self._steam_url_var.set(u),
-                    self._set_status(f"Steam: found '{n}' (App {a}) — scanning…"),
+                    self._set_status(f"Steam: found '{n}' (App {a}) — scanning"),
                     self._scan_steam(),
                 ))
             except Exception as exc:  # noqa: BLE001
@@ -8441,11 +8462,11 @@ class _SpinDoctorGUI:
             )
             return
 
-        self._set_status(f"Scanning Steam App {app_id}…")
+        self._set_status(f"Scanning Steam App {app_id}")
         for mt in ("video", "snap", "background", "artwork"):
             cb = self._steam_pick_combos[mt]
             cb.configure(state="disabled")
-            self._steam_pick_vars[mt].set("scanning…")
+            self._steam_pick_vars[mt].set("scanning")
 
         def _worker():
             try:
@@ -8520,7 +8541,7 @@ class _SpinDoctorGUI:
 
         Wrapped in a broad try/except so any unexpected exception resets the
         dropdowns and shows a visible error instead of silently freezing on
-        'scanning…'.  Tkinter swallows exceptions thrown inside root.after()
+        'scanning'.  Tkinter swallows exceptions thrown inside root.after()
         callbacks, making silent failures indistinguishable from a hung thread.
         """
         try:
@@ -8748,7 +8769,7 @@ class _SpinDoctorGUI:
         """
         if not self._meta_subset:
             self._flash_validation(
-                "No subset picked — click 'Pick subset…' first, then "
+                "No subset picked — click 'Pick subset' first, then "
                 "try again."
             )
             return
@@ -8763,7 +8784,7 @@ class _SpinDoctorGUI:
             f"Run fetch-meta on {n} system(s) sequentially, in "
             f"{mode} mode?\n\n"
             + "\n".join(f"  · {s}" for s in self._meta_subset[:10])
-            + ("\n  …" if n > 10 else "")
+            + (f"\n  (+{n - 10} more)" if n > 10 else "")
             + "\n\nThe chain stops on the first failure.",
         ):
             return
@@ -8790,7 +8811,7 @@ class _SpinDoctorGUI:
                 return
             head, *rest = remaining
             step_num = total - len(remaining) + 1
-            self._set_status(f"Step {step_num}/{total}: {head}…")
+            self._set_status(f"Step {step_num}/{total}: {head}")
             args = self._build_fetch_meta_args(["--system", head])
             if args is None:
                 # Threshold validation already showed an error; abort.
@@ -9067,7 +9088,7 @@ class _SpinDoctorGUI:
             step_num = total - len(remaining) + 1
             self._chain_advance(step_num)
             name, args = remaining[0]
-            self._set_status(f"Step {step_num}/{total}: {name}…")
+            self._set_status(f"Step {step_num}/{total}: {name}")
             self._run_cli(
                 "spindoctor", args,
                 on_complete=lambda code: run_next(remaining[1:], code),
@@ -9190,7 +9211,7 @@ class _SpinDoctorGUI:
         cur_btns = self.ttk.Frame(cur_frame)
         cur_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            cur_btns, text="Preview (interactive)…",
+            cur_btns, text="Preview (interactive)",
             command=self._show_curate_preview,
         ).pack(side="left")
         self.ttk.Button(
@@ -9315,7 +9336,7 @@ class _SpinDoctorGUI:
             command=self._run_ignore_list,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            ign_btns, text="View / un-ignore…",
+            ign_btns, text="View / un-ignore",
             command=self._show_ignore_viewer,
         ).pack(side="left", padx=6)
 
@@ -9354,7 +9375,7 @@ class _SpinDoctorGUI:
             command=self._match_list,
         ).pack(side="left")
         self.ttk.Button(
-            match_btns, text="Clear cache…",
+            match_btns, text="Clear cache",
             command=self._match_clear,
         ).pack(side="left", padx=6)
 
@@ -9629,7 +9650,7 @@ class _SpinDoctorGUI:
         win.transient(self.root)
 
         status_var = self.tk.StringVar(
-            value=f"Scanning {system} — this can take a while on large libraries…",
+            value=f"Scanning {system} — this can take a while on large libraries",
         )
         self.ttk.Label(
             win, textvariable=status_var, padding=(10, 6),
@@ -9838,7 +9859,7 @@ class _SpinDoctorGUI:
                 f"Archive {sum(len(g.retire) for g in filtered)} ROM "
                 f"file(s) across {len(filtered)} title(s) under "
                 f"<roms_dir>/{system}/_retired/?\n\n"
-                "Reversible: open the History tab → Browse manifests / undo… "
+                "Reversible: open the History tab → Browse manifests / undo "
                 "and pick the run you want to reverse.",
             ):
                 return
@@ -9849,7 +9870,7 @@ class _SpinDoctorGUI:
         cfg = load_config()
         self._set_status(
             f"Curating {sum(len(g.retire) for g in filtered)} file(s) "
-            f"({action})…"
+            f"({action})"
         )
 
         def _worker(filtered=filtered, cfg=cfg, system=system, action=action):
@@ -10080,7 +10101,7 @@ class _SpinDoctorGUI:
                 f"Remove {len(names)} entr{'y' if len(names) == 1 else 'ies'} "
                 f"from the '{target}' ignore list?\n\n"
                 + "\n".join(f"  · {n}" for n in names[:10])
-                + ("\n  …" if len(names) > 10 else "")
+                + (f"\n  (+{len(names) - 10} more)" if len(names) > 10 else "")
                 + "\n\nAffects audit / fetch-meta skipping immediately.",
             ):
                 return
@@ -10225,7 +10246,7 @@ class _SpinDoctorGUI:
             command=self._mm_save_order,
         ).pack(side="left", padx=(20, 0))
         self.ttk.Button(
-            tbl_btn_row, text="Restore from backup…",
+            tbl_btn_row, text="Restore from backup",
             command=self._mm_restore_from_backup,
         ).pack(side="left", padx=(6, 0))
 
@@ -10428,7 +10449,7 @@ class _SpinDoctorGUI:
             ("ROM extensions (csv)",     self._ovr_exts_var,
              "e.g. .ps7,iso  — leading dot optional"),
             ("Emulator",                 self._ovr_emulator_var,
-             "RocketLauncher emulator name (RetroArch, Daphne, …)"),
+             "RocketLauncher emulator name (RetroArch, Daphne, etc.)"),
             ("ROM folder path",          self._ovr_rom_path_var,
              "Overrides roms_dir\\<System> for generate-config (e.g. J:\\Games\\3DO)"),
         ]
@@ -11568,7 +11589,7 @@ class _SpinDoctorGUI:
             br_frame, textvariable=self._led_backup_dir_var, width=48,
         ).grid(row=0, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
-            br_frame, text="Browse…",
+            br_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._led_backup_dir_var, "Pick LEDBlinky backup folder",
             ),
@@ -11591,7 +11612,7 @@ class _SpinDoctorGUI:
             br_frame, textvariable=self._led_restore_path_var, width=48,
         ).grid(row=3, column=1, sticky="ew", padx=6, pady=2)
         self.ttk.Button(
-            br_frame, text="Browse…",
+            br_frame, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._led_restore_path_var, "Pick LEDBlinky backup to restore",
             ),
@@ -12303,7 +12324,7 @@ class _SpinDoctorGUI:
             out_row, textvariable=self._tools_outdir_var,
         ).pack(side="left", fill="x", expand=True, padx=(0, 6))
         self.ttk.Button(
-            out_row, text="Browse…",
+            out_row, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._tools_outdir_var, "Pick output directory",
             ),
@@ -12528,7 +12549,7 @@ class _SpinDoctorGUI:
             side="left", padx=6, fill="x", expand=True,
         )
         self.ttk.Button(
-            scrub_bk_row, text="Browse…",
+            scrub_bk_row, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._scrub_backup_var, "Pick folder to save scrub backup"
             ),
@@ -12565,7 +12586,7 @@ class _SpinDoctorGUI:
             scrub_restore_path_row, textvariable=self._scrub_restore_path_var, width=50,
         ).pack(side="left", padx=6, fill="x", expand=True)
         self.ttk.Button(
-            scrub_restore_path_row, text="Browse…",
+            scrub_restore_path_row, text="Browse",
             command=lambda: self._browse_backup_dir(
                 self._scrub_restore_path_var,
                 "Pick scrub backup folder (scrub-<timestamp>)",
@@ -13666,7 +13687,7 @@ class _SpinDoctorGUI:
             self._proc.terminate()
         except OSError:
             pass
-        self._set_status("Stopping…")
+        self._set_status("Stopping")
         # Disable Stop immediately so a frantic double-click doesn't
         # land on the next process before it's even spawned. The
         # eventual _on_proc_done sets state back to disabled too, but
@@ -13914,14 +13935,14 @@ class _SpinDoctorGUI:
             pass
 
     def _set_status(self, text: str) -> None:
-        """Update the status bar text, truncating with … if wider than the allocated space.
+        """Update the status bar text, hard-truncating if wider than the allocated space.
 
-        Long CLI command strings (e.g. ``Running: spindoctor add-pc-system …``) can
+        Long CLI command strings (e.g. ``Running: spindoctor add-pc-system --system ...``) can
         overflow the status label and hide the right-side checkboxes and buttons.
         We measure the label's current rendered width and binary-search for the
-        longest prefix that fits, then append an ellipsis.  Falls back to the raw
-        text when the label hasn't been mapped yet (early construction calls) or
-        when font metrics are unavailable.
+        longest prefix that fits. Falls back to the raw text when the label
+        hasn't been mapped yet (early construction calls) or when font metrics
+        are unavailable.
         """
         try:
             lbl = self._status_label
@@ -13934,18 +13955,15 @@ class _SpinDoctorGUI:
                 except Exception:  # noqa: BLE001
                     font = nametofont("TkDefaultFont")
                 if font.measure(text) > avail_w:
-                    ellipsis = "…"
-                    ew = font.measure(ellipsis)
-                    budget = avail_w - ew
-                    # Binary search for the longest prefix that fits within budget.
+                    # Binary search for the longest prefix that fits within avail_w.
                     lo, hi = 0, len(text)
                     while hi - lo > 1:
                         mid = (lo + hi) // 2
-                        if font.measure(text[:mid]) <= budget:
+                        if font.measure(text[:mid]) <= avail_w:
                             lo = mid
                         else:
                             hi = mid
-                    text = text[:lo].rstrip() + ellipsis
+                    text = text[:lo].rstrip()
         except Exception:  # noqa: BLE001 — widget not ready yet or font query failed
             pass
         self._status_var.set(text)
