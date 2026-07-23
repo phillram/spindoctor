@@ -1438,7 +1438,13 @@ SpinDoctor also ships a built-in correction table for emulators whose window tit
 from their registered name. Notable entries: `"Dolphin Ishiiruka"` → `"Dolphin"` (Qt-based
 Dolphin 5.0 builds dropped "Ishiiruka" from the title; without this correction, launching
 any Dolphin game from a synthetic wheel hits the timeout while the game plays in the
-background). User corrections via `emulator-title set` take precedence over the built-in
+background). `"Daphne"` → `"SDL_app"` (Daphne is an SDL 1.2 app that never sets a window
+caption, so every game's window is titled the SDL default, `"SDL_app"`, with zero overlap
+with "Daphne" — without this correction, `FadeTitle=Daphne` never matches, so PCLauncher's
+fade/loading overlay stays up for the full `FadeTitleTimeout` (5 minutes with SpinDoctor's
+default) while the game plays audibly behind it; observed sessions all ended — by the player
+exiting the game — well before that window elapsed, so in practice the overlay never appeared
+to clear at all). User corrections via `emulator-title set` take precedence over the built-in
 table.
 
 **Exception — PCLauncher-based source systems** (e.g. "PC Games", "Windows"): the source

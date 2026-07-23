@@ -711,6 +711,18 @@ def test_emulator_window_titles_correction_table_has_zinc():
     assert "ZiNc" in EMULATOR_WINDOW_TITLES
 
 
+def test_get_fade_title_returns_sdl_app_for_daphne(tmp_path):
+    """Daphne's window is always titled 'SDL_app' (SDL 1.2 default caption,
+    never overridden per-game) — the emulator name 'Daphne' never appears in
+    it, so FadeTitle must use the correction-table override, not the
+    emulator-name fallback.
+    """
+    rl = tmp_path / "rl"
+    _write_emulators_ini(rl / "Settings" / "Daphne" / "Emulators.ini", "Daphne")
+    title = _get_fade_title("Daphne", rl)
+    assert title == "SDL_app"
+
+
 def test_get_fade_title_returns_title_for_correction_table_emulator(tmp_path):
     """Returns the correction-table value when the emulator has an explicit entry."""
     rl = tmp_path / "rl"
