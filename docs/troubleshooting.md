@@ -373,6 +373,62 @@ exactly where RocketLauncher wrote its data.
 
 ---
 
+### A game from a synthetic wheel (Favorites/Recently Played/Most Played) plays with sound, but the screen stays frozen on RocketLauncher's "Loading Complete" fade screen
+
+You can hear the game running, but the picture never appears — RocketLauncher's
+fade/loading overlay is stuck on screen, and Alt-Tab doesn't help because that
+overlay is always-on-top. This is specific to launching through a synthetic
+wheel; the same game launched from its native wheel works fine.
+
+**Cause:** synthetic wheels run two RocketLauncher instances (see
+[Cabinet Architecture Reference → Recursive RocketLauncher Launch](cabinet-architecture-reference.md#recursive-rocketlauncher-launch--why-and-how)).
+The first instance keeps the fade/loading overlay up until it detects the
+emulator's window by matching the `FadeTitle=` value SpinDoctor writes against
+the emulator's actual window title (see
+[Cabinet Architecture Reference → `FadeTitle=` required](cabinet-architecture-reference.md#critical-fadetitle-required-to-fix-error-waiting-for-window-ahk_pid-xxxx)
+for the full mechanism). SpinDoctor defaults `FadeTitle` to the
+emulator's registered name — which works for the overwhelming majority of
+emulators, because their window title contains their name. It fails for any
+emulator whose window title does **not** contain its name — most notably
+**Daphne**, an SDL 1.2 laserdisc emulator that never sets a window caption, so
+its window is always titled `SDL_app` regardless of which game or system is
+running. `FadeTitle=Daphne` never matches `SDL_app`, so the overlay never
+clears.
+
+**Fix:** SpinDoctor v2.10.3+ ships `"Daphne": "SDL_app"` in the built-in
+correction table (`EMULATOR_WINDOW_TITLES` in `rocketlauncher.py`), so this is
+fixed automatically for Daphne — just rebuild the affected synthetic wheel(s)
+(`fav rebuild --apply`, `recent rebuild --apply`, or `stats-report build-wheel
+--apply`) after upgrading.
+
+If you hit this with a **different** emulator whose window title doesn't
+contain its name, add a correction yourself — no SpinDoctor upgrade needed:
+
+```bat
+spindoctor emulator-title set "<Emulator Name>" "<Actual Window Title Fragment>"
+```
+
+Then rebuild the wheel so the new `FadeTitle=` value is written into its
+PCLauncher INIs. Find the actual window title by launching the emulator
+natively and checking `MiscUtils.GetActiveWindowStatus` in
+`RocketLauncher.log` — it logs the live window `Title:`/`Class:` right before
+`WinWait`/`WinWaitActive` calls.
+
+**If you're typing the `emulator-title set` command into the GUI's Console
+tab on Windows,** wrap arguments in quotes only when they contain spaces —
+`spindoctor emulator-title set Daphne SDL_app` — since GUI versions before the
+fix in the same release retained literal quote characters in quoted
+arguments, silently storing a corrupted key that never matched anything. Run
+`spindoctor emulator-title list` afterward and confirm the listed emulator
+name and window title have **no** quote marks around them.
+
+If you rebuilt the wheel and the fix still doesn't seem to take, fully
+restart HyperSpin (or reboot the cabinet) before retesting — a stale
+RocketLauncher/HyperSpin session can hold onto old state and mask a config
+change that already succeeded.
+
+---
+
 ### Can I edit favorites from inside HyperSpin?
 
 HyperSpin's built-in F-key writes per-system favorite lists. Run `spindoctor fav sync` to merge those into the cross-system Favorites store, then `spindoctor fav rebuild --apply`. For explicit add/remove, use `spindoctor-fav add` / `remove`.
@@ -900,7 +956,7 @@ Yes — RocketUI uses the same HyperSpin `Databases/` and `Media/` structure.
 
 ### Recovering from any apply
 
-Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests…` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
+Almost every destructive command writes a manifest under `~/.spindoctor/<category>/` and supports `--undo`. Full recovery flows and the manifest map live at [Workflows → Recovery](workflows.md#recovery-from-mistakes). The GUI's `File → View logs & manifests` window lists every per-run manifest with a tree on the left and a JSON viewer on the right; the **Undo this run** button at the bottom runs the matching `--undo` command for the selected row in one click. For categories whose CLI always reverses the most recent run (`curate`, `media-scan`), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 ## GUI launcher
 
@@ -914,11 +970,11 @@ Set the `SPINDOCTOR_NO_UPDATE_CHECK=1` environment variable before launching the
 
 ### Where do my manifests live? How do I read one?
 
-Open the GUI and use **`File → View logs & manifests…`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
+Open the GUI and use **`File → View logs & manifests`**. The window groups manifests by category (Migrations, Curation, Edits, Renames, Media imports, Theme swaps, Misplaced ROMs) and shows the JSON content read-only. The folder behind it is `~/.spindoctor/<category>/`; **`File → Open SpinDoctor folder`** jumps straight there if you'd rather edit by hand. Don't edit a manifest if you might want to `--undo` later — the undo path reads the manifest verbatim. The same window has an **Undo this run** button that runs the matching `--undo` command for the selected row, so you don't have to remember which CLI invocation owns each category.
 
 ### My controller-glyph swap looks wrong / I want to revert it
 
-`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests…`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes…` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
+`spindoctor theme-apply --apply` writes a manifest under `~/.spindoctor/themes/theme-apply-<timestamp>/manifest.json` with a backup of every overwritten file alongside. To revert: `spindoctor theme-apply --undo latest` from the CLI, or open the GUI's **`File → View logs & manifests`** window, expand **Theme swaps**, click the row, and press **Undo this run**. If the GUI's `File → Browse HyperSpin themes` returns nothing for your cabinet but you can clearly see glyphs at the bottom of the screen, those glyphs likely live inside a Flash `.swf` in `Media/Main Menu/Themes/default.zip` — SpinDoctor can't edit SWFs (they need a Flash authoring tool).
 
 ### Custom Wheels tab → Schedule auto-refresh fails with "access denied"
 
