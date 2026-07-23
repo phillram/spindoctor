@@ -6,7 +6,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
-<<<<<<< HEAD
 ### Added
 
 - **`introvideo swap`** — picks a random enabled video from the pool and copies it over `intro_video_target`. A live scan + a fresh random pick every run, not a pre-computed order. GUI: new **Swap now** button on the Intro Video tab — the fastest way to confirm the pool/target config actually works without waiting for a reboot.
