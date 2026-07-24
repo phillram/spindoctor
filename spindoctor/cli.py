@@ -9433,32 +9433,41 @@ def ledblinky_admin_leds_set(exit_, pause_, select_, emulator, apply_changes, no
               help="Random seed — same seed reproduces the same colors.")
 @click.option("--emulator", default=None,
               help="Limit to one emulator's games (default: every game).")
+@click.option("--games", default=None, metavar="ROM1,ROM2,...",
+              help="Force true per-game variety for these ROMs: each gets its "
+                   "own control group (cloned from the emulator's DEFAULT) so it "
+                   "draws its own random colors. Requires --emulator.")
 @click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
 @click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
-def ledblinky_admin_leds_randomize(buttons, seed, emulator, apply_changes, no_backup):
+def ledblinky_admin_leds_randomize(buttons, seed, emulator, games, apply_changes, no_backup):
     """Assign a random admin color per control group (per-game variety).
 
     Each control group gets its own random colors from Color-RGB.ini. Games
     that share their emulator's DEFAULT group all get that group's colors, so
-    per-game variety only shows for games with their own control group. Re-run
-    ``admin-leds set`` any time to go back to uniform colors.
+    per-game variety only shows for games with their own control group — pass
+    ``--games`` (with ``--emulator``) to force specific ROMs to get their own.
+    Re-run ``admin-leds set`` any time to go back to uniform colors.
 
     \b
     spindoctor ledblinky admin-leds randomize --apply
     spindoctor ledblinky admin-leds randomize --seed 7 --buttons exit,pause --apply
+    spindoctor ledblinky admin-leds randomize --emulator MAME --games 005,pacman,galaga --apply
     """
     from . import ledblinky as lb
     button_list = [b.strip() for b in buttons.split(",") if b.strip()] if buttons else None
+    game_list = [g.strip() for g in games.split(",") if g.strip()] if games else None
     if not apply_changes:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
     try:
         result = lb.randomize_admin_led_controls(
-            _cfg(), buttons=button_list, seed=seed, emulator=emulator,
+            _cfg(), buttons=button_list, seed=seed, emulator=emulator, games=game_list,
             dry_run=not apply_changes, backup=not no_backup,
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
+    if result.groups_added:
+        console.print(f"  [green]{result.groups_added}[/green] new per-game group(s) created")
     _print_admin_led_result(result, emulator or "all emulators")
 
 
