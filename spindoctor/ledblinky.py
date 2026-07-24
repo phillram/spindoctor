@@ -2530,6 +2530,191 @@ def _patch_admin_buttons_in_text(
     return "".join(result), modified_sections
 
 
+# ─── In-game admin LED controls (LEDBlinkyControls.xml UI_* controls) ─────────
+#
+# The buttons that stay lit *during gameplay* on this cabinet are the MAME UI
+# controls in the player-0 block of every <controlGroup> in
+# LEDBlinkyControls.xml — NOT the Colors.ini ``P{n}_BUTTON`` keys that
+# ``patch_admin_button_colors`` writes. Each is ``alwaysActive="1"`` (so it
+# shows regardless of game input) with a ``color=`` that renders in-game:
+#
+#   UI_CANCEL  → the Exit button    (KEYCODE_ESC)
+#   UI_PAUSE   → the Pause button   (KEYCODE_P)
+#   UI_SELECT  → the Select button  (KEYCODE_ENTER)
+#
+# These are defined once per control group and repeated across every group, so
+# a change is a global sweep of the whole XML.
+
+#: Friendly name → LEDBlinkyControls.xml control name for the admin LED buttons.
+ADMIN_LED_CONTROLS: "dict[str, str]" = {
+    "exit": "UI_CANCEL",
+    "pause": "UI_PAUSE",
+    "select": "UI_SELECT",
+}
+
+
+@dataclass
+class AdminLedControlState:
+    """Current in-game state of one admin LED control, summarised across groups."""
+
+    control: str                 # e.g. "UI_SELECT"
+    friendly: str                # e.g. "select"
+    always_active_count: int = 0  # groups where alwaysActive="1"
+    inactive_count: int = 0       # groups where the control exists but isn't always-active
+    colors: "dict[str, int]" = field(default_factory=dict)  # color name -> group count
+
+
+@dataclass
+class AdminLedPatchResult:
+    """Outcome of :func:`set_admin_led_controls`."""
+
+    dry_run: bool
+    controls_xml_path: Optional[Path] = None
+    active_changes: int = 0      # alwaysActive attributes flipped
+    color_changes: int = 0       # color attributes rewritten
+    backup_path: Optional[Path] = None
+    # friendly -> human summary of what was requested
+    requested: "dict[str, str]" = field(default_factory=dict)
+
+
+def read_admin_led_state(config: Config) -> "list[AdminLedControlState]":
+    """Summarise the current in-game admin LED controls from LEDBlinkyControls.xml.
+
+    Reports, per control, in how many control groups it is ``alwaysActive="1"``
+    (lit in-game) vs present-but-inactive, and the distribution of its colors.
+    """
+    xml_path = _controls_xml_path(config)
+    if xml_path is None:
+        raise ValueError(
+            "ledblinky_dir not configured. Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not xml_path.exists():
+        raise ValueError(f"LEDBlinkyControls.xml not found at {xml_path}")
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+
+    states: "list[AdminLedControlState]" = []
+    for friendly, control in ADMIN_LED_CONTROLS.items():
+        st = AdminLedControlState(control=control, friendly=friendly)
+        # Only <control ...> elements that carry an alwaysActive attribute are
+        # per-group admin entries; the bare global definitions have neither
+        # alwaysActive nor color and are skipped.
+        for m in re.finditer(rf'<control\s+name="{re.escape(control)}"([^>]*)/>', text):
+            attrs = m.group(1)
+            am = re.search(r'\balwaysActive="([01])"', attrs)
+            if am is None:
+                continue
+            if am.group(1) == "1":
+                st.always_active_count += 1
+            else:
+                st.inactive_count += 1
+            cm = re.search(r'\bcolor="([^"]*)"', attrs)
+            if cm and cm.group(1):
+                st.colors[cm.group(1)] = st.colors.get(cm.group(1), 0) + 1
+        states.append(st)
+    return states
+
+
+def set_admin_led_controls(
+    config: Config,
+    updates: "dict[str, object]",
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminLedPatchResult:
+    """Set the in-game admin LED controls across every group in LEDBlinkyControls.xml.
+
+    ``updates`` maps a friendly name (``exit``/``pause``/``select``) to either
+    the string ``"off"`` (set ``alwaysActive="0"`` — dark in-game) or a color
+    name (set ``alwaysActive="1"`` and ``color="<name>"`` — lit in that color).
+
+    Only ``<control>`` elements that already carry the relevant attribute are
+    rewritten (the per-group admin entries); LedBlinky's bare global control
+    definitions are left untouched. Colors are validated against
+    ``Color-RGB.ini`` when it is present.
+    """
+    result = AdminLedPatchResult(dry_run=dry_run)
+    xml_path = _controls_xml_path(config)
+    if xml_path is None:
+        raise ValueError(
+            "ledblinky_dir not configured. Run: spindoctor config set ledblinky_dir <path>"
+        )
+    if not xml_path.exists():
+        raise ValueError(f"LEDBlinkyControls.xml not found at {xml_path}")
+    result.controls_xml_path = xml_path
+    if not updates:
+        raise ValueError("No admin LED updates requested.")
+
+    unknown = [k for k in updates if k not in ADMIN_LED_CONTROLS]
+    if unknown:
+        raise ValueError(
+            f"Unknown admin button(s): {', '.join(unknown)}. "
+            f"Choose from: {', '.join(ADMIN_LED_CONTROLS)}."
+        )
+
+    # Validate colour names against the palette when available.
+    color_values = [v for v in updates.values() if isinstance(v, str) and v.lower() != "off"]
+    if color_values:
+        color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+        if color_rgb_path.exists():
+            _, palette = parse_color_rgb_ini(color_rgb_path)
+            valid = {e.name for e in palette}
+            bad = [c for c in color_values if c not in valid]
+            if bad:
+                raise ValueError(
+                    f"Unknown color(s): {', '.join(repr(c) for c in bad)}. "
+                    f"Available: {', '.join(sorted(valid))}"
+                )
+
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    active_changes = 0
+    color_changes = 0
+
+    for friendly, value in updates.items():
+        control = ADMIN_LED_CONTROLS[friendly]
+        turn_off = isinstance(value, str) and value.lower() == "off"
+        new_active = "0" if turn_off else "1"
+        new_color = None if turn_off else str(value)
+        result.requested[friendly] = "off" if turn_off else f"{value} (lit)"
+
+        def _sub_active(m):
+            nonlocal active_changes
+            head, cur, tail = m.group(1), m.group(2), m.group(3)
+            if cur != new_active:
+                active_changes += 1
+                return f"{head}{new_active}{tail}"
+            return m.group(0)
+
+        # Flip alwaysActive on every per-group entry for this control.
+        text = re.sub(
+            rf'(<control\s+name="{re.escape(control)}"[^>]*?\balwaysActive=")([01])(")',
+            _sub_active, text,
+        )
+
+        if new_color is not None:
+            def _sub_color(m):
+                nonlocal color_changes
+                head, cur, tail = m.group(1), m.group(2), m.group(3)
+                if cur != new_color:
+                    color_changes += 1
+                    return f"{head}{new_color}{tail}"
+                return m.group(0)
+
+            text = re.sub(
+                rf'(<control\s+name="{re.escape(control)}"[^>]*?\bcolor=")([^"]*)(")',
+                _sub_color, text,
+            )
+
+    result.active_changes = active_changes
+    result.color_changes = color_changes
+
+    if not dry_run and (active_changes or color_changes):
+        if backup:
+            result.backup_path = _backup(xml_path, _config_backup_dir(config))
+        with xml_path.open("w", encoding="utf-8", newline="") as fh:
+            fh.write(text)
+
+    return result
+
+
 def patch_admin_button_colors(
     config: Config,
     button_colors: "list[str]",

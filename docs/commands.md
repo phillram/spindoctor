@@ -1930,6 +1930,35 @@ spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yell
 
 All color names are validated against the `Color-RGB.ini` palette. A timestamped `.bak` backup of `Colors.ini` is written to the configured backup folder before any change.
 
+> **Not seeing a change in-game?** On many cabinets the admin buttons lit *during gameplay* are not the `Colors.ini` `P{n}_BUTTON` keys this command writes — they're always-active MAME UI controls in `LEDBlinkyControls.xml`. Use `ledblinky admin-leds` below for those.
+
+#### `ledblinky admin-leds` — in-game admin LED buttons
+
+Show or set the admin buttons that stay lit **during gameplay** — the always-active MAME UI controls in `LEDBlinkyControls.xml`: **Exit** (`UI_CANCEL`), **Pause** (`UI_PAUSE`), **Select** (`UI_SELECT`). Each is lit regardless of game input, in the color set here; changes sweep every control group, so they apply to all games at once. This is separate from `admin-buttons set` (which writes `Colors.ini` `P{n}_BUTTON` keys); see the note above for which mechanism your cabinet uses.
+
+```bat
+:: Show the current in-game state (which admin buttons are lit, and their colors)
+spindoctor ledblinky admin-leds
+
+:: "Clean arcade" default — keep Exit + Pause lit, turn Select dark (it does nothing mid-game)
+spindoctor ledblinky admin-leds --select off --apply
+
+:: Recolor admin buttons in-game
+spindoctor ledblinky admin-leds --exit Blue --pause Orange --apply
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--exit COLOR\|off` | Exit button (`UI_CANCEL`): a palette color name to light it, or `off` to darken it in-game |
+| `--pause COLOR\|off` | Pause button (`UI_PAUSE`) |
+| `--select COLOR\|off` | Select button (`UI_SELECT`) |
+| `--apply` | Commit writes (default: dry-run) |
+| `--no-backup` | Skip the `.bak` backup before writing |
+
+Run with no options to print the current state. Color names are validated against `Color-RGB.ini`; a timestamped `.bak` of `LEDBlinkyControls.xml` is written before any change. Because these controls are `alwaysActive="1"`, setting one `off` is how you make "only the usable buttons lit" the in-game default — see [Cabinet Architecture Reference](cabinet-architecture-reference.md#colorsini--multi-player-and-admin-key-naming) for why Exit/Pause stay lit and Select/Search/mouse do not.
+
 ---
 
 ## Light guns
