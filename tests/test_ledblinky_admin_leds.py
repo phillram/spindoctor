@@ -192,3 +192,46 @@ def test_add_remove_roundtrip_keeps_valid_xml(config, led_dir):
 def test_list_emulators(config):
     emus = lb.list_admin_led_emulators(config)
     assert "MAME" in emus and "Atari_2600" in emus
+
+
+# ── randomize --games (per-game groups) ───────────────────────────────────────
+
+def test_randomize_per_game_clones_default(config, led_dir):
+    # The sample's MAME has DEFAULT + 005; ask for a game that has no group yet.
+    result = lb.randomize_admin_led_controls(
+        config, emulator="MAME", games=["galaga"], seed=1, dry_run=False, backup=False,
+    )
+    assert result.groups_added == 1
+    text = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    mame = text.split('emuname="MAME"')[1].split("</emulator>")[0]
+    assert '<controlGroup groupName="galaga"' in mame
+    # The cloned group carries the admin controls (inherited from DEFAULT).
+    galaga = re.search(r'<controlGroup groupName="galaga".*?</controlGroup>', mame, re.S).group(0)
+    assert 'name="UI_CANCEL"' in galaga and 'name="UI_SELECT"' in galaga
+    ET.fromstring(text)
+
+
+def test_randomize_per_game_is_deterministic(config, led_dir):
+    lb.randomize_admin_led_controls(config, emulator="MAME", games=["galaga", "dkong"],
+                                    seed=9, dry_run=False, backup=False)
+    out1 = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    shutil.copy(SAMPLE, led_dir / "LEDBlinkyControls.xml")
+    lb.randomize_admin_led_controls(config, emulator="MAME", games=["galaga", "dkong"],
+                                    seed=9, dry_run=False, backup=False)
+    assert (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8") == out1
+
+
+def test_randomize_games_requires_emulator(config):
+    with pytest.raises(ValueError, match="requires --emulator"):
+        lb.randomize_admin_led_controls(config, games=["galaga"], dry_run=True)
+
+
+def test_randomize_per_game_existing_group_not_duplicated(config, led_dir):
+    # 005 already has its own group in the sample — must not be cloned again.
+    result = lb.randomize_admin_led_controls(
+        config, emulator="MAME", games=["005"], seed=2, dry_run=False, backup=False,
+    )
+    assert result.groups_added == 0
+    mame = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8") \
+        .split('emuname="MAME"')[1].split("</emulator>")[0]
+    assert mame.count('groupName="005"') == 1

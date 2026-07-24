@@ -2573,6 +2573,7 @@ class AdminLedPatchResult:
     active_changes: int = 0      # alwaysActive attributes flipped/added/removed
     color_changes: int = 0       # color attributes rewritten/added
     groups_changed: int = 0      # control groups whose block was modified
+    groups_added: int = 0        # new per-game control groups cloned in
     backup_path: Optional[Path] = None
     # friendly -> human summary of what was requested
     requested: "dict[str, str]" = field(default_factory=dict)
@@ -2736,7 +2737,7 @@ def _recolor_admin_in_block(block: str, friendly: str, value: object) -> "tuple[
 def _write_xml(result: AdminLedPatchResult, xml_path: Path, text: str,
                config: Config, dry_run: bool, backup: bool) -> None:
     if dry_run or (result.active_changes == 0 and result.color_changes == 0
-                   and result.groups_changed == 0):
+                   and result.groups_changed == 0 and result.groups_added == 0):
         return
     if backup:
         result.backup_path = _backup(xml_path, _config_backup_dir(config))
@@ -2798,11 +2799,47 @@ def set_admin_led_controls(
     return result
 
 
+def _clone_default_for_games(region: str, games: "list[str]") -> "tuple[str, list[str]]":
+    """Within one emulator's body *region*, give each ROM in *games* its own
+    control group by cloning the emulator's ``DEFAULT`` group (renamed), unless a
+    group with that name already exists. Returns ``(new_region, cloned_games)``.
+
+    Cloning DEFAULT means the game inherits DEFAULT's controls verbatim — same
+    game buttons and the same admin block — so it behaves identically until its
+    colors are changed. Raises ValueError if there's no DEFAULT group to clone.
+    """
+    dm = re.search(r'<controlGroup groupName="DEFAULT".*?</controlGroup>', region, re.S)
+    if dm is None:
+        raise ValueError(
+            "Cannot create per-game groups: this emulator has no DEFAULT "
+            "control group to clone."
+        )
+    default_block = dm.group(0)
+    existing = set(re.findall(r'<controlGroup groupName="([^"]+)"', region))
+    cloned: "list[str]" = []
+    additions = ""
+    for game in games:
+        if game in existing:
+            continue
+        clone = default_block
+        clone = re.sub(r'(<controlGroup groupName=")DEFAULT(")', rf'\g<1>{game}\g<2>', clone, count=1)
+        # Update the voice/description attr to the game name if present.
+        clone = re.sub(r'(<controlGroup groupName="' + re.escape(game) + r'"[^>]*?\bvoice=")[^"]*(")',
+                       rf'\g<1>{game}\g<2>', clone, count=1)
+        additions += "\n    " + clone
+        cloned.append(game)
+        existing.add(game)
+    if additions:
+        region = region[: dm.end()] + additions + region[dm.end():]
+    return region, cloned
+
+
 def randomize_admin_led_controls(
     config: Config,
     buttons: "Optional[list[str]]" = None,
     seed: int = 0,
     emulator: "Optional[str]" = None,
+    games: "Optional[list[str]]" = None,
     dry_run: bool = True,
     backup: bool = True,
 ) -> AdminLedPatchResult:
@@ -2813,6 +2850,10 @@ def randomize_admin_led_controls(
     Deterministic given ``seed``. Note: games without their own control group
     share their emulator's DEFAULT group, so they all get that group's colors —
     per-*game* variety only appears for games that have their own group.
+
+    Pass ``games`` (with ``emulator``) to force true per-game variety: each named
+    ROM first gets its own control group cloned from the emulator's DEFAULT (if
+    it doesn't have one already), so it then draws its own random colors.
 
     ``buttons`` defaults to all of ``exit``/``pause``/``select``. Active state
     (alwaysActive) is left unchanged; only ``color=`` is randomized.
@@ -2830,6 +2871,8 @@ def randomize_admin_led_controls(
             f"Unknown admin button(s): {', '.join(unknown)}. "
             f"Choose from: {', '.join(ADMIN_LED_CONTROLS)}."
         )
+    if games and not emulator:
+        raise ValueError("--games requires --emulator (DEFAULT groups are per-emulator).")
     palette = [c for c in _palette_names(config) if c.lower() not in ("black", "whie")]
     if not palette:
         raise ValueError(
@@ -2838,6 +2881,14 @@ def randomize_admin_led_controls(
     result.requested = {b: "random" for b in buttons}
     rng = random.Random(seed)
     text = xml_path.read_text(encoding="utf-8", errors="replace")
+
+    # Optionally clone DEFAULT into a dedicated group per named game first, so
+    # each ends up with its own (independently-randomized) control group.
+    if games:
+        pre, region, post = _scoped_region(text, emulator)
+        region, cloned = _clone_default_for_games(region, games)
+        result.groups_added = len(cloned)
+        text = pre + region + post
 
     def _fn(block):
         # Deterministic per-group: draw a fresh color per requested button that

@@ -11407,10 +11407,23 @@ class _SpinDoctorGUI:
             self._led_ingame_vars[friendly] = var
             self._led_ingame_combos[friendly] = combo
 
+        # Console scope: apply to all consoles, or just one (e.g. per-console
+        # coloration). Populated from LEDBlinkyControls.xml on refresh.
+        self.ttk.Label(ab_frame, text="Console:").grid(
+            row=8, column=0, sticky="e", padx=(8, 2), pady=2,
+        )
+        self._led_ingame_emu_var = self.tk.StringVar(value="(all consoles)")
+        self._led_ingame_emu_combo = self.ttk.Combobox(
+            ab_frame, textvariable=self._led_ingame_emu_var, width=22, state="readonly",
+            values=["(all consoles)"],
+        )
+        self._led_ingame_emu_combo.grid(row=8, column=1, columnspan=2, sticky="w",
+                                        padx=(0, 4), pady=2)
+
         self.ttk.Button(
             ab_frame, text="Apply in-game admin LEDs",
             command=self._run_admin_leds,
-        ).grid(row=8, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
@@ -11969,6 +11982,14 @@ class _SpinDoctorGUI:
         # In-game admin LED combos: leave-unchanged + off + every palette color.
         for combo in getattr(self, "_led_ingame_combos", {}).values():
             combo["values"] = ["(leave unchanged)", "off (dark)"] + color_names
+        # Console scope dropdown: (all) + every emulator in LEDBlinkyControls.xml.
+        emu_combo = getattr(self, "_led_ingame_emu_combo", None)
+        if emu_combo is not None:
+            try:
+                emus = lb.list_admin_led_emulators(cfg)
+            except Exception:
+                emus = []
+            emu_combo["values"] = ["(all consoles)"] + emus
 
     def _on_color_tree_select(self, _event=None) -> None:
         """Populate the edit fields when the user clicks a color row."""
@@ -12179,6 +12200,9 @@ class _SpinDoctorGUI:
         if len(args) == 3:
             self._flash_validation("Pick a color or 'off' for at least one button.")
             return
+        emu = self._led_ingame_emu_var.get().strip()
+        if emu and emu != "(all consoles)":
+            args += ["--emulator", emu]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli("spindoctor", args)

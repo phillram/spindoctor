@@ -1960,7 +1960,7 @@ spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply
 |---|---|
 | `show` | Print current in-game admin LED state (also the default when you run `admin-leds` bare) |
 | `set` | **Uniform mode** — one color per button across every game. `--exit`/`--pause`/`--select` take a palette color or `off`. Only recolors admin controls that already exist. |
-| `randomize` | **Random mode** — a random palette color per control group. `--seed N` reproduces a result; `--buttons exit,pause,select` picks which to randomize. |
+| `randomize` | **Random mode** — a random palette color per control group. `--seed N` reproduces a result; `--buttons exit,pause,select` picks which to randomize. `--games ROM1,ROM2 --emulator NAME` forces true per-game variety by cloning the emulator's DEFAULT group for each named ROM first. |
 | `add` | Insert the always-active admin controls into groups that lack them (so those buttons light in-game). `--exit`/`--pause`/`--select` set the colors (default Red/Yellow/Green). |
 | `remove` | Strip the admin controls from groups — those buttons go dark in-game. |
 
@@ -1968,7 +1968,7 @@ All mutating subcommands accept `--emulator NAME` to scope to one console (defau
 
 Because these controls are `alwaysActive="1"`, turning one `off` (or `remove`-ing it) is how you make "only the usable buttons lit" the in-game default — see [Cabinet Architecture Reference](cabinet-architecture-reference.md#colorsini--multi-player-and-admin-key-naming) for why Exit/Pause stay lit and Select/Search/mouse do not.
 
-> **Random mode's per-game caveat.** `randomize` assigns colors per *control group*, and most games share their emulator's `DEFAULT` group — so they all get that group's random colors. Genuine per-*game* variety only appears for games that have their own control group (many arcade titles do; simple ones fall back to `DEFAULT`). Run `add` first if you want more games to carry their own admin controls. Don't like a random result? Re-run `set` to return everything to uniform colors.
+> **Random mode's per-game caveat.** `randomize` assigns colors per *control group*, and most games share their emulator's `DEFAULT` group — so they all get that group's random colors. Genuine per-*game* variety only appears for games that have their own control group (many arcade titles do; simple ones fall back to `DEFAULT`). To force it for specific ROMs, pass `--games 005,pacman,galaga --emulator MAME`: each named game gets its own control group cloned from `DEFAULT` (inheriting its game buttons + admin block) and then its own random colors. Cloning per game adds a full control group to the XML, so this is a per-ROM list, not an all-games switch. Don't like a random result? Re-run `set` to return everything to uniform colors.
 
 ---
 
