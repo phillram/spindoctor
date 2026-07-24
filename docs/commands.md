@@ -1560,6 +1560,8 @@ spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --appl
 
 Default is the admin row (`LMOUSE, RMOUSE, SELECT, EXIT, SEARCH, PAUSE`) → red, green, blue, yellow, magenta, cyan. Because `.lwax` addresses controls **by physical label**, this maps *label → physical position*. It does **not** exercise the `P{n}_BUTTON` keys that `admin-buttons set` writes (those are `Colors.ini`, in-game only) — to test that path, run `admin-buttons set` with distinct colours and launch a game.
 
+This is a one-time **setup/diagnostic aid run from the CLI**, not a GUI button — you use it once to learn your panel's label→position map, after which the GUI's colour tools (which address controls by label) just work. Files needed: the generated `.lwax`, signed once in `LEDBlinkyAnimationEditor.exe` (**Open → Save As**, no edits), then assigned as the FE or screen-saver animation with `LightFEControls=0` so nothing overrides the calibration colours.
+
 ### `ledblinky setup`
 
 One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
