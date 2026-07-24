@@ -12847,9 +12847,7 @@ class _SpinDoctorGUI:
                 stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
         if stale:
             label.configure(
-                text=("Status: enabled, but outdated — SpinDoctor's install "
-                      "location changed since this was set up. Click "
-                      "Schedule auto-refresh again to fix it."),
+                text="Outdated: Schedule auto-refresh to fix",
                 style="Warn.TLabel",
             )
         else:
@@ -13149,9 +13147,7 @@ class _SpinDoctorGUI:
             label.configure(text="Status: disabled", style="TLabel")
         elif status.stale:
             label.configure(
-                text=("Status: enabled, but outdated — SpinDoctor's install "
-                      "location changed since this was set up. Click "
-                      "Enable auto-run again to fix it."),
+                text="Outdated: Enable auto-run to fix",
                 style="Warn.TLabel",
             )
         else:
