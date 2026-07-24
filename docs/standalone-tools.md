@@ -120,7 +120,7 @@ Three integration patterns, in roughly increasing order of "how much you want it
 
 ## Wiring into Windows startup
 
-The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Schedule auto-refresh* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Remove scheduled task* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required.
+The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet startup" section: click *Enable auto-run* to register a Task Scheduler `ONLOGON` task with a configurable post-log-on delay (default 2 min — gives HyperSpin / RocketLauncher time to settle before the rebuild kicks in). Companion *Disable auto-run* and *Check task status* buttons round out the lifecycle. Internally it shells out to `schtasks.exe`, so no `pywin32` or admin rights required. (These are the same button names as the Intro Video tab's Auto-run section — both wrap the identical Task Scheduler mechanism, just for a different scheduled task.)
 
 **This is the recommended method.** The GUI generates two companion files:
 
@@ -131,11 +131,11 @@ The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet star
 
 The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refresh-wheels.vbs`.
 
-> **If you have an existing task registered before v2.4.11**, click *Remove scheduled task* then *Schedule auto-refresh* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
+> **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
 
 ### Manual registration
 
-If you need to register by hand (e.g. a group-policy environment that restricts the GUI), generate the script pair first by clicking *Schedule auto-refresh* once, then adapt the task to point at the generated VBS:
+If you need to register by hand (e.g. a group-policy environment that restricts the GUI), generate the script pair first by clicking *Enable auto-run* once, then adapt the task to point at the generated VBS:
 
 ```bat
 :: Step 1 — let the GUI write the .bat/.vbs pair.

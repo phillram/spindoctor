@@ -56,9 +56,8 @@ def _interpret_schtasks_error(operation: str, output: str) -> str:
         )
     if "does not exist" in lower or "specified task does not exist" in lower:
         return (
-            f"Could not {operation} — no auto-refresh task is currently "
-            "registered. Use the Schedule auto-refresh button to create "
-            "one."
+            f"Could not {operation} — no task is currently registered. "
+            "Use the Enable auto-run button to create one."
         )
     if "the system cannot find" in lower:
         return (

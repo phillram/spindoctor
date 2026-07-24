@@ -12447,11 +12447,11 @@ class _SpinDoctorGUI:
             sched_btns = self.ttk.Frame(sched_frame)
             sched_btns.pack(fill="x", padx=6, pady=(4, 6))
             self.ttk.Button(
-                sched_btns, text="Schedule auto-refresh",
+                sched_btns, text="Enable auto-run",
                 command=self._schedule_autorefresh,
             ).pack(side="left")
             self.ttk.Button(
-                sched_btns, text="Remove scheduled task",
+                sched_btns, text="Disable auto-run",
                 command=self._remove_autorefresh,
             ).pack(side="left", padx=6)
             self.ttk.Button(
@@ -12488,7 +12488,7 @@ class _SpinDoctorGUI:
                 "  4. Save. The helpers appear in HyperSpin's in-cabinet Tools menu.\n"
                 "\n"
                 "Windows Task Scheduler (manual):\n"
-                "  Use the 'Schedule auto-refresh' button above — it writes\n"
+                "  Use the 'Enable auto-run' button above — it writes\n"
                 "  both a launcher .bat (with IDLE process priority so HyperSpin\n"
                 "  is never starved) and a hidden-run .vbs shim so no cmd.exe\n"
                 "  window surfaces on the cabinet screen.\n"
@@ -12499,7 +12499,7 @@ class _SpinDoctorGUI:
                 "  3. Triggers → New → Begin: 'At log on' → Delay: 2 minutes.\n"
                 "  4. Actions → New → Program: wscript.exe\n"
                 "     Arguments: //B \"<path>\\spindoctor-refresh-wheels.vbs\"\n"
-                "     (generate the .bat/.vbs pair first with 'Schedule auto-refresh',\n"
+                "     (generate the .bat/.vbs pair first with 'Enable auto-run',\n"
                 "      then remove and re-register by hand if needed)\n"
                 "  5. Settings → uncheck 'Stop the task if it runs longer than'."
             ),
@@ -12732,7 +12732,7 @@ class _SpinDoctorGUI:
         instead means the Task Scheduler task's target path never needs
         to change across upgrades; only its *contents* (which reference
         the per-version sibling exes on a frozen install) need a refresh
-        — re-click "Schedule auto-refresh" once after upgrading.
+        — re-click "Enable auto-run" once after upgrading.
 
         Each sub-command is wrapped with ``START /LOW /B /WAIT`` so the
         spindoctor executables run at Windows IDLE process priority — they
@@ -12821,9 +12821,8 @@ class _SpinDoctorGUI:
         (missing outright, or — frozen installs only — doesn't reference
         the sibling exes this process is actually running from, e.g.
         after upgrading into a new version folder without re-clicking
-        Schedule auto-refresh). Not stale on a source install: the .bat
-        calls bare command names there, nothing version-specific to go
-        stale.
+        Enable auto-run). Not stale on a source install: the .bat calls
+        bare command names there, nothing version-specific to go stale.
         """
         label = getattr(self, "_autorefresh_status_label", None)
         if label is None:
@@ -12847,7 +12846,7 @@ class _SpinDoctorGUI:
                 stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
         if stale:
             label.configure(
-                text="Outdated: Schedule auto-refresh to fix",
+                text="Outdated: Enable auto-run to fix",
                 style="Warn.TLabel",
             )
         else:
