@@ -683,6 +683,20 @@ spindoctor ledblinky admin-buttons set --color Green --count 6 --apply          
 spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White,White,Yellow" :: preview
 :: (default player=3 for 2-player cabinet; use --player 2 for 1-player cabinet)
 
+:: ── In-game admin LEDs (LEDBlinkyControls.xml UI_* controls) ─────────────────
+:: Controls Exit/Pause/Select lighting *during gameplay* via alwaysActive entries.
+:: admin-buttons set targets Colors.ini — use admin-leds for in-game admin glow.
+spindoctor ledblinky admin-leds                                                               :: show current Exit/Pause/Select colors
+spindoctor ledblinky admin-leds show                                                          :: same as above
+spindoctor ledblinky admin-leds set --select off --apply                                      :: hide Select mid-game (only usable buttons glow)
+spindoctor ledblinky admin-leds set --exit Red --pause Yellow --apply                         :: uniform admin colors
+spindoctor ledblinky admin-leds set --exit Red --pause Purple --select off --apply            :: per-button
+spindoctor ledblinky admin-leds randomize --apply                                             :: random color per admin button
+spindoctor ledblinky admin-leds randomize --seed 7 --buttons exit,pause --apply              :: reproducible; skip Select
+spindoctor ledblinky admin-leds add --emulator "Atari_2600" --apply                          :: add admin-LED groups for a missing emulator
+spindoctor ledblinky admin-leds add --apply                                                   :: add groups for every emulator
+spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply                       :: remove an emulator's admin-LED groups
+
 :: ── Step 7: Brightness ────────────────────────────────────────────────────────
 :: 100% = every color at maximum brightness; dim colors are boosted up
 :: 50% = half brightness; 10% = night mode; 0% = all off
@@ -730,6 +744,9 @@ spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 
 spindoctor ledblinky lwax batch          :: preview the whole pattern library (~170 animated effects)
 spindoctor ledblinky lwax batch --apply  :: generate the library into ~/Downloads/spindoctor-lwax-patterns/ (see commands.md)
 :: (no pip install? the same generator runs as: python scripts\generate_lwax_patterns.py)
+spindoctor ledblinky lwax calibrate                                          :: preview: each admin button a distinct color
+spindoctor ledblinky lwax calibrate --apply                                  :: write calibrate_admin.lwax (sign before loading)
+spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --apply :: target specific controls
 
 :: ── Audit / coverage ─────────────────────────────────────────────────────────
 spindoctor ledblinky audit

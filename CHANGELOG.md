@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.12.0] - 2026-07-24
+
 ### Added
 
 - **GUI: "Delay after login (minutes)" field on the Intro Video tab's Auto-run section** (default `1`; `0` = no delay) — wraps `introvideo install-autorun --delay-minutes <N>`, previously CLI-only. An optional head start on top of the retry fix below — not required for correctness, but skips wasting early retry attempts on a near-certain-to-be-locked window.
@@ -2210,7 +2212,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.11.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.12.0...HEAD
+[2.12.0]: https://github.com/phillram/spindoctor/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/phillram/spindoctor/compare/v2.10.2...v2.11.0
 [2.10.2]: https://github.com/phillram/spindoctor/compare/v2.10.1...v2.10.2
 [2.10.1]: https://github.com/phillram/spindoctor/compare/v2.10.0...v2.10.1
