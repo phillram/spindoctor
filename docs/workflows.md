@@ -84,7 +84,7 @@ If `add-system` reports "no ROMs found", the file extension isn't in SpinDoctor'
 Three integration patterns, in roughly increasing order of "how invisible to the cabinet user":
 
 1. **From inside HyperSpin** (HyperHQ → Tools menu, or as games inside an existing wheel) — GUI Custom Wheels tab → "Install for HyperHQ → Tools menu" *or* "Install into an existing wheel system" (e.g. a `Toolkit` wheel). CLI equivalents: `spindoctor install-tools` and `spindoctor install-tools --add-to-system Toolkit`. See [Standalone tools → Wiring into HyperSpin Tools menu](standalone-tools.md#wiring-into-hyperspin-tools-menu).
-2. **Auto-refresh on cabinet startup** — GUI Custom Wheels tab → "Auto-refresh on cabinet startup" → Schedule auto-refresh (Windows-only — wraps `schtasks.exe`, Schedule / Remove / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
+2. **Auto-refresh on cabinet startup** — GUI Custom Wheels tab → "Auto-refresh on cabinet startup" → Enable auto-run (Windows-only — wraps `schtasks.exe`, Enable / Disable / Check Status buttons). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in.
 3. **Manual `schtasks` (Windows)** if you'd rather skip the GUI — see [Standalone tools → Wiring into Windows startup](standalone-tools.md#wiring-into-windows-startup) for the `schtasks /create` invocation, plus the macOS (`launchd` / `crontab @reboot`) and Linux (`systemd --user` / `crontab`) equivalents.
 
 ---
