@@ -11052,10 +11052,10 @@ class _SpinDoctorGUI:
             frame,
             text=("Configure LED button colors for every system in your "
                   "cabinet via LEDBlinky. Steps 1 and 2 are one-time setup "
-                  "(overlay-hook fix and Settings.ini); Steps 3–9 cover the "
+                  "(overlay-hook fix and Settings.ini); Steps 3–10 cover the "
                   "ongoing workflow: MAME LED data, fill defaults, randomize "
                   "colors, admin button colors, brightness, color definitions, "
-                  "and backup/restore."),
+                  "backup/restore, and LED animations."),
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
@@ -11667,6 +11667,58 @@ class _SpinDoctorGUI:
             command=self._run_led_restore,
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
+        # ── Step 10 — LED Animations (.lwax) ─────────────────────────────────
+        anim_frame = self.ttk.LabelFrame(
+            frame, text="Step 10 — LED Animations (.lwax)",
+        )
+        anim_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        anim_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            anim_frame,
+            text=("Build moving LED animations (the FE/screen-saver files picked "
+                  "in Step 2), separate from the per-game colors above. Generate "
+                  "the whole pattern library (~170 effects: sweeps, pulses, rain, "
+                  "breathe, rainbow, and more) or a single custom colour fade. "
+                  "Files land in ~/Downloads/spindoctor-lwax-patterns/."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+
+        anim_btn_row = self.ttk.Frame(anim_frame)
+        anim_btn_row.grid(row=1, column=0, columnspan=4, sticky="w",
+                          padx=6, pady=(2, 2))
+        self.ttk.Button(
+            anim_btn_row, text="Generate pattern library",
+            command=self._run_led_lwax_batch,
+        ).pack(side="left")
+        self.ttk.Label(
+            anim_btn_row,
+            text="  — the whole batch of ~170 animations",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
+        anim_fade_row = self.ttk.Frame(anim_frame)
+        anim_fade_row.grid(row=2, column=0, columnspan=4, sticky="w",
+                           padx=6, pady=(2, 2))
+        self.ttk.Label(anim_fade_row, text="Single fade colours (hex, comma-separated):").pack(side="left")
+        self._led_lwax_fade_var = self.tk.StringVar(value="FF0000,00FF00,0000FF")
+        self.ttk.Entry(
+            anim_fade_row, textvariable=self._led_lwax_fade_var, width=28,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            anim_fade_row, text="Generate fade",
+            command=self._run_led_lwax_fade,
+        ).pack(side="left", padx=(6, 0))
+
+        self.ttk.Label(
+            anim_frame,
+            text=("Heads-up: generated .lwax files are UNSIGNED. Before LedBlinky "
+                  "will load one, open it in LEDBlinkyAnimationEditor.exe and do "
+                  "Animation → Save As (no edits) to sign it, then it'll appear in "
+                  "the Step 2 dropdowns. This step honours the global Apply checkbox."),
+            wraplength=820, justify="left", foreground=_FG_DIM,
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
+
         frame.columnconfigure(1, weight=1)
         return frame
 
@@ -11703,6 +11755,27 @@ class _SpinDoctorGUI:
         self._run_cli(
             "spindoctor", ["ledblinky", "audit", "--system", "MAME"],
         )
+
+    def _run_led_lwax_batch(self) -> None:
+        """Generate the whole .lwax pattern library (respects Apply checkbox)."""
+        args = ["ledblinky", "lwax", "batch"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_lwax_fade(self) -> None:
+        """Generate a single .lwax colour-cycle fade from comma-separated hex."""
+        raw = self._led_lwax_fade_var.get().strip()
+        colors = [c.strip() for c in raw.split(",") if c.strip()]
+        if len(colors) < 2:
+            self._flash_validation("Enter at least 2 hex colours, e.g. FF0000,00FF00.")
+            return
+        args = ["ledblinky", "lwax", "fade"]
+        for c in colors:
+            args += ["--color", c]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _run_led_fix(self) -> None:
         # `ledblinky fix` is a writer; it respects --apply, so we forward
