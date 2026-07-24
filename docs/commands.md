@@ -1548,6 +1548,20 @@ File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `brea
 
 **Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what it already covers means editing the builders in `spindoctor/lwax.py` and `spindoctor/lwax_patterns.py` (developer task); generating and using the existing library does not.
 
+### `ledblinky lwax calibrate` — map buttons to physical positions
+
+Lights each chosen control a **distinct, named colour** and holds it steady, then prints a legend of which colour went to which control label. Use it to confirm which physical button carries which label: sign the file, assign it as the FE (or screen-saver) animation with `LightFEControls=0`, and compare the panel to the printed legend.
+
+```bat
+spindoctor ledblinky lwax calibrate               :: legend for the 6 admin buttons (dry-run)
+spindoctor ledblinky lwax calibrate --apply       :: write it
+spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --apply
+```
+
+Default is the admin row (`LMOUSE, RMOUSE, SELECT, EXIT, SEARCH, PAUSE`) → red, green, blue, yellow, magenta, cyan. Because `.lwax` addresses controls **by physical label**, this maps *label → physical position*. It does **not** exercise the `P{n}_BUTTON` keys that `admin-buttons set` writes (those are `Colors.ini`, in-game only) — to test that path, run `admin-buttons set` with distinct colours and launch a game.
+
+This is a one-time **setup/diagnostic aid run from the CLI**, not a GUI button — you use it once to learn your panel's label→position map, after which the GUI's colour tools (which address controls by label) just work. Files needed: the generated `.lwax`, signed once in `LEDBlinkyAnimationEditor.exe` (**Open → Save As**, no edits), then assigned as the FE or screen-saver animation with `LightFEControls=0` so nothing overrides the calibration colours.
+
 ### `ledblinky setup`
 
 One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
@@ -1917,6 +1931,46 @@ spindoctor ledblinky admin-buttons set --colors "Red,Blue,Green,White,White,Yell
 | `--no-backup` | off | Skip `.bak` backup before writing |
 
 All color names are validated against the `Color-RGB.ini` palette. A timestamped `.bak` backup of `Colors.ini` is written to the configured backup folder before any change.
+
+> **Not seeing a change in-game?** On many cabinets the admin buttons lit *during gameplay* are not the `Colors.ini` `P{n}_BUTTON` keys this command writes — they're always-active MAME UI controls in `LEDBlinkyControls.xml`. Use `ledblinky admin-leds` below for those.
+
+#### `ledblinky admin-leds` — in-game admin LED buttons
+
+Show or change the admin buttons that stay lit **during gameplay** — the always-active MAME UI controls in `LEDBlinkyControls.xml`: **Exit** (`UI_CANCEL`), **Pause** (`UI_PAUSE`), **Select** (`UI_SELECT`). Each is lit regardless of game input, in the color set here. This is separate from `admin-buttons set` (which writes `Colors.ini` `P{n}_BUTTON` keys); see the note above for which mechanism your cabinet uses. All subcommands are dry-run by default (`--apply` to commit), back up `LEDBlinkyControls.xml` first, and validate color names against `Color-RGB.ini`.
+
+```bat
+:: Show which admin buttons light in-game, and their colors
+spindoctor ledblinky admin-leds
+
+:: UNIFORM (default mode) — same colors on every game.
+:: "Clean arcade": keep Exit + Pause lit, turn Select dark (it does nothing mid-game)
+spindoctor ledblinky admin-leds set --select off --apply
+spindoctor ledblinky admin-leds set --exit Red --pause Purple --apply
+
+:: RANDOM — a random color per control group (see the per-game caveat below)
+spindoctor ledblinky admin-leds randomize --apply
+spindoctor ledblinky admin-leds randomize --seed 7 --buttons exit,pause --apply
+
+:: ADD / REMOVE the admin buttons to/from a console (or all)
+spindoctor ledblinky admin-leds add --emulator "Atari_2600" --apply
+spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply
+```
+
+**Subcommands:**
+
+| Subcommand | What it does |
+|---|---|
+| `show` | Print current in-game admin LED state (also the default when you run `admin-leds` bare) |
+| `set` | **Uniform mode** — one color per button across every game. `--exit`/`--pause`/`--select` take a palette color or `off`. Only recolors admin controls that already exist. |
+| `randomize` | **Random mode** — a random palette color per control group. `--seed N` reproduces a result; `--buttons exit,pause,select` picks which to randomize. `--games ROM1,ROM2 --emulator NAME` forces true per-game variety by cloning the emulator's DEFAULT group for each named ROM first. |
+| `add` | Insert the always-active admin controls into groups that lack them (so those buttons light in-game). `--exit`/`--pause`/`--select` set the colors (default Red/Yellow/Green). |
+| `remove` | Strip the admin controls from groups — those buttons go dark in-game. |
+
+All mutating subcommands accept `--emulator NAME` to scope to one console (default: every emulator), `--apply`, and `--no-backup`.
+
+Because these controls are `alwaysActive="1"`, turning one `off` (or `remove`-ing it) is how you make "only the usable buttons lit" the in-game default — see [Cabinet Architecture Reference](cabinet-architecture-reference.md#colorsini--multi-player-and-admin-key-naming) for why Exit/Pause stay lit and Select/Search/mouse do not.
+
+> **Random mode's per-game caveat.** `randomize` assigns colors per *control group*, and most games share their emulator's `DEFAULT` group — so they all get that group's random colors. Genuine per-*game* variety only appears for games that have their own control group (many arcade titles do; simple ones fall back to `DEFAULT`). To force it for specific ROMs, pass `--games 005,pacman,galaga --emulator MAME`: each named game gets its own control group cloned from `DEFAULT` (inheriting its game buttons + admin block) and then its own random colors. Cloning per game adds a full control group to the XML, so this is a per-ROM list, not an all-games switch. Don't like a random result? Re-run `set` to return everything to uniform colors.
 
 ---
 

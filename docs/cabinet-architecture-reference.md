@@ -2164,6 +2164,16 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
+> **Which admin mechanism does *your* cabinet use? (`Colors.ini P3_*` vs `LEDBlinkyControls.xml` UI controls).** The `admin-buttons set` / `fill-defaults --admin-buttons` commands above write `P{n}_BUTTON` keys into `Colors.ini`. That only lights an admin button in-game if your `LEDBlinkyControls.xml` actually maps that player slot's buttons to the physical admin controls *and* marks them active. **This cabinet does not work that way.** Its in-game admin lights are three MAME UI controls that are `alwaysActive="1"` in the `player number="0"` block of every `<controlGroup>` in `LEDBlinkyControls.xml`:
+>
+> | Physical button | XML control | Key | Default colour |
+> |---|---|---|---|
+> | Exit | `UI_CANCEL` | `Escape` | Red |
+> | Pause | `UI_PAUSE` | `P` | Yellow |
+> | Select | `UI_SELECT` | `Enter` | Green |
+>
+> These are the *only* `alwaysActive="1"` entries in the file, repeated across all ~200 control groups — which is why Exit/Pause/Select light with the same colours in nearly every game, while `Colors.ini` `P3_*` keys have no visible effect. `LMOUSE`/`RMOUSE`/`SEARCH` have no LED control entries at all, so they stay dark in-game regardless. Manage these with **`spindoctor ledblinky admin-leds`** (see [commands.md](commands.md#ledblinky-admin-leds--in-game-admin-led-buttons)): `show` the current state, `set` uniform colours (or `off`), `randomize` per-group colours, or `add`/`remove` the controls for a console. Because `alwaysActive` is what makes a button light regardless of game input, turning `UI_SELECT` off (`admin-leds set --select off`) is how you get the "only usable buttons lit" arcade default — Exit and Pause stay lit (both do something mid-game: quit and pause), Select goes dark (it only launches games from the HyperSpin menu, nothing in-game). A trimmed sample of this cabinet's file is committed at `docs/reference/LEDBlinkyControls.sample.xml`.
+
 **Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:
 
 ```bat

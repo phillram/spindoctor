@@ -11052,10 +11052,10 @@ class _SpinDoctorGUI:
             frame,
             text=("Configure LED button colors for every system in your "
                   "cabinet via LEDBlinky. Steps 1 and 2 are one-time setup "
-                  "(overlay-hook fix and Settings.ini); Steps 3–9 cover the "
+                  "(overlay-hook fix and Settings.ini); Steps 3–10 cover the "
                   "ongoing workflow: MAME LED data, fill defaults, randomize "
                   "colors, admin button colors, brightness, color definitions, "
-                  "and backup/restore."),
+                  "backup/restore, and LED animations."),
             wraplength=860, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
 
@@ -11379,6 +11379,52 @@ class _SpinDoctorGUI:
             command=self._run_admin_button_colors,
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
+        # In-game admin LEDs (LEDBlinkyControls.xml UI_* controls) — the buttons
+        # actually lit DURING gameplay, distinct from the Colors.ini keys above.
+        self.ttk.Separator(ab_frame, orient="horizontal").grid(
+            row=5, column=0, columnspan=9, sticky="ew", padx=6, pady=(4, 6),
+        )
+        self.ttk.Label(
+            ab_frame,
+            text=("In-game admin LEDs (during a game): sets the always-on Exit / "
+                  "Pause / Select buttons in LEDBlinkyControls.xml. Pick a color, "
+                  "or 'off (dark)' to hide that button during play — e.g. Select "
+                  "off for a clean arcade look. Applies to every game at once."),
+            wraplength=820, justify="left",
+        ).grid(row=6, column=0, columnspan=9, sticky="w", padx=6, pady=(0, 4))
+
+        self._led_ingame_vars = {}
+        self._led_ingame_combos = {}
+        for i, (friendly, label) in enumerate(
+            (("exit", "Exit"), ("pause", "Pause"), ("select", "Select")),
+        ):
+            self.ttk.Label(ab_frame, text=f"{label}:").grid(
+                row=7, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
+            )
+            var = self.tk.StringVar(value="(leave unchanged)")
+            combo = self.ttk.Combobox(ab_frame, textvariable=var, width=14, state="readonly")
+            combo.grid(row=7, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
+            self._led_ingame_vars[friendly] = var
+            self._led_ingame_combos[friendly] = combo
+
+        # Console scope: apply to all consoles, or just one (e.g. per-console
+        # coloration). Populated from LEDBlinkyControls.xml on refresh.
+        self.ttk.Label(ab_frame, text="Console:").grid(
+            row=8, column=0, sticky="e", padx=(8, 2), pady=2,
+        )
+        self._led_ingame_emu_var = self.tk.StringVar(value="(all consoles)")
+        self._led_ingame_emu_combo = self.ttk.Combobox(
+            ab_frame, textvariable=self._led_ingame_emu_var, width=22, state="readonly",
+            values=["(all consoles)"],
+        )
+        self._led_ingame_emu_combo.grid(row=8, column=1, columnspan=2, sticky="w",
+                                        padx=(0, 4), pady=2)
+
+        self.ttk.Button(
+            ab_frame, text="Apply in-game admin LEDs",
+            command=self._run_admin_leds,
+        ).grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
         br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
@@ -11667,6 +11713,58 @@ class _SpinDoctorGUI:
             command=self._run_led_restore,
         ).grid(row=4, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 6))
 
+        # ── Step 10 — LED Animations (.lwax) ─────────────────────────────────
+        anim_frame = self.ttk.LabelFrame(
+            frame, text="Step 10 — LED Animations (.lwax)",
+        )
+        anim_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
+        anim_frame.columnconfigure(1, weight=1)
+
+        self.ttk.Label(
+            anim_frame,
+            text=("Build moving LED animations (the FE/screen-saver files picked "
+                  "in Step 2), separate from the per-game colors above. Generate "
+                  "the whole pattern library (~170 effects: sweeps, pulses, rain, "
+                  "breathe, rainbow, and more) or a single custom colour fade. "
+                  "Files land in ~/Downloads/spindoctor-lwax-patterns/."),
+            wraplength=820, justify="left",
+        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+
+        anim_btn_row = self.ttk.Frame(anim_frame)
+        anim_btn_row.grid(row=1, column=0, columnspan=4, sticky="w",
+                          padx=6, pady=(2, 2))
+        self.ttk.Button(
+            anim_btn_row, text="Generate pattern library",
+            command=self._run_led_lwax_batch,
+        ).pack(side="left")
+        self.ttk.Label(
+            anim_btn_row,
+            text="  — the whole batch of ~170 animations",
+            foreground=_FG_DIM,
+        ).pack(side="left")
+
+        anim_fade_row = self.ttk.Frame(anim_frame)
+        anim_fade_row.grid(row=2, column=0, columnspan=4, sticky="w",
+                           padx=6, pady=(2, 2))
+        self.ttk.Label(anim_fade_row, text="Single fade colours (hex, comma-separated):").pack(side="left")
+        self._led_lwax_fade_var = self.tk.StringVar(value="FF0000,00FF00,0000FF")
+        self.ttk.Entry(
+            anim_fade_row, textvariable=self._led_lwax_fade_var, width=28,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Button(
+            anim_fade_row, text="Generate fade",
+            command=self._run_led_lwax_fade,
+        ).pack(side="left", padx=(6, 0))
+
+        self.ttk.Label(
+            anim_frame,
+            text=("Heads-up: generated .lwax files are UNSIGNED. Before LedBlinky "
+                  "will load one, open it in LEDBlinkyAnimationEditor.exe and do "
+                  "Animation → Save As (no edits) to sign it, then it'll appear in "
+                  "the Step 2 dropdowns. This step honours the global Apply checkbox."),
+            wraplength=820, justify="left", foreground=_FG_DIM,
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
+
         frame.columnconfigure(1, weight=1)
         return frame
 
@@ -11703,6 +11801,27 @@ class _SpinDoctorGUI:
         self._run_cli(
             "spindoctor", ["ledblinky", "audit", "--system", "MAME"],
         )
+
+    def _run_led_lwax_batch(self) -> None:
+        """Generate the whole .lwax pattern library (respects Apply checkbox)."""
+        args = ["ledblinky", "lwax", "batch"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_lwax_fade(self) -> None:
+        """Generate a single .lwax colour-cycle fade from comma-separated hex."""
+        raw = self._led_lwax_fade_var.get().strip()
+        colors = [c.strip() for c in raw.split(",") if c.strip()]
+        if len(colors) < 2:
+            self._flash_validation("Enter at least 2 hex colours, e.g. FF0000,00FF00.")
+            return
+        args = ["ledblinky", "lwax", "fade"]
+        for c in colors:
+            args += ["--color", c]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli("spindoctor", args)
 
     def _run_led_fix(self) -> None:
         # `ledblinky fix` is a writer; it respects --apply, so we forward
@@ -11859,6 +11978,18 @@ class _SpinDoctorGUI:
             combo["values"] = color_names
             if color_names and var.get() not in color_names:
                 var.set("White" if "White" in color_names else color_names[0])
+
+        # In-game admin LED combos: leave-unchanged + off + every palette color.
+        for combo in getattr(self, "_led_ingame_combos", {}).values():
+            combo["values"] = ["(leave unchanged)", "off (dark)"] + color_names
+        # Console scope dropdown: (all) + every emulator in LEDBlinkyControls.xml.
+        emu_combo = getattr(self, "_led_ingame_emu_combo", None)
+        if emu_combo is not None:
+            try:
+                emus = lb.list_admin_led_emulators(cfg)
+            except Exception:
+                emus = []
+            emu_combo["values"] = ["(all consoles)"] + emus
 
     def _on_color_tree_select(self, _event=None) -> None:
         """Populate the edit fields when the user clicks a color row."""
@@ -12055,6 +12186,25 @@ class _SpinDoctorGUI:
             args.append("--apply")
         if self._global_verbose_var.get():
             args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_admin_leds(self) -> None:
+        """Run ``ledblinky admin-leds set`` for the in-game Exit/Pause/Select LEDs."""
+        args = ["ledblinky", "admin-leds", "set"]
+        for friendly, var in self._led_ingame_vars.items():
+            value = var.get().strip()
+            if not value or value == "(leave unchanged)":
+                continue
+            cli_value = "off" if value == "off (dark)" else value
+            args += [f"--{friendly}", cli_value]
+        if len(args) == 3:
+            self._flash_validation("Pick a color or 'off' for at least one button.")
+            return
+        emu = self._led_ingame_emu_var.get().strip()
+        if emu and emu != "(all consoles)":
+            args += ["--emulator", emu]
+        if self._global_apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     # ── Lightgun tab ──────────────────────────────────────────────────────────
