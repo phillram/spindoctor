@@ -308,7 +308,6 @@ def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path
     bat_text = result.bat_path.read_text()
     vbs_text = result.vbs_path.read_text()
     assert "introvideo swap --apply" in bat_text
-    assert result.bat_path.name in vbs_text
     assert calls["name"] == AUTORUN_TASK_NAME
     assert calls["delay_minutes"] == 2
     assert "wscript.exe" in calls["command"]
@@ -321,6 +320,22 @@ def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path
     assert "exit /b %errorlevel%" in bat_text
     assert "ws.Run(" in vbs_text
     assert "WScript.Quit(rc)" in vbs_text
+
+    # Regression: the vbs must embed the bat's full, already-known path
+    # directly — NOT re-derive its own folder at runtime from
+    # WScript.ScriptFullName. That runtime derivation had a real,
+    # confirmed-on-a-real-cabinet bug (a backslash-escaping mistake made
+    # its InStrRev search string never match a real Windows path, so the
+    # computed bat path silently collapsed to a bare filename with no
+    # folder — which only happened to work when double-clicked, because
+    # Explorer's working directory is the file's own folder; every
+    # Task-Scheduler-triggered run silently failed to even find the .bat,
+    # regardless of delay). Embedding the full path removes the
+    # dependency on the caller's working directory — and this whole
+    # class of bug — entirely.
+    assert str(result.bat_path) in vbs_text
+    assert "ScriptFullName" not in vbs_text
+    assert "InStrRev" not in vbs_text
 
 
 def test_uninstall_autorun_dry_run_reports_status_without_deleting(monkeypatch):

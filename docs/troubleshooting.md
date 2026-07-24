@@ -465,12 +465,27 @@ Expected on macOS/Linux — the Windows Task Scheduler integration (`spindoctor/
 
 ### The logon task is registered but the intro video never seems to change
 
-**First, make sure you're on a version that includes the fix for this.** Three real bugs here were found and fixed after a real-cabinet report: `swap_video` didn't retry when `intro_video_target` was briefly locked, its retry window (originally 10 seconds) was too short for anything but the shortest intro clips, and the generated `.bat`/`.vbs` always reported Task Scheduler's "Last Result" as `0` (success) even when the swap actually failed, which is why step 3 below couldn't be trusted before the fix. **If you enabled auto-run before upgrading, re-run `introvideo install-autorun --apply`** to regenerate the launcher files with the fix — the old ones don't self-update.
+**First, make sure you're on a version that includes the fixes for this.** Four real bugs were found and fixed after an extensive real-cabinet investigation:
 
-1. Confirm it's actually registered: **Auto-run on Windows login** status label on the Intro Video tab, or `spindoctor introvideo uninstall-autorun` (dry-run — no `--apply` — just reports current status without removing anything).
-2. Run `spindoctor introvideo swap --apply` by hand (CLI, or the **Swap now** button) and confirm it prints `✓ Copied <file>`. **Don't judge success from `Intro.mp4`'s file date** — `shutil.copy2` deliberately preserves the *source* video's own modified date, not the time of the copy, so the date never reflects when a swap last ran. Compare file **size** instead (or just watch which video plays) if you want to confirm a specific run's effect.
-3. Check Task Scheduler (`taskschd.msc`) for the `SpinDoctor Intro Swap` task's Last Run Result — on a current version this is now trustworthy. A non-zero result most commonly means the generated `.bat`/`.vbs` pair (next to the frozen exe, or in `~/.spindoctor/` for a source install) can't find the `spindoctor` executable — re-run `introvideo install-autorun --apply` to regenerate them.
-4. **Most common real-world cause, confirmed and reproduced on demand on an actual cabinet:** HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. You can reproduce this yourself: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. The logon task fires around the same login moment HyperSpin does, so it can lose this race. `swap_video` retries for up to `SWAP_RETRY_ATTEMPTS` × `SWAP_RETRY_DELAY_SECONDS` (currently 90 × 2s = 3 minutes) to ride this out — sized off intro clips observed up to ~2 minutes long. If your clips can run longer than that, increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) to give a bigger head start on top of the retry.
+1. The generated `.vbs` shim never actually ran the `.bat` when triggered by Task Scheduler, at any delay — the **actual root cause**, see step 4 below.
+2. The `.bat`/`.vbs` always reported Task Scheduler's "Last Result" as `0` (success) even when the swap failed, so that field couldn't be trusted for diagnosis.
+3. `swap_video` didn't retry when `intro_video_target` was locked.
+4. Its retry window (originally 10 seconds) was too short for anything but the shortest intro clips.
+
+**If you enabled auto-run before upgrading, re-run `introvideo install-autorun --apply`** to regenerate the launcher files with all four fixes — the old ones don't self-update.
+
+Diagnostic steps, in the order that actually resolves this fastest:
+
+1. Confirm it's registered: **Auto-run on Windows login** status label on the Intro Video tab, or `spindoctor introvideo uninstall-autorun` (dry-run — no `--apply` — just reports current status without removing anything).
+2. Run `spindoctor introvideo swap --apply` by hand (CLI, or the **Swap now** button) and confirm it prints `✓ Copied <file>`. This isolates whether your `intro_randomizer_dir`/`intro_video_target` config is right — if this works, the problem is specific to the scheduled path, not your setup. **Don't judge success from `Intro.mp4`'s file date** — `shutil.copy2` deliberately preserves the *source* video's own modified date, not the time of the copy, so the date never reflects when a swap last ran. Compare file **size** instead (or just watch which video plays).
+3. **Confirm the scheduled task actually executes at all** — this is the step that finds the real root cause fastest, and doesn't require waiting for a reboot. In Task Scheduler (`taskschd.msc`), right-click **SpinDoctor Intro Swap** → **Run**. If nothing changes and you're on an older build, temporarily replace the generated `.bat` (next to the frozen exe, or in `~/.spindoctor/` for a source install) with a version that logs its own output:
+   ```bat
+   @echo off
+   "<path to spindoctor.exe>" introvideo swap --apply > "<same folder>\swap-debug.log" 2>&1
+   echo Exit code: %errorlevel% >> "<same folder>\swap-debug.log"
+   ```
+   Click **Run** again, then check whether `swap-debug.log` was created at all. **No log file at all** (not even an empty one) means the `.bat` never started — that's the `.vbs` path-derivation bug (fixed on current versions; re-run `install-autorun --apply` to regenerate the launcher files). A log file **with** a `PermissionError` inside points at the lock scenario in step 4 instead.
+4. If the `.bat` does run (confirmed via step 3) but still doesn't change the video, it's the lock: HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. Reproduce it directly: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. `swap_video` retries for up to `SWAP_RETRY_ATTEMPTS` × `SWAP_RETRY_DELAY_SECONDS` (currently 90 × 2s = 3 minutes) to ride this out — sized off intro clips observed up to ~2 minutes long. If your clips run longer than that, increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) for a bigger head start on top of the retry.
 
 ## Light guns
 
