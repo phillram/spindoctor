@@ -1535,7 +1535,7 @@ spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 
 python scripts\generate_lwax_patterns.py
 ```
 
-It writes ~170 raw (unsigned) `.lwax` files plus a `README.txt` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`). What it makes:
+It writes ~170 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`). What it makes:
 
 - **22 effect families × 5 variants** — each family has four fixed-colour variants (every colour globally unique across the whole batch, so nothing clumps) plus one moving/fading **rainbow** variant, spread over slow / medium / fast timing.
 - A **`breathe_*` solid-colour library** — one file per named colour fading smoothly in and out (standard, `vivid_*`, and `pastel_*` sets), plus `breathe_rainbow`.
@@ -1543,7 +1543,7 @@ It writes ~170 raw (unsigned) `.lwax` files plus a `README.txt` index into `%USE
 
 File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `breathe_pastel_blue_slow.lwax`, `radial_rainbow_out_fast.lwax`). The script reads the cabinet's LED layout from `%USERPROFILE%\Downloads\LEDBlinkyInputMap.xml` if you've dropped a fresh export there, otherwise from the committed reference copy at `docs/reference/LEDBlinkyInputMap.xml` — so it runs without re-exporting anything. It regenerates the whole folder each run (clearing old files first).
 
-**Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.txt` repeats these steps. Adding brand-new *effect types* beyond what the script already covers means editing the builder functions in `spindoctor/lwax.py` / the script (developer task); generating and using the existing library does not.
+**Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what the script already covers means editing the builder functions in `spindoctor/lwax.py` / the script (developer task); generating and using the existing library does not.
 
 ### `ledblinky setup`
 

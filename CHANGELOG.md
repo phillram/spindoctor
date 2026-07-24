@@ -24,7 +24,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Docs
 
-- Documented the LED pattern batch generator for end users — `docs/commands.md` ("Generating a full pattern batch"), a `scripts/README.md` entry, and a pointer in `docs/cabinet-architecture-reference.md`. Clarifies that it's a plain deterministic script (no AI required to run) and that only the LedBlinky Animation Editor signing step is manual.
+- Documented the LED pattern batch generator for end users across the usual doc surfaces — `docs/commands.md` ("Generating a full pattern batch"), `docs/cli-cheatsheet.md`, `docs/gui.md` (where the LED animation dropdowns get their files), `docs/troubleshooting.md` (Missing Signature + `LightFEControls` entries), `docs/cabinet-architecture-reference.md`, and a `scripts/README.md` entry. Clarifies that it's a plain deterministic script (no AI required to run) and that only the LedBlinky Animation Editor signing step is manual.
+- The generator's in-folder index is now `README.md` (was `README.txt`) — a short guide (family summary + naming + usage + troubleshooting) rather than a per-file listing, matching the repo's Markdown docs.
 
 ## [2.11.0] - 2026-07-23
 
