@@ -1526,6 +1526,28 @@ spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 
 :: faster steps, slower per-frame hold -- tune to taste
 ```
 
+### `ledblinky lwax batch` — generate the whole pattern library
+
+`ledblinky lwax fade` above builds one uniform fade. For a whole **library** of ready-made animations — directional sweeps, radial pulses, rain, cyclones, heartbeats, strobes, ripples, plasma, twinkles, a solid-colour "breathe" library, and more — use `batch`. **This is a plain deterministic command, not an AI feature: it produces identical output every time.**
+
+```bat
+spindoctor ledblinky lwax batch            :: preview (writes nothing)
+spindoctor ledblinky lwax batch --apply    :: generate into ~/Downloads/spindoctor-lwax-patterns/
+spindoctor ledblinky lwax batch --output D:\temp\patterns --apply :: pick the output folder
+```
+
+From a source checkout without `pip install`, the same generator runs as a standalone script (no `spindoctor` on PATH needed): `python scripts\generate_lwax_patterns.py`. Both share one implementation and produce the same files.
+
+It writes ~170 raw (unsigned) `.lwax` files plus a `README.md` index into `%USERPROFILE%\Downloads\spindoctor-lwax-patterns\` (macOS/Linux: `~/Downloads/spindoctor-lwax-patterns/`) by default. What it makes:
+
+- **22 effect families × 5 variants** — each family has four fixed-colour variants (every colour globally unique across the whole batch, so nothing clumps) plus one moving/fading **rainbow** variant, spread over slow / medium / fast timing.
+- A **`breathe_*` solid-colour library** — one file per named colour fading smoothly in and out (standard, `vivid_*`, and `pastel_*` sets), plus `breathe_rainbow`.
+- Two looping **colour-cycle** files — `breathe_cycle` (the panel breathes several unique solids in turn) and `pulse_cycle` (a radial pulse replays in each colour).
+
+File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `breathe_pastel_blue_slow.lwax`, `radial_rainbow_out_fast.lwax`). It reads the cabinet's LED layout from `<ledblinky_dir>\LEDBlinkyInputMap.xml` (or a fresh export in `~/Downloads`, or the committed reference copy at `docs/reference/LEDBlinkyInputMap.xml`) — so it runs without re-exporting anything. It regenerates the whole folder each run (clearing old files first). The same command is also available in the GUI's **Custom Command** dropdown.
+
+**Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what it already covers means editing the builders in `spindoctor/lwax.py` and `spindoctor/lwax_patterns.py` (developer task); generating and using the existing library does not.
+
 ### `ledblinky setup`
 
 One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.

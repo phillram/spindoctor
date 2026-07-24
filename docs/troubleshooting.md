@@ -585,6 +585,14 @@ spindoctor ledblinky patch-settings --fe-lwa "" --apply                  :: stat
 
 Use the **Refresh list** button in the GUI's LEDBlinky → Settings.ini Patch section to see which `.lwa` files are in your install.
 
+### A custom `.lwax` animation won't load: "Animation File has a missing or invalid signature"
+
+Expected for any file made by `spindoctor ledblinky lwax fade` or `scripts/generate_lwax_patterns.py` — they emit *unsigned* files. LedBlinky Config validates a per-file signature it only writes itself. Open the file once in `LEDBlinkyAnimationEditor.exe` (in `<ledblinky_dir>\Plugins\LEDBlinky\`), do **Animation → Save As** with the same name and no edits, then copy the result into `<ledblinky_dir>\lwa\`. (Runtime playback via `Settings.ini` does not check the signature — the error only appears inside LedBlinky Config's own animation UI.) Full detail: "LEDBlinky Animation Files (.lwax)" in [`cabinet-architecture-reference.md`](cabinet-architecture-reference.md#ledblinky-animation-files-lwax).
+
+### A custom animation plays, but some buttons stay a fixed colour (often white)
+
+`Settings.ini` `[FEOptions] LightFEControls=1` overrides the front-end's currently-active navigation buttons with a fixed colour, so they never join the animation. Set `LightFEControls=0` for a fully synced panel (or leave it `=1` if you *want* those buttons to show a fixed "usable" colour — it's one or the other, not both). This is a LedBlinky setting, not a flaw in the generated file.
+
 ### Where does `ledblinky generate` pull its data from?
 
 Locally — `mame -listxml` is run as a subprocess and the output is cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.

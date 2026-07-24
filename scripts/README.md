@@ -23,6 +23,16 @@ Full documentation — including how to wire these into the HyperSpin Tools menu
 
 > **Prefer a window over a `.bat` file?** `spindoctor-gui` (or `spindoctor-gui.exe` from the binary release) has a **Custom Wheels** tab (Step 2 — Refresh custom wheels) with a checkbox per wheel (all pre-ticked) and a **Refresh selected** button. Same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some — no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes. See [`docs/windows-binaries.md#gui-launcher`](../docs/windows-binaries.md#gui-launcher).
 
+## LED animation batch generator
+
+| File | Purpose |
+|---|---|
+| `generate_lwax_patterns.py` | Thin wrapper that runs the LEDBlinky `.lwax` pattern-library generator (sweeps, pulses, rain, breathe, rainbow, etc.) |
+
+This is a thin shim over `spindoctor.lwax_patterns` (the real logic, shared with the CLI). Run `python scripts/generate_lwax_patterns.py` from a checkout to write ~170 raw (unsigned) `.lwax` files + a `README.md` index into `~/Downloads/spindoctor-lwax-patterns/` — deterministic, no AI, no arguments. It reads the cabinet LED layout from `~/Downloads/LEDBlinkyInputMap.xml` if present, else the committed reference at [`docs/reference/LEDBlinkyInputMap.xml`](../docs/reference/LEDBlinkyInputMap.xml). Each file still needs the one-time LedBlinky Animation Editor **Save As** signing step before use.
+
+If `spindoctor` is installed, `spindoctor ledblinky lwax batch --apply` does the same thing (and appears in the GUI's Custom Command dropdown). Full walkthrough: [`docs/commands.md` → "`ledblinky lwax batch`"](../docs/commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library). For a single simple fade, `spindoctor ledblinky lwax fade` is usually enough.
+
 ## Other commands without standalone wrappers
 
 These run only inside the full `spindoctor` CLI — no `.bat` shortcut needed because they're either read-only (no boot trigger value) or interactive:

@@ -9305,7 +9305,8 @@ def ledblinky_lwax_group():
 
     \b
     Subcommands:
-      fade   Generate a color-cycle fade animation across wired controls
+      fade    Generate a single color-cycle fade animation across wired controls
+      batch   Generate the whole pattern library (~170 animated effects)
 
     IMPORTANT: the output is NOT signed and will not load in LedBlinky as-is.
     LedBlinky Config validates a per-file signature that cannot be reproduced
@@ -9398,7 +9399,10 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
         return
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(animation.render(), encoding="utf-8", newline="")
+    # newline="" via open() (not write_text, whose newline= is 3.10+ only) so
+    # Python's text-mode translation doesn't double the \r on Windows.
+    with out_path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write(animation.render())
     console.print(f"\n[green]Wrote:[/green] {out_path}")
     console.print(
         "\n[yellow]This file is not signed yet.[/yellow] Open it in "
@@ -9406,6 +9410,80 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
         "(<ledblinky_dir>\\Plugins\\LEDBlinky\\) and use "
         "[cyan]Animation -> Save As[/cyan] with no edits to sign it, "
         "then copy the result into <ledblinky_dir>\\lwa\\."
+    )
+
+
+@ledblinky_lwax_group.command("batch")
+@click.option("--output", "output_dir", type=click.Path(), default=None,
+              help="Directory to write into. Default: ~/Downloads/spindoctor-lwax-patterns.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Generate the files (default: dry-run preview).")
+def ledblinky_lwax_batch(output_dir, apply_changes):
+    """Generate the whole colour-diverse pattern library (~170 raw .lwax files).
+
+    \b
+    22 effect families x 5 variants (fade, sweep, rain, radial pulse, cyclone,
+    heartbeat, strobe, ripple, spiral, comet, lava-lamp, twinkle, candle, ...),
+    each with one rainbow variant and slow/medium/fast timing, plus a breathe
+    solid-colour library and two colour-cycle files. Every fixed-colour variant
+    uses a globally unique colour. Same deterministic output as
+    `python scripts/generate_lwax_patterns.py`.
+
+    \b
+    spindoctor ledblinky lwax batch            :: preview (writes nothing)
+    spindoctor ledblinky lwax batch --apply    :: generate into ~/Downloads/...
+    """
+    config = _cfg()
+
+    from . import lwax_patterns
+    from .lwax import resolve_input_map_path
+
+    # Prefer the cabinet's configured input map, else a fresh ~/Downloads export
+    # or the committed reference copy (so it works even before config is set).
+    input_map_path = None
+    try:
+        input_map_path = resolve_input_map_path(config)
+        if not Path(input_map_path).exists():
+            input_map_path = None
+    except ValueError:
+        input_map_path = None
+    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
+    if input_map_path is None:
+        err_console.print(
+            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
+            "(spindoctor config set ledblinky_dir <path>), or drop a copy in "
+            "~/Downloads."
+        )
+        sys.exit(1)
+
+    out_dir = Path(output_dir) if output_dir else lwax_patterns.default_output_dir()
+
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    console.print(f"Output dir   : [cyan]{out_dir}[/cyan]")
+
+    if not apply_changes:
+        console.print(
+            "\n[yellow]Would generate ~170 raw (unsigned) .lwax files + README.md "
+            "here[/yellow] (22 effect families x 5, a breathe colour library, and "
+            "2 colour-cycle files)."
+        )
+        console.print("[dim]Dry-run — pass --apply to write the files.[/dim]")
+        return
+
+    try:
+        from .lwax import parse_input_map
+        controllers = parse_input_map(Path(input_map_path))
+        written, palette_used = lwax_patterns.generate_batch(controllers, out_dir)
+    except (ValueError, RuntimeError) as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    console.print(f"\n[green]Wrote {len(written)} .lwax files + README.md[/green] to {out_dir}")
+    console.print(
+        "\n[yellow]These files are not signed yet.[/yellow] For each one you want, open "
+        "it in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] and use "
+        "[cyan]Animation -> Save As[/cyan] (no edits), then copy into "
+        "<ledblinky_dir>\\lwa\\. See the folder's README.md for details."
     )
 
 
