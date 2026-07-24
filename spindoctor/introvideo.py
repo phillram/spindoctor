@@ -53,10 +53,15 @@ SWAP_BAT_FILENAME = "spindoctor-intro-swap.bat"
 #: Retry window for copying over intro_video_target when it's briefly
 #: locked — expected at boot, since HyperSpin itself may still be holding
 #: the file open playing the *previous* intro video at the exact moment
-#: the logon-triggered swap runs. 10 attempts x 1s covers a typical intro
-#: clip's playback length without hanging the logon task indefinitely.
-SWAP_RETRY_ATTEMPTS = 10
-SWAP_RETRY_DELAY_SECONDS = 1.0
+#: the logon-triggered swap runs. Confirmed on a real cabinet: intro clips
+#: range from ~10 seconds to ~2 minutes, and the lock is held for the
+#: clip's *entire* playback (a PermissionError reproduces on demand by
+#: running `swap` while an intro is actively playing, and succeeds
+#: immediately once it finishes) — not just a brief moment. 90 attempts
+#: x 2s = 3 minutes comfortably outlasts the longest observed clip
+#: without hanging the logon task indefinitely.
+SWAP_RETRY_ATTEMPTS = 90
+SWAP_RETRY_DELAY_SECONDS = 2.0
 
 
 class IntroVideoError(Exception):
