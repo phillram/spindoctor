@@ -286,6 +286,8 @@ Sets fixed per-button colors for cabinet-level (admin) buttons (Select, Exit, Se
 
 Apply checkbox + **Set Admin Button Colors** button. CLI: `spindoctor ledblinky admin-buttons set`.
 
+The same section has an **In-game admin LEDs** block below the separator, for the buttons lit *during gameplay* — the always-active Exit / Pause / Select controls in `LEDBlinkyControls.xml` (distinct from the `Colors.ini` keys above, which many cabinets — including this one — don't use for in-game admin lighting). Each has a dropdown offering `(leave unchanged)`, `off (dark)`, or any palette color; pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons stay lit. Apply checkbox + **Apply in-game admin LEDs**. CLI: `spindoctor ledblinky admin-leds` (run it with no options to see the current state).
+
 **Step 7 — Brightness**
 
 Sets all `Color-RGB.ini` colors to a uniform brightness: **100 % = maximum** (dim colors boosted); 50 % = half; 10 % = night mode; 0 % = all off. Drag slider and click **Scale Brightness**. CLI: `spindoctor ledblinky colors brightness`.

@@ -7512,6 +7512,7 @@ def ledblinky_group():
       patch-settings Patch Settings.ini animations and suppress unused-button flash
       fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
       admin-buttons  Set per-button admin/cabinet colors across all ROM sections
+      admin-leds     Show/set in-game admin LED buttons (Exit/Pause/Select) in the XML
       colors         Manage named color definitions (list / edit / normalize)
       lwax           Build raw .lwax LED animation files (fade / batch library)
     """
@@ -9168,6 +9169,12 @@ def ledblinky_admin_buttons_group():
     \b
     Subcommands:
       set   Write per-button admin colors to every ROM section in Colors.ini
+
+    NOTE: this writes ``P{n}_BUTTON`` keys to Colors.ini. On cabinets whose
+    admin buttons are the MAME UI controls (UI_CANCEL/UI_PAUSE/UI_SELECT), the
+    in-game admin lights are driven by ``LEDBlinkyControls.xml`` instead — use
+    ``ledblinky admin-leds`` for those. Run ``admin-leds`` (no options) to see
+    which mechanism your cabinet uses.
     """
 
 
@@ -9298,6 +9305,100 @@ def ledblinky_admin_buttons_set(
                 console.print(f"[dim]  ~ {name}[/dim]")
         else:
             console.print(f"[dim][verbose] no sections updated (player=P{result.admin_player})[/dim]")
+
+
+@ledblinky_group.command("admin-leds")
+@click.option("--exit", "exit_", default=None, metavar="COLOR|off",
+              help="Exit button (UI_CANCEL): a color name to light it, or 'off'.")
+@click.option("--pause", "pause_", default=None, metavar="COLOR|off",
+              help="Pause button (UI_PAUSE): a color name to light it, or 'off'.")
+@click.option("--select", "select_", default=None, metavar="COLOR|off",
+              help="Select button (UI_SELECT): a color name to light it, or 'off'.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+def ledblinky_admin_leds(exit_, pause_, select_, apply_changes, no_backup):
+    """Show or set the admin LED buttons that stay lit *during gameplay*.
+
+    These are the always-active MAME UI controls in LEDBlinkyControls.xml —
+    Exit (UI_CANCEL), Pause (UI_PAUSE), Select (UI_SELECT) — lit regardless of
+    game input, in the color set here. Changes sweep every control group, so
+    they apply to all games at once. (This is separate from
+    ``admin-buttons set``, which writes Colors.ini P{n}_BUTTON keys.)
+
+    \b
+    Show current state (no options):
+      spindoctor ledblinky admin-leds
+
+    \b
+    "Clean arcade" default — Exit + Pause lit, Select dark:
+      spindoctor ledblinky admin-leds --select off --apply
+
+    \b
+    Recolor an admin button in-game:
+      spindoctor ledblinky admin-leds --exit Blue --pause Orange --apply
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+
+    updates: "dict[str, object]" = {}
+    for friendly, val in (("exit", exit_), ("pause", pause_), ("select", select_)):
+        if val is not None:
+            updates[friendly] = val
+
+    # No options → show current state and return.
+    if not updates:
+        try:
+            states = lb.read_admin_led_state(config)
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise SystemExit(1)
+        console.print("[blue bold]In-game admin LED controls[/blue bold] (LEDBlinkyControls.xml):\n")
+        for st in states:
+            if st.always_active_count:
+                colors = ", ".join(f"{c}×{n}" for c, n in st.colors.items())
+                console.print(
+                    f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): "
+                    f"[green]lit[/green] in {st.always_active_count} groups — {colors}"
+                )
+            else:
+                console.print(
+                    f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): [dim]dark in-game[/dim]"
+                )
+        console.print(
+            "\n[dim]Set with --exit / --pause / --select (a color name, or 'off').[/dim]"
+        )
+        return
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    try:
+        result = lb.set_admin_led_controls(
+            config, updates, dry_run=not apply_changes, backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    console.print(f"\n[blue bold]LEDBlinkyControls.xml[/blue bold]  {result.controls_xml_path}")
+    for friendly, summary in result.requested.items():
+        console.print(f"  [cyan]{friendly}[/cyan] → {summary}")
+    verb = "would change" if result.dry_run else "changed"
+    console.print(
+        f"  {verb}: [green]{result.active_changes}[/green] alwaysActive + "
+        f"[green]{result.color_changes}[/green] color attributes"
+    )
+    if result.active_changes == 0 and result.color_changes == 0:
+        console.print("\n[dim]Nothing to change — already in the requested state.[/dim]")
+    elif result.dry_run:
+        console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]")
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 # ─── ledblinky lwax ────────────────────────────────────────────────────────────

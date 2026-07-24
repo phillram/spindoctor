@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<!--
+  Trimmed sample of this cabinet's LEDBlinkyControls.xml (the full file is ~32k
+  lines / 167 emulators). It preserves the real structure that matters for the
+  `ledblinky admin-leds` command:
+
+    * per-<controlGroup> player-0 admin block: UI_CANCEL / UI_PAUSE / UI_SELECT,
+      each alwaysActive="1" with a color — these are the buttons lit *in-game*
+      (UI_CANCEL=Exit, UI_PAUSE=Pause, UI_SELECT=Select);
+    * ordinary P1/P2 game buttons (alwaysActive="0");
+    * a trailing global <control> definition block with NO alwaysActive/color —
+      these must be left untouched by admin-leds (only per-group entries change).
+
+  No PII: control names, MAME keycodes, colors, and public game titles only.
+-->
+<dat>
+  <meta>
+    <description name="Used by LEDBlinky for Emulator and Rom/Game/Batch Control Data." />
+    <version name="1.0" />
+    <generatedBy name="LEDBlinky" />
+  </meta>
+  <emulator emuname="MAME" emuDesc="">
+    <controlGroup groupName="DEFAULT" voice="" numPlayers="2" alternating="0" defaultActive="48,48,48,48" defaultInactive="0,0,0,0" jukebox="0" ledwizGlobalPulse="3">
+      <player number="0">
+        <control name="CONTROL_JOY8WAY" voice="8-Way Joystick" primaryControl="1" alwaysActive="0" color="" inputCodes="" />
+        <control name="UI_CANCEL" voice="" alwaysActive="1" color="Red" inputCodes="KEYCODE_ESC" />
+        <control name="UI_PAUSE" voice="" alwaysActive="1" color="Yellow" inputCodes="KEYCODE_P|KEY_MAMEPAUSE" />
+        <control name="UI_SELECT" voice="" alwaysActive="1" color="Green" inputCodes="KEYCODE_ENTER" />
+      </player>
+      <player number="1">
+        <control name="P1_BUTTON1" voice="" alwaysActive="0" color="White" inputCodes="KEYCODE_A" />
+        <control name="P1_JOYSTICK_UP" voice="" alwaysActive="0" color="White" inputCodes="JOYCODE_1_UP" />
+        <control name="START1" voice="Start Game" color="White" inputCodes="KEYCODE_R" />
+        <control name="COIN1" voice="Insert Coin" color="White" inputCodes="KEYCODE_S" />
+      </player>
+      <player number="2">
+        <control name="P2_BUTTON1" voice="" alwaysActive="0" color="White" inputCodes="KEYCODE_G" />
+        <control name="START2" voice="Start Game" color="White" inputCodes="KEYCODE_T" />
+        <control name="COIN2" voice="Insert Coin" color="White" inputCodes="KEYCODE_U" />
+      </player>
+    </controlGroup>
+    <controlGroup groupName="005" voice="005" numPlayers="2" alternating="0" jukebox="0">
+      <player number="0">
+        <control name="CONTROL_JOY8WAY" voice="8-Way Joystick" color="" primaryControl="1" />
+        <control name="UI_CANCEL" voice="" alwaysActive="1" color="Red" inputCodes="KEYCODE_ESC" />
+        <control name="UI_PAUSE" voice="" alwaysActive="1" color="Yellow" inputCodes="KEYCODE_P|KEY_MAMEPAUSE" />
+        <control name="UI_SELECT" voice="" alwaysActive="1" color="Green" inputCodes="KEYCODE_ENTER" />
+      </player>
+      <player number="1">
+        <control name="P1_BUTTON1" voice="FIRE" color="Cyan" inputCodes="KEYCODE_A" />
+        <control name="START1" voice="Start Game" color="Blue" inputCodes="KEYCODE_R" />
+        <control name="COIN1" voice="Insert Coin" color="Blue" inputCodes="KEYCODE_S" />
+      </player>
+    </controlGroup>
+  </emulator>
+  <emulator emuname="Atari_2600" emuDesc="">
+    <controlGroup groupName="DEFAULT" voice="" numPlayers="2" alternating="0" defaultActive="48,48,48,48" defaultInactive="0,0,0,0" jukebox="0">
+      <player number="0">
+        <control name="UI_CANCEL" voice="" alwaysActive="1" color="Red" inputCodes="KEYCODE_ESC" />
+        <control name="UI_PAUSE" voice="" alwaysActive="1" color="Yellow" inputCodes="KEYCODE_P|KEY_MAMEPAUSE" />
+        <control name="UI_SELECT" voice="" alwaysActive="1" color="Green" inputCodes="KEYCODE_ENTER" />
+      </player>
+      <player number="1">
+        <control name="P1_BUTTON1" voice="" alwaysActive="0" color="White" inputCodes="KEYCODE_A" />
+      </player>
+    </controlGroup>
+  </emulator>
+  <controlDefaults>
+    <control name="UI_SELECT" inputCodes="|KEYCODE_ENTER|JOYCODE_1_BUTTON1" allowConfigPlayerNum="0" />
+    <control name="UI_CANCEL" inputCodes="|KEYCODE_ESC" allowConfigPlayerNum="0" />
+    <control name="UI_PAUSE" inputCodes="|KEYCODE_P" allowConfigPlayerNum="0" />
+  </controlDefaults>
+</dat>

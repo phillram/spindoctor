@@ -11379,6 +11379,39 @@ class _SpinDoctorGUI:
             command=self._run_admin_button_colors,
         ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
 
+        # In-game admin LEDs (LEDBlinkyControls.xml UI_* controls) — the buttons
+        # actually lit DURING gameplay, distinct from the Colors.ini keys above.
+        self.ttk.Separator(ab_frame, orient="horizontal").grid(
+            row=5, column=0, columnspan=9, sticky="ew", padx=6, pady=(4, 6),
+        )
+        self.ttk.Label(
+            ab_frame,
+            text=("In-game admin LEDs (during a game): sets the always-on Exit / "
+                  "Pause / Select buttons in LEDBlinkyControls.xml. Pick a color, "
+                  "or 'off (dark)' to hide that button during play — e.g. Select "
+                  "off for a clean arcade look. Applies to every game at once."),
+            wraplength=820, justify="left",
+        ).grid(row=6, column=0, columnspan=9, sticky="w", padx=6, pady=(0, 4))
+
+        self._led_ingame_vars = {}
+        self._led_ingame_combos = {}
+        for i, (friendly, label) in enumerate(
+            (("exit", "Exit"), ("pause", "Pause"), ("select", "Select")),
+        ):
+            self.ttk.Label(ab_frame, text=f"{label}:").grid(
+                row=7, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
+            )
+            var = self.tk.StringVar(value="(leave unchanged)")
+            combo = self.ttk.Combobox(ab_frame, textvariable=var, width=14, state="readonly")
+            combo.grid(row=7, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
+            self._led_ingame_vars[friendly] = var
+            self._led_ingame_combos[friendly] = combo
+
+        self.ttk.Button(
+            ab_frame, text="Apply in-game admin LEDs",
+            command=self._run_admin_leds,
+        ).grid(row=8, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
         br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
@@ -11933,6 +11966,10 @@ class _SpinDoctorGUI:
             if color_names and var.get() not in color_names:
                 var.set("White" if "White" in color_names else color_names[0])
 
+        # In-game admin LED combos: leave-unchanged + off + every palette color.
+        for combo in getattr(self, "_led_ingame_combos", {}).values():
+            combo["values"] = ["(leave unchanged)", "off (dark)"] + color_names
+
     def _on_color_tree_select(self, _event=None) -> None:
         """Populate the edit fields when the user clicks a color row."""
         sel = self._color_tree.selection()
@@ -12128,6 +12165,22 @@ class _SpinDoctorGUI:
             args.append("--apply")
         if self._global_verbose_var.get():
             args.append("--verbose")
+        self._run_cli("spindoctor", args)
+
+    def _run_admin_leds(self) -> None:
+        """Run ``ledblinky admin-leds`` for the in-game Exit/Pause/Select LEDs."""
+        args = ["ledblinky", "admin-leds"]
+        for friendly, var in self._led_ingame_vars.items():
+            value = var.get().strip()
+            if not value or value == "(leave unchanged)":
+                continue
+            cli_value = "off" if value == "off (dark)" else value
+            args += [f"--{friendly}", cli_value]
+        if len(args) == 2:
+            self._flash_validation("Pick a color or 'off' for at least one button.")
+            return
+        if self._global_apply_var.get():
+            args.append("--apply")
         self._run_cli("spindoctor", args)
 
     # ── Lightgun tab ──────────────────────────────────────────────────────────
