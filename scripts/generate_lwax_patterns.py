@@ -119,13 +119,16 @@ def _build_master_palette(n: int = 48):
     """A globally unique, well-spread palette of vivid distinct colours.
 
     Walks the hue wheel and rotates through four shade profiles so neighbours
-    differ in both hue and lightness. Returns ``[(name, (r,g,b)), ...]``.
+    differ in both hue and lightness. Returns ``[(shade, hue, (r,g,b)), ...]``
+    where ``shade``/``hue`` are plain lower-case words (e.g. "vivid", "red") --
+    the hue word is what ends up in the file name, the shade adds detail in the
+    README only.
     """
     palette = []
     for i in range(n):
         h = i / n
         s, v, shade = _SHADES[i % len(_SHADES)]
-        palette.append((f"{shade}-{_hue_name(h)}", hsv48(h, s, v)))
+        palette.append((shade, _hue_name(h), hsv48(h, s, v)))
     return palette
 
 def _stride(entries, step: int):
@@ -149,9 +152,9 @@ class Palette:
     def take(self):
         if self._i >= len(self._entries):
             raise RuntimeError("Ran out of unique palette colours; enlarge MASTER_PALETTE.")
-        name, color = self._entries[self._i]
+        entry = self._entries[self._i]
         self._i += 1
-        return name, color
+        return entry  # (shade, hue, color)
 
     def take_n(self, k: int):
         return [self.take() for _ in range(k)]
@@ -287,8 +290,21 @@ def build_rainbow_checker(controllers, group_a, group_b, hold_ms=400, cycles=16)
 # --------------------------------------------------------------------------- #
 # Build the batch.
 # --------------------------------------------------------------------------- #
-def slugify(name: str) -> str:
-    return "".join(ch if ch.isalnum() else "-" for ch in name.lower()).strip("-")
+# File-name rule: plain, readable, lower-case words joined by single
+# underscores -- e.g. ``fade_red_lime_slow.lwax``. Never use spaces, em dashes
+# (--), en dashes, or runs of hyphens in a file name. ``slugify`` enforces this
+# by collapsing every non-alphanumeric run to a single underscore.
+def slugify(text: str) -> str:
+    out: list[str] = []
+    prev_us = False
+    for ch in text.lower():
+        if ch.isalnum():
+            out.append(ch)
+            prev_us = False
+        elif not prev_us:
+            out.append("_")
+            prev_us = True
+    return "".join(out).strip("_")
 
 
 def main() -> int:
@@ -312,12 +328,13 @@ def main() -> int:
     batch: list[tuple[str, str, LwaxAnimation, str]] = []
     used_names: set[str] = set()
 
-    def add(family, animation, colorway, speed, effect):
-        base = f"{family}_{slugify(colorway)}_{speed}"
+    def add(family, color_slug, speed, animation, colorway, effect):
+        """Queue a file named ``family_color_speed.lwax`` (underscores only)."""
+        base = slugify(f"{family}_{color_slug}_{speed}")
         name = base
         n = 2
         while name in used_names:
-            name = f"{base}-{n}"
+            name = f"{base}_{n}"
             n += 1
         used_names.add(name)
         batch.append((family, f"{name}.lwax", animation, f"{effect}; {colorway}; {speed}"))
@@ -326,107 +343,117 @@ def main() -> int:
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         spl, dur = FADE_SPEED[speed]
-        (na, ca), (nb, cb) = pal.take_n(2)
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
         anim = build_color_cycle(controllers, [ca, cb], steps_per_leg=spl, duration_ms=dur)
-        add("fade", anim, f"{na} + {nb}", speed, "whole-panel cross-fade")
+        add("fade", f"{ha}_{hb}", speed, anim, f"{sa} {ha} and {sb} {hb}", "whole panel cross fade")
     anim = build_color_cycle(controllers, SPECTRUM, steps_per_leg=FADE_SPEED["medium"][0],
                              duration_ms=FADE_SPEED["medium"][1])
-    add("fade", anim, "rainbow", "medium", "whole-panel full-spectrum rainbow fade")
+    add("fade", "rainbow", "medium", anim, "full spectrum", "whole panel rainbow fade")
 
     # 2. SWEEP / CHASE -- travelling fronts across the left-to-right order.
     s = VARIANT_SPEEDS[0]; fps, dur = WAVE_SPEED[s]
-    (n0, c0) = pal.take()
-    add("sweep", build_wave(controllers, LEFT_RIGHT_ORDER, c0, trail_color=dim(c0, 0.30),
-                            frames_per_step=fps, duration_ms=dur), n0, s, "left-to-right comet")
+    (sh0, h0, c0) = pal.take()
+    add("sweep", h0, s, build_wave(controllers, LEFT_RIGHT_ORDER, c0, trail_color=dim(c0, 0.30),
+                                   frames_per_step=fps, duration_ms=dur), f"{sh0} {h0}", "left to right comet")
     s = VARIANT_SPEEDS[1]; fps, dur = WAVE_SPEED[s]
-    (n1, c1) = pal.take()
-    add("sweep", build_wave(controllers, list(reversed(LEFT_RIGHT_ORDER)), c1, trail_color=dim(c1, 0.30),
-                            frames_per_step=fps, duration_ms=dur), n1, s, "right-to-left comet")
+    (sh1, h1, c1) = pal.take()
+    add("sweep", h1, s, build_wave(controllers, list(reversed(LEFT_RIGHT_ORDER)), c1, trail_color=dim(c1, 0.30),
+                                   frames_per_step=fps, duration_ms=dur), f"{sh1} {h1}", "right to left comet")
     s = VARIANT_SPEEDS[2]; fps, dur = WAVE_SPEED[s]
-    (n2a, c2a), (n2b, c2b) = pal.take_n(2)
-    add("sweep", build_wave(controllers, LEFT_RIGHT_ORDER, c2a, trail_color=c2b,
-                            lag=len(LEFT_RIGHT_ORDER) // 2, frames_per_step=fps, duration_ms=dur),
-        f"{n2a} chasing {n2b}", s, "two-colour rivalry chase")
+    (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
+    add("sweep", f"{ha}_{hb}", s, build_wave(controllers, LEFT_RIGHT_ORDER, ca, trail_color=cb,
+                                             lag=len(LEFT_RIGHT_ORDER) // 2, frames_per_step=fps, duration_ms=dur),
+        f"{sa} {ha} chasing {sb} {hb}", "two colour rivalry chase")
     s = VARIANT_SPEEDS[3]; fps, dur = WAVE_SPEED[s]
-    (n3, c3) = pal.take()
+    (sh3, h3, c3) = pal.take()
     cylon = LEFT_RIGHT_ORDER + LEFT_RIGHT_ORDER[-2:0:-1]
-    add("sweep", build_wave(controllers, cylon, c3, trail_color=dim(c3, 0.30),
-                            frames_per_step=fps, duration_ms=dur), n3, s, "Cylon ping-pong scanner")
+    add("sweep", h3, s, build_wave(controllers, cylon, c3, trail_color=dim(c3, 0.30),
+                                   frames_per_step=fps, duration_ms=dur), f"{sh3} {h3}", "cylon ping pong scanner")
     fps, dur = WAVE_SPEED["fast"]
-    add("sweep", build_rainbow_comet(controllers, LEFT_RIGHT_ORDER, frames_per_step=fps, duration_ms=dur),
-        "rainbow", "fast", "glowing rainbow comet")
+    add("sweep", "rainbow", "fast", build_rainbow_comet(controllers, LEFT_RIGHT_ORDER, frames_per_step=fps,
+                                                         duration_ms=dur), "full spectrum", "glowing rainbow comet")
 
     # 3. RAIN / CONFETTI -- randomly-timed drops.
     for i in range(3):
         speed = VARIANT_SPEEDS[i]
         fps, dur, mn, mx, tot = RAIN_SPEED[speed]
-        (na, ca), (nb, cb) = pal.take_n(2)
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
         anim = build_rain(controllers, RAIN_DROP_GROUPS, [ca, cb], frames_per_step=fps,
                           duration_ms=dur, total_frames=tot, min_gap_frames=mn, max_gap_frames=mx, seed=i)
-        add("rain", anim, f"{na} + {nb}", speed, "rain falling top-to-bottom")
+        add("rain", f"{ha}_{hb}", speed, anim, f"{sa} {ha} and {sb} {hb}", "rain falling top to bottom")
     # confetti: one-label groups so it twinkles instead of streaking.
     speed = VARIANT_SPEEDS[3]
     fps, dur, mn, mx, tot = RAIN_SPEED[speed]
-    (na, ca), (nb, cb) = pal.take_n(2)
+    (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
     confetti_groups = [[l] for g in RAIN_DROP_GROUPS for l in g]
-    add("confetti", build_rain(controllers, confetti_groups, [ca, cb], frames_per_step=fps,
-                               duration_ms=dur, total_frames=tot, min_gap_frames=mn, max_gap_frames=mx, seed=42),
-        f"{na} + {nb}", speed, "confetti twinkle")
+    add("confetti", f"{ha}_{hb}", speed,
+        build_rain(controllers, confetti_groups, [ca, cb], frames_per_step=fps, duration_ms=dur,
+                   total_frames=tot, min_gap_frames=mn, max_gap_frames=mx, seed=42),
+        f"{sa} {ha} and {sb} {hb}", "confetti twinkle")
     fps, dur, mn, mx, tot = RAIN_SPEED["medium"]
-    add("rain", build_rain(controllers, RAIN_DROP_GROUPS, SPECTRUM, frames_per_step=fps, duration_ms=dur,
-                           total_frames=tot, min_gap_frames=mn, max_gap_frames=mx, seed=7),
-        "rainbow", "medium", "full-spectrum rainbow rain")
+    add("rain", "rainbow", "medium",
+        build_rain(controllers, RAIN_DROP_GROUPS, SPECTRUM, frames_per_step=fps, duration_ms=dur,
+                   total_frames=tot, min_gap_frames=mn, max_gap_frames=mx, seed=7),
+        "full spectrum", "rainbow rain")
 
-    # 4. RAINBOW SCROLL -- the whole family is rainbow; vary speed/direction/tone.
+    # 4. SCROLL -- the whole family is rainbow; vary speed / direction / tone.
     tf, cy, dur = SCROLL_SPEED["slow"]
-    add("rainbow-scroll", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf, cycles=cy,
-                                                duration_ms=dur), "rainbow", "slow", "hue gradient scrolling right")
+    add("scroll", "right", "slow", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf,
+                                                        cycles=cy, duration_ms=dur), "full spectrum",
+        "hue gradient scrolling right")
     tf, cy, dur = SCROLL_SPEED["medium"]
-    add("rainbow-scroll", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf, cycles=cy,
-                                                duration_ms=dur), "rainbow", "medium", "hue gradient scrolling right")
+    add("scroll", "right", "medium", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf,
+                                                          cycles=cy, duration_ms=dur), "full spectrum",
+        "hue gradient scrolling right")
     tf, cy, dur = SCROLL_SPEED["fast"]
-    add("rainbow-scroll", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf, cycles=cy,
-                                                duration_ms=dur), "rainbow", "fast", "hue gradient, 2 cycles")
+    add("scroll", "right", "fast", build_rainbow_scroll(controllers, LEFT_RIGHT_ORDER, total_frames=tf,
+                                                        cycles=cy, duration_ms=dur), "full spectrum",
+        "hue gradient scrolling right, 2 cycles")
     tf, cy, dur = SCROLL_SPEED["medium"]
-    add("rainbow-scroll", build_rainbow_scroll(controllers, list(reversed(LEFT_RIGHT_ORDER)), total_frames=tf,
-                                                cycles=cy, duration_ms=dur), "rainbow", "medium",
-        "hue gradient scrolling left")
+    add("scroll", "left", "medium", build_rainbow_scroll(controllers, list(reversed(LEFT_RIGHT_ORDER)),
+                                                         total_frames=tf, cycles=cy, duration_ms=dur),
+        "full spectrum", "hue gradient scrolling left")
     tf, cy, dur = SCROLL_SPEED["slow"]
-    add("rainbow-scroll", build_rainbow_scroll(controllers, RADIAL_RINGS, total_frames=tf, cycles=cy,
-                                                duration_ms=dur, saturation=0.8, value=1.0),
-        "rainbow-pastel", "slow", "rainbow radiating from trackball")
+    add("scroll", "radial", "slow", build_rainbow_scroll(controllers, RADIAL_RINGS, total_frames=tf, cycles=cy,
+                                                         duration_ms=dur, saturation=0.8, value=1.0),
+        "full spectrum pastel", "rainbow radiating from trackball")
 
     # 5. FILL (combo-meter) -- accumulating bar radiating from the trackball.
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         fps, dur = BAR_SPEED[speed]
-        (na, ca) = pal.take()
-        add("fill", build_fill(controllers, RADIAL_RINGS, ca, flash_color=lighten(ca, 0.6),
-                               frames_per_step=fps, duration_ms=dur), na, speed, "combo-meter fill + flash")
+        (sh, h, ca) = pal.take()
+        add("fill", h, speed, build_fill(controllers, RADIAL_RINGS, ca, flash_color=lighten(ca, 0.6),
+                                         frames_per_step=fps, duration_ms=dur), f"{sh} {h}",
+            "combo meter fill and flash")
     fps, dur = BAR_SPEED["fast"]
-    add("fill", build_rainbow_fill(controllers, RADIAL_RINGS, frames_per_step=fps, duration_ms=dur),
-        "rainbow", "fast", "rainbow-gradient fill + glow")
+    add("fill", "rainbow", "fast", build_rainbow_fill(controllers, RADIAL_RINGS, frames_per_step=fps,
+                                                      duration_ms=dur), "full spectrum",
+        "rainbow gradient fill and glow")
 
     # 6. DRAIN (countdown / fuse) -- extinguish left-to-right.
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         fps, dur = BAR_SPEED[speed]
-        (na, ca) = pal.take()
-        add("drain", build_drain(controllers, LEFT_RIGHT_ORDER, ca, flash_color=lighten(ca, 0.6),
-                                 frames_per_step=fps, duration_ms=dur), na, speed, "countdown drain + flash")
+        (sh, h, ca) = pal.take()
+        add("drain", h, speed, build_drain(controllers, LEFT_RIGHT_ORDER, ca, flash_color=lighten(ca, 0.6),
+                                           frames_per_step=fps, duration_ms=dur), f"{sh} {h}",
+            "countdown drain and flash")
     fps, dur = BAR_SPEED["medium"]
-    add("drain", build_rainbow_drain(controllers, LEFT_RIGHT_ORDER, frames_per_step=fps, duration_ms=dur),
-        "rainbow", "medium", "rainbow countdown drain")
+    add("drain", "rainbow", "medium", build_rainbow_drain(controllers, LEFT_RIGHT_ORDER, frames_per_step=fps,
+                                                          duration_ms=dur), "full spectrum",
+        "rainbow countdown drain")
 
     # 7. CHECKERBOARD -- interleaved halves swapping in lockstep.
     for i in range(4):
         speed = VARIANT_SPEEDS[i]
         hold = CHECKER_SPEED[speed]
-        (na, ca), (nb, cb) = pal.take_n(2)
-        add("checker", build_alternate_wrapper(controllers, CHECKER_A, CHECKER_B, ca, cb, hold),
-            f"{na} / {nb}", speed, "checkerboard blink")
-    add("checker", build_rainbow_checker(controllers, CHECKER_A, CHECKER_B, hold_ms=CHECKER_SPEED["medium"]),
-        "rainbow", "medium", "rainbow checkerboard")
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
+        add("checker", f"{ha}_{hb}", speed, build_alternate_wrapper(controllers, CHECKER_A, CHECKER_B, ca, cb, hold),
+            f"{sa} {ha} and {sb} {hb}", "checkerboard blink")
+    add("checker", "rainbow", "medium", build_rainbow_checker(controllers, CHECKER_A, CHECKER_B,
+                                                              hold_ms=CHECKER_SPEED["medium"]),
+        "full spectrum", "rainbow checkerboard")
 
     # --- validate + write ---
     written = []
