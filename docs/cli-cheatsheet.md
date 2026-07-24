@@ -727,7 +727,9 @@ spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --apply            
 spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --labels P1B1,P1B2 --apply :: only specific controls
 spindoctor ledblinky lwax fade --color FF0000 --color 0000FF --name mypattern --output D:\temp\mypattern.lwax --apply :: custom name/path
 spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --steps-per-leg 24 --duration-ms 60 --apply :: tune fade smoothness/speed
-python scripts\generate_lwax_patterns.py :: generate a whole library (~170 files) of animated effects into ~/Downloads/spindoctor-lwax-patterns/ (see commands.md)
+spindoctor ledblinky lwax batch          :: preview the whole pattern library (~170 animated effects)
+spindoctor ledblinky lwax batch --apply  :: generate the library into ~/Downloads/spindoctor-lwax-patterns/ (see commands.md)
+:: (no pip install? the same generator runs as: python scripts\generate_lwax_patterns.py)
 
 :: ── Audit / coverage ─────────────────────────────────────────────────────────
 spindoctor ledblinky audit
