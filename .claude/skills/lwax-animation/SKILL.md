@@ -129,6 +129,12 @@ Two side effects of the grouped model worth knowing about: (1) when two independ
 
 A worked example generating 16 effects (4 directional sweeps, rainfall, radial pulse in/out, a ping-pong "breathing" pulse, confetti, a two-color race from center, a rainbow scroll, a Cylon scanner, cyclone loops both directions, an accumulating combo-meter fill, and a heartbeat brightness pulse) lives in this session's history — recreate similarly: parse the real `LEDBlinkyInputMap.xml`, derive groups from `LEFT_RIGHT_ORDER` as above, call the relevant `build_*` function(s), validate with `xml.etree.ElementTree.fromstring()` before handing files over.
 
+### Batch generator + file-naming rule
+
+`scripts/generate_lwax_patterns.py` is the maintained batch generator: 7 effect families × 5 variants = 35 files, each family with one moving/fading rainbow variant, every fixed-colour variant a globally-unique hue (hue-strided palette), spread over slow/medium/fast. It parses `~/Downloads/LEDBlinkyInputMap.xml` if present, else the committed reference copy at `docs/reference/LEDBlinkyInputMap.xml`, and writes to `~/Downloads/spindoctor-lwax-patterns/` with a `README.txt` index.
+
+**File-naming rule (applies to every generated `.lwax`):** plain, readable, lower-case words joined by single underscores — `family_color_speed.lwax`, e.g. `fade_red_lime_slow.lwax`, `scroll_right_medium.lwax`, `checker_rainbow_medium.lwax`. **Never** use spaces, em dashes (`—`), en dashes (`–`), or runs of hyphens (`---`) in a file name. The generator's `slugify()` enforces this by collapsing every non-alphanumeric run to one underscore; keep it that way.
+
 ## Step 2 — sign it (manual, on the cabinet, every time)
 
 The generated file **will not load** until this happens:
