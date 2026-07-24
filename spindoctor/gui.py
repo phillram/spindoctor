@@ -12168,15 +12168,15 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_admin_leds(self) -> None:
-        """Run ``ledblinky admin-leds`` for the in-game Exit/Pause/Select LEDs."""
-        args = ["ledblinky", "admin-leds"]
+        """Run ``ledblinky admin-leds set`` for the in-game Exit/Pause/Select LEDs."""
+        args = ["ledblinky", "admin-leds", "set"]
         for friendly, var in self._led_ingame_vars.items():
             value = var.get().strip()
             if not value or value == "(leave unchanged)":
                 continue
             cli_value = "off" if value == "off (dark)" else value
             args += [f"--{friendly}", cli_value]
-        if len(args) == 2:
+        if len(args) == 3:
             self._flash_validation("Pick a color or 'off' for at least one button.")
             return
         if self._global_apply_var.get():
