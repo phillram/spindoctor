@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dat>
+  <meta>
+    <description name="Used by LEDBlinky for LED Input Map Data."/>
+    <generatedBy name=">LEDBlinkyConfigWizard.exe"/>
+    <version name="8.2.2.0"/>
+    <date name="06/12/2025 09:58:04"/>
+  </meta>
+  <ledController type="3" id="1" name="PACLED64">
+    <port number="1" label="TRACKBALL" type="R" inputCodes="TRACKBALL"/>
+    <port number="2" label="TRACKBALL" type="G" inputCodes="TRACKBALL"/>
+    <port number="3" label="TRACKBALL" type="B" inputCodes="TRACKBALL"/>
+    <port number="4" label="SELECT" type="R" inputCodes="KEYCODE_ENTER"/>
+    <port number="5" label="SELECT" type="G" inputCodes="KEYCODE_ENTER"/>
+    <port number="6" label="SELECT" type="B" inputCodes="KEYCODE_ENTER"/>
+    <port number="7" label="RMOUSE" type="R" inputCodes=""/>
+    <port number="8" label="RMOUSE" type="G" inputCodes=""/>
+    <port number="9" label="RMOUSE" type="B" inputCodes=""/>
+    <port number="10" label="LMOUSE" type="R" inputCodes=""/>
+    <port number="11" label="LMOUSE" type="G" inputCodes=""/>
+    <port number="12" label="LMOUSE" type="B" inputCodes=""/>
+    <port number="13" label="P1COIN" type="R" inputCodes="KEYCODE_S"/>
+    <port number="14" label="P1COIN" type="G" inputCodes="KEYCODE_S"/>
+    <port number="15" label="P1COIN" type="B" inputCodes="KEYCODE_S"/>
+    <port number="16" label="P1START" type="R" inputCodes="KEYCODE_R"/>
+    <port number="17" label="P1START" type="G" inputCodes="KEYCODE_R"/>
+    <port number="18" label="P1START" type="B" inputCodes="KEYCODE_R"/>
+    <port number="19" label="P1B4" type="R" inputCodes=""/>
+    <port number="20" label="P1B4" type="G" inputCodes=""/>
+    <port number="21" label="P1B4" type="B" inputCodes=""/>
+    <port number="22" label="P1B3" type="R" inputCodes="KEYCODE_C"/>
+    <port number="23" label="P1B3" type="G" inputCodes="KEYCODE_C"/>
+    <port number="24" label="P1B3" type="B" inputCodes="KEYCODE_C"/>
+    <port number="25" label="P1B2" type="R" inputCodes="KEYCODE_B"/>
+    <port number="26" label="P1B2" type="G" inputCodes="KEYCODE_B"/>
+    <port number="27" label="P1B2" type="B" inputCodes="KEYCODE_B"/>
+    <port number="28" label="P1B1" type="R" inputCodes="KEYCODE_A"/>
+    <port number="29" label="P1B1" type="G" inputCodes="KEYCODE_A"/>
+    <port number="30" label="P1B1" type="B" inputCodes="KEYCODE_A"/>
+    <port number="31" label="P1B8" type="R" inputCodes=""/>
+    <port number="32" label="P1B8" type="G" inputCodes=""/>
+    <port number="33" label="P1B8" type="B" inputCodes=""/>
+    <port number="34" label="P1B7" type="R" inputCodes="KEYCODE_F"/>
+    <port number="35" label="P1B7" type="G" inputCodes="KEYCODE_F"/>
+    <port number="36" label="P1B7" type="B" inputCodes="KEYCODE_F"/>
+    <port number="37" label="P1B6" type="R" inputCodes="KEYCODE_E"/>
+    <port number="38" label="P1B6" type="G" inputCodes="KEYCODE_E"/>
+    <port number="39" label="P1B6" type="B" inputCodes="KEYCODE_E"/>
+    <port number="40" label="P1B5" type="R" inputCodes="KEYCODE_D"/>
+    <port number="41" label="P1B5" type="G" inputCodes="KEYCODE_D"/>
+    <port number="42" label="P1B5" type="B" inputCodes="KEYCODE_D"/>
+    <port number="43" label="" type="" inputCodes=""/>
+    <port number="44" label="" type="" inputCodes=""/>
+    <port number="45" label="" type="" inputCodes=""/>
+    <port number="46" label="" type="" inputCodes=""/>
+    <port number="47" label="" type="" inputCodes=""/>
+    <port number="48" label="" type="" inputCodes=""/>
+    <port number="49" label="" type="" inputCodes=""/>
+    <port number="50" label="" type="" inputCodes=""/>
+    <port number="51" label="" type="" inputCodes=""/>
+    <port number="52" label="" type="" inputCodes=""/>
+    <port number="53" label="" type="" inputCodes=""/>
+    <port number="54" label="" type="" inputCodes=""/>
+    <port number="55" label="" type="" inputCodes=""/>
+    <port number="56" label="" type="" inputCodes=""/>
+    <port number="57" label="" type="" inputCodes=""/>
+    <port number="58" label="" type="" inputCodes=""/>
+    <port number="59" label="" type="" inputCodes=""/>
+    <port number="60" label="" type="" inputCodes=""/>
+    <port number="61" label="" type="" inputCodes=""/>
+    <port number="62" label="" type="" inputCodes=""/>
+    <port number="63" label="" type="" inputCodes=""/>
+    <port number="64" label="" type="" inputCodes=""/>
+  </ledController>
+  <ledController type="3" id="2" name="PACLED64">
+    <port number="1" label="EXIT" type="R" inputCodes="KEYCODE_ESC"/>
+    <port number="2" label="EXIT" type="G" inputCodes="KEYCODE_ESC"/>
+    <port number="3" label="EXIT" type="B" inputCodes="KEYCODE_ESC"/>
+    <port number="4" label="SEARCH" type="R" inputCodes="KEYCODE_SLASH"/>
+    <port number="5" label="SEARCH" type="G" inputCodes="KEYCODE_SLASH"/>
+    <port number="6" label="SEARCH" type="B" inputCodes="KEYCODE_SLASH"/>
+    <port number="7" label="PAUSE" type="R" inputCodes="KEYCODE_P"/>
+    <port number="8" label="PAUSE" type="G" inputCodes="KEYCODE_P"/>
+    <port number="9" label="PAUSE" type="B" inputCodes="KEYCODE_P"/>
+    <port number="10" label="P2START" type="R" inputCodes="KEYCODE_T"/>
+    <port number="11" label="P2START" type="G" inputCodes="KEYCODE_T"/>
+    <port number="12" label="P2START" type="B" inputCodes="KEYCODE_T"/>
+    <port number="13" label="P2COIN" type="R" inputCodes="KEYCODE_U"/>
+    <port number="14" label="P2COIN" type="G" inputCodes="KEYCODE_U"/>
+    <port number="15" label="P2COIN" type="B" inputCodes="KEYCODE_U"/>
+    <port number="16" label="P2B1" type="R" inputCodes="KEYCODE_G"/>
+    <port number="17" label="P2B1" type="G" inputCodes="KEYCODE_G"/>
+    <port number="18" label="P2B1" type="B" inputCodes="KEYCODE_G"/>
+    <port number="19" label="P2B2" type="R" inputCodes="KEYCODE_H"/>
+    <port number="20" label="P2B2" type="G" inputCodes="KEYCODE_H"/>
+    <port number="21" label="P2B2" type="B" inputCodes="KEYCODE_H"/>
+    <port number="22" label="P2B3" type="R" inputCodes="KEYCODE_I"/>
+    <port number="23" label="P2B3" type="G" inputCodes="KEYCODE_I"/>
+    <port number="24" label="P2B3" type="B" inputCodes="KEYCODE_I"/>
+    <port number="25" label="P2B4" type="R" inputCodes=""/>
+    <port number="26" label="P2B4" type="G" inputCodes=""/>
+    <port number="27" label="P2B4" type="B" inputCodes=""/>
+    <port number="28" label="P2B5" type="R" inputCodes="KEYCODE_J"/>
+    <port number="29" label="P2B5" type="G" inputCodes="KEYCODE_J"/>
+    <port number="30" label="P2B5" type="B" inputCodes="KEYCODE_J"/>
+    <port number="31" label="P2B6" type="R" inputCodes="KEYCODE_K"/>
+    <port number="32" label="P2B6" type="G" inputCodes="KEYCODE_K"/>
+    <port number="33" label="P2B6" type="B" inputCodes="KEYCODE_K"/>
+    <port number="34" label="P2B7" type="R" inputCodes="KEYCODE_L"/>
+    <port number="35" label="P2B7" type="G" inputCodes="KEYCODE_L"/>
+    <port number="36" label="P2B7" type="B" inputCodes="KEYCODE_L"/>
+    <port number="37" label="P2B8" type="R" inputCodes=""/>
+    <port number="38" label="P2B8" type="G" inputCodes=""/>
+    <port number="39" label="P2B8" type="B" inputCodes=""/>
+    <port number="40" label="" type="" inputCodes=""/>
+    <port number="41" label="" type="" inputCodes=""/>
+    <port number="42" label="" type="" inputCodes=""/>
+    <port number="43" label="" type="" inputCodes=""/>
+    <port number="44" label="" type="" inputCodes=""/>
+    <port number="45" label="" type="" inputCodes=""/>
+    <port number="46" label="" type="" inputCodes=""/>
+    <port number="47" label="" type="" inputCodes=""/>
+    <port number="48" label="" type="" inputCodes=""/>
+    <port number="49" label="" type="" inputCodes=""/>
+    <port number="50" label="" type="" inputCodes=""/>
+    <port number="51" label="" type="" inputCodes=""/>
+    <port number="52" label="" type="" inputCodes=""/>
+    <port number="53" label="" type="" inputCodes=""/>
+    <port number="54" label="" type="" inputCodes=""/>
+    <port number="55" label="" type="" inputCodes=""/>
+    <port number="56" label="" type="" inputCodes=""/>
+    <port number="57" label="" type="" inputCodes=""/>
+    <port number="58" label="" type="" inputCodes=""/>
+    <port number="59" label="" type="" inputCodes=""/>
+    <port number="60" label="" type="" inputCodes=""/>
+    <port number="61" label="" type="" inputCodes=""/>
+    <port number="62" label="" type="" inputCodes=""/>
+    <port number="63" label="" type="" inputCodes=""/>
+    <port number="64" label="" type="" inputCodes=""/>
+  </ledController>
+</dat>
