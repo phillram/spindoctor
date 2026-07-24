@@ -329,13 +329,22 @@ def _sibling_spindoctor_exe() -> str:
 
 
 def _swap_bat_dir() -> Path:
-    """Directory the swap bat/vbs live in — next to the exe when frozen,
-    ``~/.spindoctor/`` for source installs. Does NOT create the directory;
-    only :func:`_write_swap_bat` does that, so computing a preview path
-    (dry-run) never touches disk.
+    """Directory the swap bat/vbs live in — always ``~/.spindoctor/``, the
+    same stable location ``config.json`` already uses, regardless of
+    frozen/source install. NOT next to the frozen exe: portable Windows
+    installs unzip each release into its own version-numbered folder
+    (e.g. ``spindoctor-win10-v2.11.0\\``), so a bat/vbs pair stored there
+    gets silently orphaned the next time the cabinet owner upgrades into
+    a new folder — the registered Task Scheduler entry would keep
+    pointing at a script that may no longer exist. Writing here instead
+    means the Task Scheduler task's target path never needs to change
+    across upgrades; only its *contents* (which reference the
+    per-version ``spindoctor.exe`` on a frozen install, via
+    :func:`_sibling_spindoctor_exe`) need a refresh — re-run
+    ``introvideo install-autorun --apply`` once after upgrading. Does NOT
+    create the directory; only :func:`_write_swap_bat` does that, so
+    computing a preview path (dry-run) never touches disk.
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
     return Path.home() / ".spindoctor"
 
 
