@@ -7504,13 +7504,16 @@ def ledblinky_group():
     \b
     Subcommands:
       generate       Generate / merge controls.ini and Colors.ini from MAME data
+      setup          Run generate + colors sync-players in one step (MAME)
       audit          Audit ROM → Colors.ini coverage
+      inspect-rom    Show what LEDBlinky would see for one ROM (diagnostic)
       check          Check LEDBlinky compatibility with HyperSpin
       fix            Fix LEDBlinky compatibility issues
       patch-settings Patch Settings.ini animations and suppress unused-button flash
       fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
       admin-buttons  Set per-button admin/cabinet colors across all ROM sections
       colors         Manage named color definitions (list / edit / normalize)
+      lwax           Build raw .lwax LED animation files (fade / batch library)
     """
 
 
