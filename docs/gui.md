@@ -241,6 +241,8 @@ Configure LEDBlinky's animation behaviour. Run once after installing, then only 
 
 **Refresh list** populates all three dropdowns from your LEDBlinky `lwa\` folder and pre-selects each dropdown to the value currently set in `Settings.ini`. The dropdowns also pre-populate on startup if `ledblinky_dir` is already configured. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
 
+> **Where do the `.lwa`/`.lwax` files in those dropdowns come from?** LedBlinky ships some; you can also build your own. `spindoctor ledblinky lwax fade` makes a single custom colour-fade, and `python scripts/generate_lwax_patterns.py` generates a whole library of animated effects (sweeps, pulses, rain, breathe, rainbow, etc.). Both write *unsigned* files that need a one-time **Save As** in LedBlinky's Animation Editor before they appear here — see [`commands.md` → "Generating a full pattern batch"](commands.md#generating-a-full-pattern-batch-scriptsgenerate_lwax_patternspy).
+
 **Step 3 — MAME: Generate, Normalize & Sync Players**
 
 These steps build MAME-sourced LED data using `mame -listxml`. Use **▶ Run Full MAME Setup (3a + 3c)** for a single-click workflow, or run individual steps below. Re-run after adding new MAME ROMs — existing entries are preserved unless Overwrite is ticked.

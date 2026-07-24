@@ -750,8 +750,9 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     # Clear previously-generated files so renamed variants don't leave stale
     # leftovers behind (this is a full-batch regenerator, not an incremental one).
-    for stale in out_dir.glob("*.lwax"):
-        stale.unlink()
+    for pattern in ("*.lwax", "README.txt", "README.md"):
+        for stale in out_dir.glob(pattern):
+            stale.unlink()
 
     pal = Palette(MASTER_PALETTE)
     # (family, filename, animation, human description)
@@ -1093,49 +1094,100 @@ def main() -> int:
         (out_dir / filename).write_text(xml_text, encoding="utf-8", newline="")
         written.append((filename, len(animation.frames), desc))
 
-    # --- README / index ---
-    lines = [
-        "SpinDoctor LEDBlinky pattern batch",
-        "=" * 42,
-        "",
-        f"{len(written)} raw (UNSIGNED) .lwax animations for the cabinet's two",
-        "PAC-LED64 boards.",
-        "",
-        "22 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
-        "checker, radial, cyclone, race, heartbeat, strobe, marquee, bounce,",
-        "rowblink, ripple, spiral, comet, lavalamp, twinkle, candle, gradient)",
-        "give each fixed-colour variant a colour used nowhere else, one",
-        "moving/fading rainbow variant apiece, and a slow / medium / fast spread.",
-        "",
-        "The 'breathe_*' files are a solid-colour library: each fades one named",
-        "colour smoothly in and out across the whole panel, slowly. Three sets --",
-        "standard, vivid_* (deepest/brightest), pastel_* (soft) -- plus one",
-        "breathe_rainbow. One per colour so you can pick favourites by name.",
-        "",
-        "Two colour-cycle files step through several unique solid colours and loop:",
-        "breathe_cycle (panel breathes each colour in turn) and pulse_cycle (a",
-        "radial pulse replays in each colour).",
-        "",
-        "TO USE ON THE CABINET (signing is required for LedBlinky Config):",
-        "  1. Copy a .lwax to the cabinet.",
-        "  2. Open it in LEDBlinkyAnimationEditor.exe (Plugins\\LEDBlinky\\).",
-        "  3. Animation -> Save As, same name, no edits (this signs it).",
-        "  4. Copy into <ledblinky_dir>\\lwa\\ and assign, e.g.:",
-        "       spindoctor ledblinky patch-settings --fe-lwa \"<name>.lwax\" --apply",
-        "  (Runtime playback via Settings.ini does NOT need signing; the signature",
-        "   check only gates LedBlinky Config's own management UI.)",
-        "",
-        "Speed = frame duration (ms) x frames-per-step. slow/medium/fast below are",
-        "this batch's tiers, not a LedBlinky setting.",
-        "",
-        "FILES",
-        "-----",
+    # --- README.md / index (a short guide, not a per-file manifest) ---
+    # One line per family with a live file count -- readers pick by the
+    # self-describing file names, so there's no need to list all ~170 files.
+    family_blurbs = [
+        ("fade", "whole panel cross-fades between two colours"),
+        ("sweep", "a comet sweeps across the panel (both directions, chase, cylon)"),
+        ("rain", "colour drops fall top-to-bottom, out of sync"),
+        ("confetti", "single buttons twinkle at random (rain, spread out)"),
+        ("scroll", "a hue gradient scrolls across the panel"),
+        ("fill", "a bar fills up from the centre, holds, flashes, refills"),
+        ("drain", "a full panel empties one step at a time (countdown/fuse)"),
+        ("checker", "interleaved halves swap colours in lockstep"),
+        ("radial", "rings pulse outward from / inward to the trackball"),
+        ("cyclone", "a front spins around the top-then-bottom loop"),
+        ("race", "two comets race outward from the trackball to each edge"),
+        ("heartbeat", "whole panel double-thumps then rests"),
+        ("strobe", "rapid whole-panel flashing"),
+        ("marquee", "theatre chase: every 3rd button lit, gaps travelling"),
+        ("bounce", "a VU-meter bar fills and recedes"),
+        ("rowblink", "top button row blinks against the rest"),
+        ("ripple", "expanding fading rings out of random buttons (raindrops)"),
+        ("spiral", "a radar wedge sweeps around the trackball hub"),
+        ("comet", "an eased head glides across and back, slowing at the ends"),
+        ("lavalamp", "a slow plasma field of overlapping waves"),
+        ("twinkle", "a calm dark starfield with soft random fades"),
+        ("candle", "the whole panel flickers like a flame"),
+        ("gradient", "a two-colour gradient breathes and slides"),
+        ("breathe", "one solid colour fades in and out (a pick-by-name colour library)"),
+        ("pulse", "a radial pulse replays through several colours and loops"),
     ]
-    for filename, frames, desc in written:
-        lines.append(f"  {filename:<44} {frames:>4} frames  {desc}")
-    (out_dir / "README.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    counts = {}
+    for filename, _frames, _desc in written:
+        fam = filename.split("_", 1)[0]
+        counts[fam] = counts.get(fam, 0) + 1
 
-    print(f"Wrote {len(written)} .lwax files + README.txt to {out_dir}")
+    md = [
+        "# SpinDoctor LEDBlinky pattern library",
+        "",
+        f"{len(written)} raw (**unsigned**) `.lwax` LED animations for this cabinet's "
+        "two PAC-LED64 boards, generated by `scripts/generate_lwax_patterns.py`.",
+        "",
+        "## What's in here",
+        "",
+        "Effect families, each with four unique-colour variants plus one moving/fading "
+        "**rainbow**, spread over slow / medium / fast timing:",
+        "",
+    ]
+    for fam, blurb in family_blurbs:
+        if fam in counts:
+            md.append(f"- **{fam}** ({counts[fam]}) — {blurb}")
+    md += [
+        "",
+        "Plus a **`breathe_*` colour library** (standard, `vivid_*`, `pastel_*`, and "
+        "`breathe_rainbow`) and two looping colour-cycle files (`breathe_cycle`, "
+        "`pulse_cycle`).",
+        "",
+        "## File names",
+        "",
+        "`family_colour_speed.lwax` — e.g. `fade_red_lime_slow.lwax`, "
+        "`breathe_pastel_blue_slow.lwax`, `radial_rainbow_out_fast.lwax`. Speed is this "
+        "batch's own slow/medium/fast tier (frame duration × frames-per-step), not a "
+        "LedBlinky setting.",
+        "",
+        "## How to use one",
+        "",
+        "The files are unsigned; LedBlinky Config validates a signature it only writes "
+        "itself, so sign each file you want once:",
+        "",
+        "1. Copy the `.lwax` to the cabinet.",
+        "2. Open it in `LEDBlinkyAnimationEditor.exe` (in `<ledblinky_dir>\\Plugins\\LEDBlinky\\`).",
+        "3. **Animation → Save As**, same name, no edits — this signs it.",
+        "4. Copy into `<ledblinky_dir>\\lwa\\` and assign it:",
+        "",
+        "```",
+        "spindoctor ledblinky patch-settings --fe-lwa \"<name>.lwax\" --apply   :: front-end active",
+        "spindoctor ledblinky patch-settings --ss-lwa \"<name>.lwax\" --apply   :: screen saver",
+        "```",
+        "",
+        "(Runtime playback via `Settings.ini` does not check the signature; the Save-As "
+        "round-trip is only needed to manage the file inside LedBlinky Config.)",
+        "",
+        "## Troubleshooting",
+        "",
+        "- **\"Animation File has a missing or invalid signature\" in LedBlinky Config** — "
+        "expected for a freshly generated file; do the Save-As step above.",
+        "- **Plays, but some buttons stay a fixed colour (often white) while browsing** — "
+        "that's `Settings.ini` `[FEOptions] LightFEControls=1` overriding the front-end's "
+        "active buttons. Set `LightFEControls=0` for a fully synced panel.",
+        "",
+        "Regenerate this whole folder any time with `python scripts/generate_lwax_patterns.py`.",
+    ]
+    (out_dir / "README.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+
+    print(f"Wrote {len(written)} .lwax files + README.md to {out_dir}")
     print(f"Unique palette colours consumed: {pal.used} / {len(MASTER_PALETTE)}")
     return 0
 
