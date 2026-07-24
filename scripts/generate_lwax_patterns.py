@@ -182,6 +182,42 @@ SCROLL_SPEED = {                                                               #
 }
 CHECKER_SPEED = {"slow": 600, "medium": 400, "fast": 200}                      # hold_ms
 
+# Breathe = whole panel fading a single solid colour in and out. steps_per_leg
+# is per half-breath (fade-in or fade-out); duration_ms is per frame. slow ~5.8s
+# per full breath, medium ~3.8s, fast ~2.2s.
+BREATHE_SPEED = {"slow": (64, 45), "medium": (48, 40), "fast": (36, 30)}        # steps_per_leg, duration_ms
+
+# Named solid colours for the breathe family, spanning the spectrum plus a few
+# whites. Values are 0-48 per channel (PAC-LED64 range). Pick favourites by name.
+BREATHE_COLORS = [
+    ("red",        (48, 0, 0)),
+    ("crimson",    (48, 0, 8)),
+    ("rose",       (48, 4, 20)),
+    ("pink",       (48, 12, 30)),
+    ("coral",      (48, 16, 10)),
+    ("orange",     (48, 18, 0)),
+    ("amber",      (48, 30, 0)),
+    ("gold",       (48, 38, 0)),
+    ("yellow",     (48, 48, 0)),
+    ("chartreuse", (32, 48, 0)),
+    ("lime",       (18, 48, 0)),
+    ("green",      (0, 48, 0)),
+    ("emerald",    (0, 48, 18)),
+    ("mint",       (0, 48, 28)),
+    ("teal",       (0, 44, 36)),
+    ("turquoise",  (0, 42, 44)),
+    ("cyan",       (0, 48, 48)),
+    ("sky",        (0, 28, 48)),
+    ("azure",      (0, 16, 48)),
+    ("blue",       (0, 0, 48)),
+    ("indigo",     (14, 0, 48)),
+    ("violet",     (26, 0, 48)),
+    ("purple",     (36, 0, 48)),
+    ("magenta",    (48, 0, 48)),
+    ("white",      (48, 48, 48)),
+    ("warm_white", (48, 40, 28)),
+]
+
 # Speed assigned to the 5 variants of each family (index 4 = the rainbow one).
 # Guarantees at least one slow, one medium and one fast per family.
 VARIANT_SPEEDS = ["slow", "medium", "fast", "slow", "medium"]
@@ -455,6 +491,16 @@ def main() -> int:
                                                               hold_ms=CHECKER_SPEED["medium"]),
         "full spectrum", "rainbow checkerboard")
 
+    # 8. BREATHE -- whole panel fading one solid colour in and out. One file per
+    # named colour so it doubles as a pickable colour library. Slow by default
+    # (Phill: "red slowly fading in and out"); build_color_cycle from off ->
+    # colour -> off gives the smooth in/out breath.
+    off = (0, 0, 0)
+    spl, dur = BREATHE_SPEED["slow"]
+    for cname, color in BREATHE_COLORS:
+        anim = build_color_cycle(controllers, [off, color], steps_per_leg=spl, duration_ms=dur)
+        add("breathe", cname, "slow", anim, cname.replace("_", " "), "solid colour fading in and out")
+
     # --- validate + write ---
     written = []
     for family, filename, animation, desc in batch:
@@ -469,9 +515,15 @@ def main() -> int:
         "=" * 42,
         "",
         f"{len(written)} raw (UNSIGNED) .lwax animations for the cabinet's two",
-        "PAC-LED64 boards. Every fixed-colour variant uses a colour that appears",
-        "nowhere else in this batch; each family also has one moving/fading",
-        "rainbow variant, and spreads over slow / medium / fast timing.",
+        "PAC-LED64 boards.",
+        "",
+        "The 7 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
+        "checker) give each fixed-colour variant a colour used nowhere else, one",
+        "moving/fading rainbow variant apiece, and a slow / medium / fast spread.",
+        "",
+        "The 'breathe_*' files are a solid-colour library: each fades one named",
+        "colour smoothly in and out across the whole panel, slowly. One per colour",
+        "so you can pick favourites by name.",
         "",
         "TO USE ON THE CABINET (signing is required for LedBlinky Config):",
         "  1. Copy a .lwax to the cabinet.",
