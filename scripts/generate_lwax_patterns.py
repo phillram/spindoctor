@@ -21,6 +21,7 @@ them; runtime playback via Settings.ini does not check the signature.
 from __future__ import annotations
 
 import colorsys
+import math
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -30,12 +31,14 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from spindoctor.lwax import (  # noqa: E402
     LwaxAnimation,
+    build_alternate,
     build_color_cycle,
     build_fill,
     build_drain,
     build_rain,
     build_rainbow_scroll,
     build_wave,
+    merge_animations,
     parse_input_map,
 )
 
@@ -139,7 +142,10 @@ def _stride(entries, step: int):
     n = len(entries)
     return [entries[(i * step) % n] for i in range(n)]
 
-MASTER_PALETTE = _stride(_build_master_palette(48), 13)
+# Large enough that every fixed-colour variant across all families gets a
+# globally unique colour. 120 & 37 are coprime, so the stride is a full
+# permutation that hops far around the wheel on each take.
+MASTER_PALETTE = _stride(_build_master_palette(120), 37)
 
 
 class Palette:
@@ -181,6 +187,8 @@ SCROLL_SPEED = {                                                               #
     "fast": (60, 2, 30),
 }
 CHECKER_SPEED = {"slow": 600, "medium": 400, "fast": 200}                      # hold_ms
+HEART_SPEED = {"slow": (6, 45, 26), "medium": (4, 40, 16), "fast": (3, 30, 10)}  # up/down frames, dur, rest
+STROBE_SPEED = {"slow": (4, 4, 45), "medium": (2, 2, 35), "fast": (1, 1, 25)}    # on, off, dur
 
 # Breathe = whole panel fading a single solid colour in and out. steps_per_leg
 # is per half-breath (fade-in or fade-out); duration_ms is per frame. slow ~5.8s
@@ -189,6 +197,8 @@ BREATHE_SPEED = {"slow": (64, 45), "medium": (48, 40), "fast": (36, 30)}        
 
 # Named solid colours for the breathe family, spanning the spectrum plus a few
 # whites. Values are 0-48 per channel (PAC-LED64 range). Pick favourites by name.
+# Three sets: standard bright, extra-vivid (deep/saturated punch), and pastels
+# (soft, desaturated). File names get a "vivid_"/"pastel_" prefix accordingly.
 BREATHE_COLORS = [
     ("red",        (48, 0, 0)),
     ("crimson",    (48, 0, 8)),
@@ -217,6 +227,18 @@ BREATHE_COLORS = [
     ("white",      (48, 48, 48)),
     ("warm_white", (48, 40, 28)),
 ]
+
+# Hue anchors used to synthesize the vivid and pastel breathe sets.
+_BREATHE_HUES = [
+    ("red", 0.00), ("orange", 0.06), ("amber", 0.10), ("yellow", 0.15),
+    ("lime", 0.22), ("green", 0.33), ("emerald", 0.42), ("cyan", 0.50),
+    ("azure", 0.57), ("blue", 0.66), ("indigo", 0.72), ("violet", 0.78),
+    ("purple", 0.82), ("magenta", 0.88), ("pink", 0.94),
+]
+# Extra-vivid: full saturation + full value -- the deepest, brightest punch.
+BREATHE_VIVID = [(f"vivid_{name}", hsv48(h, 1.0, 1.0)) for name, h in _BREATHE_HUES]
+# Pastel: low saturation, full value -- soft, milky, gentle.
+BREATHE_PASTEL = [(f"pastel_{name}", hsv48(h, 0.35, 1.0)) for name, h in _BREATHE_HUES]
 
 # Speed assigned to the 5 variants of each family (index 4 = the rainbow one).
 # Guarantees at least one slow, one medium and one fast per family.
@@ -320,6 +342,133 @@ def build_rainbow_checker(controllers, group_a, group_b, hold_ms=400, cycles=16)
         col_b = hsv48(hue_b, 1.0, 1.0)
         anim.add_frame(hold_ms, {**{l: col_a for l in group_a}, **{l: col_b for l in group_b}})
         anim.add_frame(hold_ms, {**{l: col_b for l in group_a}, **{l: col_a for l in group_b}})
+    return anim
+
+
+# --------------------------------------------------------------------------- #
+# Extra pulse families (local builders on top of add_frame / merge_animations).
+# --------------------------------------------------------------------------- #
+def _pulse(anim, labels, color, up, down, duration_ms, peak=1.0):
+    """Append a single fade-up-then-down pulse of ``color`` across ``labels``."""
+    for s in range(up):
+        anim.add_frame(duration_ms, {l: dim(color, (s + 1) / up * peak) for l in labels})
+    for s in range(down):
+        anim.add_frame(duration_ms, {l: dim(color, (1 - (s + 1) / down) * peak) for l in labels})
+
+
+def build_heartbeat(controllers, color, up=4, down=4, rest_frames=16, duration_ms=40, cycles=6):
+    """Whole panel: two quick pulses (a lub-dub) then a rest, repeating."""
+    anim = LwaxAnimation(controllers)
+    labels = anim.labels
+    off = {l: (0, 0, 0) for l in labels}
+    for _ in range(cycles):
+        _pulse(anim, labels, color, up, down, duration_ms, peak=1.0)
+        _pulse(anim, labels, color, up, down, duration_ms, peak=0.7)
+        for _ in range(rest_frames):
+            anim.add_frame(duration_ms, off)
+    return anim
+
+
+def build_rainbow_heartbeat(controllers, up=4, down=4, rest_frames=16, duration_ms=40, cycles=12):
+    """Heartbeat whose colour advances around the wheel every beat."""
+    anim = LwaxAnimation(controllers)
+    labels = anim.labels
+    off = {l: (0, 0, 0) for l in labels}
+    for c in range(cycles):
+        col1 = hsv48(c / cycles, 1.0, 1.0)
+        col2 = hsv48(c / cycles + 0.04, 1.0, 1.0)
+        _pulse(anim, labels, col1, up, down, duration_ms, peak=1.0)
+        _pulse(anim, labels, col2, up, down, duration_ms, peak=0.7)
+        for _ in range(rest_frames):
+            anim.add_frame(duration_ms, off)
+    return anim
+
+
+def build_strobe(controllers, color, on_frames=2, off_frames=2, duration_ms=30, cycles=30, rainbow=False):
+    """Whole panel flashing on/off. With ``rainbow`` each flash is a new hue."""
+    anim = LwaxAnimation(controllers)
+    labels = anim.labels
+    off = {l: (0, 0, 0) for l in labels}
+    for c in range(cycles):
+        col = hsv48(c / cycles, 1.0, 1.0) if rainbow else color
+        for _ in range(on_frames):
+            anim.add_frame(duration_ms, {l: col for l in labels})
+        for _ in range(off_frames):
+            anim.add_frame(duration_ms, off)
+    return anim
+
+
+def build_marquee(controllers, groups, color, spacing=3, frames_per_step=4, duration_ms=40, rainbow=False):
+    """Theater/marquee chase: every ``spacing``-th group lit, the lit set
+    marching one step each frame so the gaps travel around the loop."""
+    anim = LwaxAnimation(controllers)
+    all_labels = [l for g in groups for l in g]
+    n = len(groups)
+    off = (0, 0, 0)
+    for offset in range(n):
+        for _ in range(frames_per_step):
+            colors = {l: off for l in all_labels}
+            for i, group in enumerate(groups):
+                if (i - offset) % spacing == 0:
+                    col = hsv48(((i - offset) / n) % 1.0, 1.0, 1.0) if rainbow else color
+                    for l in group:
+                        colors[l] = col
+            anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_bounce(controllers, groups, color, frames_per_step=4, duration_ms=40, cycles=3, rainbow=False):
+    """A VU-meter bar that fills up to full then recedes to empty, repeating."""
+    anim = LwaxAnimation(controllers)
+    all_labels = [l for g in groups for l in g]
+    n = len(groups)
+    off = (0, 0, 0)
+
+    def col_for(j):
+        return hsv48(j / n, 1.0, 1.0) if rainbow else color
+
+    for _ in range(cycles):
+        for level in list(range(1, n + 1)) + list(range(n - 1, -1, -1)):
+            for _ in range(frames_per_step):
+                colors = {l: off for l in all_labels}
+                for j in range(level):
+                    for l in groups[j]:
+                        colors[l] = col_for(j)
+                anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_race_from_center(controllers, color_left, color_right, frames_per_step=6, duration_ms=40):
+    """Two comets launching from the trackball and racing outward to each edge,
+    each side its own colour (merged into one animation)."""
+    left = [list(g) for g in reversed(LEFT_RIGHT_ORDER[:TRACKBALL_INDEX])]
+    right = [list(g) for g in LEFT_RIGHT_ORDER[TRACKBALL_INDEX + 1:]]
+    a = build_wave(controllers, left, color_left, trail_color=dim(color_left, 0.3),
+                   frames_per_step=frames_per_step, duration_ms=duration_ms)
+    b = build_wave(controllers, right, color_right, trail_color=dim(color_right, 0.3),
+                   frames_per_step=frames_per_step, duration_ms=duration_ms)
+    return merge_animations(a, b)
+
+
+def build_rainbow_race(controllers, frames_per_step=5, duration_ms=35):
+    """Two rainbow comets racing outward from the trackball to both edges."""
+    left = [list(g) for g in reversed(LEFT_RIGHT_ORDER[:TRACKBALL_INDEX])]
+    right = [list(g) for g in LEFT_RIGHT_ORDER[TRACKBALL_INDEX + 1:]]
+    a = build_rainbow_comet(controllers, left, frames_per_step=frames_per_step, duration_ms=duration_ms)
+    b = build_rainbow_comet(controllers, right, frames_per_step=frames_per_step, duration_ms=duration_ms)
+    return merge_animations(a, b)
+
+
+def build_rainbow_breathe(controllers, total_frames=192, duration_ms=45, breaths=4):
+    """Whole panel breathing (brightness rising and falling) while its hue
+    slowly cycles once around the wheel -- a glowing rainbow breath."""
+    anim = LwaxAnimation(controllers)
+    labels = anim.labels
+    for f in range(total_frames):
+        hue = f / total_frames
+        val = (1 - math.cos(2 * math.pi * breaths * f / total_frames)) / 2  # 0->1->0
+        col = hsv48(hue, 1.0, val)
+        anim.add_frame(duration_ms, {l: col for l in labels})
     return anim
 
 
@@ -491,15 +640,119 @@ def main() -> int:
                                                               hold_ms=CHECKER_SPEED["medium"]),
         "full spectrum", "rainbow checkerboard")
 
-    # 8. BREATHE -- whole panel fading one solid colour in and out. One file per
+    # 8. RADIAL PULSE -- rings expanding out of / collapsing into the trackball.
+    dirs = [("out", RADIAL_RINGS), ("in", list(reversed(RADIAL_RINGS)))]
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fps, dur = WAVE_SPEED[speed]
+        dname, groups = dirs[i % 2]
+        (sh, h, c) = pal.take()
+        add("radial", f"{h}_{dname}", speed, build_wave(controllers, groups, c, trail_color=dim(c, 0.3),
+                                                         frames_per_step=fps, duration_ms=dur),
+            f"{sh} {h}", f"radial pulse {dname}ward")
+    fps, dur = WAVE_SPEED["fast"]
+    add("radial", "rainbow_out", "fast", build_rainbow_comet(controllers, RADIAL_RINGS, frames_per_step=fps,
+                                                             duration_ms=dur), "full spectrum",
+        "rainbow radial pulse outward")
+
+    # 9. CYCLONE -- a front spinning around the racetrack loop (top then bottom).
+    loops = [("cw", CYCLONE_LOOP), ("ccw", CYCLONE_LOOP[::-1])]
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fps, dur = WAVE_SPEED[speed]
+        lname, groups = loops[i % 2]
+        (sh, h, c) = pal.take()
+        add("cyclone", f"{h}_{lname}", speed, build_wave(controllers, groups, c, trail_color=dim(c, 0.4),
+                                                         frames_per_step=fps, duration_ms=dur),
+            f"{sh} {h}", f"cyclone spinning {lname}")
+    fps, dur = WAVE_SPEED["fast"]
+    add("cyclone", "rainbow_cw", "fast", build_rainbow_comet(controllers, CYCLONE_LOOP, frames_per_step=fps,
+                                                             duration_ms=dur), "full spectrum",
+        "rainbow cyclone")
+
+    # 10. RACE -- two comets launching from the trackball to opposite edges.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fps, dur = WAVE_SPEED[speed]
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
+        add("race", f"{ha}_{hb}", speed, build_race_from_center(controllers, ca, cb, frames_per_step=fps,
+                                                                duration_ms=dur),
+            f"{sa} {ha} versus {sb} {hb}", "two colours racing out from center")
+    add("race", "rainbow", "fast", build_rainbow_race(controllers), "full spectrum",
+        "rainbow race out from center")
+
+    # 11. HEARTBEAT -- whole panel lub-dub then rest.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        ud, dur, rest = HEART_SPEED[speed]
+        (sh, h, c) = pal.take()
+        add("heartbeat", h, speed, build_heartbeat(controllers, c, up=ud, down=ud, rest_frames=rest,
+                                                    duration_ms=dur), f"{sh} {h}", "double-thump heartbeat")
+    ud, dur, rest = HEART_SPEED["medium"]
+    add("heartbeat", "rainbow", "medium", build_rainbow_heartbeat(controllers, up=ud, down=ud, rest_frames=rest,
+                                                                  duration_ms=dur), "full spectrum",
+        "rainbow heartbeat")
+
+    # 12. STROBE -- rapid whole-panel flashing.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        on, offf, dur = STROBE_SPEED[speed]
+        (sh, h, c) = pal.take()
+        add("strobe", h, speed, build_strobe(controllers, c, on_frames=on, off_frames=offf, duration_ms=dur,
+                                             cycles=30), f"{sh} {h}", "whole-panel strobe")
+    on, offf, dur = STROBE_SPEED["fast"]
+    add("strobe", "rainbow", "fast", build_strobe(controllers, None, on_frames=on, off_frames=offf,
+                                                  duration_ms=dur, cycles=30, rainbow=True),
+        "full spectrum", "rainbow strobe")
+
+    # 13. MARQUEE -- theater chase, every 3rd control lit, gaps travelling.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fps, dur = WAVE_SPEED[speed]
+        (sh, h, c) = pal.take()
+        add("marquee", h, speed, build_marquee(controllers, LEFT_RIGHT_ORDER, c, spacing=3, frames_per_step=fps,
+                                               duration_ms=dur), f"{sh} {h}", "theater marquee chase")
+    fps, dur = WAVE_SPEED["medium"]
+    add("marquee", "rainbow", "medium", build_marquee(controllers, LEFT_RIGHT_ORDER, None, spacing=3,
+                                                      frames_per_step=fps, duration_ms=dur, rainbow=True),
+        "full spectrum", "rainbow marquee chase")
+
+    # 14. BOUNCE -- a VU-meter bar filling up and receding, radiating outward.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fps, dur = BAR_SPEED[speed]
+        (sh, h, c) = pal.take()
+        add("bounce", h, speed, build_bounce(controllers, RADIAL_RINGS, c, frames_per_step=fps, duration_ms=dur),
+            f"{sh} {h}", "VU-meter bounce")
+    fps, dur = BAR_SPEED["fast"]
+    add("bounce", "rainbow", "fast", build_bounce(controllers, RADIAL_RINGS, None, frames_per_step=fps,
+                                                  duration_ms=dur, rainbow=True), "full spectrum",
+        "rainbow VU-meter bounce")
+
+    # 15. ROWBLINK -- top button row vs the rest, swapping in lockstep.
+    row_other = ROW_ABOVE + ROW_BOTTOM
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        hold = CHECKER_SPEED[speed]
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
+        add("rowblink", f"{ha}_{hb}", speed, build_alternate_wrapper(controllers, ROW_TOP, row_other, ca, cb, hold),
+            f"{sa} {ha} and {sb} {hb}", "top row vs rest blink")
+    add("rowblink", "rainbow", "medium", build_rainbow_checker(controllers, ROW_TOP, row_other,
+                                                               hold_ms=CHECKER_SPEED["medium"]),
+        "full spectrum", "rainbow row blink")
+
+    # 16. BREATHE -- whole panel fading one solid colour in and out. One file per
     # named colour so it doubles as a pickable colour library. Slow by default
     # (Phill: "red slowly fading in and out"); build_color_cycle from off ->
-    # colour -> off gives the smooth in/out breath.
+    # colour -> off gives the smooth in/out breath. Standard, extra-vivid, and
+    # pastel sets, plus one rainbow breath.
     off = (0, 0, 0)
     spl, dur = BREATHE_SPEED["slow"]
-    for cname, color in BREATHE_COLORS:
+    for cname, color in BREATHE_COLORS + BREATHE_VIVID + BREATHE_PASTEL:
         anim = build_color_cycle(controllers, [off, color], steps_per_leg=spl, duration_ms=dur)
         add("breathe", cname, "slow", anim, cname.replace("_", " "), "solid colour fading in and out")
+    add("breathe", "rainbow", "slow", build_rainbow_breathe(controllers, duration_ms=BREATHE_SPEED["slow"][1]),
+        "full spectrum", "whole panel breathing while cycling hue")
 
     # --- validate + write ---
     written = []
@@ -517,13 +770,15 @@ def main() -> int:
         f"{len(written)} raw (UNSIGNED) .lwax animations for the cabinet's two",
         "PAC-LED64 boards.",
         "",
-        "The 7 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
-        "checker) give each fixed-colour variant a colour used nowhere else, one",
+        "15 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
+        "checker, radial, cyclone, race, heartbeat, strobe, marquee, bounce,",
+        "rowblink) give each fixed-colour variant a colour used nowhere else, one",
         "moving/fading rainbow variant apiece, and a slow / medium / fast spread.",
         "",
         "The 'breathe_*' files are a solid-colour library: each fades one named",
-        "colour smoothly in and out across the whole panel, slowly. One per colour",
-        "so you can pick favourites by name.",
+        "colour smoothly in and out across the whole panel, slowly. Three sets --",
+        "standard, vivid_* (deepest/brightest), pastel_* (soft) -- plus one",
+        "breathe_rainbow. One per colour so you can pick favourites by name.",
         "",
         "TO USE ON THE CABINET (signing is required for LedBlinky Config):",
         "  1. Copy a .lwax to the cabinet.",
@@ -552,7 +807,6 @@ def main() -> int:
 # build_alternate lives in the library; wrap so the call site above reads the
 # same as the local rainbow builders.
 def build_alternate_wrapper(controllers, group_a, group_b, color_a, color_b, hold_ms):
-    from spindoctor.lwax import build_alternate
     return build_alternate(controllers, group_a, group_b, color_a, color_b, hold_ms=hold_ms, cycles=8)
 
 
