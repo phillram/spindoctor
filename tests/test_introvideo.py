@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from spindoctor.config import Config
 from spindoctor.introvideo import (
     AUTORUN_TASK_NAME,
     IntroVideoError,
+    SWAP_BAT_FILENAME,
     SWAP_RETRY_ATTEMPTS,
     add_video,
     add_videos,
@@ -338,6 +340,35 @@ def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path
     assert "InStrRev" not in vbs_text
 
 
+def test_install_autorun_bat_dir_is_stable_even_when_frozen(layout, tmp_path, monkeypatch):
+    """Regression: the bat/vbs must always land in ~/.spindoctor/ — the
+    same stable location config.json uses — even on a frozen (packaged
+    .exe) install, NOT next to sys.executable. Portable Windows installs
+    unzip each release into its own version-numbered folder, so a
+    next-to-the-exe location would silently orphan the registered Task
+    Scheduler entry on every upgrade.
+    """
+    cfg, _pool_dir, _target = layout
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    # Simulate a frozen install with sys.executable living somewhere
+    # completely different from the stable ~/.spindoctor/ location.
+    fake_exe_dir = tmp_path / "spindoctor-win10-v2.11.0"
+    fake_exe_dir.mkdir()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe_dir / "spindoctor-gui.exe"))
+    monkeypatch.setattr(autostart_mod, "create_logon_task", lambda *a, **k: autostart_mod.TaskCreateResult(
+        name=AUTORUN_TASK_NAME, command="", output="SUCCESS",
+    ))
+
+    result = install_autorun(cfg, apply=True)
+
+    assert result.bat_path.parent == fake_home / ".spindoctor"
+    assert result.vbs_path.parent == fake_home / ".spindoctor"
+    assert fake_exe_dir not in result.bat_path.parents
+
+
 def test_uninstall_autorun_dry_run_reports_status_without_deleting(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
 
@@ -376,9 +407,11 @@ def test_uninstall_autorun_apply_noop_when_not_registered(monkeypatch):
 
 def test_autorun_status_reflects_task_exists(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
-    assert autorun_status() is True
+    assert autorun_status().registered is True
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
-    assert autorun_status() is False
+    status = autorun_status()
+    assert status.registered is False
+    assert status.stale is False  # never stale when not even registered
 
 
 def test_autorun_status_not_supported_propagates(monkeypatch):
@@ -387,3 +420,70 @@ def test_autorun_status_not_supported_propagates(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", _raise)
     with pytest.raises(autostart_mod.NotSupportedError):
         autorun_status()
+
+
+def test_autorun_status_not_stale_on_source_install(monkeypatch):
+    # Non-frozen: the bat calls bare "spindoctor", nothing version-
+    # specific to go stale, regardless of whether a bat file even exists.
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    assert autorun_status().stale is False
+
+
+def test_autorun_status_stale_when_bat_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "fakehome")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "v2.11.0" / "spindoctor-gui.exe"))
+
+    status = autorun_status()
+    assert status.registered is True
+    assert status.stale is True
+
+
+def test_autorun_status_stale_when_bat_references_old_install(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    new_exe_dir = tmp_path / "v2.12.0"
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(new_exe_dir / "spindoctor-gui.exe"))
+    # _sibling_spindoctor_exe() only returns the full quoted path if the
+    # sibling actually exists on disk — must create it for a meaningful
+    # "current install" comparison.
+    new_exe_dir.mkdir(parents=True)
+    (new_exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
+
+    # Simulate a bat written by an OLDER version of spindoctor (v2.11.0),
+    # sitting in the stable ~/.spindoctor/ location.
+    bat_dir = fake_home / ".spindoctor"
+    bat_dir.mkdir(parents=True)
+    old_exe = tmp_path / "v2.11.0" / "spindoctor.exe"
+    (bat_dir / SWAP_BAT_FILENAME).write_text(
+        f'@echo off\r\nstart /LOW /B /WAIT "" "{old_exe}" introvideo swap --apply\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="utf-8",
+    )
+
+    assert autorun_status().stale is True
+
+
+def test_autorun_status_not_stale_when_bat_matches_current_install(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    exe_dir = tmp_path / "v2.11.0"
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe_dir / "spindoctor-gui.exe"))
+    exe_dir.mkdir(parents=True)
+    (exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
+
+    bat_dir = fake_home / ".spindoctor"
+    bat_dir.mkdir(parents=True)
+    (bat_dir / SWAP_BAT_FILENAME).write_text(
+        f'@echo off\r\nstart /LOW /B /WAIT "" "{exe_dir / "spindoctor.exe"}" introvideo swap --apply\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="utf-8",
+    )
+
+    assert autorun_status().stale is False
