@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import random
 import shutil
+import sys
 import time
 from pathlib import Path
 
@@ -336,6 +337,35 @@ def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path
     assert str(result.bat_path) in vbs_text
     assert "ScriptFullName" not in vbs_text
     assert "InStrRev" not in vbs_text
+
+
+def test_install_autorun_bat_dir_is_stable_even_when_frozen(layout, tmp_path, monkeypatch):
+    """Regression: the bat/vbs must always land in ~/.spindoctor/ — the
+    same stable location config.json uses — even on a frozen (packaged
+    .exe) install, NOT next to sys.executable. Portable Windows installs
+    unzip each release into its own version-numbered folder, so a
+    next-to-the-exe location would silently orphan the registered Task
+    Scheduler entry on every upgrade.
+    """
+    cfg, _pool_dir, _target = layout
+    fake_home = tmp_path / "fakehome"
+    fake_home.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    # Simulate a frozen install with sys.executable living somewhere
+    # completely different from the stable ~/.spindoctor/ location.
+    fake_exe_dir = tmp_path / "spindoctor-win10-v2.11.0"
+    fake_exe_dir.mkdir()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(fake_exe_dir / "spindoctor-gui.exe"))
+    monkeypatch.setattr(autostart_mod, "create_logon_task", lambda *a, **k: autostart_mod.TaskCreateResult(
+        name=AUTORUN_TASK_NAME, command="", output="SUCCESS",
+    ))
+
+    result = install_autorun(cfg, apply=True)
+
+    assert result.bat_path.parent == fake_home / ".spindoctor"
+    assert result.vbs_path.parent == fake_home / ".spindoctor"
+    assert fake_exe_dir not in result.bat_path.parents
 
 
 def test_uninstall_autorun_dry_run_reports_status_without_deleting(monkeypatch):
