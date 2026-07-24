@@ -15,6 +15,7 @@ from spindoctor.config import Config
 from spindoctor.introvideo import (
     AUTORUN_TASK_NAME,
     IntroVideoError,
+    SWAP_BAT_FILENAME,
     SWAP_RETRY_ATTEMPTS,
     add_video,
     add_videos,
@@ -406,9 +407,11 @@ def test_uninstall_autorun_apply_noop_when_not_registered(monkeypatch):
 
 def test_autorun_status_reflects_task_exists(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
-    assert autorun_status() is True
+    assert autorun_status().registered is True
     monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
-    assert autorun_status() is False
+    status = autorun_status()
+    assert status.registered is False
+    assert status.stale is False  # never stale when not even registered
 
 
 def test_autorun_status_not_supported_propagates(monkeypatch):
@@ -417,3 +420,70 @@ def test_autorun_status_not_supported_propagates(monkeypatch):
     monkeypatch.setattr(autostart_mod, "task_exists", _raise)
     with pytest.raises(autostart_mod.NotSupportedError):
         autorun_status()
+
+
+def test_autorun_status_not_stale_on_source_install(monkeypatch):
+    # Non-frozen: the bat calls bare "spindoctor", nothing version-
+    # specific to go stale, regardless of whether a bat file even exists.
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    assert autorun_status().stale is False
+
+
+def test_autorun_status_stale_when_bat_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "fakehome")
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "v2.11.0" / "spindoctor-gui.exe"))
+
+    status = autorun_status()
+    assert status.registered is True
+    assert status.stale is True
+
+
+def test_autorun_status_stale_when_bat_references_old_install(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    new_exe_dir = tmp_path / "v2.12.0"
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(new_exe_dir / "spindoctor-gui.exe"))
+    # _sibling_spindoctor_exe() only returns the full quoted path if the
+    # sibling actually exists on disk — must create it for a meaningful
+    # "current install" comparison.
+    new_exe_dir.mkdir(parents=True)
+    (new_exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
+
+    # Simulate a bat written by an OLDER version of spindoctor (v2.11.0),
+    # sitting in the stable ~/.spindoctor/ location.
+    bat_dir = fake_home / ".spindoctor"
+    bat_dir.mkdir(parents=True)
+    old_exe = tmp_path / "v2.11.0" / "spindoctor.exe"
+    (bat_dir / SWAP_BAT_FILENAME).write_text(
+        f'@echo off\r\nstart /LOW /B /WAIT "" "{old_exe}" introvideo swap --apply\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="utf-8",
+    )
+
+    assert autorun_status().stale is True
+
+
+def test_autorun_status_not_stale_when_bat_matches_current_install(tmp_path, monkeypatch):
+    fake_home = tmp_path / "fakehome"
+    exe_dir = tmp_path / "v2.11.0"
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+    monkeypatch.setattr(Path, "home", lambda: fake_home)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "executable", str(exe_dir / "spindoctor-gui.exe"))
+    exe_dir.mkdir(parents=True)
+    (exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
+
+    bat_dir = fake_home / ".spindoctor"
+    bat_dir.mkdir(parents=True)
+    (bat_dir / SWAP_BAT_FILENAME).write_text(
+        f'@echo off\r\nstart /LOW /B /WAIT "" "{exe_dir / "spindoctor.exe"}" introvideo swap --apply\r\n'
+        "exit /b %errorlevel%\r\n",
+        encoding="utf-8",
+    )
+
+    assert autorun_status().stale is False

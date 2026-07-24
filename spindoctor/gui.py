@@ -1221,6 +1221,11 @@ class _SpinDoctorGUI:
         self._apply_dark_theme()
 
         self._ttk_style.configure("Unsafe.TCheckbutton", foreground=_FG_DIMMER)
+        # Amber warning text for status labels that need attention without
+        # being a hard error (e.g. a stale auto-run task) — style, not a
+        # direct `foreground=` constructor kwarg, per the ttk widget rule
+        # above; toggle back to plain "TLabel" to reset to theme default.
+        self._ttk_style.configure("Warn.TLabel", foreground="#c07000")
 
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -12691,6 +12696,28 @@ class _SpinDoctorGUI:
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
 
+    def _refresh_bat_path(self) -> Path:
+        """Path the refresh bat lives (or would live) at — always
+        ``~/.spindoctor/spindoctor-refresh-wheels.bat``. Does NOT create
+        the directory; only :func:`_write_refresh_bat` does that, so
+        computing this path for a staleness check never touches disk."""
+        return Path.home() / ".spindoctor" / "spindoctor-refresh-wheels.bat"
+
+    def _refresh_exe_refs(self) -> "tuple[str, str, str]":
+        """Command tokens for fav/recent/stats against the *currently
+        running* install — frozen: quoted absolute sibling paths; source:
+        bare command names. Shared by :func:`_write_refresh_bat` and the
+        staleness check in :func:`_refresh_autorefresh_status` so the two
+        can never drift out of sync with each other."""
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).parent
+            return (
+                f'"{exe_dir / "spindoctor-fav.exe"}"',
+                f'"{exe_dir / "spindoctor-recent.exe"}"',
+                f'"{exe_dir / "spindoctor-stats.exe"}"',
+            )
+        return "spindoctor-fav", "spindoctor-recent", "spindoctor-stats"
+
     def _write_refresh_bat(self) -> Path:
         """Write spindoctor-refresh-wheels.bat and return its path.
 
@@ -12717,13 +12744,7 @@ class _SpinDoctorGUI:
         """
         bat_dir = Path.home() / ".spindoctor"
         bat_dir.mkdir(parents=True, exist_ok=True)
-        if getattr(sys, "frozen", False):
-            exe_dir = Path(sys.executable).parent
-            fav    = f'"{exe_dir / "spindoctor-fav.exe"}"'
-            recent = f'"{exe_dir / "spindoctor-recent.exe"}"'
-            stats  = f'"{exe_dir / "spindoctor-stats.exe"}"'
-        else:
-            fav, recent, stats = "spindoctor-fav", "spindoctor-recent", "spindoctor-stats"
+        fav, recent, stats = self._refresh_exe_refs()
         lines = (
             "@echo off\r\n"
             "set FAILED=0\r\n"
@@ -12735,7 +12756,7 @@ class _SpinDoctorGUI:
             "if errorlevel 1 set FAILED=1\r\n"
             "exit /b %FAILED%\r\n"
         )
-        bat_path = bat_dir / "spindoctor-refresh-wheels.bat"
+        bat_path = self._refresh_bat_path()
         bat_path.write_text(lines, encoding="utf-8")
         return bat_path
 
@@ -12793,17 +12814,46 @@ class _SpinDoctorGUI:
     def _refresh_autorefresh_status(self) -> None:
         """Update the always-visible status label without requiring a click —
         mirrors the Intro Video tab's auto-run status label. Guarded with
-        getattr since the label only exists on win32 (see _build_tools_tab)."""
+        getattr since the label only exists on win32 (see _build_tools_tab).
+
+        Also detects a stale registration: the task is enabled, but the
+        generated .bat no longer reflects the currently-running install
+        (missing outright, or — frozen installs only — doesn't reference
+        the sibling exes this process is actually running from, e.g.
+        after upgrading into a new version folder without re-clicking
+        Schedule auto-refresh). Not stale on a source install: the .bat
+        calls bare command names there, nothing version-specific to go
+        stale.
+        """
         label = getattr(self, "_autorefresh_status_label", None)
         if label is None:
             return
         from . import autostart
         try:
-            exists = autostart.task_exists()
+            registered = autostart.task_exists()
         except autostart.NotSupportedError:
-            label.configure(text="Status: not available (Windows only)")
+            label.configure(text="Status: not available (Windows only)", style="TLabel")
             return
-        label.configure(text=f"Status: {'enabled' if exists else 'disabled'}")
+        if not registered:
+            label.configure(text="Status: disabled", style="TLabel")
+            return
+        stale = False
+        if getattr(sys, "frozen", False):
+            bat_path = self._refresh_bat_path()
+            if not bat_path.exists():
+                stale = True
+            else:
+                bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
+                stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
+        if stale:
+            label.configure(
+                text=("Status: enabled, but outdated — SpinDoctor's install "
+                      "location changed since this was set up. Click "
+                      "Schedule auto-refresh again to fix it."),
+                style="Warn.TLabel",
+            )
+        else:
+            label.configure(text="Status: enabled", style="TLabel")
 
     def _parse_delay_minutes(self) -> Optional[int]:
         raw = self._tools_delay_var.get().strip()
@@ -13091,11 +13141,21 @@ class _SpinDoctorGUI:
         from . import autostart
         from .introvideo import autorun_status
         try:
-            enabled = autorun_status()
+            status = autorun_status()
         except autostart.NotSupportedError:
-            label.configure(text="Status: not available (Windows only)")
+            label.configure(text="Status: not available (Windows only)", style="TLabel")
             return
-        label.configure(text=f"Status: {'enabled' if enabled else 'disabled'}")
+        if not status.registered:
+            label.configure(text="Status: disabled", style="TLabel")
+        elif status.stale:
+            label.configure(
+                text=("Status: enabled, but outdated — SpinDoctor's install "
+                      "location changed since this was set up. Click "
+                      "Enable auto-run again to fix it."),
+                style="Warn.TLabel",
+            )
+        else:
+            label.configure(text="Status: enabled", style="TLabel")
 
     def _introvideo_add(self) -> None:
         cfg = load_config()
