@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`introvideo swap` now retries if `intro_video_target` is briefly locked, instead of silently failing every time.** Confirmed on a real cabinet: the Windows logon-triggered swap consistently left the intro video unchanged across every reboot, even though `introvideo swap --apply` worked perfectly when run by hand. Root cause — HyperSpin itself can still be holding `intro_video_target` open, playing the *previous* intro video, at the exact moment the logon task fires; the resulting sharing-violation `OSError` was unhandled, so the copy silently never happened. `swap_video` now retries the copy up to 10 times, 1 second apart, before giving up (`IntroVideoError` if every attempt fails).
+- **The generated logon-task `.bat`/`.vbs` now actually report failure.** Task Scheduler's "Last Result" always showed `0` (success) for the intro-swap task regardless of whether the swap actually worked — the `.vbs` shim launched the `.bat` but never captured or forwarded its exit code, and the `.bat` had no explicit `exit /b` to propagate `spindoctor.exe`'s own exit code in the first place. Both fixed: the `.bat` now ends with `exit /b %errorlevel%`, and the `.vbs` captures `ws.Run`'s return value and calls `WScript.Quit` with it. Existing installs must re-run `introvideo install-autorun --apply` to regenerate the fixed files — `uninstall-autorun` followed by `install-autorun --apply` if in doubt.
+
 ## [2.11.0] - 2026-07-23
 
 ### Added

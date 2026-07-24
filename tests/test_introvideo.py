@@ -3,6 +3,8 @@ plus the Windows logon auto-run install/uninstall."""
 from __future__ import annotations
 
 import random
+import shutil
+import time
 from pathlib import Path
 
 import pytest
@@ -12,6 +14,7 @@ from spindoctor.config import Config
 from spindoctor.introvideo import (
     AUTORUN_TASK_NAME,
     IntroVideoError,
+    SWAP_RETRY_ATTEMPTS,
     add_video,
     add_videos,
     autorun_status,
@@ -220,6 +223,50 @@ def test_swap_video_uses_rng_for_reproducibility(layout):
     assert picks == {"Capcom Intro.mp4", "FF16 Victory Theme.mp4"}
 
 
+def test_swap_video_retries_past_a_transient_lock(layout, monkeypatch):
+    # Regression: intro_video_target can be briefly locked at boot (e.g.
+    # HyperSpin still playing the *previous* intro when the logon-triggered
+    # swap runs). The first two attempts fail with a sharing violation;
+    # the third succeeds — swap_video must not give up early.
+    cfg, pool_dir, target = layout
+    real_copy2 = shutil.copy2
+    calls = {"copy": 0, "sleep": 0}
+
+    def _flaky_copy2(src, dst):
+        calls["copy"] += 1
+        if calls["copy"] < 3:
+            raise PermissionError(13, "The process cannot access the file")
+        return real_copy2(src, dst)
+
+    monkeypatch.setattr(shutil, "copy2", _flaky_copy2)
+    monkeypatch.setattr(time, "sleep", lambda _s: calls.__setitem__("sleep", calls["sleep"] + 1))
+
+    result = swap_video(cfg, apply=True, rng=random.Random(1))
+
+    assert calls["copy"] == 3
+    assert calls["sleep"] == 2  # slept after each of the two failures, not after the success
+    assert target.read_bytes() == (pool_dir / result.picked).read_bytes()
+
+
+def test_swap_video_raises_intro_video_error_when_lock_never_clears(layout, monkeypatch):
+    cfg, _pool_dir, target = layout
+    calls = {"copy": 0, "sleep": 0}
+
+    def _always_locked(src, dst):
+        calls["copy"] += 1
+        raise PermissionError(13, "The process cannot access the file")
+
+    monkeypatch.setattr(shutil, "copy2", _always_locked)
+    monkeypatch.setattr(time, "sleep", lambda _s: calls.__setitem__("sleep", calls["sleep"] + 1))
+
+    with pytest.raises(IntroVideoError):
+        swap_video(cfg, apply=True, rng=random.Random(1))
+
+    assert calls["copy"] == SWAP_RETRY_ATTEMPTS
+    assert calls["sleep"] == SWAP_RETRY_ATTEMPTS - 1  # no sleep after the final failed attempt
+    assert not target.exists()
+
+
 # ── Windows logon auto-run ───────────────────────────────────────────────────
 
 def test_install_autorun_dry_run_does_not_touch_autostart(layout, monkeypatch):
@@ -258,11 +305,22 @@ def test_install_autorun_apply_writes_bat_and_vbs_and_registers(layout, tmp_path
     assert result.registered is True
     assert result.bat_path.exists()
     assert result.vbs_path.exists()
-    assert "introvideo swap --apply" in result.bat_path.read_text()
-    assert result.bat_path.name in result.vbs_path.read_text()
+    bat_text = result.bat_path.read_text()
+    vbs_text = result.vbs_path.read_text()
+    assert "introvideo swap --apply" in bat_text
+    assert result.bat_path.name in vbs_text
     assert calls["name"] == AUTORUN_TASK_NAME
     assert calls["delay_minutes"] == 2
     assert "wscript.exe" in calls["command"]
+
+    # Regression: the bat must propagate spindoctor.exe's exit code as its
+    # own, and the vbs must propagate that via WScript.Quit — otherwise
+    # Task Scheduler's Last Result always reports 0 (success) even when
+    # the swap actually failed, which is exactly what made a real swap
+    # failure invisible in the field.
+    assert "exit /b %errorlevel%" in bat_text
+    assert "ws.Run(" in vbs_text
+    assert "WScript.Quit(rc)" in vbs_text
 
 
 def test_uninstall_autorun_dry_run_reports_status_without_deleting(monkeypatch):
