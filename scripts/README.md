@@ -27,9 +27,11 @@ Full documentation — including how to wire these into the HyperSpin Tools menu
 
 | File | Purpose |
 |---|---|
-| `generate_lwax_patterns.py` | Generate a full library of LEDBlinky `.lwax` LED animations (sweeps, pulses, rain, breathe, rainbow, etc.) |
+| `generate_lwax_patterns.py` | Thin wrapper that runs the LEDBlinky `.lwax` pattern-library generator (sweeps, pulses, rain, breathe, rainbow, etc.) |
 
-Run `python scripts/generate_lwax_patterns.py` to write ~170 raw (unsigned) `.lwax` files + a `README.md` index into `~/Downloads/spindoctor-lwax-patterns/`. Deterministic — no AI, no arguments. It reads the cabinet LED layout from `~/Downloads/LEDBlinkyInputMap.xml` if present, else the committed reference at [`docs/reference/LEDBlinkyInputMap.xml`](../docs/reference/LEDBlinkyInputMap.xml). Each file still needs the one-time LedBlinky Animation Editor **Save As** signing step before use. Full walkthrough: [`docs/commands.md` → "Generating a full pattern batch"](../docs/commands.md#generating-a-full-pattern-batch-scriptsgenerate_lwax_patternspy). For a single simple fade, the built-in `spindoctor ledblinky lwax fade` command is usually enough.
+This is a thin shim over `spindoctor.lwax_patterns` (the real logic, shared with the CLI). Run `python scripts/generate_lwax_patterns.py` from a checkout to write ~170 raw (unsigned) `.lwax` files + a `README.md` index into `~/Downloads/spindoctor-lwax-patterns/` — deterministic, no AI, no arguments. It reads the cabinet LED layout from `~/Downloads/LEDBlinkyInputMap.xml` if present, else the committed reference at [`docs/reference/LEDBlinkyInputMap.xml`](../docs/reference/LEDBlinkyInputMap.xml). Each file still needs the one-time LedBlinky Animation Editor **Save As** signing step before use.
+
+If `spindoctor` is installed, `spindoctor ledblinky lwax batch --apply` does the same thing (and appears in the GUI's Custom Command dropdown). Full walkthrough: [`docs/commands.md` → "`ledblinky lwax batch`"](../docs/commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library). For a single simple fade, `spindoctor ledblinky lwax fade` is usually enough.
 
 ## Other commands without standalone wrappers
 

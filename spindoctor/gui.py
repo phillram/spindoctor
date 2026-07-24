@@ -970,6 +970,10 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky patch-settings --fe-lwa \"<FILE>\" --apply",
     "ledblinky patch-settings --ss-lwa \"<FILE>\" --apply",
     "ledblinky patch-settings --game-lwa \"<FILE>\" --apply",
+    "ledblinky lwax fade --color FF0000 --color 00FF00 --color 0000FF",
+    "ledblinky lwax fade --color FF0000 --color 0000FF --apply",
+    "ledblinky lwax batch",
+    "ledblinky lwax batch --apply",
     # ── Lightgun ──────────────────────────────────────────────────────────────
     "─── Lightgun ───",
     "lightgun audit",
