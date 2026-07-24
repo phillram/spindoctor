@@ -192,7 +192,7 @@ spindoctor install-tools --add-to-system Toolkit
 
 Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
 
-**3. Automatic refresh on cabinet startup.** From the GUI's **Custom Wheels** tab → "Auto-refresh on cabinet startup", click *Schedule auto-refresh* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
+**3. Automatic refresh on cabinet startup.** From the GUI's **Custom Wheels** tab → "Auto-refresh on cabinet startup", click *Enable auto-run* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
 
 ```bat
 schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^

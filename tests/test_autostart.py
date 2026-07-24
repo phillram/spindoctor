@@ -210,7 +210,7 @@ def test_interpret_schtasks_does_not_exist_suggests_schedule():
         "ERROR: The system cannot find the file specified.\n"
         "The specified task does not exist.",
     )
-    assert "does not exist" in msg.lower() or "no auto-refresh task" in msg.lower()
+    assert "does not exist" in msg.lower() or "no task is currently registered" in msg.lower()
 
 
 def test_interpret_schtasks_unknown_error_falls_back_to_raw():

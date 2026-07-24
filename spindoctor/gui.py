@@ -1221,6 +1221,11 @@ class _SpinDoctorGUI:
         self._apply_dark_theme()
 
         self._ttk_style.configure("Unsafe.TCheckbutton", foreground=_FG_DIMMER)
+        # Amber warning text for status labels that need attention without
+        # being a hard error (e.g. a stale auto-run task) — style, not a
+        # direct `foreground=` constructor kwarg, per the ttk widget rule
+        # above; toggle back to plain "TLabel" to reset to theme default.
+        self._ttk_style.configure("Warn.TLabel", foreground="#c07000")
 
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
@@ -12432,14 +12437,21 @@ class _SpinDoctorGUI:
                 width=6,
             ).pack(side="left", padx=6)
 
+            status_row = self.ttk.Frame(sched_frame)
+            status_row.pack(anchor="w", padx=6, pady=(0, 4))
+            self._autorefresh_status_label = self.ttk.Label(
+                status_row, text="Status: checking…",
+            )
+            self._autorefresh_status_label.pack(side="left")
+
             sched_btns = self.ttk.Frame(sched_frame)
             sched_btns.pack(fill="x", padx=6, pady=(4, 6))
             self.ttk.Button(
-                sched_btns, text="Schedule auto-refresh",
+                sched_btns, text="Enable auto-run",
                 command=self._schedule_autorefresh,
             ).pack(side="left")
             self.ttk.Button(
-                sched_btns, text="Remove scheduled task",
+                sched_btns, text="Disable auto-run",
                 command=self._remove_autorefresh,
             ).pack(side="left", padx=6)
             self.ttk.Button(
@@ -12476,7 +12488,7 @@ class _SpinDoctorGUI:
                 "  4. Save. The helpers appear in HyperSpin's in-cabinet Tools menu.\n"
                 "\n"
                 "Windows Task Scheduler (manual):\n"
-                "  Use the 'Schedule auto-refresh' button above — it writes\n"
+                "  Use the 'Enable auto-run' button above — it writes\n"
                 "  both a launcher .bat (with IDLE process priority so HyperSpin\n"
                 "  is never starved) and a hidden-run .vbs shim so no cmd.exe\n"
                 "  window surfaces on the cabinet screen.\n"
@@ -12487,7 +12499,7 @@ class _SpinDoctorGUI:
                 "  3. Triggers → New → Begin: 'At log on' → Delay: 2 minutes.\n"
                 "  4. Actions → New → Program: wscript.exe\n"
                 "     Arguments: //B \"<path>\\spindoctor-refresh-wheels.vbs\"\n"
-                "     (generate the .bat/.vbs pair first with 'Schedule auto-refresh',\n"
+                "     (generate the .bat/.vbs pair first with 'Enable auto-run',\n"
                 "      then remove and re-register by hand if needed)\n"
                 "  5. Settings → uncheck 'Stop the task if it runs longer than'."
             ),
@@ -12635,6 +12647,7 @@ class _SpinDoctorGUI:
             command=self._run_scrub_restore,
         ).pack(side="left")
 
+        self._refresh_autorefresh_status()
         return frame
 
     def _run_install_tools(self) -> None:
@@ -12683,41 +12696,67 @@ class _SpinDoctorGUI:
 
     # ── Auto-refresh on startup (Windows Task Scheduler) ──────────────────────
 
+    def _refresh_bat_path(self) -> Path:
+        """Path the refresh bat lives (or would live) at — always
+        ``~/.spindoctor/spindoctor-refresh-wheels.bat``. Does NOT create
+        the directory; only :func:`_write_refresh_bat` does that, so
+        computing this path for a staleness check never touches disk."""
+        return Path.home() / ".spindoctor" / "spindoctor-refresh-wheels.bat"
+
+    def _refresh_exe_refs(self) -> "tuple[str, str, str]":
+        """Command tokens for fav/recent/stats against the *currently
+        running* install — frozen: quoted absolute sibling paths; source:
+        bare command names. Shared by :func:`_write_refresh_bat` and the
+        staleness check in :func:`_refresh_autorefresh_status` so the two
+        can never drift out of sync with each other."""
+        if getattr(sys, "frozen", False):
+            exe_dir = Path(sys.executable).parent
+            return (
+                f'"{exe_dir / "spindoctor-fav.exe"}"',
+                f'"{exe_dir / "spindoctor-recent.exe"}"',
+                f'"{exe_dir / "spindoctor-stats.exe"}"',
+            )
+        return "spindoctor-fav", "spindoctor-recent", "spindoctor-stats"
+
     def _write_refresh_bat(self) -> Path:
         """Write spindoctor-refresh-wheels.bat and return its path.
 
-        The bat is written next to the exe when running as a frozen binary,
-        or to ~/.spindoctor/ for source installs.  Keeping the bat short
-        (three lines, no embedded paths) lets the schtasks /TR command stay
-        well under the 261-character limit — the bat itself can embed the
-        full paths.
+        Always written to ``~/.spindoctor/`` — the same stable location
+        ``config.json`` already uses — regardless of frozen/source
+        install. NOT next to the frozen exe: portable Windows installs
+        unzip each release into its own version-numbered folder (e.g.
+        ``spindoctor-win10-v2.11.0\\``), so a bat/vbs pair stored there
+        gets silently orphaned the next time the cabinet owner upgrades
+        into a new folder — the registered Task Scheduler entry would
+        keep pointing at a script that may no longer exist. Writing here
+        instead means the Task Scheduler task's target path never needs
+        to change across upgrades; only its *contents* (which reference
+        the per-version sibling exes on a frozen install) need a refresh
+        — re-click "Enable auto-run" once after upgrading.
 
         Each sub-command is wrapped with ``START /LOW /B /WAIT`` so the
         spindoctor executables run at Windows IDLE process priority — they
         only consume CPU cycles that HyperSpin and RocketLauncher don't
         need, keeping the cabinet fully responsive during the refresh.
+        Tracks a FAILED flag across all three steps (rather than just the
+        last command's errorlevel) and exits with it, so Task Scheduler's
+        Last Result reflects a failure in *any* step, not only the last.
         """
-        if getattr(sys, "frozen", False):
-            bat_dir = Path(sys.executable).parent
-            fav    = bat_dir / "spindoctor-fav.exe"
-            recent = bat_dir / "spindoctor-recent.exe"
-            stats  = bat_dir / "spindoctor-stats.exe"
-            lines = (
-                "@echo off\r\n"
-                f'start /LOW /B /WAIT "" "{fav}" rebuild --apply\r\n'
-                f'start /LOW /B /WAIT "" "{recent}" rebuild --apply\r\n'
-                f'start /LOW /B /WAIT "" "{stats}" build-wheel --apply\r\n'
-            )
-        else:
-            bat_dir = Path.home() / ".spindoctor"
-            bat_dir.mkdir(parents=True, exist_ok=True)
-            lines = (
-                "@echo off\r\n"
-                'start /LOW /B /WAIT "" spindoctor-fav rebuild --apply\r\n'
-                'start /LOW /B /WAIT "" spindoctor-recent rebuild --apply\r\n'
-                'start /LOW /B /WAIT "" spindoctor-stats build-wheel --apply\r\n'
-            )
-        bat_path = bat_dir / "spindoctor-refresh-wheels.bat"
+        bat_dir = Path.home() / ".spindoctor"
+        bat_dir.mkdir(parents=True, exist_ok=True)
+        fav, recent, stats = self._refresh_exe_refs()
+        lines = (
+            "@echo off\r\n"
+            "set FAILED=0\r\n"
+            f'start /LOW /B /WAIT "" {fav} rebuild --apply\r\n'
+            "if errorlevel 1 set FAILED=1\r\n"
+            f'start /LOW /B /WAIT "" {recent} rebuild --apply\r\n'
+            "if errorlevel 1 set FAILED=1\r\n"
+            f'start /LOW /B /WAIT "" {stats} build-wheel --apply\r\n'
+            "if errorlevel 1 set FAILED=1\r\n"
+            "exit /b %FAILED%\r\n"
+        )
+        bat_path = self._refresh_bat_path()
         bat_path.write_text(lines, encoding="utf-8")
         return bat_path
 
@@ -12729,18 +12768,31 @@ class _SpinDoctorGUI:
         bWaitOnReturn = True — so no cmd.exe console window ever surfaces on
         the cabinet screen during the scheduled refresh.
 
-        The shim derives the bat's path from its own location so the files
-        can be moved together without re-registering the task.
+        Embeds *bat_path*'s full, already-known absolute path directly
+        rather than having the VBS re-derive its own folder at runtime —
+        the previous approach had a real, confirmed-on-a-real-cabinet bug
+        (see ``spindoctor/introvideo.py``'s ``_write_swap_vbs``, which had
+        the identical pattern): a backslash-escaping mistake in the
+        Python source building the VBS's `InStrRev` search argument made
+        it search for two consecutive backslashes instead of one, which
+        never matches a normal single-backslash Windows path, so the
+        computed bat path silently collapsed to a bare filename with no
+        folder. That only "worked" when double-clicked (Explorer sets the
+        working directory to the file's own folder) and silently failed
+        every time Task Scheduler ran the identical command (which does
+        not use that folder as an action's working directory). Embedding
+        the full path removes the dependency on working directory, and
+        this whole class of bug, entirely. Also captures ``ws.Run``'s
+        return value and exits with it via ``WScript.Quit`` so Task
+        Scheduler's Last Result reflects whether the refresh actually
+        succeeded, instead of always reporting 0.
         """
         vbs_content = (
             "' SpinDoctor wheel-refresh hidden launcher\r\n"
             "' Generated by spindoctor-gui — do not edit.\r\n"
-            "Set ws = CreateObject(\"WScript.Shell\")\r\n"
-            "Dim batPath\r\n"
-            "batPath = Left(WScript.ScriptFullName, "
-            "InStrRev(WScript.ScriptFullName, \"\\\\\")) "
-            "& \"spindoctor-refresh-wheels.bat\"\r\n"
-            "ws.Run Chr(34) & batPath & Chr(34), 0, True\r\n"
+            'Set ws = CreateObject("WScript.Shell")\r\n'
+            f'rc = ws.Run(Chr(34) & "{bat_path}" & Chr(34), 0, True)\r\n'
+            "WScript.Quit(rc)\r\n"
         )
         vbs_path = bat_path.with_suffix(".vbs")
         vbs_path.write_text(vbs_content, encoding="utf-8")
@@ -12758,6 +12810,47 @@ class _SpinDoctorGUI:
         # accidentally trigger; the VBS itself uses ws.Run(..., 0, True)
         # so no console window ever appears on the cabinet screen.
         return f'wscript.exe //B "{vbs_path}"'
+
+    def _refresh_autorefresh_status(self) -> None:
+        """Update the always-visible status label without requiring a click —
+        mirrors the Intro Video tab's auto-run status label. Guarded with
+        getattr since the label only exists on win32 (see _build_tools_tab).
+
+        Also detects a stale registration: the task is enabled, but the
+        generated .bat no longer reflects the currently-running install
+        (missing outright, or — frozen installs only — doesn't reference
+        the sibling exes this process is actually running from, e.g.
+        after upgrading into a new version folder without re-clicking
+        Enable auto-run). Not stale on a source install: the .bat calls
+        bare command names there, nothing version-specific to go stale.
+        """
+        label = getattr(self, "_autorefresh_status_label", None)
+        if label is None:
+            return
+        from . import autostart
+        try:
+            registered = autostart.task_exists()
+        except autostart.NotSupportedError:
+            label.configure(text="Status: not available (Windows only)", style="TLabel")
+            return
+        if not registered:
+            label.configure(text="Status: disabled", style="TLabel")
+            return
+        stale = False
+        if getattr(sys, "frozen", False):
+            bat_path = self._refresh_bat_path()
+            if not bat_path.exists():
+                stale = True
+            else:
+                bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
+                stale = not all(ref in bat_text for ref in self._refresh_exe_refs())
+        if stale:
+            label.configure(
+                text="Outdated: Enable auto-run to fix",
+                style="Warn.TLabel",
+            )
+        else:
+            label.configure(text="Status: enabled", style="TLabel")
 
     def _parse_delay_minutes(self) -> Optional[int]:
         raw = self._tools_delay_var.get().strip()
@@ -12820,6 +12913,7 @@ class _SpinDoctorGUI:
         self._run_history.append(record)
         self._refresh_logs_tab()
         self._flash_status(f"Auto-refresh task '{result.name}' registered.")
+        self._refresh_autorefresh_status()
 
     def _remove_autorefresh(self) -> None:
         from . import autostart
@@ -12851,6 +12945,7 @@ class _SpinDoctorGUI:
         self._run_history.append(record)
         self._refresh_logs_tab()
         self._flash_status("Auto-refresh task deleted.")
+        self._refresh_autorefresh_status()
 
     def _check_autorefresh(self) -> None:
         from . import autostart
@@ -12876,6 +12971,7 @@ class _SpinDoctorGUI:
         self._run_history.append(record)
         self._refresh_logs_tab()
         self._flash_status(msg)
+        self._refresh_autorefresh_status()
 
     # ── Intro Video tab ───────────────────────────────────────────────────────
 
@@ -13042,11 +13138,19 @@ class _SpinDoctorGUI:
         from . import autostart
         from .introvideo import autorun_status
         try:
-            enabled = autorun_status()
+            status = autorun_status()
         except autostart.NotSupportedError:
-            label.configure(text="Status: not available (Windows only)")
+            label.configure(text="Status: not available (Windows only)", style="TLabel")
             return
-        label.configure(text=f"Status: {'enabled' if enabled else 'disabled'}")
+        if not status.registered:
+            label.configure(text="Status: disabled", style="TLabel")
+        elif status.stale:
+            label.configure(
+                text="Outdated: Enable auto-run to fix",
+                style="Warn.TLabel",
+            )
+        else:
+            label.configure(text="Status: enabled", style="TLabel")
 
     def _introvideo_add(self) -> None:
         cfg = load_config()

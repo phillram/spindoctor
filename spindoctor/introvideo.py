@@ -112,6 +112,17 @@ class AutorunResult:
     output: str = ""
 
 
+@dataclass
+class AutorunStatus:
+    registered: bool
+    stale: bool = False  # registered, but the .bat no longer references
+                          # the currently-running spindoctor.exe (or the
+                          # .bat is simply missing) — re-running
+                          # install_autorun fixes it. Always False when
+                          # not registered, or on a non-frozen install
+                          # (nothing version-specific to go stale there).
+
+
 def _pool_dir(config: Config) -> Path:
     if not config.intro_randomizer_dir:
         raise IntroVideoError(
@@ -329,13 +340,22 @@ def _sibling_spindoctor_exe() -> str:
 
 
 def _swap_bat_dir() -> Path:
-    """Directory the swap bat/vbs live in — next to the exe when frozen,
-    ``~/.spindoctor/`` for source installs. Does NOT create the directory;
-    only :func:`_write_swap_bat` does that, so computing a preview path
-    (dry-run) never touches disk.
+    """Directory the swap bat/vbs live in — always ``~/.spindoctor/``, the
+    same stable location ``config.json`` already uses, regardless of
+    frozen/source install. NOT next to the frozen exe: portable Windows
+    installs unzip each release into its own version-numbered folder
+    (e.g. ``spindoctor-win10-v2.11.0\\``), so a bat/vbs pair stored there
+    gets silently orphaned the next time the cabinet owner upgrades into
+    a new folder — the registered Task Scheduler entry would keep
+    pointing at a script that may no longer exist. Writing here instead
+    means the Task Scheduler task's target path never needs to change
+    across upgrades; only its *contents* (which reference the
+    per-version ``spindoctor.exe`` on a frozen install, via
+    :func:`_sibling_spindoctor_exe`) need a refresh — re-run
+    ``introvideo install-autorun --apply`` once after upgrading. Does NOT
+    create the directory; only :func:`_write_swap_bat` does that, so
+    computing a preview path (dry-run) never touches disk.
     """
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).parent
     return Path.home() / ".spindoctor"
 
 
@@ -460,7 +480,33 @@ def uninstall_autorun(*, apply: bool = False) -> AutorunResult:
     )
 
 
-def autorun_status() -> bool:
-    """Whether the logon task is currently registered. Windows-only —
-    raises `autostart.NotSupportedError` elsewhere, same as autostart.py."""
-    return autostart.task_exists(name=AUTORUN_TASK_NAME)
+def autorun_status() -> AutorunStatus:
+    """Whether the logon task is registered, and whether it's stale.
+
+    "Stale" means the task is registered but the generated `.bat` no
+    longer reflects the currently-running install: either the file is
+    missing outright, or (frozen installs only) it doesn't reference the
+    `spindoctor.exe` this process is actually running from — the
+    situation after upgrading to a new version extracted into a new
+    folder without re-running `install_autorun`. Re-running it fixes a
+    stale task in place (same task name, `/F` overwrite — no need to
+    uninstall first). Always not-stale on a non-frozen install: the
+    `.bat` calls bare `spindoctor` there, which isn't tied to any
+    specific folder, so there's nothing version-specific to go stale.
+
+    Windows-only — raises `autostart.NotSupportedError` elsewhere, same
+    as autostart.py.
+    """
+    registered = autostart.task_exists(name=AUTORUN_TASK_NAME)
+    if not registered:
+        return AutorunStatus(registered=False, stale=False)
+    stale = False
+    if getattr(sys, "frozen", False):
+        bat_path = _swap_bat_path()
+        if not bat_path.exists():
+            stale = True
+        else:
+            current_exe = _sibling_spindoctor_exe()
+            bat_text = bat_path.read_text(encoding="utf-8", errors="replace")
+            stale = current_exe not in bat_text
+    return AutorunStatus(registered=True, stale=stale)
