@@ -84,6 +84,19 @@ RAIN_DROP_GROUPS = [
 CHECKER_A = [l for i, g in enumerate(LEFT_RIGHT_ORDER) if i % 2 == 0 for l in g]
 CHECKER_B = [l for i, g in enumerate(LEFT_RIGHT_ORDER) if i % 2 == 1 for l in g]
 
+# Approximate 2D position per control, for effects that need real geometry
+# (ripple rings, spiral/radar sweep): x = column index in LEFT_RIGHT_ORDER,
+# y = row band (0 above, 1 top/trackball, 2 bottom). Not physical inches, but
+# faithful enough for distance/angle-based effects on this 2-row-per-player grid.
+def _build_label_pos():
+    xof = {l: i for i, g in enumerate(LEFT_RIGHT_ORDER) for l in g}
+    yof = {l: y for y, row in enumerate(ROWS) for l in row}
+    return {l: (xof[l], yof.get(l, 1)) for l in xof}
+
+LABEL_POS = _build_label_pos()
+ALL_LABELS = list(LABEL_POS)
+TRACKBALL_POS = LABEL_POS["TRACKBALL"]
+
 # --------------------------------------------------------------------------- #
 # Colour helpers.
 # --------------------------------------------------------------------------- #
@@ -95,6 +108,11 @@ def hsv48(h: float, s: float, v: float) -> tuple[int, int, int]:
 
 def dim(color, factor: float):
     return tuple(round(c * factor) for c in color)
+
+def _rgb_to_hue(color) -> float:
+    """Hue (0..1) of a 0-48 RGB colour, for driving a single-hue plasma."""
+    r, g, b = (c / 48 for c in color)
+    return colorsys.rgb_to_hsv(r, g, b)[0]
 
 def lighten(color, factor: float):
     return tuple(min(48, round(c + (48 - c) * factor)) for c in color)
@@ -145,7 +163,7 @@ def _stride(entries, step: int):
 # Large enough that every fixed-colour variant across all families gets a
 # globally unique colour. 120 & 37 are coprime, so the stride is a full
 # permutation that hops far around the wheel on each take.
-MASTER_PALETTE = _stride(_build_master_palette(120), 37)
+MASTER_PALETTE = _stride(_build_master_palette(240), 37)
 
 
 class Palette:
@@ -473,6 +491,229 @@ def build_rainbow_breathe(controllers, total_frames=192, duration_ms=45, breaths
 
 
 # --------------------------------------------------------------------------- #
+# Geometry / noise families (ripple, spiral, comet, plasma, twinkle, candle,
+# gradient) plus the two multi-colour cycle families. All deterministic.
+# --------------------------------------------------------------------------- #
+_MAXR = 14.5  # ~ max distance across the LABEL_POS grid
+
+
+def _dist(p, q):
+    return math.hypot(p[0] - q[0], p[1] - q[1])
+
+
+def build_ripple(controllers, color=None, drops=6, ring_frames=16, gap_frames=6,
+                 duration_ms=40, seed=0, rainbow=False):
+    """Raindrop impacts: each drop lights an expanding, fading ring out of a
+    random button, one after another."""
+    import random
+    rng = random.Random(seed)
+    anim = LwaxAnimation(controllers)
+    off = (0, 0, 0)
+    for d in range(drops):
+        impact = LABEL_POS[ALL_LABELS[rng.randrange(len(ALL_LABELS))]]
+        base_hue = rng.random()
+        for t in range(ring_frames):
+            radius = (t + 1) / ring_frames * _MAXR
+            bright = 1 - t / ring_frames
+            colors = {l: off for l in ALL_LABELS}
+            for l in ALL_LABELS:
+                if abs(_dist(LABEL_POS[l], impact) - radius) < 1.1:
+                    col = hsv48((base_hue + radius / _MAXR) % 1.0, 1.0, bright) if rainbow \
+                        else dim(color, bright)
+                    colors[l] = col
+            anim.add_frame(duration_ms, colors)
+        for _ in range(gap_frames):
+            anim.add_frame(duration_ms, {l: off for l in ALL_LABELS})
+    return anim
+
+
+def build_spiral(controllers, color=None, revolutions=3, frames_per_rev=48,
+                 width=0.5, duration_ms=40, rainbow=False):
+    """A radar-style wedge sweeping around the trackball (the always-lit hub),
+    with a fading trail. A wide wedge keeps it legible on this flat 2-row panel,
+    where controls cluster near the left/right horizontal rather than all around."""
+    anim = LwaxAnimation(controllers)
+    cx, cy = TRACKBALL_POS
+    ang = {}
+    for l, (x, y) in LABEL_POS.items():
+        if (x, y) == (cx, cy):
+            ang[l] = None  # centre pivot
+        else:
+            ang[l] = (math.atan2(y - cy, x - cx) / (2 * math.pi)) % 1.0
+    off = (0, 0, 0)
+    total = revolutions * frames_per_rev
+    for f in range(total):
+        sweep = (f / frames_per_rev) % 1.0
+        colors = {}
+        for l, a in ang.items():
+            if a is None:
+                colors[l] = hsv48(sweep, 1.0, 1.0) if rainbow else color
+                continue
+            behind = (sweep - a) % 1.0
+            if behind < width:
+                bright = 1 - behind / width
+                colors[l] = hsv48(a, 1.0, bright) if rainbow else dim(color, bright)
+            else:
+                colors[l] = off
+        anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_comet(controllers, groups, color=None, tail=3.5, loops=2,
+                frames_per_leg=90, duration_ms=40, rainbow=False):
+    """A glowing head that eases across the loop and back (slows at each end),
+    with a soft glow falling off on both sides -- a comet with gravity."""
+    anim = LwaxAnimation(controllers)
+    all_labels = [l for g in groups for l in g]
+    n = len(groups)
+    off = (0, 0, 0)
+    total = loops * frames_per_leg
+    for f in range(total):
+        head = (n - 1) * (1 - math.cos(2 * math.pi * f / frames_per_leg)) / 2  # eased bounce
+        colors = {l: off for l in all_labels}
+        for i, group in enumerate(groups):
+            bright = max(0.0, 1 - abs(i - head) / tail)
+            if bright <= 0:
+                continue
+            col = hsv48((i / n) % 1.0, 1.0, bright) if rainbow else dim(color, bright)
+            for l in group:
+                colors[l] = col
+        anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_plasma(controllers, hue=0.0, total_frames=180, duration_ms=45, rainbow=False):
+    """A lava-lamp/plasma field of overlapping sine waves. Monochrome mode
+    undulates brightness in one hue; rainbow mode drifts the whole hue field.
+    Integer wave multipliers keep it seamlessly loopable."""
+    anim = LwaxAnimation(controllers)
+    for f in range(total_frames):
+        t = f / total_frames
+        colors = {}
+        for l, (x, y) in LABEL_POS.items():
+            v = (math.sin(x * 0.5 + 2 * math.pi * t)
+                 + math.sin(y * 1.1 + 2 * math.pi * 2 * t)
+                 + math.sin((x + y) * 0.4 + 2 * math.pi * 1 * t))
+            v = (v + 3) / 6  # 0..1
+            if rainbow:
+                colors[l] = hsv48((v + t) % 1.0, 1.0, 1.0)
+            else:
+                colors[l] = hsv48(hue, 1.0, 0.25 + 0.75 * v)
+        anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_twinkle(controllers, color=None, total_frames=320, twinkles=90,
+                  fade=9, duration_ms=45, seed=0, rainbow=False):
+    """A calm dark starfield: scattered buttons softly fade in and out at random
+    times. Fixed colour, or a different random hue per star in rainbow mode."""
+    import random
+    rng = random.Random(seed)
+    off = (0, 0, 0)
+    # brightness[frame][label]
+    bright = [dict() for _ in range(total_frames)]
+    hues = {}
+    for _ in range(twinkles):
+        start = rng.randrange(total_frames)
+        label = ALL_LABELS[rng.randrange(len(ALL_LABELS))]
+        hue = rng.random()
+        for k in range(fade):
+            fr = start + k
+            if fr >= total_frames:
+                break
+            b = 1 - abs((k - fade / 2) / (fade / 2))  # triangular 0->1->0
+            if b > bright[fr].get(label, 0):
+                bright[fr][label] = b
+                hues[(fr, label)] = hue
+    anim = LwaxAnimation(controllers)
+    for fr in range(total_frames):
+        colors = {l: off for l in ALL_LABELS}
+        for label, b in bright[fr].items():
+            colors[label] = hsv48(hues[(fr, label)], 0.9, b) if rainbow else dim(color, b)
+        anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_candle(controllers, color=None, total_frames=260, duration_ms=45,
+                 seed=0, rainbow=False):
+    """Whole panel glowing like a flame: a smoothed brightness flicker (random
+    walk) in one colour. Rainbow mode slowly drifts the hue while it flickers."""
+    import random
+    rng = random.Random(seed)
+    anim = LwaxAnimation(controllers)
+    level = 0.7
+    for f in range(total_frames):
+        target = rng.uniform(0.45, 1.0)
+        level += (target - level) * 0.35
+        if rainbow:
+            col = hsv48((f / total_frames) % 1.0, 0.85, level)
+        else:
+            col = dim(color, level)
+        anim.add_frame(duration_ms, {l: col for l in ALL_LABELS})
+    return anim
+
+
+def build_gradient_breathe(controllers, color_a=None, color_b=None, total_frames=192,
+                           duration_ms=45, breaths=3, rainbow=False):
+    """A two-colour gradient laid across the panel that both breathes (brightness
+    rising/falling) and slowly slides. Rainbow mode uses the full spectrum."""
+    anim = LwaxAnimation(controllers)
+    groups = LEFT_RIGHT_ORDER
+    n = len(groups)
+    for f in range(total_frames):
+        val = (1 - math.cos(2 * math.pi * breaths * f / total_frames)) / 2
+        shift = f / total_frames
+        colors = {}
+        for i, group in enumerate(groups):
+            frac = (i / n + shift) % 1.0
+            if rainbow:
+                col = hsv48(frac, 1.0, val)
+            else:
+                blend = (math.sin(2 * math.pi * frac) + 1) / 2  # smooth a<->b<->a
+                mixed = tuple(round(color_a[c] + (color_b[c] - color_a[c]) * blend) for c in range(3))
+                col = dim(mixed, val)
+            for l in group:
+                colors[l] = col
+        anim.add_frame(duration_ms, colors)
+    return anim
+
+
+def build_breathe_cycle(controllers, colors, steps=48, duration_ms=45):
+    """Whole panel breathes one solid colour off->full->off, then the next
+    colour, and so on, looping back to the first."""
+    anim = LwaxAnimation(controllers)
+    labels = anim.labels
+    for c in colors:
+        for s in range(steps):
+            anim.add_frame(duration_ms, {l: dim(c, (s + 1) / steps) for l in labels})
+        for s in range(steps):
+            anim.add_frame(duration_ms, {l: dim(c, 1 - (s + 1) / steps) for l in labels})
+    return anim
+
+
+def build_pulse_cycle(controllers, colors, groups=None, frames_per_step=6, duration_ms=40):
+    """A radial pulse plays one full outward sweep in the first colour, then
+    replays it in the next colour, and so on, looping."""
+    if groups is None:
+        groups = RADIAL_RINGS
+    anim = LwaxAnimation(controllers)
+    all_labels = [l for g in groups for l in g]
+    n = len(groups)
+    off = (0, 0, 0)
+    for c in colors:
+        trail = dim(c, 0.3)
+        for pos in range(n):
+            for _ in range(frames_per_step):
+                frame = {l: off for l in all_labels}
+                for l in groups[pos]:
+                    frame[l] = c
+                for l in groups[(pos - 1) % n]:
+                    frame[l] = trail
+                anim.add_frame(duration_ms, frame)
+    return anim
+
+
+# --------------------------------------------------------------------------- #
 # Build the batch.
 # --------------------------------------------------------------------------- #
 # File-name rule: plain, readable, lower-case words joined by single
@@ -507,6 +748,10 @@ def main() -> int:
 
     out_dir = Path.home() / "Downloads" / "spindoctor-lwax-patterns"
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Clear previously-generated files so renamed variants don't leave stale
+    # leftovers behind (this is a full-batch regenerator, not an incremental one).
+    for stale in out_dir.glob("*.lwax"):
+        stale.unlink()
 
     pal = Palette(MASTER_PALETTE)
     # (family, filename, animation, human description)
@@ -741,7 +986,93 @@ def main() -> int:
                                                                hold_ms=CHECKER_SPEED["medium"]),
         "full spectrum", "rainbow row blink")
 
-    # 16. BREATHE -- whole panel fading one solid colour in and out. One file per
+    # 16. RIPPLE -- expanding fading rings out of random buttons (raindrops).
+    RIPPLE_SPEED = {"slow": (20, 45), "medium": (16, 40), "fast": (11, 30)}  # ring_frames, dur
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        rf, dur = RIPPLE_SPEED[speed]
+        (sh, h, c) = pal.take()
+        add("ripple", h, speed, build_ripple(controllers, c, ring_frames=rf, duration_ms=dur, seed=i),
+            f"{sh} {h}", "raindrop ripples")
+    rf, dur = RIPPLE_SPEED["medium"]
+    add("ripple", "rainbow", "medium", build_ripple(controllers, None, ring_frames=rf, duration_ms=dur,
+                                                    seed=9, rainbow=True), "full spectrum", "rainbow ripples")
+
+    # 17. SPIRAL -- a radar wedge sweeping around the trackball.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fpr, dur = {"slow": (72, 45), "medium": (48, 40), "fast": (30, 30)}[speed]
+        (sh, h, c) = pal.take()
+        add("spiral", h, speed, build_spiral(controllers, c, frames_per_rev=fpr, duration_ms=dur),
+            f"{sh} {h}", "radar spiral sweep")
+    add("spiral", "rainbow", "medium", build_spiral(controllers, None, frames_per_rev=48, duration_ms=40,
+                                                    rainbow=True), "full spectrum", "rainbow pinwheel")
+
+    # 18. COMET -- an eased head that glides across and back (slows at the ends).
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fpl, dur = {"slow": (140, 45), "medium": (90, 40), "fast": (56, 30)}[speed]
+        (sh, h, c) = pal.take()
+        add("comet", h, speed, build_comet(controllers, LEFT_RIGHT_ORDER, c, frames_per_leg=fpl, duration_ms=dur),
+            f"{sh} {h}", "gravity comet")
+    add("comet", "rainbow", "medium", build_comet(controllers, LEFT_RIGHT_ORDER, None, frames_per_leg=90,
+                                                  duration_ms=40, rainbow=True), "full spectrum", "rainbow comet")
+
+    # 19. LAVALAMP -- a slow plasma field of overlapping sine waves.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        tf, dur = {"slow": (240, 50), "medium": (180, 45), "fast": (120, 35)}[speed]
+        (sh, h, c) = pal.take()
+        hue = _rgb_to_hue(c)
+        add("lavalamp", h, speed, build_plasma(controllers, hue=hue, total_frames=tf, duration_ms=dur),
+            f"{sh} {h}", "lava-lamp plasma")
+    add("lavalamp", "rainbow", "slow", build_plasma(controllers, total_frames=240, duration_ms=50, rainbow=True),
+        "full spectrum", "rainbow plasma")
+
+    # 20. TWINKLE -- a calm dark starfield with soft random fades.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        fade, dur = {"slow": (13, 55), "medium": (9, 45), "fast": (6, 35)}[speed]
+        (sh, h, c) = pal.take()
+        add("twinkle", h, speed, build_twinkle(controllers, c, fade=fade, duration_ms=dur, seed=i),
+            f"{sh} {h}", "twinkling stars")
+    add("twinkle", "rainbow", "medium", build_twinkle(controllers, None, fade=9, duration_ms=45, seed=5,
+                                                      rainbow=True), "full spectrum", "rainbow twinkle")
+
+    # 21. CANDLE -- whole panel flickering like a flame (a coloured flame).
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        dur = {"slow": 55, "medium": 45, "fast": 32}[speed]
+        (sh, h, c) = pal.take()
+        add("candle", h, speed, build_candle(controllers, c, duration_ms=dur, seed=i), f"{sh} {h}",
+            "flame flicker")
+    add("candle", "rainbow", "medium", build_candle(controllers, None, duration_ms=45, seed=3, rainbow=True),
+        "full spectrum", "rainbow flame flicker")
+
+    # 22. GRADIENT -- a two-colour gradient across the panel, breathing + sliding.
+    for i in range(4):
+        speed = VARIANT_SPEEDS[i]
+        tf, dur = {"slow": (240, 50), "medium": (192, 45), "fast": (140, 35)}[speed]
+        (sa, ha, ca), (sb, hb, cb) = pal.take_n(2)
+        add("gradient", f"{ha}_{hb}", speed, build_gradient_breathe(controllers, ca, cb, total_frames=tf,
+                                                                    duration_ms=dur),
+            f"{sa} {ha} into {sb} {hb}", "breathing gradient")
+    add("gradient", "rainbow", "slow", build_gradient_breathe(controllers, total_frames=240, duration_ms=50,
+                                                             rainbow=True), "full spectrum",
+        "breathing rainbow gradient")
+
+    # 23. COLOUR CYCLES -- one whole-panel breathe cycle and one radial-pulse
+    # cycle, each stepping through several globally-unique solid colours and
+    # looping. (Phill: "a cycle of solid colour changes that repeat".)
+    cyc_breathe = [c for (_s, _h, c) in pal.take_n(6)]
+    add("breathe", "cycle", "slow", build_breathe_cycle(controllers, cyc_breathe, steps=BREATHE_SPEED["slow"][0],
+                                                        duration_ms=BREATHE_SPEED["slow"][1]),
+        "6 unique colours in sequence", "solid colours breathing one after another")
+    cyc_pulse = [c for (_s, _h, c) in pal.take_n(6)]
+    add("pulse", "cycle", "medium", build_pulse_cycle(controllers, cyc_pulse, frames_per_step=6, duration_ms=40),
+        "6 unique colours in sequence", "radial pulse repeating in each colour")
+
+    # 24. BREATHE -- whole panel fading one solid colour in and out. One file per
     # named colour so it doubles as a pickable colour library. Slow by default
     # (Phill: "red slowly fading in and out"); build_color_cycle from off ->
     # colour -> off gives the smooth in/out breath. Standard, extra-vivid, and
@@ -770,15 +1101,20 @@ def main() -> int:
         f"{len(written)} raw (UNSIGNED) .lwax animations for the cabinet's two",
         "PAC-LED64 boards.",
         "",
-        "15 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
+        "22 effect families (fade, sweep, rain/confetti, scroll, fill, drain,",
         "checker, radial, cyclone, race, heartbeat, strobe, marquee, bounce,",
-        "rowblink) give each fixed-colour variant a colour used nowhere else, one",
+        "rowblink, ripple, spiral, comet, lavalamp, twinkle, candle, gradient)",
+        "give each fixed-colour variant a colour used nowhere else, one",
         "moving/fading rainbow variant apiece, and a slow / medium / fast spread.",
         "",
         "The 'breathe_*' files are a solid-colour library: each fades one named",
         "colour smoothly in and out across the whole panel, slowly. Three sets --",
         "standard, vivid_* (deepest/brightest), pastel_* (soft) -- plus one",
         "breathe_rainbow. One per colour so you can pick favourites by name.",
+        "",
+        "Two colour-cycle files step through several unique solid colours and loop:",
+        "breathe_cycle (panel breathes each colour in turn) and pulse_cycle (a",
+        "radial pulse replays in each colour).",
         "",
         "TO USE ON THE CABINET (signing is required for LedBlinky Config):",
         "  1. Copy a .lwax to the cabinet.",
