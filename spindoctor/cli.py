@@ -9308,8 +9308,9 @@ def ledblinky_lwax_group():
 
     \b
     Subcommands:
-      fade    Generate a single color-cycle fade animation across wired controls
-      batch   Generate the whole pattern library (~170 animated effects)
+      fade      Generate a single color-cycle fade animation across wired controls
+      batch     Generate the whole pattern library (~170 animated effects)
+      calibrate Light each control a distinct named colour (button-mapping aid)
 
     IMPORTANT: the output is NOT signed and will not load in LedBlinky as-is.
     LedBlinky Config validates a per-file signature that cannot be reproduced
@@ -9487,6 +9488,94 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
         "it in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] and use "
         "[cyan]Animation -> Save As[/cyan] (no edits), then copy into "
         "<ledblinky_dir>\\lwa\\. See the folder's README.md for details."
+    )
+
+
+@ledblinky_lwax_group.command("calibrate")
+@click.option("--labels", default=None,
+              help="Comma-separated control labels to light (e.g. "
+                   "'SELECT,EXIT,SEARCH'). Default: the admin row "
+                   "(LMOUSE, RMOUSE, SELECT, EXIT, SEARCH, PAUSE).")
+@click.option("--name", default="calibrate_admin", show_default=True,
+              help="Base filename (without extension) when --output is not given.")
+@click.option("--output", "output_path", type=click.Path(), default=None,
+              help="Write to this exact path instead of <output_dir>/LEDBlinky/lwax/<name>.lwax.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the file (default: dry-run preview).")
+def ledblinky_lwax_calibrate(labels, name, output_path, apply_changes):
+    """Light each control a distinct, named colour to map buttons to positions.
+
+    Builds a static `.lwax` that holds each chosen control at a unique colour
+    (red, green, blue, yellow, magenta, cyan, ...) and prints the legend of
+    which colour went to which label. Sign it (Animation Editor Save As),
+    assign it as the FE or screen-saver animation with LightFEControls=0, and
+    report back which physical button shows which colour.
+
+    \b
+    spindoctor ledblinky lwax calibrate                       :: the 6 admin buttons
+    spindoctor ledblinky lwax calibrate --apply
+    spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --apply
+    """
+    config = _cfg()
+
+    from . import lwax_patterns
+    from .lwax import parse_input_map, resolve_input_map_path
+
+    # Same map resolution as `lwax batch`: configured ledblinky_dir, else a
+    # ~/Downloads export, else the committed reference copy.
+    input_map_path = None
+    try:
+        input_map_path = resolve_input_map_path(config)
+        if not Path(input_map_path).exists():
+            input_map_path = None
+    except ValueError:
+        input_map_path = None
+    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
+    if input_map_path is None:
+        err_console.print(
+            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
+            "(spindoctor config set ledblinky_dir <path>), or drop a copy in ~/Downloads."
+        )
+        sys.exit(1)
+
+    try:
+        controllers = parse_input_map(Path(input_map_path))
+        label_list = [s.strip() for s in labels.split(",") if s.strip()] if labels else None
+        animation, legend = lwax_patterns.build_calibration(controllers, labels=label_list)
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if output_path:
+        out_path = Path(output_path)
+    elif config.output_dir:
+        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
+    else:
+        err_console.print(
+            "[red]Pass --output PATH, or configure output_dir "
+            "(spindoctor config set output_dir <path>).[/red]"
+        )
+        sys.exit(1)
+
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    console.print("\n[bold]Calibration legend[/bold] (physical label -> colour):")
+    for label, color_name in legend:
+        console.print(f"  [cyan]{label:<10}[/cyan] = {color_name}")
+
+    if not apply_changes:
+        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
+        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write(animation.render())
+    console.print(f"\n[green]Wrote:[/green] {out_path}")
+    console.print(
+        "\n[yellow]Not signed yet.[/yellow] Open in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] -> "
+        "[cyan]Save As[/cyan] (no edits), copy into <ledblinky_dir>\\lwa\\, assign it as the FE "
+        "or screen-saver animation, and set [cyan]LightFEControls=0[/cyan] so nothing overrides "
+        "the calibration colours. Then compare the panel to the legend above."
     )
 
 
