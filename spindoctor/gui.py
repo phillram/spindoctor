@@ -12977,6 +12977,20 @@ class _SpinDoctorGUI:
                   "but it isn't a hard guarantee."),
             wraplength=860, justify="left",
         ).pack(anchor="w", padx=6, pady=(6, 6))
+        delay_row = self.ttk.Frame(autorun_lf)
+        delay_row.pack(anchor="w", padx=6, pady=(0, 6))
+        self.ttk.Label(delay_row, text="Delay after login (minutes):").pack(side="left")
+        self._introvideo_autorun_delay_var = self.tk.StringVar(value="1")
+        self.ttk.Entry(
+            delay_row, textvariable=self._introvideo_autorun_delay_var, width=5,
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Label(
+            delay_row,
+            text=("— applied next time you click Enable auto-run. Gives "
+                  "HyperSpin's own intro playback time to finish first, "
+                  "so the swap doesn't collide with it. 0 = no delay."),
+            foreground=_FG_DIM,
+        ).pack(side="left", padx=(6, 0))
         status_row = self.ttk.Frame(autorun_lf)
         status_row.pack(anchor="w", padx=6, pady=(0, 8))
         self._introvideo_autorun_status_label = self.ttk.Label(
@@ -13109,8 +13123,25 @@ class _SpinDoctorGUI:
             args.append("--apply")
         self._run_cli("spindoctor", args)
 
+    def _parse_introvideo_delay_minutes(self) -> Optional[int]:
+        raw = self._introvideo_autorun_delay_var.get().strip()
+        if not raw:
+            return None
+        if not raw.isdigit():
+            self.messagebox.showwarning(
+                "Invalid delay",
+                "Delay must be a non-negative integer (minutes).",
+            )
+            return -1  # sentinel: caller should bail
+        return int(raw)
+
     def _introvideo_install_autorun(self) -> None:
+        delay = self._parse_introvideo_delay_minutes()
+        if delay == -1:
+            return
         args = ["introvideo", "install-autorun"]
+        if delay is not None:
+            args += ["--delay-minutes", str(delay)]
         if self._global_apply_var.get():
             args.append("--apply")
         self._run_cli(

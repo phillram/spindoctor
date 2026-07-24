@@ -31,6 +31,7 @@ from __future__ import annotations
 import random
 import shutil
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -48,6 +49,19 @@ VIDEO_EXTENSIONS = frozenset({
 #: features can be enabled/disabled independently.
 AUTORUN_TASK_NAME = "SpinDoctor Intro Swap"
 SWAP_BAT_FILENAME = "spindoctor-intro-swap.bat"
+
+#: Retry window for copying over intro_video_target when it's briefly
+#: locked — expected at boot, since HyperSpin itself may still be holding
+#: the file open playing the *previous* intro video at the exact moment
+#: the logon-triggered swap runs. Confirmed on a real cabinet: intro clips
+#: range from ~10 seconds to ~2 minutes, and the lock is held for the
+#: clip's *entire* playback (a PermissionError reproduces on demand by
+#: running `swap` while an intro is actively playing, and succeeds
+#: immediately once it finishes) — not just a brief moment. 90 attempts
+#: x 2s = 3 minutes comfortably outlasts the longest observed clip
+#: without hanging the logon task indefinitely.
+SWAP_RETRY_ATTEMPTS = 90
+SWAP_RETRY_DELAY_SECONDS = 2.0
 
 
 class IntroVideoError(Exception):
@@ -258,9 +272,19 @@ def swap_video(
 
     A live directory scan every call — no persisted order, nothing to go
     stale. An empty pool is a clean no-op (never raises): this is the
-    function the unattended logon task calls, and it must never crash.
-    *rng* lets callers (tests) pass a seeded ``random.Random`` instead of
-    the module-level RNG.
+    function the unattended logon task calls, and it must run reliably
+    unattended. *rng* lets callers (tests) pass a seeded ``random.Random``
+    instead of the module-level RNG.
+
+    The copy is retried (:data:`SWAP_RETRY_ATTEMPTS` times, spaced
+    :data:`SWAP_RETRY_DELAY_SECONDS` apart) if the target file is locked —
+    expected at boot, since HyperSpin itself may still be holding
+    ``intro_video_target`` open playing the *previous* intro video at the
+    exact moment the logon-triggered swap runs. Raises
+    :class:`IntroVideoError` (not the raw ``OSError``) if every attempt
+    fails, so the CLI reports it clearly and — once wired through the
+    logon task's bat/vbs — Task Scheduler's Last Result reflects the
+    real failure instead of silently reporting success.
     """
     pool = _pool_dir(config)
     target = _target_file(config)
@@ -270,7 +294,22 @@ def swap_video(
     picker = rng if rng is not None else random
     picked = picker.choice(candidates)
     if apply:
-        shutil.copy2(pool / picked, target)
+        last_exc: Optional[OSError] = None
+        for attempt in range(SWAP_RETRY_ATTEMPTS):
+            try:
+                shutil.copy2(pool / picked, target)
+                last_exc = None
+                break
+            except OSError as exc:
+                last_exc = exc
+                if attempt < SWAP_RETRY_ATTEMPTS - 1:
+                    time.sleep(SWAP_RETRY_DELAY_SECONDS)
+        if last_exc is not None:
+            raise IntroVideoError(
+                f"Could not copy {picked!r} over {target} after "
+                f"{SWAP_RETRY_ATTEMPTS} attempts, {SWAP_RETRY_DELAY_SECONDS}s "
+                f"apart — still in use? ({last_exc})"
+            ) from last_exc
     return SwapResult(picked=picked, target=target, pool_size=len(candidates))
 
 
@@ -305,11 +344,15 @@ def _swap_bat_path() -> Path:
 
 
 def _write_swap_bat() -> Path:
-    """Write the .bat the logon task runs — one line, `introvideo swap --apply`."""
+    """Write the .bat the logon task runs — `introvideo swap --apply`, then
+    an explicit ``exit /b`` so the bat's own process exit code reliably
+    reflects whether the swap succeeded (cmd.exe does not propagate a
+    batch's last errorlevel as its own exit code unless told to)."""
     exe = _sibling_spindoctor_exe()
     lines = (
         "@echo off\r\n"
         f'start /LOW /B /WAIT "" {exe} introvideo swap --apply\r\n'
+        "exit /b %errorlevel%\r\n"
     )
     bat_dir = _swap_bat_dir()
     bat_dir.mkdir(parents=True, exist_ok=True)
@@ -321,17 +364,42 @@ def _write_swap_bat() -> Path:
 def _write_swap_vbs(bat_path: Path) -> Path:
     """Hidden-window shim so the logon task never flashes a console window.
 
-    Same shape as gui.py's `_write_vbs_shim` for the wheel-refresh task.
+    Embeds *bat_path*'s full, already-known absolute path directly, rather
+    than having the VBS re-derive its own folder at runtime from
+    ``WScript.ScriptFullName`` (the previous approach). That runtime
+    derivation had a real, confirmed-on-a-real-cabinet bug: the Python
+    string literal building the VBS's `InStrRev` search argument had one
+    backslash too many, so instead of searching for a single backslash
+    (a normal Windows path separator), the generated VBS searched for
+    two consecutive backslashes — which a normal path never contains.
+    That search always returned "not found", so `Left(path, 0)` always
+    returned an empty string, and the computed bat path silently
+    collapsed to a bare filename with no folder at all. A bare relative
+    filename resolves against the *caller's* working directory: Explorer
+    sets that to the double-clicked file's own folder (so manual
+    double-click testing always "worked"), but Task Scheduler does not
+    use that folder as an action's working directory — so the exact same
+    command silently failed to even find the .bat, every single time, at
+    any delay. No error, nothing in Task Scheduler history, no log file,
+    nothing — every symptom this bug produced. Embedding the full path
+    here removes the dependency on the caller's working directory
+    entirely, and with it this whole class of bug (there's no runtime
+    path derivation left to get subtly wrong).
+
+    Captures ``ws.Run``'s return value and exits with it via
+    ``WScript.Quit`` — without this, wscript.exe always exits 0 regardless
+    of whether the bat (and thus the swap) actually succeeded, which is
+    exactly what made Task Scheduler's "Last Result" untrustworthy for
+    diagnosing a real swap failure. Otherwise the same shape as gui.py's
+    `_write_vbs_shim` for the wheel-refresh task (which has the same gap,
+    not fixed here — out of scope for the intro-video swap).
     """
     vbs_content = (
         "' SpinDoctor intro-swap hidden launcher\r\n"
         "' Generated by spindoctor introvideo install-autorun — do not edit.\r\n"
         'Set ws = CreateObject("WScript.Shell")\r\n'
-        "Dim batPath\r\n"
-        'batPath = Left(WScript.ScriptFullName, '
-        'InStrRev(WScript.ScriptFullName, "\\\\")) '
-        f'& "{bat_path.name}"\r\n'
-        "ws.Run Chr(34) & batPath & Chr(34), 0, True\r\n"
+        f'rc = ws.Run(Chr(34) & "{bat_path}" & Chr(34), 0, True)\r\n'
+        "WScript.Quit(rc)\r\n"
     )
     vbs_path = bat_path.with_suffix(".vbs")
     vbs_path.write_text(vbs_content, encoding="utf-8")
