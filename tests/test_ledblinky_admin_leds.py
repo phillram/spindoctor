@@ -5,6 +5,7 @@ LEDBlinkyControls.xml against the committed trimmed sample, which mirrors the
 real cabinet's structure (per-group admin block + a trailing global control
 definition block that must never be touched).
 """
+import re
 import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -105,3 +106,89 @@ def test_missing_xml_raises(tmp_path):
     cfg = Config(ledblinky_dir=str(tmp_path))
     with pytest.raises(ValueError, match="not found"):
         lb.read_admin_led_state(cfg)
+
+
+# ── emulator scoping (uniform set) ────────────────────────────────────────────
+
+def test_set_scoped_to_one_emulator(config, led_dir):
+    """--emulator confines changes to that emulator's groups."""
+    # The sample has MAME (2 groups: DEFAULT + 005) and Atari_2600 (1 group).
+    result = lb.set_admin_led_controls(
+        config, {"exit": "Blue"}, emulator="Atari_2600", dry_run=False, backup=False,
+    )
+    assert result.groups_changed == 1          # only Atari's one group
+    text = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    mame = text.split('emuname="MAME"')[1].split("</emulator>")[0]
+    atari = text.split('emuname="Atari_2600"')[1].split("</emulator>")[0]
+    # Check the Exit admin control (UI_CANCEL) specifically, not unrelated buttons.
+    assert re.search(r'name="UI_CANCEL"[^>]*color="Blue"', atari)   # Atari's Exit changed
+    assert not re.search(r'name="UI_CANCEL"[^>]*color="Blue"', mame)  # MAME's Exit still Red
+
+
+def test_unknown_emulator_raises(config):
+    with pytest.raises(ValueError, match="not found"):
+        lb.set_admin_led_controls(config, {"exit": "Blue"}, emulator="Nope", dry_run=True)
+
+
+# ── randomize ─────────────────────────────────────────────────────────────────
+
+def test_randomize_is_deterministic(config, led_dir):
+    r1 = lb.randomize_admin_led_controls(config, seed=42, dry_run=False, backup=False)
+    out1 = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    # Reset and run again with the same seed → identical output.
+    shutil.copy(SAMPLE, led_dir / "LEDBlinkyControls.xml")
+    lb.randomize_admin_led_controls(config, seed=42, dry_run=False, backup=False)
+    out2 = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    assert out1 == out2
+    assert r1.color_changes > 0
+    ET.fromstring(out1)
+
+
+def test_randomize_only_selected_buttons(config, led_dir):
+    lb.randomize_admin_led_controls(config, buttons=["exit"], seed=1, dry_run=False, backup=False)
+    st = _state(config)
+    # Pause/Select keep their sample colors; only exit may have changed.
+    assert st["pause"].colors == {"Yellow": 3}
+    assert st["select"].colors == {"Green": 3}
+
+
+# ── add / remove ──────────────────────────────────────────────────────────────
+
+def test_add_inserts_controls_where_missing(config, led_dir):
+    """The sample's Atari_2600 DEFAULT already has admin controls, so add a
+    control group without them first, then confirm add fills it."""
+    # Remove from Atari, then add back.
+    lb.remove_admin_led_controls(config, emulator="Atari_2600", dry_run=False, backup=False)
+    st = _state(config)
+    # Atari removal drops 1 group's worth (sample MAME still has 2 lit groups).
+    assert st["exit"].always_active_count == 2
+    result = lb.add_admin_led_controls(config, emulator="Atari_2600", dry_run=False, backup=False)
+    assert result.groups_changed == 1
+    st = _state(config)
+    assert st["exit"].always_active_count == 3   # back to all three groups
+    ET.parse(led_dir / "LEDBlinkyControls.xml")
+
+
+def test_add_is_idempotent(config):
+    lb.add_admin_led_controls(config, dry_run=False, backup=False)  # sample already full
+    result = lb.add_admin_led_controls(config, dry_run=False, backup=False)
+    assert result.groups_changed == 0
+
+
+def test_remove_then_show_reports_dark(config):
+    lb.remove_admin_led_controls(config, dry_run=False, backup=False)
+    st = _state(config)
+    assert st["exit"].always_active_count == 0
+    assert st["pause"].always_active_count == 0
+    assert st["select"].always_active_count == 0
+
+
+def test_add_remove_roundtrip_keeps_valid_xml(config, led_dir):
+    lb.remove_admin_led_controls(config, dry_run=False, backup=False)
+    lb.add_admin_led_controls(config, dry_run=False, backup=False)
+    ET.parse(led_dir / "LEDBlinkyControls.xml")
+
+
+def test_list_emulators(config):
+    emus = lb.list_admin_led_emulators(config)
+    assert "MAME" in emus and "Atari_2600" in emus

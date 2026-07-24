@@ -2570,8 +2570,9 @@ class AdminLedPatchResult:
 
     dry_run: bool
     controls_xml_path: Optional[Path] = None
-    active_changes: int = 0      # alwaysActive attributes flipped
-    color_changes: int = 0       # color attributes rewritten
+    active_changes: int = 0      # alwaysActive attributes flipped/added/removed
+    color_changes: int = 0       # color attributes rewritten/added
+    groups_changed: int = 0      # control groups whose block was modified
     backup_path: Optional[Path] = None
     # friendly -> human summary of what was requested
     requested: "dict[str, str]" = field(default_factory=dict)
@@ -2614,24 +2615,11 @@ def read_admin_led_state(config: Config) -> "list[AdminLedControlState]":
     return states
 
 
-def set_admin_led_controls(
-    config: Config,
-    updates: "dict[str, object]",
-    dry_run: bool = True,
-    backup: bool = True,
-) -> AdminLedPatchResult:
-    """Set the in-game admin LED controls across every group in LEDBlinkyControls.xml.
+#: One <controlGroup>…</controlGroup> block (non-greedy).
+_CONTROLGROUP_RE = re.compile(r"<controlGroup\b.*?</controlGroup>", re.S)
 
-    ``updates`` maps a friendly name (``exit``/``pause``/``select``) to either
-    the string ``"off"`` (set ``alwaysActive="0"`` — dark in-game) or a color
-    name (set ``alwaysActive="1"`` and ``color="<name>"`` — lit in that color).
 
-    Only ``<control>`` elements that already carry the relevant attribute are
-    rewritten (the per-group admin entries); LedBlinky's bare global control
-    definitions are left untouched. Colors are validated against
-    ``Color-RGB.ini`` when it is present.
-    """
-    result = AdminLedPatchResult(dry_run=dry_run)
+def _require_controls_xml(config: Config) -> Path:
     xml_path = _controls_xml_path(config)
     if xml_path is None:
         raise ValueError(
@@ -2639,6 +2627,145 @@ def set_admin_led_controls(
         )
     if not xml_path.exists():
         raise ValueError(f"LEDBlinkyControls.xml not found at {xml_path}")
+    return xml_path
+
+
+def list_admin_led_emulators(config: Config) -> "list[str]":
+    """Return every ``emuname`` declared in LEDBlinkyControls.xml, sorted."""
+    xml_path = _require_controls_xml(config)
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    return sorted(set(re.findall(r'<emulator emuname="([^"]+)"', text)))
+
+
+def _palette_names(config: Config) -> "list[str]":
+    """Named colors from Color-RGB.ini (empty list if the file is absent)."""
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        return []
+    _, palette = parse_color_rgb_ini(color_rgb_path)
+    return [e.name for e in palette]
+
+
+def _validate_admin_colors(config: Config, names: "list[str]") -> None:
+    """Raise ValueError if any name is not in Color-RGB.ini (when it exists)."""
+    valid = set(_palette_names(config))
+    if not valid:
+        return  # no palette to validate against — same policy as other commands
+    bad = [c for c in names if c not in valid]
+    if bad:
+        raise ValueError(
+            f"Unknown color(s): {', '.join(repr(c) for c in bad)}. "
+            f"Available: {', '.join(sorted(valid))}"
+        )
+
+
+def _scoped_region(text: str, emulator: "Optional[str]") -> "tuple[str, str, str]":
+    """Split *text* into (before, region, after) where *region* is the body of
+    the named ``<emulator>`` block, or the whole document when *emulator* is
+    None. controlGroup edits are confined to *region*."""
+    if not emulator:
+        return "", text, ""
+    m = re.search(
+        rf'(<emulator emuname="{re.escape(emulator)}"[^>]*>)(.*?)(</emulator>)',
+        text, re.S,
+    )
+    if not m:
+        raise ValueError(
+            f"Emulator {emulator!r} not found in LEDBlinkyControls.xml."
+        )
+    return text[: m.start(2)], m.group(2), text[m.end(2):]
+
+
+def _transform_control_groups(text, emulator, fn):
+    """Apply *fn(group_block) -> new_block* to every ``<controlGroup>`` in the
+    scoped region. Returns ``(new_text, groups_changed)``. Global control
+    definitions (outside any controlGroup) are never seen by *fn*."""
+    pre, region, post = _scoped_region(text, emulator)
+    changed = 0
+
+    def _one(m):
+        nonlocal changed
+        new = fn(m.group(0))
+        if new != m.group(0):
+            changed += 1
+        return new
+
+    region = _CONTROLGROUP_RE.sub(_one, region)
+    return pre + region + post, changed
+
+
+def _recolor_admin_in_block(block: str, friendly: str, value: object) -> "tuple[str, int, int]":
+    """Within one group block, set the color / alwaysActive of one admin control.
+    ``value`` is ``"off"`` or a color name. Returns (block, active_changes,
+    color_changes). Only rewrites the control if it already exists in the block."""
+    control = ADMIN_LED_CONTROLS[friendly]
+    if f'name="{control}"' not in block:
+        return block, 0, 0
+    turn_off = isinstance(value, str) and value.lower() == "off"
+    new_active = "0" if turn_off else "1"
+    ac = cc = 0
+
+    def _sub_active(m):
+        nonlocal ac
+        if m.group(2) != new_active:
+            ac += 1
+            return f"{m.group(1)}{new_active}{m.group(3)}"
+        return m.group(0)
+
+    block = re.sub(
+        rf'(<control\s+name="{re.escape(control)}"[^>]*?\balwaysActive=")([01])(")',
+        _sub_active, block,
+    )
+    if not turn_off:
+        new_color = str(value)
+
+        def _sub_color(m):
+            nonlocal cc
+            if m.group(2) != new_color:
+                cc += 1
+                return f"{m.group(1)}{new_color}{m.group(3)}"
+            return m.group(0)
+
+        block = re.sub(
+            rf'(<control\s+name="{re.escape(control)}"[^>]*?\bcolor=")([^"]*)(")',
+            _sub_color, block,
+        )
+    return block, ac, cc
+
+
+def _write_xml(result: AdminLedPatchResult, xml_path: Path, text: str,
+               config: Config, dry_run: bool, backup: bool) -> None:
+    if dry_run or (result.active_changes == 0 and result.color_changes == 0
+                   and result.groups_changed == 0):
+        return
+    if backup:
+        result.backup_path = _backup(xml_path, _config_backup_dir(config))
+    with xml_path.open("w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
+def set_admin_led_controls(
+    config: Config,
+    updates: "dict[str, object]",
+    emulator: "Optional[str]" = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminLedPatchResult:
+    """Set the in-game admin LED controls uniformly across control groups.
+
+    ``updates`` maps a friendly name (``exit``/``pause``/``select``) to either
+    the string ``"off"`` (set ``alwaysActive="0"`` — dark in-game) or a color
+    name (set ``alwaysActive="1"`` and ``color="<name>"`` — lit in that color).
+    Every group gets the same value (the "uniform" mode). Pass ``emulator`` to
+    restrict the sweep to one emulator's groups.
+
+    Only ``<control>`` elements that already carry the relevant attribute are
+    rewritten (use :func:`add_admin_led_controls` to create missing ones);
+    LedBlinky's bare global control definitions are left untouched. Colors are
+    validated against ``Color-RGB.ini`` when it is present.
+    """
+    result = AdminLedPatchResult(dry_run=dry_run)
+    xml_path = _require_controls_xml(config)
     result.controls_xml_path = xml_path
     if not updates:
         raise ValueError("No admin LED updates requested.")
@@ -2649,69 +2776,179 @@ def set_admin_led_controls(
             f"Unknown admin button(s): {', '.join(unknown)}. "
             f"Choose from: {', '.join(ADMIN_LED_CONTROLS)}."
         )
-
-    # Validate colour names against the palette when available.
-    color_values = [v for v in updates.values() if isinstance(v, str) and v.lower() != "off"]
-    if color_values:
-        color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
-        if color_rgb_path.exists():
-            _, palette = parse_color_rgb_ini(color_rgb_path)
-            valid = {e.name for e in palette}
-            bad = [c for c in color_values if c not in valid]
-            if bad:
-                raise ValueError(
-                    f"Unknown color(s): {', '.join(repr(c) for c in bad)}. "
-                    f"Available: {', '.join(sorted(valid))}"
-                )
+    _validate_admin_colors(
+        config, [v for v in updates.values() if isinstance(v, str) and v.lower() != "off"]
+    )
+    for friendly, value in updates.items():
+        result.requested[friendly] = "off" if (
+            isinstance(value, str) and value.lower() == "off"
+        ) else f"{value} (lit)"
 
     text = xml_path.read_text(encoding="utf-8", errors="replace")
-    active_changes = 0
-    color_changes = 0
 
-    for friendly, value in updates.items():
-        control = ADMIN_LED_CONTROLS[friendly]
-        turn_off = isinstance(value, str) and value.lower() == "off"
-        new_active = "0" if turn_off else "1"
-        new_color = None if turn_off else str(value)
-        result.requested[friendly] = "off" if turn_off else f"{value} (lit)"
+    def _fn(block):
+        for friendly, value in updates.items():
+            block, ac, cc = _recolor_admin_in_block(block, friendly, value)
+            result.active_changes += ac
+            result.color_changes += cc
+        return block
 
-        def _sub_active(m):
-            nonlocal active_changes
-            head, cur, tail = m.group(1), m.group(2), m.group(3)
-            if cur != new_active:
-                active_changes += 1
-                return f"{head}{new_active}{tail}"
-            return m.group(0)
+    text, result.groups_changed = _transform_control_groups(text, emulator, _fn)
+    _write_xml(result, xml_path, text, config, dry_run, backup)
+    return result
 
-        # Flip alwaysActive on every per-group entry for this control.
-        text = re.sub(
-            rf'(<control\s+name="{re.escape(control)}"[^>]*?\balwaysActive=")([01])(")',
-            _sub_active, text,
+
+def randomize_admin_led_controls(
+    config: Config,
+    buttons: "Optional[list[str]]" = None,
+    seed: int = 0,
+    emulator: "Optional[str]" = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminLedPatchResult:
+    """Give each control GROUP a random admin color per button.
+
+    For every control group (in scope) that already has the admin controls,
+    each requested button is recolored to a random pick from ``Color-RGB.ini``.
+    Deterministic given ``seed``. Note: games without their own control group
+    share their emulator's DEFAULT group, so they all get that group's colors —
+    per-*game* variety only appears for games that have their own group.
+
+    ``buttons`` defaults to all of ``exit``/``pause``/``select``. Active state
+    (alwaysActive) is left unchanged; only ``color=`` is randomized.
+    """
+    import random
+
+    result = AdminLedPatchResult(dry_run=dry_run)
+    xml_path = _require_controls_xml(config)
+    result.controls_xml_path = xml_path
+
+    buttons = list(buttons) if buttons else list(ADMIN_LED_CONTROLS)
+    unknown = [b for b in buttons if b not in ADMIN_LED_CONTROLS]
+    if unknown:
+        raise ValueError(
+            f"Unknown admin button(s): {', '.join(unknown)}. "
+            f"Choose from: {', '.join(ADMIN_LED_CONTROLS)}."
         )
+    palette = [c for c in _palette_names(config) if c.lower() not in ("black", "whie")]
+    if not palette:
+        raise ValueError(
+            "No usable colors found in Color-RGB.ini to randomize from."
+        )
+    result.requested = {b: "random" for b in buttons}
+    rng = random.Random(seed)
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
 
-        if new_color is not None:
-            def _sub_color(m):
-                nonlocal color_changes
-                head, cur, tail = m.group(1), m.group(2), m.group(3)
-                if cur != new_color:
-                    color_changes += 1
-                    return f"{head}{new_color}{tail}"
-                return m.group(0)
+    def _fn(block):
+        # Deterministic per-group: draw a fresh color per requested button that
+        # exists in this group.
+        for friendly in buttons:
+            control = ADMIN_LED_CONTROLS[friendly]
+            if f'name="{control}"' not in block:
+                continue
+            block, _ac, cc = _recolor_admin_in_block(block, friendly, rng.choice(palette))
+            result.color_changes += cc
+        return block
 
-            text = re.sub(
-                rf'(<control\s+name="{re.escape(control)}"[^>]*?\bcolor=")([^"]*)(")',
-                _sub_color, text,
+    text, result.groups_changed = _transform_control_groups(text, emulator, _fn)
+    _write_xml(result, xml_path, text, config, dry_run, backup)
+    return result
+
+
+#: Default colors used when *adding* the admin controls to a group.
+ADMIN_LED_ADD_DEFAULTS: "dict[str, str]" = {
+    "exit": "Red", "pause": "Yellow", "select": "Green",
+}
+
+#: MAME input codes written on newly-added admin controls (matches the DEFAULT
+#: group's own entries).
+_ADMIN_LED_INPUTCODES: "dict[str, str]" = {
+    "exit": "KEYCODE_ESC",
+    "pause": "KEYCODE_P|KEY_MAMEPAUSE",
+    "select": "KEYCODE_ENTER",
+}
+
+
+def add_admin_led_controls(
+    config: Config,
+    emulator: "Optional[str]" = None,
+    colors: "Optional[dict[str, str]]" = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminLedPatchResult:
+    """Add the always-active admin LED controls (Exit/Pause/Select) to control
+    groups that lack them — e.g. to make the admin buttons light in-game on a
+    console (emulator) that has none. Existing admin controls are left as-is
+    (use :func:`set_admin_led_controls` to recolor those). Pass ``emulator`` to
+    target one console; omit it to cover every emulator.
+    """
+    result = AdminLedPatchResult(dry_run=dry_run)
+    xml_path = _require_controls_xml(config)
+    result.controls_xml_path = xml_path
+
+    colors = dict(ADMIN_LED_ADD_DEFAULTS, **(colors or {}))
+    _validate_admin_colors(config, list(colors.values()))
+    result.requested = {f: f"{colors[f]} (add)" for f in ADMIN_LED_CONTROLS}
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+
+    def _fn(block):
+        missing = [f for f, c in ADMIN_LED_CONTROLS.items() if f'name="{c}"' not in block]
+        if not missing:
+            return block
+        lines = "".join(
+            f'\n        <control name="{ADMIN_LED_CONTROLS[f]}" voice="" '
+            f'alwaysActive="1" color="{colors[f]}" '
+            f'inputCodes="{_ADMIN_LED_INPUTCODES[f]}" />'
+            for f in missing
+        )
+        result.active_changes += len(missing)
+        result.color_changes += len(missing)
+        pm = re.search(r'(<player number="0">)(.*?)(</player>)', block, re.S)
+        if pm:
+            # Insert before the closing </player> of the player-0 block.
+            return block[: pm.start(3)] + lines + "\n      " + block[pm.start(3):]
+        # No player-0 block — create one right after the <controlGroup …> tag.
+        gm = re.match(r'(<controlGroup\b[^>]*>)', block)
+        player0 = f'\n      <player number="0">{lines}\n      </player>'
+        return block[: gm.end(1)] + player0 + block[gm.end(1):]
+
+    text, result.groups_changed = _transform_control_groups(text, emulator, _fn)
+    _write_xml(result, xml_path, text, config, dry_run, backup)
+    return result
+
+
+def remove_admin_led_controls(
+    config: Config,
+    emulator: "Optional[str]" = None,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> AdminLedPatchResult:
+    """Remove the admin LED controls (Exit/Pause/Select) from control groups —
+    the inverse of :func:`add_admin_led_controls`. Those buttons then fall back
+    to the group's ``defaultInactive`` color (off) during gameplay. Pass
+    ``emulator`` to target one console; omit it to cover every emulator."""
+    result = AdminLedPatchResult(dry_run=dry_run)
+    xml_path = _require_controls_xml(config)
+    result.controls_xml_path = xml_path
+    result.requested = {f: "removed" for f in ADMIN_LED_CONTROLS}
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+
+    def _fn(block):
+        for control in ADMIN_LED_CONTROLS.values():
+            # Drop the whole line (leading whitespace + the self-closing tag)
+            # only for entries that carry alwaysActive (the per-group admin
+            # controls), never the bare global definitions.
+            new = re.sub(
+                rf'[ \t]*<control\s+name="{re.escape(control)}"[^>]*?\balwaysActive="[01]"[^>]*/>\r?\n?',
+                "", block,
             )
+            if new != block:
+                result.active_changes += 1
+            block = new
+        return block
 
-    result.active_changes = active_changes
-    result.color_changes = color_changes
-
-    if not dry_run and (active_changes or color_changes):
-        if backup:
-            result.backup_path = _backup(xml_path, _config_backup_dir(config))
-        with xml_path.open("w", encoding="utf-8", newline="") as fh:
-            fh.write(text)
-
+    text, result.groups_changed = _transform_control_groups(text, emulator, _fn)
+    _write_xml(result, xml_path, text, config, dry_run, backup)
     return result
 
 
