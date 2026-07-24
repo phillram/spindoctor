@@ -9399,7 +9399,10 @@ def ledblinky_lwax_fade(hex_colors, labels, steps_per_leg, duration_ms, name, ou
         return
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(animation.render(), encoding="utf-8", newline="")
+    # newline="" via open() (not write_text, whose newline= is 3.10+ only) so
+    # Python's text-mode translation doesn't double the \r on Windows.
+    with out_path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write(animation.render())
     console.print(f"\n[green]Wrote:[/green] {out_path}")
     console.print(
         "\n[yellow]This file is not signed yet.[/yellow] Open it in "
