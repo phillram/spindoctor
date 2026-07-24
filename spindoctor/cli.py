@@ -7504,13 +7504,17 @@ def ledblinky_group():
     \b
     Subcommands:
       generate       Generate / merge controls.ini and Colors.ini from MAME data
+      setup          Run generate + colors sync-players in one step (MAME)
       audit          Audit ROM → Colors.ini coverage
+      inspect-rom    Show what LEDBlinky would see for one ROM (diagnostic)
       check          Check LEDBlinky compatibility with HyperSpin
       fix            Fix LEDBlinky compatibility issues
       patch-settings Patch Settings.ini animations and suppress unused-button flash
       fill-defaults  Add default Colors.ini entries for ROMs with no LED mapping
       admin-buttons  Set per-button admin/cabinet colors across all ROM sections
+      admin-leds     In-game admin LED buttons (show/set/randomize/add/remove) in the XML
       colors         Manage named color definitions (list / edit / normalize)
+      lwax           Build raw .lwax LED animation files (fade / batch library)
     """
 
 
@@ -9165,6 +9169,12 @@ def ledblinky_admin_buttons_group():
     \b
     Subcommands:
       set   Write per-button admin colors to every ROM section in Colors.ini
+
+    NOTE: this writes ``P{n}_BUTTON`` keys to Colors.ini. On cabinets whose
+    admin buttons are the MAME UI controls (UI_CANCEL/UI_PAUSE/UI_SELECT), the
+    in-game admin lights are driven by ``LEDBlinkyControls.xml`` instead — use
+    ``ledblinky admin-leds`` for those. Run ``admin-leds`` (no options) to see
+    which mechanism your cabinet uses.
     """
 
 
@@ -9297,6 +9307,233 @@ def ledblinky_admin_buttons_set(
             console.print(f"[dim][verbose] no sections updated (player=P{result.admin_player})[/dim]")
 
 
+@ledblinky_group.group("admin-leds", invoke_without_command=True)
+@click.pass_context
+def ledblinky_admin_leds_group(ctx):
+    """Manage the admin LED buttons that stay lit *during gameplay*.
+
+    These are the always-active MAME UI controls in LEDBlinkyControls.xml —
+    Exit (UI_CANCEL), Pause (UI_PAUSE), Select (UI_SELECT) — lit regardless of
+    game input. (Separate from ``admin-buttons set``, which writes Colors.ini
+    P{n}_BUTTON keys that don't drive in-game admin lighting on UI-control
+    cabinets.)
+
+    \b
+    Subcommands:
+      show       Print the current in-game admin LED state (default)
+      set        Uniform colors on all games (e.g. --select off, --exit Red)
+      randomize  Random color per control group (per-game variety)
+      add        Add the admin controls to games/consoles that lack them
+      remove     Remove the admin controls (those buttons go dark in-game)
+
+    Run with no subcommand to show the current state.
+    """
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(ledblinky_admin_leds_show)
+
+
+def _print_admin_led_result(result, scope_label):
+    """Shared summary printer for the mutating admin-leds subcommands."""
+    console.print(f"\n[blue bold]LEDBlinkyControls.xml[/blue bold]  {result.controls_xml_path}")
+    console.print(f"  Scope: [cyan]{scope_label}[/cyan]")
+    for friendly, summary in result.requested.items():
+        console.print(f"  [cyan]{friendly}[/cyan] → {summary}")
+    verb = "would change" if result.dry_run else "changed"
+    console.print(
+        f"  {verb}: [green]{result.groups_changed}[/green] control group(s) "
+        f"([green]{result.active_changes}[/green] alwaysActive + "
+        f"[green]{result.color_changes}[/green] color)"
+    )
+    if result.groups_changed == 0 and result.active_changes == 0 and result.color_changes == 0:
+        console.print("\n[dim]Nothing to change — already in the requested state.[/dim]")
+    elif result.dry_run:
+        console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]")
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+
+@ledblinky_admin_leds_group.command("show")
+def ledblinky_admin_leds_show():
+    """Print which admin buttons light in-game, and in what colors."""
+    from . import ledblinky as lb
+    try:
+        states = lb.read_admin_led_state(_cfg())
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+    console.print("[blue bold]In-game admin LED controls[/blue bold] (LEDBlinkyControls.xml):\n")
+    for st in states:
+        if st.always_active_count:
+            colors = ", ".join(f"{c}×{n}" for c, n in st.colors.items())
+            console.print(
+                f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): "
+                f"[green]lit[/green] in {st.always_active_count} groups — {colors}"
+            )
+        else:
+            console.print(
+                f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): [dim]dark in-game[/dim]"
+            )
+    console.print(
+        "\n[dim]Change with: admin-leds set / randomize / add / remove.[/dim]"
+    )
+
+
+@ledblinky_admin_leds_group.command("set")
+@click.option("--exit", "exit_", default=None, metavar="COLOR|off",
+              help="Exit button (UI_CANCEL): a color name to light it, or 'off'.")
+@click.option("--pause", "pause_", default=None, metavar="COLOR|off",
+              help="Pause button (UI_PAUSE): a color name to light it, or 'off'.")
+@click.option("--select", "select_", default=None, metavar="COLOR|off",
+              help="Select button (UI_SELECT): a color name to light it, or 'off'.")
+@click.option("--emulator", default=None,
+              help="Limit to one emulator's games (default: every game).")
+@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
+@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+def ledblinky_admin_leds_set(exit_, pause_, select_, emulator, apply_changes, no_backup):
+    """Set uniform in-game admin colors across all games (the default mode).
+
+    Every game shows the same admin colors. Only recolors admin controls that
+    already exist — use ``admin-leds add`` first for games/consoles that lack
+    them.
+
+    \b
+    "Clean arcade" default — Exit + Pause lit, Select dark:
+      spindoctor ledblinky admin-leds set --select off --apply
+
+    \b
+    Recolor: Exit red, Pause purple, everywhere:
+      spindoctor ledblinky admin-leds set --exit Red --pause Purple --apply
+    """
+    from . import ledblinky as lb
+    updates: "dict[str, object]" = {}
+    for friendly, val in (("exit", exit_), ("pause", pause_), ("select", select_)):
+        if val is not None:
+            updates[friendly] = val
+    if not updates:
+        console.print("[red]Error:[/red] Set at least one of --exit / --pause / --select.")
+        raise SystemExit(1)
+    if not apply_changes:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    try:
+        result = lb.set_admin_led_controls(
+            _cfg(), updates, emulator=emulator,
+            dry_run=not apply_changes, backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+    _print_admin_led_result(result, emulator or "all emulators")
+
+
+@ledblinky_admin_leds_group.command("randomize")
+@click.option("--buttons", default=None,
+              help="Comma-separated buttons to randomize (exit,pause,select). "
+                   "Default: all three.")
+@click.option("--seed", default=0, show_default=True, type=int,
+              help="Random seed — same seed reproduces the same colors.")
+@click.option("--emulator", default=None,
+              help="Limit to one emulator's games (default: every game).")
+@click.option("--games", default=None, metavar="ROM1,ROM2,...",
+              help="Force true per-game variety for these ROMs: each gets its "
+                   "own control group (cloned from the emulator's DEFAULT) so it "
+                   "draws its own random colors. Requires --emulator.")
+@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
+@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+def ledblinky_admin_leds_randomize(buttons, seed, emulator, games, apply_changes, no_backup):
+    """Assign a random admin color per control group (per-game variety).
+
+    Each control group gets its own random colors from Color-RGB.ini. Games
+    that share their emulator's DEFAULT group all get that group's colors, so
+    per-game variety only shows for games with their own control group — pass
+    ``--games`` (with ``--emulator``) to force specific ROMs to get their own.
+    Re-run ``admin-leds set`` any time to go back to uniform colors.
+
+    \b
+    spindoctor ledblinky admin-leds randomize --apply
+    spindoctor ledblinky admin-leds randomize --seed 7 --buttons exit,pause --apply
+    spindoctor ledblinky admin-leds randomize --emulator MAME --games 005,pacman,galaga --apply
+    """
+    from . import ledblinky as lb
+    button_list = [b.strip() for b in buttons.split(",") if b.strip()] if buttons else None
+    game_list = [g.strip() for g in games.split(",") if g.strip()] if games else None
+    if not apply_changes:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    try:
+        result = lb.randomize_admin_led_controls(
+            _cfg(), buttons=button_list, seed=seed, emulator=emulator, games=game_list,
+            dry_run=not apply_changes, backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+    if result.groups_added:
+        console.print(f"  [green]{result.groups_added}[/green] new per-game group(s) created")
+    _print_admin_led_result(result, emulator or "all emulators")
+
+
+@ledblinky_admin_leds_group.command("add")
+@click.option("--emulator", default=None,
+              help="Console/emulator to add admin LEDs to (default: every emulator).")
+@click.option("--exit", "exit_", default="Red", show_default=True, help="Color for the added Exit button.")
+@click.option("--pause", "pause_", default="Yellow", show_default=True, help="Color for the added Pause button.")
+@click.option("--select", "select_", default="Green", show_default=True, help="Color for the added Select button.")
+@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
+@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+def ledblinky_admin_leds_add(emulator, exit_, pause_, select_, apply_changes, no_backup):
+    """Add the admin LED buttons to games/consoles that don't have them.
+
+    Inserts always-active Exit/Pause/Select controls into every control group
+    (in scope) that lacks them, so those admin buttons light in-game. Groups
+    that already have them are left untouched. Great for a console whose games
+    show no admin lights today.
+
+    \b
+    spindoctor ledblinky admin-leds add --emulator "Atari_2600" --apply
+    spindoctor ledblinky admin-leds add --apply         :: every emulator
+    """
+    from . import ledblinky as lb
+    if not apply_changes:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    try:
+        result = lb.add_admin_led_controls(
+            _cfg(), emulator=emulator,
+            colors={"exit": exit_, "pause": pause_, "select": select_},
+            dry_run=not apply_changes, backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+    _print_admin_led_result(result, emulator or "all emulators")
+
+
+@ledblinky_admin_leds_group.command("remove")
+@click.option("--emulator", default=None,
+              help="Console/emulator to remove admin LEDs from (default: every emulator).")
+@click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
+@click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
+def ledblinky_admin_leds_remove(emulator, apply_changes, no_backup):
+    """Remove the admin LED buttons (they go dark in-game).
+
+    The inverse of ``add``: strips the always-active Exit/Pause/Select controls
+    from control groups, so those buttons fall back to off during gameplay.
+
+    \b
+    spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply
+    """
+    from . import ledblinky as lb
+    if not apply_changes:
+        console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
+    try:
+        result = lb.remove_admin_led_controls(
+            _cfg(), emulator=emulator,
+            dry_run=not apply_changes, backup=not no_backup,
+        )
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+    _print_admin_led_result(result, emulator or "all emulators")
+
+
 # ─── ledblinky lwax ────────────────────────────────────────────────────────────
 
 @ledblinky_group.group("lwax")
@@ -9305,8 +9542,9 @@ def ledblinky_lwax_group():
 
     \b
     Subcommands:
-      fade    Generate a single color-cycle fade animation across wired controls
-      batch   Generate the whole pattern library (~170 animated effects)
+      fade      Generate a single color-cycle fade animation across wired controls
+      batch     Generate the whole pattern library (~170 animated effects)
+      calibrate Light each control a distinct named colour (button-mapping aid)
 
     IMPORTANT: the output is NOT signed and will not load in LedBlinky as-is.
     LedBlinky Config validates a per-file signature that cannot be reproduced
@@ -9484,6 +9722,94 @@ def ledblinky_lwax_batch(output_dir, apply_changes):
         "it in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] and use "
         "[cyan]Animation -> Save As[/cyan] (no edits), then copy into "
         "<ledblinky_dir>\\lwa\\. See the folder's README.md for details."
+    )
+
+
+@ledblinky_lwax_group.command("calibrate")
+@click.option("--labels", default=None,
+              help="Comma-separated control labels to light (e.g. "
+                   "'SELECT,EXIT,SEARCH'). Default: the admin row "
+                   "(LMOUSE, RMOUSE, SELECT, EXIT, SEARCH, PAUSE).")
+@click.option("--name", default="calibrate_admin", show_default=True,
+              help="Base filename (without extension) when --output is not given.")
+@click.option("--output", "output_path", type=click.Path(), default=None,
+              help="Write to this exact path instead of <output_dir>/LEDBlinky/lwax/<name>.lwax.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Write the file (default: dry-run preview).")
+def ledblinky_lwax_calibrate(labels, name, output_path, apply_changes):
+    """Light each control a distinct, named colour to map buttons to positions.
+
+    Builds a static `.lwax` that holds each chosen control at a unique colour
+    (red, green, blue, yellow, magenta, cyan, ...) and prints the legend of
+    which colour went to which label. Sign it (Animation Editor Save As),
+    assign it as the FE or screen-saver animation with LightFEControls=0, and
+    report back which physical button shows which colour.
+
+    \b
+    spindoctor ledblinky lwax calibrate                       :: the 6 admin buttons
+    spindoctor ledblinky lwax calibrate --apply
+    spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --apply
+    """
+    config = _cfg()
+
+    from . import lwax_patterns
+    from .lwax import parse_input_map, resolve_input_map_path
+
+    # Same map resolution as `lwax batch`: configured ledblinky_dir, else a
+    # ~/Downloads export, else the committed reference copy.
+    input_map_path = None
+    try:
+        input_map_path = resolve_input_map_path(config)
+        if not Path(input_map_path).exists():
+            input_map_path = None
+    except ValueError:
+        input_map_path = None
+    input_map_path = lwax_patterns.resolve_input_map(input_map_path)
+    if input_map_path is None:
+        err_console.print(
+            "[red]No LEDBlinkyInputMap.xml found.[/red] Configure ledblinky_dir "
+            "(spindoctor config set ledblinky_dir <path>), or drop a copy in ~/Downloads."
+        )
+        sys.exit(1)
+
+    try:
+        controllers = parse_input_map(Path(input_map_path))
+        label_list = [s.strip() for s in labels.split(",") if s.strip()] if labels else None
+        animation, legend = lwax_patterns.build_calibration(controllers, labels=label_list)
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    if output_path:
+        out_path = Path(output_path)
+    elif config.output_dir:
+        out_path = Path(config.output_dir) / "LEDBlinky" / "lwax" / f"{name}.lwax"
+    else:
+        err_console.print(
+            "[red]Pass --output PATH, or configure output_dir "
+            "(spindoctor config set output_dir <path>).[/red]"
+        )
+        sys.exit(1)
+
+    console.print(f"Input map    : [cyan]{input_map_path}[/cyan]")
+    console.print("\n[bold]Calibration legend[/bold] (physical label -> colour):")
+    for label, color_name in legend:
+        console.print(f"  [cyan]{label:<10}[/cyan] = {color_name}")
+
+    if not apply_changes:
+        console.print(f"\n[yellow]Would write:[/yellow] {out_path}")
+        console.print("[dim]Dry-run — pass --apply to write the file.[/dim]")
+        return
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("w", encoding="utf-8", newline="") as _fh:
+        _fh.write(animation.render())
+    console.print(f"\n[green]Wrote:[/green] {out_path}")
+    console.print(
+        "\n[yellow]Not signed yet.[/yellow] Open in [cyan]LEDBlinkyAnimationEditor.exe[/cyan] -> "
+        "[cyan]Save As[/cyan] (no edits), copy into <ledblinky_dir>\\lwa\\, assign it as the FE "
+        "or screen-saver animation, and set [cyan]LightFEControls=0[/cyan] so nothing overrides "
+        "the calibration colours. Then compare the panel to the legend above."
     )
 
 

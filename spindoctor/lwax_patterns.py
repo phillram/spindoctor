@@ -85,6 +85,28 @@ RAIN_DROP_GROUPS = [
 CHECKER_A = [l for i, g in enumerate(LEFT_RIGHT_ORDER) if i % 2 == 0 for l in g]
 CHECKER_B = [l for i, g in enumerate(LEFT_RIGHT_ORDER) if i % 2 == 1 for l in g]
 
+# The physical admin / cabinet row, left-to-right (see the Master control
+# reference in docs/cabinet-architecture-reference.md). These are the six
+# controls the user thinks of as "admin buttons".
+ADMIN_LABELS = ["LMOUSE", "RMOUSE", "SELECT", "EXIT", "SEARCH", "PAUSE"]
+
+# Maximally-distinct, easy-to-name colours for the calibration animation, in a
+# fixed order so callers can print a legend. (name, (r,g,b)) 0-48.
+CALIBRATION_LEGEND = [
+    ("red",     (48, 0, 0)),
+    ("green",   (0, 48, 0)),
+    ("blue",    (0, 0, 48)),
+    ("yellow",  (48, 48, 0)),
+    ("magenta", (48, 0, 48)),
+    ("cyan",    (0, 48, 48)),
+    ("orange",  (48, 20, 0)),
+    ("white",   (48, 48, 48)),
+    ("purple",  (24, 0, 48)),
+    ("lime",    (20, 48, 0)),
+    ("pink",    (48, 16, 32)),
+    ("teal",    (0, 44, 36)),
+]
+
 # Approximate 2D position per control, for effects that need real geometry
 # (ripple rings, spiral/radar sweep): x = column index in LEFT_RIGHT_ORDER,
 # y = row band (0 above, 1 top/trackball, 2 bottom). Not physical inches, but
@@ -712,6 +734,40 @@ def build_pulse_cycle(controllers, colors, groups=None, frames_per_step=6, durat
                     frame[l] = trail
                 anim.add_frame(duration_ms, frame)
     return anim
+
+
+def build_calibration(controllers, labels=None, duration_ms=500):
+    """Light each control in ``labels`` a distinct, easy-to-name colour and hold
+    it steady (a static, looping frame) — a mapping/calibration aid.
+
+    Returns ``(animation, legend)`` where ``legend`` is an ordered list of
+    ``(label, colour_name)`` so the caller can print exactly which colour was
+    assigned to which control label. Every other wired control is left off, so
+    only the calibrated buttons light up. ``labels`` defaults to the admin row
+    (:data:`ADMIN_LABELS`); pass an explicit list to calibrate other controls.
+
+    Because it addresses controls by their physical label (the same scheme
+    ``.lwax`` animations use), running it identifies which *physical* button
+    carries which label — run with ``LightFEControls=0`` so nothing overrides it.
+    """
+    anim = LwaxAnimation(controllers)
+    wired = set(anim.labels)
+    target = [l for l in (labels if labels is not None else ADMIN_LABELS)]
+    unknown = [l for l in target if l not in wired]
+    if unknown:
+        raise ValueError(f"Unknown control label(s): {unknown}")
+    if len(target) > len(CALIBRATION_LEGEND):
+        raise ValueError(
+            f"Only {len(CALIBRATION_LEGEND)} distinct calibration colours are "
+            f"defined; asked to calibrate {len(target)} controls."
+        )
+
+    legend = [(label, CALIBRATION_LEGEND[i][0]) for i, label in enumerate(target)]
+    colors = {label: CALIBRATION_LEGEND[i][1] for i, label in enumerate(target)}
+    # A couple of identical frames so the file loops as a steady hold.
+    for _ in range(2):
+        anim.add_frame(duration_ms, dict(colors))
+    return anim, legend
 
 
 # --------------------------------------------------------------------------- #

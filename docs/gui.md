@@ -241,7 +241,7 @@ Configure LEDBlinky's animation behaviour. Run once after installing, then only 
 
 **Refresh list** populates all three dropdowns from your LEDBlinky `lwa\` folder and pre-selects each dropdown to the value currently set in `Settings.ini`. The dropdowns also pre-populate on startup if `ledblinky_dir` is already configured. Apply checkbox + **Patch Settings.ini**. CLI: `spindoctor ledblinky patch-settings`.
 
-> **Where do the `.lwa`/`.lwax` files in those dropdowns come from?** LedBlinky ships some; you can also build your own. `ledblinky lwax fade` makes a single custom colour-fade, and `ledblinky lwax batch` generates a whole library of animated effects (sweeps, pulses, rain, breathe, rainbow, etc.). Both are in the **Custom Command** dropdown (Tools tab), and both write *unsigned* files that need a one-time **Save As** in LedBlinky's Animation Editor before they appear here — see [`commands.md` → "`ledblinky lwax batch`"](commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library).
+> **Where do the `.lwa`/`.lwax` files in those dropdowns come from?** LedBlinky ships some; you can also build your own — see **Step 10 — LED Animations** below (or `ledblinky lwax fade` / `ledblinky lwax batch` on the CLI). Both write *unsigned* files that need a one-time **Save As** in LedBlinky's Animation Editor before they appear here.
 
 **Step 3 — MAME: Generate, Normalize & Sync Players**
 
@@ -286,6 +286,8 @@ Sets fixed per-button colors for cabinet-level (admin) buttons (Select, Exit, Se
 
 Apply checkbox + **Set Admin Button Colors** button. CLI: `spindoctor ledblinky admin-buttons set`.
 
+The same section has an **In-game admin LEDs** block below the separator, for the buttons lit *during gameplay* — the always-active Exit / Pause / Select controls in `LEDBlinkyControls.xml` (distinct from the `Colors.ini` keys above, which many cabinets — including this one — don't use for in-game admin lighting). Each has a dropdown offering `(leave unchanged)`, `off (dark)`, or any palette color; pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons stay lit. A **Console** dropdown scopes the change to one console (e.g. give each system its own admin coloration) or `(all consoles)` for every game at once. Apply checkbox + **Apply in-game admin LEDs**. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (the GUI covers the uniform mode; the CLI also has `randomize` (incl. `--games` per-game variety), `add`, and `remove` — run `spindoctor ledblinky admin-leds` with no subcommand to see the current state).
+
 **Step 7 — Brightness**
 
 Sets all `Color-RGB.ini` colors to a uniform brightness: **100 % = maximum** (dim colors boosted); 50 % = half; 10 % = night mode; 0 % = all off. Drag slider and click **Scale Brightness**. CLI: `spindoctor ledblinky colors brightness`.
@@ -297,6 +299,15 @@ Treeview of all named colors (Name, R/G/B 0-48, hex). Click a row to load it; ed
 **Step 9 — Backup / Restore**
 
 Quick backup and restore scoped to LEDBlinky files. Both folder fields default to `config.backup_dir`. Dry-run by default. CLI: `spindoctor backup create --include ledblinky` / `spindoctor backup restore --include ledblinky`.
+
+**Step 10 — LED Animations (.lwax)**
+
+Build moving LED animations — the FE / screen-saver files you pick in Step 2 — as opposed to the per-game colors in Steps 3–8. Files are written to `~/Downloads/spindoctor-lwax-patterns/`.
+
+- **Generate pattern library** — the whole ~170-file batch (sweeps, pulses, rain, breathe, rainbow, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox).
+- **Generate fade** — a single custom colour-cycle fade from the comma-separated hex colours in the field (e.g. `FF0000,00FF00,0000FF`). CLI: `spindoctor ledblinky lwax fade --color …`.
+
+Generated files are **unsigned** — before LedBlinky will load one, open it in `LEDBlinkyAnimationEditor.exe` and do **Animation → Save As** (no edits) to sign it; it then appears in the Step 2 dropdowns. Full walkthrough: [`commands.md` → "`ledblinky lwax batch`"](commands.md#ledblinky-lwax-batch--generate-the-whole-pattern-library).
 
 ### Lightgun
 
