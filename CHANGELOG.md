@@ -6,10 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **GUI: "Delay after login (minutes)" field on the Intro Video tab's Auto-run section** (default `1`; `0` = no delay) — wraps `introvideo install-autorun --delay-minutes <N>`, previously CLI-only. Gives HyperSpin's own intro playback a head start before the swap runs, reducing the chance it collides with `intro_video_target` still being open.
+
 ### Fixed
 
 - **`introvideo swap` now retries if `intro_video_target` is briefly locked, instead of silently failing every time.** Confirmed on a real cabinet: the Windows logon-triggered swap consistently left the intro video unchanged across every reboot, even though `introvideo swap --apply` worked perfectly when run by hand. Root cause — HyperSpin itself can still be holding `intro_video_target` open, playing the *previous* intro video, at the exact moment the logon task fires; the resulting sharing-violation `OSError` was unhandled, so the copy silently never happened. `swap_video` now retries the copy up to 10 times, 1 second apart, before giving up (`IntroVideoError` if every attempt fails).
-- **The generated logon-task `.bat`/`.vbs` now actually report failure.** Task Scheduler's "Last Result" always showed `0` (success) for the intro-swap task regardless of whether the swap actually worked — the `.vbs` shim launched the `.bat` but never captured or forwarded its exit code, and the `.bat` had no explicit `exit /b` to propagate `spindoctor.exe`'s own exit code in the first place. Both fixed: the `.bat` now ends with `exit /b %errorlevel%`, and the `.vbs` captures `ws.Run`'s return value and calls `WScript.Quit` with it. Existing installs must re-run `introvideo install-autorun --apply` to regenerate the fixed files — `uninstall-autorun` followed by `install-autorun --apply` if in doubt.
+- **The generated logon-task `.bat`/`.vbs` now actually report failure.** Task Scheduler's "Last Result" always showed `0` (success) for the intro-swap task regardless of whether the swap actually worked — the `.vbs` shim launched the `.bat` but never captured or forwarded its exit code, and the `.bat` had no explicit `exit /b` to propagate `spindoctor.exe`'s own exit code in the first place. Both fixed: the `.bat` now ends with `exit /b %errorlevel%`, and the `.vbs` captures `ws.Run`'s return value and calls `WScript.Quit` with it. **Existing installs only need to re-run `introvideo install-autorun --apply`** (no need to uninstall first — it overwrites the `.bat`/`.vbs` and the Task Scheduler entry in place) to pick up both this fix and the retry fix above.
 
 ## [2.11.0] - 2026-07-23
 
