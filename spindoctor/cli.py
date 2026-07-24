@@ -2972,9 +2972,18 @@ def introvideo_install_autorun(delay_minutes, apply_changes):
               help="Remove the Windows Task Scheduler task. Without this "
                    "flag, only the current status is printed.")
 def introvideo_uninstall_autorun(apply_changes):
-    """Remove the Windows logon task registered by 'install-autorun'."""
+    """Remove the Windows logon task registered by 'install-autorun'.
+
+    \b
+    Without --apply, also doubles as a status check: reports whether the
+    task is registered, and if so, whether it's stale (the generated
+    .bat no longer matches the currently-running install — e.g. after
+    upgrading SpinDoctor into a new version folder without re-running
+    'install-autorun'). A stale task is fixed by re-running
+    'install-autorun --apply', not by removing it first.
+    """
     from . import autostart
-    from .introvideo import uninstall_autorun
+    from .introvideo import autorun_status, uninstall_autorun
 
     try:
         result = uninstall_autorun(apply=apply_changes)
@@ -2988,6 +2997,13 @@ def introvideo_uninstall_autorun(apply_changes):
     if not apply_changes:
         if result.registered:
             console.print(f"Would remove Task Scheduler task [cyan]{result.task_name}[/cyan]")
+            if autorun_status().stale:
+                console.print(
+                    "[yellow]Note: this task is currently stale[/yellow] — it no "
+                    "longer matches the currently-running install (likely from "
+                    "an upgrade). If you want to fix it rather than remove it, "
+                    "run [cyan]introvideo install-autorun --apply[/cyan] instead."
+                )
             console.print("[dim]Re-run with --apply to commit.[/dim]")
         else:
             console.print(f"[dim]Task '{result.task_name}' is not registered — nothing to remove.[/dim]")
