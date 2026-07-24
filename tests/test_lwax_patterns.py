@@ -73,3 +73,26 @@ def test_one_rainbow_variant_per_effect_family(generated):
     # A representative sample of families that must each ship a rainbow variant.
     for family in ("fade", "sweep", "radial", "heartbeat", "ripple", "candle"):
         assert any(n.startswith(f"{family}_rainbow") for n in names), family
+
+
+def test_calibration_lights_only_requested_controls(controllers):
+    anim, legend = lwax_patterns.build_calibration(controllers)
+    # Default is the admin row — 6 controls, each a distinct legend colour.
+    assert [label for label, _c in legend] == lwax_patterns.ADMIN_LABELS
+    assert len({c for _l, c in legend}) == len(legend)  # distinct colour names
+
+    # Exactly the admin labels are lit; everything else is off.
+    resolved = anim._resolved_colors()[-1]
+    lit = {label for label, rgb in resolved.items() if rgb != (0, 0, 0)}
+    assert lit == set(lwax_patterns.ADMIN_LABELS)
+
+    # Output is well-formed XML in range.
+    root = ET.fromstring(anim.render())
+    for intensity in root.iter("Intensity"):
+        for value in intensity.get("Value").split(","):
+            assert 0 <= int(value) <= 48
+
+
+def test_calibration_rejects_unknown_label(controllers):
+    with pytest.raises(ValueError):
+        lwax_patterns.build_calibration(controllers, labels=["NOPE"])

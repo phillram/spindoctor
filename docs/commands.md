@@ -1548,6 +1548,18 @@ File names are `family_colour_speed.lwax` (e.g. `fade_red_lime_slow.lwax`, `brea
 
 **Signing and assigning is the same manual step as any `.lwax`** (see the three steps under `ledblinky lwax fade` above): open each file you want in `LEDBlinkyAnimationEditor.exe` → **Save As** (no edits), copy into `<ledblinky_dir>\lwa\`, then assign with `ledblinky patch-settings --fe-lwa "<name>.lwax" --apply`. The folder's `README.md` repeats these steps. Adding brand-new *effect types* beyond what it already covers means editing the builders in `spindoctor/lwax.py` and `spindoctor/lwax_patterns.py` (developer task); generating and using the existing library does not.
 
+### `ledblinky lwax calibrate` — map buttons to physical positions
+
+Lights each chosen control a **distinct, named colour** and holds it steady, then prints a legend of which colour went to which control label. Use it to confirm which physical button carries which label: sign the file, assign it as the FE (or screen-saver) animation with `LightFEControls=0`, and compare the panel to the printed legend.
+
+```bat
+spindoctor ledblinky lwax calibrate               :: legend for the 6 admin buttons (dry-run)
+spindoctor ledblinky lwax calibrate --apply       :: write it
+spindoctor ledblinky lwax calibrate --labels P1B1,P1B2,P1B3 --name cal_p1 --apply
+```
+
+Default is the admin row (`LMOUSE, RMOUSE, SELECT, EXIT, SEARCH, PAUSE`) → red, green, blue, yellow, magenta, cyan. Because `.lwax` addresses controls **by physical label**, this maps *label → physical position*. It does **not** exercise the `P{n}_BUTTON` keys that `admin-buttons set` writes (those are `Colors.ini`, in-game only) — to test that path, run `admin-buttons set` with distinct colours and launch a game.
+
 ### `ledblinky setup`
 
 One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
