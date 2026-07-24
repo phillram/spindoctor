@@ -1089,7 +1089,11 @@ def generate_batch(controllers, out_dir):
     for family, filename, animation, desc in batch:
         xml_text = animation.render()
         ET.fromstring(xml_text)  # raises if malformed
-        (out_dir / filename).write_text(xml_text, encoding="utf-8", newline="")
+        # newline="" so Python's text-mode translation doesn't double the \r on
+        # Windows. open(newline=) works on all versions; write_text(newline=) is
+        # 3.10+ only (this project supports 3.8).
+        with (out_dir / filename).open("w", encoding="utf-8", newline="") as _fh:
+            _fh.write(xml_text)
         written.append((filename, len(animation.frames), desc))
 
     # --- README.md / index (a short guide, not a per-file manifest) ---
