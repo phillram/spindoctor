@@ -7,7 +7,6 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 - [Launching](#launching)
 - [First-run wizard](#first-run-wizard)
 - [Layout primer](#layout-primer)
-- [Per-tab health badges](#per-tab-health-badges)
 - [Tab tour](#tab-tour)
 - [Menubar](#menubar)
 - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -63,18 +62,6 @@ The status bar contains three checkboxes that apply to **every command in every 
 | **Save Log** | When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured **Default output directory** (Setup tab). Unchecked by default. If `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected. |
 
 Apply and Verbose replace the per-section Apply checkboxes that previously lived inside each tab. The single always-visible location makes it impossible to forget which mode you're in before clicking a button. Save Log is a convenience copy of what the Logs tab already keeps in memory for the session — use it when you want a durable record after the GUI closes (e.g. to attach to a bug report).
-
-## Per-tab health badges
-
-Each tab name carries a small badge whenever the area it covers has a problem detected by `spindoctor doctor`:
-
-| Badge | Meaning |
-|---|---|
-| (none) | Area is healthy. |
-| ⚠ | Warning — paths missing optional bits, scraper credentials blank, etc. |
-| ✗ | Failure — required path is broken, database file unreadable, etc. |
-
-The doctor pass runs on a worker thread on launch (doesn't delay first paint) and re-runs after every Setup save so badges stay current. Run-progress badges (⟳/✓/✗) render at the right edge so a tab can show both at once — e.g. `LEDBlinky ⚠ ⟳`.
 
 ## Tab tour
 
