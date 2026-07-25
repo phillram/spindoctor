@@ -185,6 +185,7 @@ class HyperspinDatabase:
         system_name: str,
         xml_path: Path,
         enabled_as_attribute: bool = False,
+        preserve_order: bool = False,
     ):
         self.system_name = system_name
         self.xml_path = xml_path
@@ -193,6 +194,11 @@ class HyperspinDatabase:
         # Hyperspin's two loaders honour different conventions, so callers tell
         # us which schema to read and write.
         self._enabled_as_attribute = enabled_as_attribute
+        # Synthetic wheels (Recently Played, Most Played) rank their games and
+        # want that ranking preserved as the on-wheel order. Setting this skips
+        # the alphabetical sort in ``_write_fresh`` so insertion order wins in
+        # both the fresh-file and in-place-merge save paths.
+        self._preserve_order = preserve_order
         self._games: dict[str, GameEntry] = {}
         self._loaded = False
         # Tracks the parsed tree and per-game element refs for in-place updates
@@ -476,8 +482,9 @@ class HyperspinDatabase:
             _set_text(hdr, "exporterversion", "SpinDoctor")
 
         # Main Menu preserves the user's order (HyperSpin honours XML order
-        # for the wheel); per-system DBs sort alphabetically for stability.
-        if attr_mode:
+        # for the wheel); per-system DBs sort alphabetically for stability,
+        # unless a caller (e.g. a ranked synthetic wheel) opts to keep order.
+        if attr_mode or self._preserve_order:
             games_iter = self._games.values()
         else:
             games_iter = sorted(self._games.values(), key=lambda g: g.name.lower())
