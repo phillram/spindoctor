@@ -1605,7 +1605,7 @@ Output includes:
 - **controls.ini** — whether an entry exists for the ROM and whether its keys are in the correct LedBlinky format (`P1_BUTTON1=1`). Entries with the old SpinDoctor format (`P1_NUMBUTTONS=1`, `P1_CONTROLS=…`) are flagged — regenerate with `generate --overwrite --apply`.
 - **LEDBlinkyControls.xml** — which emulators are defined and whether the ROM has its own `<game>` entry. If no per-ROM entry exists, LedBlinky uses the emulator's DEFAULT control group and may ignore `Colors.ini` entirely.
 - **MAME listxml** — player count, button count, and control types per MAME's own database.
-- **LEDBlinky log path** — the path to `LEDBlinkyLog.txt` (written by LedBlinky itself, not SpinDoctor). Opening it and searching for the ROM name after a game launch shows exactly what name RocketLauncher sent to LedBlinky.
+- **LEDBlinky log path** — the path to `LEDBlinky.log` / `LEDBlinkyLog.txt` (written by LedBlinky itself, not SpinDoctor). Opening it and searching for the ROM name after a game launch shows exactly what name RocketLauncher sent to LedBlinky.
 - **Guided next steps** — actionable suggestions based on what's missing.
 
 When `output_dir` is configured, the full report is also saved to `<output_dir>/diagnostics/inspect-rom-<ROM>-<timestamp>.txt` for later reference.

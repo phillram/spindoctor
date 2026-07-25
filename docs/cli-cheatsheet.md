@@ -688,9 +688,14 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 :: admin-buttons set targets Colors.ini — use admin-leds for in-game admin glow.
 spindoctor ledblinky admin-leds                                                               :: show current Exit/Pause/Select colors
 spindoctor ledblinky admin-leds show                                                          :: same as above
+spindoctor ledblinky admin-leds show --by-console                                            :: one line per console; flags consoles with no admin LEDs
+spindoctor ledblinky admin-leds show --emulator MAME                                         :: scoped to one console
 spindoctor ledblinky admin-leds set --select off --apply                                      :: hide Select mid-game (only usable buttons glow)
 spindoctor ledblinky admin-leds set --exit Red --pause Yellow --apply                         :: uniform admin colors
 spindoctor ledblinky admin-leds set --exit Red --pause Purple --select off --apply            :: per-button
+spindoctor ledblinky admin-leds set --search-off --apply                                     :: Search dark (Pause stays lit — they share a control)
+spindoctor ledblinky admin-leds set --search-on --emulator GameCube --apply                  :: re-light Search for one console only
+spindoctor ledblinky admin-leds set --lmouse-off --rmouse-off --apply                        :: dark mouse buttons mid-game
 spindoctor ledblinky admin-leds randomize --apply                                             :: random color per admin button
 spindoctor ledblinky admin-leds randomize --seed 7 --buttons exit,pause --apply              :: reproducible; skip Select
 spindoctor ledblinky admin-leds add --emulator "Atari_2600" --apply                          :: add admin-LED groups for a missing emulator
@@ -754,6 +759,8 @@ spindoctor ledblinky audit --report D:\ledblinky_audit.csv    :: save CSV (rom, 
 
 :: ── Color-RGB.ini — named color palette management ───────────────────────────
 spindoctor ledblinky colors list
+spindoctor ledblinky colors add Teal --hex 008080 --apply                :: create a new named color
+spindoctor ledblinky colors add "Dark Blue" --rgb 0,0,30 --apply         :: low-intensity via R,G,B (0-48)
 spindoctor ledblinky colors edit Blue                                     :: inspect
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply
 spindoctor ledblinky colors edit Orange --name Amber --apply              :: rename only
