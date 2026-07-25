@@ -167,38 +167,6 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
-def test_health_to_tabs_only_references_real_tab_labels():
-    """Every tab label in `_HEALTH_TO_TABS` must be a real tab name
-    the GUI builds, otherwise `_tab_base_names.index(label)` raises
-    ValueError and silently drops the badge. Pin the mapping so a
-    rename of any tab triggers a test failure."""
-    # Tab labels SpinDoctor's `_build_layout` adds to `_tab_base_names`.
-    # Kept in sync manually — mirroring the order in `_build_layout`.
-    expected_tabs = {
-        "Setup", "Diagnostics", "Metadata & Media", "Maintenance",
-        "Custom Wheels", "Systems", "Games", "LEDBlinky", "Lightgun",
-        "Backup & Restore", "Migration", "History", "Console",
-    }
-    for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
-        for label in tab_labels:
-            assert label in expected_tabs, (
-                f"_HEALTH_TO_TABS[{check_name!r}] references unknown "
-                f"tab {label!r}; tab strip has: {sorted(expected_tabs)}"
-            )
-
-
-def test_health_badge_mapping_covers_warn_and_fail():
-    badges = gui._SpinDoctorGUI._HEALTH_BADGE
-    # `ok` and `info` are deliberately absent — clean areas should NOT
-    # decorate their tab. Pin the absence so a future "always show ✓"
-    # change is intentional.
-    assert "ok" not in badges
-    assert "info" not in badges
-    # warn and fail must produce visible glyphs.
-    assert badges["warn"]
-    assert badges["fail"]
-
-
 @pytest.mark.parametrize("s,expected", [
     ("1024x768", True),
     ("1280x800+120+60", True),
@@ -2436,8 +2404,6 @@ def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path
         tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         # Now run startup health checks — should snap back to Setup.
-        # Stub out the threaded doctor pass to keep the test deterministic.
-        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
         app._startup_health_checks()
         assert app._nb.index("current") == app._tab_base_names.index("Setup")
     finally:
@@ -2456,12 +2422,34 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
 
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
-        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
         tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         app._startup_health_checks()
         # Tab choice preserved.
         assert app._nb.index("current") == tools_idx
+    finally:
+        app.root.destroy()
+
+
+def test_tab_labels_carry_no_status_glyphs(monkeypatch):
+    """Tab titles are plain base names — the old run (⟳/✓/✗) and health
+    (⚠/✗) badge systems were removed. Guard against a regression that
+    re-introduces glyphs onto the tab strip.
+
+    Also runs the startup health check (which used to stamp health
+    badges) to prove it no longer decorates any tab.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._startup_health_checks()
+        app.root.update_idletasks()
+        glyphs = "⟳✓✗⚠·"
+        for idx, base in enumerate(app._tab_base_names):
+            shown = app._nb.tab(idx, "text")
+            assert shown == base, f"tab {idx} shows {shown!r}, expected {base!r}"
+            assert not any(g in shown for g in glyphs), (
+                f"tab {idx} label {shown!r} still carries a status glyph"
+            )
     finally:
         app.root.destroy()
 
