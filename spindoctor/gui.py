@@ -11101,84 +11101,27 @@ class _SpinDoctorGUI:
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 4 — Admin Button Colors ─────────────────────────────────────
-        ab_frame = self.ttk.LabelFrame(frame, text="Step 6 — Admin Button Colors")
+        # In-game admin buttons — the always-on Exit/Pause/Select LEDs lit
+        # DURING gameplay, driven by the UI_* controls in LEDBlinkyControls.xml.
+        # (The old Colors.ini "P3 admin buttons" block was removed: on cabinets
+        # like this one — where admin buttons are UI controls, not a player slot
+        # — it had no in-game effect. The `ledblinky admin-buttons set` CLI
+        # command still exists for cabinets that do map admin to a player slot.)
+        ab_frame = self.ttk.LabelFrame(
+            frame, text="Step 6 — In-Game Admin Buttons (Exit / Pause / Select)",
+        )
         ab_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
-            text=("Set fixed colors for your cabinet-level (admin) buttons across "
-                  "ALL Colors.ini ROM sections — e.g. Select=Green, Exit=Red. "
-                  "Colors are written to the player slot you choose (P3 for a 2-player "
-                  "cabinet). Run after Step 5 (Randomize) — Randomize overwrites all "
-                  "button colors, so admin colors must be set last."),
+            text=("Set the admin buttons that stay lit while a game is running — "
+                  "Exit, Pause, and Select. Pick a color for each, or “off (dark)” "
+                  "to hide it during play (e.g. Select off for a clean arcade look, "
+                  "leaving just Exit and Pause). Choose a Console to color one "
+                  "system, or “(all consoles)” for every game at once. "
+                  "Restart LEDBlinky afterward so it reloads."),
             wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 4))
-
-        # Player slot + button count + refresh button on one row
-        self.ttk.Label(ab_frame, text="Player slot").grid(
-            row=1, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._admin_player_var = self.tk.StringVar(value="3")
-        self.ttk.Spinbox(
-            ab_frame, textvariable=self._admin_player_var,
-            from_=1, to=6, width=4,
-        ).grid(row=1, column=1, sticky="w", padx=(4, 8), pady=2)
-        self.ttk.Label(ab_frame, text="Button count").grid(
-            row=1, column=2, sticky="w", padx=(0, 2), pady=2,
-        )
-        self._admin_button_count_var = self.tk.StringVar(value="6")
-        self.ttk.Spinbox(
-            ab_frame, textvariable=self._admin_button_count_var,
-            from_=1, to=8, width=4,
-        ).grid(row=1, column=3, sticky="w", padx=(4, 8), pady=2)
-        self.ttk.Button(
-            ab_frame, text="Refresh colors",
-            command=self._refresh_color_list,
-        ).grid(row=1, column=4, sticky="w", padx=(0, 4), pady=2)
-        self.ttk.Label(
-            ab_frame,
-            text="(1–8; only this many buttons are sent)",
-            foreground=_FG_DIM,
-        ).grid(row=1, column=5, columnspan=4, sticky="w", padx=4, pady=2)
-
-        # 8 per-button color comboboxes: BUTTON1..BUTTON8, laid out 4 per row
-        # Colors are populated from Color-RGB.ini via _refresh_color_list().
-        self._admin_color_vars: list = []
-        self._admin_color_combos: list = []
-        for i in range(8):
-            row_offset = 2 + (i // 4)
-            col_offset = (i % 4) * 2
-            self.ttk.Label(
-                ab_frame, text=f"BUTTON{i + 1}:",
-            ).grid(row=row_offset, column=col_offset, sticky="e",
-                   padx=(8 if col_offset == 0 else 4, 2), pady=2)
-            var = self.tk.StringVar(value="White")
-            combo = self.ttk.Combobox(
-                ab_frame, textvariable=var, width=14, state="readonly",
-            )
-            combo.grid(row=row_offset, column=col_offset + 1, sticky="w",
-                       padx=(0, 4), pady=2)
-            self._admin_color_vars.append(var)
-            self._admin_color_combos.append(combo)
-
-        self.ttk.Button(
-            ab_frame, text="Set Admin Button Colors",
-            command=self._run_admin_button_colors,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
-
-        # In-game admin LEDs (LEDBlinkyControls.xml UI_* controls) — the buttons
-        # actually lit DURING gameplay, distinct from the Colors.ini keys above.
-        self.ttk.Separator(ab_frame, orient="horizontal").grid(
-            row=5, column=0, columnspan=9, sticky="ew", padx=6, pady=(4, 6),
-        )
-        self.ttk.Label(
-            ab_frame,
-            text=("In-game admin LEDs (during a game): sets the always-on Exit / "
-                  "Pause / Select buttons in LEDBlinkyControls.xml. Pick a color, "
-                  "or 'off (dark)' to hide that button during play — e.g. Select "
-                  "off for a clean arcade look. Applies to every game at once."),
-            wraplength=820, justify="left",
-        ).grid(row=6, column=0, columnspan=9, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 6))
 
         self._led_ingame_vars = {}
         self._led_ingame_combos = {}
@@ -11186,31 +11129,35 @@ class _SpinDoctorGUI:
             (("exit", "Exit"), ("pause", "Pause"), ("select", "Select")),
         ):
             self.ttk.Label(ab_frame, text=f"{label}:").grid(
-                row=7, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
+                row=1, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
             )
             var = self.tk.StringVar(value="(leave unchanged)")
             combo = self.ttk.Combobox(ab_frame, textvariable=var, width=14, state="readonly")
-            combo.grid(row=7, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
+            combo.grid(row=1, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
             self._led_ingame_vars[friendly] = var
             self._led_ingame_combos[friendly] = combo
 
-        # Console scope: apply to all consoles, or just one (e.g. per-console
+        # Console scope: apply to all consoles, or just one (per-console
         # coloration). Populated from LEDBlinkyControls.xml on refresh.
         self.ttk.Label(ab_frame, text="Console:").grid(
-            row=8, column=0, sticky="e", padx=(8, 2), pady=2,
+            row=2, column=0, sticky="e", padx=(8, 2), pady=2,
         )
         self._led_ingame_emu_var = self.tk.StringVar(value="(all consoles)")
         self._led_ingame_emu_combo = self.ttk.Combobox(
             ab_frame, textvariable=self._led_ingame_emu_var, width=22, state="readonly",
             values=["(all consoles)"],
         )
-        self._led_ingame_emu_combo.grid(row=8, column=1, columnspan=2, sticky="w",
+        self._led_ingame_emu_combo.grid(row=2, column=1, columnspan=2, sticky="w",
                                         padx=(0, 4), pady=2)
+        self.ttk.Button(
+            ab_frame, text="Refresh consoles / colors",
+            command=self._refresh_color_list,
+        ).grid(row=2, column=3, sticky="w", padx=(4, 4), pady=2)
 
         self.ttk.Button(
-            ab_frame, text="Apply in-game admin LEDs",
+            ab_frame, text="Apply in-game admin buttons",
             command=self._run_admin_leds,
-        ).grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
@@ -11753,15 +11700,6 @@ class _SpinDoctorGUI:
                 if color_names and var.get() not in color_names:
                     var.set("White" if "White" in color_names else color_names[0])
 
-        # Populate admin button per-button color combos
-        for combo, var in zip(
-            getattr(self, "_admin_color_combos", []),
-            getattr(self, "_admin_color_vars", []),
-        ):
-            combo["values"] = color_names
-            if color_names and var.get() not in color_names:
-                var.set("White" if "White" in color_names else color_names[0])
-
         # In-game admin LED combos: leave-unchanged + off + every palette color.
         for combo in getattr(self, "_led_ingame_combos", {}).values():
             combo["values"] = ["(leave unchanged)", "off (dark)"] + color_names
@@ -11938,31 +11876,6 @@ class _SpinDoctorGUI:
                 args += ["--seed", seed_raw]
             except ValueError:
                 pass  # ignore non-integer seed input
-        if self._global_apply_var.get():
-            args.append("--apply")
-        if self._global_verbose_var.get():
-            args.append("--verbose")
-        self._run_cli("spindoctor", args)
-
-    def _run_admin_button_colors(self) -> None:
-        """Run ``ledblinky admin-buttons set`` with per-button colors."""
-        try:
-            player = int(self._admin_player_var.get())
-        except (ValueError, AttributeError):
-            player = 3
-        try:
-            count = max(1, min(8, int(self._admin_button_count_var.get())))
-        except (ValueError, AttributeError):
-            count = 6
-        colors = [
-            var.get().strip() or "White"
-            for var in self._admin_color_vars[:count]
-        ]
-        args = [
-            "ledblinky", "admin-buttons", "set",
-            "--player", str(player),
-            "--colors", ",".join(colors),
-        ]
         if self._global_apply_var.get():
             args.append("--apply")
         if self._global_verbose_var.get():

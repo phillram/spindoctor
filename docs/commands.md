@@ -1960,7 +1960,7 @@ spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply
 
 | Subcommand | What it does |
 |---|---|
-| `show` | Print current in-game admin LED state (also the default when you run `admin-leds` bare) |
+| `show` | Print the current in-game admin LED state (default when you run `admin-leds` bare). `--emulator NAME` scopes to one console; `--by-console` prints a line per console so you can see exactly which systems have admin LEDs and which don't. |
 | `set` | **Uniform mode** — one color per button across every game. `--exit`/`--pause`/`--select` take a palette color or `off`. Only recolors admin controls that already exist. |
 | `randomize` | **Random mode** — a random palette color per control group. `--seed N` reproduces a result; `--buttons exit,pause,select` picks which to randomize. `--games ROM1,ROM2 --emulator NAME` forces true per-game variety by cloning the emulator's DEFAULT group for each named ROM first. |
 | `add` | Insert the always-active admin controls into groups that lack them (so those buttons light in-game). `--exit`/`--pause`/`--select` set the colors (default Red/Yellow/Green). |
@@ -1971,6 +1971,25 @@ All mutating subcommands accept `--emulator NAME` to scope to one console (defau
 Because these controls are `alwaysActive="1"`, turning one `off` (or `remove`-ing it) is how you make "only the usable buttons lit" the in-game default — see [Cabinet Architecture Reference](cabinet-architecture-reference.md#colorsini--multi-player-and-admin-key-naming) for why Exit/Pause stay lit and Select/Search/mouse do not.
 
 > **Random mode's per-game caveat.** `randomize` assigns colors per *control group*, and most games share their emulator's `DEFAULT` group — so they all get that group's random colors. Genuine per-*game* variety only appears for games that have their own control group (many arcade titles do; simple ones fall back to `DEFAULT`). To force it for specific ROMs, pass `--games 005,pacman,galaga --emulator MAME`: each named game gets its own control group cloned from `DEFAULT` (inheriting its game buttons + admin block) and then its own random colors. Cloning per game adds a full control group to the XML, so this is a per-ROM list, not an all-games switch. Don't like a random result? Re-run `set` to return everything to uniform colors.
+
+##### Verifying the admin colors actually changed
+
+If the admin buttons don't seem to change on the cabinet, check it in this order — most problems are one of the first three:
+
+```bat
+:: 1. Did the file actually change? (totals across all games)
+spindoctor ledblinky admin-leds show
+
+:: 2. Per system — which consoles have admin LEDs, and in what colors?
+spindoctor ledblinky admin-leds show --by-console
+spindoctor ledblinky admin-leds show --emulator MAME
+```
+
+- **The `show` colors are the old ones →** the write didn't land. You either ran without `--apply` (dry-run) or `ledblinky_dir` points at a different install than the one LedBlinky reads. Confirm the path printed at the top of `show` is your real `LEDBlinkyControls.xml`, then re-run the command with `--apply`.
+- **`show` shows the new colors, but the cabinet doesn't →** LedBlinky reads `LEDBlinkyControls.xml` **once at startup**. Restart LedBlinky (or reboot) so it reloads.
+- **A system is all `dark in-game` in `--by-console` →** that console's control groups have no admin controls at all, so `set`/`randomize` have nothing to recolor. Run `admin-leds add --emulator "<name>" --apply` first, then set colors.
+- **You're looking at the wrong context →** `admin-leds` only affects lighting **during a game**. In the HyperSpin menu the FE animation (`FELWAFile`) drives the buttons — see `patch-settings` / the `.lwax` commands. Launch an actual game to judge admin colors.
+- **Colors look right but a specific game differs →** that game has its own control group (e.g. from `randomize --games`) with its own colors. `admin-leds show --emulator <console>` won't split per-game; use `ledblinky inspect-rom <rom>` to dump one ROM's control data.
 
 ---
 

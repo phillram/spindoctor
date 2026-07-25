@@ -263,17 +263,16 @@ Gives each game its own independent random button color. All `P*_BUTTON*` / `P*_
 
 Apply checkbox + **Randomize Entry Colors** button. CLI: `spindoctor ledblinky colors randomize [--seed N]`.
 
-**Step 6 — Admin Button Colors**
+**Step 6 — In-Game Admin Buttons (Exit / Pause / Select)**
 
-Sets fixed per-button colors for cabinet-level (admin) buttons (Select, Exit, Search, Pause) across **every** ROM section. **Run after Step 5 (Randomize)** — Randomize overwrites all button colors, so admin colors must be set last to stick.
+Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on this cabinet.
 
-- **Player slot (1–6)** — default `3` for a 2-player cabinet.
-- **Button count (1–8)** — how many buttons to update.
-- **BUTTON1–BUTTON8** — per-button color dropdowns. **Refresh colors** reloads from `Color-RGB.ini`.
+- **Exit / Pause / Select** — a color dropdown each, offering `(leave unchanged)`, `off (dark)`, or any palette color. Pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons (Exit + Pause) stay lit.
+- **Console** — scope the change to one system (give each console its own admin coloration) or `(all consoles)` for every game at once. **Refresh consoles / colors** reloads both lists from your LEDBlinky files.
 
-Apply checkbox + **Set Admin Button Colors** button. CLI: `spindoctor ledblinky admin-buttons set`.
+Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
 
-The same section has an **In-game admin LEDs** block below the separator, for the buttons lit *during gameplay* — the always-active Exit / Pause / Select controls in `LEDBlinkyControls.xml` (distinct from the `Colors.ini` keys above, which many cabinets — including this one — don't use for in-game admin lighting). Each has a dropdown offering `(leave unchanged)`, `off (dark)`, or any palette color; pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons stay lit. A **Console** dropdown scopes the change to one console (e.g. give each system its own admin coloration) or `(all consoles)` for every game at once. Apply checkbox + **Apply in-game admin LEDs**. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (the GUI covers the uniform mode; the CLI also has `randomize` (incl. `--games` per-game variety), `add`, and `remove` — run `spindoctor ledblinky admin-leds` with no subcommand to see the current state).
+> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. This cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
 
 **Step 7 — Brightness**
 
