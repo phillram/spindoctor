@@ -6,11 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-07-25
+
 ### Fixed
 
 - **`ledblinky inspect-rom` now finds the real LEDBlinky log.** It only looked for `LEDBlinkyLog.txt` / `LedBlinkyLog.txt` / `log.txt`, but current LEDBlinky installs name it **`LEDBlinky.log`** — so the diagnostic falsely reported "Log not found" and pointed at a nonexistent path, exactly when you need the log to see what system+rom RocketLauncher sends at launch (and any "Event Dropped" lines). Added `LEDBlinky.log` (and `LedBlinky.log`) to the lookup and to the guessed fallback.
 
 - **`ledblinky admin-leds set --exit/--pause/--select off` now actually turns the button off in-game.** It previously only set `alwaysActive="0"`, which — confirmed on a real cabinet — does *not* darken the LED: LedBlinky keeps showing the control's colour while the button's key is still mapped. "Off" now also removes the control's own keycode (e.g. `KEYCODE_ENTER` for Select) from `inputCodes`, which is what makes the button fall to `defaultInactive` (off). Re-lighting a button (`--select Red`) restores its keycode, so it's reversible; unrelated tokens sharing the control (like Search's `/` on Pause) are preserved. Verified to reproduce a hand-edited XML the cabinet owner confirmed works.
+
+- **Auto-run status no longer reports "enabled" when task registration fails.** If `schtasks /Create` returned an access-denied error, a stale task from a prior successful attempt could still pass `task_exists()` — making the status label read "enabled" even though the attempted re-registration failed. The status is now re-derived with an `op_failed` flag so a failed enable shows "Outdated: run as Administrator" (or "disabled"), never "enabled." Applies to both the Intro Video and Custom Wheels auto-run paths.
+
+- **Most Played and Recently Played synthetic wheels now render in the correct order.** Both wheels were rendering alphabetically regardless of play count or recency — the ranked order computed by `top_games`/`top_recent` was thrown away during the XML write. On an existing install, surviving `<game>` elements kept their prior XML positions (alphabetical); on a fresh install `_write_fresh` sorted them alphabetically. Fixed by calling `db.reset_games()` before upsert (mirroring the Favorites builder) so the ranked insertion order wins, and opening the database with `preserve_order=True` so `_write_fresh` keeps it. Favorites is intentionally unchanged (still alphabetical).
 
 ### Added
 
@@ -21,6 +27,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Changed
 
 - **GUI: LEDBlinky tab Step 6 is now a single, clear "In-Game Admin Buttons (Exit / Pause / Select)" section.** It previously bundled two look-alike mechanisms in one box — a `Colors.ini` "Player slot / P3 / BUTTON1–8" block and the in-game `UI_*` block — which was confusing because the `Colors.ini`/P3 block has no in-game effect on cabinets (like this one) whose admin buttons are `UI_*` controls rather than a spare player slot. The dead block was removed; the working in-game Exit/Pause/Select controls (with per-console scope) are now the whole step. The `ledblinky admin-buttons set` CLI command is unchanged for cabinets that do use the player-slot wiring.
+
+- **GUI: per-tab health badges and transient run badges removed entirely.** The tab strip now shows plain tab names. The persistent health-badge indicators (⚠/✗ on tabs with configuration issues) and transient run-state badges (⟳/✓/✗ during and after command runs) have been removed — they were a guided-setup aid that outlived their usefulness once the cabinet is configured. The status-bar health summary is unchanged.
+
+- **GUI: 57 main-window `messagebox` modal popups converted to non-modal Output + History feedback.** Error and result dialogs that previously blocked the GUI with a modal popup now route to the Output panel and History tab instead, consistent with how command output already works. The sole exceptions kept as modals are confirmation prompts (`askyesno`), file/folder pickers, and dialog-internal popups. The "Check task status" button (Custom Wheels auto-run) was also removed — its information is already shown in the always-visible status label.
+
+### Docs
+
+- **`docs/cabinet-architecture-reference.md` Platform table updated to reflect the cabinet's Windows 10 upgrade (July 2026).** The OS row previously still said Windows 7. The SpinDoctor product itself still ships a Windows 7–compatible binary and Python 3.8 floor; only the cabinet's own OS changed.
 
 ## [2.12.0] - 2026-07-24
 
@@ -2228,7 +2242,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.12.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.13.0...HEAD
+[2.13.0]: https://github.com/phillram/spindoctor/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/phillram/spindoctor/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/phillram/spindoctor/compare/v2.10.2...v2.11.0
 [2.10.2]: https://github.com/phillram/spindoctor/compare/v2.10.1...v2.10.2
