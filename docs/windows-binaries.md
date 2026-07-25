@@ -166,7 +166,7 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all the EXEs in the same folder; the GUI does not require `PATH` to be configured.
 
-**For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, first-run wizard, and per-tab health badges — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
+**For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, and first-run wizard — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
 ### Tab tour, menubar, shortcuts, dry-run feedback, dark mode
 
