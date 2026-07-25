@@ -167,38 +167,6 @@ def test_custom_command_presets_are_unique():
     assert len(presets) == len(set(presets))
 
 
-def test_health_to_tabs_only_references_real_tab_labels():
-    """Every tab label in `_HEALTH_TO_TABS` must be a real tab name
-    the GUI builds, otherwise `_tab_base_names.index(label)` raises
-    ValueError and silently drops the badge. Pin the mapping so a
-    rename of any tab triggers a test failure."""
-    # Tab labels SpinDoctor's `_build_layout` adds to `_tab_base_names`.
-    # Kept in sync manually — mirroring the order in `_build_layout`.
-    expected_tabs = {
-        "Setup", "Diagnostics", "Metadata & Media", "Maintenance",
-        "Custom Wheels", "Systems", "Games", "LEDBlinky", "Lightgun",
-        "Backup & Restore", "Migration", "History", "Console",
-    }
-    for check_name, tab_labels in gui._SpinDoctorGUI._HEALTH_TO_TABS.items():
-        for label in tab_labels:
-            assert label in expected_tabs, (
-                f"_HEALTH_TO_TABS[{check_name!r}] references unknown "
-                f"tab {label!r}; tab strip has: {sorted(expected_tabs)}"
-            )
-
-
-def test_health_badge_mapping_covers_warn_and_fail():
-    badges = gui._SpinDoctorGUI._HEALTH_BADGE
-    # `ok` and `info` are deliberately absent — clean areas should NOT
-    # decorate their tab. Pin the absence so a future "always show ✓"
-    # change is intentional.
-    assert "ok" not in badges
-    assert "info" not in badges
-    # warn and fail must produce visible glyphs.
-    assert badges["warn"]
-    assert badges["fail"]
-
-
 @pytest.mark.parametrize("s,expected", [
     ("1024x768", True),
     ("1280x800+120+60", True),
@@ -275,11 +243,10 @@ def test_build_fetch_meta_args_rejects_out_of_range_threshold():
         _meta_game_var = _FakeVar("")
         _global_apply_var = _FakeVar(False)   # global apply replaced per-tab _meta_apply_var
         _meta_game_args = staticmethod(lambda: [])
-        messagebox = type("M", (), {
-            "showerror": staticmethod(
-                lambda *a, **_k: captured.update({"err": a}),
-            ),
-        })
+        # Validation failures now flash the status bar (no modal popup).
+        _flash_validation = staticmethod(
+            lambda *a, **_k: captured.update({"err": a}),
+        )
 
     args = gui._SpinDoctorGUI._build_fetch_meta_args(
         _FakeGUI, ["--all"],
@@ -578,18 +545,14 @@ def test_open_path_uses_platform_specific_command(monkeypatch, tmp_path):
 
 def test_open_path_warns_on_missing(monkeypatch, tmp_path):
     """If the path doesn't exist, no OS call should fire — the user
-    gets a warning dialog instead. Saves us from confusing 'silently
-    nothing happened' behaviour on Windows when a stale config points
-    at an unmounted drive."""
+    gets a status-bar validation flash instead. Saves us from confusing
+    'silently nothing happened' behaviour on Windows when a stale config
+    points at an unmounted drive."""
     captured: dict = {}
 
     class _FakeApp:
-        messagebox = type("M", (), {
-            "showwarning": staticmethod(
-                lambda *args, **_k: captured.setdefault("warning", args)
-            ),
-            "showerror": staticmethod(lambda *_a, **_k: None),
-        })
+        def _flash_validation(self, msg):
+            captured["warning"] = msg
 
         def _open_path(self, path, *, missing_label):
             return gui._SpinDoctorGUI._open_path(self, path, missing_label=missing_label)
@@ -1867,8 +1830,9 @@ def test_main_menu_save_migrates_legacy_enabled_child(monkeypatch, tmp_path):
 
 
 def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
-    """A malformed Main Menu.xml must trigger a showerror modal so the
-    user actually notices — not just a line in the Output pane.
+    """A malformed Main Menu.xml must surface a routed error (Output panel +
+    Logs tab + a status-bar flash with a bell) so the user actually notices —
+    not just a silent line in the Output pane.
     """
     from spindoctor import config as cfg_mod
 
@@ -1886,17 +1850,19 @@ def test_main_menu_parse_error_surfaces_error_dialog(monkeypatch, tmp_path):
             "spindoctor.gui.load_config", lambda: cfg,
         )
 
-        errors: list[tuple[str, str]] = []
+        errors: list[tuple] = []
         monkeypatch.setattr(
-            app.messagebox, "showerror",
-            lambda title, msg: errors.append((title, msg)),
+            app, "_report_action_error",
+            lambda *a: errors.append(a),
         )
 
         app._mm_refresh()
 
-        assert errors, "malformed XML must trigger an error dialog"
-        title, body = errors[0]
-        assert "Main Menu.xml" in title or "Main Menu.xml" in body
+        assert errors, "malformed XML must surface a routed error"
+        # _report_action_error(argv_str, summary, detail)
+        _argv, summary, *rest = errors[0]
+        body = rest[0] if rest else ""
+        assert "Main Menu.xml" in summary or "Main Menu.xml" in body
         # The Treeview must reset so the user doesn't see stale rows.
         assert app._mm_data == []
     finally:
@@ -1936,6 +1902,70 @@ def test_flash_validation_rings_bell_and_sets_status(monkeypatch):
         assert app._status_var.get() == "Pick a system first."
     finally:
         app.root.destroy()
+
+
+# ─── auto-run status must not read "enabled" after a failed enable ───────────
+
+
+class _StubStatusLabel:
+    """Captures the last configure(text=…, style=…) call."""
+
+    def __init__(self):
+        self.text = None
+        self.style = None
+
+    def configure(self, **kw):
+        self.text = kw.get("text", self.text)
+        self.style = kw.get("style", self.style)
+
+
+def test_autorefresh_status_never_reads_enabled_on_failed_enable(monkeypatch):
+    """A failed Enable can't overwrite a task left from an earlier attempt, so
+    task_exists() still reports it. With op_failed the label must read
+    'Outdated' (Warn), never plain 'enabled' — the bug the user reported."""
+    # Task exists (leftover from a prior attempt), but the enable just failed.
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: True)
+
+    class _Fake:
+        _autorefresh_status_label = _StubStatusLabel()
+
+    fake = _Fake()
+    gui._SpinDoctorGUI._refresh_autorefresh_status(fake, op_failed=True)
+    assert "Outdated" in fake._autorefresh_status_label.text
+    assert fake._autorefresh_status_label.style == "Warn.TLabel"
+    assert "enabled" not in fake._autorefresh_status_label.text.lower()
+
+
+def test_autorefresh_status_disabled_when_no_task_after_failure(monkeypatch):
+    """A failed enable that left no task behind → plain 'disabled'."""
+    monkeypatch.setattr(autostart_mod, "task_exists", lambda name=None: False)
+
+    class _Fake:
+        _autorefresh_status_label = _StubStatusLabel()
+
+    fake = _Fake()
+    gui._SpinDoctorGUI._refresh_autorefresh_status(fake, op_failed=True)
+    assert fake._autorefresh_status_label.text == "Status: disabled"
+
+
+def test_introvideo_autorun_status_never_reads_enabled_on_failed_enable(monkeypatch):
+    """Same guard on the Intro Video tab's auto-run label."""
+    from spindoctor import introvideo as _iv
+
+    monkeypatch.setattr(
+        _iv, "autorun_status",
+        lambda: _iv.AutorunStatus(registered=True, stale=False),
+    )
+
+    class _Fake:
+        _introvideo_autorun_status_label = _StubStatusLabel()
+
+    fake = _Fake()
+    gui._SpinDoctorGUI._refresh_introvideo_autorun_status(fake, op_failed=True)
+    label = fake._introvideo_autorun_status_label
+    assert "Outdated" in label.text
+    assert label.style == "Warn.TLabel"
+    assert "enabled" not in label.text.lower()
 
 
 # ─── PR E: pc-rename arity fix + friendly schtasks errors ────────────────────
@@ -2006,10 +2036,9 @@ def test_save_game_override_requires_system_and_game(monkeypatch):
         app._meta_game_var.set("")
         ran: list[list[str]] = []
         monkeypatch.setattr(app, "_run_cli", lambda binary, args: ran.append(args))
-        warned: list[tuple] = []
+        warned: list[str] = []
         monkeypatch.setattr(
-            app.messagebox, "showwarning",
-            lambda title, msg: warned.append((title, msg)),
+            app, "_flash_validation", lambda msg: warned.append(msg),
         )
 
         app._save_game_override()
@@ -2375,8 +2404,6 @@ def test_startup_health_focuses_setup_tab_on_fresh_install(monkeypatch, tmp_path
         tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         # Now run startup health checks — should snap back to Setup.
-        # Stub out the threaded doctor pass to keep the test deterministic.
-        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
         app._startup_health_checks()
         assert app._nb.index("current") == app._tab_base_names.index("Setup")
     finally:
@@ -2395,12 +2422,34 @@ def test_startup_health_does_not_force_focus_when_config_exists(monkeypatch, tmp
 
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
-        monkeypatch.setattr(app, "_compute_tab_health_badges", lambda: None)
         tools_idx = app._tab_base_names.index("Custom Wheels")
         app._nb.select(tools_idx)
         app._startup_health_checks()
         # Tab choice preserved.
         assert app._nb.index("current") == tools_idx
+    finally:
+        app.root.destroy()
+
+
+def test_tab_labels_carry_no_status_glyphs(monkeypatch):
+    """Tab titles are plain base names — the old run (⟳/✓/✗) and health
+    (⚠/✗) badge systems were removed. Guard against a regression that
+    re-introduces glyphs onto the tab strip.
+
+    Also runs the startup health check (which used to stamp health
+    badges) to prove it no longer decorates any tab.
+    """
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._startup_health_checks()
+        app.root.update_idletasks()
+        glyphs = "⟳✓✗⚠·"
+        for idx, base in enumerate(app._tab_base_names):
+            shown = app._nb.tab(idx, "text")
+            assert shown == base, f"tab {idx} shows {shown!r}, expected {base!r}"
+            assert not any(g in shown for g in glyphs), (
+                f"tab {idx} label {shown!r} still carries a status glyph"
+            )
     finally:
         app.root.destroy()
 
@@ -2571,7 +2620,7 @@ def test_apply_steam_selection_skips_sentinel_type(monkeypatch):
 
 
 def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
-    """When all pickers are set to the sentinel, showwarning fires and no CLI call is made."""
+    """When all pickers are set to the sentinel, a validation flash fires and no CLI call is made."""
     from spindoctor.scraper import MediaCandidate
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
@@ -2586,13 +2635,13 @@ def test_apply_steam_selection_all_sentinels_shows_warning(monkeypatch):
         ran: list = []
         warnings: list = []
         monkeypatch.setattr(app, "_run_cli", lambda *_a, **_k: ran.append(True))
-        monkeypatch.setattr(app.messagebox, "showwarning",
-                            lambda title, msg: warnings.append(title))
+        monkeypatch.setattr(app, "_flash_validation",
+                            lambda msg: warnings.append(msg))
 
         app._apply_steam_selection()
 
         assert not ran, "no CLI call expected when all types are set to sentinel"
-        assert warnings, "expected a showwarning dialog"
+        assert warnings, "expected a validation flash"
     finally:
         app.root.destroy()
 
@@ -2859,20 +2908,21 @@ def test_on_steam_scan_done_none_meta_shows_not_found(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:
         shown: list[str] = []
-        monkeypatch.setattr(app.messagebox, "showwarning",
-                            lambda title, msg: shown.append(title))
+        monkeypatch.setattr(app, "_flash_status",
+                            lambda msg, **_k: shown.append(msg))
         app._on_steam_scan_done("9999999", None)
 
         for mt in ("video", "snap", "background", "artwork"):
             assert app._steam_pick_vars[mt].get() == "— not found —", mt
-        assert shown, "expected a showwarning dialog"
+        assert shown, "expected a status-bar flash"
     finally:
         app.root.destroy()
 
 
 def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
     """Any exception inside _on_steam_scan_done_inner must reset dropdowns to
-    '— scan error —' and show an error dialog instead of silently freezing.
+    '— scan error —' and surface a routed error (Output + Logs + flash)
+    instead of silently freezing.
 
     This is the structural guard added after the second 'frozen on scanning…'
     incident.  Tk swallows exceptions inside root.after() callbacks, making
@@ -2886,9 +2936,9 @@ def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
         monkeypatch.setattr(app, "_on_steam_scan_done_inner",
                             lambda *_: (_ for _ in ()).throw(RuntimeError("injected failure")))
 
-        errors: list[str] = []
-        monkeypatch.setattr(app.messagebox, "showerror",
-                            lambda title, msg: errors.append(msg))
+        errors: list = []
+        monkeypatch.setattr(app, "_report_action_error",
+                            lambda *a: errors.append(a))
 
         # Pre-set dropdowns to "scanning…" as _scan_steam would.
         for mt in app._steam_pick_vars:
@@ -2902,8 +2952,8 @@ def test_on_steam_scan_done_error_guard_resets_ui(monkeypatch):
                 f"{mt} dropdown still shows {var.get()!r} after error — "
                 "silent freeze not prevented"
             )
-        # User must see an error dialog.
-        assert errors, "expected showerror to be called after callback exception"
+        # User must see the routed error.
+        assert errors, "expected _report_action_error after callback exception"
     finally:
         app.root.destroy()
 
