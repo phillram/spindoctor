@@ -8446,8 +8446,11 @@ def ledblinky_colors_group():
     \b
     Subcommands:
       list          Show all color definitions
-      edit          Rename / recolor a color and propagate the change
+      add           Add a brand-new named color to Color-RGB.ini
+      edit          Rename / recolor an existing color and propagate the change
       normalize     Convert hex-format Colors.ini entries to named P1_BUTTON format
+      brightness    Rescale every color to a uniform brightness percentage
+      randomize     Randomly reassign palette colors to game button sections
       sync-players  Mirror P1 colors to P2+ based on controls.ini button layout
     """
 
@@ -8637,6 +8640,86 @@ def ledblinky_colors_edit(color_name, new_name, hex_color, rgb_values, apply_cha
             + ", ".join(str(p) for p in result.backup_paths)
             + "[/dim]"
         )
+
+
+@ledblinky_colors_group.command("add")
+@click.argument("name")
+@click.option("--hex", "hex_color", default=None,
+              help="Color as a RRGGBB hex string (e.g. 06BEE1), converted from "
+                   "0-255 per channel to the 0-48 range. Mutually exclusive with --rgb.")
+@click.option("--rgb", "rgb_values", default=None,
+              help="Native R,G,B values in the 0-48 intensity range (e.g. 0,38,42). "
+                   "Mutually exclusive with --hex.")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit the change to disk (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the .bak backup before writing.")
+def ledblinky_colors_add(name, hex_color, rgb_values, apply_changes, no_backup):
+    """Add a brand-new named color to Color-RGB.ini.
+
+    \b
+    NAME  the new color's name (must be unique, e.g. 'Turquoise').
+
+    Give the color with either --hex or --rgb. The new name becomes available
+    everywhere colors are picked (admin buttons, fill-defaults, animations, ...).
+    To change an existing color instead, use 'ledblinky colors edit'.
+
+    \b
+    spindoctor ledblinky colors add Turquoise --hex 06BEE1 --apply
+    spindoctor ledblinky colors add "Hot Pink" --rgb 48,8,28 --apply
+    """
+    from . import ledblinky as lb
+
+    config = _cfg()
+    _check_config(config)
+
+    if hex_color and rgb_values:
+        console.print("[red]Error: --hex and --rgb are mutually exclusive.[/red]")
+        raise SystemExit(1)
+    if not hex_color and not rgb_values:
+        console.print("[red]Error: give the color with --hex RRGGBB or --rgb R,G,B.[/red]")
+        raise SystemExit(1)
+
+    if hex_color:
+        try:
+            tmp = lb.ColorEntry.from_hex("_", hex_color)
+            r, g, b = tmp.r, tmp.g, tmp.b
+        except ValueError as exc:
+            console.print(f"[red]Error:[/red] {exc}")
+            raise SystemExit(1) from exc
+    else:
+        parts = [p.strip() for p in rgb_values.split(",")]
+        if len(parts) != 3:
+            console.print("[red]Error: --rgb requires three comma-separated integers "
+                          "in the 0-48 range, e.g. 0,38,42.[/red]")
+            raise SystemExit(1)
+        try:
+            r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
+        except ValueError:
+            console.print("[red]Error: --rgb values must be integers, e.g. 0,38,42.[/red]")
+            raise SystemExit(1)
+
+    if not apply_changes:
+        console.print(
+            "[yellow bold][DRY RUN][/yellow bold] No files will be written. "
+            "Re-run with [cyan]--apply[/cyan] to commit."
+        )
+    try:
+        result = lb.add_color(config, name, r, g, b,
+                              dry_run=not apply_changes, backup=not no_backup)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1) from exc
+
+    verb = "would add" if result.dry_run else "added"
+    preview = lb.ColorEntry("_", result.r, result.g, result.b).to_hex()
+    console.print(f"\n[blue bold]Color-RGB.ini[/blue bold]  {result.color_rgb_path}")
+    console.print(f"  {verb}: [green]{result.name}[/green] = "
+                  f"R={result.r}, G={result.g}, B={result.b}  ({preview})")
+    if result.dry_run:
+        console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]")
+    elif result.backup_path:
+        console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
 @ledblinky_colors_group.command("normalize")

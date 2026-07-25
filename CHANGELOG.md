@@ -9,10 +9,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Added
 
 - **`ledblinky admin-leds show` gained per-system views** — `--by-console` prints a line per console (so you can see exactly which systems have in-game admin LEDs and which don't), and `--emulator NAME` scopes the summary to one console. The command header now also prints the `LEDBlinkyControls.xml` path it read, so it doubles as a "did my change land, and on the right file?" check. New docs section "Verifying the admin colors actually changed" walks through the common reasons admin colors don't appear to change (dry-run, wrong path, LedBlinky not reloaded, a console with no admin controls, menu-vs-in-game). Backed by `read_admin_led_state(..., emulator=...)` and `read_admin_led_state_by_emulator()`; covered by `tests/test_ledblinky_admin_leds.py`.
+- **`ledblinky colors add`** — create a brand-new named color in `Color-RGB.ini` (previously only possible to rename/recolor *existing* colors via `colors edit`). Takes `--hex RRGGBB` or `--rgb R,G,B` (0-48), validates the name is unique (case-insensitive) and free of characters that break the `Name=R,G,B` line, and writes a `.bak` first. The new color is immediately usable everywhere colors are picked by name (admin buttons, `fill-defaults`, animations). GUI: an **Add new color** button in the LEDBlinky tab's Step 8. Backed by `add_color()` in `spindoctor/ledblinky.py`; covered by `tests/test_ledblinky_colors_add.py`.
 
 ### Changed
 
 - **GUI: LEDBlinky tab Step 6 is now a single, clear "In-Game Admin Buttons (Exit / Pause / Select)" section.** It previously bundled two look-alike mechanisms in one box — a `Colors.ini` "Player slot / P3 / BUTTON1–8" block and the in-game `UI_*` block — which was confusing because the `Colors.ini`/P3 block has no in-game effect on cabinets (like this one) whose admin buttons are `UI_*` controls rather than a spare player slot. The dead block was removed; the working in-game Exit/Pause/Select controls (with per-console scope) are now the whole step. The `ledblinky admin-buttons set` CLI command is unchanged for cabinets that do use the player-slot wiring.
+
+## [2.12.0] - 2026-07-24
 
 ### Added
 
