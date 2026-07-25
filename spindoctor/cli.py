@@ -9352,29 +9352,62 @@ def _print_admin_led_result(result, scope_label):
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
 
 
-@ledblinky_admin_leds_group.command("show")
-def ledblinky_admin_leds_show():
-    """Print which admin buttons light in-game, and in what colors."""
-    from . import ledblinky as lb
-    try:
-        states = lb.read_admin_led_state(_cfg())
-    except ValueError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
-        raise SystemExit(1)
-    console.print("[blue bold]In-game admin LED controls[/blue bold] (LEDBlinkyControls.xml):\n")
+def _print_admin_led_states(states, indent="  "):
+    """Render one list of AdminLedControlState lines."""
     for st in states:
         if st.always_active_count:
             colors = ", ".join(f"{c}×{n}" for c, n in st.colors.items())
             console.print(
-                f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): "
+                f"{indent}[cyan]{st.friendly:<7}[/cyan] ({st.control}): "
                 f"[green]lit[/green] in {st.always_active_count} groups — {colors}"
             )
         else:
             console.print(
-                f"  [cyan]{st.friendly:<7}[/cyan] ({st.control}): [dim]dark in-game[/dim]"
+                f"{indent}[cyan]{st.friendly:<7}[/cyan] ({st.control}): [dim]dark in-game[/dim]"
             )
+
+
+@ledblinky_admin_leds_group.command("show")
+@click.option("--emulator", default=None,
+              help="Summarise just this console's games (default: every game).")
+@click.option("--by-console", is_flag=True,
+              help="Break the summary down per console instead of one total.")
+def ledblinky_admin_leds_show(emulator, by_console):
+    """Print which admin buttons light in-game, and in what colors.
+
+    \b
+    spindoctor ledblinky admin-leds show                  :: one total across all games
+    spindoctor ledblinky admin-leds show --emulator MAME  :: just MAME
+    spindoctor ledblinky admin-leds show --by-console      :: a line per console
+    """
+    from . import ledblinky as lb
+    try:
+        path = lb._controls_xml_path(_cfg())
+        if by_console:
+            per = lb.read_admin_led_state_by_emulator(_cfg())
+        else:
+            states = lb.read_admin_led_state(_cfg(), emulator=emulator)
+    except ValueError as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    console.print(f"[blue bold]In-game admin LED controls[/blue bold]  {path}")
+    if by_console:
+        console.print("[dim](per console — a console with all-dark rows has no admin "
+                      "controls; use 'admin-leds add --emulator <name>' to add them)[/dim]\n")
+        for emu, states in per:
+            lit = sum(s.always_active_count for s in states)
+            tag = "" if lit else "  [dim](no admin LEDs)[/dim]"
+            console.print(f"[bold]{emu}[/bold]{tag}")
+            _print_admin_led_states(states, indent="    ")
+        return
+
+    scope = f" — [cyan]{emulator}[/cyan] only" if emulator else ""
+    console.print(f"[dim]scope: {'one console' if emulator else 'all consoles'}{scope}[/dim]\n")
+    _print_admin_led_states(states)
     console.print(
-        "\n[dim]Change with: admin-leds set / randomize / add / remove.[/dim]"
+        "\n[dim]Change with: admin-leds set / randomize / add / remove. "
+        "Per console: add --by-console or --emulator.[/dim]"
     )
 
 

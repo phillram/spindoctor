@@ -2579,21 +2579,8 @@ class AdminLedPatchResult:
     requested: "dict[str, str]" = field(default_factory=dict)
 
 
-def read_admin_led_state(config: Config) -> "list[AdminLedControlState]":
-    """Summarise the current in-game admin LED controls from LEDBlinkyControls.xml.
-
-    Reports, per control, in how many control groups it is ``alwaysActive="1"``
-    (lit in-game) vs present-but-inactive, and the distribution of its colors.
-    """
-    xml_path = _controls_xml_path(config)
-    if xml_path is None:
-        raise ValueError(
-            "ledblinky_dir not configured. Run: spindoctor config set ledblinky_dir <path>"
-        )
-    if not xml_path.exists():
-        raise ValueError(f"LEDBlinkyControls.xml not found at {xml_path}")
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
-
+def _summarise_admin_led_text(text: str) -> "list[AdminLedControlState]":
+    """Summarise the admin controls found in a chunk of controls-XML text."""
     states: "list[AdminLedControlState]" = []
     for friendly, control in ADMIN_LED_CONTROLS.items():
         st = AdminLedControlState(control=control, friendly=friendly)
@@ -2614,6 +2601,37 @@ def read_admin_led_state(config: Config) -> "list[AdminLedControlState]":
                 st.colors[cm.group(1)] = st.colors.get(cm.group(1), 0) + 1
         states.append(st)
     return states
+
+
+def read_admin_led_state(
+    config: Config, emulator: "Optional[str]" = None,
+) -> "list[AdminLedControlState]":
+    """Summarise the current in-game admin LED controls from LEDBlinkyControls.xml.
+
+    Reports, per control, in how many control groups it is ``alwaysActive="1"``
+    (lit in-game) vs present-but-inactive, and the distribution of its colors.
+    Pass ``emulator`` to restrict the summary to one console's groups.
+    """
+    xml_path = _require_controls_xml(config)
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    if emulator:
+        _pre, text, _post = _scoped_region(text, emulator)
+    return _summarise_admin_led_text(text)
+
+
+def read_admin_led_state_by_emulator(
+    config: Config,
+) -> "list[tuple[str, list[AdminLedControlState]]]":
+    """Per-emulator admin LED summary: ``[(emuname, [states…]), …]`` in file
+    order. Lets you see which consoles actually have the admin controls (and in
+    what colors) versus which have none — the key check when a system's admin
+    buttons aren't changing."""
+    xml_path = _require_controls_xml(config)
+    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    out: "list[tuple[str, list[AdminLedControlState]]]" = []
+    for m in re.finditer(r'<emulator emuname="([^"]+)"[^>]*>(.*?)</emulator>', text, re.S):
+        out.append((m.group(1), _summarise_admin_led_text(m.group(2))))
+    return out
 
 
 #: One <controlGroup>…</controlGroup> block (non-greedy).
