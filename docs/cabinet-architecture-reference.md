@@ -10,7 +10,7 @@
 
 | Property | Value |
 |----------|-------|
-| OS | **Windows 7** |
+| OS | **Windows 10** (upgraded from Windows 7 in July 2026 — see the Dolphin section for what this unlocked) |
 | HyperSpin runtime | Adobe AIR (H.264 Main Profile ≤ Level 4.0 only — see video section) |
 | Python target | Must work on Windows 7; use `pathlib.Path` for all path construction |
 | Regex replacements | Always use `lambda m: replacement` in `re.sub`/`re.subn` when the replacement string may contain a Windows path — backslash sequences like `\U`, `\N`, `\A` are misread as regex backreferences and raise `re.error` |
