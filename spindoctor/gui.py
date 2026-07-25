@@ -11138,20 +11138,24 @@ class _SpinDoctorGUI:
             self._led_ingame_combos[friendly] = combo
 
         # Secondary (optional) row — Search / mouse buttons. These aren't their
-        # own LED control (their key rides on another admin control), so they're
-        # off-only: ticking one blanks just that button in-game.
+        # own LED control (their key rides on another admin control), so they
+        # can only be turned off (dark) or on (lit, in the Pause control's
+        # color), not independently coloured.
         self.ttk.Label(
-            ab_frame, text="Also turn off (optional):", foreground=_FG_DIM,
+            ab_frame, text="Search / mouse (optional):", foreground=_FG_DIM,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=(8, 2), pady=(4, 0))
         self._led_ingame_off_vars = {}
         for i, (friendly, label) in enumerate(
             (("search", "Search"), ("lmouse", "Left Mouse"), ("rmouse", "Right Mouse")),
         ):
-            v = self.tk.BooleanVar(value=False)
-            self.ttk.Checkbutton(ab_frame, text=label, variable=v).grid(
-                row=3, column=i * 2, columnspan=2, sticky="w",
-                padx=(8 if i == 0 else 4, 2), pady=2,
+            self.ttk.Label(ab_frame, text=f"{label}:").grid(
+                row=3, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
             )
+            v = self.tk.StringVar(value="(leave unchanged)")
+            self.ttk.Combobox(
+                ab_frame, textvariable=v, width=13, state="readonly",
+                values=["(leave unchanged)", "off (dark)", "on (lit)"],
+            ).grid(row=3, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
             self._led_ingame_off_vars[friendly] = v
 
         # Console scope: apply to all consoles, or just one (per-console
@@ -11940,10 +11944,13 @@ class _SpinDoctorGUI:
                 continue
             cli_value = "off" if value == "off (dark)" else value
             args += [f"--{friendly}", cli_value]
-        # Optional secondary-row off toggles (Search / mouse).
+        # Optional secondary-row Search / mouse on|off toggles.
         for friendly, var in self._led_ingame_off_vars.items():
-            if var.get():
+            choice = var.get().strip()
+            if choice.startswith("off"):
                 args.append(f"--{friendly}-off")
+            elif choice.startswith("on"):
+                args.append(f"--{friendly}-on")
         if len(args) == 3:
             self._flash_validation(
                 "Pick a color/off for a button, or tick one of the optional 'turn off' boxes.",

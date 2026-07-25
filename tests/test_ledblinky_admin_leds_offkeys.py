@@ -106,13 +106,54 @@ def test_dry_run_writes_nothing(config, led_dir):
 
 
 def test_unknown_off_button_rejected(config):
-    with pytest.raises(ValueError, match="Unknown off button"):
+    with pytest.raises(ValueError, match="Unknown button"):
         lb.set_admin_led_controls(config, off_buttons=["banana"], dry_run=True)
 
 
 def test_no_updates_and_no_off_raises(config):
     with pytest.raises(ValueError, match="No admin LED updates"):
         lb.set_admin_led_controls(config, dry_run=True)
+
+
+def test_search_off_then_on_restores(config, led_dir):
+    lb.set_admin_led_controls(config, off_buttons=["search"], dry_run=False, backup=False)
+    assert _pause_ic(led_dir) == "KEYCODE_P"                 # search removed
+    r = lb.set_admin_led_controls(config, on_buttons=["search"], dry_run=False, backup=False)
+    assert r.keycode_changes == 1 and r.no_host == []
+    assert set(_pause_ic(led_dir).split("|")) == {"KEYCODE_P", "KEYCODE_SLASH"}  # back on Pause
+    ET.fromstring((led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8"))
+
+
+def test_search_on_is_idempotent(config):
+    # Fixture already has Search on Pause → turning it on again changes nothing.
+    r = lb.set_admin_led_controls(config, on_buttons=["search"], dry_run=False, backup=False)
+    assert r.keycode_changes == 0
+
+
+def test_cant_turn_same_button_on_and_off(config):
+    with pytest.raises(ValueError, match="both on and off"):
+        lb.set_admin_led_controls(config, off_buttons=["search"], on_buttons=["search"],
+                                  dry_run=True)
+
+
+def test_on_with_no_host_reports_no_host(tmp_path):
+    # A group with no UI_PAUSE control → nowhere to attach the key.
+    # open(newline="") is used instead of write_text(newline=), which is 3.10+ only.
+    with (tmp_path / "LEDBlinkyControls.xml").open("w", encoding="utf-8", newline="") as fh:
+        fh.write(
+            '<?xml version="1.0"?>\n<dat>\n'
+            '  <emulator emuname="X">\n'
+            '    <controlGroup groupName="DEFAULT">\n'
+            '      <player number="0">\n'
+            '        <control name="UI_CANCEL" alwaysActive="1" color="Red" inputCodes="KEYCODE_ESC" />\n'
+            '      </player>\n'
+            '    </controlGroup>\n'
+            '  </emulator>\n</dat>\n'
+        )
+    cfg = Config(ledblinky_dir=str(tmp_path))
+    r = lb.set_admin_led_controls(cfg, on_buttons=["search"], dry_run=False, backup=False)
+    assert r.keycode_changes == 0
+    assert r.no_host == ["search"]
 
 
 def test_emulator_scope_on_off(config):
