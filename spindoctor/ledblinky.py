@@ -1632,6 +1632,93 @@ def apply_color_rename(
     return result
 
 
+@dataclass
+class ColorAddResult:
+    """Outcome of :func:`add_color`."""
+
+    name: str
+    r: int
+    g: int
+    b: int
+    dry_run: bool = False
+    color_rgb_path: Optional[Path] = None
+    backup_path: Optional[Path] = None
+
+
+#: Characters that would break the ``Name=R,G,B`` INI line or a color lookup.
+_COLOR_NAME_BAD_CHARS = set("=,;[]\r\n\t")
+
+
+def _validate_new_color_name(name: str, existing: "list[str]") -> str:
+    """Validate a proposed new color name; return the cleaned name or raise."""
+    cleaned = name.strip()
+    if not cleaned:
+        raise ValueError("Color name must not be empty.")
+    if not any(ch.isalnum() for ch in cleaned):
+        raise ValueError(f"Color name '{name}' needs at least one letter or digit.")
+    bad = sorted(set(cleaned) & _COLOR_NAME_BAD_CHARS)
+    if bad:
+        raise ValueError(
+            f"Color name '{name}' contains characters that aren't allowed "
+            f"in Color-RGB.ini: {' '.join(repr(c) for c in bad)}."
+        )
+    lower = {e.lower() for e in existing}
+    if cleaned.lower() in lower:
+        raise ValueError(
+            f"A color named '{cleaned}' already exists. Pick a different name, "
+            f"or use 'ledblinky colors edit' to change the existing one."
+        )
+    return cleaned
+
+
+def add_color(
+    config: Config,
+    name: str,
+    r: int,
+    g: int,
+    b: int,
+    dry_run: bool = True,
+    backup: bool = True,
+) -> ColorAddResult:
+    """Add a brand-new named color to ``Color-RGB.ini``.
+
+    ``r``/``g``/``b`` are LedBlinky intensities (0-48). The name must be unique
+    (case-insensitive) and free of the characters that would break the
+    ``Name=R,G,B`` line. A timestamped ``.bak`` of ``Color-RGB.ini`` is written
+    before the change. Complements :func:`apply_color_rename`, which can only
+    change an *existing* color.
+
+    Raises ``ValueError`` if ``ledblinky_dir`` is unset, ``Color-RGB.ini`` is
+    missing, the name is invalid/duplicate, or a channel is outside 0-48.
+    """
+    for ch, val in (("R", r), ("G", g), ("B", b)):
+        if not (0 <= val <= 48):
+            raise ValueError(
+                f"{ch} value {val} is outside the valid 0-48 intensity range "
+                f"(LedBlinky uses 0-48, not 0-255). Use --hex for 8-bit hex input."
+            )
+    if not config.ledblinky_dir:
+        raise ValueError(
+            "ledblinky_dir not configured. Run: spindoctor config set ledblinky_dir <path>"
+        )
+    color_rgb_path = Path(config.ledblinky_dir) / COLOR_RGB_NAME
+    if not color_rgb_path.exists():
+        raise ValueError(f"{COLOR_RGB_NAME} not found at {color_rgb_path}")
+
+    header, entries = parse_color_rgb_ini(color_rgb_path)
+    cleaned = _validate_new_color_name(name, [e.name for e in entries])
+
+    result = ColorAddResult(name=cleaned, r=r, g=g, b=b, dry_run=dry_run,
+                            color_rgb_path=color_rgb_path)
+    if dry_run:
+        return result
+
+    if backup:
+        result.backup_path = _backup(color_rgb_path, _config_backup_dir(config))
+    write_color_rgb_ini(header, entries + [ColorEntry(cleaned, r, g, b)], color_rgb_path)
+    return result
+
+
 # ─── Colors.ini normalisation ─────────────────────────────────────────────────
 
 # Regex matching SpinDoctor-generated hex button keys: ledcolor1, ledcolor2, …

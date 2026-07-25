@@ -11316,9 +11316,12 @@ class _SpinDoctorGUI:
 
         self.ttk.Label(
             cd_frame,
-            text=("View and edit the named color palette used by all other sections. "
-                  "Renaming a color propagates the change through Color-RGB.ini, "
-                  "Colors.ini, and LEDBlinkyControls.xml in one operation."),
+            text=("View, add, and edit the named color palette used by all other "
+                  "sections. To add a new color, type a New name + New color and "
+                  "click Add new color. To change an existing one, select its row "
+                  "first, edit the fields, and click Update & Rename — a rename "
+                  "propagates through Color-RGB.ini, Colors.ini, and "
+                  "LEDBlinkyControls.xml in one operation."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
 
@@ -11384,6 +11387,11 @@ class _SpinDoctorGUI:
 
         cd_btn_row = self.ttk.Frame(cd_frame)
         cd_btn_row.grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
+
+        self.ttk.Button(
+            cd_btn_row, text="Add new color",
+            command=self._run_color_add,
+        ).pack(side="left", padx=(0, 8))
 
         self.ttk.Button(
             cd_btn_row, text="Update & Rename",
@@ -11737,6 +11745,30 @@ class _SpinDoctorGUI:
                     pass
             except ValueError:
                 pass
+
+    def _run_color_add(self) -> None:
+        """Run ``ledblinky colors add`` from the New name + New color fields."""
+        name = self._color_new_name_var.get().strip()
+        hex_val = self._color_hex_var.get().strip().lstrip("#")
+        if not name:
+            self.messagebox.showwarning(
+                "Name required", "Enter a New name for the color to add.",
+            )
+            return
+        import re as _re
+        if not _re.fullmatch(r"[0-9A-Fa-f]{6}", hex_val):
+            self.messagebox.showwarning(
+                "Color required",
+                "Enter a New color as 6 hex characters (e.g. 06BEE1 for turquoise).",
+            )
+            return
+        args = ["ledblinky", "colors", "add", name, "--hex", hex_val]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        self._run_cli(
+            "spindoctor", args,
+            on_complete=lambda rc: self._refresh_color_list() if rc == 0 else None,
+        )
 
     def _run_color_edit(self) -> None:
         """Run ``ledblinky colors edit`` for the selected color."""

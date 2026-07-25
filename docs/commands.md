@@ -1665,10 +1665,12 @@ A timestamped `.bak` copy of `Settings.ini` is written before any change. Pass `
 
 `Color-RGB.ini` is LedBlinky's master color dictionary (intensity values 0-48 per channel). Named colors from this file are referenced by value in `Colors.ini` (`P1_COIN=Orange`) and as XML attributes in `LEDBlinkyControls.xml` (`color="Red"`).
 
-`colors list` shows the full table. `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section. `colors sync-players` adds missing P2/P3/P4+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`; supports any number of additional players and accepts `--override` to replace existing non-P1 entries.
+`colors list` shows the full table. `colors add` creates a **brand-new** named color (`edit` can only change one that already exists). `colors edit` renames a color and/or changes its intensity values, then propagates the new name throughout all three files atomically. `colors normalize` converts SpinDoctor-generated hex entries to named format so that subsequent renames reach every section. `colors sync-players` adds missing P2/P3/P4+ entries to `Colors.ini` by mirroring the matching P1 color for each button listed in `controls.ini`; supports any number of additional players and accepts `--override` to replace existing non-P1 entries.
 
 ```bat
 spindoctor ledblinky colors list                                                 :: show all definitions
+spindoctor ledblinky colors add Turquoise --hex 06BEE1 --apply                  :: add a NEW color
+spindoctor ledblinky colors add "Hot Pink" --rgb 48,8,28 --apply                :: add via 0-48 values
 spindoctor ledblinky colors edit Blue                                            :: inspect Blue
 spindoctor ledblinky colors edit Blue --name Turquoise --hex 06BEE1 --apply     :: rename + recolor
 spindoctor ledblinky colors edit Orange --name Amber --apply                    :: rename only
@@ -1679,6 +1681,10 @@ spindoctor ledblinky colors normalize --apply --verbose          :: also print e
 ```
 
 `--hex RRGGBB` accepts standard 8-bit hex (0-255 per channel) and converts to the 0-48 intensity range stored in `Color-RGB.ini`. `--rgb R,G,B` accepts values directly in the 0-48 range.
+
+#### `ledblinky colors add`
+
+Adds a new named color to `Color-RGB.ini` — the thing `edit` can't do (it only changes existing colors). The name must be unique (case-insensitive) and free of characters that would break the `Name=R,G,B` line (`= , ; [ ]`); a timestamped `.bak` is written first. Once added, the color is immediately available everywhere colors are picked by name — admin buttons, `fill-defaults`, animations, and the GUI dropdowns (click **Refresh** to reload the list). Give the color with `--hex RRGGBB` or `--rgb R,G,B`. GUI: **Add new color** button in Step 8 (type a New name + New color first).
 
 Files updated by `edit --apply`:
 
