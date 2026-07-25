@@ -11137,27 +11137,48 @@ class _SpinDoctorGUI:
             self._led_ingame_vars[friendly] = var
             self._led_ingame_combos[friendly] = combo
 
+        # Secondary (optional) row — Search / mouse buttons. These aren't their
+        # own LED control (their key rides on another admin control), so they
+        # can only be turned off (dark) or on (lit, in the Pause control's
+        # color), not independently coloured.
+        self.ttk.Label(
+            ab_frame, text="Search / mouse (optional):", foreground=_FG_DIM,
+        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=(8, 2), pady=(4, 0))
+        self._led_ingame_off_vars = {}
+        for i, (friendly, label) in enumerate(
+            (("search", "Search"), ("lmouse", "Left Mouse"), ("rmouse", "Right Mouse")),
+        ):
+            self.ttk.Label(ab_frame, text=f"{label}:").grid(
+                row=3, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
+            )
+            v = self.tk.StringVar(value="(leave unchanged)")
+            self.ttk.Combobox(
+                ab_frame, textvariable=v, width=13, state="readonly",
+                values=["(leave unchanged)", "off (dark)", "on (lit)"],
+            ).grid(row=3, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
+            self._led_ingame_off_vars[friendly] = v
+
         # Console scope: apply to all consoles, or just one (per-console
         # coloration). Populated from LEDBlinkyControls.xml on refresh.
         self.ttk.Label(ab_frame, text="Console:").grid(
-            row=2, column=0, sticky="e", padx=(8, 2), pady=2,
+            row=4, column=0, sticky="e", padx=(8, 2), pady=2,
         )
         self._led_ingame_emu_var = self.tk.StringVar(value="(all consoles)")
         self._led_ingame_emu_combo = self.ttk.Combobox(
             ab_frame, textvariable=self._led_ingame_emu_var, width=22, state="readonly",
             values=["(all consoles)"],
         )
-        self._led_ingame_emu_combo.grid(row=2, column=1, columnspan=2, sticky="w",
+        self._led_ingame_emu_combo.grid(row=4, column=1, columnspan=2, sticky="w",
                                         padx=(0, 4), pady=2)
         self.ttk.Button(
             ab_frame, text="Refresh consoles / colors",
             command=self._refresh_color_list,
-        ).grid(row=2, column=3, sticky="w", padx=(4, 4), pady=2)
+        ).grid(row=4, column=3, sticky="w", padx=(4, 4), pady=2)
 
         self.ttk.Button(
             ab_frame, text="Apply in-game admin buttons",
             command=self._run_admin_leds,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 8))
+        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
@@ -11915,7 +11936,7 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_admin_leds(self) -> None:
-        """Run ``ledblinky admin-leds set`` for the in-game Exit/Pause/Select LEDs."""
+        """Run ``ledblinky admin-leds set`` for the in-game admin LEDs."""
         args = ["ledblinky", "admin-leds", "set"]
         for friendly, var in self._led_ingame_vars.items():
             value = var.get().strip()
@@ -11923,8 +11944,17 @@ class _SpinDoctorGUI:
                 continue
             cli_value = "off" if value == "off (dark)" else value
             args += [f"--{friendly}", cli_value]
+        # Optional secondary-row Search / mouse on|off toggles.
+        for friendly, var in self._led_ingame_off_vars.items():
+            choice = var.get().strip()
+            if choice.startswith("off"):
+                args.append(f"--{friendly}-off")
+            elif choice.startswith("on"):
+                args.append(f"--{friendly}-on")
         if len(args) == 3:
-            self._flash_validation("Pick a color or 'off' for at least one button.")
+            self._flash_validation(
+                "Pick a color/off for a button, or tick one of the optional 'turn off' boxes.",
+            )
             return
         emu = self._led_ingame_emu_var.get().strip()
         if emu and emu != "(all consoles)":
