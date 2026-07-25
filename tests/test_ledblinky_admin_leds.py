@@ -235,3 +235,36 @@ def test_randomize_per_game_existing_group_not_duplicated(config, led_dir):
     mame = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8") \
         .split('emuname="MAME"')[1].split("</emulator>")[0]
     assert mame.count('groupName="005"') == 1
+
+
+# ── per-system show (read_admin_led_state emulator scope + by-emulator) ────────
+
+def test_read_state_scoped_to_emulator(config):
+    """The sample: MAME has 2 admin groups, Atari_2600 has 1."""
+    mame = {s.friendly: s for s in lb.read_admin_led_state(config, emulator="MAME")}
+    atari = {s.friendly: s for s in lb.read_admin_led_state(config, emulator="Atari_2600")}
+    assert mame["exit"].always_active_count == 2
+    assert atari["exit"].always_active_count == 1
+    # Total (unscoped) is the sum.
+    total = {s.friendly: s for s in lb.read_admin_led_state(config)}
+    assert total["exit"].always_active_count == 3
+
+
+def test_read_state_by_emulator(config):
+    per = dict(lb.read_admin_led_state_by_emulator(config))
+    assert set(per) == {"MAME", "Atari_2600"}
+    mame = {s.friendly: s for s in per["MAME"]}
+    assert mame["select"].always_active_count == 2
+    assert mame["select"].colors == {"Green": 2}
+
+
+def test_by_emulator_flags_console_with_no_admin_controls(config, led_dir):
+    """A console whose groups have no admin controls shows all-zero counts —
+    the signal that its games can't light admin buttons until 'add' is run."""
+    lb.remove_admin_led_controls(config, emulator="Atari_2600", dry_run=False, backup=False)
+    per = dict(lb.read_admin_led_state_by_emulator(config))
+    atari = {s.friendly: s for s in per["Atari_2600"]}
+    assert all(s.always_active_count == 0 for s in atari.values())
+    # MAME still lit.
+    mame = {s.friendly: s for s in per["MAME"]}
+    assert mame["exit"].always_active_count == 2
