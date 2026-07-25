@@ -2678,6 +2678,38 @@ def _strip_admin_keycode_in_block(block: str, keycode: str) -> "tuple[str, int]"
     return re.sub(r"<control [^>]*/>", _one, block), changed
 
 
+#: The always-active admin control that hosts extra button keys (Search rides on
+#: Pause here; turning a keycode button back "on" re-attaches its key to this).
+_ADMIN_LED_KEYCODE_HOST = "UI_PAUSE"
+
+
+def _add_admin_keycode_in_block(block: str, keycode: str) -> "tuple[str, int]":
+    """Re-attach ``keycode`` to the group's host always-active control
+    (:data:`_ADMIN_LED_KEYCODE_HOST`) so its physical button lights again —
+    the inverse of :func:`_strip_admin_keycode_in_block`. Returns
+    ``(new_block, controls_changed)``; 0 if there's no host control to attach to."""
+    changed = 0
+
+    def _one(cm):
+        nonlocal changed
+        ctrl = cm.group(0)
+        if (f'name="{_ADMIN_LED_KEYCODE_HOST}"' not in ctrl
+                or 'alwaysActive="1"' not in ctrl):
+            return ctrl
+        im = re.search(r'inputCodes="([^"]*)"', ctrl)
+        if not im:
+            return ctrl
+        tokens = im.group(1).split("|")
+        if keycode in tokens:
+            return ctrl  # already attached
+        tokens.append(keycode)
+        changed += 1
+        return ctrl[: im.start(1)] + "|".join(tokens) + ctrl[im.end(1):]
+
+    # Only the first host control per group (there's one UI_PAUSE per group).
+    return re.sub(r"<control [^>]*/>", _one, block, count=0), changed
+
+
 @dataclass
 class AdminLedControlState:
     """Current in-game state of one admin LED control, summarised across groups."""
@@ -2705,6 +2737,8 @@ class AdminLedPatchResult:
     requested: "dict[str, str]" = field(default_factory=dict)
     # off-buttons that matched no lit control (already dark in-game)
     already_dark: "list[str]" = field(default_factory=list)
+    # on-buttons with no host control to attach to (can't be lit on this cabinet)
+    no_host: "list[str]" = field(default_factory=list)
 
 
 def _summarise_admin_led_text(text: str) -> "list[AdminLedControlState]":
@@ -2923,6 +2957,7 @@ def set_admin_led_controls(
     config: Config,
     updates: "Optional[dict[str, object]]" = None,
     off_buttons: "Optional[list[str]]" = None,
+    on_buttons: "Optional[list[str]]" = None,
     emulator: "Optional[str]" = None,
     dry_run: bool = True,
     backup: bool = True,
@@ -2948,10 +2983,11 @@ def set_admin_led_controls(
     """
     updates = dict(updates or {})
     off_buttons = list(off_buttons or [])
+    on_buttons = list(on_buttons or [])
     result = AdminLedPatchResult(dry_run=dry_run)
     xml_path = _require_controls_xml(config)
     result.controls_xml_path = xml_path
-    if not updates and not off_buttons:
+    if not updates and not off_buttons and not on_buttons:
         raise ValueError("No admin LED updates requested.")
 
     unknown = [k for k in updates if k not in ADMIN_LED_CONTROLS]
@@ -2960,12 +2996,15 @@ def set_admin_led_controls(
             f"Unknown admin button(s): {', '.join(unknown)}. "
             f"Choose from: {', '.join(ADMIN_LED_CONTROLS)}."
         )
-    bad_off = [b for b in off_buttons if b not in ADMIN_LED_KEYCODES]
-    if bad_off:
+    bad_key = [b for b in (off_buttons + on_buttons) if b not in ADMIN_LED_KEYCODES]
+    if bad_key:
         raise ValueError(
-            f"Unknown off button(s): {', '.join(bad_off)}. "
+            f"Unknown button(s): {', '.join(bad_key)}. "
             f"Choose from: {', '.join(ADMIN_LED_KEYCODES)}."
         )
+    both = set(off_buttons) & set(on_buttons)
+    if both:
+        raise ValueError(f"Can't turn {', '.join(sorted(both))} both on and off.")
     _validate_admin_colors(
         config, [v for v in updates.values() if isinstance(v, str) and v.lower() != "off"]
     )
@@ -2975,9 +3014,12 @@ def set_admin_led_controls(
         ) else f"{value} (lit)"
     for b in off_buttons:
         result.requested[b] = "off"
+    for b in on_buttons:
+        result.requested[b] = "on"
 
     text = xml_path.read_text(encoding="utf-8", errors="replace")
     matched_off: "set[str]" = set()
+    matched_on: "set[str]" = set()
 
     def _fn(block):
         for friendly, value in updates.items():
@@ -2989,10 +3031,17 @@ def set_admin_led_controls(
             if kc:
                 matched_off.add(b)
                 result.keycode_changes += kc
+        for b in on_buttons:
+            block, kc = _add_admin_keycode_in_block(block, ADMIN_LED_KEYCODES[b])
+            if kc:
+                matched_on.add(b)
+                result.keycode_changes += kc
         return block
 
     text, result.groups_changed = _transform_control_groups(text, emulator, _fn)
     result.already_dark = [b for b in off_buttons if b not in matched_off]
+    # on-buttons that found no host control to attach to (can't be lit here)
+    result.no_host = [b for b in on_buttons if b not in matched_on]
     _write_xml(result, xml_path, text, config, dry_run, backup)
     return result
 

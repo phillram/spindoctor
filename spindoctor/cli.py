@@ -9511,27 +9511,37 @@ def ledblinky_admin_leds_show(emulator, by_console):
               help="Blank the Left Mouse button in-game.")
 @click.option("--rmouse-off", "rmouse_off", is_flag=True,
               help="Blank the Right Mouse button in-game.")
+@click.option("--search-on", "search_on", is_flag=True,
+              help="Re-light the Search button in-game (adds its key back onto the "
+                   "Pause control). Scope-sensitive — pair with --emulator.")
+@click.option("--lmouse-on", "lmouse_on", is_flag=True,
+              help="Light the Left Mouse button in-game (rides on the Pause control).")
+@click.option("--rmouse-on", "rmouse_on", is_flag=True,
+              help="Light the Right Mouse button in-game (rides on the Pause control).")
 @click.option("--emulator", default=None,
               help="Limit to one emulator's games (default: every game).")
 @click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
 @click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
 def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
-                             rmouse_off, emulator, apply_changes, no_backup):
+                             rmouse_off, search_on, lmouse_on, rmouse_on,
+                             emulator, apply_changes, no_backup):
     """Set uniform in-game admin colors/state across all games (default mode).
 
     Exit / Pause / Select take a color (light) or 'off' (dark). Search and the
     two mouse buttons aren't their own LED control — they only light because
     their key rides on another always-active control (Search's "/" rides on
-    Pause) — so they're off-only: --search-off / --lmouse-off / --rmouse-off
-    remove just that button's key, leaving the others (like Pause) lit.
+    Pause) — so they're on/off toggles: --search-off removes just that key
+    (Pause stays lit); --search-on adds it back. "On" is scope-sensitive: with
+    no --emulator it lights the button on EVERY console, so pair it with
+    --emulator to restore just one (dry-run first to see the group count).
 
     \b
-    "Clean arcade" default — Exit + Pause lit, Select + Search dark:
+    "Clean arcade" for GameCube — Exit + Pause lit, Select + Search dark:
       spindoctor ledblinky admin-leds set --select off --search-off --apply
 
     \b
-    Recolor: Exit red, Pause purple, everywhere:
-      spindoctor ledblinky admin-leds set --exit Red --pause Purple --apply
+    Undo — re-light Search on just GameCube:
+      spindoctor ledblinky admin-leds set --search-on --emulator Nintendo_GameCube --apply
     """
     from . import ledblinky as lb
     updates: "dict[str, object]" = {}
@@ -9540,16 +9550,22 @@ def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
             updates[friendly] = val
     off_buttons = [b for b, on in
                    (("search", search_off), ("lmouse", lmouse_off), ("rmouse", rmouse_off)) if on]
-    if not updates and not off_buttons:
-        console.print("[red]Error:[/red] Set at least one of --exit / --pause / --select / "
-                      "--search-off / --lmouse-off / --rmouse-off.")
+    on_buttons = [b for b, on in
+                  (("search", search_on), ("lmouse", lmouse_on), ("rmouse", rmouse_on)) if on]
+    if not updates and not off_buttons and not on_buttons:
+        console.print("[red]Error:[/red] Set at least one button "
+                      "(--exit / --pause / --select / --search-off|on / --lmouse-off|on / "
+                      "--rmouse-off|on).")
         raise SystemExit(1)
+    if on_buttons and not emulator:
+        console.print("[yellow]Note:[/yellow] turning a button on with no --emulator lights it "
+                      "on [bold]every[/bold] console. Add --emulator to target one.")
     if not apply_changes:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
     try:
         result = lb.set_admin_led_controls(
-            _cfg(), updates, off_buttons=off_buttons, emulator=emulator,
-            dry_run=not apply_changes, backup=not no_backup,
+            _cfg(), updates, off_buttons=off_buttons, on_buttons=on_buttons,
+            emulator=emulator, dry_run=not apply_changes, backup=not no_backup,
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
@@ -9558,6 +9574,10 @@ def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
         console.print(
             f"[dim]Already dark in-game (no lit control found): "
             f"{', '.join(result.already_dark)}[/dim]"
+        )
+    if result.no_host:
+        console.print(
+            f"[dim]No host control to light (skipped): {', '.join(result.no_host)}[/dim]"
         )
     _print_admin_led_result(result, emulator or "all emulators")
 
