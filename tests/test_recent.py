@@ -215,6 +215,55 @@ def test_rebuild_prunes_when_records_drop_off(isolated_config, tmp_path):
     assert {w.stem for w in wheels} == {"Mario"}
 
 
+def test_rebuild_orders_by_recency_not_alphabetical(isolated_config, tmp_path):
+    """Recently Played lists games most-recent first, even when that differs
+    from alphabetical order — covering both the fresh write and a rebuild over
+    an existing database file."""
+    import re
+
+    def _game_order(db_path):
+        return re.findall(
+            r'<game name="([^"]+)"',
+            db_path.read_text(encoding="utf-8"),
+        )
+
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+
+    (roms / "Super Nintendo").mkdir(parents=True)
+    (hs / "Databases" / "Super Nintendo").mkdir(parents=True)
+    (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").write_text(
+        "<menu>"
+        "<game name=\"Apple\"><description>Apple</description></game>"
+        "<game name=\"Banana\"><description>Banana</description></game>"
+        "<game name=\"Cherry\"><description>Cherry</description></game>"
+        "</menu>",
+        encoding="utf-8",
+    )
+    # Newest-first ranking: Banana > Cherry > Apple. Alphabetical would be
+    # Apple, Banana, Cherry — deliberately different.
+    _write_stats_ini(
+        rl / "Settings" / "Global Statistics" / "Super Nintendo.ini",
+        [
+            ("Apple", "2026-04-25 10:00:00", 1),
+            ("Banana", "2026-04-27 18:00:00", 1),
+            ("Cherry", "2026-04-26 12:00:00", 1),
+        ],
+    )
+    cfg = Config(roms_dir=str(roms), hyperspin_dir=str(hs),
+                 rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    # First build — fresh Recently Played.xml (_write_fresh path).
+    summary = rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert _game_order(summary.db_path) == ["Banana", "Cherry", "Apple"]
+
+    # Second build — merges over the existing file (_merge_into_tree path).
+    summary = rebuild(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert _game_order(summary.db_path) == ["Banana", "Cherry", "Apple"]
+
+
 # ─── New path: Data/Statistics/ ──────────────────────────────────────────────
 
 def test_parse_time_handles_global_statistics_format():
