@@ -48,7 +48,6 @@ All seven are managed by the GUI; hand-editing them is fine but not necessary. *
 
 None of these change existing behaviour — they're additive:
 
-- **Per-tab health badges** (⚠/✗) next to tab names whose area `doctor` flagged.
 - **Find bar** above the Output panel — `Ctrl+F` to open.
 - **System quick-filter** — `Ctrl+Shift+F` to narrow every system combobox across every tab.
 - **Drag-and-drop** — drop a folder from Explorer / Finder onto any Setup path field to fill it.
