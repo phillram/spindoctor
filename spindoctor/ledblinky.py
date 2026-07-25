@@ -578,7 +578,8 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
     ``xml_rom_entries`` — list of ``{"emulator": ..., "attrs": {...}}`` for any
                           ``<game>``/``<rom>`` XML elements whose ``name`` attribute
                           matches *rom_name* (case-insensitive)
-    ``log_path``        — guessed path to LEDBlinkyLog.txt
+    ``log_path``        — path to LEDBlinky's log (``LEDBlinky.log`` on current
+                          installs), or a guessed path if none is present
     ``listxml``         — ``{"players": N, "buttons": N, "controls": [...]}`` or ``None``
     ``warnings``        — list of diagnostic warning strings
     """
@@ -696,14 +697,19 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
     else:
         result["warnings"].append(f"LEDBlinkyControls.xml not found at {xml_path}.")
 
-    # LEDBlinky log file
-    for log_name in ("LEDBlinkyLog.txt", "LedBlinkyLog.txt", "log.txt"):
+    # LEDBlinky log file. The real filename on current LEDBlinky installs is
+    # "LEDBlinky.log" (confirmed on a live cabinet); the older ".txt" variants
+    # are checked too for compatibility. Getting this right matters — the log is
+    # where LEDBlinky records the exact system+rom RocketLauncher sends at launch
+    # (and "Event Dropped" lines when it can't reach its primary instance).
+    for log_name in ("LEDBlinky.log", "LedBlinky.log",
+                     "LEDBlinkyLog.txt", "LedBlinkyLog.txt", "log.txt"):
         lp = base / log_name
         if lp.exists():
             result["log_path"] = lp
             break
     if result["log_path"] is None:
-        result["log_path"] = base / "LEDBlinkyLog.txt"  # guessed path
+        result["log_path"] = base / "LEDBlinky.log"  # guessed path
         result["warnings"].append(
             f"LEDBlinky log not found at expected path ({result['log_path']}). "
             f"Enable logging in LEDBlinky's Settings to capture game-launch events."

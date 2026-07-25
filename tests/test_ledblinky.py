@@ -1486,3 +1486,33 @@ def test_replace_color_in_controls_xml_handles_backslash_in_new_name(tmp_path):
     )
     assert count == 1
     assert r'color="C:\Users\New"' in new_text
+
+
+# ── inspect-rom log-file resolution ───────────────────────────────────────────
+
+def test_inspect_rom_finds_real_ledblinky_log(tmp_path):
+    """The live cabinet's log is 'LEDBlinky.log', not 'LEDBlinkyLog.txt' —
+    inspect_rom must locate it (this was silently reported 'not found')."""
+    from spindoctor.ledblinky import inspect_rom
+    from spindoctor.config import Config
+    (tmp_path / "LEDBlinky.log").write_text("[log]\n", encoding="utf-8")
+    result = inspect_rom(Config(ledblinky_dir=str(tmp_path)), "metroid")
+    assert result["log_path"] == tmp_path / "LEDBlinky.log"
+    assert not any("log not found" in w.lower() for w in result["warnings"])
+
+
+def test_inspect_rom_still_finds_legacy_txt_log(tmp_path):
+    from spindoctor.ledblinky import inspect_rom
+    from spindoctor.config import Config
+    (tmp_path / "LEDBlinkyLog.txt").write_text("[log]\n", encoding="utf-8")
+    result = inspect_rom(Config(ledblinky_dir=str(tmp_path)), "metroid")
+    assert result["log_path"] == tmp_path / "LEDBlinkyLog.txt"
+
+
+def test_inspect_rom_guesses_dot_log_when_absent(tmp_path):
+    from spindoctor.ledblinky import inspect_rom
+    from spindoctor.config import Config
+    result = inspect_rom(Config(ledblinky_dir=str(tmp_path)), "metroid")
+    # No log present → guessed path uses the current filename + a clear warning.
+    assert result["log_path"] == tmp_path / "LEDBlinky.log"
+    assert any("log not found" in w.lower() for w in result["warnings"])
