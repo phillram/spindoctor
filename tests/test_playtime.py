@@ -335,6 +335,62 @@ def test_build_most_played_wheel_respects_limit(isolated_config, tmp_path):
     assert " name=\"A\"" not in db_text
 
 
+def _game_order(db_path):
+    """Return the ``<game name=...>`` values in the order they appear."""
+    import re
+    return re.findall(
+        r'<game name="([^"]+)"',
+        db_path.read_text(encoding="utf-8"),
+    )
+
+
+def test_build_most_played_wheel_orders_by_playtime_not_alphabetical(
+    isolated_config, tmp_path,
+):
+    """Wheel XML lists games most-played first, even when that differs from
+    alphabetical order — covering both the fresh write and a rebuild over an
+    existing (alphabetically-ordered) database file."""
+    hs = tmp_path / "hs"
+    roms = tmp_path / "roms"
+    rl = tmp_path / "rl"
+
+    (roms / "Super Nintendo").mkdir(parents=True)
+    (hs / "Databases" / "Super Nintendo").mkdir(parents=True)
+    (hs / "Databases" / "Super Nintendo" / "Super Nintendo.xml").write_text(
+        "<menu>"
+        "<game name=\"Apple\"><description>Apple</description></game>"
+        "<game name=\"Banana\"><description>Banana</description></game>"
+        "<game name=\"Cherry\"><description>Cherry</description></game>"
+        "</menu>",
+        encoding="utf-8",
+    )
+    # Ranked by total playtime: Cherry (900) > Apple (500) > Banana (100).
+    # Alphabetical order would be Apple, Banana, Cherry — deliberately different.
+    _write_stats_ini(
+        rl / "Settings" / "Global Statistics" / "Super Nintendo.ini",
+        [
+            {"name": "Apple", "count": 1, "total": 500,
+             "last": "2026-04-27 18:00:00"},
+            {"name": "Banana", "count": 1, "total": 100,
+             "last": "2026-04-27 18:00:00"},
+            {"name": "Cherry", "count": 1, "total": 900,
+             "last": "2026-04-27 18:00:00"},
+        ],
+    )
+    cfg = Config(roms_dir=str(roms), hyperspin_dir=str(hs),
+                 rocketlauncher_dir=str(rl))
+    save_config(cfg)
+
+    # First build — fresh Most Played.xml (no prior file → _write_fresh path).
+    summary = build_most_played_wheel(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert _game_order(summary.db_path) == ["Cherry", "Apple", "Banana"]
+
+    # Second build — merges over the existing file (in-place _merge_into_tree
+    # path). Must re-derive ranked order rather than keeping prior positions.
+    summary = build_most_played_wheel(cfg, limit=20, media_mode=LinkMode.COPY)
+    assert _game_order(summary.db_path) == ["Cherry", "Apple", "Banana"]
+
+
 # ─── Data/Statistics/ path + Global Statistics.ini fallback ──────────────────
 
 def _write_global_statistics_ini(path, top_time=None, top_count=None):

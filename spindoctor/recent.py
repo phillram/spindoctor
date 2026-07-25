@@ -564,13 +564,14 @@ def _build_synthetic_wheel(
     # ── Phase 1: write / prune the HyperSpin database XML ────────────────────
     print(f"[{target_system}] writing database…", flush=True)
     db_path = config.databases_dir / target_system / f"{target_system}.xml"
-    db = HyperspinDatabase(target_system, db_path)
+    db = HyperspinDatabase(target_system, db_path, preserve_order=True)
     db.load()
     keep = set(target_names.values())
-    for name in list(db.games().keys()):
-        if name not in keep:
-            db.remove_game(name)
-            summary.pruned += 1
+    # Drop every existing entry so the ranked upserts below dictate XML order —
+    # otherwise `_merge_into_tree` would keep surviving games at their prior
+    # (alphabetical) positions, defeating the recency / most-played ranking.
+    summary.pruned = sum(1 for name in db.games() if name not in keep)
+    db.reset_games()
 
     # src_cache is pre-populated above; continue reusing it so each source
     # system DB is parsed only once across the full build.
