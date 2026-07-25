@@ -8,6 +8,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **`ledblinky inspect-rom` now finds the real LEDBlinky log.** It only looked for `LEDBlinkyLog.txt` / `LedBlinkyLog.txt` / `log.txt`, but current LEDBlinky installs name it **`LEDBlinky.log`** — so the diagnostic falsely reported "Log not found" and pointed at a nonexistent path, exactly when you need the log to see what system+rom RocketLauncher sends at launch (and any "Event Dropped" lines). Added `LEDBlinky.log` (and `LedBlinky.log`) to the lookup and to the guessed fallback.
+
 - **`ledblinky admin-leds set --exit/--pause/--select off` now actually turns the button off in-game.** It previously only set `alwaysActive="0"`, which — confirmed on a real cabinet — does *not* darken the LED: LedBlinky keeps showing the control's colour while the button's key is still mapped. "Off" now also removes the control's own keycode (e.g. `KEYCODE_ENTER` for Select) from `inputCodes`, which is what makes the button fall to `defaultInactive` (off). Re-lighting a button (`--select Red`) restores its keycode, so it's reversible; unrelated tokens sharing the control (like Search's `/` on Pause) are preserved. Verified to reproduce a hand-edited XML the cabinet owner confirmed works.
 
 ### Added
