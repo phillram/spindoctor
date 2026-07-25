@@ -54,12 +54,25 @@ def test_sample_has_three_admin_controls_lit(config):
 
 def test_turn_select_off_sweeps_every_group(config, led_dir):
     result = lb.set_admin_led_controls(config, {"select": "off"}, dry_run=False, backup=False)
-    assert result.active_changes == 3      # one per control group
+    # Each group: alwaysActive 1->0 *and* KEYCODE_ENTER stripped = 2 edits/group.
+    assert result.active_changes == 6
     assert result.color_changes == 0
     st = _state(config)
     assert st["select"].always_active_count == 0   # dark in-game now
     assert st["exit"].always_active_count == 3      # Exit/Pause untouched
     assert st["pause"].always_active_count == 3
+    # The reliable off also removes the control's own keycode (what actually
+    # darkens it on real hardware — alwaysActive="0" alone doesn't).
+    text = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    assert not re.search(r'name="UI_SELECT"[^>]*alwaysActive="[01]"[^>]*KEYCODE_ENTER', text)
+
+
+def test_select_off_then_on_restores_keycode(config, led_dir):
+    lb.set_admin_led_controls(config, {"select": "off"}, dry_run=False, backup=False)
+    lb.set_admin_led_controls(config, {"select": "Blue"}, dry_run=False, backup=False)
+    text = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
+    # Lighting it again restores alwaysActive="1", the colour, and its keycode.
+    assert re.search(r'name="UI_SELECT"[^>]*alwaysActive="1"[^>]*color="Blue"[^>]*KEYCODE_ENTER', text)
 
 
 def test_recolor_admin_button(config):
@@ -88,7 +101,7 @@ def test_output_stays_valid_xml(config, led_dir):
 def test_dry_run_writes_nothing(config, led_dir):
     before = (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8")
     result = lb.set_admin_led_controls(config, {"select": "off"}, dry_run=True)
-    assert result.active_changes == 3          # reports what it *would* do
+    assert result.active_changes == 6          # reports what it *would* do (flip + key strip)
     assert (led_dir / "LEDBlinkyControls.xml").read_text(encoding="utf-8") == before
 
 
