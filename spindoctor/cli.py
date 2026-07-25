@@ -9422,12 +9422,15 @@ def _print_admin_led_result(result, scope_label):
     for friendly, summary in result.requested.items():
         console.print(f"  [cyan]{friendly}[/cyan] → {summary}")
     verb = "would change" if result.dry_run else "changed"
+    kc = getattr(result, "keycode_changes", 0)
     console.print(
         f"  {verb}: [green]{result.groups_changed}[/green] control group(s) "
         f"([green]{result.active_changes}[/green] alwaysActive + "
-        f"[green]{result.color_changes}[/green] color)"
+        f"[green]{result.color_changes}[/green] color + "
+        f"[green]{kc}[/green] key removed)"
     )
-    if result.groups_changed == 0 and result.active_changes == 0 and result.color_changes == 0:
+    if (result.groups_changed == 0 and result.active_changes == 0
+            and result.color_changes == 0 and kc == 0):
         console.print("\n[dim]Nothing to change — already in the requested state.[/dim]")
     elif result.dry_run:
         console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]")
@@ -9501,20 +9504,30 @@ def ledblinky_admin_leds_show(emulator, by_console):
               help="Pause button (UI_PAUSE): a color name to light it, or 'off'.")
 @click.option("--select", "select_", default=None, metavar="COLOR|off",
               help="Select button (UI_SELECT): a color name to light it, or 'off'.")
+@click.option("--search-off", "search_off", is_flag=True,
+              help="Blank the Search button in-game (it shares Pause's control — "
+                   "removes only Search's key, so Pause stays lit).")
+@click.option("--lmouse-off", "lmouse_off", is_flag=True,
+              help="Blank the Left Mouse button in-game.")
+@click.option("--rmouse-off", "rmouse_off", is_flag=True,
+              help="Blank the Right Mouse button in-game.")
 @click.option("--emulator", default=None,
               help="Limit to one emulator's games (default: every game).")
 @click.option("--apply", "apply_changes", is_flag=True, help="Commit writes (default: dry-run).")
 @click.option("--no-backup", is_flag=True, help="Skip the automatic .bak backup.")
-def ledblinky_admin_leds_set(exit_, pause_, select_, emulator, apply_changes, no_backup):
-    """Set uniform in-game admin colors across all games (the default mode).
+def ledblinky_admin_leds_set(exit_, pause_, select_, search_off, lmouse_off,
+                             rmouse_off, emulator, apply_changes, no_backup):
+    """Set uniform in-game admin colors/state across all games (default mode).
 
-    Every game shows the same admin colors. Only recolors admin controls that
-    already exist — use ``admin-leds add`` first for games/consoles that lack
-    them.
+    Exit / Pause / Select take a color (light) or 'off' (dark). Search and the
+    two mouse buttons aren't their own LED control — they only light because
+    their key rides on another always-active control (Search's "/" rides on
+    Pause) — so they're off-only: --search-off / --lmouse-off / --rmouse-off
+    remove just that button's key, leaving the others (like Pause) lit.
 
     \b
-    "Clean arcade" default — Exit + Pause lit, Select dark:
-      spindoctor ledblinky admin-leds set --select off --apply
+    "Clean arcade" default — Exit + Pause lit, Select + Search dark:
+      spindoctor ledblinky admin-leds set --select off --search-off --apply
 
     \b
     Recolor: Exit red, Pause purple, everywhere:
@@ -9525,19 +9538,27 @@ def ledblinky_admin_leds_set(exit_, pause_, select_, emulator, apply_changes, no
     for friendly, val in (("exit", exit_), ("pause", pause_), ("select", select_)):
         if val is not None:
             updates[friendly] = val
-    if not updates:
-        console.print("[red]Error:[/red] Set at least one of --exit / --pause / --select.")
+    off_buttons = [b for b, on in
+                   (("search", search_off), ("lmouse", lmouse_off), ("rmouse", rmouse_off)) if on]
+    if not updates and not off_buttons:
+        console.print("[red]Error:[/red] Set at least one of --exit / --pause / --select / "
+                      "--search-off / --lmouse-off / --rmouse-off.")
         raise SystemExit(1)
     if not apply_changes:
         console.print("[yellow bold][DRY RUN][/yellow bold] No files will be written.")
     try:
         result = lb.set_admin_led_controls(
-            _cfg(), updates, emulator=emulator,
+            _cfg(), updates, off_buttons=off_buttons, emulator=emulator,
             dry_run=not apply_changes, backup=not no_backup,
         )
     except ValueError as exc:
         console.print(f"[red]Error:[/red] {exc}")
         raise SystemExit(1)
+    if result.already_dark:
+        console.print(
+            f"[dim]Already dark in-game (no lit control found): "
+            f"{', '.join(result.already_dark)}[/dim]"
+        )
     _print_admin_led_result(result, emulator or "all emulators")
 
 
