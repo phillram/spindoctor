@@ -1256,17 +1256,12 @@ class _SpinDoctorGUI:
         self._run_history: Deque[_RunRecord] = deque(maxlen=200)
         self._current_run: Optional[_RunRecord] = None
 
-        # Tab-badge state — tracks which notebook tab launched the
-        # currently running command so we can stamp ✓/✗ on finish.
-        self._tab_base_names: list[str] = []  # base label per tab index
-        self._running_tab_idx: Optional[int] = None
-        # Per-tab status overlays. Run badges (⟳/✓/✗) are stamped by
-        # _run_cli / _on_proc_done; health badges (✓/⚠/✗/·) are stamped
-        # by the startup doctor pass and reflect the overall health of
-        # the area each tab covers. Both render through _render_tab_label
-        # so neither one overwrites the other.
-        self._tab_run_badges: dict[int, str] = {}
-        self._tab_health_badges: dict[int, str] = {}
+        # Base label per tab index. Used for index lookups (auto-select
+        # the Setup tab on a fresh install, restore-selection). Tabs no
+        # longer carry status glyphs — the old run/health badges were a
+        # guided-setup aid that outlived its usefulness once cabinets are
+        # configured and owners return only to tweak things.
+        self._tab_base_names: list[str] = []
 
         # Setup-tab field vars; populated in _build_setup_tab().
         self._setup_vars: dict[str, "tk_mod.StringVar"] = {}
@@ -1872,15 +1867,6 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 — best-effort focus only
             pass
 
-        # Kick off the deeper doctor pass on a worker thread so per-tab
-        # health badges can populate without delaying first paint.
-        # `_startup_health_checks` (this method) is cheap and runs
-        # synchronously; `_compute_tab_health_badges` calls `doctor`
-        # which touches disk and may take 100+ ms on a slow drive.
-        threading.Thread(
-            target=self._compute_tab_health_badges, daemon=True,
-        ).start()
-
     # ── First-run wizard ──────────────────────────────────────────────────────
 
     def _show_first_run_wizard(self) -> None:
@@ -2114,83 +2100,6 @@ class _SpinDoctorGUI:
 
         show_step(0)
         win.bind("<Escape>", lambda _e: _save_and_close(skip=True))
-
-    # ── tab health badges ─────────────────────────────────────────────────────
-    #
-    # Maps each doctor check name to one or more tabs that surface that
-    # area. Maintained alongside `health.run_health_checks` — when a new
-    # check ships there, add an entry here (or accept the default
-    # "unmapped checks don't badge any tab" behaviour).
-    _HEALTH_TO_TABS: dict[str, tuple[str, ...]] = {
-        "Paths":                  ("Setup",),
-        "External binaries":      ("Custom Wheels", "Setup"),
-        "HyperSpin databases":    ("Diagnostics",),
-        "Match cache":            ("Maintenance",),
-        "Global Emulators.ini":   ("Metadata & Media",),
-        "LEDBlinky":              ("LEDBlinky",),
-        "Metadata APIs":          ("Setup",),
-        "Media folders":          ("Metadata & Media",),
-        # "lxml", "Archive support", "Preview support" are install-level
-        # — no single tab owns them, so they don't badge anything. They
-        # still surface via the Diagnostics tab's "Run doctor" output.
-    }
-
-    _HEALTH_BADGE = {
-        # "ok" → no badge; user shouldn't need to see anything for
-        # working areas (the absence of a warning IS the signal).
-        "warn": "⚠",
-        "fail": "✗",
-        # "info" → no badge; not actionable enough to draw attention.
-    }
-
-    def _compute_tab_health_badges(self) -> None:
-        """Run `doctor` in the background and stamp tabs with the
-        worst status of every check that maps to them.
-
-        Runs on a worker thread. Widget mutations marshal back to the
-        main thread via `root.after(0, …)`.
-        """
-        try:
-            from . import health
-            cfg = load_config()
-            report = health.run_health_checks(cfg, fix=False)
-        except Exception:  # noqa: BLE001 - badges are best-effort
-            return
-
-        order = {"ok": 0, "info": 0, "warn": 1, "fail": 2}
-        # tab label → worst seen status string
-        worst_per_tab: dict[str, str] = {}
-        for check in report.checks:
-            tabs = self._HEALTH_TO_TABS.get(check.name)
-            if not tabs:
-                continue
-            for tab_label in tabs:
-                current = worst_per_tab.get(tab_label, "ok")
-                if order[check.status.value] > order[current]:
-                    worst_per_tab[tab_label] = check.status.value
-
-        # Resolve tab labels → indices and schedule the badge update.
-        updates: list[tuple[int, str]] = []
-        for tab_label, status_str in worst_per_tab.items():
-            try:
-                idx = self._tab_base_names.index(tab_label)
-            except ValueError:
-                continue
-            badge = self._HEALTH_BADGE.get(status_str, "")
-            updates.append((idx, badge))
-
-        if updates:
-            try:
-                self.root.after(0, self._apply_tab_health_badges, updates)
-            except Exception:  # noqa: BLE001 - root may be destroyed in tests
-                pass
-
-    def _apply_tab_health_badges(self, updates: list) -> None:
-        try:
-            for idx, badge in updates:
-                self._set_tab_health_badge(idx, badge)
-        except Exception:  # noqa: BLE001 - widget race during teardown
-            pass
 
     # ── themed scrolled text ──────────────────────────────────────────────────
 
@@ -2862,10 +2771,7 @@ class _SpinDoctorGUI:
             return
         sel = tree.selection()
         if not sel:
-            self.messagebox.showinfo(
-                "Pick a row first",
-                "Select a row in the tree, then click Copy.",
-            )
+            self._flash_validation("Select a row in the tree, then click Copy.")
             return
         idx = self._logs_iid_to_idx.get(sel[0])
         if idx is None or idx >= len(self._run_history):
@@ -2888,10 +2794,7 @@ class _SpinDoctorGUI:
             return
         sel = tree.selection()
         if not sel:
-            self.messagebox.showinfo(
-                "Pick a row first",
-                "Select a row in the tree, then click Save.",
-            )
+            self._flash_validation("Select a row in the tree, then click Save.")
             return
         idx = self._logs_iid_to_idx.get(sel[0])
         if idx is None or idx >= len(self._run_history):
@@ -2922,14 +2825,13 @@ class _SpinDoctorGUI:
             self._run_history.append(export_record)
             self._refresh_logs_tab()
         except OSError as exc:
-            self.messagebox.showerror("Save failed", str(exc))
+            self._report_action_error("logs export", "Save failed", str(exc))
 
     def _clear_logs(self) -> None:
         if self._proc is not None:
-            self.messagebox.showinfo(
-                "Wait for the current run to finish",
+            self._flash_validation(
                 "A command is still running — wait for it (or Stop) "
-                "before clearing the log.",
+                "before clearing the log."
             )
             return
         self._run_history.clear()
@@ -3250,27 +3152,23 @@ class _SpinDoctorGUI:
 
     def _on_manual_update_disabled(self, message: str) -> None:
         self._set_status("Ready.")
-        self.messagebox.showinfo("Update check disabled", message)
+        self._flash_status(message)
 
     def _on_manual_update_failed(self, _message: str) -> None:
         self._set_status("Ready.")
-        self.messagebox.showinfo(
-            "Update check failed",
-            "Could not reach GitHub. Check your connection and try "
-            "again, or visit "
-            "https://github.com/phillram/spindoctor/releases/latest "
-            "manually.",
+        self._flash_status(
+            "Update check failed: could not reach GitHub. Check your "
+            "connection and try again, or visit "
+            "https://github.com/phillram/spindoctor/releases/latest manually."
         )
 
     def _on_manual_update_result(self, result) -> None:
         self._set_status("Ready.")
         if result is None:
-            self.messagebox.showinfo(
-                "Update check failed",
-                "Could not reach GitHub. Check your connection and try "
-                "again, or visit "
-                "https://github.com/phillram/spindoctor/releases/latest "
-                "manually.",
+            self._flash_status(
+                "Update check failed: could not reach GitHub. Check your "
+                "connection and try again, or visit "
+                "https://github.com/phillram/spindoctor/releases/latest manually."
             )
             return
         if result.newer_available:
@@ -3307,10 +3205,9 @@ class _SpinDoctorGUI:
         Windows and pops a Finder error on macOS.
         """
         if not path.exists():
-            self.messagebox.showwarning(
-                "Path not found",
-                f"{missing_label} doesn't exist on disk:\n  {path}\n\n"
-                "Set the corresponding path in the Setup tab first.",
+            self._flash_validation(
+                f"{missing_label} doesn't exist on disk: {path} — "
+                "set the corresponding path in the Setup tab first."
             )
             return
         try:
@@ -3321,7 +3218,8 @@ class _SpinDoctorGUI:
             else:
                 subprocess.Popen(["xdg-open", str(path)])  # noqa: S603,S607
         except OSError as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "open folder",
                 "Could not open folder",
                 f"OS refused to open {path}:\n{exc}",
             )
@@ -3335,9 +3233,8 @@ class _SpinDoctorGUI:
     def _open_hyperspin_folder(self) -> None:
         cfg = load_config()
         if not cfg.hyperspin_dir:
-            self.messagebox.showwarning(
-                "Not configured",
-                "hyperspin_dir is unset. Fill it in on the Setup tab.",
+            self._flash_validation(
+                "hyperspin_dir is unset. Fill it in on the Setup tab."
             )
             return
         self._open_path(Path(cfg.hyperspin_dir), missing_label="hyperspin_dir")
@@ -3345,9 +3242,8 @@ class _SpinDoctorGUI:
     def _open_roms_folder(self) -> None:
         cfg = load_config()
         if not cfg.roms_dir:
-            self.messagebox.showwarning(
-                "Not configured",
-                "roms_dir is unset. Fill it in on the Setup tab.",
+            self._flash_validation(
+                "roms_dir is unset. Fill it in on the Setup tab."
             )
             return
         self._open_path(Path(cfg.roms_dir), missing_label="roms_dir")
@@ -3361,10 +3257,9 @@ class _SpinDoctorGUI:
         """
         cfg = load_config()
         if not cfg.hyperspin_dir:
-            self.messagebox.showwarning(
-                "hyperspin_dir not set",
-                "Fill in the HyperSpin directory on the Setup tab "
-                "before browsing media.",
+            self._flash_validation(
+                "hyperspin_dir not set. Fill in the HyperSpin directory "
+                "on the Setup tab before browsing media."
             )
             return
         media_dir = Path(cfg.hyperspin_dir) / "Media" / system
@@ -5061,22 +4956,15 @@ class _SpinDoctorGUI:
             for err in errors:
                 record.append(f"  ! {err}\n")
                 self._append_output(f"  ! {err}\n")
-            self.messagebox.showwarning(
-                "Saved with warnings",
-                "Configuration saved, but some required paths still need attention:\n\n"
-                + "\n".join(errors),
+            self._flash_status(
+                "Configuration saved, but some required paths still need "
+                "attention: " + "; ".join(errors)
             )
         record.exit_code = 0 if ok else 1
         self._run_history.append(record)
         self._refresh_logs_tab()
         # System dropdown depends on roms_dir/hyperspin_dir; refresh it.
         self._refresh_systems()
-        # Health badges may have just changed (e.g. user set the
-        # previously-missing ledblinky_dir). Re-compute in the
-        # background so the tab strip stays accurate.
-        threading.Thread(
-            target=self._compute_tab_health_badges, daemon=True,
-        ).start()
 
     # ── Wheels tab (LEGACY — content merged into _build_tools_tab) ──────────────
 
@@ -5084,10 +4972,7 @@ class _SpinDoctorGUI:
         sys_ = self._fav_system_var.get().strip()
         rom = self._fav_rom_var.get().strip()
         if not sys_ or not rom:
-            self.messagebox.showwarning(
-                "Missing arguments",
-                "Pick a system and select a game.",
-            )
+            self._flash_validation("Pick a system and select a game.")
             return
         self._run_cli("spindoctor", ["fav", "add", sys_, rom])
 
@@ -5095,10 +4980,7 @@ class _SpinDoctorGUI:
         sys_ = self._fav_system_var.get().strip()
         rom = self._fav_rom_var.get().strip()
         if not sys_ or not rom:
-            self.messagebox.showwarning(
-                "Missing arguments",
-                "Pick a system and select a game.",
-            )
+            self._flash_validation("Pick a system and select a game.")
             return
         # Confirm before removing — matches the pattern used by the
         # other destructive controls (ignore remove, mainmenu remove,
@@ -5166,10 +5048,7 @@ class _SpinDoctorGUI:
             if var.get()
         ]
         if not steps:
-            self.messagebox.showwarning(
-                "Nothing selected",
-                "Tick at least one wheel to refresh.",
-            )
+            self._flash_validation("Tick at least one wheel to refresh.")
             return
         total = len(steps)
 
@@ -5268,12 +5147,9 @@ class _SpinDoctorGUI:
         self._set_status(
             f"Preflight: {len(failed)} of {len(results)} check(s) failed."
         )
-        self.messagebox.showwarning(
-            "Preflight: issues found",
-            f"{len(failed)} of {len(results)} preflight check(s) failed:\n\n"
-            f"{body}\n\n"
-            "Read the Output panel for per-check details, then drill into "
-            "the relevant tab (Audit & Doctor, Tools) to fix.",
+        self._flash_status(
+            f"Preflight: {len(failed)} of {len(results)} check(s) failed — "
+            "read the Output panel for per-check details."
         )
 
     # ── Diagnostics tab (combines Audit & Doctor + Diagnose) ─────────────────
@@ -5538,26 +5414,19 @@ class _SpinDoctorGUI:
     def _open_audit_media_folder(self) -> None:
         system = self._system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Pick a system from the dropdown above first.",
-            )
+            self._flash_validation("Pick a system from the dropdown above first.")
             return
         self._open_system_media_folder(system)
 
     def _open_audit_roms_folder(self) -> None:
         system = self._system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Pick a system from the dropdown above first.",
-            )
+            self._flash_validation("Pick a system from the dropdown above first.")
             return
         cfg = load_config()
         if not cfg.roms_dir:
-            self.messagebox.showwarning(
-                "roms_dir not set",
-                "Fill in the ROMs directory on the Setup tab first.",
+            self._flash_validation(
+                "roms_dir not set. Fill in the ROMs directory on the Setup tab first."
             )
             return
         self._open_path(
@@ -5711,10 +5580,9 @@ class _SpinDoctorGUI:
     def _run_audit(self) -> None:
         system = self._system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "No system selected",
+            self._flash_validation(
                 "Pick a system from the dropdown (or click Reload list "
-                "after configuring paths in the Setup tab).",
+                "after configuring paths in the Setup tab)."
             )
             return
         args = ["audit", "--system", system]
@@ -5921,10 +5789,7 @@ class _SpinDoctorGUI:
         do_stats = self._scrub_stats_var.get()
         do_hs_fav = self._scrub_hs_favorites_var.get()
         if not do_fav and not do_stats and not do_hs_fav:
-            self.messagebox.showwarning(
-                "Nothing selected",
-                "Tick at least one option to scrub.",
-            )
+            self._flash_validation("Tick at least one option to scrub.")
             return
         backup_dir = self._scrub_backup_var.get().strip()
         apply_ = self._global_apply_var.get()
@@ -5973,10 +5838,9 @@ class _SpinDoctorGUI:
     def _run_scrub_restore(self) -> None:
         path = self._scrub_restore_path_var.get().strip()
         if not path:
-            self.messagebox.showwarning(
-                "Backup folder required",
+            self._flash_validation(
                 "Pick the scrub backup folder to restore from "
-                "(the scrub-<timestamp> folder created by scrub --backup-dir).",
+                "(the scrub-<timestamp> folder created by scrub --backup-dir)."
             )
             return
         args = ["scrub-restore", path]
@@ -6012,16 +5876,14 @@ class _SpinDoctorGUI:
         """
         target = self._backup_target_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "No target folder",
-                "Set the backup target folder at the top of this tab first.",
+            self._flash_validation(
+                "Set the backup target folder at the top of this tab first."
             )
             return
         target_path = Path(target)
         if not target_path.exists():
-            self.messagebox.showwarning(
-                "Folder not found",
-                f"Backup target folder does not exist:\n{target_path}",
+            self._flash_validation(
+                f"Backup target folder does not exist: {target_path}"
             )
             return
         try:
@@ -6035,7 +5897,8 @@ class _SpinDoctorGUI:
                 creationflags=_CREATE_NO_WINDOW,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "backup scan",
                 "Could not list backups",
                 f"Failed to enumerate backups via "
                 f"`spindoctor backup list`:\n\n{exc}",
@@ -6044,7 +5907,8 @@ class _SpinDoctorGUI:
         try:
             entries = json.loads(proc.stdout or "[]")
         except json.JSONDecodeError as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "backup scan",
                 "Could not list backups",
                 f"`spindoctor backup list --json` produced unparseable "
                 f"output:\n\n{exc}\n\n{proc.stdout!r}",
@@ -6108,18 +5972,14 @@ class _SpinDoctorGUI:
     def _run_backup_create(self) -> None:
         target = self._backup_target_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "Target folder required",
+            self._flash_validation(
                 "Pick the folder where backups should be written before "
-                "running Create.",
+                "running Create."
             )
             return
         include = self._selected_backup_components()
         if include == "":
-            self.messagebox.showwarning(
-                "No components selected",
-                "Tick at least one component to back up.",
-            )
+            self._flash_validation("Tick at least one component to back up.")
             return
         args = ["backup", "create", "--target", target]
         if include is not None:
@@ -6136,9 +5996,8 @@ class _SpinDoctorGUI:
     def _run_backup_list(self) -> None:
         target = self._backup_target_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "Target folder required",
-                "Pick the folder where backups live before listing.",
+            self._flash_validation(
+                "Pick the folder where backups live before listing."
             )
             return
         self._run_cli("spindoctor", ["backup", "list", "--target", target])
@@ -6146,10 +6005,9 @@ class _SpinDoctorGUI:
     def _run_backup_info(self) -> None:
         backup_path = self._backup_restore_path_var.get().strip()
         if not backup_path:
-            self.messagebox.showwarning(
-                "Backup folder required",
+            self._flash_validation(
                 "Pick a backup folder first (one that was produced by "
-                "`backup create`).",
+                "`backup create`)."
             )
             return
         self._run_cli("spindoctor", ["backup", "info", "--backup", backup_path])
@@ -6164,10 +6022,9 @@ class _SpinDoctorGUI:
         """
         backup_path = self._backup_restore_path_var.get().strip()
         if not backup_path:
-            self.messagebox.showwarning(
-                "Backup folder required",
+            self._flash_validation(
                 "Pick a backup folder first — diff compares its "
-                "contents against the live cabinet tree.",
+                "contents against the live cabinet tree."
             )
             return
         self._run_cli("spindoctor", ["diff", backup_path])
@@ -6175,17 +6032,13 @@ class _SpinDoctorGUI:
     def _run_backup_restore(self) -> None:
         backup_path = self._backup_restore_path_var.get().strip()
         if not backup_path:
-            self.messagebox.showwarning(
-                "Backup folder required",
-                "Pick the backup folder you want to restore from.",
+            self._flash_validation(
+                "Pick the backup folder you want to restore from."
             )
             return
         include = self._selected_backup_components()
         if include == "":
-            self.messagebox.showwarning(
-                "No components selected",
-                "Tick at least one component to restore.",
-            )
+            self._flash_validation("Tick at least one component to restore.")
             return
         if self._global_apply_var.get():
             if not self.messagebox.askyesno(
@@ -6529,17 +6382,13 @@ class _SpinDoctorGUI:
     def _run_migrate(self) -> None:
         target = self._migrate_target_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "Target root required",
-                "Pick the destination root folder before running migrate.",
+            self._flash_validation(
+                "Pick the destination root folder before running migrate."
             )
             return
         include = self._selected_migrate_components()
         if include == "":
-            self.messagebox.showwarning(
-                "No components selected",
-                "Tick at least one component to migrate.",
-            )
+            self._flash_validation("Tick at least one component to migrate.")
             return
         args = ["migrate", "--target", target]
         if include is not None:
@@ -6591,9 +6440,8 @@ class _SpinDoctorGUI:
     def _run_migrate_undo(self) -> None:
         manifest = self._migrate_undo_var.get().strip()
         if not manifest:
-            self.messagebox.showwarning(
-                "Manifest required",
-                "Select a manifest or type 'latest' before running Undo.",
+            self._flash_validation(
+                "Select a manifest or type 'latest' before running Undo."
             )
             return
         args = ["migrate", "--undo", manifest]
@@ -6606,9 +6454,8 @@ class _SpinDoctorGUI:
     def _run_pre_migrate_backup(self) -> None:
         target = self._pre_migrate_backup_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "Backup folder required",
-                "Enter or browse to a backup target folder before creating a backup.",
+            self._flash_validation(
+                "Enter or browse to a backup target folder before creating a backup."
             )
             return
         args = ["backup", "create", "--target", target]
@@ -6620,14 +6467,11 @@ class _SpinDoctorGUI:
         system = self._repath_system_var.get().strip()
         new_path = self._repath_path_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required", "Select a system before re-pathing.",
-            )
+            self._flash_validation("Select a system before re-pathing.")
             return
         if not new_path:
-            self.messagebox.showwarning(
-                "New game folder required",
-                "Enter the new absolute path to the system's game folder.",
+            self._flash_validation(
+                "Enter the new absolute path to the system's game folder."
             )
             return
         args = ["repath-system", system, "--rom-path", new_path]
@@ -7051,15 +6895,16 @@ class _SpinDoctorGUI:
         except Exception as exc:  # noqa: BLE001 — surface every parse error
             # Reset to an empty Treeview so the user doesn't see stale
             # rows from the last successful load, then surface the error
-            # in BOTH a modal dialog (so they actually notice) and the
-            # Output pane (so the message is grep-able from the log).
+            # via the Output pane + Logs tab + a status-bar flash (with a
+            # bell so they actually notice) — no modal to click through.
             self._mm_data = []
             self._mm_repopulate_tree()
             self._append_output(
                 f"Error reading Main Menu.xml: {exc}\n"
                 f"  Path: {xml_path}\n"
             )
-            self.messagebox.showerror(
+            self._report_action_error(
+                "mainmenu refresh",
                 "Main Menu.xml could not be parsed",
                 f"Could not read Main Menu.xml:\n  {xml_path}\n\n"
                 f"{exc}\n\n"
@@ -7179,14 +7024,13 @@ class _SpinDoctorGUI:
         """
         xml_path = self._mm_xml_path()
         if xml_path is None or not xml_path.exists():
-            self.messagebox.showerror(
-                "Cannot save",
+            self._flash_validation(
                 "Main Menu.xml not found. Refresh the tab after configuring "
-                "HyperSpin directory in Setup.",
+                "HyperSpin directory in Setup."
             )
             return
         if not self._mm_data:
-            self.messagebox.showwarning("Nothing to save", "No systems loaded.")
+            self._flash_validation("No systems loaded.")
             return
         if not self.messagebox.askyesno(
             "Save Main Menu order",
@@ -7259,7 +7103,7 @@ class _SpinDoctorGUI:
         record.exit_code = 1
         self._set_status("Save failed.")
         self._refresh_logs_tab()
-        self.messagebox.showerror("Save failed", msg)
+        self._report_action_error("mainmenu save", "Save failed", msg)
 
     def _restore_sidecar(
         self,
@@ -7285,7 +7129,8 @@ class _SpinDoctorGUI:
                 creationflags=_CREATE_NO_WINDOW,
             )
         except (OSError, subprocess.SubprocessError) as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "sidecar list",
                 "Could not list backups",
                 f"Failed to enumerate backups via "
                 f"`spindoctor backup sidecar list`:\n\n{exc}",
@@ -7294,7 +7139,8 @@ class _SpinDoctorGUI:
         try:
             backups = json.loads(proc.stdout or "[]")
         except json.JSONDecodeError as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "sidecar list",
                 "Could not list backups",
                 f"`spindoctor backup sidecar list --json` produced "
                 f"unparseable output:\n\n{exc}\n\n{proc.stdout!r}",
@@ -7303,11 +7149,11 @@ class _SpinDoctorGUI:
         if not backups:
             msg = no_backups_hint or (
                 f"No .YYYYMMDD_HHMMSS.bak sidecars exist next to "
-                f"{target.name}.\n\nSpinDoctor writes one before every "
+                f"{target.name}. SpinDoctor writes one before every "
                 f"in-place write when config.backup_before_modify is on "
                 f"(the default)."
             )
-            self.messagebox.showinfo("No backups found", msg)
+            self._flash_status(msg)
             return
         chosen = self._ask_pick_sidecar(target.name, backups)
         if chosen is None:
@@ -7329,10 +7175,9 @@ class _SpinDoctorGUI:
         """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it."""
         xml_path = self._mm_xml_path()
         if xml_path is None:
-            self.messagebox.showerror(
-                "Cannot restore",
+            self._flash_validation(
                 "HyperSpin directory is not configured — set it in the "
-                "Setup tab first.",
+                "Setup tab first."
             )
             return
         self._restore_sidecar(
@@ -7437,9 +7282,8 @@ class _SpinDoctorGUI:
     def _run_mainmenu_action(self, sub: str) -> None:
         system = self._mainmenu_system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required",
-                "Select a system from the dropdown before clicking Add or Remove.",
+            self._flash_validation(
+                "Select a system from the dropdown before clicking Add or Remove."
             )
             return
         verb = "add to" if sub == "add" else "remove from"
@@ -7460,9 +7304,7 @@ class _SpinDoctorGUI:
         system = self._inspect_system_var.get().strip()
         rom = self._inspect_rom_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "Pick a system", "Select a system from the dropdown first.",
-            )
+            self._flash_validation("Select a system from the dropdown first.")
             return
         args = ["inspect", "--system", system]
         if rom:
@@ -7483,9 +7325,7 @@ class _SpinDoctorGUI:
     def _run_find_global(self) -> None:
         query = self._diagnose_query_var.get().strip()
         if not query:
-            self.messagebox.showinfo(
-                "Query required", "Type something to search for first.",
-            )
+            self._flash_validation("Type something to search for first.")
             return
         self._run_cli("spindoctor", ["find-global", query])
 
@@ -7493,9 +7333,8 @@ class _SpinDoctorGUI:
         system = self._verify_system_var.get().strip()
         dat = self._verify_dat_var.get().strip()
         if not system or not dat:
-            self.messagebox.showwarning(
-                "System and DAT required",
-                "Verify needs both a system name and a DAT file path.",
+            self._flash_validation(
+                "Verify needs both a system name and a DAT file path."
             )
             return
         self._run_cli(
@@ -8192,15 +8031,10 @@ class _SpinDoctorGUI:
         game = self._madd_game_var.get().strip()
         path = self._madd_file_var.get().strip()
         if not (sys_ and game and path):
-            self.messagebox.showwarning(
-                "Missing arguments",
-                "Pick a system, select a game, and pick a file.",
-            )
+            self._flash_validation("Pick a system, select a game, and pick a file.")
             return
         if not Path(path).exists():
-            self.messagebox.showerror(
-                "File not found", f"No such file:\n{path}",
-            )
+            self._flash_validation(f"File not found: {path}")
             return
         args = [
             "media-add",
@@ -8247,10 +8081,9 @@ class _SpinDoctorGUI:
         set_clause = self._batch_edit_set_var.get().strip()
         report = self._batch_edit_report_var.get().strip()
         if not filter_clause and not set_clause and not report:
-            self.messagebox.showwarning(
-                "Nothing to do",
+            self._flash_validation(
                 "Provide at least one of: filter clause, set clause, "
-                "or report path.",
+                "or report path."
             )
             return
         args = ["batch-edit", *sys_args]
@@ -8291,9 +8124,8 @@ class _SpinDoctorGUI:
             return ["--all"]
         system = self._meta_system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required",
-                "Type a system name (e.g. 'MAME') or tick All systems.",
+            self._flash_validation(
+                "Type a system name (e.g. 'MAME') or tick All systems."
             )
             return None
         return ["--system", system]
@@ -8312,11 +8144,10 @@ class _SpinDoctorGUI:
         sys_ = self._meta_system_var.get().strip()
         game_ = self._meta_game_var.get().strip()
         if not sys_ or not game_:
-            self.messagebox.showwarning(
-                "System and Game required",
+            self._flash_validation(
                 "Pick a System above and select a Game in the optional "
                 "override box — a per-game override needs to know exactly "
-                "which game.",
+                "which game."
             )
             return None
         return sys_, game_
@@ -8333,7 +8164,7 @@ class _SpinDoctorGUI:
             reset_override_cache()  # force re-read from disk
             current = get_game_override(sys_, game_)
         except Exception as exc:  # noqa: BLE001
-            self.messagebox.showerror("Could not load override", str(exc))
+            self._report_action_error("override load", "Could not load override", str(exc))
             return
         ss = current.get("screenscraper_id")
         self._gameovr_ss_id_var.set("" if ss is None else str(ss))
@@ -8417,10 +8248,7 @@ class _SpinDoctorGUI:
             return
         _sys, game_name = selection
         if not game_name:
-            self.messagebox.showwarning(
-                "No game selected",
-                "Select a game from the Game dropdown first.",
-            )
+            self._flash_validation("Select a game from the Game dropdown first.")
             return
 
         self._set_status(f"Searching Steam for '{game_name}'")
@@ -8448,10 +8276,9 @@ class _SpinDoctorGUI:
                 if not games:
                     self.root.after(0, lambda: (
                         self._set_status(f"Steam: no results for '{game_name}'"),
-                        self.messagebox.showinfo(
-                            "Not found on Steam",
-                            f"Steam returned no results for '{game_name}'.\n"
-                            "Try a shorter or variant title.",
+                        self._flash_status(
+                            f"Steam returned no results for '{game_name}'. "
+                            "Try a shorter or variant title."
                         ),
                     ))
                     return
@@ -8469,7 +8296,7 @@ class _SpinDoctorGUI:
             except Exception as exc:  # noqa: BLE001
                 self.root.after(0, lambda e=exc: (
                     self._set_status(f"Steam search error: {e}"),
-                    self.messagebox.showerror("Steam search error", str(e)),
+                    self._report_action_error("steam search", "Steam search error", str(e)),
                 ))
 
         threading.Thread(target=_worker, daemon=True).start()
@@ -8488,9 +8315,8 @@ class _SpinDoctorGUI:
 
         raw = self._steam_url_var.get().strip()
         if not raw:
-            self.messagebox.showwarning(
-                "No Steam URL / App ID",
-                "Paste a Steam store URL or App ID into the Steam URL field first.",
+            self._flash_validation(
+                "Paste a Steam store URL or App ID into the Steam URL field first."
             )
             return
 
@@ -8498,7 +8324,8 @@ class _SpinDoctorGUI:
 
         app_id = _extract(raw)
         if app_id is None:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "steam scan",
                 "Cannot parse App ID",
                 f"Could not extract a Steam App ID from:\n{raw}\n\n"
                 "Paste the full store URL (e.g. store.steampowered.com/app/1145360/Hades/) "
@@ -8518,13 +8345,13 @@ class _SpinDoctorGUI:
             except MetadataError as exc:
                 self.root.after(0, lambda e=exc: (
                     self._set_status(f"Steam scan failed: {e}"),
-                    self.messagebox.showerror("Steam scan failed", str(e)),
+                    self._report_action_error("steam scan", "Steam scan failed", str(e)),
                 ))
                 return
             except Exception as exc:  # noqa: BLE001 — surface unexpected errors
                 self.root.after(0, lambda e=exc: (
                     self._set_status(f"Steam scan error: {e}"),
-                    self.messagebox.showerror("Steam scan error", str(e)),
+                    self._report_action_error("steam scan", "Steam scan error", str(e)),
                 ))
                 return
             self.root.after(0, lambda m=meta: self._on_steam_scan_done(app_id, m))
@@ -8598,7 +8425,8 @@ class _SpinDoctorGUI:
                 self._steam_pick_combos[mt].configure(state="disabled")
                 self._steam_preview_btns[mt].configure(state="disabled")
             self._set_status(f"Steam scan error (App {app_id}): {exc}")
-            self.messagebox.showerror(
+            self._report_action_error(
+                "steam scan",
                 "Steam scan error",
                 f"An unexpected error occurred while processing Steam results "
                 f"for App {app_id}:\n\n{exc}\n\nSee the Logs tab for the full "
@@ -8612,10 +8440,9 @@ class _SpinDoctorGUI:
     def _on_steam_scan_done_inner(self, app_id: str, meta) -> None:
         if meta is None:
             self._set_status(f"Steam App {app_id} not found.")
-            self.messagebox.showwarning(
-                "App not found",
+            self._flash_status(
                 f"Steam App ID {app_id} returned no data — verify the ID at "
-                f"store.steampowered.com/app/{app_id}/",
+                f"store.steampowered.com/app/{app_id}/"
             )
             for mt in ("video", "snap", "background", "artwork"):
                 self._steam_pick_vars[mt].set("— not found —")
@@ -8664,9 +8491,8 @@ class _SpinDoctorGUI:
             "Pick candidates then click 'Apply selected'."
         )
         if not any_found:
-            self.messagebox.showinfo(
-                "No media found",
-                f"Steam returned no video, screenshot, or artwork for App {app_id}.",
+            self._flash_status(
+                f"Steam returned no video, screenshot, or artwork for App {app_id}."
             )
 
     def _preview_steam_candidate(self, mt: str) -> None:
@@ -8694,16 +8520,16 @@ class _SpinDoctorGUI:
 
         raw = self._steam_url_var.get().strip()
         if not raw:
-            self.messagebox.showwarning(
-                "No Steam URL / App ID",
-                "Fill the Steam URL / App ID field and click Scan first.",
+            self._flash_validation(
+                "Fill the Steam URL / App ID field and click Scan first."
             )
             return
 
         from .scraper import extract_steam_app_id as _extract
         app_id = _extract(raw)
         if app_id is None:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "steam scan",
                 "Cannot parse App ID",
                 f"Could not extract a Steam App ID from:\n{raw}",
             )
@@ -8734,9 +8560,8 @@ class _SpinDoctorGUI:
                 args += [f"--{mt}-index", str(idx)]
 
         if not types_to_fetch:
-            self.messagebox.showwarning(
-                "Nothing selected",
-                "Scan first, then pick at least one video, screenshot, background, artwork, or wheel.",
+            self._flash_validation(
+                "Scan first, then pick at least one video, screenshot, background, artwork, or wheel."
             )
             return
 
@@ -8778,16 +8603,14 @@ class _SpinDoctorGUI:
             try:
                 t = float(thresh)
             except ValueError:
-                self.messagebox.showerror(
-                    "Invalid threshold",
+                self._flash_validation(
                     f"Threshold must be a number between 0.0 and 1.0; "
-                    f"got {thresh!r}.",
+                    f"got {thresh!r}."
                 )
                 return None
             if not (0.0 <= t <= 1.0):
-                self.messagebox.showerror(
-                    "Invalid threshold",
-                    f"Threshold must be between 0.0 and 1.0; got {t}.",
+                self._flash_validation(
+                    f"Threshold must be between 0.0 and 1.0; got {t}."
                 )
                 return None
             args += ["--threshold", str(t)]
@@ -8872,9 +8695,7 @@ class _SpinDoctorGUI:
         try:
             systems = get_systems(load_config())
         except Exception as exc:  # noqa: BLE001 - surface in dialog
-            self.messagebox.showerror(
-                "Could not list systems", str(exc),
-            )
+            self._report_action_error("systems list", "Could not list systems", str(exc))
             return
         if not systems:
             self._flash_validation(
@@ -8980,10 +8801,7 @@ class _SpinDoctorGUI:
     def _run_media_scan(self) -> None:
         source = self._meta_scan_dir_var.get().strip()
         if not source:
-            self.messagebox.showwarning(
-                "Source folder required",
-                "Pick the media folder to scan first.",
-            )
+            self._flash_validation("Pick the media folder to scan first.")
             return
         sys_args = self._meta_system_args()
         if sys_args is None:
@@ -9025,15 +8843,12 @@ class _SpinDoctorGUI:
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Pick a system in the selector above first.",
-            )
+            self._flash_validation("Pick a system in the selector above first.")
             return
         try:
             cfg = load_config()
         except Exception as exc:  # noqa: BLE001
-            self.messagebox.showerror("Config error", str(exc))
+            self._report_action_error("db restore", "Config error", str(exc))
             return
         xml_path = Path(cfg.databases_dir) / sys_name / f"{sys_name}.xml"
         self._restore_sidecar(xml_path)
@@ -9051,20 +8866,17 @@ class _SpinDoctorGUI:
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
-            self.messagebox.showwarning(
-                "No system selected",
-                "Pick a system in the selector above first.",
-            )
+            self._flash_validation("Pick a system in the selector above first.")
             return
         try:
             cfg = load_config()
         except Exception as exc:  # noqa: BLE001
-            self.messagebox.showerror("Config error", str(exc))
+            self._report_action_error("rl-ini restore", "Config error", str(exc))
             return
         if not cfg.rocketlauncher_dir:
-            self.messagebox.showwarning(
-                "RocketLauncher not configured",
-                "Set rocketlauncher_dir in the Setup tab first.",
+            self._flash_validation(
+                "RocketLauncher not configured — set rocketlauncher_dir in "
+                "the Setup tab first."
             )
             return
         settings_dir = Path(cfg.rocketlauncher_dir) / "Settings"
@@ -9524,9 +9336,7 @@ class _SpinDoctorGUI:
         game = self._fixexe_game_var.get().strip()
         exe = self._fixexe_path_var.get().strip()
         if not (system and game):
-            self.messagebox.showwarning(
-                "Input required", "Select a system and game first.",
-            )
+            self._flash_validation("Select a system and game first.")
             return
         args = ["pc-fix-exe", system, game]
         if self._global_apply_var.get():
@@ -9591,10 +9401,7 @@ class _SpinDoctorGUI:
             return ["--all"]
         system = self._curate_system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required",
-                "Type a system name or tick All systems first.",
-            )
+            self._flash_validation("Type a system name or tick All systems first.")
             return None
         return ["--system", system]
 
@@ -9675,10 +9482,7 @@ class _SpinDoctorGUI:
             return
         system = self._curate_system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required",
-                "Type a system name (e.g. 'NES') first.",
-            )
+            self._flash_validation("Type a system name (e.g. 'NES') first.")
             return
 
         regions = ",".join(
@@ -9928,8 +9732,8 @@ class _SpinDoctorGUI:
         def _on_done(payload, exc):
             if exc is not None:
                 self._set_status("Curate failed.")
-                self.messagebox.showerror(
-                    "Curate failed", f"{type(exc).__name__}: {exc}",
+                self._report_action_error(
+                    "curate apply", "Curate failed", f"{type(exc).__name__}: {exc}",
                 )
                 return
             result, manifest = payload
@@ -9957,13 +9761,12 @@ class _SpinDoctorGUI:
             self._run_history.append(record)
             self._refresh_logs_tab()
             self._set_status(f"Curate done: {msg}.")
-            self.messagebox.showinfo(
-                "Curate done",
-                f"{msg}.\n\n"
-                + (f"Manifest: {manifest}\n"
-                   "Reverse via Logs & Manifests viewer → Undo this run."
+            self._flash_status(
+                f"Curate done: {msg}. "
+                + (f"Manifest: {manifest} — reverse via Logs & Manifests "
+                   "viewer → Undo this run."
                    if manifest
-                   else "No manifest written (delete leaves no undo)."),
+                   else "No manifest written (delete leaves no undo).")
             )
             win.destroy()
 
@@ -9984,9 +9787,8 @@ class _SpinDoctorGUI:
         selected_unsafe = [k for k, _l, s in _CLEANUP_CATEGORIES if not s and self._cleanup_cat_vars.get(k, self.tk.BooleanVar()).get()]
         selected = selected_safe + selected_unsafe
         if not selected:
-            self.messagebox.showwarning(
-                "Nothing selected",
-                "Tick at least one category before running cleanup.",
+            self._flash_validation(
+                "Tick at least one category before running cleanup."
             )
             return
         args = ["cleanup", "run"]
@@ -9996,9 +9798,8 @@ class _SpinDoctorGUI:
         older = self._cleanup_older_var.get().strip()
         if older and older != "0":
             if not older.isdigit():
-                self.messagebox.showwarning(
-                    "Invalid value",
-                    "Older-than must be a non-negative integer (days).",
+                self._flash_validation(
+                    "Older-than must be a non-negative integer (days)."
                 )
                 return
             args += ["--older-than", older]
@@ -10009,9 +9810,8 @@ class _SpinDoctorGUI:
     def _run_ignore(self, sub: str) -> None:
         game = self._ignore_game_var.get().strip()
         if not game:
-            self.messagebox.showwarning(
-                "Game name required",
-                "Select a system first to load the game list, then pick a game.",
+            self._flash_validation(
+                "Select a system first to load the game list, then pick a game."
             )
             return
         args = ["ignore", sub, game]
@@ -10560,18 +10360,15 @@ class _SpinDoctorGUI:
         the currently-picked system."""
         sys_ = self._ovr_system_var.get().strip()
         if not sys_:
-            self.messagebox.showwarning(
-                "Pick a system",
-                "Choose a system from the dropdown first.",
-            )
+            self._flash_validation("Choose a system from the dropdown first.")
             return
         try:
             from .config import get_system_overrides, reset_override_cache
             reset_override_cache()  # force re-read from disk
             overrides = get_system_overrides()
         except Exception as exc:  # noqa: BLE001
-            self.messagebox.showerror(
-                "Could not load overrides", str(exc),
+            self._report_action_error(
+                "override load", "Could not load overrides", str(exc),
             )
             return
         current = overrides.get(sys_, {})
@@ -10612,10 +10409,7 @@ class _SpinDoctorGUI:
         """
         sys_ = self._ovr_system_var.get().strip()
         if not sys_:
-            self.messagebox.showwarning(
-                "Pick a system",
-                "Choose a system from the dropdown first.",
-            )
+            self._flash_validation("Choose a system from the dropdown first.")
             return
         args = ["config", "system", "set", sys_]
         ss = self._ovr_ss_id_var.get().strip()
@@ -10623,9 +10417,8 @@ class _SpinDoctorGUI:
             try:
                 int(ss)
             except ValueError:
-                self.messagebox.showerror(
-                    "Invalid ScreenScraper ID",
-                    f"Must be an integer; got {ss!r}.",
+                self._flash_validation(
+                    f"Invalid ScreenScraper ID — must be an integer; got {ss!r}."
                 )
                 return
             args += ["--screenscraper-id", ss]
@@ -10634,9 +10427,8 @@ class _SpinDoctorGUI:
             try:
                 int(tg)
             except ValueError:
-                self.messagebox.showerror(
-                    "Invalid TheGamesDB ID",
-                    f"Must be an integer; got {tg!r}.",
+                self._flash_validation(
+                    f"Invalid TheGamesDB ID — must be an integer; got {tg!r}."
                 )
                 return
             args += ["--thegamesdb-id", tg]
@@ -10664,9 +10456,7 @@ class _SpinDoctorGUI:
     def _run_organize(self) -> None:
         sys_ = self._organize_system_var.get().strip()
         if not sys_:
-            self.messagebox.showwarning(
-                "System required", "Pick a system from the dropdown.",
-            )
+            self._flash_validation("Pick a system from the dropdown.")
             return
         args = ["organize", sys_]
         if self._organize_no_sort_var.get():
@@ -10686,9 +10476,8 @@ class _SpinDoctorGUI:
     def _run_organize_undo(self) -> None:
         sys_ = self._organize_system_var.get().strip()
         if not sys_:
-            self.messagebox.showwarning(
-                "System required",
-                "Pick the system whose restructure you want to undo.",
+            self._flash_validation(
+                "Pick the system whose restructure you want to undo."
             )
             return
         if not self.messagebox.askyesno(
@@ -10731,7 +10520,7 @@ class _SpinDoctorGUI:
             db = load_database(system, cfg.databases_dir)
             games = list(db.iter_xml_order())
         except Exception as exc:  # noqa: BLE001
-            self.messagebox.showerror("Load failed", str(exc))
+            self._report_action_error("gwm load", "Load failed", str(exc))
             return
         self._gwm_data = [{"name": g.name, "description": g.description} for g in games]
         self._gwm_loaded_system = system
@@ -10986,9 +10775,8 @@ class _SpinDoctorGUI:
         game = self._rename_game_var.get().strip()
         to = self._rename_to_var.get().strip()
         if not (sys_ and game and to):
-            self.messagebox.showwarning(
-                "Missing arguments",
-                "Pick a system, select a game, and fill in New name.",
+            self._flash_validation(
+                "Pick a system, select a game, and fill in New name."
             )
             return
         args = [verb, "--system", sys_, "--game", game, "--to", to]
@@ -10999,10 +10787,9 @@ class _SpinDoctorGUI:
     def _run_add_system(self, pc: bool) -> None:
         name = self._systems_name_var.get().strip()
         if not name:
-            self.messagebox.showwarning(
-                "System name required",
+            self._flash_validation(
                 "Type a system name (e.g. 'Nintendo Entertainment "
-                "System' or 'PC Games') first.",
+                "System' or 'PC Games') first."
             )
             return
         args = ["add-pc-system" if pc else "add-system", name]
@@ -11314,84 +11101,27 @@ class _SpinDoctorGUI:
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 4 — Admin Button Colors ─────────────────────────────────────
-        ab_frame = self.ttk.LabelFrame(frame, text="Step 6 — Admin Button Colors")
+        # In-game admin buttons — the always-on Exit/Pause/Select LEDs lit
+        # DURING gameplay, driven by the UI_* controls in LEDBlinkyControls.xml.
+        # (The old Colors.ini "P3 admin buttons" block was removed: on cabinets
+        # like this one — where admin buttons are UI controls, not a player slot
+        # — it had no in-game effect. The `ledblinky admin-buttons set` CLI
+        # command still exists for cabinets that do map admin to a player slot.)
+        ab_frame = self.ttk.LabelFrame(
+            frame, text="Step 6 — In-Game Admin Buttons (Exit / Pause / Select)",
+        )
         ab_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
         self.ttk.Label(
             ab_frame,
-            text=("Set fixed colors for your cabinet-level (admin) buttons across "
-                  "ALL Colors.ini ROM sections — e.g. Select=Green, Exit=Red. "
-                  "Colors are written to the player slot you choose (P3 for a 2-player "
-                  "cabinet). Run after Step 5 (Randomize) — Randomize overwrites all "
-                  "button colors, so admin colors must be set last."),
+            text=("Set the admin buttons that stay lit while a game is running — "
+                  "Exit, Pause, and Select. Pick a color for each, or “off (dark)” "
+                  "to hide it during play (e.g. Select off for a clean arcade look, "
+                  "leaving just Exit and Pause). Choose a Console to color one "
+                  "system, or “(all consoles)” for every game at once. "
+                  "Restart LEDBlinky afterward so it reloads."),
             wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 4))
-
-        # Player slot + button count + refresh button on one row
-        self.ttk.Label(ab_frame, text="Player slot").grid(
-            row=1, column=0, sticky="w", padx=6, pady=2,
-        )
-        self._admin_player_var = self.tk.StringVar(value="3")
-        self.ttk.Spinbox(
-            ab_frame, textvariable=self._admin_player_var,
-            from_=1, to=6, width=4,
-        ).grid(row=1, column=1, sticky="w", padx=(4, 8), pady=2)
-        self.ttk.Label(ab_frame, text="Button count").grid(
-            row=1, column=2, sticky="w", padx=(0, 2), pady=2,
-        )
-        self._admin_button_count_var = self.tk.StringVar(value="6")
-        self.ttk.Spinbox(
-            ab_frame, textvariable=self._admin_button_count_var,
-            from_=1, to=8, width=4,
-        ).grid(row=1, column=3, sticky="w", padx=(4, 8), pady=2)
-        self.ttk.Button(
-            ab_frame, text="Refresh colors",
-            command=self._refresh_color_list,
-        ).grid(row=1, column=4, sticky="w", padx=(0, 4), pady=2)
-        self.ttk.Label(
-            ab_frame,
-            text="(1–8; only this many buttons are sent)",
-            foreground=_FG_DIM,
-        ).grid(row=1, column=5, columnspan=4, sticky="w", padx=4, pady=2)
-
-        # 8 per-button color comboboxes: BUTTON1..BUTTON8, laid out 4 per row
-        # Colors are populated from Color-RGB.ini via _refresh_color_list().
-        self._admin_color_vars: list = []
-        self._admin_color_combos: list = []
-        for i in range(8):
-            row_offset = 2 + (i // 4)
-            col_offset = (i % 4) * 2
-            self.ttk.Label(
-                ab_frame, text=f"BUTTON{i + 1}:",
-            ).grid(row=row_offset, column=col_offset, sticky="e",
-                   padx=(8 if col_offset == 0 else 4, 2), pady=2)
-            var = self.tk.StringVar(value="White")
-            combo = self.ttk.Combobox(
-                ab_frame, textvariable=var, width=14, state="readonly",
-            )
-            combo.grid(row=row_offset, column=col_offset + 1, sticky="w",
-                       padx=(0, 4), pady=2)
-            self._admin_color_vars.append(var)
-            self._admin_color_combos.append(combo)
-
-        self.ttk.Button(
-            ab_frame, text="Set Admin Button Colors",
-            command=self._run_admin_button_colors,
-        ).grid(row=4, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
-
-        # In-game admin LEDs (LEDBlinkyControls.xml UI_* controls) — the buttons
-        # actually lit DURING gameplay, distinct from the Colors.ini keys above.
-        self.ttk.Separator(ab_frame, orient="horizontal").grid(
-            row=5, column=0, columnspan=9, sticky="ew", padx=6, pady=(4, 6),
-        )
-        self.ttk.Label(
-            ab_frame,
-            text=("In-game admin LEDs (during a game): sets the always-on Exit / "
-                  "Pause / Select buttons in LEDBlinkyControls.xml. Pick a color, "
-                  "or 'off (dark)' to hide that button during play — e.g. Select "
-                  "off for a clean arcade look. Applies to every game at once."),
-            wraplength=820, justify="left",
-        ).grid(row=6, column=0, columnspan=9, sticky="w", padx=6, pady=(0, 4))
+        ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 6))
 
         self._led_ingame_vars = {}
         self._led_ingame_combos = {}
@@ -11399,31 +11129,35 @@ class _SpinDoctorGUI:
             (("exit", "Exit"), ("pause", "Pause"), ("select", "Select")),
         ):
             self.ttk.Label(ab_frame, text=f"{label}:").grid(
-                row=7, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
+                row=1, column=i * 2, sticky="e", padx=(8 if i == 0 else 4, 2), pady=2,
             )
             var = self.tk.StringVar(value="(leave unchanged)")
             combo = self.ttk.Combobox(ab_frame, textvariable=var, width=14, state="readonly")
-            combo.grid(row=7, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
+            combo.grid(row=1, column=i * 2 + 1, sticky="w", padx=(0, 4), pady=2)
             self._led_ingame_vars[friendly] = var
             self._led_ingame_combos[friendly] = combo
 
-        # Console scope: apply to all consoles, or just one (e.g. per-console
+        # Console scope: apply to all consoles, or just one (per-console
         # coloration). Populated from LEDBlinkyControls.xml on refresh.
         self.ttk.Label(ab_frame, text="Console:").grid(
-            row=8, column=0, sticky="e", padx=(8, 2), pady=2,
+            row=2, column=0, sticky="e", padx=(8, 2), pady=2,
         )
         self._led_ingame_emu_var = self.tk.StringVar(value="(all consoles)")
         self._led_ingame_emu_combo = self.ttk.Combobox(
             ab_frame, textvariable=self._led_ingame_emu_var, width=22, state="readonly",
             values=["(all consoles)"],
         )
-        self._led_ingame_emu_combo.grid(row=8, column=1, columnspan=2, sticky="w",
+        self._led_ingame_emu_combo.grid(row=2, column=1, columnspan=2, sticky="w",
                                         padx=(0, 4), pady=2)
+        self.ttk.Button(
+            ab_frame, text="Refresh consoles / colors",
+            command=self._refresh_color_list,
+        ).grid(row=2, column=3, sticky="w", padx=(4, 4), pady=2)
 
         self.ttk.Button(
-            ab_frame, text="Apply in-game admin LEDs",
+            ab_frame, text="Apply in-game admin buttons",
             command=self._run_admin_leds,
-        ).grid(row=9, column=0, columnspan=4, sticky="w", padx=6, pady=(4, 8))
+        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
         br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
@@ -11834,9 +11568,8 @@ class _SpinDoctorGUI:
     def _run_led_backup(self) -> None:
         target = self._led_backup_dir_var.get().strip()
         if not target:
-            self.messagebox.showwarning(
-                "Backup folder required",
-                "Pick the folder where the backup should be written.",
+            self._flash_validation(
+                "Pick the folder where the backup should be written."
             )
             return
         args = ["backup", "create", "--target", target, "--include", "ledblinky"]
@@ -11849,10 +11582,7 @@ class _SpinDoctorGUI:
     def _run_led_restore(self) -> None:
         backup_path = self._led_restore_path_var.get().strip()
         if not backup_path:
-            self.messagebox.showwarning(
-                "Backup folder required",
-                "Pick the backup folder to restore from.",
-            )
+            self._flash_validation("Pick the backup folder to restore from.")
             return
         if self._global_apply_var.get():
             if not self.messagebox.askyesno(
@@ -11970,15 +11700,6 @@ class _SpinDoctorGUI:
                 if color_names and var.get() not in color_names:
                     var.set("White" if "White" in color_names else color_names[0])
 
-        # Populate admin button per-button color combos
-        for combo, var in zip(
-            getattr(self, "_admin_color_combos", []),
-            getattr(self, "_admin_color_vars", []),
-        ):
-            combo["values"] = color_names
-            if color_names and var.get() not in color_names:
-                var.set("White" if "White" in color_names else color_names[0])
-
         # In-game admin LED combos: leave-unchanged + off + every palette color.
         for combo in getattr(self, "_led_ingame_combos", {}).values():
             combo["values"] = ["(leave unchanged)", "off (dark)"] + color_names
@@ -12021,9 +11742,8 @@ class _SpinDoctorGUI:
         """Run ``ledblinky colors edit`` for the selected color."""
         sel = self._color_tree.selection()
         if not sel:
-            self.messagebox.showwarning(
-                "No color selected",
-                "Click a color row in the list, then edit its name or value.",
+            self._flash_validation(
+                "Click a color row in the list, then edit its name or value."
             )
             return
         old_name = sel[0]   # iid is the old name
@@ -12031,7 +11751,7 @@ class _SpinDoctorGUI:
         hex_val = self._color_hex_var.get().strip().lstrip("#")
 
         if not new_name:
-            self.messagebox.showwarning("Name required", "Enter a name for the color.")
+            self._flash_validation("Enter a name for the color.")
             return
 
         name_changed = (new_name != old_name)
@@ -12039,25 +11759,24 @@ class _SpinDoctorGUI:
 
         # Validate hex string before sending to CLI
         if len(hex_val) > 0 and len(hex_val) != 6:
-            self.messagebox.showwarning(
-                "Invalid hex color",
-                f"'{hex_val}' must be exactly 6 hex characters (e.g. FF0000 for red).",
+            self._flash_validation(
+                f"Invalid hex color: '{hex_val}' must be exactly 6 hex "
+                "characters (e.g. FF0000 for red)."
             )
             return
         if hex_changed:
             import re as _re
             if not _re.fullmatch(r"[0-9A-Fa-f]{6}", hex_val):
-                self.messagebox.showwarning(
-                    "Invalid hex color",
-                    f"'{hex_val}' contains non-hex characters.\n"
-                    "Use digits 0-9 and letters A-F only (e.g. FF0000 for red).",
+                self._flash_validation(
+                    f"Invalid hex color: '{hex_val}' contains non-hex "
+                    "characters. Use digits 0-9 and letters A-F only "
+                    "(e.g. FF0000 for red)."
                 )
                 return
 
         if not name_changed and not hex_changed:
-            self.messagebox.showinfo(
-                "No changes",
-                "Change the name or the hex color value to make an edit.",
+            self._flash_status(
+                "Change the name or the hex color value to make an edit."
             )
             return
 
@@ -12157,31 +11876,6 @@ class _SpinDoctorGUI:
                 args += ["--seed", seed_raw]
             except ValueError:
                 pass  # ignore non-integer seed input
-        if self._global_apply_var.get():
-            args.append("--apply")
-        if self._global_verbose_var.get():
-            args.append("--verbose")
-        self._run_cli("spindoctor", args)
-
-    def _run_admin_button_colors(self) -> None:
-        """Run ``ledblinky admin-buttons set`` with per-button colors."""
-        try:
-            player = int(self._admin_player_var.get())
-        except (ValueError, AttributeError):
-            player = 3
-        try:
-            count = max(1, min(8, int(self._admin_button_count_var.get())))
-        except (ValueError, AttributeError):
-            count = 6
-        colors = [
-            var.get().strip() or "White"
-            for var in self._admin_color_vars[:count]
-        ]
-        args = [
-            "ledblinky", "admin-buttons", "set",
-            "--player", str(player),
-            "--colors", ",".join(colors),
-        ]
         if self._global_apply_var.get():
             args.append("--apply")
         if self._global_verbose_var.get():
@@ -12301,9 +11995,8 @@ class _SpinDoctorGUI:
     def _run_lg_configure(self) -> None:
         system = self._lg_system_var.get().strip()
         if not system:
-            self.messagebox.showwarning(
-                "System required",
-                "Configure needs a system name (e.g. 'Sega Naomi').",
+            self._flash_validation(
+                "Configure needs a system name (e.g. 'Sega Naomi')."
             )
             return
         args = ["lightgun", "configure", "--system", system]
@@ -12582,7 +12275,7 @@ class _SpinDoctorGUI:
 
             delay_row = self.ttk.Frame(sched_frame)
             delay_row.pack(fill="x", padx=6, pady=2)
-            self.ttk.Label(delay_row, text="Delay after log-on (minutes)").pack(
+            self.ttk.Label(delay_row, text="Delay after login (minutes):").pack(
                 side="left",
             )
             self._tools_delay_var = self.tk.StringVar(value="2")
@@ -12607,10 +12300,6 @@ class _SpinDoctorGUI:
             self.ttk.Button(
                 sched_btns, text="Disable auto-run",
                 command=self._remove_autorefresh,
-            ).pack(side="left", padx=6)
-            self.ttk.Button(
-                sched_btns, text="Check task status",
-                command=self._check_autorefresh,
             ).pack(side="left", padx=6)
         else:
             self.ttk.Label(
@@ -12814,10 +12503,9 @@ class _SpinDoctorGUI:
     def _run_install_tools_into_wheel(self) -> None:
         wheel = self._tools_wheel_var.get().strip()
         if not wheel:
-            self.messagebox.showwarning(
-                "Wheel name required",
+            self._flash_validation(
                 "Type the HyperSpin system name to install into "
-                "(e.g. 'Toolkit') before clicking Install into wheel.",
+                "(e.g. 'Toolkit') before clicking Install into wheel."
             )
             return
         self._run_cli(
@@ -12827,10 +12515,9 @@ class _SpinDoctorGUI:
     def _run_uninstall_tools_from_wheel(self) -> None:
         wheel = self._tools_wheel_var.get().strip()
         if not wheel:
-            self.messagebox.showwarning(
-                "Wheel name required",
+            self._flash_validation(
                 "Type the HyperSpin system name to uninstall from "
-                "(e.g. 'Toolkit') before clicking Uninstall from wheel.",
+                "(e.g. 'Toolkit') before clicking Uninstall from wheel."
             )
             return
         if not self.messagebox.askyesno(
@@ -12965,7 +12652,7 @@ class _SpinDoctorGUI:
         # so no console window ever appears on the cabinet screen.
         return f'wscript.exe //B "{vbs_path}"'
 
-    def _refresh_autorefresh_status(self) -> None:
+    def _refresh_autorefresh_status(self, *, op_failed: bool = False) -> None:
         """Update the always-visible status label without requiring a click —
         mirrors the Intro Video tab's auto-run status label. Guarded with
         getattr since the label only exists on win32 (see _build_tools_tab).
@@ -12977,6 +12664,14 @@ class _SpinDoctorGUI:
         after upgrading into a new version folder without re-clicking
         Enable auto-run). Not stale on a source install: the .bat calls
         bare command names there, nothing version-specific to go stale.
+
+        `op_failed=True` is passed by the Enable path when registration just
+        failed (e.g. access denied without admin). A failed `/Create` can't
+        overwrite a task left over from an earlier attempt, so
+        `task_exists()` would still report it and the label would misleadingly
+        read "enabled". When the enable failed we never show plain "enabled":
+        a lingering task is reported as "Outdated" (needs re-running as admin),
+        and no task as "disabled".
         """
         label = getattr(self, "_autorefresh_status_label", None)
         if label is None:
@@ -12989,6 +12684,12 @@ class _SpinDoctorGUI:
             return
         if not registered:
             label.configure(text="Status: disabled", style="TLabel")
+            return
+        if op_failed:
+            label.configure(
+                text="Outdated: run Enable auto-run as Administrator",
+                style="Warn.TLabel",
+            )
             return
         stale = False
         if getattr(sys, "frozen", False):
@@ -13011,8 +12712,7 @@ class _SpinDoctorGUI:
         if not raw:
             return None
         if not raw.isdigit():
-            self.messagebox.showwarning(
-                "Invalid delay",
+            self._flash_validation(
                 "Delay must be a non-negative integer (minutes).",
             )
             return -1  # sentinel: caller should bail
@@ -13020,20 +12720,32 @@ class _SpinDoctorGUI:
 
     def _schedule_autorefresh(self) -> None:
         from . import autostart
+        delay = self._parse_delay_minutes()
+        if delay == -1:
+            return
+        # Build a command string that mirrors the Intro Video auto-run row
+        # in the Logs tab: a verb + the delay argument, echoed as a `$ …`
+        # header before the operational output. Keeps the two auto-run
+        # features visually consistent in the history even though this one
+        # runs in-process rather than shelling out to the CLI.
+        argv_str = "autorefresh schedule"
+        if delay is not None:
+            argv_str += f" --delay-minutes {delay}"
         started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         record = _RunRecord(
             started_at=started_at,
-            argv_str="autorefresh schedule",
+            argv_str=argv_str,
             dry_run=False,
         )
+        record.command_slug = "autorefresh_schedule"
+        header = f"$ {argv_str}\n"
+        self._append_output(header)
+        record.append(header)
         try:
-            delay = self._parse_delay_minutes()
-            if delay == -1:
-                return
             bat_path = self._write_refresh_bat()
             vbs_path = self._write_vbs_shim(bat_path)
             bat_text = (
-                f"\n[Auto-refresh] wrote launcher bat → {bat_path}\n"
+                f"[Auto-refresh] wrote launcher bat → {bat_path}\n"
                 f"[Auto-refresh] wrote hidden-run shim → {vbs_path}\n"
             )
             self._append_output(bat_text)
@@ -13043,19 +12755,29 @@ class _SpinDoctorGUI:
                 delay_minutes=delay,
             )
         except autostart.NotSupportedError as exc:
-            self.messagebox.showinfo("Not supported on this OS", str(exc))
+            self._flash_validation(str(exc))
             return
-        except (ValueError, RuntimeError) as exc:
-            self.messagebox.showerror("Could not schedule task", str(exc))
-            return
-        except OSError as exc:
-            self.messagebox.showerror(
-                "Could not write bat/vbs file",
-                f"Failed to write the companion script files:\n{exc}",
+        except (ValueError, RuntimeError, OSError) as exc:
+            summary = (
+                "Could not write bat/vbs file"
+                if isinstance(exc, OSError)
+                else "Could not schedule task"
             )
+            # Route to the Output panel + History (failed run) instead of a
+            # modal dialog — the error stays visible in the log, and the
+            # status label is refreshed with op_failed so it never reads
+            # "enabled" when registration actually failed.
+            err_text = f"[error] {summary}: {exc}\n"
+            self._append_output(err_text)
+            record.append(err_text)
+            record.exit_code = 1
+            self._run_history.append(record)
+            self._refresh_logs_tab()
+            self._flash_status(f"{summary} — see Output/Logs.")
+            self._refresh_autorefresh_status(op_failed=True)
             return
         task_text = (
-            f"\n[Task Scheduler] created '{result.name}' → "
+            f"[Task Scheduler] created '{result.name}' → "
             f"{result.command}\n{result.output}\n"
             f"Launcher bat: {bat_path}\n"
             f"Hidden-run shim: {vbs_path}\n"
@@ -13074,57 +12796,34 @@ class _SpinDoctorGUI:
         started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         try:
             if not autostart.task_exists():
-                self.messagebox.showinfo(
-                    "Nothing to remove",
+                self._flash_status(
                     f"No task named '{autostart.DEFAULT_LOGON_TASK}' is "
-                    "registered.",
+                    "registered — nothing to remove.",
                 )
                 return
             output = autostart.delete_logon_task()
         except autostart.NotSupportedError as exc:
-            self.messagebox.showinfo("Not supported on this OS", str(exc))
+            self._flash_validation(str(exc))
             return
         except RuntimeError as exc:
-            self.messagebox.showerror("Could not remove task", str(exc))
+            self._report_action_error(
+                "autorefresh remove", "Could not remove task", str(exc),
+            )
             return
-        output_text = f"\n[Task Scheduler] removed task.\n{output}\n"
-        self._append_output(output_text)
+        header = "$ autorefresh remove\n"
+        output_text = f"[Task Scheduler] removed task.\n{output}\n"
+        self._append_output(header + output_text)
         record = _RunRecord(
             started_at=started_at,
             argv_str="autorefresh remove",
             dry_run=False,
         )
-        record.append(output_text)
+        record.command_slug = "autorefresh_remove"
+        record.append(header + output_text)
         record.exit_code = 0
         self._run_history.append(record)
         self._refresh_logs_tab()
         self._flash_status("Auto-refresh task deleted.")
-        self._refresh_autorefresh_status()
-
-    def _check_autorefresh(self) -> None:
-        from . import autostart
-        started_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        try:
-            exists = autostart.task_exists()
-        except autostart.NotSupportedError as exc:
-            self.messagebox.showinfo("Not supported on this OS", str(exc))
-            return
-        msg = (
-            f"Task '{autostart.DEFAULT_LOGON_TASK}' is "
-            f"{'REGISTERED' if exists else 'not registered'}."
-        )
-        output_text = f"\n[Task Scheduler] {msg}\n"
-        self._append_output(output_text)
-        record = _RunRecord(
-            started_at=started_at,
-            argv_str="autorefresh check-status",
-            dry_run=None,
-        )
-        record.append(output_text)
-        record.exit_code = 0
-        self._run_history.append(record)
-        self._refresh_logs_tab()
-        self._flash_status(msg)
         self._refresh_autorefresh_status()
 
     # ── Intro Video tab ───────────────────────────────────────────────────────
@@ -13231,8 +12930,9 @@ class _SpinDoctorGUI:
         delay_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Label(delay_row, text="Delay after login (minutes):").pack(side="left")
         self._introvideo_autorun_delay_var = self.tk.StringVar(value="1")
-        self.ttk.Entry(
-            delay_row, textvariable=self._introvideo_autorun_delay_var, width=5,
+        self.ttk.Spinbox(
+            delay_row, from_=0, to=60,
+            textvariable=self._introvideo_autorun_delay_var, width=6,
         ).pack(side="left", padx=(6, 0))
         self.ttk.Label(
             delay_row,
@@ -13285,7 +12985,14 @@ class _SpinDoctorGUI:
             size = f"{v.size_bytes / 1_048_576:.1f} MB" if v.size_bytes else "-"
             tree.insert("", "end", text=v.filename, values=(status, size))
 
-    def _refresh_introvideo_autorun_status(self) -> None:
+    def _refresh_introvideo_autorun_status(self, *, op_failed: bool = False) -> None:
+        # op_failed=True is passed after a failed Enable auto-run (e.g. access
+        # denied without admin). A failed install can't overwrite a leftover
+        # task from an earlier attempt, so task_exists() would still report it
+        # and the label would misleadingly read "enabled". When the enable
+        # failed we never show plain "enabled": a lingering task is reported as
+        # "Outdated" (re-run as admin), and no task as "disabled". Mirrors
+        # _refresh_autorefresh_status.
         label = getattr(self, "_introvideo_autorun_status_label", None)
         if label is None:
             return
@@ -13298,6 +13005,11 @@ class _SpinDoctorGUI:
             return
         if not status.registered:
             label.configure(text="Status: disabled", style="TLabel")
+        elif op_failed:
+            label.configure(
+                text="Outdated: run Enable auto-run as Administrator",
+                style="Warn.TLabel",
+            )
         elif status.stale:
             label.configure(
                 text="Outdated: Enable auto-run to fix",
@@ -13333,9 +13045,7 @@ class _SpinDoctorGUI:
             return
         sel = tree.selection()
         if not sel:
-            self.messagebox.showwarning(
-                "No selection", "Pick one or more enabled videos in the list first.",
-            )
+            self._flash_validation("Pick one or more enabled videos in the list first.")
             return
         # No confirmation dialog: the global Apply checkbox is the gate —
         # unticked runs a dry-run preview in the Output panel first, same
@@ -13357,9 +13067,7 @@ class _SpinDoctorGUI:
             return
         sel = tree.selection()
         if not sel:
-            self.messagebox.showwarning(
-                "No selection", "Pick one or more disabled videos in the list first.",
-            )
+            self._flash_validation("Pick one or more disabled videos in the list first.")
             return
         filenames = [tree.item(iid, "text") for iid in sel]
         args = ["introvideo", "restore"] + filenames
@@ -13386,9 +13094,8 @@ class _SpinDoctorGUI:
         if not raw:
             return None
         if not raw.isdigit():
-            self.messagebox.showwarning(
-                "Invalid delay",
-                "Delay must be a non-negative integer (minutes).",
+            self._flash_validation(
+                "Delay must be a non-negative integer (minutes)."
             )
             return -1  # sentinel: caller should bail
         return int(raw)
@@ -13404,7 +13111,9 @@ class _SpinDoctorGUI:
             args.append("--apply")
         self._run_cli(
             "spindoctor", args,
-            on_complete=lambda _rc: self._refresh_introvideo_autorun_status(),
+            on_complete=lambda rc: self._refresh_introvideo_autorun_status(
+                op_failed=(rc != 0),
+            ),
         )
 
     def _introvideo_uninstall_autorun(self) -> None:
@@ -13496,11 +13205,10 @@ class _SpinDoctorGUI:
         # CLI would just complain about a literal "<SYSTEM>" path which is
         # confusing if the user didn't realise the dropdown was a template.
         if "<" in raw and ">" in raw:
-            self.messagebox.showwarning(
-                "Replace placeholders first",
+            self._flash_validation(
                 "The command still contains <PLACEHOLDER> tokens. Replace "
                 "them with real values (e.g. a system name or a path) "
-                "before clicking Run.",
+                "before clicking Run."
             )
             return
         try:
@@ -13513,7 +13221,8 @@ class _SpinDoctorGUI:
             if win:
                 args = _dequote_windows_shlex_tokens(args)
         except ValueError as exc:
-            self.messagebox.showerror(
+            self._report_action_error(
+                "custom parse",
                 "Couldn't parse arguments",
                 f"Could not split your command into arguments:\n  {exc}\n\n"
                 "Common cause: an unmatched quote — make sure every "
@@ -13608,8 +13317,6 @@ class _SpinDoctorGUI:
             f"{'[DRY RUN] ' if is_dry_run else ''}Running: "
             f"{binary} {' '.join(args)}"
         )
-        self._running_tab_idx = self._nb.index("current")
-        self._set_tab_badge(self._running_tab_idx, "⟳")
         self._stop_btn.configure(state="normal")
         self._set_busy(True)
         # Logs tab refreshes itself from _run_history when it's open;
@@ -13872,8 +13579,8 @@ class _SpinDoctorGUI:
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:
         # CRITICAL: every transition out of the "running" UI state lives
-        # in this method. If any single step raises (e.g. ``_set_tab_badge``
-        # on a destroyed widget, ``_refresh_logs_tab`` after a tab swap),
+        # in this method. If any single step raises (e.g. ``_refresh_logs_tab``
+        # after a tab swap, ``_set_busy`` on a destroyed widget),
         # the rest of the cleanup is skipped and the GUI stays busy
         # forever. Wrap the body in try/finally and re-do the essentials
         # in ``finally`` so the user always escapes the running state.
@@ -13934,15 +13641,6 @@ class _SpinDoctorGUI:
                     f"{label} — FAILED (exit {marker.rc}){elapsed_str}."
                 )
 
-            if self._running_tab_idx is not None:
-                try:
-                    self._set_tab_badge(
-                        self._running_tab_idx,
-                        "✓" if marker.rc == 0 else "✗",
-                    )
-                except Exception:  # noqa: BLE001 — widget race
-                    pass
-
             # Re-render the Logs tab so the row's exit-code column updates.
             try:
                 self._refresh_logs_tab()
@@ -13978,7 +13676,6 @@ class _SpinDoctorGUI:
                 self._current_run = None
                 self._run_started_monotonic = None
                 self._run_label = ""
-                self._running_tab_idx = None
                 try:
                     self._stop_btn.configure(state="disabled")
                 except Exception:  # noqa: BLE001
@@ -14352,49 +14049,36 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 — Tk teardown or no main loop
             pass
 
-    def _set_tab_badge(self, idx: int, badge: str) -> None:
-        """Stamp the run-progress glyph (⟳/✓/✗) on a tab (main thread only)."""
-        if idx < 0 or idx >= len(self._tab_base_names):
-            return
-        if badge:
-            self._tab_run_badges[idx] = badge
-        else:
-            self._tab_run_badges.pop(idx, None)
-        self._render_tab_label(idx)
+    def _report_action_error(
+        self, argv_str: str, summary: str, detail: str = "",
+    ) -> None:
+        """Route an action failure to the Output panel + Logs tab instead of a
+        modal dialog.
 
-    def _set_tab_health_badge(self, idx: int, badge: str) -> None:
-        """Stamp the area-health glyph (✓/⚠/✗) on a tab.
-
-        Health badges persist across runs (they're driven by the
-        startup `doctor` pass, not by command outcomes), so a tab can
-        show both a run badge AND a health badge at once — e.g.
-        "LEDBlinky ⚠ ⟳" means "the LEDBlinky area has a configuration
-        warning, and a command is currently streaming output from
-        this tab".
+        Used in place of `messagebox.showerror` for operation failures so the
+        error stays visible in the Output panel and the History tab (as a
+        failed `_RunRecord`, exit code 1) rather than forcing the user to
+        dismiss a popup that vanishes the moment they click OK. `summary` is a
+        one-line headline; `detail` is the optional longer body (e.g. an
+        exception string or raw CLI output).
         """
-        if idx < 0 or idx >= len(self._tab_base_names):
-            return
-        if badge:
-            self._tab_health_badges[idx] = badge
-        else:
-            self._tab_health_badges.pop(idx, None)
-        self._render_tab_label(idx)
-
-    def _render_tab_label(self, idx: int) -> None:
-        """Combine base + health badge + run badge into the tab title."""
-        if idx < 0 or idx >= len(self._tab_base_names):
-            return
-        base = self._tab_base_names[idx]
-        health = self._tab_health_badges.get(idx, "")
-        run = self._tab_run_badges.get(idx, "")
-        # Health sits closer to the base name (semantic state),
-        # run sits at the far right (transient activity).
-        parts = [base]
-        if health:
-            parts.append(health)
-        if run:
-            parts.append(run)
-        self._nb.tab(idx, text=" ".join(parts))
+        body = summary if not detail else f"{summary}\n{detail}"
+        output_text = f"\n[error] {body}\n"
+        self._append_output(output_text)
+        record = _RunRecord(
+            started_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            argv_str=argv_str,
+            dry_run=None,
+        )
+        record.append(output_text)
+        record.exit_code = 1
+        self._run_history.append(record)
+        self._refresh_logs_tab()
+        try:
+            self.root.bell()
+        except Exception:  # noqa: BLE001 — silent terminals are fine
+            pass
+        self._flash_status(summary)
 
     def _fit_geometry(self, win, ideal_w: int, ideal_h: int) -> None:
         """Set dialog geometry capped to the current screen size minus margins.
