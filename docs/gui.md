@@ -280,7 +280,11 @@ Sets all `Color-RGB.ini` colors to a uniform brightness: **100 % = maximum** (di
 
 **Step 8 — Color Definitions (Color-RGB.ini)**
 
-Treeview of all named colors (Name, R/G/B 0-48, hex). Click a row to load it; edit name and/or paste `#RRGGBB`; click **Update & Rename** to propagate through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml`. **Normalize Colors.ini** also available here as a shortcut. CLI: `spindoctor ledblinky colors edit / normalize`.
+Treeview of all named colors (Name, R/G/B 0-48, hex).
+
+- **Add new color** — type a **New name** and a **New color** (`#RRGGBB`), then click it to append a brand-new color to `Color-RGB.ini`. It becomes available everywhere colors are picked by name (admin buttons, fill-defaults, animations). No row selection needed. CLI: `spindoctor ledblinky colors add`.
+- **Update & Rename** — select an existing row first, then edit its name and/or hex; the rename propagates through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml`. CLI: `spindoctor ledblinky colors edit`.
+- **Normalize Colors.ini** — shortcut for `spindoctor ledblinky colors normalize`.
 
 **Step 9 — Backup / Restore**
 
