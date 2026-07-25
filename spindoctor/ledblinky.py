@@ -2800,43 +2800,70 @@ def _transform_control_groups(text, emulator, fn):
     return pre + region + post, changed
 
 
+#: The keycode(s) each admin control uses to light its own physical button.
+#: Turning a button "off" reliably means removing these from its ``inputCodes``
+#: (confirmed on real hardware: ``alwaysActive="0"`` alone does NOT darken a
+#: button — LedBlinky still shows the control's colour while the button's key is
+#: mapped; clearing the key is what makes it fall to ``defaultInactive`` = off).
+#: Turning it back on re-adds them. Other (unrelated) tokens — e.g. Search's
+#: KEYCODE_SLASH riding on UI_PAUSE — are preserved either way.
+ADMIN_LED_OWN_KEYCODES: "dict[str, tuple[str, ...]]" = {
+    "exit": ("KEYCODE_ESC",),
+    "pause": ("KEYCODE_P", "KEY_MAMEPAUSE"),
+    "select": ("KEYCODE_ENTER",),
+}
+
+
 def _recolor_admin_in_block(block: str, friendly: str, value: object) -> "tuple[str, int, int]":
-    """Within one group block, set the color / alwaysActive of one admin control.
-    ``value`` is ``"off"`` or a color name. Returns (block, active_changes,
-    color_changes). Only rewrites the control if it already exists in the block."""
+    """Within one group block, set the state of one admin control.
+
+    ``value`` is ``"off"`` or a color name.
+      * off   → ``alwaysActive="0"`` **and** the control's own keycode(s) removed
+                from ``inputCodes`` (the combination that actually darkens the
+                button in-game; ``alwaysActive="0"`` alone does not).
+      * color → ``alwaysActive="1"``, ``color="<name>"``, and the control's own
+                keycode(s) restored if a previous "off" had stripped them.
+
+    Returns ``(block, active_changes, color_changes)`` — ``active_changes``
+    counts alwaysActive flips *and* inputCodes edits. Only rewrites the control
+    if it already exists in the block; unrelated keycode tokens are preserved."""
     control = ADMIN_LED_CONTROLS[friendly]
     if f'name="{control}"' not in block:
         return block, 0, 0
     turn_off = isinstance(value, str) and value.lower() == "off"
-    new_active = "0" if turn_off else "1"
-    ac = cc = 0
+    own = ADMIN_LED_OWN_KEYCODES[friendly]
+    counts = {"ac": 0, "cc": 0}
 
-    def _sub_active(m):
-        nonlocal ac
-        if m.group(2) != new_active:
-            ac += 1
-            return f"{m.group(1)}{new_active}{m.group(3)}"
-        return m.group(0)
+    def _rewrite(m):
+        ctrl = m.group(0)
+        # alwaysActive
+        new_active = "0" if turn_off else "1"
+        am = re.search(r'\balwaysActive="([01])"', ctrl)
+        if am and am.group(1) != new_active:
+            ctrl = ctrl[:am.start(1)] + new_active + ctrl[am.end(1):]
+            counts["ac"] += 1
+        # inputCodes: strip (off) or restore (on) this button's own keys
+        im = re.search(r'\binputCodes="([^"]*)"', ctrl)
+        if im:
+            tokens = [t for t in im.group(1).split("|") if t]
+            if turn_off:
+                new_tokens = [t for t in tokens if t not in own]
+            else:
+                new_tokens = list(tokens) + [k for k in own if k not in tokens]
+            if new_tokens != tokens:
+                ctrl = ctrl[:im.start(1)] + "|".join(new_tokens) + ctrl[im.end(1):]
+                counts["ac"] += 1
+        # colour (only when lighting)
+        if not turn_off:
+            cm = re.search(r'\bcolor="([^"]*)"', ctrl)
+            if cm and cm.group(1) != str(value):
+                ctrl = ctrl[:cm.start(1)] + str(value) + ctrl[cm.end(1):]
+                counts["cc"] += 1
+        return ctrl
 
-    block = re.sub(
-        rf'(<control\s+name="{re.escape(control)}"[^>]*?\balwaysActive=")([01])(")',
-        _sub_active, block,
-    )
-    if not turn_off:
-        new_color = str(value)
-
-        def _sub_color(m):
-            nonlocal cc
-            if m.group(2) != new_color:
-                cc += 1
-                return f"{m.group(1)}{new_color}{m.group(3)}"
-            return m.group(0)
-
-        block = re.sub(
-            rf'(<control\s+name="{re.escape(control)}"[^>]*?\bcolor=")([^"]*)(")',
-            _sub_color, block,
-        )
-    return block, ac, cc
+    # Rewrite only the first matching per-group control element.
+    block = re.sub(rf'<control\s+name="{re.escape(control)}"[^>]*/>', _rewrite, block, count=1)
+    return block, counts["ac"], counts["cc"]
 
 
 def _write_xml(result: AdminLedPatchResult, xml_path: Path, text: str,
