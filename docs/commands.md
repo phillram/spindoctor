@@ -1967,7 +1967,7 @@ spindoctor ledblinky admin-leds remove --emulator "Atari_2600" --apply
 | Subcommand | What it does |
 |---|---|
 | `show` | Print the current in-game admin LED state (default when you run `admin-leds` bare). `--emulator NAME` scopes to one console; `--by-console` prints a line per console so you can see exactly which systems have admin LEDs and which don't. |
-| `set` | **Uniform mode** — one color per button across every game. `--exit`/`--pause`/`--select` take a palette color or `off`. Only recolors admin controls that already exist. |
+| `set` | **Uniform mode** — one color per button across every game. `--exit`/`--pause`/`--select` take a palette color or `off`. Only recolors admin controls that already exist. `--search-off`/`--lmouse-off`/`--rmouse-off` blank the Search / mouse buttons (see below). |
 | `randomize` | **Random mode** — a random palette color per control group. `--seed N` reproduces a result; `--buttons exit,pause,select` picks which to randomize. `--games ROM1,ROM2 --emulator NAME` forces true per-game variety by cloning the emulator's DEFAULT group for each named ROM first. |
 | `add` | Insert the always-active admin controls into groups that lack them (so those buttons light in-game). `--exit`/`--pause`/`--select` set the colors (default Red/Yellow/Green). |
 | `remove` | Strip the admin controls from groups — those buttons go dark in-game. |
@@ -1977,6 +1977,22 @@ All mutating subcommands accept `--emulator NAME` to scope to one console (defau
 Turning a button `off` (or `remove`-ing it) is how you make "only the usable buttons lit" the in-game default — see [Cabinet Architecture Reference](cabinet-architecture-reference.md#colorsini--multi-player-and-admin-key-naming) for why Exit/Pause stay lit and Select/Search/mouse do not.
 
 > **How "off" works (and why it changed).** Setting `off` sets `alwaysActive="0"` **and** removes the control's own keycode (e.g. `KEYCODE_ENTER` for Select) from its `inputCodes`. Confirmed on real hardware: `alwaysActive="0"` *alone* does not darken the button — LedBlinky keeps showing the control's colour as long as its key is still mapped; clearing the key is what makes the button fall to `defaultInactive` (off). Re-lighting a button (`--select Red`) restores its keycode automatically, so the change is reversible. Unrelated tokens sharing the control (like Search's `/` on Pause) are preserved.
+
+##### Blanking Search / Left Mouse / Right Mouse (`--search-off`, `--lmouse-off`, `--rmouse-off`)
+
+Exit, Pause, and Select each have their own LED control (`UI_CANCEL`/`UI_PAUSE`/`UI_SELECT`), so `--exit`/`--pause`/`--select` can color them or turn them off. **Search and the two mouse buttons don't** — they're lit only because their key is listed in another always-active control's `inputCodes`. On this cabinet, for example, the Search "/" key rides on `UI_PAUSE` (`inputCodes="KEYCODE_SLASH|KEYCODE_P"`), so the physical Search button lights whenever Pause does, in the same color — which is why you can't color Search independently and why there's no `--search` color flag.
+
+`--search-off` removes just the Search key from any always-active control that carries it, so **Search goes dark in-game while Pause stays lit** (its `KEYCODE_P` is untouched). `--lmouse-off` / `--rmouse-off` do the same for the mouse-click keys. If a button's key isn't found on any lit control, it's already dark in-game and the command reports it (no change). These are off-only and reversible from the `.bak` backup.
+
+```bat
+:: Clean arcade for GameCube: keep Exit + Pause, kill Select + Search
+spindoctor ledblinky admin-leds set --select off --search-off --apply
+
+:: One console only
+spindoctor ledblinky admin-leds set --search-off --emulator "Nintendo_GameCube" --apply
+```
+
+(GUI: the LEDBlinky tab's in-game admin section has an optional second row of **Search / Left Mouse / Right Mouse** "turn off" checkboxes.)
 
 > **Random mode's per-game caveat.** `randomize` assigns colors per *control group*, and most games share their emulator's `DEFAULT` group — so they all get that group's random colors. Genuine per-*game* variety only appears for games that have their own control group (many arcade titles do; simple ones fall back to `DEFAULT`). To force it for specific ROMs, pass `--games 005,pacman,galaga --emulator MAME`: each named game gets its own control group cloned from `DEFAULT` (inheriting its game buttons + admin block) and then its own random colors. Cloning per game adds a full control group to the XML, so this is a per-ROM list, not an all-games switch. Don't like a random result? Re-run `set` to return everything to uniform colors.
 

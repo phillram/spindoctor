@@ -268,9 +268,10 @@ Apply checkbox + **Randomize Entry Colors** button. CLI: `spindoctor ledblinky c
 Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on this cabinet.
 
 - **Exit / Pause / Select** — a color dropdown each, offering `(leave unchanged)`, `off (dark)`, or any palette color. Pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons (Exit + Pause) stay lit.
+- **Search / Left Mouse / Right Mouse** — an optional "turn off" checkbox row. Unlike Exit/Pause/Select these aren't their own LED (their key rides on another always-active control — e.g. Search's `/` is on Pause), so they're off-only; ticking **Search** removes just its key so Search goes dark while Pause stays lit.
 - **Console** — scope the change to one system (give each console its own admin coloration) or `(all consoles)` for every game at once. **Refresh consoles / colors** reloads both lists from your LEDBlinky files.
 
-Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
+Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (incl. `--search-off`/`--lmouse-off`/`--rmouse-off`) — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
 
 > **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. This cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
 
