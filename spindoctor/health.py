@@ -982,6 +982,70 @@ def check_led_coverage(config: Config) -> Check:
     return Check(name="LED coverage", status=Status.OK, detail=detail)
 
 
+def check_intro_video(config: Config) -> Check:
+    """Health of the intro-video randomizer (opt-in feature).
+
+    Catches failures that otherwise have *no* symptom until someone notices the
+    boot video stopped changing: an empty pool (``introvideo swap`` is a silent
+    no-op by design), a target whose folder no longer exists, and a logon
+    auto-run task that's registered but stale (points at an old install after a
+    portable upgrade — re-running ``install-autorun`` fixes it in place).
+    """
+    if not config.intro_randomizer_dir and not config.intro_video_target:
+        return Check(name="Intro video", status=Status.INFO,
+                     detail="not configured (optional feature)")
+
+    parent = Check(name="Intro video", status=Status.OK)
+
+    if config.intro_randomizer_dir:
+        pool_dir = Path(config.intro_randomizer_dir)
+        if not pool_dir.exists():
+            parent.children.append(Check(
+                name="pool", status=Status.WARN,
+                detail=f"intro_randomizer_dir missing: {pool_dir}",
+                fix="spindoctor config set intro_randomizer_dir <path>",
+            ))
+        else:
+            from .introvideo import list_videos
+            enabled = [v for v in list_videos(config) if v.enabled]
+            if not enabled:
+                parent.children.append(Check(
+                    name="pool", status=Status.WARN,
+                    detail="pool is empty — introvideo swap is a silent no-op",
+                    fix="spindoctor introvideo add <video-file>",
+                ))
+            else:
+                parent.children.append(Check(
+                    name="pool", status=Status.OK,
+                    detail=f"{len(enabled)} video(s) in rotation",
+                ))
+
+    if config.intro_video_target:
+        target_parent = Path(config.intro_video_target).parent
+        if not target_parent.exists():
+            parent.children.append(Check(
+                name="target", status=Status.WARN,
+                detail=f"target folder does not exist: {target_parent}",
+                fix="spindoctor config set intro_video_target <path>",
+            ))
+
+    # Logon auto-run task staleness (Windows-only; skip elsewhere silently).
+    try:
+        from .introvideo import autorun_status
+        st = autorun_status()
+        if st.registered and st.stale:
+            parent.children.append(Check(
+                name="auto-run", status=Status.WARN,
+                detail="logon task is stale (points at an old install)",
+                fix="spindoctor introvideo install-autorun --apply",
+            ))
+    except Exception:  # noqa: BLE001 — NotSupportedError off-Windows, etc.
+        pass
+
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -1000,6 +1064,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_lightguns(config))
     report.add(check_ledblinky(config))
     report.add(check_led_coverage(config))
+    report.add(check_intro_video(config))
     report.add(check_api_creds(config))
     report.add(check_media_skeletons(config, fix, report.fixes_applied))
     return report
