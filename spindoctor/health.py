@@ -982,24 +982,141 @@ def check_led_coverage(config: Config) -> Check:
     return Check(name="LED coverage", status=Status.OK, detail=detail)
 
 
+def check_intro_video(config: Config) -> Check:
+    """Health of the intro-video randomizer (opt-in feature).
+
+    Catches failures that otherwise have *no* symptom until someone notices the
+    boot video stopped changing: an empty pool (``introvideo swap`` is a silent
+    no-op by design), a target whose folder no longer exists, and a logon
+    auto-run task that's registered but stale (points at an old install after a
+    portable upgrade — re-running ``install-autorun`` fixes it in place).
+    """
+    if not config.intro_randomizer_dir and not config.intro_video_target:
+        return Check(name="Intro video", status=Status.INFO,
+                     detail="not configured (optional feature)")
+
+    parent = Check(name="Intro video", status=Status.OK)
+
+    if config.intro_randomizer_dir:
+        pool_dir = Path(config.intro_randomizer_dir)
+        if not pool_dir.exists():
+            parent.children.append(Check(
+                name="pool", status=Status.WARN,
+                detail=f"intro_randomizer_dir missing: {pool_dir}",
+                fix="spindoctor config set intro_randomizer_dir <path>",
+            ))
+        else:
+            from .introvideo import list_videos
+            enabled = [v for v in list_videos(config) if v.enabled]
+            if not enabled:
+                parent.children.append(Check(
+                    name="pool", status=Status.WARN,
+                    detail="pool is empty — introvideo swap is a silent no-op",
+                    fix="spindoctor introvideo add <video-file>",
+                ))
+            else:
+                parent.children.append(Check(
+                    name="pool", status=Status.OK,
+                    detail=f"{len(enabled)} video(s) in rotation",
+                ))
+
+    if config.intro_video_target:
+        target_parent = Path(config.intro_video_target).parent
+        if not target_parent.exists():
+            parent.children.append(Check(
+                name="target", status=Status.WARN,
+                detail=f"target folder does not exist: {target_parent}",
+                fix="spindoctor config set intro_video_target <path>",
+            ))
+
+    # Logon auto-run task staleness (Windows-only; skip elsewhere silently).
+    try:
+        from .introvideo import autorun_status
+        st = autorun_status()
+        if st.registered and st.stale:
+            parent.children.append(Check(
+                name="auto-run", status=Status.WARN,
+                detail="logon task is stale (points at an old install)",
+                fix="spindoctor introvideo install-autorun --apply",
+            ))
+    except Exception:  # noqa: BLE001 — NotSupportedError off-Windows, etc.
+        pass
+
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+def check_orphan_media(config: Config) -> Check:
+    """Report leftover media files with no matching game (disk bloat).
+
+    Diagnosis only, and INFO severity — orphan media doesn't break anything, it
+    just wastes space.  Deleting is destructive, so this never touches files
+    (doctor's contract is "never deletes ROMs/DBs/media"); it points at
+    ``find-orphan-media``, which has its own preview and ``--apply`` gate.
+    """
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name="Orphan media", status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+
+    from .orphan_media import find_orphan_media
+
+    total = 0
+    systems_hit = 0
+    for system in get_systems(config):
+        try:
+            n = len(find_orphan_media(system, config).orphans)
+        except Exception:  # noqa: BLE001 — a bad DB is check_databases' problem
+            continue
+        if n:
+            total += n
+            systems_hit += 1
+
+    if total == 0:
+        return Check(name="Orphan media", status=Status.OK, detail="none")
+    return Check(
+        name="Orphan media", status=Status.INFO,
+        detail=f"{total} orphan media file(s) across {systems_hit} system(s) — disk bloat",
+        fix="spindoctor find-orphan-media --all   (preview; add --apply to remove)",
+    )
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
 def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report = HealthReport()
-    report.add(check_paths(config))
-    report.add(check_binaries(config))
-    report.add(check_lxml())
-    report.add(check_archive_support())
-    report.add(check_preview_support())
-    report.add(check_databases(config))
-    report.add(check_wheel_wiring(config, fix, report.fixes_applied))
-    report.add(check_pc_launchability(config))
-    report.add(check_match_cache(config, fix, report.fixes_applied))
-    report.add(check_global_emulators(config, fix, report.fixes_applied))
-    report.add(check_lightguns(config))
-    report.add(check_ledblinky(config))
-    report.add(check_led_coverage(config))
-    report.add(check_api_creds(config))
-    report.add(check_media_skeletons(config, fix, report.fixes_applied))
+
+    def _safe(name: str, fn) -> None:
+        """Run one check; a crash becomes a FAIL row, never a doctor crash.
+
+        `doctor` is the tool you reach for *because* something is wrong, so a
+        single check hitting an unexpected condition (a locked file, a
+        permission error, a malformed INI it didn't anticipate) must not take
+        down the whole report.
+        """
+        try:
+            report.add(fn())
+        except Exception as e:  # noqa: BLE001
+            report.add(Check(
+                name=name, status=Status.FAIL,
+                detail=f"check crashed: {type(e).__name__}: {e}",
+            ))
+
+    _safe("Paths", lambda: check_paths(config))
+    _safe("External binaries", lambda: check_binaries(config))
+    _safe("lxml", check_lxml)
+    _safe("Archive support", check_archive_support)
+    _safe("Preview support", check_preview_support)
+    _safe("HyperSpin databases", lambda: check_databases(config))
+    _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
+    _safe("PC games", lambda: check_pc_launchability(config))
+    _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
+    _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
+    _safe("Lightguns", lambda: check_lightguns(config))
+    _safe("LEDBlinky", lambda: check_ledblinky(config))
+    _safe("LED coverage", lambda: check_led_coverage(config))
+    _safe("Intro video", lambda: check_intro_video(config))
+    _safe("Orphan media", lambda: check_orphan_media(config))
+    _safe("Metadata APIs", lambda: check_api_creds(config))
+    _safe("Media folders", lambda: check_media_skeletons(config, fix, report.fixes_applied))
     return report

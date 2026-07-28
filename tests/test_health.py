@@ -757,6 +757,75 @@ def test_lightguns_warn_on_bad_demulshooter_path(tmp_path):
     assert _sub(result, "demulshooter_path").status == health.Status.WARN
 
 
+# ─── check_intro_video ───────────────────────────────────────────────────────
+
+
+def test_intro_video_info_when_unconfigured(tmp_path):
+    assert health.check_intro_video(_mk_cabinet(tmp_path)).status == health.Status.INFO
+
+
+def test_intro_video_warns_on_empty_pool(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    cfg.intro_randomizer_dir = str(pool)
+    result = health.check_intro_video(cfg)
+    assert result.status == health.Status.WARN
+    assert _sub(result, "pool").status == health.Status.WARN
+    assert "silent no-op" in _sub(result, "pool").detail
+
+
+def test_intro_video_ok_with_videos(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    (pool / "intro1.mp4").write_bytes(b"x")
+    cfg.intro_randomizer_dir = str(pool)
+    assert _sub(health.check_intro_video(cfg), "pool").status == health.Status.OK
+
+
+def test_intro_video_warns_on_missing_target_folder(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    cfg.intro_video_target = str(tmp_path / "nope" / "Intro.mp4")
+    assert _sub(health.check_intro_video(cfg), "target").status == health.Status.WARN
+
+
+def test_intro_video_warns_on_stale_autorun(tmp_path, monkeypatch):
+    from spindoctor import introvideo
+    pool = tmp_path / "pool"
+    pool.mkdir()
+    (pool / "intro1.mp4").write_bytes(b"x")
+    cfg = _mk_cabinet(tmp_path)
+    cfg.intro_randomizer_dir = str(pool)
+    monkeypatch.setattr(
+        introvideo, "autorun_status",
+        lambda: introvideo.AutorunStatus(registered=True, stale=True))
+    result = health.check_intro_video(cfg)
+    assert _sub(result, "auto-run").status == health.Status.WARN
+
+
+# ─── check_orphan_media ──────────────────────────────────────────────────────
+
+
+def test_orphan_media_ok_when_none(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="mario"/></menu>', encoding="utf-8")
+    assert health.check_orphan_media(cfg).status == health.Status.OK
+
+
+def test_orphan_media_info_when_orphans_present(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="mario"/></menu>', encoding="utf-8")
+    # A theme folder for a game that isn't in the DB or ROMs → orphan.
+    (cfg.media_dir / "NES" / "Themes" / "ghost").mkdir(parents=True)
+    result = health.check_orphan_media(cfg)
+    assert result.status == health.Status.INFO
+    assert "orphan media" in result.detail
+    assert "find-orphan-media" in result.fix
+
+
 # ─── run_health_checks orchestration ─────────────────────────────────────────
 
 
@@ -777,8 +846,25 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Lightguns" in names
     assert "LEDBlinky" in names
     assert "LED coverage" in names
+    assert "Intro video" in names
+    assert "Orphan media" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
+
+
+def test_run_health_checks_never_crashes_on_a_failing_check(tmp_path, monkeypatch):
+    """A check that raises must become a FAIL row, not crash the whole run."""
+    def _boom(*a, **k):
+        raise OSError("drive ejected mid-scan")
+
+    monkeypatch.setattr(health, "check_global_emulators", _boom)
+    cfg = _mk_cabinet(tmp_path)
+    report = health.run_health_checks(cfg, fix=True)  # must not raise
+    crashed = {c.name: c for c in report.checks}["Global Emulators.ini"]
+    assert crashed.status == health.Status.FAIL
+    assert "check crashed" in crashed.detail
+    # Other checks still ran.
+    assert "Paths" in [c.name for c in report.checks]
 
 
 def test_health_report_overall_picks_worst_status():
