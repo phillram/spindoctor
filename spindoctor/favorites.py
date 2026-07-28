@@ -457,9 +457,14 @@ def _generate_pclauncher_ini(
     """
     from .rocketlauncher import pclauncher_settings_text
 
+    from .media import _win_safe_stem
+
     module_dir = rocketlauncher_dir / "Modules" / "PCLauncher" / target_system
     module_dir.mkdir(parents=True, exist_ok=True)
-    ini = module_dir / f"{target_name}.ini"
+    # Sanitize the INI *filename* — a raw name with ':' etc. is an invalid
+    # Windows path and would crash the whole rebuild with OSError.  (The launch
+    # parameters inside still carry the raw source name.)
+    ini = module_dir / f"{_win_safe_stem(target_name)}.ini"
     rl_exe = rocketlauncher_dir / "RocketLauncher.exe"
     contents = pclauncher_settings_text(
         rl_exe,
@@ -578,8 +583,12 @@ def rebuild(
 
     # ── 2. Media mirror ──────────────────────────────────────────────────────
     if not skip_media:
+        from .media import _win_safe_stem
         print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
-        seen_targets = set(target_names.values())
+        # Mirrored media files are written with sanitized stems, so the
+        # orphan-cleanup allowlist must be sanitized too — otherwise it would
+        # delete the freshly-written files for any name with a forbidden char.
+        seen_targets = {_win_safe_stem(v) for v in target_names.values()}
 
         # Write new media FIRST so a mid-run failure (disk full, network
         # disconnect) never leaves entries without media that was deleted
@@ -648,7 +657,10 @@ def rebuild(
         # Remove stale per-game INIs AFTER writing new ones.
         existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / store.target_system
         if existing_ini_dir.exists():
-            keep = set(target_names.values())
+            from .media import _win_safe_stem
+            # INI filenames are sanitized (see _generate_pclauncher_ini), so the
+            # keep-set must be sanitized to match — else valid INIs get deleted.
+            keep = {_win_safe_stem(v) for v in target_names.values()}
             for ini in existing_ini_dir.iterdir():
                 if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
                     try:
