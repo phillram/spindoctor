@@ -2055,6 +2055,8 @@ It also runs a **per-wheel wiring** check: for every wheel on the Main Menu it v
 
 For every system marked `lightgun: true`, a **Lightguns** check verifies the DemulShooter wiring: a system flagged for a light gun but with no `Pre_Launch_App` (game runs with no gun) is a FAIL; a missing `Post_Launch_App` teardown (DemulShooter left running) is a WARN. It's diagnosis-only — it prints the `lightgun configure` command to run.
 
+For every `PCLauncher` system, a **PC games** check goes one level deeper than the wheel-wiring emulator check: it walks the per-game PCLauncher INIs and reports games with no INI at all, or whose `Application=` path no longer exists on disk (the "Cannot find this Application" / stale drive-letter bug). It points at `add-pc-system` / `pc-rename` to fix.
+
 ```bat
 spindoctor doctor              :: read-only diagnosis
 spindoctor doctor --apply      :: also run safe, idempotent repairs
