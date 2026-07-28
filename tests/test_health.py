@@ -133,6 +133,50 @@ def test_check_databases_fails_with_broken_xml(tmp_path):
     assert result.status == health.Status.FAIL
 
 
+def test_check_databases_does_not_crash_on_non_valueerror(tmp_path, monkeypatch):
+    """doctor must never crash: a PermissionError/OSError from a locked file
+    becomes one FAIL row, not an exception out of the whole command."""
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="Mario"/></menu>', encoding="utf-8")
+
+    def _boom(*a, **k):
+        raise PermissionError("file is locked by HyperSpin")
+
+    monkeypatch.setattr(health, "load_database", _boom)
+    result = health.check_databases(cfg)  # must not raise
+    assert result.status == health.Status.FAIL
+    assert "PermissionError" in result.children[0].detail
+
+
+def test_check_databases_warns_on_empty_db(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        "<menu></menu>", encoding="utf-8")  # parses, but zero games
+    result = health.check_databases(cfg)
+    assert result.status == health.Status.WARN
+    assert "empty" in {c.name: c for c in result.children}["NES"].detail
+
+
+def test_check_match_cache_skips_when_roms_dir_unset(tmp_path, isolated_match_cache):
+    cfg = _mk_cabinet(tmp_path)
+    cfg.roms_dir = ""
+    (isolated_match_cache / "NES.json").write_text('{"Mario": {}}', encoding="utf-8")
+    result = health.check_match_cache(cfg, fix=True, fixes_applied=[])
+    assert result.status == health.Status.INFO
+    # Cache must be untouched (not wiped as "all stale").
+    assert (isolated_match_cache / "NES.json").exists()
+
+
+def test_check_match_cache_case_insensitive_rom_match(tmp_path, isolated_match_cache):
+    """A re-cased ROM (mario.zip vs cached 'Mario') is not stale on NTFS."""
+    cfg = _mk_cabinet(tmp_path)
+    (tmp_path / "roms" / "NES" / "mario.zip").write_bytes(b"x")
+    (isolated_match_cache / "NES.json").write_text('{"Mario": {}}', encoding="utf-8")
+    result = health.check_match_cache(cfg, fix=False, fixes_applied=[])
+    assert result.status == health.Status.OK
+
+
 # ─── check_match_cache (read + --fix paths) ──────────────────────────────────
 
 
@@ -404,6 +448,9 @@ def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
         "[ROMS]\nDefault_Emulator=Demul\n", encoding="utf-8")
     (rl / "Settings" / "Global Emulators.ini").write_text(
         "[Demul]\nEmu_Path=..\\Emulators\\Demul\\demul.exe\n", encoding="utf-8")
+    # Emu_Path is relative to RL's Settings/ dir → rl/Emulators/Demul/demul.exe.
+    (rl / "Emulators" / "Demul").mkdir(parents=True)
+    (rl / "Emulators" / "Demul" / "demul.exe").write_bytes(b"MZ")
     cfg.rocketlauncher_dir = str(rl)
     _seed_main_menu(cfg, "Dreamcast")
     from pathlib import Path
@@ -422,6 +469,37 @@ def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
     emu = _sub(node, "Emulator")
     assert emu.status == health.Status.OK
     assert "demul.exe" in emu.detail
+
+
+def test_wheel_wiring_warns_when_emulator_exe_missing_on_disk(tmp_path):
+    """Emulator is registered in Global Emulators.ini, but its Emu_Path binary
+    doesn't exist (stale after uninstall/drive change) → WARN, not a false OK."""
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings" / "Dreamcast").mkdir(parents=True)
+    (rl / "Settings" / "Dreamcast" / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=Demul\n", encoding="utf-8")
+    (rl / "Settings" / "Global Emulators.ini").write_text(
+        "[Demul]\nEmu_Path=..\\Emulators\\Demul\\demul.exe\n", encoding="utf-8")
+    # Note: the demul.exe binary is deliberately NOT created.
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "Dreamcast")
+    from pathlib import Path
+    ini = Path(cfg.hyperspin_dir) / "Settings" / "Dreamcast.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text("[exe info]\nhyperlaunch=true\n", encoding="utf-8")
+    theme = Path(cfg.media_dir) / "Dreamcast" / "Themes" / "default.zip"
+    theme.parent.mkdir(parents=True, exist_ok=True)
+    theme.write_bytes(b"x")
+    (cfg.databases_dir / "Dreamcast").mkdir(parents=True, exist_ok=True)
+    (cfg.databases_dir / "Dreamcast" / "Dreamcast.xml").write_text(
+        "<menu><game name='x'/></menu>", encoding="utf-8")
+
+    node = _wheel_node(
+        health.check_wheel_wiring(cfg, fix=False, fixes_applied=[]), "Dreamcast")
+    emu = _sub(node, "Emulator")
+    assert emu.status == health.Status.WARN
+    assert "not found on disk" in emu.detail
 
 
 # ─── run_health_checks orchestration ─────────────────────────────────────────
