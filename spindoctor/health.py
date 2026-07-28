@@ -427,7 +427,14 @@ def check_ledblinky(config: Config) -> Check:
         )
     base = Path(config.ledblinky_dir)
     parent = Check(name="LEDBlinky", status=Status.OK)
-    from .ledblinky import CONTROLS_INI_NAME, COLORS_INI_NAME
+    from .ledblinky import (
+        COLOR_RGB_NAME,
+        COLORS_INI_NAME,
+        CONTROLS_INI_NAME,
+        SEARCH_MENU_NAMES,
+        parse_ini_sections,
+        scan,
+    )
     for fname in (CONTROLS_INI_NAME, COLORS_INI_NAME):
         p = base / fname
         if not p.exists():
@@ -437,21 +444,57 @@ def check_ledblinky(config: Config) -> Check:
             ))
         else:
             try:
-                from .ledblinky import parse_ini_sections
                 n = len(parse_ini_sections(p))
                 parent.children.append(Check(
                     name=fname, status=Status.OK,
                     detail=f"{n} sections",
                 ))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 parent.children.append(Check(
                     name=fname, status=Status.WARN,
                     detail=f"{type(e).__name__}: {e}",
                 ))
-    parent.status = (
-        Status.OK if all(c.status == Status.OK for c in parent.children)
-        else Status.WARN
-    )
+
+    # Color-RGB.ini — without it `ledblinky generate` silently degrades to the
+    # legacy hex color format, which real LedBlinky can't read.
+    rgb = base / COLOR_RGB_NAME
+    if rgb.exists():
+        parent.children.append(Check(
+            name=COLOR_RGB_NAME, status=Status.OK, detail=str(rgb),
+        ))
+    else:
+        parent.children.append(Check(
+            name=COLOR_RGB_NAME, status=Status.WARN,
+            detail="missing — `ledblinky generate` falls back to legacy hex colors LedBlinky can't read",
+            fix="Add a named palette with: spindoctor ledblinky colors add ...",
+        ))
+
+    # Search/Genre/Favorites crash scan — a LedBlinky process hook in a menu's
+    # Settings.ini (or a missing LEDBlinkyControls.xml entry) is the documented
+    # cause of HyperSpin crashing when you open those menus.
+    try:
+        scan_res = scan(config, menus=SEARCH_MENU_NAMES)
+    except Exception:  # noqa: BLE001 — a scan failure must not sink doctor
+        scan_res = None
+    if scan_res is not None:
+        risky = [
+            mi["menu"] for mi in scan_res["menu_inis"]
+            if mi["has_hooks"]
+            or (scan_res["controls_xml_exists"] and not mi["has_controls_entry"])
+        ]
+        if risky:
+            parent.children.append(Check(
+                name="Search/Genre/Favorites", status=Status.WARN,
+                detail=f"crash risk on: {', '.join(risky)} (LedBlinky hook or missing controls entry)",
+                fix="spindoctor ledblinky fix --apply",
+            ))
+        else:
+            parent.children.append(Check(
+                name="Search/Genre/Favorites", status=Status.OK,
+                detail="no LedBlinky menu-crash conflicts",
+            ))
+
+    parent.status = _worst(c.status for c in parent.children)
     return parent
 
 
@@ -706,6 +749,20 @@ def check_wheel_wiring(
 
         node.status = _worst([c.status for c in node.children])
         parent.children.append(node)
+
+    # Reverse orphans: systems fully set up under Databases/ but missing from the
+    # Main Menu — invisible in HyperSpin even though all the work was done.
+    from .mainmenu import discover_systems
+    try:
+        orphans = discover_systems(config)
+    except Exception:  # noqa: BLE001
+        orphans = []
+    for system in orphans:
+        parent.children.append(Check(
+            name=system, status=Status.WARN,
+            detail="set up in Databases/ but not on the Main Menu — invisible in HyperSpin",
+            fix=f'spindoctor mainmenu add "{system}" --apply',
+        ))
 
     parent.status = _worst([c.status for c in parent.children])
     return parent
