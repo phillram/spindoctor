@@ -2061,6 +2061,8 @@ The **LEDBlinky** check goes beyond confirming the core files parse: it also fla
 
 A **LED coverage** check reports how much of the MAME set has LEDBlinky control/color entries, and how many games could be lit up with `ledblinky generate`. It is **cache-only** — it never triggers a fresh `mame -listxml` (which can take minutes) from `doctor`; if no cached control data exists it just points you at `ledblinky audit`.
 
+If you use the intro-video randomizer, an **Intro video** check surfaces the failures that otherwise have no symptom until the boot video stops changing: an empty pool (`introvideo swap` is a silent no-op), a target whose folder no longer exists, and a logon auto-run task that's registered but stale after a portable upgrade (re-run `introvideo install-autorun --apply`).
+
 ```bat
 spindoctor doctor              :: read-only diagnosis
 spindoctor doctor --apply      :: also run safe, idempotent repairs
