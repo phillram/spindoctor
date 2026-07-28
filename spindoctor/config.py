@@ -511,10 +511,19 @@ def get_rom_extensions(system_name: str) -> list[str]:
     # Exact match first
     if key in ROM_EXTENSIONS:
         return ROM_EXTENSIONS[key]
-    # Longest-key-first partial match to avoid "nes" matching "genesis"
-    for k in sorted(ROM_EXTENSIONS, key=len, reverse=True):
-        if k != "default" and (k in key or key in k):
-            return ROM_EXTENSIONS[k]
+    # A known key contained *in* the folder name (e.g. "Sega Genesis" →
+    # "segagenesis" → key "genesis"): the LONGEST such key is the most
+    # specific, so "nes" never wins over "genesis".
+    contained = [k for k in ROM_EXTENSIONS if k != "default" and k in key]
+    if contained:
+        return ROM_EXTENSIONS[max(contained, key=lambda k: (len(k), k))]
+    # Otherwise the folder name may be an abbreviation contained in a key
+    # (e.g. "ST" → "atarist"): pick the SHORTEST matching key so a 2-char
+    # abbreviation isn't swallowed by an unrelated long key that merely
+    # happens to contain those letters ("st" inside "...syStem").
+    abbrev = [k for k in ROM_EXTENSIONS if k != "default" and key in k]
+    if abbrev:
+        return ROM_EXTENSIONS[min(abbrev, key=lambda k: (len(k), k))]
     return ROM_EXTENSIONS["default"]
 
 
@@ -523,14 +532,20 @@ def get_systems(config: Config) -> list[str]:
     # Databases folder named "PC Games" collapse to one entry.  The databases_dir
     # name takes priority because HyperSpin drives its system names from there.
     canonical: dict[str, str] = {}
-    roms_path = Path(config.roms_dir)
-    db_path = Path(config.databases_dir)  # handle both Path and str configs
-    if roms_path.exists():
-        for p in roms_path.iterdir():
-            if p.is_dir():
-                canonical[p.name.lower()] = p.name
-    if db_path.exists():
-        for p in db_path.iterdir():
-            if p.is_dir():
-                canonical[p.name.lower()] = p.name  # databases_dir wins on collision
+    # Guard on the configured dir being non-empty: Path("") is Path(".") and
+    # Path("")/"Databases" is a CWD-relative "Databases", so without these guards
+    # an unconfigured Config would scan whatever folders happen to sit in the
+    # process's current working directory.
+    if config.roms_dir:
+        roms_path = Path(config.roms_dir)
+        if roms_path.exists():
+            for p in roms_path.iterdir():
+                if p.is_dir():
+                    canonical[p.name.lower()] = p.name
+    if config.hyperspin_dir:
+        db_path = Path(config.databases_dir)
+        if db_path.exists():
+            for p in db_path.iterdir():
+                if p.is_dir():
+                    canonical[p.name.lower()] = p.name  # databases_dir wins on collision
     return sorted(canonical.values())

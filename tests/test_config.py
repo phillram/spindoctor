@@ -248,6 +248,14 @@ def test_get_rom_extensions_partial_match_prefers_longest_key(isolated_config):
     assert exts != config_mod.get_rom_extensions("NES")
 
 
+def test_get_rom_extensions_short_abbrev_prefers_specific_key(isolated_config):
+    """A short folder name ("ST") must not be swallowed by an unrelated long
+    key that merely contains those letters ("st" inside "...system")."""
+    exts = config_mod.get_rom_extensions("ST")  # Atari ST
+    assert ".st" in exts
+    assert exts != config_mod.get_rom_extensions("SNES")
+
+
 def test_get_rom_extensions_falls_back_to_default(isolated_config):
     exts = config_mod.get_rom_extensions("Imaginary System")
     # Default list covers common archives and disc image formats.
@@ -281,6 +289,15 @@ def test_get_systems_unions_roms_and_databases(tmp_path):
 def test_get_systems_ignores_missing_paths(tmp_path):
     cfg = Config(roms_dir=str(tmp_path / "no"), hyperspin_dir=str(tmp_path / "nope"))
     assert config_mod.get_systems(cfg) == []
+
+
+def test_get_systems_does_not_scan_cwd_when_unconfigured(tmp_path, monkeypatch):
+    """An unconfigured Config must not scan folders in the current directory
+    (Path("") resolves to "." — a real CWD-relative scan)."""
+    (tmp_path / "NotASystem").mkdir()
+    (tmp_path / "Databases" / "AlsoNot").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    assert config_mod.get_systems(Config()) == []
 
 
 # ─── first-run wizard flag ───────────────────────────────────────────────────
