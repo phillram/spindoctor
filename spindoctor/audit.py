@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -243,12 +244,27 @@ def _scan_recursive(
                 continue
 
         title = derive_pc_title(best, system_rom_dir, title_strategy)
-        if title not in roms:
-            roms[title] = RomFileInfo(
-                name=title,
-                path=best,
-                extension=best.suffix.lower(),
-            )
+        if title in roms:
+            # First slot wins (deduplication is intended: in "smart" mode a
+            # launcher.exe and its desktop shortcut both resolve to the game's
+            # name).  But under title_strategy="stem" a collision usually means
+            # two DIFFERENT games happen to share a launcher filename (e.g. both
+            # ship "Launcher.exe") — silently dropping the second made a whole
+            # game vanish from the audit with no trace, so surface that case.
+            if title_strategy == "stem":
+                warnings.warn(
+                    f"Duplicate title {title!r} in {system_rom_dir.name}: keeping "
+                    f"{roms[title].path}, skipping {best}. Rename a folder or use a "
+                    f"different title_strategy so both games get a distinct name.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            continue
+        roms[title] = RomFileInfo(
+            name=title,
+            path=best,
+            extension=best.suffix.lower(),
+        )
     return roms
 
 
