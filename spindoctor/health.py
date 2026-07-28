@@ -65,6 +65,22 @@ def _resolve_emu_path(emu_path: str, rl_dir: Path) -> list[Path]:
     ]
 
 
+def _pc_app_exists(app_path: str) -> Optional[bool]:
+    """Whether a PCLauncher ``Application=`` path exists on disk.
+
+    Returns None when it can't be checked on this OS (an absolute Windows drive
+    path while running on POSIX) so callers don't false-flag; True/False when the
+    path is checkable (POSIX-style path, or any path on Windows).
+    """
+    if not app_path:
+        return None
+    from pathlib import PureWindowsPath
+
+    if PureWindowsPath(app_path).drive:  # absolute Windows path (D:\...)
+        return Path(app_path).exists() if os.name == "nt" else None
+    return Path(app_path).exists()
+
+
 @dataclass
 class Check:
     name: str
@@ -695,6 +711,90 @@ def check_wheel_wiring(
     return parent
 
 
+def check_pc_launchability(config: Config) -> Check:
+    """Verify per-game launch wiring for every PCLauncher system.
+
+    ``check_wheel_wiring`` treats ``Default_Emulator=PCLauncher`` as automatically
+    OK and never looks deeper.  This walks the per-game PCLauncher INIs — the
+    layer that actually produces "Cannot find this Application" — and, per PC
+    system, checks that every game in the database has an INI whose
+    ``Application=`` path still exists on disk (the stale-drive-letter bug).
+
+    Diagnosis only: the fixes (`add-pc-system` / `pc-rename`) rewrite RL config
+    and per-game INIs, which is too broad to fold into a blanket ``doctor --fix``
+    — each finding names the exact command instead.
+    """
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name="PC games", status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+    if not config.rocketlauncher_dir:
+        return Check(name="PC games", status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+
+    from .rocketlauncher import (
+        SKIP_GENERATE_CONFIG,
+        _read_system_default_emulator,
+        _win_safe_stem,
+        read_pclauncher_ini_application_path,
+    )
+
+    rl_dir = Path(config.rocketlauncher_dir)
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    pc_systems = [
+        w for w in _main_menu_wheels(mm_path)
+        if w not in SKIP_GENERATE_CONFIG
+        and _read_system_default_emulator(w, rl_dir) == "PCLauncher"
+    ]
+    if not pc_systems:
+        return Check(name="PC games", status=Status.INFO, detail="no PCLauncher systems")
+
+    parent = Check(name="PC games", status=Status.OK)
+    for system in pc_systems:
+        node = Check(name=system, status=Status.OK)
+        try:
+            games = list(load_database(system, config.databases_dir).games().keys())
+        except Exception:  # noqa: BLE001 — DB integrity is check_databases' job
+            games = []
+        if not games:
+            node.status = Status.INFO
+            node.detail = "no games in database"
+            parent.children.append(node)
+            continue
+
+        ini_dir = rl_dir / "Modules" / "PCLauncher" / system
+        missing_ini: list[str] = []
+        stale_app: list[str] = []
+        for name in games:
+            ini = ini_dir / f"{_win_safe_stem(name)}.ini"
+            if not ini.exists():
+                missing_ini.append(name)
+                continue
+            app = read_pclauncher_ini_application_path(ini, section_name=name)
+            if _pc_app_exists(app) is False:
+                stale_app.append(name)
+
+        total = len(games)
+        if missing_ini:
+            node.children.append(Check(
+                name="per-game INIs", status=Status.FAIL,
+                detail=f"{len(missing_ini)}/{total} games have no PCLauncher INI (e.g. {missing_ini[0]})",
+                fix=f'spindoctor add-pc-system "{system}" --apply',
+            ))
+        if stale_app:
+            node.children.append(Check(
+                name="Application paths", status=Status.FAIL,
+                detail=f"{len(stale_app)}/{total} games' Application path is missing on disk (e.g. {stale_app[0]})",
+                fix=f'spindoctor pc-rename "{system}" --apply   (fixes stale drive letters)',
+            ))
+        if not node.children:
+            node.detail = f"{total} game(s) OK"
+        node.status = _worst([c.status for c in node.children])
+        parent.children.append(node)
+
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_lightguns(config: Config) -> Check:
     """Verify DemulShooter wiring for every system marked ``lightgun: true``.
 
@@ -779,6 +879,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_preview_support())
     report.add(check_databases(config))
     report.add(check_wheel_wiring(config, fix, report.fixes_applied))
+    report.add(check_pc_launchability(config))
     report.add(check_match_cache(config, fix, report.fixes_applied))
     report.add(check_global_emulators(config, fix, report.fixes_applied))
     report.add(check_lightguns(config))

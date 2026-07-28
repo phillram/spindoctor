@@ -502,6 +502,68 @@ def test_wheel_wiring_warns_when_emulator_exe_missing_on_disk(tmp_path):
     assert "not found on disk" in emu.detail
 
 
+# ─── check_pc_launchability ──────────────────────────────────────────────────
+
+
+def _pc_cabinet(tmp_path, *games, emulator="PCLauncher"):
+    """Cabinet with a 'PC Games' PCLauncher system + a DB listing *games*."""
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings" / "PC Games").mkdir(parents=True)
+    (rl / "Settings" / "PC Games" / "Emulators.ini").write_text(
+        f"[ROMS]\nDefault_Emulator={emulator}\n", encoding="utf-8")
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "PC Games")
+    db = cfg.databases_dir / "PC Games"
+    db.mkdir(parents=True, exist_ok=True)
+    games_xml = "".join(f'<game name="{g}"/>' for g in games)
+    (db / "PC Games.xml").write_text(f"<menu>{games_xml}</menu>", encoding="utf-8")
+    return cfg, rl
+
+
+def _write_pcl_ini(rl, system, game, app_path):
+    d = rl / "Modules" / "PCLauncher" / system
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{game}.ini").write_text(
+        f"[{game}]\nApplication={app_path}\n", encoding="utf-8")
+
+
+def test_pc_info_when_no_pclauncher_systems(tmp_path):
+    # 'PC Games' present but its emulator is MAME, not PCLauncher.
+    cfg, rl = _pc_cabinet(tmp_path, "Hades", emulator="MAME")
+    assert health.check_pc_launchability(cfg).status == health.Status.INFO
+
+
+def test_pc_ok_when_ini_and_app_present(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    exe = tmp_path / "Games" / "Hades" / "hades.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ")
+    _write_pcl_ini(rl, "PC Games", "Hades", str(exe))
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.OK
+
+
+def test_pc_fail_when_ini_missing(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    # No Modules/PCLauncher/PC Games/Hades.ini written.
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "PC Games")
+    assert _sub(node, "per-game INIs").status == health.Status.FAIL
+    assert "add-pc-system" in _sub(node, "per-game INIs").fix
+
+
+def test_pc_fail_when_application_path_stale(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    _write_pcl_ini(rl, "PC Games", "Hades", str(tmp_path / "gone" / "hades.exe"))
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "PC Games")
+    assert _sub(node, "Application paths").status == health.Status.FAIL
+    assert "pc-rename" in _sub(node, "Application paths").fix
+
+
 # ─── check_lightguns ─────────────────────────────────────────────────────────
 
 
@@ -585,6 +647,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Preview support" in names
     assert "HyperSpin databases" in names
     assert "Wheel wiring" in names
+    assert "PC games" in names
     assert "Match cache" in names
     assert "Global Emulators.ini" in names
     assert "Lightguns" in names
