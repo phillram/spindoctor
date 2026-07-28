@@ -1752,6 +1752,32 @@ def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
     return EMULATOR_EXECUTABLES.get(emulator_name, "")
 
 
+def _read_emulator_emu_path(emulator_name: str, rocketlauncher_dir: Path) -> str:
+    """Return the raw ``Emu_Path`` string for *emulator_name* from ``Global Emulators.ini``.
+
+    Unlike :func:`_read_emulator_exe` (which returns only the bare filename), this
+    returns the full path exactly as recorded — absolute (``D:\\Emulators\\...``) or
+    relative (``..\\Emulators\\...``, resolved by RocketLauncher against its own
+    directory).  Callers that want to verify the emulator binary exists on disk use
+    this; returns an empty string if the emulator has no path entry.
+    """
+    global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
+    if not global_ini.exists():
+        return ""
+    try:
+        cp = configparser.RawConfigParser()
+        cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
+        if cp.has_section(emulator_name):
+            for key in ("Emu_Path", "Emulator_Application_Path", "emulator_path", "emu_path"):
+                if cp.has_option(emulator_name, key):
+                    path_str = cp.get(emulator_name, key).strip()
+                    if path_str:
+                        return path_str
+    except Exception:
+        pass
+    return ""
+
+
 def _read_pclauncher_game_exe(
     source_system: str, source_rom: str, rocketlauncher_dir: Path
 ) -> str:
