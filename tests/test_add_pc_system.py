@@ -109,6 +109,17 @@ def test_add_pc_system_writes_overrides_db_and_pclauncher_inis(
     assert "launcher.exe" in cyber_ini.read_text(encoding="utf-8")
     assert "Hades.lnk" in hades_ini.read_text(encoding="utf-8")
 
+    # 5. HyperSpin Settings/<System>.ini written so the wheel opens without
+    #    "Cannot find PC Games.ini".
+    hs_settings = cabinet["hs"] / "Settings" / "PC Games.ini"
+    assert hs_settings.exists(), "HyperSpin Settings INI was not created"
+    assert "hyperlaunch=true" in hs_settings.read_text(encoding="utf-8")
+
+    # 6. Console-level default.zip theme installed so games without their own
+    #    theme still render.
+    default_zip = cabinet["hs"] / "Media" / "PC Games" / "Themes" / "default.zip"
+    assert default_zip.exists(), "default console theme was not installed"
+
 
 def test_add_pc_system_dry_run_writes_nothing(cabinet):
     """Default invocation (no --apply) is a dry-run preview."""

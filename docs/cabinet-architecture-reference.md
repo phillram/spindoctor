@@ -208,7 +208,11 @@ D:\Arcade\Settings\<System>.ini
 
 Each INI can contain multiple sections controlling the wheel's appearance and launch behaviour. The one SpinDoctor cares about is `[video defaults]`.
 
-> **When renaming a system:** HyperSpin will display "Cannot find &lt;NewName&gt;.ini" and refuse to open the wheel until `Settings\<OldName>.ini` is renamed to `Settings\<NewName>.ini`. This is purely a filename rename — no content changes are needed. It is separate from the other files that must be updated when renaming (Main Menu.xml, `RocketLauncher\Settings\<System>\`, HyperSpin `Databases\<System>\`). SpinDoctor does not manage Settings INI files.
+> **When renaming a system:** HyperSpin will display "Cannot find &lt;NewName&gt;.ini" and refuse to open the wheel until `Settings\<OldName>.ini` is renamed to `Settings\<NewName>.ini`. This is purely a filename rename — no content changes are needed. It is separate from the other files that must be updated when renaming (Main Menu.xml, `RocketLauncher\Settings\<System>\`, HyperSpin `Databases\<System>\`).
+
+> **SpinDoctor writes this file when adding a wheel.** The same "Cannot find &lt;System&gt;.ini" error appears when the file is *absent* — e.g. after adding a new wheel. SpinDoctor creates a minimal `Settings\<System>.ini` (via `write_hyperspin_system_ini` in `rocketlauncher.py`, `[exe info] hyperlaunch=true`) as part of the synthetic-wheel rebuilds (`fav`/`recent`/`stats build-wheel`) **and** `mainmenu add` / `add-system` / `add-pc-system`. It only writes when the file is missing, so an existing HyperHQ-authored theme INI is never overwritten. It does not otherwise manage the contents of these files.
+>
+> Those same three add commands also install a console-level fallback theme at `Media\<System>\Themes\default.zip` (bundled `theme_blank.zip`, via `fill_default_theme`) when one is absent, so a newly added console's games render instead of showing a blank screen. Also idempotent — an existing `default.zip` is left untouched.
 
 ### `[video defaults]` — video path redirect
 
