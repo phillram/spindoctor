@@ -133,6 +133,50 @@ def test_check_databases_fails_with_broken_xml(tmp_path):
     assert result.status == health.Status.FAIL
 
 
+def test_check_databases_does_not_crash_on_non_valueerror(tmp_path, monkeypatch):
+    """doctor must never crash: a PermissionError/OSError from a locked file
+    becomes one FAIL row, not an exception out of the whole command."""
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="Mario"/></menu>', encoding="utf-8")
+
+    def _boom(*a, **k):
+        raise PermissionError("file is locked by HyperSpin")
+
+    monkeypatch.setattr(health, "load_database", _boom)
+    result = health.check_databases(cfg)  # must not raise
+    assert result.status == health.Status.FAIL
+    assert "PermissionError" in result.children[0].detail
+
+
+def test_check_databases_warns_on_empty_db(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        "<menu></menu>", encoding="utf-8")  # parses, but zero games
+    result = health.check_databases(cfg)
+    assert result.status == health.Status.WARN
+    assert "empty" in {c.name: c for c in result.children}["NES"].detail
+
+
+def test_check_match_cache_skips_when_roms_dir_unset(tmp_path, isolated_match_cache):
+    cfg = _mk_cabinet(tmp_path)
+    cfg.roms_dir = ""
+    (isolated_match_cache / "NES.json").write_text('{"Mario": {}}', encoding="utf-8")
+    result = health.check_match_cache(cfg, fix=True, fixes_applied=[])
+    assert result.status == health.Status.INFO
+    # Cache must be untouched (not wiped as "all stale").
+    assert (isolated_match_cache / "NES.json").exists()
+
+
+def test_check_match_cache_case_insensitive_rom_match(tmp_path, isolated_match_cache):
+    """A re-cased ROM (mario.zip vs cached 'Mario') is not stale on NTFS."""
+    cfg = _mk_cabinet(tmp_path)
+    (tmp_path / "roms" / "NES" / "mario.zip").write_bytes(b"x")
+    (isolated_match_cache / "NES.json").write_text('{"Mario": {}}', encoding="utf-8")
+    result = health.check_match_cache(cfg, fix=False, fixes_applied=[])
+    assert result.status == health.Status.OK
+
+
 # ─── check_match_cache (read + --fix paths) ──────────────────────────────────
 
 
@@ -404,6 +448,9 @@ def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
         "[ROMS]\nDefault_Emulator=Demul\n", encoding="utf-8")
     (rl / "Settings" / "Global Emulators.ini").write_text(
         "[Demul]\nEmu_Path=..\\Emulators\\Demul\\demul.exe\n", encoding="utf-8")
+    # Emu_Path is relative to RL's Settings/ dir → rl/Emulators/Demul/demul.exe.
+    (rl / "Emulators" / "Demul").mkdir(parents=True)
+    (rl / "Emulators" / "Demul" / "demul.exe").write_bytes(b"MZ")
     cfg.rocketlauncher_dir = str(rl)
     _seed_main_menu(cfg, "Dreamcast")
     from pathlib import Path
@@ -424,6 +471,168 @@ def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
     assert "demul.exe" in emu.detail
 
 
+def test_wheel_wiring_warns_when_emulator_exe_missing_on_disk(tmp_path):
+    """Emulator is registered in Global Emulators.ini, but its Emu_Path binary
+    doesn't exist (stale after uninstall/drive change) → WARN, not a false OK."""
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings" / "Dreamcast").mkdir(parents=True)
+    (rl / "Settings" / "Dreamcast" / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=Demul\n", encoding="utf-8")
+    (rl / "Settings" / "Global Emulators.ini").write_text(
+        "[Demul]\nEmu_Path=..\\Emulators\\Demul\\demul.exe\n", encoding="utf-8")
+    # Note: the demul.exe binary is deliberately NOT created.
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "Dreamcast")
+    from pathlib import Path
+    ini = Path(cfg.hyperspin_dir) / "Settings" / "Dreamcast.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text("[exe info]\nhyperlaunch=true\n", encoding="utf-8")
+    theme = Path(cfg.media_dir) / "Dreamcast" / "Themes" / "default.zip"
+    theme.parent.mkdir(parents=True, exist_ok=True)
+    theme.write_bytes(b"x")
+    (cfg.databases_dir / "Dreamcast").mkdir(parents=True, exist_ok=True)
+    (cfg.databases_dir / "Dreamcast" / "Dreamcast.xml").write_text(
+        "<menu><game name='x'/></menu>", encoding="utf-8")
+
+    node = _wheel_node(
+        health.check_wheel_wiring(cfg, fix=False, fixes_applied=[]), "Dreamcast")
+    emu = _sub(node, "Emulator")
+    assert emu.status == health.Status.WARN
+    assert "not found on disk" in emu.detail
+
+
+# ─── check_pc_launchability ──────────────────────────────────────────────────
+
+
+def _pc_cabinet(tmp_path, *games, emulator="PCLauncher"):
+    """Cabinet with a 'PC Games' PCLauncher system + a DB listing *games*."""
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings" / "PC Games").mkdir(parents=True)
+    (rl / "Settings" / "PC Games" / "Emulators.ini").write_text(
+        f"[ROMS]\nDefault_Emulator={emulator}\n", encoding="utf-8")
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "PC Games")
+    db = cfg.databases_dir / "PC Games"
+    db.mkdir(parents=True, exist_ok=True)
+    games_xml = "".join(f'<game name="{g}"/>' for g in games)
+    (db / "PC Games.xml").write_text(f"<menu>{games_xml}</menu>", encoding="utf-8")
+    return cfg, rl
+
+
+def _write_pcl_ini(rl, system, game, app_path):
+    d = rl / "Modules" / "PCLauncher" / system
+    d.mkdir(parents=True, exist_ok=True)
+    (d / f"{game}.ini").write_text(
+        f"[{game}]\nApplication={app_path}\n", encoding="utf-8")
+
+
+def test_pc_info_when_no_pclauncher_systems(tmp_path):
+    # 'PC Games' present but its emulator is MAME, not PCLauncher.
+    cfg, rl = _pc_cabinet(tmp_path, "Hades", emulator="MAME")
+    assert health.check_pc_launchability(cfg).status == health.Status.INFO
+
+
+def test_pc_ok_when_ini_and_app_present(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    exe = tmp_path / "Games" / "Hades" / "hades.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ")
+    _write_pcl_ini(rl, "PC Games", "Hades", str(exe))
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.OK
+
+
+def test_pc_fail_when_ini_missing(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    # No Modules/PCLauncher/PC Games/Hades.ini written.
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "PC Games")
+    assert _sub(node, "per-game INIs").status == health.Status.FAIL
+    assert "add-pc-system" in _sub(node, "per-game INIs").fix
+
+
+def test_pc_fail_when_application_path_stale(tmp_path):
+    cfg, rl = _pc_cabinet(tmp_path, "Hades")
+    _write_pcl_ini(rl, "PC Games", "Hades", str(tmp_path / "gone" / "hades.exe"))
+    result = health.check_pc_launchability(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "PC Games")
+    assert _sub(node, "Application paths").status == health.Status.FAIL
+    assert "pc-rename" in _sub(node, "Application paths").fix
+
+
+# ─── check_lightguns ─────────────────────────────────────────────────────────
+
+
+def _lightgun_cabinet(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings").mkdir(parents=True)
+    cfg.rocketlauncher_dir = str(rl)
+    return cfg, rl
+
+
+def _write_rl_ini(rl, system, body):
+    (rl / "Settings" / f"{system}.ini").write_text(body, encoding="utf-8")
+
+
+def test_lightguns_info_when_none_marked(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    assert health.check_lightguns(cfg).status == health.Status.INFO
+
+
+def test_lightguns_fail_when_marked_but_not_wired(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    # No RL INI at all for the system → not wired.
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "Point Blank")
+    assert node.status == health.Status.FAIL
+    assert "no gun" in node.detail
+    assert "lightgun configure" in node.fix
+
+
+def test_lightguns_ok_when_fully_wired(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n"
+                  "Post_Launch_App=taskkill /IM DemulShooter.exe\n")
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.OK
+    node = _wheel_node(result, "Point Blank")
+    assert _sub(node, "target").detail.endswith("demul")
+
+
+def test_lightguns_warn_when_teardown_missing(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n")
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.WARN
+    node = _wheel_node(result, "Point Blank")
+    assert _sub(node, "teardown").status == health.Status.WARN
+
+
+def test_lightguns_warn_on_bad_demulshooter_path(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n"
+                  "Post_Launch_App=taskkill /IM DemulShooter.exe\n")
+    cfg.demulshooter_path = str(tmp_path / "nope" / "DemulShooter.exe")
+    result = health.check_lightguns(cfg)
+    assert _sub(result, "demulshooter_path").status == health.Status.WARN
+
+
 # ─── run_health_checks orchestration ─────────────────────────────────────────
 
 
@@ -438,8 +647,10 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Preview support" in names
     assert "HyperSpin databases" in names
     assert "Wheel wiring" in names
+    assert "PC games" in names
     assert "Match cache" in names
     assert "Global Emulators.ini" in names
+    assert "Lightguns" in names
     assert "LEDBlinky" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
