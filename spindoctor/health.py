@@ -427,7 +427,14 @@ def check_ledblinky(config: Config) -> Check:
         )
     base = Path(config.ledblinky_dir)
     parent = Check(name="LEDBlinky", status=Status.OK)
-    from .ledblinky import CONTROLS_INI_NAME, COLORS_INI_NAME
+    from .ledblinky import (
+        COLOR_RGB_NAME,
+        COLORS_INI_NAME,
+        CONTROLS_INI_NAME,
+        SEARCH_MENU_NAMES,
+        parse_ini_sections,
+        scan,
+    )
     for fname in (CONTROLS_INI_NAME, COLORS_INI_NAME):
         p = base / fname
         if not p.exists():
@@ -437,21 +444,57 @@ def check_ledblinky(config: Config) -> Check:
             ))
         else:
             try:
-                from .ledblinky import parse_ini_sections
                 n = len(parse_ini_sections(p))
                 parent.children.append(Check(
                     name=fname, status=Status.OK,
                     detail=f"{n} sections",
                 ))
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 parent.children.append(Check(
                     name=fname, status=Status.WARN,
                     detail=f"{type(e).__name__}: {e}",
                 ))
-    parent.status = (
-        Status.OK if all(c.status == Status.OK for c in parent.children)
-        else Status.WARN
-    )
+
+    # Color-RGB.ini — without it `ledblinky generate` silently degrades to the
+    # legacy hex color format, which real LedBlinky can't read.
+    rgb = base / COLOR_RGB_NAME
+    if rgb.exists():
+        parent.children.append(Check(
+            name=COLOR_RGB_NAME, status=Status.OK, detail=str(rgb),
+        ))
+    else:
+        parent.children.append(Check(
+            name=COLOR_RGB_NAME, status=Status.WARN,
+            detail="missing — `ledblinky generate` falls back to legacy hex colors LedBlinky can't read",
+            fix="Add a named palette with: spindoctor ledblinky colors add ...",
+        ))
+
+    # Search/Genre/Favorites crash scan — a LedBlinky process hook in a menu's
+    # Settings.ini (or a missing LEDBlinkyControls.xml entry) is the documented
+    # cause of HyperSpin crashing when you open those menus.
+    try:
+        scan_res = scan(config, menus=SEARCH_MENU_NAMES)
+    except Exception:  # noqa: BLE001 — a scan failure must not sink doctor
+        scan_res = None
+    if scan_res is not None:
+        risky = [
+            mi["menu"] for mi in scan_res["menu_inis"]
+            if mi["has_hooks"]
+            or (scan_res["controls_xml_exists"] and not mi["has_controls_entry"])
+        ]
+        if risky:
+            parent.children.append(Check(
+                name="Search/Genre/Favorites", status=Status.WARN,
+                detail=f"crash risk on: {', '.join(risky)} (LedBlinky hook or missing controls entry)",
+                fix="spindoctor ledblinky fix --apply",
+            ))
+        else:
+            parent.children.append(Check(
+                name="Search/Genre/Favorites", status=Status.OK,
+                detail="no LedBlinky menu-crash conflicts",
+            ))
+
+    parent.status = _worst(c.status for c in parent.children)
     return parent
 
 
@@ -707,6 +750,20 @@ def check_wheel_wiring(
         node.status = _worst([c.status for c in node.children])
         parent.children.append(node)
 
+    # Reverse orphans: systems fully set up under Databases/ but missing from the
+    # Main Menu — invisible in HyperSpin even though all the work was done.
+    from .mainmenu import discover_systems
+    try:
+        orphans = discover_systems(config)
+    except Exception:  # noqa: BLE001
+        orphans = []
+    for system in orphans:
+        parent.children.append(Check(
+            name=system, status=Status.WARN,
+            detail="set up in Databases/ but not on the Main Menu — invisible in HyperSpin",
+            fix=f'spindoctor mainmenu add "{system}" --apply',
+        ))
+
     parent.status = _worst([c.status for c in parent.children])
     return parent
 
@@ -867,6 +924,64 @@ def check_lightguns(config: Config) -> Check:
     return parent
 
 
+def check_led_coverage(config: Config) -> Check:
+    """Report how much of the MAME set has LEDBlinky control/color coverage.
+
+    Purely informational, and deliberately **cache-only**: it never triggers a
+    fresh ``mame -listxml`` (which can take minutes), so it only runs when a
+    fresh cached listxml already exists from a prior ``ledblinky audit`` /
+    ``generate``.  Otherwise it points the user at that command instead.
+
+    "would-synth" games are the actionable bucket — they have MAME input data
+    but no LEDBlinky entry yet, so ``ledblinky generate`` can light them up.
+    """
+    if not config.ledblinky_dir:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="ledblinky_dir not configured; skipping")
+    if not config.mame_executable:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="mame_executable not configured; skipping")
+
+    from .ledblinky import LISTXML_CACHE_DIR, audit_coverage
+
+    cache = LISTXML_CACHE_DIR / "MAME.xml"
+    mame = Path(config.mame_executable)
+    fresh = (
+        cache.exists()
+        and (not mame.exists() or cache.stat().st_mtime >= mame.stat().st_mtime)
+    )
+    if not fresh:
+        return Check(
+            name="LED coverage", status=Status.INFO,
+            detail="MAME control data not cached (won't run -listxml from doctor)",
+            fix="spindoctor ledblinky audit --system MAME",
+        )
+
+    try:
+        roms = list(load_database("MAME", config.databases_dir).games().keys())
+    except Exception:  # noqa: BLE001
+        roms = []
+    if not roms:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="no MAME database; skipping")
+
+    rows = audit_coverage(config, roms)
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    covered = counts.get("covered", 0)
+    would = counts.get("would-synth", 0)
+    detail = (f"{covered}/{len(roms)} covered · {would} could be generated · "
+              f"{counts.get('no-input', 0)} no-input · "
+              f"{counts.get('missing', 0)} not in listxml")
+    if would:
+        return Check(
+            name="LED coverage", status=Status.WARN, detail=detail,
+            fix="spindoctor ledblinky generate --apply",
+        )
+    return Check(name="LED coverage", status=Status.OK, detail=detail)
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -884,6 +999,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_global_emulators(config, fix, report.fixes_applied))
     report.add(check_lightguns(config))
     report.add(check_ledblinky(config))
+    report.add(check_led_coverage(config))
     report.add(check_api_creds(config))
     report.add(check_media_skeletons(config, fix, report.fixes_applied))
     return report

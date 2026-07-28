@@ -292,7 +292,61 @@ def test_check_ledblinky_warns_on_missing_files(tmp_path):
     cfg.ledblinky_dir = str(led)
     result = health.check_ledblinky(cfg)
     assert result.status == health.Status.WARN
-    assert all(c.status == health.Status.WARN for c in result.children)
+    from spindoctor.ledblinky import (
+        COLOR_RGB_NAME, COLORS_INI_NAME, CONTROLS_INI_NAME,
+    )
+    statuses = {c.name: c.status for c in result.children}
+    assert statuses[CONTROLS_INI_NAME] == health.Status.WARN
+    assert statuses[COLORS_INI_NAME] == health.Status.WARN
+    assert statuses[COLOR_RGB_NAME] == health.Status.WARN
+
+
+def _ledblinky_cabinet(tmp_path):
+    """Cabinet with a LEDBlinky dir whose three core files all parse OK."""
+    cfg = _mk_cabinet(tmp_path)
+    led = tmp_path / "led"
+    led.mkdir()
+    cfg.ledblinky_dir = str(led)
+    from spindoctor.ledblinky import (
+        COLOR_RGB_NAME, COLORS_INI_NAME, CONTROLS_INI_NAME,
+    )
+    (led / CONTROLS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (led / COLORS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (led / COLOR_RGB_NAME).write_text("[Colors]\nRed=48,0,0\n", encoding="utf-8")
+    return cfg, led
+
+
+def test_ledblinky_ok_when_no_search_conflicts(tmp_path):
+    cfg, led = _ledblinky_cabinet(tmp_path)
+    result = health.check_ledblinky(cfg)
+    assert result.status == health.Status.OK
+    assert _sub(result, "Search/Genre/Favorites").status == health.Status.OK
+
+
+def test_ledblinky_warns_on_search_menu_crash_hook(tmp_path):
+    cfg, led = _ledblinky_cabinet(tmp_path)
+    # HyperSpin Search menu Settings.ini carrying a LedBlinky process hook —
+    # the documented Search-crash trigger.
+    from pathlib import Path
+    menu_ini = Path(cfg.hyperspin_dir) / "Menu" / "Search" / "Settings.ini"
+    menu_ini.parent.mkdir(parents=True)
+    menu_ini.write_text(
+        "[Settings]\nStart_Hyperspin_Process=C:\\LEDBlinky\\LEDBlinky.exe\n",
+        encoding="utf-8")
+    result = health.check_ledblinky(cfg)
+    assert result.status == health.Status.WARN
+    search = _sub(result, "Search/Genre/Favorites")
+    assert search.status == health.Status.WARN
+    assert "Search" in search.detail
+    assert "ledblinky fix" in search.fix
+
+
+def test_ledblinky_warns_on_missing_color_rgb(tmp_path):
+    cfg, led = _ledblinky_cabinet(tmp_path)
+    from spindoctor.ledblinky import COLOR_RGB_NAME
+    (led / COLOR_RGB_NAME).unlink()
+    result = health.check_ledblinky(cfg)
+    assert _sub(result, COLOR_RGB_NAME).status == health.Status.WARN
 
 
 # ─── check_api_creds ─────────────────────────────────────────────────────────
@@ -471,6 +525,22 @@ def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
     assert "demul.exe" in emu.detail
 
 
+def test_wheel_wiring_flags_reverse_orphan(tmp_path):
+    """A system set up under Databases/ but not on the Main Menu is invisible."""
+    cfg = _mk_cabinet(tmp_path)
+    _seed_main_menu(cfg, "MAME")
+    orphan = cfg.databases_dir / "Neo Geo"
+    orphan.mkdir(parents=True)
+    (orphan / "Neo Geo.xml").write_text(
+        "<menu><game name='x'/></menu>", encoding="utf-8")
+    result = health.check_wheel_wiring(cfg, fix=False, fixes_applied=[])
+    node = _wheel_node(result, "Neo Geo")
+    assert node is not None
+    assert node.status == health.Status.WARN
+    assert "not on the Main Menu" in node.detail
+    assert 'mainmenu add "Neo Geo"' in node.fix
+
+
 def test_wheel_wiring_warns_when_emulator_exe_missing_on_disk(tmp_path):
     """Emulator is registered in Global Emulators.ini, but its Emu_Path binary
     doesn't exist (stale after uninstall/drive change) → WARN, not a false OK."""
@@ -564,6 +634,60 @@ def test_pc_fail_when_application_path_stale(tmp_path):
     assert "pc-rename" in _sub(node, "Application paths").fix
 
 
+# ─── check_led_coverage ──────────────────────────────────────────────────────
+
+
+def test_led_coverage_info_when_unconfigured(tmp_path):
+    cfg = _mk_cabinet(tmp_path)  # no ledblinky_dir / mame_executable
+    assert health.check_led_coverage(cfg).status == health.Status.INFO
+
+
+def test_led_coverage_info_when_no_cache(tmp_path, monkeypatch):
+    from spindoctor import ledblinky
+    monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", tmp_path / "empty_cache")
+    cfg = _mk_cabinet(tmp_path)
+    (tmp_path / "led").mkdir()
+    cfg.ledblinky_dir = str(tmp_path / "led")
+    (tmp_path / "mame.exe").write_bytes(b"MZ")
+    cfg.mame_executable = str(tmp_path / "mame.exe")
+    result = health.check_led_coverage(cfg)
+    assert result.status == health.Status.INFO
+    assert "not cached" in result.detail  # never runs -listxml from doctor
+
+
+def test_led_coverage_warns_on_generatable_games(tmp_path, monkeypatch):
+    from spindoctor import ledblinky
+    cache_dir = tmp_path / "listxml_cache"
+    cache_dir.mkdir()
+    monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", cache_dir)
+
+    cfg = _mk_cabinet(tmp_path)
+    led = tmp_path / "led"
+    led.mkdir()
+    cfg.ledblinky_dir = str(led)
+    # pacman is fully covered; galaga has input but no LEDBlinky entry.
+    (led / ledblinky.CONTROLS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (led / ledblinky.COLORS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (tmp_path / "mame.exe").write_bytes(b"MZ")
+    cfg.mame_executable = str(tmp_path / "mame.exe")
+    (cache_dir / "MAME.xml").write_text(
+        "<mame>"
+        '<machine name="pacman"><description>Pac</description>'
+        '<input players="1"><control type="joy4way" buttons="1"/></input></machine>'
+        '<machine name="galaga"><description>Gal</description>'
+        '<input players="1"><control type="joy8way" buttons="1"/></input></machine>'
+        "</mame>", encoding="utf-8")
+    dbdir = cfg.databases_dir / "MAME"
+    dbdir.mkdir(parents=True)
+    (dbdir / "MAME.xml").write_text(
+        '<menu><game name="pacman"/><game name="galaga"/></menu>', encoding="utf-8")
+
+    result = health.check_led_coverage(cfg)
+    assert result.status == health.Status.WARN
+    assert "could be generated" in result.detail
+    assert "generate --apply" in result.fix
+
+
 # ─── check_lightguns ─────────────────────────────────────────────────────────
 
 
@@ -652,6 +776,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Global Emulators.ini" in names
     assert "Lightguns" in names
     assert "LEDBlinky" in names
+    assert "LED coverage" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
 
