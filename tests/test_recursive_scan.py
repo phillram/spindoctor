@@ -62,6 +62,26 @@ def test_recursive_scan_finds_nested_files(isolated_config, pc_layout):
     assert set(roms.keys()) == {"Cyberpunk 2077", "Hades", "Portal 2"}
 
 
+def test_recursive_scan_warns_on_title_collision(isolated_config, tmp_path):
+    """Two folders deriving the same title must warn, not silently drop one."""
+    roms_dir = tmp_path / "roms"
+    sys_dir = roms_dir / "PC Games"
+    (sys_dir / "GameA").mkdir(parents=True)
+    (sys_dir / "GameA" / "launcher.exe").touch()
+    (sys_dir / "GameB").mkdir()
+    (sys_dir / "GameB" / "launcher.exe").touch()
+    _save_overrides({
+        "PC Games": {
+            "rom_extensions": [".exe"],
+            "recursive_scan": True,
+            "title_strategy": "stem",  # both folders → title "launcher"
+        }
+    })
+    with pytest.warns(RuntimeWarning, match="Duplicate title"):
+        roms = scan_roms("PC Games", roms_dir)
+    assert list(roms.keys()) == ["launcher"]  # one kept, collision surfaced
+
+
 def test_recursive_scan_strategy_stem(isolated_config, pc_layout):
     _save_overrides({
         "PC Games": {
