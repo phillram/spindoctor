@@ -36,6 +36,9 @@ MEDIA_FILE_SUBDIRS = (
     "Images/Artwork1",
     "Images/Artwork2",
     "Images/Artwork3",
+    # "fade" media (media.py MEDIA_DIR_MAP → Images/Artwork4).  Was omitted, so
+    # fade images were never mirrored into synthetic wheels.
+    "Images/Artwork4",
     # Title-screen captures used by many HyperSpin themes for side-panel
     # artwork.  Absent from the original list — games in synthetic wheels
     # showed a blank title-image slot even though source systems had them.
@@ -155,7 +158,16 @@ def plan_mirror(
     MAME subsystems ("4-Player Games", "Driving Games", etc.) that store all
     their videos under ``Media/MAME/Video/`` rather than a per-system folder.
     """
+    # Media files on disk are always written with a Windows-safe stem
+    # (media.py sanitizes game names before writing, and HyperSpin resolves
+    # media the same way), so match source files and name target files by the
+    # sanitized stem — not the raw game name, which may contain ':' etc.  Using
+    # the raw name meant zero media was mirrored for any game with a forbidden
+    # character in its title (e.g. "Metal Gear Solid: VR Missions").
+    from .media import _win_safe_stem
     target_stem = target_stem or source_stem
+    source_stem = _win_safe_stem(source_stem)
+    target_stem = _win_safe_stem(target_stem)
     plan = LinkPlan()
 
     src_root = media_root / source_system
@@ -197,7 +209,12 @@ def plan_mirror(
         # source wheel). Copy it as <target_stem>.zip so the same themed
         # background and video layout appear in the synthetic wheel.
         if sub == "Themes" and not theme_found:
-            default_theme = src_dir / "Default.zip"
+            # Accept either casing: SpinDoctor's own fill_default_theme (and the
+            # HyperSpin/RocketLauncher convention) writes lowercase default.zip,
+            # while some packs ship Default.zip.
+            default_theme = src_dir / "default.zip"
+            if not default_theme.is_file():
+                default_theme = src_dir / "Default.zip"
             if default_theme.is_file():
                 dest = dst_root / sub / f"{target_stem}.zip"
                 plan.actions.append(_classify(default_theme, dest, is_dir=False))

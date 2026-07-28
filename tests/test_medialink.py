@@ -309,3 +309,40 @@ def test_plan_mirror_prefers_system_video_over_override(tmp_path):
     assert video_actions[0].src.parent == src / "Video", (
         "system-specific Video dir must be used, not the override"
     )
+
+
+def test_plan_mirror_matches_sanitized_source_media_for_colon_names(tmp_path):
+    """A game whose DB name has a forbidden char (colon) still mirrors: media
+    on disk is sanitized, so plan_mirror must match/write by sanitized stem."""
+    media = tmp_path / "Media"
+    wheel = media / "PSX" / "Images" / "Wheel"
+    wheel.mkdir(parents=True)
+    # media.py writes the file with the colon stripped:
+    (wheel / "Metal Gear Solid VR Missions.png").write_bytes(b"x")
+
+    plan = plan_mirror(media, "PSX", "Favorites", "Metal Gear Solid: VR Missions")
+    dests = {a.dest.name for a in plan.actions}
+    assert "Metal Gear Solid VR Missions.png" in dests, (
+        "media for a colon-named game must still be mirrored"
+    )
+
+
+def test_plan_mirror_includes_artwork4_fade(tmp_path):
+    media = tmp_path / "Media"
+    fade = media / "MAME" / "Images" / "Artwork4"
+    fade.mkdir(parents=True)
+    (fade / "pacman.png").write_bytes(b"fade")
+    plan = plan_mirror(media, "MAME", "Favorites", "pacman")
+    assert any(a.dest.name == "pacman.png" and "Artwork4" in str(a.dest)
+               for a in plan.actions)
+
+
+def test_plan_mirror_default_theme_lowercase(tmp_path):
+    media = tmp_path / "Media"
+    themes = media / "MAME" / "Themes"
+    themes.mkdir(parents=True)
+    (themes / "default.zip").write_bytes(b"theme")  # lowercase, no per-game theme
+    plan = plan_mirror(media, "MAME", "Favorites", "pacman")
+    assert any(a.dest.name == "pacman.zip" for a in plan.actions), (
+        "lowercase default.zip must be used as the per-game theme fallback"
+    )

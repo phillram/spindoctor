@@ -598,8 +598,12 @@ def _build_synthetic_wheel(
 
     # ── Phase 2: mirror media ─────────────────────────────────────────────────
     if not skip_media:
+        from .media import _win_safe_stem
         print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
-        seen = set(target_names.values())
+        # Mirrored media files use sanitized stems, so the orphan-cleanup
+        # allowlist must be sanitized too (else it deletes the files just
+        # written for any name with a forbidden character).
+        seen = {_win_safe_stem(v) for v in target_names.values()}
         _target_media = config.media_dir / target_system
         # Per-system video directory overrides: HyperSpin subsystems that use MAME
         # (e.g. "4-Player Games", "Driving Games") redirect their video lookup to
@@ -674,10 +678,15 @@ def _build_synthetic_wheel(
             extra_window_titles=config.emulator_window_titles or None,
         )
         summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
-        # Remove stale per-game INIs AFTER writing new ones.
+        # Remove stale per-game INIs AFTER writing new ones.  INI filenames are
+        # sanitized (see _generate_pclauncher_ini), so this allowlist is the
+        # sanitized form of the names — NOT the raw `keep` set used for DB
+        # pruning above (which must stay raw to match HyperSpin DB entry names).
         if ini_dir.exists():
+            from .media import _win_safe_stem
+            keep_inis = {_win_safe_stem(v) for v in target_names.values()}
             for ini in ini_dir.iterdir():
-                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep:
+                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep_inis:
                     try:
                         ini.unlink()
                     except OSError as e:
