@@ -804,6 +804,28 @@ def test_intro_video_warns_on_stale_autorun(tmp_path, monkeypatch):
     assert _sub(result, "auto-run").status == health.Status.WARN
 
 
+# ─── check_orphan_media ──────────────────────────────────────────────────────
+
+
+def test_orphan_media_ok_when_none(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="mario"/></menu>', encoding="utf-8")
+    assert health.check_orphan_media(cfg).status == health.Status.OK
+
+
+def test_orphan_media_info_when_orphans_present(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    (cfg.databases_dir / "NES" / "NES.xml").write_text(
+        '<menu><game name="mario"/></menu>', encoding="utf-8")
+    # A theme folder for a game that isn't in the DB or ROMs → orphan.
+    (cfg.media_dir / "NES" / "Themes" / "ghost").mkdir(parents=True)
+    result = health.check_orphan_media(cfg)
+    assert result.status == health.Status.INFO
+    assert "orphan media" in result.detail
+    assert "find-orphan-media" in result.fix
+
+
 # ─── run_health_checks orchestration ─────────────────────────────────────────
 
 
@@ -825,6 +847,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "LEDBlinky" in names
     assert "LED coverage" in names
     assert "Intro video" in names
+    assert "Orphan media" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
 
