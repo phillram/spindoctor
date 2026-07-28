@@ -852,6 +852,21 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Media folders" in names
 
 
+def test_run_health_checks_never_crashes_on_a_failing_check(tmp_path, monkeypatch):
+    """A check that raises must become a FAIL row, not crash the whole run."""
+    def _boom(*a, **k):
+        raise OSError("drive ejected mid-scan")
+
+    monkeypatch.setattr(health, "check_global_emulators", _boom)
+    cfg = _mk_cabinet(tmp_path)
+    report = health.run_health_checks(cfg, fix=True)  # must not raise
+    crashed = {c.name: c for c in report.checks}["Global Emulators.ini"]
+    assert crashed.status == health.Status.FAIL
+    assert "check crashed" in crashed.detail
+    # Other checks still ran.
+    assert "Paths" in [c.name for c in report.checks]
+
+
 def test_health_report_overall_picks_worst_status():
     rep = health.HealthReport()
     rep.add(health.Check("a", health.Status.OK))

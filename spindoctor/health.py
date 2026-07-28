@@ -1085,21 +1085,38 @@ def check_orphan_media(config: Config) -> Check:
 
 def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report = HealthReport()
-    report.add(check_paths(config))
-    report.add(check_binaries(config))
-    report.add(check_lxml())
-    report.add(check_archive_support())
-    report.add(check_preview_support())
-    report.add(check_databases(config))
-    report.add(check_wheel_wiring(config, fix, report.fixes_applied))
-    report.add(check_pc_launchability(config))
-    report.add(check_match_cache(config, fix, report.fixes_applied))
-    report.add(check_global_emulators(config, fix, report.fixes_applied))
-    report.add(check_lightguns(config))
-    report.add(check_ledblinky(config))
-    report.add(check_led_coverage(config))
-    report.add(check_intro_video(config))
-    report.add(check_orphan_media(config))
-    report.add(check_api_creds(config))
-    report.add(check_media_skeletons(config, fix, report.fixes_applied))
+
+    def _safe(name: str, fn) -> None:
+        """Run one check; a crash becomes a FAIL row, never a doctor crash.
+
+        `doctor` is the tool you reach for *because* something is wrong, so a
+        single check hitting an unexpected condition (a locked file, a
+        permission error, a malformed INI it didn't anticipate) must not take
+        down the whole report.
+        """
+        try:
+            report.add(fn())
+        except Exception as e:  # noqa: BLE001
+            report.add(Check(
+                name=name, status=Status.FAIL,
+                detail=f"check crashed: {type(e).__name__}: {e}",
+            ))
+
+    _safe("Paths", lambda: check_paths(config))
+    _safe("External binaries", lambda: check_binaries(config))
+    _safe("lxml", check_lxml)
+    _safe("Archive support", check_archive_support)
+    _safe("Preview support", check_preview_support)
+    _safe("HyperSpin databases", lambda: check_databases(config))
+    _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
+    _safe("PC games", lambda: check_pc_launchability(config))
+    _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
+    _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
+    _safe("Lightguns", lambda: check_lightguns(config))
+    _safe("LEDBlinky", lambda: check_ledblinky(config))
+    _safe("LED coverage", lambda: check_led_coverage(config))
+    _safe("Intro video", lambda: check_intro_video(config))
+    _safe("Orphan media", lambda: check_orphan_media(config))
+    _safe("Metadata APIs", lambda: check_api_creds(config))
+    _safe("Media folders", lambda: check_media_skeletons(config, fix, report.fixes_applied))
     return report
