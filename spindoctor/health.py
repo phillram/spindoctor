@@ -924,6 +924,64 @@ def check_lightguns(config: Config) -> Check:
     return parent
 
 
+def check_led_coverage(config: Config) -> Check:
+    """Report how much of the MAME set has LEDBlinky control/color coverage.
+
+    Purely informational, and deliberately **cache-only**: it never triggers a
+    fresh ``mame -listxml`` (which can take minutes), so it only runs when a
+    fresh cached listxml already exists from a prior ``ledblinky audit`` /
+    ``generate``.  Otherwise it points the user at that command instead.
+
+    "would-synth" games are the actionable bucket — they have MAME input data
+    but no LEDBlinky entry yet, so ``ledblinky generate`` can light them up.
+    """
+    if not config.ledblinky_dir:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="ledblinky_dir not configured; skipping")
+    if not config.mame_executable:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="mame_executable not configured; skipping")
+
+    from .ledblinky import LISTXML_CACHE_DIR, audit_coverage
+
+    cache = LISTXML_CACHE_DIR / "MAME.xml"
+    mame = Path(config.mame_executable)
+    fresh = (
+        cache.exists()
+        and (not mame.exists() or cache.stat().st_mtime >= mame.stat().st_mtime)
+    )
+    if not fresh:
+        return Check(
+            name="LED coverage", status=Status.INFO,
+            detail="MAME control data not cached (won't run -listxml from doctor)",
+            fix="spindoctor ledblinky audit --system MAME",
+        )
+
+    try:
+        roms = list(load_database("MAME", config.databases_dir).games().keys())
+    except Exception:  # noqa: BLE001
+        roms = []
+    if not roms:
+        return Check(name="LED coverage", status=Status.INFO,
+                     detail="no MAME database; skipping")
+
+    rows = audit_coverage(config, roms)
+    counts: dict[str, int] = {}
+    for r in rows:
+        counts[r.status] = counts.get(r.status, 0) + 1
+    covered = counts.get("covered", 0)
+    would = counts.get("would-synth", 0)
+    detail = (f"{covered}/{len(roms)} covered · {would} could be generated · "
+              f"{counts.get('no-input', 0)} no-input · "
+              f"{counts.get('missing', 0)} not in listxml")
+    if would:
+        return Check(
+            name="LED coverage", status=Status.WARN, detail=detail,
+            fix="spindoctor ledblinky generate --apply",
+        )
+    return Check(name="LED coverage", status=Status.OK, detail=detail)
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -941,6 +999,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_global_emulators(config, fix, report.fixes_applied))
     report.add(check_lightguns(config))
     report.add(check_ledblinky(config))
+    report.add(check_led_coverage(config))
     report.add(check_api_creds(config))
     report.add(check_media_skeletons(config, fix, report.fixes_applied))
     return report

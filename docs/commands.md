@@ -2059,6 +2059,8 @@ For every `PCLauncher` system, a **PC games** check goes one level deeper than t
 
 The **LEDBlinky** check goes beyond confirming the core files parse: it also flags a missing `Color-RGB.ini` (without it `ledblinky generate` degrades to a legacy color format LedBlinky can't read) and runs the Search/Genre/Favorites crash scan (a LedBlinky process hook in a menu's `Settings.ini`, or a missing `LEDBlinkyControls.xml` entry, is the documented cause of HyperSpin crashing when you open those menus — fix with `ledblinky fix --apply`). The wheel-wiring check additionally reports **reverse orphans** — systems fully set up under `Databases/` but missing from the Main Menu, so invisible in HyperSpin.
 
+A **LED coverage** check reports how much of the MAME set has LEDBlinky control/color entries, and how many games could be lit up with `ledblinky generate`. It is **cache-only** — it never triggers a fresh `mame -listxml` (which can take minutes) from `doctor`; if no cached control data exists it just points you at `ledblinky audit`.
+
 ```bat
 spindoctor doctor              :: read-only diagnosis
 spindoctor doctor --apply      :: also run safe, idempotent repairs
