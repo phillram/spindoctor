@@ -634,6 +634,60 @@ def test_pc_fail_when_application_path_stale(tmp_path):
     assert "pc-rename" in _sub(node, "Application paths").fix
 
 
+# ─── check_led_coverage ──────────────────────────────────────────────────────
+
+
+def test_led_coverage_info_when_unconfigured(tmp_path):
+    cfg = _mk_cabinet(tmp_path)  # no ledblinky_dir / mame_executable
+    assert health.check_led_coverage(cfg).status == health.Status.INFO
+
+
+def test_led_coverage_info_when_no_cache(tmp_path, monkeypatch):
+    from spindoctor import ledblinky
+    monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", tmp_path / "empty_cache")
+    cfg = _mk_cabinet(tmp_path)
+    (tmp_path / "led").mkdir()
+    cfg.ledblinky_dir = str(tmp_path / "led")
+    (tmp_path / "mame.exe").write_bytes(b"MZ")
+    cfg.mame_executable = str(tmp_path / "mame.exe")
+    result = health.check_led_coverage(cfg)
+    assert result.status == health.Status.INFO
+    assert "not cached" in result.detail  # never runs -listxml from doctor
+
+
+def test_led_coverage_warns_on_generatable_games(tmp_path, monkeypatch):
+    from spindoctor import ledblinky
+    cache_dir = tmp_path / "listxml_cache"
+    cache_dir.mkdir()
+    monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", cache_dir)
+
+    cfg = _mk_cabinet(tmp_path)
+    led = tmp_path / "led"
+    led.mkdir()
+    cfg.ledblinky_dir = str(led)
+    # pacman is fully covered; galaga has input but no LEDBlinky entry.
+    (led / ledblinky.CONTROLS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (led / ledblinky.COLORS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
+    (tmp_path / "mame.exe").write_bytes(b"MZ")
+    cfg.mame_executable = str(tmp_path / "mame.exe")
+    (cache_dir / "MAME.xml").write_text(
+        "<mame>"
+        '<machine name="pacman"><description>Pac</description>'
+        '<input players="1"><control type="joy4way" buttons="1"/></input></machine>'
+        '<machine name="galaga"><description>Gal</description>'
+        '<input players="1"><control type="joy8way" buttons="1"/></input></machine>'
+        "</mame>", encoding="utf-8")
+    dbdir = cfg.databases_dir / "MAME"
+    dbdir.mkdir(parents=True)
+    (dbdir / "MAME.xml").write_text(
+        '<menu><game name="pacman"/><game name="galaga"/></menu>', encoding="utf-8")
+
+    result = health.check_led_coverage(cfg)
+    assert result.status == health.Status.WARN
+    assert "could be generated" in result.detail
+    assert "generate --apply" in result.fix
+
+
 # ─── check_lightguns ─────────────────────────────────────────────────────────
 
 
@@ -722,6 +776,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Global Emulators.ini" in names
     assert "Lightguns" in names
     assert "LEDBlinky" in names
+    assert "LED coverage" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
 
