@@ -2051,7 +2051,9 @@ See [Configuration → demulshooter_path](configuration.md) for setting an expli
 
 Self-diagnose your install: paths, binaries, XML DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, optional `lxml`, `ffprobe`. Each check renders ✓ / ⚠ / ✗.
 
-It also runs a **per-wheel wiring** check: for every wheel on the Main Menu it verifies the pieces HyperSpin and RocketLauncher need at *select* and *launch* time — the HyperSpin `Settings\<System>.ini` (missing → "Cannot find `<System>.ini`" when you open the wheel), the console-level `Media\<System>\Themes\default.zip` fallback theme, the RocketLauncher emulator mapping (`Default_Emulator` resolving to a known executable — games won't launch without it), and that the wheel has a database. This catches broken wheels that the install-wide checks miss.
+It also runs a **per-wheel wiring** check: for every wheel on the Main Menu it verifies the pieces HyperSpin and RocketLauncher need at *select* and *launch* time — the HyperSpin `Settings\<System>.ini` (missing → "Cannot find `<System>.ini`" when you open the wheel), the console-level `Media\<System>\Themes\default.zip` fallback theme, the RocketLauncher emulator mapping (`Default_Emulator` resolving to an executable that exists on disk — games won't launch without it), and that the wheel has a database. This catches broken wheels that the install-wide checks miss.
+
+For every system marked `lightgun: true`, a **Lightguns** check verifies the DemulShooter wiring: a system flagged for a light gun but with no `Pre_Launch_App` (game runs with no gun) is a FAIL; a missing `Post_Launch_App` teardown (DemulShooter left running) is a WARN. It's diagnosis-only — it prints the `lightgun configure` command to run.
 
 ```bat
 spindoctor doctor              :: read-only diagnosis

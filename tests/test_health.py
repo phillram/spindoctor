@@ -502,6 +502,75 @@ def test_wheel_wiring_warns_when_emulator_exe_missing_on_disk(tmp_path):
     assert "not found on disk" in emu.detail
 
 
+# ─── check_lightguns ─────────────────────────────────────────────────────────
+
+
+def _lightgun_cabinet(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings").mkdir(parents=True)
+    cfg.rocketlauncher_dir = str(rl)
+    return cfg, rl
+
+
+def _write_rl_ini(rl, system, body):
+    (rl / "Settings" / f"{system}.ini").write_text(body, encoding="utf-8")
+
+
+def test_lightguns_info_when_none_marked(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    assert health.check_lightguns(cfg).status == health.Status.INFO
+
+
+def test_lightguns_fail_when_marked_but_not_wired(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    # No RL INI at all for the system → not wired.
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.FAIL
+    node = _wheel_node(result, "Point Blank")
+    assert node.status == health.Status.FAIL
+    assert "no gun" in node.detail
+    assert "lightgun configure" in node.fix
+
+
+def test_lightguns_ok_when_fully_wired(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n"
+                  "Post_Launch_App=taskkill /IM DemulShooter.exe\n")
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.OK
+    node = _wheel_node(result, "Point Blank")
+    assert _sub(node, "target").detail.endswith("demul")
+
+
+def test_lightguns_warn_when_teardown_missing(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n")
+    result = health.check_lightguns(cfg)
+    assert result.status == health.Status.WARN
+    node = _wheel_node(result, "Point Blank")
+    assert _sub(node, "teardown").status == health.Status.WARN
+
+
+def test_lightguns_warn_on_bad_demulshooter_path(tmp_path):
+    cfg, rl = _lightgun_cabinet(tmp_path)
+    cfg.set_lightgun("Point Blank", True)
+    _write_rl_ini(rl, "Point Blank",
+                  "[Point Blank]\n"
+                  "Pre_Launch_App=C:\\Tools\\DemulShooter.exe -target demul\n"
+                  "Post_Launch_App=taskkill /IM DemulShooter.exe\n")
+    cfg.demulshooter_path = str(tmp_path / "nope" / "DemulShooter.exe")
+    result = health.check_lightguns(cfg)
+    assert _sub(result, "demulshooter_path").status == health.Status.WARN
+
+
 # ─── run_health_checks orchestration ─────────────────────────────────────────
 
 
@@ -518,6 +587,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Wheel wiring" in names
     assert "Match cache" in names
     assert "Global Emulators.ini" in names
+    assert "Lightguns" in names
     assert "LEDBlinky" in names
     assert "Metadata APIs" in names
     assert "Media folders" in names
