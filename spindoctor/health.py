@@ -1046,6 +1046,40 @@ def check_intro_video(config: Config) -> Check:
     return parent
 
 
+def check_orphan_media(config: Config) -> Check:
+    """Report leftover media files with no matching game (disk bloat).
+
+    Diagnosis only, and INFO severity — orphan media doesn't break anything, it
+    just wastes space.  Deleting is destructive, so this never touches files
+    (doctor's contract is "never deletes ROMs/DBs/media"); it points at
+    ``find-orphan-media``, which has its own preview and ``--apply`` gate.
+    """
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name="Orphan media", status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+
+    from .orphan_media import find_orphan_media
+
+    total = 0
+    systems_hit = 0
+    for system in get_systems(config):
+        try:
+            n = len(find_orphan_media(system, config).orphans)
+        except Exception:  # noqa: BLE001 — a bad DB is check_databases' problem
+            continue
+        if n:
+            total += n
+            systems_hit += 1
+
+    if total == 0:
+        return Check(name="Orphan media", status=Status.OK, detail="none")
+    return Check(
+        name="Orphan media", status=Status.INFO,
+        detail=f"{total} orphan media file(s) across {systems_hit} system(s) — disk bloat",
+        fix="spindoctor find-orphan-media --all   (preview; add --apply to remove)",
+    )
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -1065,6 +1099,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_ledblinky(config))
     report.add(check_led_coverage(config))
     report.add(check_intro_video(config))
+    report.add(check_orphan_media(config))
     report.add(check_api_creds(config))
     report.add(check_media_skeletons(config, fix, report.fixes_applied))
     return report
