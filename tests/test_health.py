@@ -297,6 +297,133 @@ def test_check_media_skeletons_fix_creates_folders(tmp_path):
     assert any("media subfolder" in m for m in fixes)
 
 
+# ─── check_wheel_wiring (read + --fix) ───────────────────────────────────────
+
+
+def _seed_main_menu(cfg, *names, extra_xml=""):
+    """Write Main Menu.xml under the cabinet's hyperspin_dir."""
+    mm = cfg.databases_dir / "Main Menu" / "Main Menu.xml"
+    mm.parent.mkdir(parents=True, exist_ok=True)
+    games = "".join(f'<game name="{n}"/>' for n in names)
+    mm.write_text(f"<menu>{games}{extra_xml}</menu>", encoding="utf-8")
+    return mm
+
+
+def _wheel_node(parent, name):
+    return next((c for c in parent.children if c.name == name), None)
+
+
+def _sub(node, name):
+    return next((c for c in node.children if c.name == name), None)
+
+
+def test_wheel_wiring_skips_without_hyperspin(tmp_path):
+    cfg = Config()
+    result = health.check_wheel_wiring(cfg, fix=False, fixes_applied=[])
+    assert result.status == health.Status.INFO
+
+
+def test_wheel_wiring_info_when_no_main_menu(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    result = health.check_wheel_wiring(cfg, fix=False, fixes_applied=[])
+    assert result.status == health.Status.INFO
+
+
+def test_wheel_wiring_warns_on_missing_settings_ini(tmp_path):
+    """The exact bug: a wheel on the Main Menu with no HyperSpin Settings INI."""
+    cfg = _mk_cabinet(tmp_path)
+    _seed_main_menu(cfg, "Recompiled")
+    result = health.check_wheel_wiring(cfg, fix=False, fixes_applied=[])
+    assert result.status == health.Status.WARN
+    node = _wheel_node(result, "Recompiled")
+    ini_check = _sub(node, "HyperSpin settings INI")
+    assert ini_check.status == health.Status.WARN
+    assert "Cannot find Recompiled.ini" in ini_check.detail
+    assert "mainmenu add" in ini_check.fix
+
+
+def test_wheel_wiring_excludes_search_entry(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    _seed_main_menu(cfg, "Recompiled", extra_xml='<game name="Search" exe="true"/>')
+    result = health.check_wheel_wiring(cfg, fix=False, fixes_applied=[])
+    assert _wheel_node(result, "Search") is None
+    assert _wheel_node(result, "Recompiled") is not None
+
+
+def test_wheel_wiring_fix_writes_settings_ini_and_theme(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    _seed_main_menu(cfg, "Recompiled")
+    fixes: list[str] = []
+    result = health.check_wheel_wiring(cfg, fix=True, fixes_applied=fixes)
+
+    ini = cfg.hyperspin_dir + "/Settings/Recompiled.ini"
+    from pathlib import Path
+    assert Path(ini).exists()
+    assert "hyperlaunch=true" in Path(ini).read_text(encoding="utf-8")
+    default_zip = Path(cfg.media_dir) / "Recompiled" / "Themes" / "default.zip"
+    assert default_zip.exists()
+    assert any("Settings/Recompiled.ini" in m for m in fixes)
+    # Recompiled is synthetic → emulator sub-check is OK, so the node clears.
+    node = _wheel_node(result, "Recompiled")
+    assert _sub(node, "HyperSpin settings INI").status == health.Status.OK
+
+
+def test_wheel_wiring_warns_on_missing_emulator_for_console(tmp_path):
+    """A non-synthetic wheel with a Settings INI + theme but no emulator mapping
+    still warns, because its games can't launch."""
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings").mkdir(parents=True)
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "Dreamcast")
+    # Give Dreamcast its Settings INI + theme so only the emulator is missing.
+    (cfg.hyperspin_dir + "/Settings")  # noqa
+    from pathlib import Path
+    ini = Path(cfg.hyperspin_dir) / "Settings" / "Dreamcast.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text("[exe info]\nhyperlaunch=true\n", encoding="utf-8")
+    theme = Path(cfg.media_dir) / "Dreamcast" / "Themes" / "default.zip"
+    theme.parent.mkdir(parents=True, exist_ok=True)
+    theme.write_bytes(b"x")
+    (cfg.databases_dir / "Dreamcast").mkdir(parents=True, exist_ok=True)
+    (cfg.databases_dir / "Dreamcast" / "Dreamcast.xml").write_text(
+        "<menu><game name='x'/></menu>", encoding="utf-8")
+
+    node = _wheel_node(
+        health.check_wheel_wiring(cfg, fix=False, fixes_applied=[]), "Dreamcast")
+    emu = _sub(node, "Emulator")
+    assert emu.status == health.Status.WARN
+    assert "won't launch" in emu.detail
+
+
+def test_wheel_wiring_ok_when_emulator_resolves(tmp_path):
+    cfg = _mk_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    (rl / "Settings" / "Dreamcast").mkdir(parents=True)
+    (rl / "Settings" / "Dreamcast" / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=Demul\n", encoding="utf-8")
+    (rl / "Settings" / "Global Emulators.ini").write_text(
+        "[Demul]\nEmu_Path=..\\Emulators\\Demul\\demul.exe\n", encoding="utf-8")
+    cfg.rocketlauncher_dir = str(rl)
+    _seed_main_menu(cfg, "Dreamcast")
+    from pathlib import Path
+    ini = Path(cfg.hyperspin_dir) / "Settings" / "Dreamcast.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_text("[exe info]\nhyperlaunch=true\n", encoding="utf-8")
+    theme = Path(cfg.media_dir) / "Dreamcast" / "Themes" / "default.zip"
+    theme.parent.mkdir(parents=True, exist_ok=True)
+    theme.write_bytes(b"x")
+    (cfg.databases_dir / "Dreamcast").mkdir(parents=True, exist_ok=True)
+    (cfg.databases_dir / "Dreamcast" / "Dreamcast.xml").write_text(
+        "<menu><game name='x'/></menu>", encoding="utf-8")
+
+    node = _wheel_node(
+        health.check_wheel_wiring(cfg, fix=False, fixes_applied=[]), "Dreamcast")
+    emu = _sub(node, "Emulator")
+    assert emu.status == health.Status.OK
+    assert "demul.exe" in emu.detail
+
+
 # ─── run_health_checks orchestration ─────────────────────────────────────────
 
 
@@ -310,6 +437,7 @@ def test_run_health_checks_emits_all_sections(tmp_path):
     assert "Archive support" in names
     assert "Preview support" in names
     assert "HyperSpin databases" in names
+    assert "Wheel wiring" in names
     assert "Match cache" in names
     assert "Global Emulators.ini" in names
     assert "LEDBlinky" in names
