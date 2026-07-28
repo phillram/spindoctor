@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -26,6 +27,15 @@ class Status(str, Enum):
     WARN = "warn"
     FAIL = "fail"
     INFO = "info"
+
+
+# Severity ordering: OK and INFO are both "fine"; WARN then FAIL escalate.
+_STATUS_ORDER = {Status.OK: 0, Status.INFO: 0, Status.WARN: 1, Status.FAIL: 2}
+
+
+def _worst(statuses) -> Status:
+    """Return the most severe status in *statuses* (OK/INFO < WARN < FAIL)."""
+    return max(statuses, key=lambda s: _STATUS_ORDER[s], default=Status.OK)
 
 
 @dataclass
@@ -459,6 +469,178 @@ def check_media_skeletons(
     )
 
 
+def _main_menu_wheels(mm_path: Path) -> list[str]:
+    """Real wheel names from Main Menu.xml.
+
+    Excludes HyperSpin built-in entries carrying ``exe="true"`` (e.g. the
+    ``Search`` entry), which are not selectable console/system wheels and have
+    no Settings INI / database of their own.
+    """
+    if not mm_path.exists():
+        return []
+    try:
+        tree = ET.parse(mm_path)
+    except ET.ParseError:
+        return []
+    wheels: list[str] = []
+    for g in tree.getroot().findall("game"):
+        name = (g.get("name") or "").strip()
+        if not name:
+            continue
+        if (g.get("exe") or "").strip().lower() == "true":
+            continue  # built-in (Search) — not a wheel
+        wheels.append(name)
+    return wheels
+
+
+def check_wheel_wiring(
+    config: Config, fix: bool, fixes_applied: list[str],
+) -> Check:
+    """Per-wheel launch/open wiring for every system on the Main Menu.
+
+    The install-wide checks (databases, Global Emulators.ini, media skeleton)
+    can all pass while an individual wheel is still broken.  This walks
+    ``Main Menu.xml`` and, for each wheel, verifies the pieces HyperSpin and
+    RocketLauncher actually need at selection/launch time:
+
+    * **HyperSpin ``Settings/<System>.ini``** — required to *open* the wheel;
+      without it HyperSpin reports "Cannot find <System>.ini".  ``--fix`` writes
+      the minimal INI (idempotent).
+    * **``Media/<System>/Themes/default.zip``** — HyperSpin's per-console
+      fallback theme; without it games with no theme of their own render blank.
+      ``--fix`` installs the bundled blank theme.
+    * **RocketLauncher emulator mapping** — a wheel with no ``Default_Emulator``
+      (or one that resolves to no known executable) can't launch its games.
+      Diagnosis only — SpinDoctor can't guess an uninstalled emulator.
+    * **Database presence** — a Main-Menu wheel with no DB XML is an empty
+      orphan.
+    """
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(
+            name="Wheel wiring", status=Status.INFO,
+            detail="hyperspin_dir not configured; skipping",
+        )
+
+    from .rocketlauncher import (
+        SKIP_GENERATE_CONFIG,
+        _read_emulator_exe,
+        _read_system_default_emulator,
+        fill_default_theme,
+        write_hyperspin_system_ini,
+    )
+
+    hs_dir = Path(config.hyperspin_dir)
+    rl_dir = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    mm_path = hs_dir / "Databases" / "Main Menu" / "Main Menu.xml"
+
+    parent = Check(name="Wheel wiring", status=Status.OK)
+    if not mm_path.exists():
+        parent.status = Status.INFO
+        parent.detail = f"no Main Menu.xml at {mm_path}; skipping"
+        return parent
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        parent.status = Status.INFO
+        parent.detail = "Main Menu.xml has no wheels"
+        return parent
+
+    for system in wheels:
+        node = Check(name=system, status=Status.OK)
+
+        # 1. HyperSpin Settings/<System>.ini — required to OPEN the wheel.
+        ini_path = hs_dir / "Settings" / f"{system}.ini"
+        if ini_path.exists():
+            node.children.append(Check(
+                name="HyperSpin settings INI", status=Status.OK, detail=str(ini_path),
+            ))
+        elif fix and write_hyperspin_system_ini(system, hs_dir) is not None:
+            fixes_applied.append(f"wrote HyperSpin Settings/{system}.ini")
+            node.children.append(Check(
+                name="HyperSpin settings INI", status=Status.OK,
+                detail=f"created: {ini_path}",
+            ))
+        else:
+            node.children.append(Check(
+                name="HyperSpin settings INI", status=Status.WARN,
+                detail=f'missing — HyperSpin will report "Cannot find {system}.ini" on select',
+                fix=f'spindoctor mainmenu add "{system}" --apply  (or doctor --fix)',
+            ))
+
+        # 2. Default console theme (Media/<System>/Themes/default.zip).
+        theme_path = hs_dir / "Media" / system / "Themes" / "default.zip"
+        if theme_path.exists():
+            node.children.append(Check(
+                name="Default theme", status=Status.OK, detail=str(theme_path),
+            ))
+        elif fix:
+            status = fill_default_theme(hs_dir, system)
+            if status == "installed":
+                fixes_applied.append(f"installed default theme for {system}")
+                node.children.append(Check(
+                    name="Default theme", status=Status.OK, detail=f"created: {theme_path}",
+                ))
+            else:  # "no_asset" — bundled zip missing (should never happen in a real install)
+                node.children.append(Check(
+                    name="Default theme", status=Status.INFO,
+                    detail="bundled theme_blank.zip missing from package",
+                ))
+        else:
+            node.children.append(Check(
+                name="Default theme", status=Status.INFO,
+                detail="no default.zip (untheme'd games show a blank screen)",
+                fix=f'spindoctor theme-fill --system "{system}" --default --apply  (or doctor --fix)',
+            ))
+
+        # 3. RocketLauncher emulator mapping — skip synthetic/PCLauncher wheels.
+        if system in SKIP_GENERATE_CONFIG:
+            node.children.append(Check(
+                name="Emulator", status=Status.OK, detail="synthetic/PCLauncher wheel",
+            ))
+        elif rl_dir is None:
+            node.children.append(Check(
+                name="Emulator", status=Status.INFO,
+                detail="rocketlauncher_dir not configured; skipping",
+            ))
+        else:
+            emu = _read_system_default_emulator(system, rl_dir)
+            if not emu:
+                node.children.append(Check(
+                    name="Emulator", status=Status.WARN,
+                    detail="no Default_Emulator configured — games won't launch",
+                    fix=(f'spindoctor config system set "{system}" --emulator <NAME> '
+                         f'--rom-path <PATH>  then  spindoctor generate-config --apply'),
+                ))
+            elif emu == "PCLauncher":
+                node.children.append(Check(
+                    name="Emulator", status=Status.OK, detail="PCLauncher",
+                ))
+            elif _read_emulator_exe(emu, rl_dir):
+                node.children.append(Check(
+                    name="Emulator", status=Status.OK,
+                    detail=f"{emu} → {_read_emulator_exe(emu, rl_dir)}",
+                ))
+            else:
+                node.children.append(Check(
+                    name="Emulator", status=Status.WARN,
+                    detail=f'"{emu}" not found in Global Emulators.ini — games may not launch',
+                    fix="Add the emulator to Settings/Global Emulators.ini with an Emu_Path=",
+                ))
+
+        # 4. Database presence — an orphan Main-Menu wheel with no DB is empty.
+        if find_database(system, config.databases_dir) is None:
+            node.children.append(Check(
+                name="Database", status=Status.WARN,
+                detail="no DB XML — wheel will be empty",
+                fix=f'spindoctor add-system "{system}" --apply',
+            ))
+
+        node.status = _worst([c.status for c in node.children])
+        parent.children.append(node)
+
+    parent.status = _worst([c.status for c in parent.children])
+    return parent
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -470,6 +652,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_archive_support())
     report.add(check_preview_support())
     report.add(check_databases(config))
+    report.add(check_wheel_wiring(config, fix, report.fixes_applied))
     report.add(check_match_cache(config, fix, report.fixes_applied))
     report.add(check_global_emulators(config, fix, report.fixes_applied))
     report.add(check_ledblinky(config))

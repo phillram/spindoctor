@@ -7452,8 +7452,9 @@ def mainmenu_edit(output_dir):
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Apply safe, idempotent repairs (default: read-only diagnosis). "
                    "Repairs include: pruning stale match cache, creating missing "
-                   "media folders, regenerating Global Emulators.ini if missing. "
-                   "Never deletes ROMs/DBs/media.")
+                   "media folders, regenerating Global Emulators.ini if missing, "
+                   "and writing missing per-wheel HyperSpin Settings INIs and "
+                   "default console themes. Never deletes ROMs/DBs/media.")
 def doctor(apply_changes):
     """Self-diagnose: paths, binaries, DB integrity, cache hygiene, integrations.
 
