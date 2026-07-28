@@ -373,6 +373,45 @@ exactly where RocketLauncher wrote its data.
 
 ---
 
+### "Cannot find &lt;System&gt;.ini" when *selecting* a newly added wheel (e.g. Recompiled)
+
+The wheel appears on the Main Menu carousel (logo, video, title all show) and
+its game is in the Games tab, but choosing the wheel throws **"Cannot find
+&lt;System&gt;.ini"** and it never opens. This is HyperSpin's own error about
+its per-system settings file at `D:\Arcade\Settings\<System>.ini` (the HyperSpin
+`Settings\` folder — **not** `RocketLauncher\Settings\`, which is a separate
+folder that also holds a same-named `.ini` and is unrelated to this error).
+
+**Cause:** HyperSpin requires `Settings\<System>.ini` to exist before it will
+open a wheel as a sub-menu. The synthetic-wheel rebuilds (`fav rebuild`,
+`recent rebuild`, `stats build-wheel`) write this file automatically, but a wheel
+added *only* through `mainmenu add` — most notably **Recompiled**, which has no
+rebuild path — previously never got one.
+
+**Fix — re-run the add (`mainmenu add` now writes this file for you):**
+
+```bat
+spindoctor mainmenu add "Recompiled" --apply
+```
+
+`add-system` / `add-pc-system` write it too. The write is idempotent — it only
+creates the file when it's missing, so an existing HyperHQ theme INI is never
+touched.
+
+**Manual one-liner (any version):** create `D:\Arcade\Settings\<System>.ini`
+with the minimal content HyperSpin needs (or copy a working wheel's INI, e.g.
+`Recently Played.ini`):
+
+```ini
+[exe info]
+hyperlaunch=true
+
+[filters]
+parents_only=false
+```
+
+---
+
 ### A game from a synthetic wheel (Favorites/Recently Played/Most Played) plays with sound, but the screen stays frozen on RocketLauncher's "Loading Complete" fade screen
 
 You can hear the game running, but the picture never appears — RocketLauncher's

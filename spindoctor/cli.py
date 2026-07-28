@@ -7224,7 +7224,13 @@ def mainmenu_add(system, apply, output_dir):
     media file — use this when you want to reset or first-install the media.
     """
     from .mainmenu import add_system
-    from .rocketlauncher import SKIP_GENERATE_CONFIG, generate_synthetic_system_ini, install_bundled_system_assets
+    from .rocketlauncher import (
+        SKIP_GENERATE_CONFIG,
+        fill_default_theme,
+        generate_synthetic_system_ini,
+        install_bundled_system_assets,
+        write_hyperspin_system_ini,
+    )
     config = _cfg()
     _check_config(config)
     menu = _load_menu_or_exit(config)
@@ -7256,6 +7262,34 @@ def mainmenu_add(system, apply, output_dir):
     hs_dir = getattr(config, "hyperspin_dir", None)
     if not hs_dir:
         return
+
+    # ── HyperSpin per-system settings INI ─────────────────────────────────────
+    # HyperSpin needs Settings/<system>.ini to open the wheel as a sub-menu;
+    # without it it reports "Cannot find <system>.ini" on selection.  The
+    # synthetic-wheel rebuilds (fav/recent) already write this via
+    # write_hyperspin_system_ini, but a wheel added only through `mainmenu add`
+    # (notably Recompiled, which has no rebuild path) never did.  Idempotent:
+    # only writes when the file is absent, so HyperHQ customisations survive.
+    hs_ini_path = Path(hs_dir) / "Settings" / f"{system}.ini"
+    if apply:
+        written = write_hyperspin_system_ini(system, Path(hs_dir))
+        if written is not None:
+            console.print(f"  [green]✓[/green] HyperSpin settings: {written}")
+    elif not hs_ini_path.exists():
+        console.print(f"  [yellow]would write[/yellow] HyperSpin settings: {hs_ini_path}")
+
+    # ── Default console theme ─────────────────────────────────────────────────
+    # HyperSpin falls back to Media/<system>/Themes/default.zip for any game
+    # without its own theme.  Drop in the bundled blank theme when absent so a
+    # freshly added wheel's games still render a background/video instead of a
+    # blank screen.  Idempotent — an existing default.zip is never touched.
+    default_zip = Path(hs_dir) / "Media" / system / "Themes" / "default.zip"
+    if apply:
+        if fill_default_theme(Path(hs_dir), system) == "installed":
+            console.print(f"  [green]✓[/green] default theme: {default_zip}")
+    elif not default_zip.exists():
+        console.print(f"  [yellow]would write[/yellow] default theme: {default_zip}")
+
     bundled = install_bundled_system_assets(
         Path(hs_dir),
         system,
@@ -10011,7 +10045,11 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
     """
     from .audit import build_stub_entry, scan_roms
     from .media import MediaDownloader
-    from .rocketlauncher import upsert_main_menu_system
+    from .rocketlauncher import (
+        fill_default_theme,
+        upsert_main_menu_system,
+        write_hyperspin_system_ini,
+    )
     from .scraper import MetadataError, build_client
 
     config = _cfg()
@@ -10055,6 +10093,41 @@ def add_system(system_name, no_menu, no_system_media, no_db, no_game_media,
                 console.print(f"  [green]+[/green] added to {path}")
             else:
                 console.print(f"  [dim]already present in {path}[/dim]")
+
+        # HyperSpin needs Settings/<system>.ini to open the wheel; without it it
+        # reports "Cannot find <system>.ini" on selection.  Idempotent — only
+        # writes when absent, so HyperHQ/user customisations are never clobbered.
+        hs_dir = getattr(config, "hyperspin_dir", None)
+        if hs_dir:
+            hs_ini_path = Path(hs_dir) / "Settings" / f"{system_name}.ini"
+            if not apply_changes:
+                if hs_ini_path.exists():
+                    console.print(f"  [dim]HyperSpin settings exists:[/dim] {hs_ini_path}")
+                else:
+                    console.print(f"  [yellow]would write[/yellow] HyperSpin settings: {hs_ini_path}")
+            else:
+                written = write_hyperspin_system_ini(system_name, Path(hs_dir))
+                if written is not None:
+                    console.print(f"  [green]+[/green] HyperSpin settings: {written}")
+                else:
+                    console.print(f"  [dim]HyperSpin settings already present: {hs_ini_path}[/dim]")
+
+            # Default console theme: HyperSpin falls back to
+            # Media/<system>/Themes/default.zip for games with no theme of
+            # their own.  Install the bundled blank theme when absent so the
+            # new console's games render instead of showing a blank screen.
+            default_zip = Path(hs_dir) / "Media" / system_name / "Themes" / "default.zip"
+            if not apply_changes:
+                if default_zip.exists():
+                    console.print(f"  [dim]default theme exists:[/dim] {default_zip}")
+                else:
+                    console.print(f"  [yellow]would write[/yellow] default theme: {default_zip}")
+            else:
+                status = fill_default_theme(Path(hs_dir), system_name)
+                if status == "installed":
+                    console.print(f"  [green]+[/green] default theme: {default_zip}")
+                elif status == "skipped":
+                    console.print(f"  [dim]default theme already present: {default_zip}[/dim]")
 
     # 3. System-level media ────────────────────────────────────────────────────
     if no_system_media:

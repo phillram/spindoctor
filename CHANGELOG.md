@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Adding a wheel no longer fails with "Cannot find `<System>.ini`" when you select it.** HyperSpin needs its own `Settings\<System>.ini` (under the HyperSpin dir — separate from the same-named RocketLauncher file) to open a wheel as a sub-menu. The synthetic-wheel rebuilds (`fav`/`recent`/`stats build-wheel`) already wrote it, but a wheel added only through `mainmenu add` — most notably **Recompiled**, which has no rebuild path — never got one, so selecting it threw HyperSpin's "Cannot find Recompiled.ini" even though the wheel, its game, and all media were present. `mainmenu add`, `add-system`, and `add-pc-system` now write a minimal `Settings\<System>.ini` (`[exe info] hyperlaunch=true`) via `write_hyperspin_system_ini`. Idempotent — an existing HyperHQ-authored theme INI is never overwritten. Covered by `tests/test_hyperspin_settings_ini.py`.
+
+### Added
+
+- **New wheels/consoles now get a fallback console theme automatically.** When `mainmenu add`, `add-system`, or `add-pc-system` register a wheel, they now install the bundled blank theme as `Media\<System>\Themes\default.zip` when one is absent — HyperSpin's fallback theme for any game in the system without its own theme, so a freshly added console's games render a background/video instead of a blank screen. Mirrors the fallback that games already have, and reuses the existing `fill_default_theme` (the same one behind `theme-fill --default`). Idempotent — an existing `default.zip` is left untouched.
+
 ## [2.13.0] - 2026-07-25
 
 ### Fixed
