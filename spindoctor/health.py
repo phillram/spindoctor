@@ -695,6 +695,78 @@ def check_wheel_wiring(
     return parent
 
 
+def check_lightguns(config: Config) -> Check:
+    """Verify DemulShooter wiring for every system marked ``lightgun: true``.
+
+    A system flagged for lightgun support runs a light-gun game — but if the
+    RocketLauncher `Pre_Launch_App` DemulShooter wiring is missing, the game
+    launches with no aiming device attached, and a missing `Post_Launch_App`
+    teardown leaves DemulShooter running and can break the next launch.  These
+    are silent failures the user only notices mid-game, so they belong in doctor.
+
+    Diagnosis only — wiring a system needs a DemulShooter path and a `-target`
+    choice, so there is no safe blanket auto-fix; each finding names the exact
+    ``lightgun configure`` command instead.
+    """
+    from .lightgun import audit_system_wiring
+
+    systems = config.lightgun_systems()
+    if not systems:
+        return Check(
+            name="Lightguns", status=Status.INFO,
+            detail="no systems marked lightgun",
+        )
+
+    parent = Check(name="Lightguns", status=Status.OK)
+
+    # demulshooter_path override, if set, must point at a real file.
+    if config.demulshooter_path:
+        p = Path(config.demulshooter_path)
+        if not p.exists():
+            parent.children.append(Check(
+                name="demulshooter_path", status=Status.WARN,
+                detail=f"configured but missing: {p}",
+                fix="spindoctor config set demulshooter_path <path-to-DemulShooter.exe>",
+            ))
+
+    if not config.rocketlauncher_dir:
+        parent.children.append(Check(
+            name="wiring", status=Status.INFO,
+            detail="rocketlauncher_dir not configured; can't check wiring",
+        ))
+        parent.status = _worst(c.status for c in parent.children)
+        return parent
+
+    for system in systems:
+        node = Check(name=system, status=Status.OK)
+        status = audit_system_wiring(system, config)
+        if status is None or not status.is_wired:
+            node.status = Status.FAIL
+            node.detail = "marked lightgun but no DemulShooter Pre_Launch_App — game runs with no gun"
+            node.fix = f'spindoctor lightgun configure --system "{system}" --apply'
+        else:
+            if status.post_launch is None:
+                node.children.append(Check(
+                    name="teardown", status=Status.WARN,
+                    detail="no Post_Launch_App — DemulShooter may keep running after exit",
+                    fix=f'spindoctor lightgun configure --system "{system}" --apply',
+                ))
+            if status.target is None:
+                node.children.append(Check(
+                    name="target", status=Status.INFO,
+                    detail="wired, but -target could not be parsed",
+                ))
+            else:
+                node.children.append(Check(
+                    name="target", status=Status.OK, detail=f"-target {status.target}",
+                ))
+            node.status = _worst(c.status for c in node.children)
+        parent.children.append(node)
+
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 # ─── orchestration ────────────────────────────────────────────────────────────
 
 
@@ -709,6 +781,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     report.add(check_wheel_wiring(config, fix, report.fixes_applied))
     report.add(check_match_cache(config, fix, report.fixes_applied))
     report.add(check_global_emulators(config, fix, report.fixes_applied))
+    report.add(check_lightguns(config))
     report.add(check_ledblinky(config))
     report.add(check_api_creds(config))
     report.add(check_media_skeletons(config, fix, report.fixes_applied))
