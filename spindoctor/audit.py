@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -243,12 +244,27 @@ def _scan_recursive(
                 continue
 
         title = derive_pc_title(best, system_rom_dir, title_strategy)
-        if title not in roms:
-            roms[title] = RomFileInfo(
-                name=title,
-                path=best,
-                extension=best.suffix.lower(),
-            )
+        if title in roms:
+            # First slot wins (deduplication is intended: in "smart" mode a
+            # launcher.exe and its desktop shortcut both resolve to the game's
+            # name).  But under title_strategy="stem" a collision usually means
+            # two DIFFERENT games happen to share a launcher filename (e.g. both
+            # ship "Launcher.exe") — silently dropping the second made a whole
+            # game vanish from the audit with no trace, so surface that case.
+            if title_strategy == "stem":
+                warnings.warn(
+                    f"Duplicate title {title!r} in {system_rom_dir.name}: keeping "
+                    f"{roms[title].path}, skipping {best}. Rename a folder or use a "
+                    f"different title_strategy so both games get a distinct name.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            continue
+        roms[title] = RomFileInfo(
+            name=title,
+            path=best,
+            extension=best.suffix.lower(),
+        )
     return roms
 
 
@@ -319,21 +335,39 @@ def audit_system(
     result.total_roms = len(roms)
     result.total_db_entries = len(db_games)
 
-    # Build exact-match union
-    all_names = set(roms.keys()) | set(db_games.keys())
+    # Build a CASE-INSENSITIVE union of ROM stems and DB entry names.  The
+    # cabinet's NTFS filesystem and HyperSpin both treat name case as
+    # insignificant, so a ROM "Pac-Man" and a DB entry "pac-man" are the SAME
+    # game — matching them case-sensitively reported one working game as two
+    # separate problems (both "ROM not in DB" and "DB entry has no ROM").
+    # Fold on lower-case; keep the first-seen original name for display, with
+    # the DB name preferred as HyperSpin's canonical spelling.
+    roms_by_lower: dict[str, str] = {}
+    for k in roms:
+        roms_by_lower.setdefault(k.lower(), k)
+    db_by_lower: dict[str, str] = {}
+    for k in db_games:
+        db_by_lower.setdefault(k.lower(), k)
+
     db_name_list = list(db_games.keys())
 
     # Track which DB entries have been claimed by a ROM (exact or fuzzy)
     claimed_db_names: set[str] = set()
 
-    for name in all_names:
-        rom_exists = name in roms
-        in_database = name in db_games
-        db_entry = db_games.get(name)
+    # Iterate in sorted order so entry order — and therefore the fuzzy-match
+    # pass below — is deterministic (set iteration order is randomized per
+    # process, which made ambiguous fuzzy matches non-reproducible).
+    for low in sorted(set(roms_by_lower) | set(db_by_lower)):
+        rom_key = roms_by_lower.get(low)
+        db_key = db_by_lower.get(low)
+        rom_exists = rom_key is not None
+        in_database = db_key is not None
+        db_entry = db_games.get(db_key) if db_key is not None else None
+        name = db_key or rom_key  # canonical display name
         is_ignored = config.is_ignored(name, system_name)
 
         if in_database:
-            claimed_db_names.add(name)
+            claimed_db_names.add(db_key)
 
         media = (
             check_media(name, system_name, config.media_dir)

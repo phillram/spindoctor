@@ -899,3 +899,17 @@ def test_standalone_rebuild_media_mode_defaults_to_auto():
     from spindoctor.favorites import _build_parser
     args = _build_parser().parse_args(["rebuild"])
     assert args.media_mode == "auto"
+
+
+def test_generate_pclauncher_ini_sanitizes_filename(tmp_path):
+    """A game name with a Windows-forbidden char must not crash the INI write:
+    the filename is sanitized (the launch params keep the raw source name)."""
+    from spindoctor.favorites import _generate_pclauncher_ini
+
+    rl = tmp_path / "RocketLauncher"
+    ini = _generate_pclauncher_ini(
+        rl, "Favorites", "Submachine: Legacy", "PC Games", "Submachine Legacy",
+    )
+    assert ini.name == "Submachine Legacy.ini"  # colon stripped from filename
+    assert ini.exists()
+    assert "Submachine Legacy" in ini.read_text(encoding="utf-8")
