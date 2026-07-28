@@ -2057,6 +2057,8 @@ For every system marked `lightgun: true`, a **Lightguns** check verifies the Dem
 
 For every `PCLauncher` system, a **PC games** check goes one level deeper than the wheel-wiring emulator check: it walks the per-game PCLauncher INIs and reports games with no INI at all, or whose `Application=` path no longer exists on disk (the "Cannot find this Application" / stale drive-letter bug). It points at `add-pc-system` / `pc-rename` to fix.
 
+The **LEDBlinky** check goes beyond confirming the core files parse: it also flags a missing `Color-RGB.ini` (without it `ledblinky generate` degrades to a legacy color format LedBlinky can't read) and runs the Search/Genre/Favorites crash scan (a LedBlinky process hook in a menu's `Settings.ini`, or a missing `LEDBlinkyControls.xml` entry, is the documented cause of HyperSpin crashing when you open those menus — fix with `ledblinky fix --apply`). The wheel-wiring check additionally reports **reverse orphans** — systems fully set up under `Databases/` but missing from the Main Menu, so invisible in HyperSpin.
+
 ```bat
 spindoctor doctor              :: read-only diagnosis
 spindoctor doctor --apply      :: also run safe, idempotent repairs
