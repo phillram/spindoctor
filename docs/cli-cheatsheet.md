@@ -47,12 +47,13 @@ spindoctor tools-audit --report D:\tools_audit.csv    :: save CSV (category, too
 
 Reference: [Command reference → tools-audit](commands.md#tools-audit).
 
-### `doctor` — self-diagnose paths, binaries, DB integrity
+### `doctor` — comprehensive install health check
 
-Validates `config.json`, walks `roms_dir` / `hyperspin_dir`, probes scraper credentials, checks for orphan databases. Run after any config change.
+Validates paths, binaries, DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, optional deps; then runs per-domain checks: per-wheel HyperSpin wiring (Settings.ini, default.zip, emulator mapping, DB presence), lightgun DemulShooter wiring, PC-game PCLauncher INI / Application= path, LEDBlinky Color-RGB.ini + overlay-crash scan + reverse orphans, LED coverage (cache-only), intro-video pool / target / stale autorun, and orphan media. Each check renders ✓ / ⚠ / ✗.
 
 ```bat
-spindoctor doctor
+spindoctor doctor              :: read-only diagnosis
+spindoctor doctor --apply      :: also run safe, idempotent repairs (write missing Settings.ini / default.zip, prune stale cache)
 ```
 
 Reference: [Command reference → doctor](commands.md#doctor).
