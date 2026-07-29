@@ -508,8 +508,8 @@ spindoctor mainmenu down MAME --apply
 spindoctor mainmenu hide "Atari Jaguar" --apply
 spindoctor mainmenu show "Atari Jaguar" --apply       :: un-hide
 
-spindoctor mainmenu add "Sega Saturn" --apply
-spindoctor mainmenu add "Favorites" --apply   :: also regenerates RL settings + media
+spindoctor mainmenu add "Sega Saturn" --apply   :: also writes HyperSpin Settings\<System>.ini + default.zip fallback theme
+spindoctor mainmenu add "Favorites" --apply     :: also regenerates RL settings + media
 spindoctor mainmenu remove "Atari Jaguar" --apply
 
 spindoctor mainmenu sort alpha --apply
@@ -545,7 +545,7 @@ Sort axes default to all four (`genre,manufacturer,year,letter`); existing sort-
 
 > **GUI alternative:** the **Systems** tab wraps `add-system` and `add-pc-system` (with **Skip system media download** / **Skip per-game media download** toggles, dry-run by default). The **Add / Refresh Games** button on the PC section runs `add-pc-system --no-menu --no-system-media --no-game-media --no-interactive`, which updates both the XML database and PCLauncher INIs without touching the wheel carousel or media files. See [GUI walkthrough](gui.md).
 
-Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, and walks the metadata + media fetch flow.
+Bootstraps a brand-new console end-to-end: registers it in the Main Menu, creates database stub, generates RocketLauncher INI, scaffolds media folders, writes HyperSpin's `Settings\<System>.ini` (without it HyperSpin throws "Cannot find `<System>.ini`" when you select the wheel), installs a `Media\<System>\Themes\default.zip` fallback theme (so games without their own theme render a background instead of a blank screen), and walks the metadata + media fetch flow.
 
 ```bat
 spindoctor add-system "Sega Saturn"             :: dry-run preview

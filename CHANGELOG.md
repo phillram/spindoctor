@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-07-28
+
 ### Fixed
 
 - **Adding a wheel no longer fails with "Cannot find `<System>.ini`" when you select it.** HyperSpin needs its own `Settings\<System>.ini` (under the HyperSpin dir — separate from the same-named RocketLauncher file) to open a wheel as a sub-menu. The synthetic-wheel rebuilds (`fav`/`recent`/`stats build-wheel`) already wrote it, but a wheel added only through `mainmenu add` — most notably **Recompiled**, which has no rebuild path — never got one, so selecting it threw HyperSpin's "Cannot find Recompiled.ini" even though the wheel, its game, and all media were present. `mainmenu add`, `add-system`, and `add-pc-system` now write a minimal `Settings\<System>.ini` (`[exe info] hyperlaunch=true`) via `write_hyperspin_system_ini`. Idempotent — an existing HyperHQ-authored theme INI is never overwritten. Covered by `tests/test_hyperspin_settings_ini.py`.
@@ -2277,7 +2279,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.13.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.14.0...HEAD
+[2.14.0]: https://github.com/phillram/spindoctor/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/phillram/spindoctor/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/phillram/spindoctor/compare/v2.11.0...v2.12.0
 [2.11.0]: https://github.com/phillram/spindoctor/compare/v2.10.2...v2.11.0
