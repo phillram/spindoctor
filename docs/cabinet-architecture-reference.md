@@ -2016,30 +2016,37 @@ button all launch a game regardless of which physical player pressed it.
 > use `Escape` for their own pause/menu**, so a single `Escape` both opens the
 > game's menu *and* tells RocketLauncher to close the game — an erroneous exit.
 > Fix it at the RocketLauncher layer only, per-system: for the `PC Games` (and
-> DOSBox) systems, change the exit key from `Esc` to a passthrough two-button
-> **chord** so a bare `Escape` reaches the game and only the chord quits. The
-> cabinet already uses this `~`-passthrough style for `exitScriptKey := "~LShift &
-> ~Z"` and `toggleCursorKey := "~LShift & ~X"`. Recommended on this cabinet:
-> **P1 Coin + Exit** (`~s & ~Esc`) — hold the Coin/swop key, press Exit. It reuses
-> the cabinet's existing [swop-key](#master-control-reference) idiom (P1 Coin is
-> already the shift key), keeps bare `Esc` free for the game, and never touches
-> `Enter`, so no key is consumed and the "only `Z` is free" inventory is unchanged.
-> (**Exit + Select**, `~Esc & ~Enter`, also works but is less clean — holding `Esc`
-> flickers the game's own menu and `Enter` may activate a menu item.)
+> DOSBox) systems, change the exit key from a bare `Esc` to a **hold-to-exit** using
+> RocketLauncher's XHotkey `H<ms>:` prefix, so a quick `Esc` tap reaches the game and
+> only a deliberate hold quits. Recommended on this cabinet (confirmed working):
+> **`H2000:~Esc`** — hold the Exit button ~2 seconds to quit; the `~` passes a normal
+> `Esc` tap through to the game's own menu. Single button, nothing for the game to
+> "eat", and no panel key consumed (the "only `Z` is free"
+> [inventory](#master-control-reference) is unchanged).
+>
+> A two-plain-key combo (`~s & ~Esc`, Coin + Exit) reads well but proved unreliable
+> here — UFO 50 uses `S` for movement, so the game consumes the `S` and the combo
+> never completes. Prefer the hold. If you want the Coin button instead of Exit,
+> `H2000:~s` works, but any game that uses `S` as a *held* key can trip it, so
+> Exit-hold is safer.
 >
 > **Where to set it.** The editable key is `Exit_Emulator_Key` (the log's
-> `exitEmulatorKey`). The global default lives in `RocketLauncher\Settings\Global
-> RocketLauncher.ini` under `[Exit]` (`Exit_Emulator_Key=Esc`) — **leave it** so
-> console/arcade systems keep `Esc`. Override it per-system in `RocketLauncher\
-> Settings\<System>\RocketLauncher.ini` (note: that filename, *not* `<System>.ini`)
-> under `[Exit]`: change `Exit_Emulator_Key=use_global` to `Exit_Emulator_Key=~s &
-> ~Esc`. Prefer RocketLauncherUI (select the system first) so it writes the file
-> correctly; if hand-editing, close RLUI first or it rewrites the file on exit.
+> `exitEmulatorKey`), settable in RocketLauncherUI at *<System> → Settings → Main
+> Settings → Exit Emulator Key* (a text field — type the value; **not** the "Exit
+> Script Key" under Controls, which is RL's internal kill-the-script hotkey). The
+> global default lives in `RocketLauncher\Settings\Global RocketLauncher.ini` under
+> `[Exit]` (`Exit_Emulator_Key=Esc`) — **leave it** so console/arcade systems keep
+> `Esc`. Override it per-system in `RocketLauncher\Settings\<System>\RocketLauncher.ini`
+> (note: that filename, *not* `<System>.ini`) under `[Exit]`:
+> `Exit_Emulator_Key=H2000:~Esc`. If hand-editing, close RLUI first or it rewrites the
+> file on exit.
 >
-> **Confirm on the cabinet.** Using a key as an AHK chord prefix can interact with a
-> game that also reads it (here, `s` — the Coin button — passes through via `~s`, so
-> a game that uses `S` still receives it; only Coin **held** + Exit quits). Verify the
-> combo quits cleanly and that bare `Esc` reaches the game.
+> **Reliability varies per game.** Whether the hold-exit fires depends on how each PC
+> game handles keyboard focus — some quit reliably on the hold, some don't respond to
+> it at all. The game's own in-UI quit always works and returns to HyperSpin
+> (`Restore_Front_End_On_Exit=Restore`), so it's the dependable fallback. `H1000:`
+> (1 s) is more responsive; `H2000:` (2 s) guards harder against accidental exits. See
+> [XHotkey](http://wiki.rlauncher.com/index.php?title=XHotkey) for the full syntax.
 
 ### Xbox 360 button numbers (winxinput driver)
 
