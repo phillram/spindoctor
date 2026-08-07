@@ -934,12 +934,17 @@ redundant and only creates the second-mapper fight.
 
 **Fix:**
 
-1. **RocketLauncherUI → Global → Keymapper → set Keymapper Enabled = false** (or switch
-   it off `xpadder`). This is the high-value step — it stops the game-launch/exit
-   invocation and the control-switching fight in one move.
+1. **Disable the keymapper.** RocketLauncherUI → Global → Keymapper → **Keymapper
+   Enabled = false**. If RLUI doesn't expose it, hand-edit `RocketLauncher\Settings\
+   Global RocketLauncher.ini` → `[Keymapper]` → `Keymapper_Enabled=false` (close RLUI
+   first, or it rewrites the file on exit). This is the high-value step — it stops the
+   game-launch/exit invocation and the control-switching fight in one move. Note that
+   JoyIDs controller-ordering (`JoyIDs_Enabled`) lives in the same `[Keymapper]` block;
+   if a game's player/controller assignment looks swapped afterward, that's the setting
+   to revisit (DS4Windows can handle ordering instead).
 2. **Delete the Xpadder install folder(s)** (`spindoctor tools-audit` / `where /r D:\
-   Xpadder.exe` reports where they are) so nothing can launch it even if a stray
-   reference survives.
+   Xpadder.exe` reports where they are — note a renamed folder still contains a runnable
+   `Xpadder.exe`) so nothing can launch it even if a stray reference survives.
 3. Full runbook: [Controller input → Removing Xpadder completely](controller-input.md#6-removing-xpadder-completely).
 
 **Diagnosis:** confirm *when* the dialog fires. If it's on a **game launch/exit**, it's

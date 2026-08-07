@@ -2016,15 +2016,28 @@ button all launch a game regardless of which physical player pressed it.
 > use `Escape` for their own pause/menu**, so a single `Escape` both opens the
 > game's menu *and* tells RocketLauncher to close the game — an erroneous exit.
 > Fix it at the RocketLauncher layer only, per-system: for the `PC Games` (and
-> DOSBox) systems, change `exitEmulatorKey` from `Esc` to a passthrough two-button
+> DOSBox) systems, change the exit key from `Esc` to a passthrough two-button
 > **chord** so a bare `Escape` reaches the game and only the chord quits. The
 > cabinet already uses this `~`-passthrough style for `exitScriptKey := "~LShift &
 > ~Z"` and `toggleCursorKey := "~LShift & ~X"`; the arcade-panel equivalent is
 > **Exit + Select** (`~Esc & ~Enter`) — both existing admin buttons, so no key is
 > consumed and the "only `Z` is free" [key inventory](#master-control-reference)
-> is unchanged. Set it in RocketLauncherUI under the `PC Games` system's settings
-> and leave console/arcade systems on `Esc`. Confirm the exact combo on the cabinet
-> — `Esc` used as an AHK chord prefix can interact with a game that also reads it.
+> is unchanged.
+>
+> **Where to set it.** The editable key is `Exit_Emulator_Key` (the log's
+> `exitEmulatorKey`). The global default lives in `RocketLauncher\Settings\Global
+> RocketLauncher.ini` under `[Exit]` (`Exit_Emulator_Key=Esc`) — **leave it** so
+> console/arcade systems keep `Esc`. Override it per-system in `RocketLauncher\
+> Settings\<System>\RocketLauncher.ini` (note: that filename, *not* `<System>.ini`)
+> under `[Exit]`: change `Exit_Emulator_Key=use_global` to `Exit_Emulator_Key=~Esc &
+> ~Enter`. Prefer RocketLauncherUI (select the system first) so it writes the file
+> correctly; if hand-editing, close RLUI first or it rewrites the file on exit.
+>
+> **Caveats (confirm on the cabinet).** `Esc` as an AHK chord prefix can interact
+> with a game that also reads it — and holding `Esc` opens the game's own menu while
+> `Enter` may activate a menu item. If that's awkward, use **P1 Coin + Exit**
+> (`~s & ~Esc`), which matches the cabinet's existing [swop-key](#master-control-reference)
+> idiom, keeps bare `Esc` for the game, and never touches `Enter`.
 
 ### Xbox 360 button numbers (winxinput driver)
 

@@ -134,7 +134,10 @@ keymapping is redundant.
 Clear every launch point, in this order:
 
 1. **RocketLauncher Keymapper** — RocketLauncherUI → **Global → Keymapper** → set
-   **Keymapper Enabled = false** (or switch it off `xpadder`).
+   **Keymapper Enabled = false**. If RLUI doesn't expose it, hand-edit `RocketLauncher\
+   Settings\Global RocketLauncher.ini` → `[Keymapper]` → `Keymapper_Enabled=false`
+   (close RLUI first, or it rewrites the file on exit). A keymapper still pointed at a
+   renamed/missing Xpadder shows as "Not found" in RLUI — that's the live reference.
 2. **Windows autostart** — Task Manager → **Startup** tab (covers the Startup folder
    *and* the registry Run keys), plus `shell:startup` / `shell:common startup`,
    `taskschd.msc`, and `HKCU\…\CurrentVersion\Run` (+ `RunOnce`, `HKLM`,
