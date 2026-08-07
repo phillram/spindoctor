@@ -2008,6 +2008,24 @@ problem either way — HyperSpin treats any of its configured "Start" keys as
 "launch the highlighted game," so P1 Start, P2 Start, and the admin Select
 button all launch a game regardless of which physical player pressed it.
 
+> **`Escape` = Exit, and PC games.** The Exit admin button sends `Escape`
+> ([`#ctl-exit`](#ctl-exit)) at the hardware layer, and that is the exit key at
+> every layer above it — HyperSpin's front-end (this table) and RocketLauncher's
+> per-emulator exit watcher (`exitEmulatorKey := "Esc"`, confirmed in
+> `RocketLauncher.log`). Fine for emulators, but **PC games launched via PCLauncher
+> use `Escape` for their own pause/menu**, so a single `Escape` both opens the
+> game's menu *and* tells RocketLauncher to close the game — an erroneous exit.
+> Fix it at the RocketLauncher layer only, per-system: for the `PC Games` (and
+> DOSBox) systems, change `exitEmulatorKey` from `Esc` to a passthrough two-button
+> **chord** so a bare `Escape` reaches the game and only the chord quits. The
+> cabinet already uses this `~`-passthrough style for `exitScriptKey := "~LShift &
+> ~Z"` and `toggleCursorKey := "~LShift & ~X"`; the arcade-panel equivalent is
+> **Exit + Select** (`~Esc & ~Enter`) — both existing admin buttons, so no key is
+> consumed and the "only `Z` is free" [key inventory](#master-control-reference)
+> is unchanged. Set it in RocketLauncherUI under the `PC Games` system's settings
+> and leave console/arcade systems on `Esc`. Confirm the exact combo on the cabinet
+> — `Esc` used as an AHK chord prefix can interact with a game that also reads it.
+
 ### Xbox 360 button numbers (winxinput driver)
 
 | Button | `_btn` value | Notes |
