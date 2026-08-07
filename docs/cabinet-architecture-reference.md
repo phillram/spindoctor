@@ -2008,6 +2008,46 @@ problem either way — HyperSpin treats any of its configured "Start" keys as
 "launch the highlighted game," so P1 Start, P2 Start, and the admin Select
 button all launch a game regardless of which physical player pressed it.
 
+> **`Escape` = Exit, and PC games.** The Exit admin button sends `Escape`
+> ([`#ctl-exit`](#ctl-exit)) at the hardware layer, and that is the exit key at
+> every layer above it — HyperSpin's front-end (this table) and RocketLauncher's
+> per-emulator exit watcher (`exitEmulatorKey := "Esc"`, confirmed in
+> `RocketLauncher.log`). Fine for emulators, but **PC games launched via PCLauncher
+> use `Escape` for their own pause/menu**, so a single `Escape` both opens the
+> game's menu *and* tells RocketLauncher to close the game — an erroneous exit.
+> Fix it at the RocketLauncher layer only, per-system: for the `PC Games` (and
+> DOSBox) systems, change the exit key from a bare `Esc` to a **hold-to-exit** using
+> RocketLauncher's XHotkey `H<ms>:` prefix, so a quick `Esc` tap reaches the game and
+> only a deliberate hold quits. Recommended on this cabinet (confirmed working):
+> **`H2000:~Esc`** — hold the Exit button ~2 seconds to quit; the `~` passes a normal
+> `Esc` tap through to the game's own menu. Single button, nothing for the game to
+> "eat", and no panel key consumed (the "only `Z` is free"
+> [inventory](#master-control-reference) is unchanged).
+>
+> A two-plain-key combo (`~s & ~Esc`, Coin + Exit) reads well but proved unreliable
+> here — UFO 50 uses `S` for movement, so the game consumes the `S` and the combo
+> never completes. Prefer the hold. If you want the Coin button instead of Exit,
+> `H2000:~s` works, but any game that uses `S` as a *held* key can trip it, so
+> Exit-hold is safer.
+>
+> **Where to set it.** The editable key is `Exit_Emulator_Key` (the log's
+> `exitEmulatorKey`), settable in RocketLauncherUI at *<System> → Settings → Main
+> Settings → Exit Emulator Key* (a text field — type the value; **not** the "Exit
+> Script Key" under Controls, which is RL's internal kill-the-script hotkey). The
+> global default lives in `RocketLauncher\Settings\Global RocketLauncher.ini` under
+> `[Exit]` (`Exit_Emulator_Key=Esc`) — **leave it** so console/arcade systems keep
+> `Esc`. Override it per-system in `RocketLauncher\Settings\<System>\RocketLauncher.ini`
+> (note: that filename, *not* `<System>.ini`) under `[Exit]`:
+> `Exit_Emulator_Key=H2000:~Esc`. If hand-editing, close RLUI first or it rewrites the
+> file on exit.
+>
+> **Reliability varies per game.** Whether the hold-exit fires depends on how each PC
+> game handles keyboard focus — some quit reliably on the hold, some don't respond to
+> it at all. The game's own in-UI quit always works and returns to HyperSpin
+> (`Restore_Front_End_On_Exit=Restore`), so it's the dependable fallback. `H1000:`
+> (1 s) is more responsive; `H2000:` (2 s) guards harder against accidental exits. See
+> [XHotkey](http://wiki.rlauncher.com/index.php?title=XHotkey) for the full syntax.
+
 ### Xbox 360 button numbers (winxinput driver)
 
 | Button | `_btn` value | Notes |

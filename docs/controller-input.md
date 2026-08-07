@@ -107,3 +107,59 @@ The `HyperSpin Startup Script.ini`
 
 No native joystick nav, no separate key-mapper, no duplicate DS4Windows window,
 and the controller never drops mid-game.
+
+---
+
+## 6. Removing Xpadder completely
+
+Xpadder is retired on this cabinet (§1 — DS4Windows Auto Profiles replaced it). If
+it still launches or throws an error after you've disabled the obvious autostarts,
+it's because Xpadder can be started from **more than one** place. The easily-missed
+one is **RocketLauncher's own Keymapper**, which can be pointed at Xpadder —
+confirmed on this cabinet's `RocketLauncher.log`:
+
+```
+keymapperEnabled := "true"
+keymapper        := "xpadder"
+xpadderFullPath  := "D:\Arcade\Utilities\Xpadder\Xpadder.exe"
+```
+
+With `keymapperAHKMethod := "Internal"` RocketLauncher reads the Xpadder *profile
+format* through its own AHK engine and does **not** launch `Xpadder.exe` (the
+*External* method does); either way it's a live reference, and when no profile
+matches the game it just logs `GetAHKProfile - Keymapper support is enabled … could
+not find a … profile`. DS4Windows Auto Profiles already maps the pad, so RL
+keymapping is redundant.
+
+Clear every launch point, in this order:
+
+1. **RocketLauncher Keymapper** — RocketLauncherUI → **Global → Keymapper** → set
+   **Keymapper Enabled = false**. If RLUI doesn't expose it, hand-edit `RocketLauncher\
+   Settings\Global RocketLauncher.ini` → `[Keymapper]` → `Keymapper_Enabled=false`
+   (close RLUI first, or it rewrites the file on exit). A keymapper still pointed at a
+   renamed/missing Xpadder shows as "Not found" in RLUI — that's the live reference.
+2. **Windows autostart** — Task Manager → **Startup** tab (covers the Startup folder
+   *and* the registry Run keys), plus `shell:startup` / `shell:common startup`,
+   `taskschd.msc`, and `HKCU\…\CurrentVersion\Run` (+ `RunOnce`, `HKLM`,
+   `Wow6432Node`).
+3. **HyperSpin Startup Script** — confirm `[Startup]`/`[Exit]` in `HyperSpin Startup
+   Script.ini` has no Xpadder entry ([§4](#4-hyperspin-startup-script-changes) —
+   already done here).
+4. **Uninstall the exe** — `spindoctor tools-audit` (or `where /r D:\ Xpadder.exe`)
+   reports where `xpadder.exe` lives. Once the steps above are clear, uninstall it /
+   delete the folder(s) so nothing can start it even if a stray reference survives.
+
+> **Which one is the culprit?** Use *when* the error fires to tell them apart. A
+> **game launch/exit** error is the RocketLauncher Keymapper (step 1); a **Windows
+> boot/logon** error is an autostart (steps 2–3). To catch the launcher live, leave
+> the Xpadder error dialog open and run the PowerShell parent-process query in
+> [Troubleshooting → Xpadder still launches](troubleshooting.md#xpadder-still-launches-and-throws-errors-after-i-disabled-it-in-windows-and-hyperspin).
+>
+> **Confirmed on this cabinet:** every Windows autostart and scheduled task was clean
+> of Xpadder and the HyperSpin Startup Script referenced only `HyperSearch.exe`; the
+> error reproduced on **exiting a PCLauncher game**, so RocketLauncher's Keymapper
+> (`keymapper := "xpadder"`) was the sole invoker. Disabling it (step 1) also stops the
+> control-switching fight between Xpadder's AutoProfileScan and DS4Windows Auto Profiles.
+
+See also [Cabinet architecture reference → HyperSpin Startup/Exit
+Orchestration](cabinet-architecture-reference.md#hyperspin-startupexit-orchestration).

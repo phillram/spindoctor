@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Docs
+
+- **New section: *Removing Xpadder completely* (`docs/controller-input.md` §6) plus a matching `docs/troubleshooting.md` entry.** Xpadder can still auto-launch after it's "disabled" from Windows and the HyperSpin Startup Script — the easily-missed source is **RocketLauncher's own Keymapper** (`keymapperEnabled := "true"`, `keymapper := "xpadder"`, `xpadderFullPath` in `RocketLauncher.log`), which references Xpadder even though the `Internal` AHK method reads the profile format rather than launching the exe. Documents the full launch-point checklist (RL Keymapper, Windows Startup folder / registry Run / Task Scheduler, HyperSpin Startup Script) and points at `spindoctor tools-audit` to locate the installed exe.
+- **Documented the RocketLauncher-only fix for `Escape` erroneously exiting PC games (`docs/cabinet-architecture-reference.md`).** The Exit button sends `Escape` at every layer, including RocketLauncher's `exitEmulatorKey := "Esc"`, so one `Escape` in a PCLauncher game both opens its menu and closes the game. Recommends a per-system **hold-to-exit** — `Exit_Emulator_Key=H2000:~Esc` (RocketLauncher XHotkey `H<ms>:` hold prefix; hold Exit ~2 s to quit, a quick `Esc` tap passes through to the game) — for the `PC Games` / DOSBox systems, leaving the global `Exit_Emulator_Key=Esc` so console/arcade systems are unaffected. Confirmed working on the cabinet; a two-plain-key combo (`~s & ~Esc`) was tried first but proved unreliable because games that use `S` consume the key before the combo completes. Notes that hold-exit reliability varies per game and the game's own in-UI quit is the dependable fallback. Records the concrete edit confirmed against the cabinet's INIs: `Exit_Emulator_Key` under `[Exit]` in the **per-system** `Settings\<System>\RocketLauncher.ini` (note: that filename, not `<System>.ini`), leaving the global `Settings\Global RocketLauncher.ini` `Exit_Emulator_Key=Esc`. The Xpadder purge step likewise names the concrete setting — `Keymapper_Enabled=false` under `[Keymapper]` in `Settings\Global RocketLauncher.ini` — and flags that JoyIDs controller-ordering shares that block. Cross-linked from `docs/windows-10-migration.md`.
+
 ## [2.14.0] - 2026-07-28
 
 ### Fixed
