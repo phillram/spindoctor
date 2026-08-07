@@ -2019,25 +2019,27 @@ button all launch a game regardless of which physical player pressed it.
 > DOSBox) systems, change the exit key from `Esc` to a passthrough two-button
 > **chord** so a bare `Escape` reaches the game and only the chord quits. The
 > cabinet already uses this `~`-passthrough style for `exitScriptKey := "~LShift &
-> ~Z"` and `toggleCursorKey := "~LShift & ~X"`; the arcade-panel equivalent is
-> **Exit + Select** (`~Esc & ~Enter`) — both existing admin buttons, so no key is
-> consumed and the "only `Z` is free" [key inventory](#master-control-reference)
-> is unchanged.
+> ~Z"` and `toggleCursorKey := "~LShift & ~X"`. Recommended on this cabinet:
+> **P1 Coin + Exit** (`~s & ~Esc`) — hold the Coin/swop key, press Exit. It reuses
+> the cabinet's existing [swop-key](#master-control-reference) idiom (P1 Coin is
+> already the shift key), keeps bare `Esc` free for the game, and never touches
+> `Enter`, so no key is consumed and the "only `Z` is free" inventory is unchanged.
+> (**Exit + Select**, `~Esc & ~Enter`, also works but is less clean — holding `Esc`
+> flickers the game's own menu and `Enter` may activate a menu item.)
 >
 > **Where to set it.** The editable key is `Exit_Emulator_Key` (the log's
 > `exitEmulatorKey`). The global default lives in `RocketLauncher\Settings\Global
 > RocketLauncher.ini` under `[Exit]` (`Exit_Emulator_Key=Esc`) — **leave it** so
 > console/arcade systems keep `Esc`. Override it per-system in `RocketLauncher\
 > Settings\<System>\RocketLauncher.ini` (note: that filename, *not* `<System>.ini`)
-> under `[Exit]`: change `Exit_Emulator_Key=use_global` to `Exit_Emulator_Key=~Esc &
-> ~Enter`. Prefer RocketLauncherUI (select the system first) so it writes the file
+> under `[Exit]`: change `Exit_Emulator_Key=use_global` to `Exit_Emulator_Key=~s &
+> ~Esc`. Prefer RocketLauncherUI (select the system first) so it writes the file
 > correctly; if hand-editing, close RLUI first or it rewrites the file on exit.
 >
-> **Caveats (confirm on the cabinet).** `Esc` as an AHK chord prefix can interact
-> with a game that also reads it — and holding `Esc` opens the game's own menu while
-> `Enter` may activate a menu item. If that's awkward, use **P1 Coin + Exit**
-> (`~s & ~Esc`), which matches the cabinet's existing [swop-key](#master-control-reference)
-> idiom, keeps bare `Esc` for the game, and never touches `Enter`.
+> **Confirm on the cabinet.** Using a key as an AHK chord prefix can interact with a
+> game that also reads it (here, `s` — the Coin button — passes through via `~s`, so
+> a game that uses `S` still receives it; only Coin **held** + Exit quits). Verify the
+> combo quits cleanly and that bare `Esc` reaches the game.
 
 ### Xbox 360 button numbers (winxinput driver)
 
