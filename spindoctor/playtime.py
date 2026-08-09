@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
 from .favorites import FavoriteEntry
 from .medialink import LinkMode
@@ -614,6 +615,13 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="spindoctor-stats",
         description="RocketLauncher playtime reporting + Most Played wheel.",
+    )
+    # See spindoctor-recent's --version note: this is the exe the GUI and the
+    # scheduled .bat actually run to build the Most Played wheel, so it needs
+    # to report its own version for stale-binary diagnosis.
+    p.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s ({__app_name__}) version {__version__}",
     )
     sub = p.add_subparsers(dest="cmd")
 
