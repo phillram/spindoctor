@@ -22,6 +22,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
+from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
 from .database import GameEntry, HyperspinDatabase
 from .favorites import (
@@ -786,6 +787,14 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="spindoctor-recent",
         description="Regenerate the Recently Played HyperSpin wheel from "
                     "RocketLauncher launch statistics.",
+    )
+    # Lets `spindoctor-recent --version` be diagnosed independently of the
+    # main CLI / GUI — the GUI and the generated .bat files invoke *this*
+    # frozen exe, so a stale copy here is what makes the wheel come out
+    # alphabetical even when `spindoctor --version` reports the new release.
+    p.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s ({__app_name__}) version {__version__}",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 
