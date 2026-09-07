@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fetch-meta` no longer crashes on a game that TheGamesDB holds no boxart for.** TheGamesDB runs on PHP, whose `json_encode` writes an empty map as `[]` and not `{}`. So `include.boxart.data` came back as a list when no matched game had art, and `_parse_thegamesdb` called `.get()` on it. The command stopped with `AttributeError: 'list' object has no attribute 'get'` and lost every game it had already resolved. A PC wheel hits this often, because obscure PC titles frequently have no art. All keyed lookups into a TheGamesDB payload now go through `_as_dict`, which reads an empty list as an empty map. The same guard covers the `genres`, `developers` and `Games/Images` maps. Covered by `tests/test_scraper_payload_shapes.py`.
+- **One unexpected scraper payload now costs one game, not the whole run.** Any other shape surprise from ScreenScraper or TheGamesDB becomes the per-game `MetadataError` that `fetch-meta` and `fetch-media` already handle, so the run names that game and continues with the next one. The traceback still goes to `~/.spindoctor/scraper.log`.
+- **Scraper failures now show what the API replied.** Both APIs answer HTTP 200 with a plain-text body for login, quota and maintenance problems. `resp.json()` then failed with "Expecting value: line 1 column 1 (char 0)", and the text that names the cause was dropped. `fetch` and `search` now add the HTTP status and a body snippet to the message, or report an empty response body. The snippet hides the values of `sspassword`, `devpassword` and `apikey`, because users paste these messages into bug reports.
+
 ## [2.14.0] - 2026-07-28
 
 ### Fixed
