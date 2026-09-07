@@ -5,6 +5,7 @@ import json
 import logging
 import re
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
@@ -85,12 +86,27 @@ def _redact_params(params: Optional[dict]) -> dict:
     }
 
 
+def _as_dict(value: object) -> dict:
+    """Return *value* when it is a dict, else an empty dict.
+
+    TheGamesDB runs on PHP, and ``json_encode`` writes an empty
+    associative array as ``[]`` rather than ``{}``. So an id-keyed map
+    such as ``include.boxart.data`` arrives as a **list** whenever the
+    matched games have no boxart at all — and ``.get()`` on a list
+    raises ``AttributeError``. Every keyed lookup into a TheGamesDB
+    payload goes through here so an empty map reads as "nothing here"
+    instead of crashing the run.
+    """
+    return value if isinstance(value, dict) else {}
+
+
 def _raise_if_ss_error(data: dict) -> None:
     """Raise MetadataError if the ScreenScraper JSON body signals an API-level
     error (quota exceeded, auth failure, server issue).  SS returns HTTP 200
     even for these conditions; the error is signalled via an ``"erreur"`` key
     at the top level or inside ``response``."""
-    err = data.get("erreur") or data.get("response", {}).get("erreur")
+    data = _as_dict(data)
+    err = data.get("erreur") or _as_dict(data.get("response")).get("erreur")
     if err:
         raise MetadataError(f"ScreenScraper API error: {err}")
 
@@ -101,10 +117,22 @@ def _raise_if_tgdb_error(data: dict) -> None:
     problem via a top-level ``"code"`` field (401 / 403) rather than an HTTP
     status code.  Quota exhaustion uses proper HTTP 429 and is already caught
     by ``raise_for_status()``, so we only need to handle the in-band cases."""
+    data = _as_dict(data)
     code = data.get("code")
     if code and code not in (200, None):
         status = data.get("status") or ""
         raise MetadataError(f"TheGamesDB API error (code {code}): {status}")
+
+
+def _redact_text(text: str, params: Optional[dict]) -> str:
+    """Replace every known-secret literal from *params* with ``***``."""
+    if not params:
+        return text
+    for key in _REDACT_KEYS:
+        val = params.get(key)
+        if val and val not in ("", None):
+            text = text.replace(str(val), "***")
+    return text
 
 
 def _redact_error_str(error: BaseException, params: Optional[dict]) -> str:
@@ -116,14 +144,7 @@ def _redact_error_str(error: BaseException, params: Optional[dict]) -> str:
     ``_redact_params`` already cleaned the params dict. This replaces every
     known-secret literal value with ``***`` before the string hits the log.
     """
-    text = str(error)
-    if not params:
-        return text
-    for key in _REDACT_KEYS:
-        val = params.get(key)
-        if val and val not in ("", None):
-            text = text.replace(str(val), "***")
-    return text
+    return _redact_text(str(error), params)
 
 
 def _body_snippet(body: str, limit: int = 500) -> str:
@@ -170,6 +191,28 @@ def _failure_with_body(message: str, body: str) -> str:
     """Compose ``message`` with a parenthetical raw-body hint when present."""
     snippet = _body_snippet(body, limit=300)
     return f"{message} (raw: {snippet})" if snippet else message
+
+
+def _api_failure(
+    label: str,
+    error: BaseException,
+    resp: requests.Response,
+    params: Optional[dict],
+) -> str:
+    """Compose a fetch/search failure message that keeps the response body.
+
+    Both APIs answer HTTP 200 with a plain-text body for auth, quota and
+    maintenance conditions. ``resp.json()`` then fails with "Expecting
+    value: line 1 column 1 (char 0)", which names nothing the user can
+    act on — the body is the part that says whether the credentials, the
+    quota or the service is the problem, so it travels with the message.
+    The snippet is redacted: this message reaches the console, and users
+    paste console output into bug reports.
+    """
+    detail = _redact_error_str(error, params)
+    snippet = _redact_text(_body_snippet(resp.text or "", limit=300), params)
+    body_hint = f"raw: {snippet}" if snippet else "empty response body"
+    return f"{label}: {detail} (HTTP {resp.status_code}, {body_hint})"
 
 
 # ScreenScraper system IDs — lowercase HyperSpin name / common alias → SS id.
@@ -818,6 +861,31 @@ class MetadataError(Exception):
     pass
 
 
+@contextmanager
+def _parse_guard(source: str, game_name: str):
+    """Turn an unexpected payload failure into a per-game MetadataError.
+
+    A scraper response that doesn't match the documented shape must cost
+    the run one game, not all of them. Callers already handle
+    ``MetadataError`` per game — they record the game and move to the
+    next one — while any other exception unwinds the whole command and
+    throws away every game resolved so far. The traceback still reaches
+    ``scraper.log`` so the real cause stays diagnosable.
+    """
+    try:
+        yield
+    except MetadataError:
+        raise
+    except Exception as e:  # noqa: BLE001 — one bad payload must not end the run
+        scraper_logger.exception(
+            "%s: unexpected payload for %s", source, game_name,
+        )
+        raise MetadataError(
+            f"{source} returned an unexpected payload for '{game_name}' "
+            f"({type(e).__name__}: {e}) — see {SCRAPER_LOG_PATH}"
+        ) from e
+
+
 # ─── disk cache ───────────────────────────────────────────────────────────────
 
 _FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]+")
@@ -1085,15 +1153,18 @@ class ScreenScraperClient(_FetchWithSearchMixin):
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
-            raise MetadataError(f"ScreenScraper fetch failed: {e}") from e
+            raise MetadataError(
+                _api_failure("ScreenScraper fetch failed", e, resp, params)
+            ) from e
 
         # SS signals quota/auth errors via an "erreur" key at HTTP 200.
         _raise_if_ss_error(data)
         if "response" not in data or "jeu" not in data.get("response", {}):
             return None
 
-        meta = _parse_screenscraper(game_name, data["response"]["jeu"])
-        meta.match_score = similarity(game_name, meta.name)
+        with _parse_guard("ScreenScraper", game_name):
+            meta = _parse_screenscraper(game_name, data["response"]["jeu"])
+            meta.match_score = similarity(game_name, meta.name)
         return meta
 
     def fetch_by_id(self, game_id: str) -> Optional[GameMetadata]:
@@ -1146,16 +1217,19 @@ class ScreenScraperClient(_FetchWithSearchMixin):
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
-            raise MetadataError(f"ScreenScraper search failed: {e}") from e
+            raise MetadataError(
+                _api_failure("ScreenScraper search failed", e, resp, params)
+            ) from e
 
         _raise_if_ss_error(data)
-        jeux = data.get("response", {}).get("jeux", []) or []
+        jeux = _as_dict(data.get("response")).get("jeux") or []
         results = []
-        for jeu in jeux[:max_results]:
-            meta = _parse_screenscraper(game_name, jeu)
-            meta.match_score = similarity(game_name, meta.name)
-            results.append(meta)
-        results.sort(key=lambda m: m.match_score, reverse=True)
+        with _parse_guard("ScreenScraper", game_name):
+            for jeu in jeux[:max_results]:
+                meta = _parse_screenscraper(game_name, jeu)
+                meta.match_score = similarity(game_name, meta.name)
+                results.append(meta)
+            results.sort(key=lambda m: m.match_score, reverse=True)
 
         # The list endpoint's lighter payload means the top (auto-picked)
         # candidate frequently has zero media even when the game's own
@@ -1263,7 +1337,8 @@ class TheGamesDBClient(_FetchWithSearchMixin):
                       resp.status_code, resp.text or "")
             resp.raise_for_status()
             data = resp.json()
-            return data.get("data", {}).get("images", {}).get(str(game_id), []) or []
+            images = _as_dict(_as_dict(data.get("data")).get("images"))
+            return images.get(str(game_id)) or []
         except Exception as e:
             _log_http("thegamesdb.images", "GET", url, params, None, "", error=e)
             return []
@@ -1313,15 +1388,18 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
-            raise MetadataError(f"TheGamesDB fetch failed: {e}") from e
+            raise MetadataError(
+                _api_failure("TheGamesDB fetch failed", e, resp, params)
+            ) from e
 
         _raise_if_tgdb_error(data)
-        games = data.get("data", {}).get("games", [])
+        games = _as_dict(data.get("data")).get("games") or []
         if not games:
             return None
-        meta = _parse_thegamesdb(game_name, games[0], data)
-        self._merge_images(meta, games[0])
-        meta.match_score = similarity(game_name, meta.name)
+        with _parse_guard("TheGamesDB", game_name):
+            meta = _parse_thegamesdb(game_name, games[0], data)
+            self._merge_images(meta, games[0])
+            meta.match_score = similarity(game_name, meta.name)
         return meta
 
     def _merge_images(self, meta: GameMetadata, game: dict) -> None:
@@ -1372,11 +1450,12 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             _raise_if_tgdb_error(data)
         except Exception:  # noqa: BLE001 — best-effort enrichment only
             return None
-        games = data.get("data", {}).get("games", [])
+        games = _as_dict(data.get("data")).get("games") or []
         if not games:
             return None
-        meta = _parse_thegamesdb(str(game_id), games[0], data)
-        self._merge_images(meta, games[0])
+        with _parse_guard("TheGamesDB", str(game_id)):
+            meta = _parse_thegamesdb(str(game_id), games[0], data)
+            self._merge_images(meta, games[0])
         return meta
 
     def search(self, game_name: str, system_name: str, max_results: int = 8) -> list[GameMetadata]:
@@ -1403,24 +1482,27 @@ class TheGamesDBClient(_FetchWithSearchMixin):
             resp.raise_for_status()
             data = resp.json()
         except (requests.RequestException, ValueError) as e:
-            raise MetadataError(f"TheGamesDB search failed: {e}") from e
+            raise MetadataError(
+                _api_failure("TheGamesDB search failed", e, resp, params)
+            ) from e
 
         _raise_if_tgdb_error(data)
-        games = (data.get("data", {}).get("games", []) or [])[:max_results]
+        games = (_as_dict(data.get("data")).get("games") or [])[:max_results]
         results = []
-        for g in games:
-            meta = _parse_thegamesdb(game_name, g, data)
-            meta.match_score = similarity(game_name, meta.name)
-            results.append(meta)
-        results.sort(key=lambda m: m.match_score, reverse=True)
-        # Enrich the top candidate with wheel/snap/background from Games/Images.
-        # fetch() and fetch_by_id() both call _merge_images; search() was missing
-        # this, leaving wheel_url/snap_url/background_url empty on search results.
-        if results:
-            top_id = results[0].source_id
-            top_game = next((g for g in games if str(g.get("id", "")) == top_id), None)
-            if top_game:
-                self._merge_images(results[0], top_game)
+        with _parse_guard("TheGamesDB", game_name):
+            for g in games:
+                meta = _parse_thegamesdb(game_name, g, data)
+                meta.match_score = similarity(game_name, meta.name)
+                results.append(meta)
+            results.sort(key=lambda m: m.match_score, reverse=True)
+            # Enrich the top candidate with wheel/snap/background from Games/Images.
+            # fetch() and fetch_by_id() both call _merge_images; search() was missing
+            # this, leaving wheel_url/snap_url/background_url empty on search results.
+            if results:
+                top_id = results[0].source_id
+                top_game = next((g for g in games if str(g.get("id", "")) == top_id), None)
+                if top_game:
+                    self._merge_images(results[0], top_game)
         return results
 
 
@@ -2227,21 +2309,22 @@ def _parse_screenscraper(rom_name: str, jeu: dict) -> GameMetadata:
 
 
 def _parse_thegamesdb(rom_name: str, game: dict, full_response: dict) -> GameMetadata:
-    genres_map = full_response.get("include", {}).get("genres", {}).get("data", {})
-    devs_map = full_response.get("include", {}).get("developers", {}).get("data", {})
-    boxart = full_response.get("include", {}).get("boxart", {})
+    include = _as_dict(full_response.get("include"))
+    genres_map = _as_dict(_as_dict(include.get("genres")).get("data"))
+    devs_map = _as_dict(_as_dict(include.get("developers")).get("data"))
+    boxart = _as_dict(include.get("boxart"))
 
     genre_ids = game.get("genres") or []
-    genre = genres_map.get(str(genre_ids[0]), {}).get("name", "") if genre_ids else ""
+    genre = _as_dict(genres_map.get(str(genre_ids[0]))).get("name", "") if genre_ids else ""
 
     dev_ids = game.get("developers") or []
-    manufacturer = devs_map.get(str(dev_ids[0]), {}).get("name", "") if dev_ids else ""
+    manufacturer = _as_dict(devs_map.get(str(dev_ids[0]))).get("name", "") if dev_ids else ""
 
     release_date = game.get("release_date") or ""
     year = release_date[:4]
 
-    base_url = boxart.get("base_url", {}).get("medium", "")
-    images = boxart.get("data", {}).get(str(game.get("id")), []) or []
+    base_url = _as_dict(boxart.get("base_url")).get("medium", "")
+    images = _as_dict(boxart.get("data")).get(str(game.get("id"))) or []
 
     artwork_candidates: list[MediaCandidate] = []
     if base_url:

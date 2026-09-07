@@ -134,6 +134,25 @@ What to look for:
 
 SpinDoctor caps itself at 1 request/second. The free tier allows 500/day — wait until midnight UTC or upgrade your account.
 
+### `fetch-meta` reports `Expecting value: line 1 column 1 (char 0)`
+
+**Symptom:** every game in the system fails with a line like:
+
+```
+  Error [Crazy Taxi 2-in-1]: ScreenScraper: ScreenScraper search failed: Expecting value:
+  line 1 column 1 (char 0) (HTTP 200, raw: Erreur : API fermée pour les non membres)
+```
+
+**Cause:** the API replied `HTTP 200` with a plain-text body instead of JSON, so the JSON decoder failed on the first character. ScreenScraper does this for login, thread-limit and maintenance conditions. The text after `raw:` is the API's own message and names the real cause. `empty response body` means the API sent nothing at all.
+
+**What to check:**
+
+1. A login message (`Erreur de login`, `Vérifier vos identifiants`) — see [403 from ScreenScraper or TheGamesDB](#403-from-screenscraper-or-thegamesdb) below, causes 1 and 3.
+2. A quota or thread message — see [ScreenScraper rate-limiting](#screenscraper-rate-limiting).
+3. `empty response body`, or a body that looks like an HTML page — ScreenScraper is overloaded or down. Retry later, or run `--source thegamesdb` to keep working from the other provider.
+
+With `--source both`, a failure on one provider does not stop the other: games that TheGamesDB resolves are still applied. The full request and response for each call is in `scraper.log`.
+
 ### 403 from ScreenScraper or TheGamesDB
 
 The Setup tab's **Test credentials** button verifies both providers. When either returns `HTTP 403`, the failure dialog includes a trimmed copy of the upstream response body — that's usually where the real reason lives ("Erreur de login : mauvais mot de passe", "Invalid API key", a rate-limit notice). Check the full request/response in `scraper.log` if you need more detail.
