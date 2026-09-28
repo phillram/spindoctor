@@ -2436,6 +2436,8 @@ def fav_rebuild(media_mode, apply_changes, verbose):
     summary = rebuild(store, config, media_mode=mode, skip_media=skip_media,
                       dry_run=not apply_changes, verbose=verbose)
     _print_synth_summary("Favorites", summary)
+    if apply_changes:
+        _sync_ledblinky_collection(config, store.target_system, apply_changes)
 
 
 @fav_group.command("clear")
@@ -2525,6 +2527,8 @@ def recent_rebuild(limit, target_system, media_mode, apply_changes, verbose):
         verbose=verbose,
     )
     _print_synth_summary("Recently Played", summary)
+    if apply_changes:
+        _sync_ledblinky_collection(config, target_system, apply_changes)
 
 
 @recent_group.command("list")
@@ -3282,6 +3286,8 @@ def stats_report_build_wheel(limit, target_system, media_mode,
             "install is left untouched.[/dim]"
         )
     _print_synth_summary("Most Played", summary)
+    if not staging:
+        _sync_ledblinky_collection(config, target_system, True)
 
 
 @stats_report_group.command("clear-wheel")
@@ -9103,6 +9109,98 @@ def ledblinky_colors_sync_players(apply_changes, no_backup, override, verbose):
         )
     elif result.backup_path:
         console.print(f"\n[dim]Backup: {result.backup_path}[/dim]")
+
+
+@ledblinky_group.command("profiles")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit writes (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the automatic .bak backup before writing.")
+@click.option("--verbose", "-v", is_flag=True,
+              help="List unresolved games and every warning.")
+def ledblinky_profiles(apply_changes, no_backup, verbose):
+    """Give every game a profile that lights only the buttons it can use.
+
+    Reads the keymap each wheel really launches with (RocketLauncher
+    Emulators.ini / Games.ini -> emulator folder -> that emulator's key
+    config) and writes LEDBlinky profiles whose keys match it.
+
+    \b
+      - Consoles: each system's DEFAULT lights the pad's buttons as the
+        emulator maps them (RetroArch, DeSmuME, SSF, PokeMini, MESS).
+      - Arcade wheels LEDBlinky doesn't treat as MAME (CPS, Neo Geo, CAVE,
+        ST-V, Zinc, gun and driving wheels…) get one profile per game.
+      - Existing Naomi / Model 2 / Model 3 / Type X profiles are re-keyed.
+      - HBMAME / PacMAME / MAME ROMs missing from Controls.ini borrow their
+        parent's entry; the community controls.dat button count is used
+        where it disagrees with MAME's.
+      - Favorites / Most Played / Recently Played copy each game's source
+        profile.
+
+    \b
+    Examples:
+      spindoctor ledblinky profiles              :: preview
+      spindoctor ledblinky profiles --apply      :: write (with .bak backups)
+    """
+    from . import ledblinky_profiles as lp
+
+    config = _cfg()
+    try:
+        builder = lp.plan_profiles(config)
+        result = builder.write(dry_run=not apply_changes, backup=not no_backup)
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    table = Table(show_header=True, header_style="bold", box=None)
+    table.add_column("System")
+    table.add_column("Action")
+    table.add_column("Groups", justify="right")
+    table.add_column("Keymap / note", style="dim")
+    for a in result.actions:
+        note = "; ".join(x for x in (a.source, a.note) if x)
+        table.add_row(a.system, a.action, str(a.groups), note)
+    console.print(table)
+    console.print(
+        f"\nProfiles: [green]{result.groups_written}[/green]   "
+        f"Controls.ini entries added: [green]{len(result.controls_ini_added)}[/green]   "
+        f"community button counts: [green]{len(result.controls_ini_community)}[/green]   "
+        f"unresolved games: [yellow]{len(result.unresolved_roms)}[/yellow]"
+    )
+    for key, systems in sorted(result.unroutable_keys.items()):
+        console.print(
+            f"[yellow]Note:[/yellow] {key} has no LED in LEDBlinkyInputMap.xml "
+            f"(used by {', '.join(sorted(systems))})."
+        )
+    if verbose:
+        for system, rom in result.unresolved_roms:
+            console.print(f"[dim]  unresolved  {system}: {rom}[/dim]")
+        for w in result.warnings:
+            console.print(f"[dim]  {w}[/dim]")
+    elif result.unresolved_roms or result.warnings:
+        console.print("[dim]Pass --verbose to list unresolved games and warnings.[/dim]")
+    verb = "Would write" if result.dry_run else "Wrote"
+    for p in result.written:
+        console.print(f"{verb} {p}")
+    for b in result.backups:
+        console.print(f"[dim]Backup: {b}[/dim]")
+    if result.dry_run and result.written:
+        console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to commit.[/yellow]")
+
+
+def _sync_ledblinky_collection(config, target_system: str, apply_changes: bool) -> None:
+    """Refresh LEDBlinky profiles for a rebuilt collection wheel (best effort)."""
+    if not (config.ledblinky_dir and config.rocketlauncher_dir):
+        return
+    from . import ledblinky_profiles as lp
+    try:
+        result = lp.sync_collection(config, target_system, dry_run=not apply_changes)
+    except (OSError, ValueError) as exc:
+        console.print(f"[yellow]WARNING:[/yellow] LEDBlinky profiles not refreshed: {exc}")
+        return
+    n = result.groups_written
+    verb = "would refresh" if result.dry_run else "refreshed"
+    console.print(f"LEDBlinky: {verb} {n} profile(s) for [cyan]{target_system}[/cyan].")
 
 
 @ledblinky_group.command("fill-defaults")

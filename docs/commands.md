@@ -1479,6 +1479,8 @@ spindoctor ledblinky setup --overwrite --apply :: regenerate all entries, includ
 spindoctor ledblinky generate              :: dry-run preview
 spindoctor ledblinky generate --apply      :: commit controls.ini / Colors.ini (native P1_BUTTON1= format)
 spindoctor ledblinky generate --apply --verbose  :: also print file paths + format used
+spindoctor ledblinky profiles              :: dry-run: a per-game profile for every game, from the real keymaps
+spindoctor ledblinky profiles --apply      :: commit (backs up LEDBlinkyControls.xml, Controls.ini, Colors.ini)
 spindoctor ledblinky inspect-rom 005       :: diagnose why 005's LED colors may not be applying
 spindoctor ledblinky audit
 spindoctor ledblinky audit --report D:\ledblinky_audit.csv
@@ -1589,6 +1591,35 @@ spindoctor ledblinky setup --overwrite --apply  :: replace existing entries (req
 ```bat
 spindoctor ledblinky generate --overwrite --apply
 ```
+
+### `ledblinky profiles`
+
+Gives every game a profile that lights **only the buttons it can use**, matched to the keys its emulator actually sends. Run it after `ledblinky setup`, and again whenever you add a wheel or change an emulator's key mapping.
+
+```bat
+spindoctor ledblinky profiles              :: dry-run: table of what each wheel gets
+spindoctor ledblinky profiles --apply      :: write LEDBlinkyControls.xml / Controls.ini / Colors.ini
+spindoctor ledblinky profiles --verbose    :: also list games with no controls data, and warnings
+```
+
+| Flag | Effect |
+|------|--------|
+| `--apply` | Commit; omit for a dry-run preview |
+| `--no-backup` | Skip the timestamped `.bak` backup of each file before it is modified |
+| `--verbose` | List every game that couldn't be resolved, and every warning |
+
+Needs `ledblinky_dir`, `hyperspin_dir`, `rocketlauncher_dir` and `emulators_dir` set. For each wheel it follows RocketLauncher's `Emulators.ini` (and `Games.ini` for per-game overrides) to the emulator folder, reads that emulator's own key config, and writes profiles whose keys match it:
+
+| Wheel type | What it gets |
+|---|---|
+| Consoles on RetroArch, DeSmuME, SSF, PokeMini or MESS | The system's default profile lights each pad button where the emulator maps it, labeled with the console's name for it (Y/X/L on the top row, B/A/R below, for example). Games launched with a different emulator or a per-game RetroArch config get their own profile. Pad-only systems light just Exit and Pause. |
+| Arcade wheels run through MAME but not named "MAME" (CPS1/2/3, Neo Geo, CAVE, ST-V, 4-Player, gun and driving wheels…), plus Zinc and Hikaru | One profile per game, from its `Controls.ini` entry and the keys of the MAME folder that launches it. The joystick is set to 4-way or 2-way where the community controls data says so, so a ServoStik switches correctly. |
+| Naomi, Atomiswave, Model 2 / 3, Type X, Daphne, AAE | Existing per-game profiles are re-keyed (buttons 4–6 on D/E/F), and games with controls data get a profile. |
+| MAME, MAME (Vector), HBMAME, PacMAME | ROMs missing from `Controls.ini` borrow their parent's (or base ROM's) entry. Where the community `controls.dat` disagrees with MAME's button count, the community count wins, unless the game has its own XML profile or a per-game MAME cfg that remaps its buttons. |
+| Favorites, Most Played, Recently Played | Each game copies the profile it has on its source wheel. `fav rebuild`, `recent rebuild` and `stats-report build-wheel` refresh these automatically. |
+| PC, Toolkit, KODI and other wheels with no readable keymap | Exit and Pause only, instead of a dark panel. |
+
+Wheels whose emulator's keys it can't read (Altirra, WinVICE, Hatari, PCSX2, PPSSPP, Dolphin…) keep their existing default profile, and the dry-run table says so. A button that lights nothing is almost always a key with no LED in `LEDBlinkyInputMap.xml`; the command lists any such keys (for example `KEYCODE_W` on Button 8, whose port carries no `inputCodes`).
 
 ### `ledblinky inspect-rom`
 

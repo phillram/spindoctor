@@ -26,3 +26,6 @@ env/
 .pytest_cache/
 
 .DS_Store
+
+# Ad-hoc analysis scripts
+.scratch/
