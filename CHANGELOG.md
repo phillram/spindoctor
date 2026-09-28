@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`ledblinky profiles`: every game gets an LEDBlinky profile that lights only the buttons it can use.** Previously, games in wheels without a LEDBlinky section (CPS1/2/3, Neo Geo, CAVE, ST-V, 4-Player, gun and driving wheels, collections, PC wheels) got LEDBlinky's `OTHER` fallback, which lights nothing at all, not even Exit. MAME/HBMAME/PacMAME ROMs missing from `Controls.ini` lit six buttons per side whatever the game used. The command reads the keymap each wheel really launches with (RocketLauncher `Emulators.ini` / `Games.ini` → emulator folder → RetroArch, MAME/MESS, DeSmuME, SSF, Zinc, Demul, Daphne or PokeMini config) and writes profiles whose `inputCodes` are those keys. That matters because LEDBlinky routes a control to an LED by `inputCodes`, never by control name. Console defaults are rebuilt from the real mapping. Several were wrong: SNES "Button B" and "Button Y" both lit Button 1 and R never lit. Existing arcade profiles are re-keyed (their buttons 4–8 repeated the A/B keys). Collection wheels copy each game's source profile and are refreshed by `fav rebuild`, `recent rebuild` and `stats-report build-wheel`. Dry-run by default, with a `.bak` of each file before writing.
+
 ## [2.14.0] - 2026-07-28
 
 ### Fixed
