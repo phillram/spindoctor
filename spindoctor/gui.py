@@ -36,7 +36,7 @@ import time
 from collections import deque
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Deque, Optional, Sequence
+from typing import Callable, Deque, Iterable, Optional, Sequence
 
 from . import __app_name__, __version__
 from .config import (
@@ -106,6 +106,44 @@ def resolve_cli_command(name: str) -> list[str]:
     if on_path:
         return [on_path]
     return [sys.executable, "-m", _DEV_MODULE_MAP[name]]
+
+
+_CLI_VERSION_RE = re.compile(r"(\d+\.\d+\.\d+)")
+
+
+def probe_cli_version(name: str) -> Optional[str]:
+    """Return the ``X.Y.Z`` version reported by the resolved *name* binary.
+
+    Runs ``<binary> --version`` (added to every wheel-builder exe) and pulls
+    the first semantic-version string out of its output. Returns ``None`` when
+    the binary can't be resolved, doesn't understand ``--version`` (an older
+    build that predates the flag), times out, or prints nothing parseable —
+    each of which is itself evidence the exe is stale, so callers treat
+    ``None`` the same as a mismatch.
+
+    The GUI, the Tools-menu ``.bat`` files, and Task Scheduler all invoke
+    these *sibling* exes rather than the running GUI's own code, so a copy
+    left behind by a partial upgrade silently rebuilds wheels with old logic
+    (e.g. Recently Played / Most Played rendered alphabetically). This probe
+    is how the GUI notices that before kicking off a refresh.
+    """
+    try:
+        argv = resolve_cli_command(name) + ["--version"]
+    except (CliNotFoundError, ValueError):
+        return None
+    try:
+        proc = subprocess.run(
+            argv,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            creationflags=_CREATE_NO_WINDOW,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    match = _CLI_VERSION_RE.search(f"{proc.stdout or ''}\n{proc.stderr or ''}")
+    return match.group(1) if match else None
 
 
 # ─── Dark-mode palette (module-level so tests can reach in too) ───────────────
@@ -5050,6 +5088,14 @@ class _SpinDoctorGUI:
         if not steps:
             self._flash_validation("Tick at least one wheel to refresh.")
             return
+
+        # The GUI runs the *sibling* wheel-builder exes, not its own code — a
+        # copy left stale by a partial upgrade rebuilds wheels with old logic
+        # (the classic symptom: Recently Played / Most Played come out
+        # alphabetical). Verify each builder matches this GUI before running.
+        if not self._confirm_wheel_binary_versions(binary for _n, binary, _a in steps):
+            return
+
         total = len(steps)
 
         def run_next(remaining: list[tuple[str, str, list[str]]], rc: int) -> None:
@@ -5065,6 +5111,48 @@ class _SpinDoctorGUI:
             self._run_cli(binary, args, on_complete=lambda code: run_next(remaining[1:], code))
 
         run_next(steps, 0)
+
+    def _confirm_wheel_binary_versions(self, binaries: Iterable[str]) -> bool:
+        """Warn if any wheel-builder exe's version differs from this GUI's.
+
+        Probes each distinct *binary* via :func:`probe_cli_version` and, when
+        one reports a different version (or can't be identified — typically an
+        old build predating ``--version``), pops a confirm dialog explaining
+        the stale-binary risk. Returns ``True`` to proceed with the refresh
+        and ``False`` if the user cancels. A clean, all-matching set proceeds
+        silently.
+        """
+        mismatches: list[str] = []
+        for binary in dict.fromkeys(binaries):  # de-dup, preserve order
+            reported = probe_cli_version(binary)
+            if reported is None:
+                mismatches.append(
+                    f"• {binary}: version could not be determined "
+                    f"(likely an older build that predates --version)."
+                )
+            elif reported != __version__:
+                mismatches.append(
+                    f"• {binary}: reports {reported}, but this GUI is {__version__}."
+                )
+        if not mismatches:
+            return True
+        proceed = self.messagebox.askyesno(
+            "Wheel builder version mismatch",
+            f"The program(s) the GUI runs to build wheels don't all match this "
+            f"GUI (version {__version__}):\n\n"
+            + "\n".join(mismatches)
+            + "\n\nAn out-of-date builder rebuilds wheels with old logic — for "
+            "example rendering Recently Played / Most Played alphabetically "
+            "instead of by recency / play count. Re-extract the full release so "
+            "every spindoctor*.exe in the install folder matches, then refresh "
+            "again.\n\nRefresh anyway?",
+        )
+        if not proceed:
+            self._append_output(
+                "\nRefresh cancelled — wheel-builder version mismatch "
+                "(see the dialog for which exe is out of date).\n"
+            )
+        return proceed
 
     def _run_preflight(self) -> None:
         """One-button "is the cabinet ready for guests?" health check.
