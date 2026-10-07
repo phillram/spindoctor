@@ -134,6 +134,25 @@ What to look for:
 
 SpinDoctor caps itself at 1 request/second. The free tier allows 500/day — wait until midnight UTC or upgrade your account.
 
+### `fetch-meta` reports `Expecting value: line 1 column 1 (char 0)`
+
+**Symptom:** every game in the system fails with a line like:
+
+```
+  Error [Crazy Taxi 2-in-1]: ScreenScraper: ScreenScraper search failed: Expecting value:
+  line 1 column 1 (char 0) (HTTP 200, raw: Erreur : API fermée pour les non membres)
+```
+
+**Cause:** the API replied `HTTP 200` with a plain-text body instead of JSON, so the JSON decoder failed on the first character. ScreenScraper does this for login, thread-limit and maintenance conditions. The text after `raw:` is the API's own message and names the real cause. `empty response body` means the API sent nothing at all.
+
+**What to check:**
+
+1. A login message (`Erreur de login`, `Vérifier vos identifiants`) — see [403 from ScreenScraper or TheGamesDB](#403-from-screenscraper-or-thegamesdb) below, causes 1 and 3.
+2. A quota or thread message — see [ScreenScraper rate-limiting](#screenscraper-rate-limiting).
+3. `empty response body`, or a body that looks like an HTML page — ScreenScraper is overloaded or down. Retry later, or run `--source thegamesdb` to keep working from the other provider.
+
+With `--source both`, a failure on one provider does not stop the other: games that TheGamesDB resolves are still applied. The full request and response for each call is in `scraper.log`.
+
 ### 403 from ScreenScraper or TheGamesDB
 
 The Setup tab's **Test credentials** button verifies both providers. When either returns `HTTP 403`, the failure dialog includes a trimmed copy of the upstream response body — that's usually where the real reason lives ("Erreur de login : mauvais mot de passe", "Invalid API key", a rate-limit notice). Check the full request/response in `scraper.log` if you need more detail.
@@ -889,6 +908,73 @@ so buttons do not register even though the device appears connected.
 If DS4Windows is not listed in the tray, it has exited. See
 [Controller input — DS4Windows and XInput](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput)
 for the full architecture reference.
+
+---
+
+### Xpadder still launches and throws errors after I disabled it in Windows and HyperSpin
+
+**Symptom:** You removed Xpadder from Windows startup and from the HyperSpin Startup
+Script, but it still opens **as a game launches or exits**, with the dialog:
+
+> *An error has occurred in this program — AutoProfileScan thread failed to stop.
+> This error should never happen! For assistance, please visit the website xpadder.com*
+
+A related symptom is **controls "randomly" switching** between the PS4 pad, the arcade
+stick, and a third mapping mid-session — two auto-profile mappers (Xpadder's
+AutoProfileScan and DS4Windows Auto Profiles) fighting over the same pad.
+
+`AutoProfileScan` is Xpadder's **own Auto-Profiles** thread (it watches the foreground
+window and swaps profiles — the same job DS4Windows Auto Profiles now does). "Failed
+to stop" is a shutdown race: Xpadder is launched with auto-profiles running and then
+killed as the game exits.
+
+**Cause:** Once the Windows autostart surfaces (Startup folder, registry Run keys,
+Task Scheduler) and the HyperSpin Startup Script are all confirmed clean, the
+remaining culprit is **RocketLauncher's own Keymapper**. RocketLauncherUI → Global →
+Keymapper can be set to Xpadder — the RL log records it as:
+
+```
+keymapperEnabled := "true"
+keymapper        := "xpadder"
+xpadderFullPath  := "D:\Arcade\Utilities\Xpadder\Xpadder.exe"
+```
+
+Because the keymapper runs per game launch/exit, the tell-tale is that the error fires
+**when you launch or quit a game** (a PCLauncher/PC-game exit on this cabinet), *not* at
+Windows boot. DS4Windows Auto Profiles already maps the pad, so RL keymapping is
+redundant and only creates the second-mapper fight.
+
+> **Confirmed on this cabinet.** Every Windows autostart (HKCU/HKLM/WOW6432 `Run`,
+> `RunOnce`, both Startup folders) and every scheduled task were clean of Xpadder, and
+> the HyperSpin Startup Script `[Startup]`/`[Exit]` referenced only `HyperSearch.exe` /
+> `AutoHotkey.exe`. `Xpadder.exe` existed only in retired `…\Utilities\Xpadder … - not
+> in use\` folders. The single error reproduced on **exiting a PCLauncher game** —
+> RocketLauncher's Keymapper (`keymapper := "xpadder"`) was the only remaining invoker.
+
+**Fix:**
+
+1. **Disable the keymapper.** RocketLauncherUI → Global → Keymapper → **Keymapper
+   Enabled = false**. If RLUI doesn't expose it, hand-edit `RocketLauncher\Settings\
+   Global RocketLauncher.ini` → `[Keymapper]` → `Keymapper_Enabled=false` (close RLUI
+   first, or it rewrites the file on exit). This is the high-value step — it stops the
+   game-launch/exit invocation and the control-switching fight in one move. Note that
+   JoyIDs controller-ordering (`JoyIDs_Enabled`) lives in the same `[Keymapper]` block;
+   if a game's player/controller assignment looks swapped afterward, that's the setting
+   to revisit (DS4Windows can handle ordering instead).
+2. **Delete the Xpadder install folder(s)** (`spindoctor tools-audit` / `where /r D:\
+   Xpadder.exe` reports where they are — note a renamed folder still contains a runnable
+   `Xpadder.exe`) so nothing can launch it even if a stray reference survives.
+3. Full runbook: [Controller input → Removing Xpadder completely](controller-input.md#6-removing-xpadder-completely).
+
+**Diagnosis:** confirm *when* the dialog fires. If it's on a **game launch/exit**, it's
+the RL Keymapper (above). If it's at **Windows boot/logon**, check the autostart
+surfaces instead — Task Manager → Startup, `shell:startup`, `taskschd.msc`, and the
+`…\CurrentVersion\Run` registry keys. To catch the launcher live, leave the error
+dialog open and run
+`powershell "Get-CimInstance Win32_Process -Filter \"name='Xpadder.exe'\" | ForEach-Object { $p=Get-CimInstance Win32_Process -Filter ('ProcessId='+$_.ParentProcessId); [pscustomobject]@{Xpadder=$_.ExecutablePath;Parent=$p.Name;ParentPath=$p.ExecutablePath} } | Format-List"`
+— `Parent`/`ParentPath` name whatever started it. Related: the *"After the game loads,
+HyperSpin stays in front…"* entry below, where an Xpadder profile mapped the back
+button to `Escape`.
 
 ---
 
