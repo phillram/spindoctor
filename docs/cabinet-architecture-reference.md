@@ -2315,7 +2315,17 @@ LedBlinky resolves the control profile for a launched ROM in this order:
 2. DEFAULT `controlGroup` under the matching emulator → `Controls: [EMULATOR-DEFAULT]`
 3. OTHER-DEFAULT (for emulators with no XML section at all)
 
-`controls.ini` entries (when present and correctly formatted) define **which control names** appear in the control list. The XML then provides input codes and `alwaysActive` settings for those names.  If `controls.ini` has an entry for a ROM, it overrides the XML's control list — so a broken `controls.ini` entry will suppress the ROM-specific XML entry entirely.
+For MAME, `controls.ini` entries (when present and correctly formatted) define **which control names** appear in the control list for ROMs that have no XML group of their own, and each control's key comes from MAME's cfg (the log tags these `MAME-ALLGAMES`). **A ROM-specific XML group beats `controls.ini`:** on the cabinet, `asteroid` has buttons 1–5 in `controls.ini`, yet the log's control list is the XML group's `P1_BUTTON3|P1_BUTTON4|P1_BUTTON5`.
+
+**Confirmed against `Debug.log` on the cabinet (2026-09):**
+
+- **The emulator name is the HyperSpin wheel name**, upper-cased with spaces → `_` (`SNK Neo Geo MVS` → `SNK_NEO_GEO_MVS`). HyperSpin drives LEDBlinky (`FE=hyperspin`); RocketLauncher's own LEDBlinky integration is off (`LEDBlinky_Enabled=false` globally), so per-system `LEDBlinky_System_Name` overrides in RocketLauncher are inert.
+- **Only wheels with `MAME` in the name use `controls.ini`.** A CPS2 or Neo Geo wheel launches MAME, but LEDBlinky sees `CAPCOM_PLAY_SYSTEM_II`, finds no section, and falls to OTHER-DEFAULT.
+- **OTHER-DEFAULT lights nothing** — not even Exit. Its controls carry no `inputCodes`.
+- **A MAME ROM missing from `controls.ini` lights six buttons per side** (MAME-DEFAULT: every port the cabinet's MAME cfg maps).
+- **A control lights the LED whose `LEDBlinkyInputMap.xml` port lists one of its `inputCodes`; the control's name plays no part.** The old SNES DEFAULT named "Button B" `P1_BUTTON4` but gave it `KEYCODE_A`, and it lit Button 1, not Button 4. Buttons 4 and 8 have no `inputCodes` in the input map, so a profile keyed to `V`/`W`/`Y`/`X` can't light them.
+
+`spindoctor ledblinky profiles` writes profiles from these rules — see [commands.md](commands.md#ledblinky-profiles).
 
 ### `controls.ini` and `Colors.ini` — generation
 

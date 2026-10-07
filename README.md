@@ -7,7 +7,7 @@ A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](htt
 - **Audits and verifies the library** — compares ROMs against the HyperSpin databases and media, validates ROM integrity against No-Intro / Redump / TOSEC DATs, finds duplicates and misplaced files
 - **Fills in metadata and artwork** — downloads game descriptions, wheel art, backgrounds, and videos, and keeps the HyperSpin XML in sync with what's on disk
 - **Builds smart wheels** — cross-system Favorites, Recently Played, and Most Played, plus playtime reports
-- **Wires up hardware** — Sinden / DemulShooter light guns per system, and LEDBlinky button lighting
+- **Wires up hardware** — Sinden / DemulShooter light guns per system, and LEDBlinky button lighting that gives every game a profile lighting only the buttons it uses
 - **Protects and moves the library** — dated backups, whole-library migration between drives or PCs, and undo for almost every destructive operation
 - **Knows your cabinet** — inventories the third-party arcade tools already installed and reports which ones SpinDoctor replaces
 
