@@ -27,6 +27,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from . import __app_name__, __version__
 from .config import CONFIG_DIR, Config, load_config
 from .database import GameEntry, HyperspinDatabase, load_database, resolve_atomic_tmp_dir
 from .medialink import LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir
@@ -934,6 +935,12 @@ def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="spindoctor-fav",
         description="Manage cross-system HyperSpin favorites.",
+    )
+    # See spindoctor-recent's --version note: keeps every wheel-builder exe
+    # independently version-checkable so the GUI can flag a stale copy.
+    p.add_argument(
+        "--version", action="version",
+        version=f"%(prog)s ({__app_name__}) version {__version__}",
     )
     sub = p.add_subparsers(dest="cmd", required=True)
 

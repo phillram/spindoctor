@@ -913,3 +913,15 @@ def test_generate_pclauncher_ini_sanitizes_filename(tmp_path):
     assert ini.name == "Submachine Legacy.ini"  # colon stripped from filename
     assert ini.exists()
     assert "Submachine Legacy" in ini.read_text(encoding="utf-8")
+
+
+def test_standalone_version_flag_reports_version(capsys):
+    # spindoctor-fav is invoked as a sibling exe by the GUI / scheduled .bat;
+    # it exposes --version so a stale copy is diagnosable like its peers.
+    import pytest
+    import spindoctor.favorites as fav_mod
+    from spindoctor import __version__
+    with pytest.raises(SystemExit) as exc:
+        fav_mod.main(["--version"])
+    assert exc.value.code == 0
+    assert __version__ in capsys.readouterr().out
