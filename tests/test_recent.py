@@ -577,3 +577,16 @@ def test_standalone_rebuild_media_mode_defaults_to_auto():
     from spindoctor.recent import _build_parser
     args = _build_parser().parse_args(["rebuild"])
     assert args.media_mode == "auto"
+
+
+def test_standalone_version_flag_reports_version(capsys):
+    # The GUI and scheduled .bat run this sibling exe directly, so it must
+    # report its own version (independently of `spindoctor --version`) to
+    # diagnose a stale copy left behind by a partial upgrade. --version must
+    # win over the otherwise-required subcommand.
+    import spindoctor.recent as recent_mod
+    from spindoctor import __version__
+    with pytest.raises(SystemExit) as exc:
+        recent_mod.main(["--version"])
+    assert exc.value.code == 0
+    assert __version__ in capsys.readouterr().out

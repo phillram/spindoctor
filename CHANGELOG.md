@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`spindoctor-fav`, `spindoctor-recent`, and `spindoctor-stats` now accept `--version`.** These standalone wheel-builder binaries are what the GUI and the generated Tools-menu / scheduled `.bat` files actually invoke — the GUI shells out to its *sibling* exes (`resolve_cli_command`) and each `.bat` embeds a full path to one (`_sibling_exe`). So a copy left stale by a partial upgrade silently rebuilds Recently Played / Most Played with pre-2.13.0 alphabetical logic even while `spindoctor --version` reports the new release. Each binary now reports its own version so a stale one is diagnosable in isolation; `--version` takes priority over the otherwise-required subcommand.
+- **The GUI warns before a wheel refresh when a builder binary's version doesn't match the GUI's.** Before running the Favorites / Recently Played / Most Played rebuilds, the GUI probes each selected sibling builder via `<binary> --version` (`probe_cli_version`) and, if any reports a different version — or is an older build that can't be probed at all — pops a confirm dialog naming the out-of-date exe and explaining the alphabetical-wheel symptom, so the fix (re-extract the full release so every `spindoctor*.exe` matches) is obvious. A clean, all-matching set refreshes silently as before.
+
 ### Docs
 
 - **New section: *Removing Xpadder completely* (`docs/controller-input.md` §6) plus a matching `docs/troubleshooting.md` entry.** Xpadder can still auto-launch after it's "disabled" from Windows and the HyperSpin Startup Script — the easily-missed source is **RocketLauncher's own Keymapper** (`keymapperEnabled := "true"`, `keymapper := "xpadder"`, `xpadderFullPath` in `RocketLauncher.log`), which references Xpadder even though the `Internal` AHK method reads the profile format rather than launching the exe. Documents the full launch-point checklist (RL Keymapper, Windows Startup folder / registry Run / Task Scheduler, HyperSpin Startup Script) and points at `spindoctor tools-audit` to locate the installed exe.
