@@ -892,6 +892,73 @@ for the full architecture reference.
 
 ---
 
+### Xpadder still launches and throws errors after I disabled it in Windows and HyperSpin
+
+**Symptom:** You removed Xpadder from Windows startup and from the HyperSpin Startup
+Script, but it still opens **as a game launches or exits**, with the dialog:
+
+> *An error has occurred in this program — AutoProfileScan thread failed to stop.
+> This error should never happen! For assistance, please visit the website xpadder.com*
+
+A related symptom is **controls "randomly" switching** between the PS4 pad, the arcade
+stick, and a third mapping mid-session — two auto-profile mappers (Xpadder's
+AutoProfileScan and DS4Windows Auto Profiles) fighting over the same pad.
+
+`AutoProfileScan` is Xpadder's **own Auto-Profiles** thread (it watches the foreground
+window and swaps profiles — the same job DS4Windows Auto Profiles now does). "Failed
+to stop" is a shutdown race: Xpadder is launched with auto-profiles running and then
+killed as the game exits.
+
+**Cause:** Once the Windows autostart surfaces (Startup folder, registry Run keys,
+Task Scheduler) and the HyperSpin Startup Script are all confirmed clean, the
+remaining culprit is **RocketLauncher's own Keymapper**. RocketLauncherUI → Global →
+Keymapper can be set to Xpadder — the RL log records it as:
+
+```
+keymapperEnabled := "true"
+keymapper        := "xpadder"
+xpadderFullPath  := "D:\Arcade\Utilities\Xpadder\Xpadder.exe"
+```
+
+Because the keymapper runs per game launch/exit, the tell-tale is that the error fires
+**when you launch or quit a game** (a PCLauncher/PC-game exit on this cabinet), *not* at
+Windows boot. DS4Windows Auto Profiles already maps the pad, so RL keymapping is
+redundant and only creates the second-mapper fight.
+
+> **Confirmed on this cabinet.** Every Windows autostart (HKCU/HKLM/WOW6432 `Run`,
+> `RunOnce`, both Startup folders) and every scheduled task were clean of Xpadder, and
+> the HyperSpin Startup Script `[Startup]`/`[Exit]` referenced only `HyperSearch.exe` /
+> `AutoHotkey.exe`. `Xpadder.exe` existed only in retired `…\Utilities\Xpadder … - not
+> in use\` folders. The single error reproduced on **exiting a PCLauncher game** —
+> RocketLauncher's Keymapper (`keymapper := "xpadder"`) was the only remaining invoker.
+
+**Fix:**
+
+1. **Disable the keymapper.** RocketLauncherUI → Global → Keymapper → **Keymapper
+   Enabled = false**. If RLUI doesn't expose it, hand-edit `RocketLauncher\Settings\
+   Global RocketLauncher.ini` → `[Keymapper]` → `Keymapper_Enabled=false` (close RLUI
+   first, or it rewrites the file on exit). This is the high-value step — it stops the
+   game-launch/exit invocation and the control-switching fight in one move. Note that
+   JoyIDs controller-ordering (`JoyIDs_Enabled`) lives in the same `[Keymapper]` block;
+   if a game's player/controller assignment looks swapped afterward, that's the setting
+   to revisit (DS4Windows can handle ordering instead).
+2. **Delete the Xpadder install folder(s)** (`spindoctor tools-audit` / `where /r D:\
+   Xpadder.exe` reports where they are — note a renamed folder still contains a runnable
+   `Xpadder.exe`) so nothing can launch it even if a stray reference survives.
+3. Full runbook: [Controller input → Removing Xpadder completely](controller-input.md#6-removing-xpadder-completely).
+
+**Diagnosis:** confirm *when* the dialog fires. If it's on a **game launch/exit**, it's
+the RL Keymapper (above). If it's at **Windows boot/logon**, check the autostart
+surfaces instead — Task Manager → Startup, `shell:startup`, `taskschd.msc`, and the
+`…\CurrentVersion\Run` registry keys. To catch the launcher live, leave the error
+dialog open and run
+`powershell "Get-CimInstance Win32_Process -Filter \"name='Xpadder.exe'\" | ForEach-Object { $p=Get-CimInstance Win32_Process -Filter ('ProcessId='+$_.ParentProcessId); [pscustomobject]@{Xpadder=$_.ExecutablePath;Parent=$p.Name;ParentPath=$p.ExecutablePath} } | Format-List"`
+— `Parent`/`ParentPath` name whatever started it. Related: the *"After the game loads,
+HyperSpin stays in front…"* entry below, where an Xpadder profile mapped the back
+button to `Escape`.
+
+---
+
 ### Loading screen reaches 100% then errors — but the game is actually running in the background
 
 **Symptom:** The RocketLauncher fade/loading screen fills its progress bar to 100% and then
