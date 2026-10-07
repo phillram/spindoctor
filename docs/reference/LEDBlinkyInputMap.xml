@@ -25,9 +25,9 @@
     <port number="16" label="P1START" type="R" inputCodes="KEYCODE_R"/>
     <port number="17" label="P1START" type="G" inputCodes="KEYCODE_R"/>
     <port number="18" label="P1START" type="B" inputCodes="KEYCODE_R"/>
-    <port number="19" label="P1B4" type="R" inputCodes=""/>
-    <port number="20" label="P1B4" type="G" inputCodes=""/>
-    <port number="21" label="P1B4" type="B" inputCodes=""/>
+    <port number="19" label="P1B4" type="R" inputCodes="KEYCODE_V"/>
+    <port number="20" label="P1B4" type="G" inputCodes="KEYCODE_V"/>
+    <port number="21" label="P1B4" type="B" inputCodes="KEYCODE_V"/>
     <port number="22" label="P1B3" type="R" inputCodes="KEYCODE_C"/>
     <port number="23" label="P1B3" type="G" inputCodes="KEYCODE_C"/>
     <port number="24" label="P1B3" type="B" inputCodes="KEYCODE_C"/>
@@ -37,9 +37,9 @@
     <port number="28" label="P1B1" type="R" inputCodes="KEYCODE_A"/>
     <port number="29" label="P1B1" type="G" inputCodes="KEYCODE_A"/>
     <port number="30" label="P1B1" type="B" inputCodes="KEYCODE_A"/>
-    <port number="31" label="P1B8" type="R" inputCodes=""/>
-    <port number="32" label="P1B8" type="G" inputCodes=""/>
-    <port number="33" label="P1B8" type="B" inputCodes=""/>
+    <port number="31" label="P1B8" type="R" inputCodes="KEYCODE_W"/>
+    <port number="32" label="P1B8" type="G" inputCodes="KEYCODE_W"/>
+    <port number="33" label="P1B8" type="B" inputCodes="KEYCODE_W"/>
     <port number="34" label="P1B7" type="R" inputCodes="KEYCODE_F"/>
     <port number="35" label="P1B7" type="G" inputCodes="KEYCODE_F"/>
     <port number="36" label="P1B7" type="B" inputCodes="KEYCODE_F"/>
@@ -97,9 +97,9 @@
     <port number="22" label="P2B3" type="R" inputCodes="KEYCODE_I"/>
     <port number="23" label="P2B3" type="G" inputCodes="KEYCODE_I"/>
     <port number="24" label="P2B3" type="B" inputCodes="KEYCODE_I"/>
-    <port number="25" label="P2B4" type="R" inputCodes=""/>
-    <port number="26" label="P2B4" type="G" inputCodes=""/>
-    <port number="27" label="P2B4" type="B" inputCodes=""/>
+    <port number="25" label="P2B4" type="R" inputCodes="KEYCODE_Y"/>
+    <port number="26" label="P2B4" type="G" inputCodes="KEYCODE_Y"/>
+    <port number="27" label="P2B4" type="B" inputCodes="KEYCODE_Y"/>
     <port number="28" label="P2B5" type="R" inputCodes="KEYCODE_J"/>
     <port number="29" label="P2B5" type="G" inputCodes="KEYCODE_J"/>
     <port number="30" label="P2B5" type="B" inputCodes="KEYCODE_J"/>
@@ -109,9 +109,9 @@
     <port number="34" label="P2B7" type="R" inputCodes="KEYCODE_L"/>
     <port number="35" label="P2B7" type="G" inputCodes="KEYCODE_L"/>
     <port number="36" label="P2B7" type="B" inputCodes="KEYCODE_L"/>
-    <port number="37" label="P2B8" type="R" inputCodes=""/>
-    <port number="38" label="P2B8" type="G" inputCodes=""/>
-    <port number="39" label="P2B8" type="B" inputCodes=""/>
+    <port number="37" label="P2B8" type="R" inputCodes="KEYCODE_X"/>
+    <port number="38" label="P2B8" type="G" inputCodes="KEYCODE_X"/>
+    <port number="39" label="P2B8" type="B" inputCodes="KEYCODE_X"/>
     <port number="40" label="" type="" inputCodes=""/>
     <port number="41" label="" type="" inputCodes=""/>
     <port number="42" label="" type="" inputCodes=""/>
