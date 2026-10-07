@@ -583,3 +583,16 @@ def test_standalone_build_wheel_media_mode_defaults_to_auto():
     from spindoctor.playtime import _build_parser
     args = _build_parser().parse_args(["build-wheel"])
     assert args.media_mode == "auto"
+
+
+def test_standalone_version_flag_reports_version(capsys):
+    # spindoctor-stats is what actually builds the Most Played wheel from the
+    # GUI / scheduled .bat, so it exposes its own --version for stale-binary
+    # diagnosis.
+    import pytest
+    import spindoctor.playtime as playtime_mod
+    from spindoctor import __version__
+    with pytest.raises(SystemExit) as exc:
+        playtime_mod.main(["--version"])
+    assert exc.value.code == 0
+    assert __version__ in capsys.readouterr().out

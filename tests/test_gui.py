@@ -113,6 +113,101 @@ def test_resolve_frozen_missing_sibling_raises(monkeypatch, tmp_path):
     assert "spindoctor-fav" in str(exc.value)
 
 
+# ─── probe_cli_version / stale wheel-builder detection ────────────────────────
+
+def _fake_completed(stdout="", stderr=""):
+    import types
+    return types.SimpleNamespace(stdout=stdout, stderr=stderr, returncode=0)
+
+
+def test_probe_cli_version_parses_reported_semver(monkeypatch):
+    monkeypatch.setattr(gui, "resolve_cli_command", lambda _name: ["fake-bin"])
+    monkeypatch.setattr(
+        gui.subprocess, "run",
+        lambda *a, **k: _fake_completed(
+            stdout="spindoctor-recent (SpinDoctor) version 2.14.0\n"),
+    )
+    assert gui.probe_cli_version("spindoctor-recent") == "2.14.0"
+
+
+def test_probe_cli_version_none_when_binary_missing(monkeypatch):
+    def _raise(_name):
+        raise gui.CliNotFoundError("nope")
+    monkeypatch.setattr(gui, "resolve_cli_command", _raise)
+    assert gui.probe_cli_version("spindoctor-recent") is None
+
+
+def test_probe_cli_version_none_on_subprocess_error(monkeypatch):
+    monkeypatch.setattr(gui, "resolve_cli_command", lambda _name: ["fake-bin"])
+
+    def _boom(*a, **k):
+        raise OSError("cannot exec")
+    monkeypatch.setattr(gui.subprocess, "run", _boom)
+    assert gui.probe_cli_version("spindoctor-recent") is None
+
+
+def test_probe_cli_version_none_when_no_version_string(monkeypatch):
+    # An older build predating --version prints usage/error with no X.Y.Z —
+    # None, which callers treat as a mismatch.
+    monkeypatch.setattr(gui, "resolve_cli_command", lambda _name: ["fake-bin"])
+    monkeypatch.setattr(
+        gui.subprocess, "run",
+        lambda *a, **k: _fake_completed(
+            stderr="usage: spindoctor-recent [-h] {rebuild,list,clear} ...\n"),
+    )
+    assert gui.probe_cli_version("spindoctor-recent") is None
+
+
+# ─── _confirm_wheel_binary_versions (stale-builder guard) ─────────────────────
+
+def _fake_version_gui(askyesno_answer):
+    """Minimal stand-in for _SpinDoctorGUI carrying just what the guard uses."""
+    import types
+    appended: list[str] = []
+    asked: list[str] = []
+
+    def _askyesno(_title, message):
+        asked.append(message)
+        return askyesno_answer
+
+    return types.SimpleNamespace(
+        messagebox=types.SimpleNamespace(askyesno=_askyesno),
+        _append_output=appended.append,
+        _appended=appended,
+        _asked=asked,
+    )
+
+
+def test_confirm_versions_proceeds_silently_when_all_match(monkeypatch):
+    monkeypatch.setattr(gui, "probe_cli_version", lambda _name: __version__)
+    fake = _fake_version_gui(True)
+    ok = gui._SpinDoctorGUI._confirm_wheel_binary_versions(
+        fake, ["spindoctor-recent", "spindoctor-stats"])
+    assert ok is True
+    assert fake._asked == []  # no dialog when every builder matches
+
+
+def test_confirm_versions_warns_and_cancels_on_mismatch(monkeypatch):
+    monkeypatch.setattr(
+        gui, "probe_cli_version",
+        lambda name: "2.9.0" if name == "spindoctor-recent" else __version__)
+    fake = _fake_version_gui(False)  # user declines
+    ok = gui._SpinDoctorGUI._confirm_wheel_binary_versions(
+        fake, ["spindoctor-recent", "spindoctor-stats"])
+    assert ok is False
+    assert any("2.9.0" in m for m in fake._asked)
+    assert any("cancelled" in msg.lower() for msg in fake._appended)
+
+
+def test_confirm_versions_warns_when_version_undeterminable(monkeypatch):
+    # None (old build / unprobeable) is treated as a mismatch.
+    monkeypatch.setattr(gui, "probe_cli_version", lambda _name: None)
+    fake = _fake_version_gui(True)  # user proceeds anyway
+    ok = gui._SpinDoctorGUI._confirm_wheel_binary_versions(fake, ["spindoctor-fav"])
+    assert ok is True
+    assert any("could not be determined" in m for m in fake._asked)
+
+
 # ─── Backup tab presets ───────────────────────────────────────────────────────
 
 def test_backup_components_match_cli_components():
