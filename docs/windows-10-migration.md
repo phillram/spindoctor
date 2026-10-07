@@ -152,5 +152,9 @@ unavailable and the emulator's `d3d` renderer draws nothing.
 - [Controller input: PS4 pad, dual-mode via DS4Windows Auto Profiles](controller-input.md) —
   re-establishing controller menu nav + in-game input after the reinstall in §4,
   without the redundant Xpadder/antimicro mapper stack.
+- [Controller input → Removing Xpadder completely](controller-input.md#6-removing-xpadder-completely) —
+  if Xpadder resurfaces after the reinstall (it can still be launched from
+  RocketLauncher's Keymapper or a leftover Windows autostart even once it's out of
+  the HyperSpin Startup Script), the full purge runbook.
 - [Troubleshooting](troubleshooting.md) — general error lookup once the cabinet
   is back up.
