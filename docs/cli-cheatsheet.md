@@ -637,6 +637,10 @@ spindoctor ledblinky setup --apply                                        :: com
 spindoctor ledblinky setup --apply --verbose                              :: also show per-step detail
 spindoctor ledblinky setup --overwrite --apply                            :: replace all existing entries too
 
+:: ── Per-game profiles: light only the buttons each game uses ─────────────────
+spindoctor ledblinky profiles                                             :: dry-run preview
+spindoctor ledblinky profiles --apply                                     :: commit (with .bak backups)
+
 :: ── Step 3a: Generate MAME control + color data (individual step) ─────────────
 :: Since 2.4.22: controls.ini uses LedBlinky runtime keys (P1_BUTTON1=1).
 :: Since 2.4.21: Colors.ini uses native named format (P1_BUTTON1=Red).
