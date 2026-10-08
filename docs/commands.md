@@ -1619,7 +1619,7 @@ Needs `ledblinky_dir`, `hyperspin_dir`, `rocketlauncher_dir` and `emulators_dir`
 | Favorites, Most Played, Recently Played | Each game copies the profile it has on its source wheel. `fav rebuild`, `recent rebuild` and `stats-report build-wheel` refresh these automatically. |
 | PC, Toolkit, KODI and other wheels with no readable keymap | Exit and Pause only, instead of a dark panel. |
 
-Wheels whose emulator's keys it can't read (Altirra, WinVICE, Hatari, PCSX2, PPSSPP, Dolphin…) keep their existing default profile, and the dry-run table says so. A button that lights nothing is almost always a key with no LED in `LEDBlinkyInputMap.xml`; the command lists any such keys (for example `KEYCODE_W` on Button 8, whose port carries no `inputCodes`).
+Wheels whose emulator's keys it can't read (Altirra, WinVICE, Hatari, PCSX2, PPSSPP, Dolphin…) keep their existing default profile, and the dry-run table says so. A button that lights nothing is almost always a key with no LED in `LEDBlinkyInputMap.xml`; the command lists any such keys (for example `KEYCODE_W` when Button 8's port carries no `inputCodes`). For MAME installs, only ports that the ctrlr file or a cfg remaps can light. A port left on MAME's built-in key isn't something the panel was set up for.
 
 ### `ledblinky inspect-rom`
 
