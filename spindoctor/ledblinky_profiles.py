@@ -290,17 +290,6 @@ CONSOLE_LABELS: dict[str, dict[str, str]] = {
 
 # MAME family --------------------------------------------------------------------
 
-#: MAME's built-in keys, used for ports no cfg remaps.
-_MAME_BUILTIN = {
-    "P1_BUTTON1": ["KEYCODE_LCONTROL"], "P1_BUTTON2": ["KEYCODE_LALT"],
-    "P1_BUTTON3": ["KEYCODE_SPACE"], "P1_BUTTON4": ["KEYCODE_LSHIFT"],
-    "P1_BUTTON5": ["KEYCODE_Z"], "P1_BUTTON6": ["KEYCODE_X"],
-    "P2_BUTTON1": ["KEYCODE_A"], "P2_BUTTON2": ["KEYCODE_S"],
-    "P2_BUTTON3": ["KEYCODE_Q"], "P2_BUTTON4": ["KEYCODE_W"],
-    "START1": ["KEYCODE_1"], "START2": ["KEYCODE_2"],
-    "COIN1": ["KEYCODE_5"], "COIN2": ["KEYCODE_6"],
-}
-
 #: MESS / MAME system driver per wheel, for console wheels run through MAME.
 MESS_DRIVERS = {
     "Amstrad GX4000": "gx4000", "Bally Astrocade": "astrocde",
@@ -338,16 +327,22 @@ def _mame_cfg_ports(path: Path) -> dict[str, list[str]]:
 
 
 class MameIndex:
-    """Keymaps from a MAME-family folder: ctrlr file, cfg/default.cfg, cfg/<game>.cfg."""
+    """Keymaps from a MAME-family folder: ctrlr file, cfg/default.cfg, cfg/<game>.cfg.
+
+    Only ports one of those files remaps count. A port left on MAME's built-in
+    key (P2 Button 1 = A, P2 Button 4 = W, ...) was never set up for the panel,
+    and lighting it would light whichever button happens to send that letter.
+    """
 
     def __init__(self, folder: Path, exe: str):
         self.folder = folder
-        self.base: dict[str, list[str]] = dict(_MAME_BUILTIN)
+        self.base: dict[str, list[str]] = {}
         ctrlr = ""
         ini = folder / (Path(exe).stem.replace("64", "") + ".ini")
         for cand in (ini, folder / "mame.ini", folder / "hbmame.ini", folder / "mess.ini"):
             if cand.is_file():
-                m = re.search(r"^ctrlr\s+(\S.*?)\s*$", _read_text(cand), re.M)
+                # [ \t], not \s: a blank "ctrlr" line must not run on into the next one.
+                m = re.search(r"^ctrlr[ \t]+(\S[^\r\n]*?)[ \t]*$", _read_text(cand), re.M)
                 ctrlr = m.group(1) if m else ""
                 break
         if ctrlr and ctrlr.lower() != "none":

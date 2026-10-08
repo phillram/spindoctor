@@ -114,7 +114,7 @@ def cabinet(tmp_path):
     _write(emus / "RetroArch" / "retroarch.cfg", 'input_player1_b = "z"\n')
     _write(emus / "RetroArch" / "config" / "Nintendo Entertainment System.cfg",
            'input_player1_b = "a"\ninput_player1_a = "b"\ninput_player1_start = "r"\n'
-           'input_player1_select = "s"\ninput_player2_b = "g"\ninput_player1_x = "x"\n')
+           'input_player1_select = "s"\ninput_player2_b = "g"\ninput_player1_x = "z"\n')
     _write(emus / "RetroArch (MultiPlayer)" / "retroarch.cfg", 'input_player1_b = "num4"\n')
     _write(emus / "RetroArch (MultiPlayer)" / "config" / "Nintendo Entertainment System.cfg",
            'input_player1_b = "num1"\ninput_player1_a = "num2"\n')
@@ -183,7 +183,8 @@ def test_panel_routes_by_input_codes():
     panel = lp.load_panel(INPUT_MAP.parent)
     assert panel["KEYCODE_A"] == "P1B1"
     assert panel["KEYCODE_D"] == "P1B5"   # bottom-row first button
-    assert "KEYCODE_V" not in panel       # P1B4 carries no inputCodes
+    # Buttons 4 and 8 sit at the end of each row and send V/W (P1) and Y/X (P2).
+    assert [panel[f"KEYCODE_{k}"] for k in "VWYX"] == ["P1B4", "P1B8", "P2B4", "P2B8"]
 
 
 def test_retroarch_system_cfg_overrides_base(cabinet):
@@ -201,6 +202,31 @@ def test_mame_index_default_and_game_cfg(cabinet):
     assert idx.keymap().get(1, "BUTTON4") == ["KEYCODE_D"]
     assert idx.keymap("sf2").get(1, "BUTTON1") == ["KEYCODE_F"]
     assert idx.keymap().get(1, "START") == ["KEYCODE_R"]
+
+
+def test_mame_index_skips_ports_no_cfg_remaps(tmp_path):
+    # A wheel/gun MAME setup that never maps P2 Button 4 or P1 Button 6: MAME
+    # would fall back to W and X, which are P1 Button 8 and P2 Button 8 here.
+    folder = tmp_path / "MAME (Driving Games)"
+    _write(folder / "mame.ini", "ctrlr                     \n")
+    _write(folder / "cfg" / "default.cfg", _mame_cfg({"P1_BUTTON1": "KEYCODE_A"}))
+    km = lp.MameIndex(folder, "mame64.exe").keymap("coolridr")
+    assert km.keys == {(1, "BUTTON1"): ["KEYCODE_A"]}
+
+
+def test_mame_index_blank_ctrlr_does_not_read_next_line(tmp_path):
+    folder = tmp_path / "MAME"
+    _write(folder / "mame.ini", "ctrlr                     \nmouse 1\n")
+    _write(folder / "ctrlr" / "mouse 1.cfg", _mame_cfg({"P1_BUTTON1": "KEYCODE_Z"}))
+    _write(folder / "cfg" / "default.cfg", _mame_cfg({}))
+    assert lp.MameIndex(folder, "mame64.exe").keymap().get(1, "BUTTON1") == []
+
+
+def test_mame_index_reads_named_ctrlr(tmp_path):
+    folder = tmp_path / "MAME (Gun Games)(Other)"
+    _write(folder / "mame.ini", "ctrlr                     gunconfig\n")
+    _write(folder / "ctrlr" / "gunconfig.cfg", _mame_cfg({"COIN1": "KEYCODE_S"}))
+    assert lp.MameIndex(folder, "mame64.exe").keymap().get(1, "COIN") == ["KEYCODE_S"]
 
 
 def test_mame_driver_keymap_ignores_builtins(cabinet):
@@ -246,12 +272,12 @@ def test_console_group_lights_only_routed_keys():
     panel = lp.load_panel(INPUT_MAP.parent)
     km = lp.Keymap(source="t", labels=dict(lp.CONSOLE_LABELS["Nintendo Entertainment System"]),
                    keys={(1, "b"): ["KEYCODE_A"], (1, "a"): ["KEYCODE_B"], (1, "start"): ["KEYCODE_R"],
-                         (1, "x"): ["KEYCODE_X"]})   # X has no LED -> dropped
+                         (1, "x"): ["KEYCODE_Z"]})   # Z has no LED -> dropped
     g = lp.build_console_group("DEFAULT", km, panel, None, ADMIN_P0)
     names = {c.name: (c.voice, c.color) for c in g.controls}
     assert names["P1_BUTTON1"] == ("Button B", "Red")
     assert names["P1_BUTTON9"][0] == "Start" and names["P1_BUTTON9"][1] == "Black"
-    assert all("KEYCODE_X" not in c.input_codes for c in g.controls)
+    assert all("KEYCODE_Z" not in c.input_codes for c in g.controls)
 
 
 def test_console_group_never_leaves_a_used_face_button_dim():
