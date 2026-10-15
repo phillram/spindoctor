@@ -99,7 +99,7 @@ jobs:
           subject-path: 'artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip'
 
       - name: Upload Win7 artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: win7-bundle
           path: |
@@ -187,7 +187,7 @@ jobs:
           subject-path: 'artifacts/spindoctor-win10-${{ steps.tag.outputs.tag }}.zip'
 
       - name: Upload modern artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: modern-bundle
           path: |
