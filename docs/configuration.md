@@ -157,7 +157,7 @@ That dump is the canonical control schema for every machine MAME knows about, an
 2. A "vanilla" build over a fork, if you have both — they differ in a handful of obscure machines, but for listxml purposes it's a wash.
 3. Whichever folder is closest to your other `Emulators/` subfolders, just so the path is easy to remember.
 
-The listxml output is cached under the SpinDoctor cache directory keyed by system, and only re-runs when the binary's mtime changes — so you pay the (slow) listxml dump once per MAME upgrade, not per audit. Your per-system MAME folders for driving / gun games / etc. are launched by RocketLauncher as usual; SpinDoctor never touches them.
+The listxml output is cached under the SpinDoctor cache directory, one file per MAME executable shared by every system, and only re-runs when the binary's mtime changes — so you pay the (slow) listxml dump once per MAME upgrade, not per audit. Your per-system MAME folders for driving / gun games / etc. are launched by RocketLauncher as usual; SpinDoctor never touches them.
 
 You can leave `mame_executable` blank if you don't use `ledblinky generate` — `audit` and `doctor` will skip the MAME-controls check and warn instead of failing.
 
