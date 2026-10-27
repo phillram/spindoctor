@@ -5,7 +5,7 @@ import configparser
 import re
 import shutil
 import xml.etree.ElementTree as ET
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 from ._compat import et_indent
@@ -441,6 +441,114 @@ def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
     return count > 0
 
 
+def _rom_path_dir(element: str, rl_base: Path) -> Path:
+    """Return the folder one ``Rom_Path`` element points at.
+
+    RocketLauncher resolves a relative element (``..\\Games\\MAME``) from its
+    own root folder, so relative elements are joined onto *rl_base*.
+    """
+    if _is_absolute_path(element):
+        return Path(element)
+    return rl_base / element
+
+
+def _rom_path_element_is_dir(element: str, rl_base: Path) -> bool:
+    """True when one ``Rom_Path`` element points at an existing folder."""
+    try:
+        return _rom_path_dir(element, rl_base).is_dir()
+    except (OSError, ValueError):
+        return False
+
+
+def _rebase_rom_path_element(element: str, roms_dir: Path) -> Optional[str]:
+    """Move one ``Rom_Path`` element under *roms_dir*, keeping its subfolders.
+
+    The element's old ROM root is swapped for *roms_dir*: with ``roms_dir``
+    set to ``E:\\Games``, ``J:\\Games\\Sega Dreamcast\\roms`` becomes
+    ``E:\\Games\\Sega Dreamcast\\roms``.  Tails are tried longest first and the
+    first one that exists under *roms_dir* wins, so an element is never rebased
+    onto a folder that isn't there.  Returns ``None`` when no tail exists.
+
+    The element is parsed with ``PureWindowsPath`` because RocketLauncher INIs
+    always hold Windows paths, whatever OS SpinDoctor itself runs on.
+    """
+    pure = PureWindowsPath(element)
+    parts = list(pure.parts[1:] if pure.anchor else pure.parts)
+    # Only the folders after the last ".." are below the old ROM root.
+    while ".." in parts:
+        parts = parts[parts.index("..") + 1:]
+    for i in range(len(parts)):
+        candidate = roms_dir.joinpath(*parts[i:])
+        try:
+            if candidate.is_dir():
+                return str(candidate)
+        except (OSError, ValueError):
+            pass
+    return None
+
+
+def _same_rom_dir(a: str, b: str, rl_base: Path) -> bool:
+    """True when Rom_Path elements *a* and *b* name the same existing folder."""
+    try:
+        return _rom_path_dir(a, rl_base).samefile(_rom_path_dir(b, rl_base))
+    except (OSError, ValueError):
+        return False
+
+
+def _rebase_rom_path_value(current: str, roms_dir: Path, rl_base: Path) -> Optional[str]:
+    """Plan the new value of an existing ``Rom_Path=`` line.
+
+    *current* may list several folders separated by ``|`` (e.g. a system's
+    base folder plus its ``\\MultiDisc`` and ``\\_Gun Games`` subfolders).
+    Each element is handled on its own:
+
+    - rebased under *roms_dir* when the same subfolders exist there (see
+      :func:`_rebase_rom_path_element`), which is how a ROM-drive move is
+      picked up without dropping subfolders;
+    - otherwise kept as written, whether or not it still exists, so no
+      configured folder silently disappears from the value.
+
+    Returns *current* unchanged when no element needs to move, the rebased
+    value when at least one does, or ``None`` when no element exists and none
+    could be rebased.  On ``None`` the caller falls back to the path derived
+    from ``roms_dir`` (the pre-existing behaviour).
+    """
+    elements = [e.strip() for e in current.split("|") if e.strip()]
+    planned: list[str] = []
+    usable = False
+    for element in elements:
+        rebased = _rebase_rom_path_element(element, roms_dir)
+        if rebased is not None and not _same_rom_dir(rebased, element, rl_base):
+            planned.append(rebased)
+            usable = True
+        else:
+            planned.append(element)
+            if rebased is not None or _rom_path_element_is_dir(element, rl_base):
+                usable = True
+    if not usable:
+        return None
+    if planned == elements:
+        return current
+    return "|".join(planned)
+
+
+def _uses_pclauncher_placeholders(system_name: str, rl_base: Path) -> bool:
+    """True when a PCLauncher system should get the placeholder-INI layout.
+
+    That layout (``Rom_Path=Modules\\PCLauncher\\<system>``,
+    ``Rom_Extension=ini``, written by :func:`generate_synthetic_system_ini`)
+    only works when the per-game placeholder INIs exist.  It is also used for
+    a brand-new system, where there are no existing settings to preserve.
+    """
+    placeholder_dir = rl_base / "Modules" / "PCLauncher" / system_name
+    try:
+        if placeholder_dir.is_dir() and any(p.is_file() for p in placeholder_dir.glob("*.ini")):
+            return True
+    except OSError:
+        pass
+    return detect_rl_layout(rl_base / "Settings", system_name) == "new"
+
+
 def generate_rl_system_ini(
     system_name: str,
     config: Config,
@@ -462,9 +570,21 @@ def generate_rl_system_ini(
     file and report "Could not find an Emu_path" instead of falling back to
     ``Global Emulators.ini`` where the path is defined.
 
+    The existing ``Rom_Path`` is rebased rather than replaced (see
+    :func:`_rebase_rom_path_value`): each ``|``-separated element keeps its
+    subfolders when it moves under ``roms_dir``, and elements with nothing to
+    move onto are kept.  The file is left untouched when nothing needs to
+    move.  Only when no element exists or can be rebased is the value replaced
+    with the path derived from ``roms_dir``.
+
     **For new systems** (neither file exists) both folder-layout and flat-layout
     files are written from the template so the cabinet works regardless of which
     layout RocketLauncher prefers.
+
+    **PCLauncher systems** get the placeholder-INI layout of
+    :func:`generate_synthetic_system_ini` only when
+    ``Modules/PCLauncher/<system>/`` holds per-game INIs or the system is new.
+    Otherwise their existing files are updated in place like any other system.
 
     Returns the list of paths written (one or two items).
     """
@@ -521,12 +641,25 @@ def generate_rl_system_ini(
     # games via their placeholder INIs regardless of how game files are laid
     # out on disk.  generate_synthetic_system_ini already generates exactly
     # this layout (and always rewrites so stale paths are corrected).
+    #
+    # Only switch to it when those placeholder INIs exist (or the system is
+    # new).  A PCLauncher wheel set up without them launches from its own
+    # Rom_Path, and pointing it at an empty placeholder folder leaves every
+    # game on the wheel unlaunchable — so it is updated in place instead.
     if emulator == "PCLauncher":
-        generate_synthetic_system_ini(system_name, rl_base)
-        return [
-            rl_base / "Settings" / system_name / "Emulators.ini",
-            rl_base / "Settings" / f"{system_name}.ini",
-        ]
+        if _uses_pclauncher_placeholders(system_name, rl_base):
+            generate_synthetic_system_ini(system_name, rl_base)
+            return [
+                rl_base / "Settings" / system_name / "Emulators.ini",
+                rl_base / "Settings" / f"{system_name}.ini",
+            ]
+        import sys
+        print(
+            f"WARNING: {system_name}: no per-game INIs in "
+            f"{rl_base / 'Modules' / 'PCLauncher' / system_name}, so its "
+            "RocketLauncher settings are kept and only Rom_Path is rebased.",
+            file=sys.stderr,
+        )
 
     extensions = "|".join(ext.lstrip(".") for ext in get_rom_extensions(system_name))
     layout = detect_rl_layout(settings_dir, system_name)
@@ -543,6 +676,7 @@ def generate_rl_system_ini(
         # We only apply this guard when no explicit system_override is set — if
         # the user configured a rom_path override we always honour it.
         _skip_update = False
+        _planned_rom_path: Optional[str] = None
         if not ovr.get("rom_path") and emu_ini.exists() and not output_base:
             _current = _read_rom_path_from_ini(emu_ini)
             if _current and Path(_current).is_dir() and not Path(_natural_rom_path).exists():
@@ -575,8 +709,15 @@ def generate_rl_system_ini(
                         _folder_family_path = str(Path(config.roms_dir) / _folder_family)
                         if Path(_folder_family_path).exists():
                             rom_path = _folder_family_path
+            # Rebase the existing value element by element so subfolders
+            # (\roms) and extra |-separated paths (\MultiDisc) survive a
+            # ROM-drive move; leave the file alone when nothing has to move.
+            if not _skip_update and _current and config.roms_dir:
+                _planned_rom_path = _rebase_rom_path_value(_current, Path(config.roms_dir), rl_base)
+                if _planned_rom_path == _current:
+                    _skip_update = True
         if not _skip_update:
-            if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, rom_path)):
+            if not (emu_ini.exists() and _update_rom_path_in_ini(emu_ini, _planned_rom_path or rom_path)):
                 emu_ini.write_text("\n".join([
                     "[ROMS]",
                     f"Default_Emulator={emulator}",
@@ -592,6 +733,7 @@ def generate_rl_system_ini(
     if layout in ("flat", "new"):
         flat_ini = settings_dir / f"{system_name}.ini"
         _skip_update_flat = False
+        _planned_rom_path_flat: Optional[str] = None
         if not ovr.get("rom_path") and flat_ini.exists() and not output_base:
             _current_flat = _read_rom_path_from_ini(flat_ini)
             if _current_flat and Path(_current_flat).is_dir() and not Path(_natural_rom_path).exists():
@@ -616,8 +758,13 @@ def generate_rl_system_ini(
                         _flat_family_path = str(Path(config.roms_dir) / _flat_family)
                         if Path(_flat_family_path).exists():
                             rom_path = _flat_family_path
+            # Same per-element rebase as the folder layout above.
+            if not _skip_update_flat and _current_flat and config.roms_dir:
+                _planned_rom_path_flat = _rebase_rom_path_value(_current_flat, Path(config.roms_dir), rl_base)
+                if _planned_rom_path_flat == _current_flat:
+                    _skip_update_flat = True
         if not _skip_update_flat:
-            if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, rom_path)):
+            if not (flat_ini.exists() and _update_rom_path_in_ini(flat_ini, _planned_rom_path_flat or rom_path)):
                 flat_ini.write_text("\n".join([
                     "[Settings]",
                     f"Default_Emulator={emulator}",

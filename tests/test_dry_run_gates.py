@@ -621,3 +621,53 @@ def test_generate_config_dry_run_does_not_touch_disk(tmp_path, isolated_config):
     assert result.exit_code == 0, result.output
     assert "DRY RUN" in result.output
     assert _snapshot(hs_dir, roms_dir, rl_dir) == before
+
+
+def test_generate_config_dry_run_previews_rebased_rom_paths(tmp_path, isolated_config, monkeypatch):
+    """The preview must show what --apply will write: subfolders and
+    |-separated paths kept, and PCLauncher placeholders only when present."""
+    import spindoctor.cli as cli_mod
+    from rich.console import Console
+
+    # Wide console so Rich doesn't truncate the long tmp paths in the table.
+    monkeypatch.setattr(cli_mod, "console", Console(soft_wrap=True, width=1000))
+    cfg = _build_nes_library(tmp_path)
+    roms_dir = Path(cfg.roms_dir)
+    rl_dir = tmp_path / "rl"
+    settings = rl_dir / "Settings"
+
+    # Old drive is gone; the same subfolder exists under roms_dir.
+    (roms_dir / "Sega Dreamcast" / "roms").mkdir(parents=True)
+    (settings / "Sega Dreamcast").mkdir(parents=True)
+    (settings / "Sega Dreamcast" / "Emulators.ini").write_text(
+        "[ROMS]\nDefault_Emulator=Demul\nRom_Path=J:\\Games\\Sega Dreamcast\\roms\n",
+        encoding="utf-8",
+    )
+    # Multi-path value whose elements all still exist.
+    ps1 = roms_dir / "Sony Playstation"
+    (ps1 / "MultiDisc").mkdir(parents=True)
+    (settings / "Sony Playstation").mkdir(parents=True)
+    (settings / "Sony Playstation" / "Emulators.ini").write_text(
+        f"[ROMS]\nDefault_Emulator=ePSXe\nRom_Path={ps1}|{ps1 / 'MultiDisc'}\n",
+        encoding="utf-8",
+    )
+    # New PCLauncher system with placeholder INIs.
+    (roms_dir / "Steam").mkdir()
+    placeholders = rl_dir / "Modules" / "PCLauncher" / "Steam"
+    placeholders.mkdir(parents=True)
+    (placeholders / "Portal.ini").write_text("[Portal]\n", encoding="utf-8")
+
+    cfg.rocketlauncher_dir = str(rl_dir)
+    save_config(cfg)
+    config_mod.reset_override_cache()
+    before = _snapshot(rl_dir)
+
+    result = CliRunner().invoke(
+        cli, ["generate-config", "--no-main-menu", "--no-global-emulators"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert str(roms_dir / "Sega Dreamcast" / "roms") in result.output, result.output
+    assert "preserved (existing paths)" in result.output, result.output
+    assert str(placeholders) in result.output, result.output
+    assert _snapshot(rl_dir) == before
