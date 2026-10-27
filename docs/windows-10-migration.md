@@ -81,7 +81,8 @@ drive is fine). Reinstall, in roughly this order:
 |---|---|---|
 | **DirectX End-User Runtime (June 2010)** | HyperSpin & many emulators need the `d3dx9_*.dll` files Windows 10 doesn't ship | HyperSpin is 32-bit — verify `C:\Windows\SysWOW64\d3dx9_43.dll` actually exists |
 | **.NET Framework 3.5** | Older tooling | Enable via "Turn Windows features on or off" |
-| **Visual C++ Redistributables (2005–2022, x86+x64)** | Emulator dependencies | Install the older ones too, not just the latest |
+| **Visual C++ Redistributables (2005–2022, x86+x64)** | Emulator dependencies. An older emulator needs the runtime of the Visual C++ version it was built with: NullDC, PokeMini and Pinball Arcade need **2010 x86** (`msvcr100.dll`), the Dolphin Triforce builds need **2013 x64** (`msvcr120.dll`), and Pinball Arcade's DX11 exe also needs **2012 x86** (`msvcr110.dll`) | Install the older ones too, not just the latest: 2015–2022 share one runtime, but 2005, 2008, 2010, 2012 and 2013 are separate installs. Install both x86 and x64 — a 32-bit emulator needs the x86 package even on 64-bit Windows. A missing one shows as "`MSVCR100.dll` was not found" (or `MSVCR120.dll`, …) when the emulator starts |
+| **Java runtime** | ParaJVE (the GCE Vectrex emulator) is a Java program, and a fresh install has no Java | `ParaJVE.exe` is only a launcher that looks for an installed Java (1.5 or later) to run ParaJVE's `.jar`, so the wheel fails until Java is back. Alternative: run the Vectrex wheel through MAME/MESS (`vectrex` driver) and skip Java |
 | **GPU driver** | Fixes emulators that render a white screen | See §6 |
 | **AutoHotkey 1.1 (ANSI, 32-bit)** | RocketLauncher will not run without it | **Not** AutoHotkey 2.x |
 | **DAEMON Tools Lite** | Virtual drive for disc-based games (`vdEnabled=true`) | If it uses SCSI, add a virtual SCSI drive after install |
