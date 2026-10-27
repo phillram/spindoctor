@@ -30,11 +30,14 @@ This module covers two related concerns:
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import random as _random
 import re
 import shutil
 import subprocess
 import sys
+import threading
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -54,6 +57,13 @@ _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
 
 LISTXML_CACHE_DIR = CONFIG_DIR / "mame_listxml_cache"
+
+# Parsed -listxml for the most recently loaded MAME binary, keyed by
+# (resolved exe path, exe mtime), so one ``audit --all`` parses the dump once
+# instead of once per MAME-ish system. One entry only: a full parse is tens
+# of MB. The lock keeps two threads from running MAME for the same dump.
+_listxml_memo: dict = {}
+_listxml_lock = threading.Lock()
 
 # ─── data shapes ───────────────────────────────────────────────────────────────
 
@@ -173,10 +183,59 @@ def run_mame_listxml(
         )
 
     if cache_path is not None:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_bytes(proc.stdout)
+        _write_listxml_cache(cache_path, proc.stdout)
 
     return proc.stdout
+
+
+def _write_listxml_cache(cache_path: Path, data: bytes) -> None:
+    """Write the dump through a temp file + rename.
+
+    Every system and every SpinDoctor process shares one cache file per MAME
+    binary, and the freshness check trusts any file newer than the binary, so
+    a half-written dump must never land under the real name. The cache is
+    only a speed-up: if it can't be written, the caller still has the data.
+    """
+    tmp = cache_path.with_name(f"{cache_path.name}.{os.getpid()}.tmp")
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp.write_bytes(data)
+        os.replace(str(tmp), str(cache_path))
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _resolved_mame_path(mame_executable: str) -> str:
+    """Absolute, symlink-free, case-normalised path of the MAME binary.
+
+    A bare command name (``mame``) is looked up on ``PATH`` first, and kept
+    as-is if it isn't there, so the result doesn't depend on the current
+    directory.
+    """
+    exe = mame_executable
+    if not os.path.dirname(exe):
+        exe = shutil.which(exe) or exe
+    if os.path.dirname(exe):
+        exe = os.path.realpath(exe)
+    return os.path.normcase(exe)
+
+
+def listxml_cache_path(mame_executable: str) -> Path:
+    """Cache file for *mame_executable*'s ``-listxml`` dump.
+
+    The dump depends only on the binary, so there is one file per MAME
+    executable, shared by every system: ``<exe stem>-<hash>.xml``, where the
+    hash is 8 hex digits of the resolved path. Two MAME installs with the
+    same file name (``MAME\\mame.exe``, ``MAME (gun)\\mame.exe``) get
+    separate files.
+    """
+    resolved = _resolved_mame_path(mame_executable)
+    digest = hashlib.sha1(resolved.encode("utf-8", errors="replace")).hexdigest()[:8]
+    stem = _safe(os.path.splitext(os.path.basename(resolved))[0])
+    return LISTXML_CACHE_DIR / f"{stem}-{digest}.xml"
 
 
 def parse_listxml(
@@ -244,23 +303,45 @@ def load_listxml_for_system(
 ) -> dict[str, ControlInfo]:
     """Cached wrapper around ``run_mame_listxml`` + ``parse_listxml``.
 
+    The dump depends only on ``config.mame_executable``, so *system_name* is
+    used in messages only. Every system shares the cache file from
+    :func:`listxml_cache_path`, and the parsed result is kept in memory while
+    the binary's mtime is unchanged, so ``audit --all`` runs and parses
+    ``-listxml`` at most once. Callers must not modify the returned dict.
+
     Returns an empty dict (silently) if MAME is not configured.
     """
     if not config.mame_executable:
         return {}
-    cache_path = LISTXML_CACHE_DIR / f"{_safe(system_name)}.xml"
+    resolved = _resolved_mame_path(config.mame_executable)
     try:
-        xml_bytes = run_mame_listxml(
-            config.mame_executable, cache_path=cache_path,
-        )
-    except RuntimeError as exc:
-        if warnings is not None:
-            warnings.append(
-                f"MAME -listxml failed for {system_name}: {exc} — "
-                "LEDBlinky control data will be unavailable."
+        mtime = os.stat(resolved).st_mtime
+    except OSError:
+        mtime = None
+    key = (resolved, mtime)
+    with _listxml_lock:
+        memo = _listxml_memo.get(key)
+        if memo is not None:
+            return memo
+        try:
+            xml_bytes = run_mame_listxml(
+                config.mame_executable,
+                cache_path=listxml_cache_path(config.mame_executable),
             )
-        return {}
-    return parse_listxml(xml_bytes, warnings=warnings)
+        except RuntimeError as exc:
+            if warnings is not None:
+                warnings.append(
+                    f"MAME -listxml failed for {system_name}: {exc} — "
+                    "LEDBlinky control data will be unavailable."
+                )
+            return {}
+        info = parse_listxml(xml_bytes, warnings=warnings)
+        # Failures and empty dumps aren't kept, so the next call retries
+        # and reports them again.
+        if info:
+            _listxml_memo.clear()
+            _listxml_memo[key] = info
+        return info
 
 
 # ─── synthesis from -listxml ───────────────────────────────────────────────────
