@@ -608,3 +608,175 @@ def test_get_emulator_family_folder_matches_daphne_variants():
     assert _get_emulator_family_folder("Daphne Singe (WoW Action Max)") == "Daphne"
     assert _get_emulator_family_folder("MAME") is None
     assert _get_emulator_family_folder("RetroArch") is None
+
+
+# ── Rom_Path rebase: subfolders and |-separated paths ─────────────────────────
+
+
+def _rom_paths(ini: Path) -> list[str]:
+    """Every Rom_Path= value in *ini*, in file order."""
+    return [
+        line.split("=", 1)[1]
+        for line in ini.read_text(encoding="utf-8").splitlines()
+        if line.lower().startswith("rom_path=")
+    ]
+
+
+def test_rom_drive_move_keeps_rom_path_subfolder(tmp_path):
+    """J:\\Games\\Sega Dreamcast\\roms with ROMs moved to roms_dir must become
+    roms_dir/Sega Dreamcast/roms, not roms_dir/Sega Dreamcast."""
+    cfg, rl = _make_config(tmp_path)
+    roms = Path(cfg.roms_dir)
+    (roms / "Sega Dreamcast" / "roms").mkdir(parents=True)
+    emu_ini = rl / "Settings" / "Sega Dreamcast" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=Demul\nRom_Path=J:\\Games\\Sega Dreamcast\\roms\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sega Dreamcast", cfg)
+
+    assert _rom_paths(emu_ini) == [str(roms / "Sega Dreamcast" / "roms")]
+    assert "Default_Emulator=Demul" in emu_ini.read_text(encoding="utf-8")
+
+
+def test_rom_drive_move_rebases_every_element_of_multi_path(tmp_path):
+    cfg, rl = _make_config(tmp_path)
+    roms = Path(cfg.roms_dir)
+    ps1 = roms / "Sony Playstation"
+    (ps1 / "MultiDisc").mkdir(parents=True)
+    (ps1 / "_Gun Games").mkdir()
+    emu_ini = rl / "Settings" / "Sony Playstation" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=ePSXe\n"
+        "Rom_Path=J:\\Games\\Sony Playstation|J:\\Games\\Sony Playstation\\MultiDisc"
+        "|J:\\Games\\Sony Playstation\\_Gun Games\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sony Playstation", cfg)
+
+    assert _rom_paths(emu_ini) == [
+        f"{ps1}|{ps1 / 'MultiDisc'}|{ps1 / '_Gun Games'}",
+    ]
+
+
+def test_multi_path_left_untouched_when_every_element_exists(tmp_path):
+    """Path("a|b|c").is_dir() is always False, so every multi-path value used
+    to be replaced with the single roms_dir/<System> folder."""
+    cfg, rl = _make_config(tmp_path)
+    # Relative elements resolve from the RL root: rl/../Games == tmp/Games.
+    games = tmp_path / "Games" / "Sony Playstation"
+    (games / "MultiDisc").mkdir(parents=True)
+    (games / "_Gun Games").mkdir()
+    emu_ini = rl / "Settings" / "Sony Playstation" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    original = (
+        "[ROMS]\nDefault_Emulator=ePSXe\n"
+        "Rom_Path=../Games/Sony Playstation|../Games/Sony Playstation/MultiDisc"
+        "|../Games/Sony Playstation/_Gun Games\n"
+    )
+    emu_ini.write_text(original, encoding="utf-8")
+
+    written = generate_rl_system_ini("Sony Playstation", cfg)
+
+    assert written == [emu_ini]
+    assert emu_ini.read_text(encoding="utf-8") == original
+
+
+def test_multi_path_keeps_element_that_cannot_be_rebased(tmp_path):
+    """A stale element with no counterpart under roms_dir stays in the value
+    rather than silently disappearing."""
+    cfg, rl = _make_config(tmp_path)
+    ps1 = Path(cfg.roms_dir) / "Sony Playstation"
+    ps1.mkdir()
+    emu_ini = rl / "Settings" / "Sony Playstation" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=ePSXe\n"
+        "Rom_Path=J:\\Games\\Sony Playstation|J:\\Games\\Sony Playstation\\_Gun Games\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sony Playstation", cfg)
+
+    assert _rom_paths(emu_ini) == [f"{ps1}|J:\\Games\\Sony Playstation\\_Gun Games"]
+
+
+def test_flat_layout_rom_drive_move_keeps_subfolder(tmp_path):
+    cfg, rl = _make_config(tmp_path)
+    roms = Path(cfg.roms_dir)
+    (roms / "Sega Dreamcast" / "roms").mkdir(parents=True)
+    flat_ini = rl / "Settings" / "Sega Dreamcast.ini"
+    flat_ini.write_text(
+        "[Settings]\nDefault_Emulator=Demul\nRom_Path=J:\\Games\\Sega Dreamcast\\roms\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sega Dreamcast", cfg)
+
+    assert _rom_paths(flat_ini) == [str(roms / "Sega Dreamcast" / "roms")]
+
+
+# ── PCLauncher systems ────────────────────────────────────────────────────────
+
+
+def _pc_games_ini(rl: Path) -> Path:
+    emu_ini = rl / "Settings" / "PC Games" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=PCLauncher\nRom_Path=J:\\Games\\PC Games\n",
+        encoding="utf-8",
+    )
+    return emu_ini
+
+
+@pytest.mark.parametrize("placeholder_dir", ["missing", "empty"])
+def test_pclauncher_without_placeholder_inis_is_updated_in_place(
+    tmp_path, capsys, placeholder_dir,
+):
+    """Rewriting a PCLauncher wheel to Rom_Path=Modules\\PCLauncher\\<system>
+    with Rom_Extension=ini makes every game unlaunchable when that folder
+    holds no per-game INIs. The existing file is rebased in place instead."""
+    cfg, rl = _make_config(tmp_path)
+    (Path(cfg.roms_dir) / "PC Games").mkdir()
+    if placeholder_dir == "empty":
+        (rl / "Modules" / "PCLauncher" / "PC Games").mkdir(parents=True)
+    emu_ini = _pc_games_ini(rl)
+
+    written = generate_rl_system_ini("PC Games", cfg)
+
+    assert written == [emu_ini]
+    body = emu_ini.read_text(encoding="utf-8")
+    assert _rom_paths(emu_ini) == [str(Path(cfg.roms_dir) / "PC Games")]
+    assert "Rom_Extension=ini" not in body
+    assert "Modules" not in body
+    assert not (rl / "Settings" / "PC Games.ini").exists()
+    assert "no per-game INIs" in capsys.readouterr().err
+
+
+def test_pclauncher_with_placeholder_inis_uses_placeholder_layout(tmp_path):
+    cfg, rl = _make_config(tmp_path)
+    placeholders = rl / "Modules" / "PCLauncher" / "PC Games"
+    placeholders.mkdir(parents=True)
+    (placeholders / "Half-Life.ini").write_text("[Half-Life]\n", encoding="utf-8")
+    emu_ini = _pc_games_ini(rl)
+
+    generate_rl_system_ini("PC Games", cfg)
+
+    flat_ini = rl / "Settings" / "PC Games.ini"
+    for ini in (emu_ini, flat_ini):
+        assert set(_rom_paths(ini)) == {str(placeholders)}
+        assert "Rom_Extension=ini" in ini.read_text(encoding="utf-8")
+
+
+def test_new_pclauncher_system_gets_placeholder_layout(tmp_path):
+    cfg, rl = _make_config(tmp_path)
+
+    generate_rl_system_ini("PC Games", cfg)
+
+    placeholders = rl / "Modules" / "PCLauncher" / "PC Games"
+    for ini in (rl / "Settings" / "PC Games" / "Emulators.ini", rl / "Settings" / "PC Games.ini"):
+        assert set(_rom_paths(ini)) == {str(placeholders)}

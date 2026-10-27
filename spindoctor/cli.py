@@ -34,6 +34,7 @@ from .scraper import (
     extract_screenscraper_id, extract_thegamesdb_id, extract_steam_app_id,
 )
 from .database import GameEntry, HyperspinDatabase, load_database
+from ._utils import unique_path
 
 console = Console(soft_wrap=True)
 err_console = Console(stderr=True, soft_wrap=True)
@@ -3375,7 +3376,7 @@ def _scrub_backup(
     from .favorites import FAVORITES_FILE
 
     stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
-    backup_folder = backup_dir / f"scrub-{stamp}"
+    backup_folder = unique_path(backup_dir / f"scrub-{stamp}")
     backup_folder.mkdir(parents=True, exist_ok=True)
 
     manifest: list[dict] = []
@@ -6668,6 +6669,37 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
 
 # ─── generate-config ──────────────────────────────────────────────────────────
 
+def _generate_config_backup(target: Path, config) -> Path:
+    """Copy *target* to a timestamped ``.bak`` and return the backup path.
+
+    With ``backup_dir`` set, the backup goes under
+    ``backup_dir/RocketLauncher/`` at the same relative path the file has
+    under ``rocketlauncher_dir`` (``Settings/<System>/Emulators.ini.<stamp>.bak``).
+    Every folder-layout system's file is called ``Emulators.ini``, so a single
+    flat folder made backups written in the same second overwrite each other.
+    Files outside ``rocketlauncher_dir`` (Main Menu.xml) keep their parent
+    folder's name.  Without ``backup_dir`` the backup is a
+    ``<stem>.<stamp>.bak`` sidecar next to the file.  An existing backup is
+    never overwritten.
+    """
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    _bak_root = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+    if _bak_root:
+        rel_parent = Path(target.parent.name)
+        if config.rocketlauncher_dir:
+            try:
+                rel_parent = target.parent.relative_to(Path(config.rocketlauncher_dir))
+            except ValueError:
+                pass
+        dest_dir = _bak_root / "RocketLauncher" / rel_parent
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        bak = unique_path(dest_dir / f"{target.name}.{stamp}.bak")
+    else:
+        bak = unique_path(target.with_suffix(f".{stamp}.bak"))
+    shutil.copy2(target, bak)
+    return bak
+
+
 @cli.command("generate-config")
 @click.option("--all", "all_systems", is_flag=True, default=False,
               help="Generate config for all detected systems.")
@@ -6715,6 +6747,8 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
     from .rocketlauncher import (
         SKIP_GENERATE_CONFIG,
         _read_default_emulator_from_ini,
+        _rebase_rom_path_value,
+        _uses_pclauncher_placeholders,
         generate_global_emulators_ini,
         generate_hs_main_menu,
         generate_rl_system_ini,
@@ -6760,16 +6794,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
         """Copy *target* to a timestamped .bak file. Returns bak path or None."""
         if out_base or not target.exists():
             return None
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        _bak_root = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-        if _bak_root:
-            dest_dir = _bak_root / "RocketLauncher"
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            bak = dest_dir / f"{target.name}.{stamp}.bak"
-        else:
-            bak = target.with_suffix(f".{stamp}.bak")
-        shutil.copy2(target, bak)
-        return bak
+        return _generate_config_backup(target, config)
 
     # Populated inside gen_rl block; read by the trailing summary at the end.
     _gen_rl_errors: list[tuple[str, str]] = []
@@ -6867,6 +6892,15 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     _mame_path = str(Path(config.roms_dir) / "MAME")
                     if Path(_mame_path).exists():
                         new_rom_path = _mame_path
+                # PCLauncher systems with placeholder INIs (or new ones) are
+                # pointed at Modules/PCLauncher/<system>/ by the real write.
+                _pc_placeholders = bool(
+                    emulator == "PCLauncher"
+                    and rl_base_dry
+                    and _uses_pclauncher_placeholders(sys_name, rl_base_dry)
+                )
+                if _pc_placeholders:
+                    new_rom_path = str(rl_base_dry / "Modules" / "PCLauncher" / sys_name)
                 existing_ini = (
                     _find_existing_ini(rl_base_dry, sys_name)
                     if rl_base_dry else None
@@ -6909,8 +6943,22 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     current_str = f"[dim]{current_rom_path}[/dim]"
                     status = "[dim]preserved (custom path)[/dim]"
                 else:
-                    current_str = f"[yellow]{current_rom_path}[/yellow]"
-                    status = "[green]update[/green]"
+                    # Mirror the per-element rebase in generate_rl_system_ini
+                    # so the preview shows the value that will be written.
+                    _planned = (
+                        _rebase_rom_path_value(current_rom_path, Path(config.roms_dir), rl_base_dry)
+                        if not _ovr_rom and not out_base and not _pc_placeholders
+                        and config.roms_dir and rl_base_dry
+                        else None
+                    )
+                    if _planned == current_rom_path:
+                        current_str = f"[dim]{current_rom_path}[/dim]"
+                        status = "[dim]preserved (existing paths)[/dim]"
+                    else:
+                        if _planned is not None:
+                            new_rom_path = _planned
+                        current_str = f"[yellow]{current_rom_path}[/yellow]"
+                        status = "[green]update[/green]"
                 tbl.add_row(sys_name, emulator, current_str, new_rom_path, status)
             else:
                 try:
@@ -11237,7 +11285,7 @@ def repath_system(system_name, new_rom_path, apply_changes):
             if apply_changes and changes:
                 # Back up the file before writing so a failed write can be recovered.
                 stamp = _dt.now().strftime("%Y%m%d_%H%M%S")
-                bak = system_ini.with_suffix(f".{stamp}.bak")
+                bak = unique_path(system_ini.with_suffix(f".{stamp}.bak"))
                 _shutil.copy2(system_ini, bak)
                 console.print(f"  [dim]↳ Backed up to: {bak}[/dim]")
                 repath_pclauncher_system_ini(
@@ -11846,11 +11894,13 @@ def _sidecar_pattern(path: Path):
     SpinDoctor's apply commands write ``<stem>.YYYYMMDD_HHMMSS.bak``
     next to each mutated file via ``Path.with_suffix(...)``. For
     ``Main Menu.xml`` that's ``Main Menu.20260519_153045.bak`` —
-    ``stem`` is ``Main Menu``, the timestamp is 8+1+6 digits.
+    ``stem`` is ``Main Menu``, the timestamp is 8+1+6 digits. A second
+    backup in the same second gets a counter from ``unique_path``
+    (``Main Menu.20260519_153045_2.bak``).
     """
     import re as _re
     return _re.compile(
-        rf"^{_re.escape(path.stem)}\.\d{{8}}_\d{{6}}\.bak$"
+        rf"^{_re.escape(path.stem)}\.(\d{{8}}_\d{{6}})(?:_(\d+))?\.bak$"
     )
 
 
@@ -11860,9 +11910,15 @@ def _find_sidecars(path: Path) -> list[Path]:
         return []
     pat = _sidecar_pattern(path)
     matches = [p for p in path.parent.iterdir() if pat.match(p.name)]
-    # The timestamp lexicographically sorts as chronological order, so
-    # ``sort(reverse=True)`` puts newest first without needing mtime.
-    matches.sort(key=lambda p: p.name, reverse=True)
+
+    # The timestamp lexicographically sorts as chronological order and the
+    # same-second counter sorts numerically, so ``reverse=True`` puts newest
+    # first without needing mtime.
+    def _order(p: Path) -> tuple[str, int]:
+        m = pat.match(p.name)
+        return (m.group(1), int(m.group(2) or 1))
+
+    matches.sort(key=_order, reverse=True)
     return matches
 
 
@@ -11979,7 +12035,7 @@ def backup_sidecar_restore(file, source, apply_changes):
     # can undo the restore via another ``sidecar restore`` call.
     if file.exists():
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        live_backup = file.with_suffix(f".{stamp}.bak")
+        live_backup = unique_path(file.with_suffix(f".{stamp}.bak"))
         try:
             shutil.copy2(file, live_backup)
         except OSError as e:
