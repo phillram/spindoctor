@@ -419,6 +419,240 @@ def check_global_emulators(
     )
 
 
+def check_rocketlauncher_settings(config: Config) -> Check:
+    """RocketLauncher's own settings that stop launches or slow every one down.
+
+    Reads ``Settings/RocketLauncher.ini`` the way RocketLauncher does
+    (case-insensitive sections and keys, relative paths resolved against the
+    RocketLauncher folder):
+
+    * **Virtual drive** — ``Virtual_Drive_Path`` must exist when any system
+      mounts disc images through it.  ``Virtual_Drive_Enabled`` comes from
+      ``Global RocketLauncher.ini``, overridden per system by
+      ``Settings/<System>/RocketLauncher.ini`` (``use_global`` defers).  The
+      usual break is DAEMON Tools Lite reinstalled into the *other* Program
+      Files folder, so the fix names that path when the program is there.
+    * **7-Zip** — RocketLauncher checks ``7z_Path`` at the start of every
+      launch, whether or not 7z is enabled, so a stale path stops them all.
+    * **Logging** — ``Logging_Level`` 4 (debug) and up slows every launch.
+
+    Diagnosis only: these are the user's RocketLauncher settings, so each
+    finding names the file and key to edit.
+    """
+    name = "RocketLauncher settings"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    rl_dir = Path(config.rocketlauncher_dir)
+    settings_dir = rl_dir / "Settings"
+
+    # One listing of Settings/: top-level INIs by lower-cased name, plus the
+    # per-system folders (each may hold its own RocketLauncher.ini).
+    inis: dict[str, Path] = {}
+    system_dirs: list[Path] = []
+    try:
+        with os.scandir(settings_dir) as it:
+            for entry in it:
+                if entry.is_dir():
+                    system_dirs.append(Path(entry.path))
+                elif entry.is_file():
+                    inis[entry.name.lower()] = Path(entry.path)
+    except OSError:
+        pass
+    rl_ini = inis.get("rocketlauncher.ini")
+    if rl_ini is None:
+        return Check(name=name, status=Status.INFO,
+                     detail=f"no RocketLauncher.ini in {settings_dir}; skipping")
+
+    settings = _read_rl_settings_ini(rl_ini)
+    parent = Check(name=name, status=Status.OK, detail=str(rl_ini))
+    parent.children.append(_check_rl_virtual_drive(
+        settings, _read_rl_settings_ini(inis.get("global rocketlauncher.ini")),
+        system_dirs, rl_ini, rl_dir,
+    ))
+    parent.children.append(_check_rl_7z_path(settings, rl_ini, rl_dir))
+    parent.children.append(_check_rl_logging(settings, rl_ini))
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+def _check_rl_virtual_drive(
+    settings: dict[str, dict[str, str]],
+    global_settings: dict[str, dict[str, str]],
+    system_dirs: list[Path],
+    rl_ini: Path,
+    rl_dir: Path,
+) -> Check:
+    name = "Virtual drive"
+    raw = settings.get("virtual drive", {}).get("virtual_drive_path", "")
+    exists = _rl_path_exists(raw, rl_dir) if raw else None
+    if exists:
+        return Check(name=name, status=Status.OK, detail=raw)
+    if raw and exists is None:
+        return Check(name=name, status=Status.INFO,
+                     detail=f"can't check a Windows path from this OS: {raw}")
+
+    # Empty or missing: that only matters if some system mounts through it.
+    # RocketLauncher's default for a missing global switch is "false".  A
+    # system's own value wins unless it is "use_global" (or absent); any other
+    # value, blank included, means off for that system.
+    global_on = global_settings.get("virtual drive", {}).get(
+        "virtual_drive_enabled", "").lower() == "true"
+    switched_on: list[str] = []
+    inheriting: list[str] = []
+    for d in system_dirs:
+        value = _read_rl_settings_ini(d / "RocketLauncher.ini").get("virtual drive", {}).get(
+            "virtual_drive_enabled", "use_global").lower()
+        if value == "true":
+            switched_on.append(d.name)
+        elif value == "use_global" and global_on:
+            inheriting.append(d.name)
+    # Systems switched on explicitly come first: they're usually the disc systems.
+    users = sorted(switched_on, key=str.lower) + sorted(inheriting, key=str.lower)
+    in_use = bool(users) or (global_on and not system_dirs)
+
+    if not in_use:
+        if exists is False:
+            # Nothing mounts through it, so a stale path breaks nothing.
+            return Check(
+                name=name, status=Status.INFO,
+                detail=f"Virtual_Drive_Path not found: {raw} (no system uses the virtual drive)",
+                fix=_rl_twin_path_fix(raw, rl_dir, "Virtual_Drive_Path", "Virtual Drive", rl_ini),
+            )
+        return Check(name=name, status=Status.OK, detail="not used by any system")
+
+    shown = ", ".join(users[:5]) + (f" and {len(users) - 5} more" if len(users) > 5 else "")
+    if global_on:
+        who = f"enabled globally ({len(users)} system(s): {shown})" if users else "enabled globally"
+    else:
+        who = f"enabled for {shown}"
+    if not raw:
+        return Check(
+            name=name, status=Status.WARN,
+            detail=f"Virtual_Drive_Path is empty but the virtual drive is {who}",
+            fix=(f"Set Virtual_Drive_Path under [Virtual Drive] in {rl_ini}, "
+                 "or turn Virtual_Drive_Enabled off"),
+        )
+    return Check(
+        name=name, status=Status.WARN,
+        detail=f"Virtual_Drive_Path not found: {raw} — {who}",
+        fix=_rl_twin_path_fix(raw, rl_dir, "Virtual_Drive_Path", "Virtual Drive", rl_ini)
+        or (f"Point Virtual_Drive_Path under [Virtual Drive] in {rl_ini} at your virtual-drive "
+            "program (e.g. DTLite.exe), or turn Virtual_Drive_Enabled off for those systems"),
+    )
+
+
+def _check_rl_7z_path(
+    settings: dict[str, dict[str, str]], rl_ini: Path, rl_dir: Path,
+) -> Check:
+    name = "7-Zip"
+    # A blank or missing key falls back to RocketLauncher's bundled copy.
+    raw = settings.get("7z", {}).get("7z_path", "") or r".\Module Extensions\7z.exe"
+    exists = _rl_path_exists(raw, rl_dir)
+    if exists is None:
+        return Check(name=name, status=Status.INFO,
+                     detail=f"can't check a Windows path from this OS: {raw}")
+    if exists:
+        return Check(name=name, status=Status.OK, detail=raw)
+    return Check(
+        name=name, status=Status.WARN,
+        detail=f"7z_Path not found: {raw} — RocketLauncher stops every launch at this check",
+        fix=_rl_twin_path_fix(raw, rl_dir, "7z_Path", "7z", rl_ini)
+        or (f"Point 7z_Path under [7z] in {rl_ini} at 7z.exe "
+            "(RocketLauncher ships one in its Module Extensions folder)"),
+    )
+
+
+def _check_rl_logging(settings: dict[str, dict[str, str]], rl_ini: Path) -> Check:
+    name = "Logging"
+    raw = settings.get("logging", {}).get("logging_level", "")
+    if not raw:
+        return Check(name=name, status=Status.OK,
+                     detail="Logging_Level not set (RocketLauncher uses 3)")
+    try:
+        level = int(raw)
+    except ValueError:
+        return Check(name=name, status=Status.INFO,
+                     detail=f"Logging_Level is not a number: {raw}")
+    if level >= 4:
+        return Check(
+            name=name, status=Status.INFO,
+            detail=(f"Logging_Level={level} (debug or higher) slows every launch; "
+                    "2-3 still logs warnings and errors"),
+            fix=f"Set Logging_Level=3 under [Logging] in {rl_ini} once you're done troubleshooting",
+        )
+    return Check(name=name, status=Status.OK, detail=f"Logging_Level={level}")
+
+
+def _read_rl_settings_ini(path: Optional[Path]) -> dict[str, dict[str, str]]:
+    """``{section: {key: value}}`` from a RocketLauncher INI, names lower-cased.
+
+    RocketLauncher matches sections and keys case-insensitively, so lookups
+    here use lower case.  A repeated key keeps its first value.  A missing or
+    unreadable file reads as empty.
+    """
+    out: dict[str, dict[str, str]] = {}
+    if path is None:
+        return out
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return out
+    section: Optional[dict[str, str]] = None
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith((";", "#")):
+            continue
+        if s.startswith("[") and "]" in s:
+            section = out.setdefault(s[1:s.index("]")].strip().lower(), {})
+        elif section is not None and "=" in s:
+            key, value = s.split("=", 1)
+            section.setdefault(key.strip().lower(), value.strip())
+    return out
+
+
+def _rl_path_exists(value: str, rl_dir: Path) -> Optional[bool]:
+    """Whether a path from a RocketLauncher INI exists on disk.
+
+    Relative paths (``.\\Module Extensions\\7z.exe``) resolve against the
+    RocketLauncher folder, as RocketLauncher resolves them.  Returns None when
+    the path can't be checked here: an absolute Windows path on POSIX.
+    """
+    from pathlib import PureWindowsPath
+
+    pw = PureWindowsPath(value)
+    if pw.drive:
+        return Path(value).exists() if os.name == "nt" else None
+    if os.path.isabs(value):
+        return Path(value).exists()
+    return Path(os.path.normpath(os.path.join(str(rl_dir), *pw.parts))).exists()
+
+
+def _rl_twin_path_fix(
+    raw: str, rl_dir: Path, key: str, section: str, rl_ini: Path,
+) -> Optional[str]:
+    """Fix hint when a missing program is in the other Program Files folder.
+
+    A program reinstalled as 64-bit (or as 32-bit) lands in ``Program Files``
+    instead of ``Program Files (x86)`` (or the reverse), while RocketLauncher
+    still points at the old one.  Returns the exact edit when the file exists
+    there, else None.
+    """
+    import re
+
+    x86 = re.compile(r"(^|[\\/])Program Files \(x86\)(?=[\\/]|$)", re.IGNORECASE)
+    native = re.compile(r"(^|[\\/])Program Files(?=[\\/]|$)", re.IGNORECASE)
+    if x86.search(raw):
+        twin = x86.sub(lambda m: m.group(1) + "Program Files", raw, count=1)
+    elif native.search(raw):
+        twin = native.sub(lambda m: m.group(1) + "Program Files (x86)", raw, count=1)
+    else:
+        return None
+    if not _rl_path_exists(twin, rl_dir):
+        return None
+    return f"Set {key}={twin} under [{section}] in {rl_ini} (found in the other Program Files folder)"
+
+
 def check_ledblinky(config: Config) -> Check:
     if not config.ledblinky_dir:
         return Check(
@@ -1112,6 +1346,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
+    _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
