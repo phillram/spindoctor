@@ -84,7 +84,7 @@ drive is fine). Reinstall, in roughly this order:
 | **Visual C++ Redistributables (2005–2022, x86+x64)** | Emulator dependencies | Install the older ones too, not just the latest |
 | **GPU driver** | Fixes emulators that render a white screen | See §6 |
 | **AutoHotkey 1.1 (ANSI, 32-bit)** | RocketLauncher will not run without it | **Not** AutoHotkey 2.x |
-| **DAEMON Tools Lite** | Virtual drive for disc-based games (`vdEnabled=true`) | If it uses SCSI, add a virtual SCSI drive after install |
+| **DAEMON Tools Lite** | Virtual drive for disc-based games (`vdEnabled=true`) | If it uses SCSI, add a virtual SCSI drive after install. The 64-bit installer uses `C:\Program Files\DAEMON Tools Lite\`, so update `Virtual_Drive_Path` in RocketLauncher's `Settings\RocketLauncher.ini` if it still points at `Program Files (x86)`. `spindoctor doctor` flags a stale path |
 | **Control-board software** | WinIPAC, ServoStik driver, etc. | Reinstall to the same paths your configs expect |
 | **LEDBlinky** | Button lighting | Program was on C:; profiles survive on the Arcade drive |
 | **Fonts** (e.g. Bebas Neue) | HyperSpin themes reference them | `C:\Windows\Fonts` was wiped — easy to forget |

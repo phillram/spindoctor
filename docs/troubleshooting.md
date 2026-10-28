@@ -714,6 +714,32 @@ Locally — `mame -listxml` is run as a subprocess and the output is cached in `
 
 ## Migration / drives
 
+### Disc-based games stop launching after reinstalling DAEMON Tools (or moving to a new PC)
+
+**Symptom:** Every system that mounts disc images through RocketLauncher's virtual drive (for example Sega Saturn, Neo Geo CD, PC-FX, Amiga CD32, CD-i) stops launching, while cartridge and arcade systems still work. RocketLauncher reports that it could not find the virtual-drive program (`DTLite.exe`) and asks you to fix the Virtual Drive Path.
+
+**Cause:** RocketLauncher stores the full path to the virtual-drive program in `Virtual_Drive_Path` under `[Virtual Drive]` in `RocketLauncher\Settings\RocketLauncher.ini`. The 64-bit DAEMON Tools Lite installer uses `C:\Program Files\DAEMON Tools Lite\`, but a cabinet set up with the 32-bit version still points at `C:\Program Files (x86)\DAEMON Tools Lite\DTLite.exe`. After a Windows reinstall or a move to a new PC, that file is gone. Which systems use the virtual drive is set by `Virtual_Drive_Enabled`: globally in `Settings\Global RocketLauncher.ini`, overridden per system in `Settings\<System>\RocketLauncher.ini`, where `use_global` follows the global value.
+
+**Find it:** `spindoctor doctor` → **RocketLauncher settings** → **Virtual drive** shows a WARN listing the systems affected. If `DTLite.exe` exists in the other Program Files folder, the fix line gives that exact path.
+
+**Fix:** Set the Virtual Drive Path in RocketLauncherUI, or edit the file directly:
+
+```ini
+; D:\Arcade\RocketLauncher\Settings\RocketLauncher.ini
+[Virtual Drive]
+Virtual_Drive_Path=C:\Program Files\DAEMON Tools Lite\DTLite.exe
+```
+
+Then re-run `spindoctor doctor`, and launch one disc-based game to confirm.
+
+### Every launch takes longer than it should
+
+**Symptom:** Games launch, but RocketLauncher takes noticeably longer on every launch than it used to.
+
+**Cause:** `Logging_Level` under `[Logging]` in `RocketLauncher\Settings\RocketLauncher.ini` is 4 (debug) or higher, often left over from troubleshooting. RocketLauncher logs its own warning at those levels that debug logging slows it down. Levels 2 and 3 still log warnings and errors; 3 is RocketLauncher's default.
+
+**Fix:** Set `Logging_Level=3` (in RocketLauncherUI or in the file). `spindoctor doctor` reports a level of 4 or higher as INFO under **RocketLauncher settings** → **Logging**.
+
 ### ScummVM games launch but show a blank screen or quit immediately after a drive change
 
 **Symptom:** ScummVM launches and then quits after a few seconds, or opens without loading any game. The RocketLauncher log shows the correct ROM path on the new drive (e.g. `romPath := "J:\Games\ScummVM"`) but the game doesn't load.
