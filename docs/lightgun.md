@@ -31,7 +31,9 @@ spindoctor lightgun configure --system "Sega Naomi"             :: dry-run previ
 spindoctor lightgun configure --system "Sega Naomi" --apply     :: commit
 ```
 
-The dry-run output shows the exact `Pre_Launch_App` and `Post_Launch_App` lines that will be inserted. `--apply` writes them and marks the system as lightgun-enabled in spindoctor config.
+The dry-run output shows the exact `Pre_Launch_App` and `Post_Launch_App` lines that will be inserted. `--apply` writes them and marks the system as lightgun-enabled in spindoctor config. They go into the system's existing settings file: `Settings\<System>\Emulators.ini` (under `[ROMS]`) when the system uses the folder layout, otherwise `Settings\<System>.ini` (under `[Settings]`). Nothing else in the file changes. A system with neither file has no RocketLauncher settings yet; set it up in RocketLauncherUI or with `generate-config --apply` first.
+
+DemulShooter is started as `"<DemulShooter.exe>" -target=<target> <extra args>`. DemulShooter only accepts its options with `=`; SpinDoctor 2.15.0 and earlier wrote `-target <target>`, which DemulShooter ignores, so re-run `configure --apply` on systems wired by them. No `-rom=` is written: the hook is per system, and RocketLauncher has no documented way to put each game's ROM name into it. Targets that need `-rom=` are better served by RocketLauncher's own DemulShooter support (DemulShooter path under **Global → Third Party** in RocketLauncherUI, then **DemulShooter Enabled** per game in the module's settings).
 
 For systems spindoctor doesn't auto-target (rare emulators, custom builds), pass `--target <name>` — anything DemulShooter accepts, see its readme:
 
@@ -68,8 +70,8 @@ Lists every system with `"lightgun": true` and whether its INI's `Pre_Launch_App
 
 - DemulShooter is launched with `-noresize` by default — Sinden-friendly. Override globally via `demulshooter_extra_args` or per-call via `--extra-args`.
 - The `Post_Launch_App` is `taskkill /IM "DemulShooter.exe" /F` so DemulShooter shuts down cleanly between launches.
-- spindoctor never edits the global module `.ahk` files Tur ships with. If a per-system INI didn't exist, it's generated using the same template as `generate-config`.
+- spindoctor never edits the global module `.ahk` files Tur ships with, and never creates a system's settings file just to add the hooks.
 
 ## Reverting
 
-The INI is plain text — open `RocketLauncher\Settings\<System>.ini` and delete the `Pre_Launch_App` / `Post_Launch_App` lines. Or set `"lightgun": false` in the per-system override and re-run `lightgun audit` to confirm.
+The INI is plain text — open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` and delete the `Pre_Launch_App` / `Post_Launch_App` lines. Or set `"lightgun": false` in the per-system override and re-run `lightgun audit` to confirm.

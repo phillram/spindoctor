@@ -125,12 +125,14 @@ def test_detect_lightgun_systems_lists_wired_systems(tmp_path):
 
 # ─── plan / apply ────────────────────────────────────────────────────────────
 
-def test_plan_wire_system_creates_when_ini_missing(tmp_path):
+def test_plan_wire_system_writes_target_with_equals(tmp_path):
+    """DemulShooter reads -target=<name>; with a space it gets no target."""
+    rl = tmp_path / "rl"
+    _wire_ini(rl, "MAME", "[Settings]\nDefault_Emulator=MAME\n")
     cfg = Config(
         roms_dir=str(tmp_path / "roms"),
         hyperspin_dir=str(tmp_path / "hs"),
-        rocketlauncher_dir=str(tmp_path / "rl"),
-        emulators_dir=str(tmp_path / "emu"),
+        rocketlauncher_dir=str(rl),
     )
     install = LightgunInstall(
         demulshooter_exe=tmp_path / "tools" / "DemulShooter.exe",
@@ -138,10 +140,82 @@ def test_plan_wire_system_creates_when_ini_missing(tmp_path):
     _touch(install.demulshooter_exe)
     plan = plan_wire_system("MAME", cfg, install)
     assert plan.target == "mame"
-    assert plan.create_ini
+    assert not plan.create_ini
     assert "DemulShooter.exe" in plan.pre_launch_command
-    assert "-target mame" in plan.pre_launch_command
+    assert "-target=mame" in plan.pre_launch_command
+    assert "-target mame" not in plan.pre_launch_command
     assert "taskkill" in plan.post_launch_command
+
+
+def test_plan_wire_system_refuses_system_without_settings(tmp_path):
+    """Generating the system's settings just to add two hook keys used to
+    rewrite Rom_Path as a side effect."""
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    install = LightgunInstall(demulshooter_exe=tmp_path / "DemulShooter.exe")
+    _touch(install.demulshooter_exe)
+    with pytest.raises(ValueError, match="No RocketLauncher settings"):
+        plan_wire_system("MAME", cfg, install)
+    assert not (tmp_path / "rl" / "Settings").exists()
+
+
+def _folder_layout_cabinet(tmp_path):
+    rl = tmp_path / "rl"
+    emu_ini = rl / "Settings" / "Sega Naomi" / "Emulators.ini"
+    original = (
+        "[ROMS]\nDefault_Emulator=Demul\nRom_Path=D:\\Games\\Sega Naomi\n\n"
+        "[Demul]\nRom_Extension=zip\n"
+    )
+    _touch(emu_ini, original)
+    cfg = Config(
+        roms_dir=str(tmp_path / "roms"),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(rl),
+    )
+    install = LightgunInstall(demulshooter_exe=tmp_path / "DemulShooter.exe")
+    _touch(install.demulshooter_exe)
+    return cfg, install, rl, emu_ini
+
+
+def test_configure_folder_layout_adds_hooks_to_emulators_ini(tmp_path):
+    """Only Settings/<System>/Emulators.ini exists.  apply used to call
+    generate_rl_system_ini (rewriting Rom_Path) and then read the missing
+    flat Settings/<System>.ini, raising FileNotFoundError."""
+    cfg, install, rl, emu_ini = _folder_layout_cabinet(tmp_path)
+
+    plan = plan_wire_system("Sega Naomi", cfg, install)
+    assert plan.ini_path == emu_ini
+    assert not plan.create_ini
+    written = apply_wire_plan(plan, cfg)
+
+    assert written == emu_ini
+    body = emu_ini.read_text(encoding="utf-8")
+    assert "Rom_Path=D:\\Games\\Sega Naomi" in body  # untouched
+    assert "[Demul]\nRom_Extension=zip" in body
+    roms = body.split("[Demul]")[0]
+    assert "Pre_Launch_App=" in roms and "-target=demul07a" in roms
+    assert "Post_Launch_App=" in roms
+    assert not (rl / "Settings" / "Sega Naomi.ini").exists()
+
+    status = audit_system_wiring("Sega Naomi", cfg)
+    assert status.ini_path == emu_ini
+    assert status.target == "demul07a"
+    assert detect_lightgun_systems(cfg) == ["Sega Naomi"]
+
+
+@pytest.mark.parametrize("hook, target", [
+    ('"C:\\T\\DemulShooter.exe" -target=demul07a -rom=confmiss -noresize', "demul07a"),
+    ("C:\\T\\DemulShooter.exe -target model2 -noresize", "model2"),
+])
+def test_audit_reads_target_in_either_form(tmp_path, hook, target):
+    rl = tmp_path / "rl"
+    _wire_ini(rl, "Sega Model 2", f"[Settings]\nPre_Launch_App={hook}\n")
+    cfg = Config(roms_dir=str(tmp_path), hyperspin_dir=str(tmp_path / "hs"),
+                 rocketlauncher_dir=str(rl))
+    assert audit_system_wiring("Sega Model 2", cfg).target == target
 
 
 def test_plan_wire_system_unknown_target_requires_override(tmp_path):
@@ -153,6 +227,7 @@ def test_plan_wire_system_unknown_target_requires_override(tmp_path):
         demulshooter_exe=tmp_path / "DemulShooter.exe",
     )
     _touch(install.demulshooter_exe)
+    _wire_ini(tmp_path / "rl", "Nintendo Entertainment System", "[Settings]\n")
     with pytest.raises(ValueError, match="No DemulShooter target"):
         plan_wire_system("Nintendo Entertainment System", cfg, install)
     plan = plan_wire_system(
@@ -184,12 +259,13 @@ def test_plan_wire_system_detects_existing_replacement(tmp_path):
     assert plan.replace_post
 
 
-def test_apply_wire_plan_writes_keys_when_creating_ini(tmp_path):
+def test_apply_wire_plan_writes_keys_idempotently(tmp_path):
+    rl = tmp_path / "rl"
+    _wire_ini(rl, "MAME", "[Settings]\nDefault_Emulator=MAME\n")
     cfg = Config(
         roms_dir=str(tmp_path / "roms"),
         hyperspin_dir=str(tmp_path / "hs"),
-        rocketlauncher_dir=str(tmp_path / "rl"),
-        emulators_dir=str(tmp_path / "emu"),
+        rocketlauncher_dir=str(rl),
     )
     install = LightgunInstall(
         demulshooter_exe=tmp_path / "DemulShooter.exe",
@@ -200,7 +276,7 @@ def test_apply_wire_plan_writes_keys_when_creating_ini(tmp_path):
     body = written.read_text(encoding="utf-8")
     assert "Pre_Launch_App=" in body
     assert "Post_Launch_App=" in body
-    assert "-target mame" in body
+    assert "-target=mame" in body
     # Re-running should be idempotent (no duplicate keys).
     apply_wire_plan(plan, cfg)
     body2 = written.read_text(encoding="utf-8")
