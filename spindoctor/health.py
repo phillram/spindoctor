@@ -1072,7 +1072,10 @@ def check_pc_launchability(config: Config) -> Check:
             node.children.append(Check(
                 name="Application paths", status=Status.FAIL,
                 detail=f"{len(stale_app)}/{total} games' Application path is missing on disk (e.g. {stale_app[0]})",
-                fix=f'spindoctor pc-rename "{system}" --apply   (fixes stale drive letters)',
+                # Plain --apply only writes missing INIs; the stale ones are
+                # rewritten only with --overwrite-pclauncher.
+                fix=(f'spindoctor pc-rename "{system}" --overwrite-pclauncher --apply   '
+                     "(rewrites every per-game INI, replacing hand edits)"),
             ))
         if not node.children:
             node.detail = f"{total} game(s) OK"
