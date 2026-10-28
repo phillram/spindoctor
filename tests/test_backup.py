@@ -188,6 +188,33 @@ def test_list_backups_empty_target(tmp_path):
     assert list_backups(tmp_path / "does_not_exist") == []
 
 
+def test_backups_started_in_the_same_second_get_separate_roots(
+    isolated_config, tmp_path, monkeypatch,
+):
+    """The folder name only has one-second resolution. A second backup in
+    the same second used to reuse the first one's folder and overwrite its
+    manifest.json, which hid the first backup's components from restore."""
+    from datetime import datetime
+
+    class _FrozenDateTime:
+        @classmethod
+        def now(cls):
+            return datetime(2026, 6, 14, 17, 46, 35)
+
+    monkeypatch.setattr(backup_mod, "datetime", _FrozenDateTime)
+    cfg = _seed_library(tmp_path)
+    target = tmp_path / "backups"
+
+    first = apply_backup(plan_backup(cfg, target, ["roms"]), cfg)
+    second = apply_backup(plan_backup(cfg, target, ["databases"]), cfg)
+
+    assert first.name == "spindoctor-backup-20260614_174635"
+    assert second.name == "spindoctor-backup-20260614_174635_2"
+    assert {i["component"] for i in read_manifest(first)["items"]} == {"roms"}
+    assert {i["component"] for i in read_manifest(second)["items"]} == {"databases"}
+    assert [b.name for b in list_backups(target)] == [first.name, second.name]
+
+
 # ─── plan_restore / apply_restore ─────────────────────────────────────────────
 
 
