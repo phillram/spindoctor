@@ -196,6 +196,8 @@ def config_show():
 
     sensitive = {"screenscraper_pass", "thegamesdb_key"}
     for key, val in config.to_dict().items():
+        if key == "metadata_source_migrated":
+            continue  # internal one-time migration marker
         if key == "ignore_lists":
             n = sum(len(v) for v in val.values())
             tbl.add_row(key, f"[dim]{n} entries across {len(val)} system(s)[/dim]")
@@ -203,6 +205,25 @@ def config_show():
         display = "***" if key in sensitive and val else (str(val) or "[dim]<not set>[/dim]")
         tbl.add_row(key, display)
     console.print(tbl)
+
+
+def _parse_list_setting(value: str) -> list[str]:
+    """``config set`` value for a list setting.
+
+    Accepts a JSON array (``["USA", "Japan"]``) or a comma-separated list
+    (``USA, Japan``); an empty value clears the list.  Raises ``ValueError``
+    for anything else, so a list is never saved as a plain string.
+    """
+    text = value.strip()
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise ValueError(str(e)) from e
+        if not isinstance(parsed, list) or not all(isinstance(v, str) for v in parsed):
+            raise ValueError("expected a JSON array of strings")
+        return [v.strip() for v in parsed if v.strip()]
+    return [v.strip() for v in text.split(",") if v.strip()]
 
 
 @config_group.command("set")
@@ -238,7 +259,9 @@ def config_set(key: str, value: str):
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
-      default_metadata_source   screenscraper | thegamesdb
+      default_metadata_source   auto | screenscraper | thegamesdb | both
+                                (default auto: both when both are configured,
+                                else whichever is)
       backup_before_modify      true | false
       match_threshold           0.0–1.0 fuzzy match confidence (default 0.80)
       interactive_matching      true | false
@@ -254,6 +277,7 @@ def config_set(key: str, value: str):
     config = _cfg()
     if not hasattr(config, key) or key in (
         "ignore_lists", "databases_dir", "media_dir", "ledblinky_default_colors",
+        "metadata_source_migrated",
     ):
         err_console.print(f"[red]Unknown config key:[/red] {key}")
         sys.exit(1)
@@ -267,8 +291,27 @@ def config_set(key: str, value: str):
         "ui_scale": (0.6, 2.0),
     }
     current = getattr(config, key)
+    _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
+    if key == "default_metadata_source":
+        value = value.strip().lower()
+        if value not in _metadata_sources:
+            err_console.print(
+                f"[red]Invalid value for[/red] {key}: {value!r} "
+                f"(expected one of: {', '.join(_metadata_sources)})"
+            )
+            sys.exit(1)
+    if isinstance(current, dict):
+        # Mappings (system_overrides, gui_last_systems, …) have their own
+        # commands; a plain string here would replace the whole mapping.
+        err_console.print(
+            f"[red]{key} is a mapping and can't be set with config set.[/red] "
+            "Edit it with its own command (e.g. config system, config game-override) or in config.json."
+        )
+        sys.exit(1)
     try:
-        if isinstance(current, bool):
+        if isinstance(current, list):
+            new_val = _parse_list_setting(value)
+        elif isinstance(current, bool):
             new_val: object = value.lower() in ("1", "true", "yes")
         elif isinstance(current, int):
             new_val = int(value)
@@ -277,10 +320,11 @@ def config_set(key: str, value: str):
         else:
             new_val = value
     except ValueError:
-        err_console.print(
-            f"[red]Invalid value for[/red] {key}: {value!r} "
-            f"(expected {type(current).__name__})"
+        expected = (
+            'a comma-separated list, e.g. "USA, Japan", or a JSON array'
+            if isinstance(current, list) else type(current).__name__
         )
+        err_console.print(f"[red]Invalid value for[/red] {key}: {value!r} (expected {expected})")
         sys.exit(1)
     if key in _CONFIG_BOUNDS and isinstance(new_val, (int, float)) and not isinstance(new_val, bool):
         lo, hi = _CONFIG_BOUNDS[key]
@@ -292,7 +336,7 @@ def config_set(key: str, value: str):
             sys.exit(1)
     setattr(config, key, new_val)
     save_config(config)
-    console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {value!r}")
+    console.print(f"[green]✓[/green] Set [cyan]{key}[/cyan] = {new_val!r}")
 
 
 # Wizard fields: (key, prompt label, hardcoded Windows default, allow_blank).
