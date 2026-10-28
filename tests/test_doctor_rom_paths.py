@@ -137,6 +137,13 @@ def test_read_rl_ini_is_lenient_and_case_insensitive(tmp_path):
     assert health._read_rl_ini(tmp_path / "missing.ini") == {}
 
 
+@pytest.mark.parametrize("encoding", ["cp1252", "utf-16", "utf-8", "utf-8-sig"])
+def test_read_rl_ini_reads_windows_encodings(tmp_path, encoding):
+    """RL reads INIs through the Windows profile API: ANSI, or UTF-16 with a BOM."""
+    ini = _write(tmp_path / "x.ini", "[ROMS]\nRom_Path=D:\\Jeux Rétro\\NES\n", encoding=encoding)
+    assert health._read_rl_ini(ini)["roms"]["rom_path"] == "D:\\Jeux Rétro\\NES"
+
+
 # ─── Rom_Path folders ────────────────────────────────────────────────────────
 
 
@@ -220,6 +227,35 @@ def test_missing_rom_path_folder_fails(tmp_path):
     assert str(gone) in folder_rows[0].detail
     assert str(ini) in folder_rows[0].fix
     assert _rows(node, "Games")[0].status == FAIL
+
+
+def test_missing_second_rom_path_folder_is_a_warning_when_games_are_found(tmp_path):
+    """RL only fails a launch when no Rom_Path folder holds the ROM, so an
+    unplugged second drive on a wheel whose games all launch isn't a FAIL."""
+    games = ["Nights into Dreams (USA)", "Panzer Dragoon (USA)"]
+    cfg, rl = _cabinet(tmp_path, {"Sega Saturn": games})
+    saturn = tmp_path / "Games" / "Sega Saturn"
+    _touch(saturn, *(f"{g}.cue" for g in games))
+    gone = tmp_path / "Unplugged" / "Sega Saturn"
+    _emulators_ini(rl, "Sega Saturn", f"{saturn}|{gone}", rom_ext="cue")
+
+    node = _wheel(cfg, "Sega Saturn")
+    assert node.status == WARN
+    assert [r.status for r in _rows(node, "Rom_Path")] == [WARN]
+    assert str(gone) in _rows(node, "Rom_Path")[0].detail
+    assert _rows(node, "Games") == []
+
+
+def test_blank_rom_path_is_a_warning_when_rl_looks_up_no_game(tmp_path):
+    """A PCLauncher wheel with no Rom_Extension: RL never looks for a file."""
+    cfg, rl = _cabinet(tmp_path, {"PC Games": ["Hades"]})
+    _emulators_ini(rl, "PC Games", "", emulator="PCLauncher")
+    _global_emulators(rl, "[PCLauncher]\nEmu_Path=..\\Emulators\\PCLauncher\n")
+
+    node = _wheel(cfg, "PC Games")
+    assert node.status == WARN
+    assert [r.status for r in _rows(node, "Rom_Path")] == [WARN]
+    assert "PCLauncher game not checked" in node.detail
 
 
 def test_missing_relative_rom_path_shows_the_resolved_folder(tmp_path):
