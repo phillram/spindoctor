@@ -862,6 +862,23 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 
 `fav rebuild` and `stats-report build-wheel` default to hardlinks, which need NTFS / ext4 / APFS. On FAT32 / exFAT they fall back to copy automatically (via `auto` mode), which doubles disk use. Either pass `--media-mode copy` explicitly to make the fallback intentional, or move the wheel target to an NTFS volume.
 
+### Naomi/Atomiswave, AAE, Daphne or Pokémon Mini games can't find their ROMs or saves after moving the ROM drive
+
+**Symptom:** You moved your ROMs (for example from `J:\Games` to `E:\Games`) and ran `generate-config --apply`. Most wheels launch again, but Sega Naomi / Sammy Atomiswave games in Demul, AAE vector games or Daphne laserdisc games still report missing ROMs, or Pokémon Mini saves stop working.
+
+**Cause:** These emulators keep a ROM or save folder in their *own* config file, separate from RocketLauncher's `Rom_Path`. Neither `generate-config` nor `migrate` rewrites it:
+
+| Emulator | File | Key |
+|---|---|---|
+| Demul with the v0.5.6 / v0.5.7 module (it only passes `-rom=`, so Demul searches its own list) | `Demul.ini` in the emulator folder | `roms0` … `romsN` under `[files]`, up to `romsPathsCount` |
+| AAE | `aae.ini` in the emulator folder | `mame_rom_path` |
+| PokeMini | `pokemini.cfg` in the emulator folder | `eepromfile` (the one shared save file, used while `eepromshare=yes`, the default; with `eepromshare=no` saves sit next to each ROM and this is not checked) |
+| Daphne | `RocketLauncher\Modules\Daphne\Daphne.ini` | `homedir` in each game's section |
+
+**Fix:** Run `spindoctor doctor`. The **Emulator ROM folders** check lists every value whose folder no longer exists, with the file and key, and gives the replacement value when the same folder exists under your `roms_dir`. Close the emulator, open the file in Notepad and set each listed key to the new folder. Keep Demul's trailing backslash (`roms1 = E:\Games\Sega Naomi\`). A Daphne `homedir` of `.` (Daphne's own folder) is fine.
+
+If `doctor` shows a value as INFO ("harmless"), the emulator's RocketLauncher module sets that folder itself before every launch (the stock AAE module, and the Demul v0.5.8 / v0.7 modules), so there's nothing to fix.
+
 ---
 
 ## Dolphin / GameCube

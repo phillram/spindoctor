@@ -1844,6 +1844,319 @@ def check_lightguns(config: Config) -> Check:
     return parent
 
 
+@dataclass(frozen=True)
+class _EmuFolderSetting:
+    """One emulator config value that names a ROM or save folder.
+
+    ``key`` is a regex matched against the whole lower-cased key name;
+    ``section``, ``count_key`` and ``module_writes`` are lower-case too.
+    """
+    emulator: str                 # display name
+    exes: tuple[str, ...]         # Emu_Path exe names that identify the emulator
+    filename: str                 # config file in the emulator's folder
+    key: str
+    section: str = ""             # only this [section]; "" = any
+    count_key: str = ""           # numbered keys at or above this key's value are unused
+    file_value: bool = False      # the value names a file; check its folder
+    rl_module: str = ""           # file lives in RocketLauncher\Modules\<rl_module>\ instead
+    module_writes: str = ""       # a module that writes this key sets the folder at launch
+    off_when: tuple[str, str] = ("", "")  # (key, value) under which the setting is unused
+
+
+# Emulators that keep their own ROM / save folder, which neither
+# generate-config nor migrate rewrites.  Add a row to cover another one.
+# MAME's mame.ini ``rompath`` is left out on purpose: RocketLauncher passes
+# -rompath on the command line, so a stale value there is cosmetic.
+# ``module_writes`` spots the same case in a module that writes the setting
+# before each launch: the stock AAE module (mame_rom_path) and the Demul
+# v0.5.8 / v0.7 modules (they append the ROM folder and bump romsPathsCount).
+# The Demul v0.5.6 / v0.5.7 modules only pass -rom=, so Demul searches roms0..N.
+_EMU_FOLDER_SETTINGS = (
+    _EmuFolderSetting("AAE", ("aae.exe",), "aae.ini", r"mame_rom_path",
+                      module_writes="mame_rom_path"),
+    _EmuFolderSetting("Demul", ("demul.exe",), "Demul.ini", r"roms\d+",
+                      section="files", count_key="romspathscount",
+                      module_writes="romspathscount"),
+    # eepromfile is the one shared save file only while eepromshare is on (the
+    # default).  With it off PokeMini saves next to each ROM and just writes the
+    # last game's .eep back here, so a stale value breaks nothing.
+    _EmuFolderSetting("PokeMini", ("pokemini.exe",), "pokemini.cfg", r"eepromfile",
+                      file_value=True, off_when=("eepromshare", "no")),
+    _EmuFolderSetting("Daphne", (), "Daphne.ini", r"homedir", rl_module="Daphne"),
+)
+
+# Global Emulators.ini keys that hold the emulator exe (as _read_emulator_exe).
+_EMU_PATH_KEYS = ("emu_path", "emulator_application_path", "emulator_path")
+
+
+def _read_ini_entries(path: Path) -> list[tuple[str, str, str]]:
+    """``(section, key, value)`` for every ``key=value`` line of *path*.
+
+    Loose on purpose: emulator configs repeat a section (Demul writes a second
+    ``[main]``) or have no section at all (pokemini.cfg), which configparser
+    rejects.  Names keep their case; callers compare them lower-cased.
+    """
+    import re
+
+    text = _read_windows_text(path)
+    entries: list[tuple[str, str, str]] = []
+    section = ""
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s[0] in ";#":
+            continue
+        if s[0] == "[" and s[-1] == "]":
+            section = s[1:-1].strip()
+        elif "=" in s:
+            key, value = s.split("=", 1)
+            # aae.ini puts comments after values: "doublebuffer = 1 ;Enable ..."
+            value = re.sub(r"\s+;.*$", "", value)
+            entries.append((section, key.strip(), value.strip()))
+    return entries
+
+
+def _dir_exists(p: Path) -> bool:
+    try:
+        return p.is_dir()
+    except (OSError, ValueError):
+        return False
+
+
+def _subfolders(folder: Path) -> list[Path]:
+    try:
+        with os.scandir(folder) as it:
+            return sorted((Path(e.path) for e in it if e.is_dir()), key=lambda p: p.name.lower())
+    except OSError:
+        return []
+
+
+def _setting_folder(value: str, base: Optional[Path], file_value: bool) -> Optional[Path]:
+    """The folder a config value points at, or None when it can't be checked.
+
+    A relative value resolves from *base* (the emulator's folder, where
+    RocketLauncher starts it); with no base it is skipped.  An absolute Windows
+    drive path can only be checked on Windows (as ``_resolve_emu_path``).
+    """
+    from pathlib import PureWindowsPath
+
+    pw = PureWindowsPath(value)
+    if pw.drive:
+        if os.name != "nt":
+            return None
+        p = Path(value)
+    elif Path(value).is_absolute():
+        p = Path(value)
+    elif base is not None:
+        p = Path(os.path.normpath(base.joinpath(*pw.parts)))
+    else:
+        return None
+    return p.parent if file_value else p
+
+
+def _rebased_setting(value: str, folder: Path, roms_dir: str, file_value: bool) -> Optional[str]:
+    """*value* moved under *roms_dir* when the same trailing folders exist there
+    (``J:\\Games\\Sega Naomi`` → ``<roms_dir>\\Sega Naomi``), longest tail first."""
+    if not roms_dir:
+        return None
+    from pathlib import PureWindowsPath
+
+    parts = folder.parts[1:] if folder.anchor else folder.parts
+    for i in range(len(parts)):
+        candidate = Path(roms_dir).joinpath(*parts[i:])
+        if _dir_exists(candidate):
+            if file_value:
+                return str(candidate / PureWindowsPath(value).name)
+            return str(candidate) + (os.sep if value.endswith(("\\", "/")) else "")
+    return None
+
+
+def _module_writes(module: Path, key: str, cache: dict) -> bool:
+    """Whether RocketLauncher *module* writes *key* (lower-case) into the
+    emulator's config before launch: a ``Write`` line naming it, outside a
+    ``;`` comment."""
+    if (module, key) not in cache:
+        try:
+            text = module.read_text(encoding="utf-8", errors="replace").lower()
+        except OSError:
+            text = ""
+        cache[(module, key)] = any(
+            "write" in code and key in code
+            for code in (line.split(";", 1)[0] for line in text.splitlines())
+        )
+    return cache[(module, key)]
+
+
+def _emulator_config_files(
+    config: Config,
+) -> list[tuple[_EmuFolderSetting, Path, Optional[Path], Optional[Path]]]:
+    """``(setting, config file, emulator folder, managing module)`` for each
+    installed emulator in ``_EMU_FOLDER_SETTINGS``.
+
+    Emulator folders come from the ``Emu_Path`` entries of Global Emulators.ini.
+    An emulator with no usable entry there is looked for one level under
+    ``emulators_dir`` instead.  A RocketLauncher module INI has no emulator
+    folder (None).  The managing module is set only when every entry that
+    launches the folder uses a module that writes the setting itself.
+    """
+    from pathlib import PureWindowsPath
+
+    rl_dir = Path(config.rocketlauncher_dir) if config.rocketlauncher_dir else None
+    known_exes = {exe for s in _EMU_FOLDER_SETTINGS for exe in s.exes}
+
+    # (exe, candidate folders, module file) per known emulator in Global Emulators.ini.
+    emus: list[tuple[str, list[Path], Path]] = []
+    global_ini = rl_dir / "Settings" / "Global Emulators.ini" if rl_dir else None
+    if global_ini is not None and global_ini.is_file():
+        try:
+            entries = _read_ini_entries(global_ini)
+        except OSError:  # locked / unreadable: fall back to emulators_dir
+            entries = []
+        sections: dict[str, tuple[str, dict[str, str]]] = {}
+        for section, key, value in entries:
+            sections.setdefault(section.lower(), (section, {}))[1].setdefault(key.lower(), value)
+        for section, keys in sections.values():
+            emu_path = next((keys[k] for k in _EMU_PATH_KEYS if keys.get(k)), "")
+            exe = PureWindowsPath(emu_path).name.lower()
+            if exe not in known_exes:
+                continue
+            # RocketLauncher resolves Module= from Modules\<emulator>\ (default <emulator>.ahk).
+            module = PureWindowsPath(keys.get("module") or f"{section}.ahk")
+            emus.append((
+                exe,
+                [c.parent for c in _resolve_emu_path(emu_path, rl_dir)],
+                Path(os.path.normpath(rl_dir.joinpath("Modules", section, *module.parts))),
+            ))
+
+    subdirs: Optional[list[Path]] = None
+    writes_cache: dict = {}
+    found: list[tuple[_EmuFolderSetting, Path, Optional[Path], Optional[Path]]] = []
+    for setting in _EMU_FOLDER_SETTINGS:
+        if setting.rl_module:
+            module_ini = rl_dir / "Modules" / setting.rl_module / setting.filename if rl_dir else None
+            if module_ini is not None and module_ini.is_file():
+                found.append((setting, module_ini, None, None))
+            continue
+        # folder -> modules of the entries that launch it (several can share one)
+        folders: dict[Path, list[Path]] = {}
+        for exe, dirs, module in emus:
+            if exe in setting.exes:
+                hit = next((d for d in dirs if (d / setting.filename).is_file()), None)
+                if hit is not None:
+                    folders.setdefault(hit, []).append(module)
+        if not folders and config.emulators_dir:
+            if subdirs is None:
+                subdirs = _subfolders(Path(config.emulators_dir))
+            folders = {d: [] for d in subdirs if (d / setting.filename).is_file()}
+        for folder, modules in folders.items():
+            managed = None
+            if setting.module_writes and modules and all(
+                    _module_writes(m, setting.module_writes, writes_cache) for m in modules):
+                managed = modules[0]
+            found.append((setting, folder / setting.filename, folder, managed))
+    return found
+
+
+def check_emulator_rom_paths(config: Config) -> Check:
+    """Flag ROM / save folders that emulators keep in their *own* config files.
+
+    After a ROM-drive move, ``generate-config`` rewrites RocketLauncher's
+    ``Rom_Path`` values, but some emulators read ROMs or saves from a folder in
+    their own config: AAE's ``mame_rom_path``, Demul's ``roms0..N`` (the v0.5.7
+    module only passes ``-rom=``), PokeMini's ``eepromfile`` and the Daphne
+    module's per-game ``homedir``.  Neither ``generate-config`` nor ``migrate``
+    rewrites those, so the games can't find their ROMs while every
+    RocketLauncher check passes.
+
+    Diagnosis only: each missing folder is a WARN naming the file, key and
+    current value, plus the exact replacement when the same folder exists under
+    ``roms_dir``.  It is only INFO when the emulator's RocketLauncher module
+    writes that setting itself before every launch.
+    """
+    import re
+
+    name = "Emulator ROM folders"
+    configs = _emulator_config_files(config)
+    if not configs:
+        labels = [s.emulator for s in _EMU_FOLDER_SETTINGS]
+        return Check(
+            name=name, status=Status.INFO,
+            detail=f"no {', '.join(labels[:-1])} or {labels[-1]} config found",
+        )
+
+    parent = Check(name=name, status=Status.OK)
+    for setting, path, base, managed in configs:
+        node = Check(name=f"{setting.emulator}: {path}", status=Status.OK)
+        try:
+            entries = [(k, v) for sec, k, v in _read_ini_entries(path)
+                       if not setting.section or sec.lower() == setting.section]
+        except OSError as e:
+            node.status = Status.INFO
+            node.detail = f"unreadable: {e}"
+            parent.children.append(node)
+            continue
+
+        off_key, off_value = setting.off_when
+        if off_key and any(
+            k.lower() == off_key and v.strip('"').strip().lower() in (off_value, "false", "0")
+            for k, v in entries
+        ):
+            node.detail = f"{off_key}={off_value}, so {setting.key} isn't used"
+            parent.children.append(node)
+            continue
+
+        limit = None
+        if setting.count_key:
+            counts = [v for k, v in entries if k.lower() == setting.count_key]
+            if counts and counts[-1].isdigit():
+                limit = int(counts[-1])
+
+        # (key, value) -> number of entries, so 17 Daphne games sharing one
+        # stale homedir make one row.
+        missing: dict[tuple[str, str], int] = {}
+        checked = 0
+        for key, value in entries:
+            value = value.strip('"').strip()
+            if not value or not re.fullmatch(setting.key, key.lower()):
+                continue
+            number = re.search(r"\d+$", key)
+            if limit is not None and number and int(number.group()) >= limit:
+                continue
+            folder = _setting_folder(value, base, setting.file_value)
+            if folder is None:
+                continue
+            checked += 1
+            if not _dir_exists(folder):
+                missing[(key, value)] = missing.get((key, value), 0) + 1
+
+        if missing and managed is not None:
+            # The module sets the folder before every launch: harmless leftovers.
+            keys = ", ".join(dict.fromkeys(k for k, _ in missing))
+            node.status = Status.INFO
+            node.detail = f"{keys} not found; harmless, {managed.name} sets the folder at launch"
+            parent.children.append(node)
+            continue
+        for (key, value), count in missing.items():
+            folder = _setting_folder(value, base, setting.file_value)
+            new = _rebased_setting(value, folder, config.roms_dir, setting.file_value)
+            node.children.append(Check(
+                name=key, status=Status.WARN,
+                detail=f"folder not found: {value}" + (f" ({count} entries)" if count > 1 else ""),
+                fix=(f"In {path}, set {key}={new}" if new
+                     else f"In {path}, point {key} at the folder's new location"),
+            ))
+        if node.children:
+            node.status = Status.WARN
+            node.detail = f"{sum(missing.values())} of {checked} folder path(s) not found"
+        elif checked:
+            node.detail = f"{checked} folder path(s) OK"
+        else:
+            node.detail = "no checkable folder paths (unset or relative)"
+        parent.children.append(node)
+
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_led_coverage(config: Config) -> Check:
     """Report how much of the MAME set has LEDBlinky control/color coverage.
 
@@ -2035,6 +2348,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
     _safe("Lightguns", lambda: check_lightguns(config))
+    _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
