@@ -464,11 +464,24 @@ def check_rocketlauncher_settings(config: Config) -> Check:
         return Check(name=name, status=Status.INFO,
                      detail=f"no RocketLauncher.ini in {settings_dir}; skipping")
 
+    # Main Menu wheels with no Settings/<System>/ folder have no per-system
+    # value, so they follow the global Virtual_Drive_Enabled.
+    folderless: list[str] = []
+    if config.hyperspin_dir:
+        from .rocketlauncher import SKIP_GENERATE_CONFIG
+
+        have = {d.name.lower() for d in system_dirs}
+        mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+        folderless = [
+            w for w in _main_menu_wheels(mm_path)
+            if w not in SKIP_GENERATE_CONFIG and w.lower() not in have
+        ]
+
     settings = _read_rl_settings_ini(rl_ini)
     parent = Check(name=name, status=Status.OK, detail=str(rl_ini))
     parent.children.append(_check_rl_virtual_drive(
         settings, _read_rl_settings_ini(inis.get("global rocketlauncher.ini")),
-        system_dirs, rl_ini, rl_dir,
+        system_dirs, folderless, rl_ini, rl_dir,
     ))
     parent.children.append(_check_rl_7z_path(settings, rl_ini, rl_dir))
     parent.children.append(_check_rl_logging(settings, rl_ini))
@@ -480,6 +493,7 @@ def _check_rl_virtual_drive(
     settings: dict[str, dict[str, str]],
     global_settings: dict[str, dict[str, str]],
     system_dirs: list[Path],
+    folderless: list[str],
     rl_ini: Path,
     rl_dir: Path,
 ) -> Check:
@@ -507,6 +521,8 @@ def _check_rl_virtual_drive(
             switched_on.append(d.name)
         elif value == "use_global" and global_on:
             inheriting.append(d.name)
+    if global_on:
+        inheriting.extend(folderless)
     # Systems switched on explicitly come first: they're usually the disc systems.
     users = sorted(switched_on, key=str.lower) + sorted(inheriting, key=str.lower)
     in_use = bool(users) or (global_on and not system_dirs)
@@ -587,28 +603,9 @@ def _check_rl_logging(settings: dict[str, dict[str, str]], rl_ini: Path) -> Chec
 def _read_rl_settings_ini(path: Optional[Path]) -> dict[str, dict[str, str]]:
     """``{section: {key: value}}`` from a RocketLauncher INI, names lower-cased.
 
-    RocketLauncher matches sections and keys case-insensitively, so lookups
-    here use lower case.  A repeated key keeps its first value.  A missing or
-    unreadable file reads as empty.
+    Same parsing as :func:`_read_rl_ini`; *path* may be None (no such file).
     """
-    out: dict[str, dict[str, str]] = {}
-    if path is None:
-        return out
-    try:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
-    except OSError:
-        return out
-    section: Optional[dict[str, str]] = None
-    for line in text.splitlines():
-        s = line.strip()
-        if not s or s.startswith((";", "#")):
-            continue
-        if s.startswith("[") and "]" in s:
-            section = out.setdefault(s[1:s.index("]")].strip().lower(), {})
-        elif section is not None and "=" in s:
-            key, value = s.split("=", 1)
-            section.setdefault(key.strip().lower(), value.strip())
-    return out
+    return _read_rl_ini(path) if path is not None else {}
 
 
 def _rl_path_exists(value: str, rl_dir: Path) -> Optional[bool]:
