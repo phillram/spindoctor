@@ -13401,12 +13401,21 @@ def lightgun_detect(apply_changes, verbose):
                  str(install.sinden_software_dir) if install.has_sinden
                  else "[red]not found[/red]")
     grid.add_row("[cyan]DemulShooter:[/cyan]",
-                 str(install.demulshooter_exe) if install.has_demulshooter
+                 (str(install.demulshooter_exe)
+                  + (" [dim](demulshooter_path)[/dim]" if install.demulshooter_from_config else ""))
+                 if install.has_demulshooter
                  else "[red]not found[/red]")
     grid.add_row("[cyan]Arcade Guns Utility:[/cyan]",
                  str(install.arcade_guns_dir) if install.arcade_guns_dir
                  else "[dim]not found[/dim]")
     console.print(grid)
+    if len(install.demulshooter_candidates) > 1 and not install.demulshooter_from_config:
+        console.print(f"\n[yellow]{len(install.demulshooter_candidates)} DemulShooter "
+                      "executables found[/yellow] — the first is used. Pick the one "
+                      "your cabinet runs with [cyan]spindoctor config set "
+                      "demulshooter_path <path>[/cyan]:")
+        for exe in install.demulshooter_candidates:
+            console.print(f"  · {exe}")
 
     pre_wired = lg.detect_lightgun_systems(config)
     already_marked = set(config.lightgun_systems())
@@ -13495,12 +13504,8 @@ def lightgun_configure(system, target, extra_args, apply_changes, verbose):
     from . import lightgun as lg
 
     config = _cfg()
+    # detect_lightgun_install applies the demulshooter_path override.
     install = lg.detect_lightgun_install(config)
-    if config.demulshooter_path:
-        # Honour user override even if auto-detect missed it.
-        forced = Path(config.demulshooter_path)
-        if forced.exists():
-            install.demulshooter_exe = forced
 
     args = (extra_args
             or config.demulshooter_extra_args
