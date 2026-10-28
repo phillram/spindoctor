@@ -103,7 +103,7 @@ spindoctor fetch-meta --all --auto-best --threshold 0.9 --apply :: stricter auto
 spindoctor fetch-meta --system "Sony PlayStation 2" --game "Dark Cloud" --apply  :: single game
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Without it, `default_metadata_source` decides; its default `auto` uses `both` (ScreenScraper primary, TheGamesDB fills gaps) when both credentials are configured, otherwise whichever one is. `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
@@ -136,7 +136,7 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --typ
 spindoctor fetch-media --all --apply --report D:\post_fetch_audit.csv               :: write audit CSV after run
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file. `--report PATH` writes a post-fetch audit CSV to a specific path (includes before/after download columns per media slot); this is independent of the `auto_audit_export_dir` auto-export, so both can be active simultaneously.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Without it, `default_metadata_source` decides; its default `auto` uses `both` (ScreenScraper primary, TheGamesDB fills gaps) when both credentials are configured, otherwise whichever one is. `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file. `--report PATH` writes a post-fetch audit CSV to a specific path (includes before/after download columns per media slot); this is independent of the `auto_audit_export_dir` auto-export, so both can be active simultaneously.
 
 A game that resolves but downloads nothing for every type is usually a name-matching problem, not a missing-media problem — see [Troubleshooting](troubleshooting.md#fetch-media-resolves-the-game-but-every-type-reports-no-url-even-with---source-both) and consider a [per-game override](configuration.md#per-game-overrides). When an override is active for a game, the metadata cache is automatically bypassed so the forced ID is always tried fresh — setting an override takes effect on the very next run without needing to clear the cache manually. `--verbose` output shows the active override IDs alongside the resolved source (`override: ss=XXXX`).
 
