@@ -196,6 +196,8 @@ def config_show():
 
     sensitive = {"screenscraper_pass", "thegamesdb_key"}
     for key, val in config.to_dict().items():
+        if key == "metadata_source_migrated":
+            continue  # internal one-time migration marker
         if key == "ignore_lists":
             n = sum(len(v) for v in val.values())
             tbl.add_row(key, f"[dim]{n} entries across {len(val)} system(s)[/dim]")
@@ -257,7 +259,9 @@ def config_set(key: str, value: str):
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
       thegamesdb_key            TheGamesDB API key
-      default_metadata_source   screenscraper | thegamesdb
+      default_metadata_source   auto | screenscraper | thegamesdb | both
+                                (default auto: both when both are configured,
+                                else whichever is)
       backup_before_modify      true | false
       match_threshold           0.0–1.0 fuzzy match confidence (default 0.80)
       interactive_matching      true | false
@@ -273,6 +277,7 @@ def config_set(key: str, value: str):
     config = _cfg()
     if not hasattr(config, key) or key in (
         "ignore_lists", "databases_dir", "media_dir", "ledblinky_default_colors",
+        "metadata_source_migrated",
     ):
         err_console.print(f"[red]Unknown config key:[/red] {key}")
         sys.exit(1)
@@ -286,6 +291,15 @@ def config_set(key: str, value: str):
         "ui_scale": (0.6, 2.0),
     }
     current = getattr(config, key)
+    _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
+    if key == "default_metadata_source":
+        value = value.strip().lower()
+        if value not in _metadata_sources:
+            err_console.print(
+                f"[red]Invalid value for[/red] {key}: {value!r} "
+                f"(expected one of: {', '.join(_metadata_sources)})"
+            )
+            sys.exit(1)
     if isinstance(current, dict):
         # Mappings (system_overrides, gui_last_systems, …) have their own
         # commands; a plain string here would replace the whole mapping.

@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A configured TheGamesDB key is now used without `--source both`.** The docs said `fetch-meta` / `fetch-media` use both sources (ScreenScraper first, TheGamesDB filling gaps) when both are configured. But `default_metadata_source` defaulted to `screenscraper`, and that value was written into every saved config, so TheGamesDB was used only with `--source both`. The new default is `auto`: both sources when both are configured, otherwise whichever one is. A saved `screenscraper` from an earlier version is switched to `auto` once. Set `default_metadata_source screenscraper` again afterwards to use ScreenScraper only; that choice is kept. `config set` now rejects values other than `auto`, `screenscraper`, `thegamesdb` and `both`. Covered by `tests/test_metadata_source_default.py`.
+
 ### Fixed
 
 - **`config set` saves list settings as lists.** It converted only true/false and number values, so `config set region_preferences USA,Japan` saved the string `"USA,Japan"`, and anything reading the setting got single characters. List settings now take comma-separated values (`"USA, Japan"`) or a JSON array, an empty value clears the list, and anything else is rejected without saving. Mapping settings such as `system_overrides` were overwritten with a plain string the same way; `config set` now refuses them and names the command to use instead. See `docs/configuration.md`. Covered by `tests/test_config.py`.

@@ -2053,9 +2053,10 @@ def build_client(
     """Return a metadata client for *source*.
 
     When *source* is None the config ``default_metadata_source`` field is used.
-    The special value ``"both"`` (and ``None`` when both credential sets are
-    present) returns a :class:`CombinedMetadataClient` that queries
-    ScreenScraper first and fills any gaps from TheGamesDB.
+    ``"both"``, and ``"auto"`` (the default) when both credential sets are
+    present, return a :class:`CombinedMetadataClient` that queries
+    ScreenScraper first and fills any gaps from TheGamesDB.  ``"auto"`` with
+    only one set configured uses that one.
     """
     source = source or config.default_metadata_source
     enabled = config.metadata_cache_enabled if use_cache is None else use_cache
@@ -2093,7 +2094,7 @@ def build_client(
     if source in ("both", "combined"):
         return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
 
-    # Unknown / legacy value: fall back to whatever credentials are present.
+    # "auto" (and any unknown value): whatever credentials are present.
     if has_ss and has_tgdb:
         return CombinedMetadataClient(_make_ss(), _make_tgdb(), cache=cache)
     if has_ss:
