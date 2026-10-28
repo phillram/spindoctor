@@ -35,7 +35,7 @@ spindoctor config set <key> <value>
 | `screenscraper_user` / `screenscraper_pass` | ScreenScraper credentials |
 | `screenscraper_devid` / `screenscraper_devpassword` | **Advanced.** ScreenScraper's per-app developer credential pair, sent on every request alongside the user credentials. Default `"SpinDoctor"` / `"SpinDoctor"` — the historical baked-in values. Override only if ScreenScraper has issued you a real registered developer credential or starts rejecting the default pair with HTTP 403. No Setup-tab field; set from the Console tab with `config set screenscraper_devid <value>`. See also [Troubleshooting → 403 from ScreenScraper or TheGamesDB](troubleshooting.md#403-from-screenscraper-or-thegamesdb). |
 | `thegamesdb_key` | TheGamesDB API key |
-| `default_metadata_source` | `screenscraper` or `thegamesdb` |
+| `default_metadata_source` | Where `fetch-meta` / `fetch-media` look games up when `--source` isn't given. `auto` (default): ScreenScraper first with TheGamesDB filling the gaps when both are configured, otherwise whichever one is. Or `screenscraper`, `thegamesdb` or `both`. Configs saved by earlier versions that still hold `screenscraper`, the old default, are switched to `auto` once; set `screenscraper` again afterwards to use ScreenScraper only. |
 | `match_threshold` | Fuzzy auto-accept confidence, `0.0`–`1.0` (default `0.80`) |
 | `interactive_matching` | Prompt on ambiguous matches (default `true`) |
 | `mame_executable` | Path to a MAME binary (used by `ledblinky generate` — see below) |
