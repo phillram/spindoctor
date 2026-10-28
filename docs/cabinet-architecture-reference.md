@@ -2483,6 +2483,69 @@ spindoctor ledblinky inspect-rom 005   :: read Colors.ini, controls.ini, XML, li
 
 `inspect-rom` reports what LedBlinky would see for a specific ROM, flags any mismatches, and prints the path to `LEDBlinkyLog.txt` with instructions on what to search for.
 
+### Diagnosing buttons that flash on one board (PAC-LED64 on-board flash mode)
+
+**Confirmed on the cabinet (2026-10-25).** Search, Pause, P2 Start, P2 Coin and P2 Buttons 1-8 blinked constantly, which is board 2 ports 4-39 in the [Master control reference](#master-control-reference). Exit (board 2 ports 1-3) and everything on board 1 followed the animation normally. Restarting HyperSpin and LedBlinky changed nothing. A reboot or power-off would have cleared it, but it was fixed without one.
+
+**It wasn't LedBlinky.** Each step below ruled out one explanation:
+
+- **LedBlinky sends both boards the same thing.** With the debug log on (`Settings.ini` `[OtherSettings] LogFile=Debug.log`), LedBlinky was playing only `breathe_*` animations while the buttons blinked. Decoding those files frame by frame, the `Id="1"` and `Id="2"` values are identical in every frame, Exit's ports included.
+- **"Dark when LedBlinky is closed" proves nothing.** On quit LedBlinky sets every LED to 0, and a port in flash mode blinks between 0 and 0.
+- **The board blinks on its own.** With HyperSpin closed, every wired LED was lit solid straight through `PacDrive32.dll` (`Pac64SetLEDIntensities` plus `Pac64SetLEDStates` on all 8 groups). The same buttons kept blinking while Exit and board 1 stayed steady.
+- **It isn't firmware.** Both boards report firmware version `0x19`.
+- **USB was stable.** Neither board dropped off USB while the blinking was going on.
+
+**The fix.** `Pac64ClearFlash` returned success but did not stop the blinking. Sending `Pac64SetLEDFlashSpeeds(id, 0)`, `Pac64SetLEDFlashSpeed(id, port, 0)` for ports 0-63 and `Pac64SetLEDFadeTime(id, 0)` together stopped it at once. Which of the three did it wasn't isolated, but flash speed is the setting that controls flash mode. `LEDBlinky.exe` references `Pac64ClearFlash` and `Pac64SetLEDFadeTime` but none of the flash-speed calls, which is why restarting LedBlinky can't clear this.
+
+**Likely trigger (not proven).** At 15:44 that day, every Ultimarc device re-enumerated within one second: the Mini-PAC, the ServoStik and both PAC-LED64 boards (Device Manager `LastArrivalDate`). The PC hadn't slept or rebooted, and the Bluetooth adapter reset at the same moment. All four devices sit behind two chained Genesys Logic USB 2.0 hubs (`VID_05E3&PID_0610`). Windows was allowed to power those hubs down ("Allow the computer to turn off this device to save power"), and USB selective suspend was enabled. Turning both off, or moving the boards to a powered hub, is the suggested prevention. It isn't yet confirmed to stop a recurrence.
+
+**Calling `PacDrive32.dll` from a script.** It's a 32-bit DLL, so run the script from `C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe`. The `id` argument is the device index from `PacInitialize()` (0 to count-1), not the board ID. `PacGetProductId(id)` returns `0x1400` plus the board ID, so board 2 is `0x1402`. The calls work while LedBlinky has the boards open.
+
+**HyperSpin startup safety net.** `ResetLEDFlash.bat` is entry 2 in the `[Startup]` list of `HyperSpin Startup Script.ini` (see [HyperSpin Startup/Exit Orchestration](#hyperspin-startupexit-orchestration)). The cabinet keeps the `.bat` and its script in their own tools folder outside the HyperSpin install. Like the other entries, `Target` is the bare file name and `Working_Dir` is the folder that holds it:
+
+```ini
+Program_To_Run_Target_2=ResetLEDFlash.bat
+Program_To_Run_Working_Dir_2=<folder holding ResetLEDFlash.bat>
+Program_To_Run_MaxMinHide_2=Hide
+```
+
+The `.bat` runs the script below under 32-bit PowerShell (`-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ResetLEDFlash.ps1"`). The script zeroes only the flash speeds and leaves colors, states and fade time to LedBlinky. It writes `ResetLEDFlash.log` next to itself on every run. On the cabinet's first real start, it ran with LedBlinky already up, reset both boards, and the panel animated normally. To run the same reset by hand, close HyperSpin and run the `.bat`. If your LedBlinky install isn't `D:\Arcade\LEDBlinky`, change the DLL path first.
+
+```powershell
+$log = Join-Path $PSScriptRoot 'ResetLEDFlash.log'
+$lines = @("[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] start (LEDBlinky running: $([bool](Get-Process -Name LEDBlinky -ErrorAction SilentlyContinue)))")
+try {
+    if ([IntPtr]::Size -ne 4) { throw 'needs 32-bit PowerShell (SysWOW64)' }
+    Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class PacFlash {
+    const string D = @"D:\Arcade\LEDBlinky\PacDrive32.dll";
+    [DllImport(D)] public static extern int PacInitialize();
+    [DllImport(D)] public static extern void PacShutdown();
+    [DllImport(D)] public static extern int PacGetProductId(int id);
+    [DllImport(D)] public static extern bool Pac64SetLEDFlashSpeeds(int id, int flashSpeed);
+    [DllImport(D)] public static extern bool Pac64SetLEDFlashSpeed(int id, int port, int flashSpeed);
+}
+'@
+    $n = [PacFlash]::PacInitialize()
+    try {
+        $boards = 0
+        for ($i = 0; $i -lt $n; $i++) {
+            $pid_ = [PacFlash]::PacGetProductId($i)
+            if ($pid_ -lt 0x1401 -or $pid_ -gt 0x1404) { continue }   # PAC-LED64 board IDs 1-4
+            $boards++
+            $all = [PacFlash]::Pac64SetLEDFlashSpeeds($i, 0)
+            $failed = 0; for ($p = 0; $p -lt 64; $p++) { if (-not [PacFlash]::Pac64SetLEDFlashSpeed($i, $p, 0)) { $failed++ } }
+            $lines += "  LED board $($pid_ - 0x1400): flash speeds 0 (board-wide ok: $all, per-port failures: $failed)"
+        }
+        $lines += "  $n Ultimarc device(s), $boards LED board(s) reset"
+    } finally { [PacFlash]::PacShutdown() }
+} catch {
+    $lines += "  ERROR: $($_.Exception.Message)"
+}
+Set-Content -Path $log -Value $lines -Encoding UTF8
+```
+
 ---
 
 ## LEDBlinky Animation Files (.lwax)
@@ -2523,7 +2586,7 @@ Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" 
 
 - `Frame Duration` is milliseconds the frame holds.
 - `Intensity` = per-port brightness, 0-48 (not 0-255).
-- `State` = per-port on/off, 0/1. Present for every device type observed (`LEDWiz`, `PACDrive`, `PACLED64`) — an earlier version of this doc incorrectly said State was LEDWiz-only; that was a mix-up with `GlobalPulse`, which genuinely is LEDWiz-only (a hardware pulse-profile selector with no PACLED64/PACDrive equivalent).
+- `State` = per-port on/off, 0/1. Present for every device type observed (`LEDWiz`, `PACDrive`, `PACLED64`) — an earlier version of this doc incorrectly said State was LEDWiz-only; that was a mix-up with `GlobalPulse`, which genuinely is LEDWiz-only (a hardware pulse-profile selector with no PACLED64/PACDrive equivalent in the `.lwax` format). The PAC-LED64 does flash in hardware, but only through Ultimarc's SDK, one port at a time, never from a `.lwax` file. A stuck flash looks like an animation bug: see [Diagnosing buttons that flash on one board](#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode).
 - **Real Animation-Editor-signed files use `LedHwType="<numeric-type-code>"` instead of `Device="<Name>"`.** The numeric code matches the `type=` attribute in `LEDBlinkyInputMap.xml`'s `<ledController type="3" ...>` tag (`3` = PACLED64 on this cabinet). Third-party/community sample `.lwax` packs found online use the older `Device="PACLED64"` string form instead — the Animation Editor transparently reads and auto-upgrades either form on Save As, so a file built with `Device=`/`Id="0"` attributes imports fine and re-saves in the current `LedHwType=` form with the real board IDs.
 - **Values persist frame-to-frame unless redeclared** — confirmed both by inspecting `slowfadeupdown.lwax` (this cabinet's shipped, working `FELWAFile`/`FEScreenSaverLWAFile`) and by the Animation Editor's own help document: *"When displaying the xml for an individual frame, both the Intensity and State values are listed... When the animation is saved to a .LWAX file, the Intensity values are optimized – they are only included for a frame if the values differ from the prior frame."* This is how a smooth fade (redeclare Intensity every frame) is distinguished from a hard on/off chase (redeclare State, leave Intensity alone) in the same format.
 - Other devices seen in third-party example files (not present on this cabinet): `LEDWiz` (32 ports, variable intensity), `PACDrive` (16 ports, on/off only, no `Intensity`).
@@ -2648,3 +2711,4 @@ Arcade panel (Mini-PAC) ──────────────────�
 | **antimicro / antimicroX** | Controller → keyboard mapper (free) | Same as Xpadder — redundant with Auto Profiles, keep at most one mapper active regardless of which tool. |
 | **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |
 | **HyperSearch** | Search-the-wheel add-on for HyperSpin | Keep if wheel search is used. |
+| **ResetLEDFlash** (`ResetLEDFlash.bat` → `.ps1`) | Turns off the PAC-LED64 boards' on-board flash mode at every HyperSpin start | Only on PAC-LED64 cabinets. Safe to run alongside LedBlinky. See [Diagnosing buttons that flash on one board](#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode). |

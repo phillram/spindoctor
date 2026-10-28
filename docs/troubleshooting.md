@@ -708,6 +708,17 @@ Expected for any file made by `spindoctor ledblinky lwax fade` or `scripts/gener
 
 `Settings.ini` `[FEOptions] LightFEControls=1` overrides the front-end's currently-active navigation buttons with a fixed colour, so they never join the animation. Set `LightFEControls=0` for a fully synced panel (or leave it `=1` if you *want* those buttons to show a fixed "usable" colour — it's one or the other, not both). This is a LedBlinky setting, not a flaw in the generated file.
 
+### Buttons on one LED board flash constantly, even during calm animations
+
+A fixed group of buttons blinks whatever LedBlinky plays, even a slow `breathe_*` fade, while the rest of the panel animates normally. Restarting HyperSpin and LedBlinky doesn't help, and the buttons go dark once LedBlinky closes. On the cabinet it was Search, Pause and every Player 2 button: all on the second PAC-LED64, while Exit on the same board stayed steady.
+
+The board itself is doing it. The PAC-LED64 has its own per-port flash mode, which stays on until it's cleared or the board loses power, and a flashing port blinks whatever brightness it's given. That is why they go dark like the rest once LedBlinky turns them off. Nothing SpinDoctor writes, and no `.lwax` file, can switch flash mode on, and LedBlinky never resets it.
+
+1. Close HyperSpin, then light every LED solid straight through Ultimarc's `PacDrive32.dll`. If the same buttons still blink, the board is in flash mode.
+2. Set every port's flash speed to 0 with `Pac64SetLEDFlashSpeeds` and `Pac64SetLEDFlashSpeed`. `Pac64ClearFlash` alone did not stop it. A full power-off also clears it.
+
+The script, the diagnosis and a HyperSpin startup step that repeats the reset at every start are in [Diagnosing buttons that flash on one board](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode) in `cabinet-architecture-reference.md`.
+
 ### Where does `ledblinky generate` pull its data from?
 
 Locally — `mame -listxml` is run as a subprocess and the output is cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.
