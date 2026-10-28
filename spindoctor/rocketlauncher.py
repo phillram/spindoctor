@@ -1850,6 +1850,32 @@ def pclauncher_settings_text(executable, parameters: str = "") -> str:
     )
 
 
+def _rl_ini_value(path: Path, section: str, key: str) -> str:
+    """One value from a RocketLauncher INI, read the way RocketLauncher reads it.
+
+    RocketLauncher goes through the Windows profile API, so section and key
+    names match case-insensitively (``[Roms]`` is ``[ROMS]``) and the first
+    occurrence of a key wins.  configparser gets both wrong, and raises on
+    the duplicate keys RocketLauncher tolerates.  A missing or unreadable
+    file, section or key reads as ``""``.
+    """
+    try:
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+    except OSError:
+        return ""
+    section, key = section.lower(), key.lower()
+    current = None
+    for line in text.splitlines():
+        s = line.strip()
+        if s.startswith("[") and "]" in s:
+            current = s[1:s.index("]")].strip().lower()
+        elif current == section and "=" in s and not s.startswith((";", "#")):
+            k, v = s.split("=", 1)
+            if k.strip().lower() == key:
+                return v.strip()
+    return ""
+
+
 def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) -> str:
     """Return the Default_Emulator name configured for *source_system* in RL's settings.
 
@@ -1861,28 +1887,14 @@ def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) 
     settings_dir = rocketlauncher_dir / "Settings"
 
     # Folder layout: Settings/<system>/Emulators.ini → [ROMS] Default_Emulator
-    folder_ini = settings_dir / source_system / "Emulators.ini"
-    if folder_ini.exists():
-        try:
-            cp = configparser.RawConfigParser()
-            cp.read_string(folder_ini.read_text(encoding="utf-8", errors="replace"))
-            val = cp.get("ROMS", "Default_Emulator", fallback="").strip()
-            if val:
-                return val
-        except Exception:
-            pass
+    val = _rl_ini_value(settings_dir / source_system / "Emulators.ini", "ROMS", "Default_Emulator")
+    if val:
+        return val
 
     # Flat layout: Settings/<system>.ini → [Settings] Default_Emulator
-    flat_ini = settings_dir / f"{source_system}.ini"
-    if flat_ini.exists():
-        try:
-            cp = configparser.RawConfigParser()
-            cp.read_string(flat_ini.read_text(encoding="utf-8", errors="replace"))
-            val = cp.get("Settings", "Default_Emulator", fallback="").strip()
-            if val:
-                return val
-        except Exception:
-            pass
+    val = _rl_ini_value(settings_dir / f"{source_system}.ini", "Settings", "Default_Emulator")
+    if val:
+        return val
 
     return ""
 
@@ -1897,21 +1909,11 @@ def _read_emulator_exe(emulator_name: str, rocketlauncher_dir: Path) -> str:
     Returns an empty string if the emulator is completely unknown.
     """
 
-    global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
-    if global_ini.exists():
-        try:
-            from pathlib import PureWindowsPath
-            cp = configparser.RawConfigParser()
-            cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
-            if cp.has_section(emulator_name):
-                for key in ("Emu_Path", "Emulator_Application_Path", "emulator_path", "emu_path"):
-                    if cp.has_option(emulator_name, key):
-                        path_str = cp.get(emulator_name, key).strip()
-                        if path_str:
-                            return PureWindowsPath(path_str).name
-        except Exception:
-            pass
+    from pathlib import PureWindowsPath
 
+    path_str = _read_emulator_emu_path(emulator_name, rocketlauncher_dir)
+    if path_str:
+        return PureWindowsPath(path_str).name
     return EMULATOR_EXECUTABLES.get(emulator_name, "")
 
 
@@ -1925,19 +1927,10 @@ def _read_emulator_emu_path(emulator_name: str, rocketlauncher_dir: Path) -> str
     this; returns an empty string if the emulator has no path entry.
     """
     global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
-    if not global_ini.exists():
-        return ""
-    try:
-        cp = configparser.RawConfigParser()
-        cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
-        if cp.has_section(emulator_name):
-            for key in ("Emu_Path", "Emulator_Application_Path", "emulator_path", "emu_path"):
-                if cp.has_option(emulator_name, key):
-                    path_str = cp.get(emulator_name, key).strip()
-                    if path_str:
-                        return path_str
-    except Exception:
-        pass
+    for key in ("Emu_Path", "Emulator_Application_Path", "Emulator_Path"):
+        path_str = _rl_ini_value(global_ini, emulator_name, key)
+        if path_str:
+            return path_str
     return ""
 
 
@@ -2325,16 +2318,10 @@ def read_rl_rom_extensions(
         emulator = guess_emulator(system_name)
 
     global_ini = rocketlauncher_dir / "Settings" / "Global Emulators.ini"
-    if global_ini.exists() and emulator:
-        try:
-            cp = configparser.RawConfigParser()
-            cp.read_string(global_ini.read_text(encoding="utf-8", errors="replace"))
-            if cp.has_section(emulator):
-                ext_str = cp.get(emulator, "Rom_Extension", fallback="").strip()
-                if ext_str:
-                    return {e.lower() for e in ext_str.split("|") if e.strip()}
-        except Exception:
-            pass
+    if emulator:
+        ext_str = _rl_ini_value(global_ini, emulator, "Rom_Extension")
+        if ext_str:
+            return {e.lower() for e in ext_str.split("|") if e.strip()}
 
     if emulator and emulator in EMULATOR_EXTENSIONS:
         return {e.lower() for e in EMULATOR_EXTENSIONS[emulator].split("|") if e.strip()}

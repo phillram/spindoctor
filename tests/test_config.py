@@ -207,6 +207,51 @@ def test_config_set_accepts_in_range_value(isolated_config):
     assert config_mod.load_config().match_threshold == pytest.approx(0.75)
 
 
+# ─── config set on list and mapping settings ─────────────────────────────────
+
+
+@pytest.mark.parametrize("value,expected", [
+    ("USA,Japan", ["USA", "Japan"]),
+    (" USA , World ,Japan ", ["USA", "World", "Japan"]),
+    ('["Europe", "USA"]', ["Europe", "USA"]),
+    ("", []),
+])
+def test_config_set_saves_list_settings_as_lists(isolated_config, value, expected):
+    """Regression: list settings were saved as the raw string, so anything
+    iterating region_preferences got single characters."""
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    result = CliRunner().invoke(cli, ["config", "set", "region_preferences", value])
+    assert result.exit_code == 0, result.output
+    assert config_mod.load_config().region_preferences == expected
+
+
+@pytest.mark.parametrize("value", ['["USA", 3]', '[1, 2]', "[USA"])
+def test_config_set_rejects_malformed_list(isolated_config, value):
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    before = config_mod.load_config().region_preferences
+    result = CliRunner().invoke(cli, ["config", "set", "region_preferences", value])
+    assert result.exit_code != 0
+    assert "Invalid value" in result.output
+    assert config_mod.load_config().region_preferences == before
+
+
+def test_config_set_refuses_mapping_settings(isolated_config):
+    from click.testing import CliRunner
+
+    from spindoctor.cli import cli
+
+    config_mod.save_config(Config(system_overrides={"NES": {"emulator": "fceux"}}))
+    result = CliRunner().invoke(cli, ["config", "set", "system_overrides", "oops"])
+    assert result.exit_code != 0
+    assert config_mod.load_config().system_overrides == {"NES": {"emulator": "fceux"}}
+
+
 # ─── system override cache ───────────────────────────────────────────────────
 
 

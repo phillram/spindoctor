@@ -606,7 +606,7 @@ Diagnostic steps, in the order that actually resolves this fastest:
 
 ### `spindoctor lightgun detect` reports "DemulShooter not found"
 
-DemulShooter must be on disk somewhere spindoctor scans. The auto-detected roots are `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, `<RocketLauncher>/Plugins`, `<emulators_dir>`, plus `Program Files` and the Start Menu. If yours lives elsewhere:
+DemulShooter must be on disk somewhere spindoctor scans, at most four folders deep. The auto-detected roots are `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, `<RocketLauncher>/Plugins`, `<emulators_dir>`, plus `Program Files` and the Start Menu. If yours lives elsewhere, or `detect` lists several DemulShooter executables and picked the wrong one:
 
 ```bat
 spindoctor config set demulshooter_path "C:\arcade\DemulShooter\DemulShooter.exe"
