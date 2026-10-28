@@ -109,6 +109,26 @@ def test_missing_vd_path_is_info_when_no_system_uses_it(tmp_path, global_vd, sys
     assert result.status != health.Status.WARN
 
 
+def test_wheel_without_settings_folder_follows_the_global_switch(tmp_path):
+    """A Main Menu wheel with no Settings/<System>/ folder has no value of its
+    own, so a global "true" turns the virtual drive on for it."""
+    stale = _dtlite(tmp_path, "Program Files (x86)")
+    cfg, _ = _cabinet(tmp_path, vd_path=str(stale), global_vd="true",
+                      systems={"Sony Playstation": "false"})
+    hs = tmp_path / "HyperSpin"
+    menu = hs / "Databases" / "Main Menu" / "Main Menu.xml"
+    menu.parent.mkdir(parents=True)
+    menu.write_text(
+        '<menu><game name="Sony Playstation"/><game name="Sega Saturn"/></menu>',
+        encoding="utf-8")
+    cfg.hyperspin_dir = str(hs)
+
+    vd = _sub(health.check_rocketlauncher_settings(cfg), "Virtual drive")
+    assert vd.status == health.Status.WARN
+    assert "Sega Saturn" in vd.detail
+    assert "Sony Playstation" not in vd.detail
+
+
 def test_empty_vd_path_is_ok_when_unused(tmp_path):
     cfg, _ = _cabinet(tmp_path, vd_path="", systems={"NES": "use_global"})
     vd = _sub(health.check_rocketlauncher_settings(cfg), "Virtual drive")
