@@ -263,31 +263,55 @@ spindoctor migrate --target J:\ --include roms
 spindoctor migrate --target J:\ --include roms --apply
 
 :: 3. Regenerate RocketLauncher's per-system INIs with the new Rom_Path.
-::    Each Settings\<SystemName>.ini is rewritten to point at J:\Games\<system>.
+::    The dry-run lists each wheel's current and new Rom_Path.
+spindoctor generate-config
 spindoctor generate-config --apply
+
+:: 4. Check the result (see "After moving: check" below).
+spindoctor doctor
 ```
 
-GUI path: **Migration tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, check Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
+#### After moving: check
+
+`migrate` only moves files and `generate-config` only changes `Rom_Path=`, so a few settings can still point at the old drive. Go through this list once after moving your ROMs, whether you used `migrate` or moved them by hand:
+
+1. **Run `spindoctor doctor`.** Its **ROM paths** check flags wheels whose games RocketLauncher can't find (item 2), **PC games** and **Wheel wiring** flag items 3 and 4, and **Emulator ROM folders** flags ROM and save folders kept in an emulator's own config (Demul, AAE, PokeMini, Daphne). See [Command reference → doctor](commands.md#doctor).
+2. **Wheels whose `Rom_Path` has a subfolder or several folders.** For example `D:\Arcade\Games\Sega Dreamcast\roms`, or a `|`-separated list such as `…\Sony Playstation|…\Sony Playstation\MultiDisc`. `generate-config` keeps the subfolders and every folder in the list. SpinDoctor 2.14.0 and earlier replaced such a value with plain `<roms_dir>\<System>`: the Dreamcast wheel ended up on `J:\Games\Sega Dreamcast` instead of `J:\Games\Sega Dreamcast\roms`, and games in the dropped folders stopped launching. If you ran `generate-config --apply` with one of those versions, check these wheels: `doctor`'s **ROM paths** check lists the games RocketLauncher can't find, and the `.bak` that `generate-config` wrote keeps the old value. Put any missing part back in `Settings\<System>\Emulators.ini` (or `Settings\<System>.ini`), on the new drive.
+3. **PCLauncher wheels.** Each game's `Modules\PCLauncher\<System>\<game>.ini` keeps `Application=` and `WorkingFolder=` on the old drive. Run `pc-rename` for **every** wheel whose emulator is PCLauncher, not only `PC Games`. `doctor`'s **PC games** check lists them.
+
+   ```bat
+   spindoctor pc-rename "PC Games" --verbose                        :: dry-run: lists stale INIs
+   spindoctor pc-rename "PC Games" --overwrite-pclauncher --apply   :: rewrite them
+   ```
+
+   Plain `--apply` only writes INIs that are missing; `--overwrite-pclauncher` is what replaces the stale ones. It rewrites every INI in that wheel and writes no `.bak`, so copy `Modules\PCLauncher\<System>\` first if you've hand-edited any INI or picked an exe with [`pc-fix-exe`](commands.md#pc-fix-exe). A wheel that keeps all its games in one `Modules\PCLauncher\<System>.ini` (Taito Type X and similar) uses [`repath-system`](commands.md#repath-system) instead.
+4. **Emulators installed inside the games folder.** An `Emu_Path=` that points into the old games folder, such as `..\Games\PacMAME\pacmame.exe` (relative to the RocketLauncher folder) or `D:\Arcade\Games\PinballArcade\PinballArcade.exe`, isn't touched by `generate-config`. When it's a wheel's default emulator, `doctor`'s **Wheel wiring** check reports it as `exe not found on disk`. Edit it by hand in `Settings\Global Emulators.ini`, and in any per-system `Emulators.ini` that sets its own `Emu_Path=`. See [RocketLauncher launches the wrong drive after moving an emulator](troubleshooting.md#rocketlauncher-launches-the-wrong-drive-after-moving-an-emulator-to-a-new-drive).
+
 ### Already moved your ROMs manually (without using migrate)
 
-If you moved your games folder yourself — dragged it in Explorer, used robocopy, etc. — and didn't use `spindoctor migrate`, you just need two commands:
+If you moved your games folder yourself — dragged it in Explorer, used robocopy, etc. — and didn't use `spindoctor migrate`, run these, then go through [After moving: check](#after-moving-check):
 
 ```bat
 :: 1. Tell SpinDoctor where the games now live.
 spindoctor config set roms_dir J:\Games
 
-:: 2. Update Rom_Path in RocketLauncher's per-system INIs.
+:: 2. Update Rom_Path in RocketLauncher's per-system INIs (dry-run first).
+spindoctor generate-config
 spindoctor generate-config --apply
+
+:: 3. Check the result.
+spindoctor doctor
 ```
 
-GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → check Apply → click **Update RocketLauncher INIs**.
 
 `generate-config --apply` updates `Rom_Path=` in every `<RocketLauncher>\Settings\<SystemName>\Emulators.ini`. It performs a surgical in-place update: only `Rom_Path=` changes. `Default_Emulator`, `Emu_Path`, `Module`, pause/save-state keys, and any other emulator settings are preserved exactly as you configured them in HyperHQ / RLUI.
 
-> **Emulators don't need to move.** `generate-config` only updates where your ROMs live. Emulator paths (`Emu_Path=`) in your `Global Emulators.ini` are separate and are never touched. If your emulators are still on D:\ and only your ROMs moved to J:\, no emulator configuration changes are needed.
+> **Emulators don't need to move.** `generate-config` only updates where your ROMs live. Emulator paths (`Emu_Path=`) in your `Global Emulators.ini` are separate and are never touched. If your emulators are still on D:\ and only your ROMs moved to J:\, no emulator configuration changes are needed, with one exception: an emulator installed *inside* the games folder moved with your ROMs, and its `Emu_Path=` still points at the old place. See item 4 of [After moving: check](#after-moving-check).
 
 > **Undo:** `generate-config` creates a timestamped `.bak` sidecar next to each file it touches (or in `backup_dir/RocketLauncher/` if you have `backup_dir` configured). To roll back: either use the **Restore RL INI backup** button in the GUI (Step 4: Metadata & Media → next to **Update RocketLauncher INIs**), or re-run `generate-config --apply` after correcting `roms_dir`.
 
@@ -296,7 +320,7 @@ GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click 
 Be aware before assuming the new drive / PC is fully wired up:
 
 - **RocketLauncher per-system INIs (`Settings\<SystemName>.ini`).** Each file hardcodes `Rom_Path`. After migrating the `roms` component, run `spindoctor generate-config --apply` (or GUI: Migration tab → Step 5 → **Update RocketLauncher INIs**) to rewrite them with the new path. Without this step RocketLauncher can't find any games.
-- **Emulator-internal paths.** RetroArch's `retroarch.cfg`, PCSX2's INI, Dolphin's user folder, etc. often hardcode absolute paths to BIOS, save folders, or shaders. SpinDoctor moves the emulator's files but does not rewrite those internal configs. Re-test each emulator and adjust.
+- **Emulator-internal paths.** RetroArch's `retroarch.cfg`, PCSX2's INI, Dolphin's user folder, etc. often hardcode absolute paths to BIOS, save folders, or shaders. SpinDoctor moves the emulator's files but does not rewrite those internal configs. Re-test each emulator and adjust. Some of them also hold your ROM or save folders, so they go stale when the *ROMs* move: Demul's `Demul.ini` `roms0`…`romsN`, AAE's `aae.ini` `mame_rom_path`, PokeMini's `pokemini.cfg` `eepromfile`, and the per-game `homedir` in RocketLauncher's `Modules\Daphne\Daphne.ini`. `spindoctor doctor` now lists any of these whose folder no longer exists (the **Emulator ROM folders** check), with the replacement value when the same folder exists under `roms_dir`.
 - **BIOS files outside `emulators_dir`.** Only included if they live under `<emulators_dir>` and you `--include emulators`.
 - **Hardcoded paths inside HyperSpin XML.** SpinDoctor preserves `<game>` content verbatim. If a previous tool wrote absolute Windows paths into the XML, those are not rewritten.
 - **API credentials.** Live in `~/.spindoctor/config.json` — covered by `backup --include settings` (or `all`). Make sure your backup includes settings or you'll re-enter them on the new PC.
