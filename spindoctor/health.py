@@ -1629,6 +1629,7 @@ class _EmuFolderSetting:
     file_value: bool = False      # the value names a file; check its folder
     rl_module: str = ""           # file lives in RocketLauncher\Modules\<rl_module>\ instead
     module_writes: str = ""       # a module that writes this key sets the folder at launch
+    off_when: tuple[str, str] = ("", "")  # (key, value) under which the setting is unused
 
 
 # Emulators that keep their own ROM / save folder, which neither
@@ -1645,8 +1646,11 @@ _EMU_FOLDER_SETTINGS = (
     _EmuFolderSetting("Demul", ("demul.exe",), "Demul.ini", r"roms\d+",
                       section="files", count_key="romspathscount",
                       module_writes="romspathscount"),
+    # eepromfile is the one shared save file only while eepromshare is on (the
+    # default).  With it off PokeMini saves next to each ROM and just writes the
+    # last game's .eep back here, so a stale value breaks nothing.
     _EmuFolderSetting("PokeMini", ("pokemini.exe",), "pokemini.cfg", r"eepromfile",
-                      file_value=True),
+                      file_value=True, off_when=("eepromshare", "no")),
     _EmuFolderSetting("Daphne", (), "Daphne.ini", r"homedir", rl_module="Daphne"),
 )
 
@@ -1661,11 +1665,9 @@ def _read_ini_entries(path: Path) -> list[tuple[str, str, str]]:
     ``[main]``) or have no section at all (pokemini.cfg), which configparser
     rejects.  Names keep their case; callers compare them lower-cased.
     """
-    raw = path.read_bytes()
-    try:
-        text = raw.decode("utf-8-sig")
-    except UnicodeDecodeError:  # ANSI code page, as most emulators write
-        text = raw.decode("cp1252", errors="replace")
+    import re
+
+    text = _read_windows_text(path)
     entries: list[tuple[str, str, str]] = []
     section = ""
     for line in text.splitlines():
@@ -1676,6 +1678,8 @@ def _read_ini_entries(path: Path) -> list[tuple[str, str, str]]:
             section = s[1:-1].strip()
         elif "=" in s:
             key, value = s.split("=", 1)
+            # aae.ini puts comments after values: "doublebuffer = 1 ;Enable ..."
+            value = re.sub(r"\s+;.*$", "", value)
             entries.append((section, key.strip(), value.strip()))
     return entries
 
@@ -1857,6 +1861,15 @@ def check_emulator_rom_paths(config: Config) -> Check:
         except OSError as e:
             node.status = Status.INFO
             node.detail = f"unreadable: {e}"
+            parent.children.append(node)
+            continue
+
+        off_key, off_value = setting.off_when
+        if off_key and any(
+            k.lower() == off_key and v.strip('"').strip().lower() in (off_value, "false", "0")
+            for k, v in entries
+        ):
+            node.detail = f"{off_key}={off_value}, so {setting.key} isn't used"
             parent.children.append(node)
             continue
 

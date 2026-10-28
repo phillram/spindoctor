@@ -846,7 +846,7 @@ spindoctor backup restore --backup E:\Backups\... --use-current-paths --apply
 |---|---|---|
 | Demul with the v0.5.6 / v0.5.7 module (it only passes `-rom=`, so Demul searches its own list) | `Demul.ini` in the emulator folder | `roms0` … `romsN` under `[files]`, up to `romsPathsCount` |
 | AAE | `aae.ini` in the emulator folder | `mame_rom_path` |
-| PokeMini | `pokemini.cfg` in the emulator folder | `eepromfile` (per-game `.eep` saves when `eepromshare=no`) |
+| PokeMini | `pokemini.cfg` in the emulator folder | `eepromfile` (the one shared save file, used while `eepromshare=yes`, the default; with `eepromshare=no` saves sit next to each ROM and this is not checked) |
 | Daphne | `RocketLauncher\Modules\Daphne\Daphne.ini` | `homedir` in each game's section |
 
 **Fix:** Run `spindoctor doctor`. The **Emulator ROM folders** check lists every value whose folder no longer exists, with the file and key, and gives the replacement value when the same folder exists under your `roms_dir`. Close the emulator, open the file in Notepad and set each listed key to the new folder. Keep Demul's trailing backslash (`roms1 = E:\Games\Sega Naomi\`). A Daphne `homedir` of `.` (Daphne's own folder) is fine.
