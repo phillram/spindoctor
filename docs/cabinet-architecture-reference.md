@@ -467,12 +467,60 @@ Rom_Extension=ini
 ```
 
 > **Critical:** Both files MUST have `[PCLauncher]` with `Rom_Extension=ini`. RL v1.2
-> reads `Rom_Extension` from the emulator section (`[PCLauncher]`) first. When no
+> reads `Rom_Extension` from the emulator section (`[PCLauncher]`), never from `[ROMS]`. When no
 > `[PCLauncher]` section exists in the system file, RL falls back to `Global Emulators.ini`'s
-> `[PCLauncher]` which may omit `Rom_Extension=ini`. Without it RL uses its built-in
-> default extension list (`zip|rar|7z|lha|…`) and cannot find the placeholder `.ini` files,
-> producing: *"Cannot find Rom \<game\> In any Rom_Paths provided … with any provided
-> Rom_Extension: zip|rar|7z|lha|lzh|gzip|tar|"*.
+> `[PCLauncher]` which may omit `Rom_Extension=ini`. With 7-Zip on (`7z_Enabled=true`), RL
+> then tries only its `7z_Extensions` (`zip|rar|7z|lha|lzh|gzip|tar` by default) and cannot
+> find the placeholder `.ini` files, producing: *"Cannot find Rom \<game\> In any Rom_Paths
+> provided … with any provided Rom_Extension: zip|rar|7z|lha|lzh|gzip|tar|"*.
+
+### Multiple ROM folders and MAME alternate-name placeholders
+
+`Rom_Path` can list several folders separated with `|`. RocketLauncher searches them
+in order for `<folder>\<name>.<ext>` or `<folder>\<name>\<name>.<ext>`, trying each
+`Rom_Extension`. It searches no other subfolders, so every folder that holds games
+must be listed itself (or its files moved up into a folder that is). For example,
+a PlayStation wheel whose multi-disc games live in their own folder:
+
+```ini
+[ROMS]
+Default_Emulator=RetroArch
+Rom_Path=J:\Games\Sony Playstation|J:\Games\Sony Playstation\MultiDisc
+```
+
+The extensions come from the emulator, not the wheel. RocketLauncher 1.x reads
+`Rom_Extension` from the `[<emulator>]` section of the first file that has one: the
+system's `Emulators.ini`, else `Global Emulators.ini`. It never reads one from `[ROMS]`.
+With 7-Zip on (`7z_Enabled=true` in `RocketLauncher.ini` `[7z]`, per system or global),
+it also tries each `7z_Extensions` entry (`zip|rar|7z|lha|lzh|gzip|tar` by default).
+An emulator with no `Rom_Extension` stops the launch (*"Could not find a Rom_Extension"*),
+except PCLauncher: with no extension to try, RocketLauncher doesn't look for a file at all.
+With 7-Zip on it does get the 7-Zip list, which RocketLauncher builds as `zip|…|tar|`: the
+empty last entry also accepts a file or folder named exactly like the game. A blank
+`Default_Emulator` stops every game on the wheel, even one with its own `Emulator=` in
+`Games.ini`.
+
+A wheel that lists MAME games under **alternate names** (a 4-player wheel's
+`xmenxbox`, a 2-player wheel's `3stooges2play`) depends on two pieces:
+
+1. An empty placeholder file for each alternate name in the MAME ROM folder, e.g.
+   `J:\Games\MAME\xmenxbox.txt`, with `txt` in the emulator's `Rom_Extension`
+   (e.g. `Rom_Extension=zip|7z|txt` under `[MAME]` in `Global Emulators.ini`).
+   This is the "ROM" RocketLauncher finds.
+2. A section for each alternate name in the MAME module's settings,
+   `RocketLauncher\Modules\MAME\MAME.ini`, telling the module which real ROM to run:
+
+   ```ini
+   [xmenxbox]
+   MameRomName = xmen
+   ```
+
+`*2play.txt` placeholders work the same way (`[3stooges2play]` /
+`MameRomName = 3stooges`). The placeholders are 0-byte files, so a cleanup that
+deletes empty files breaks every game on those wheels without any error at the
+time. `spindoctor doctor`'s **ROM paths** check reports `Rom_Path` folders that
+don't exist and games RocketLauncher can't find, and names the placeholder to
+recreate when a missing game has a `MameRomName` entry.
 
 ---
 
@@ -542,9 +590,10 @@ application executable (`.exe`, `.lnk`, etc.) is referenced inside the INI. This
 to both synthetic wheels (Favorites, Recently Played, Most Played, Recompiled) and real PC/Windows/Steam
 systems.
 
-When `Rom_Extension` is missing or set to a non-ini value, RL falls back to its built-in
-default extension list (`zip|rar|7z|lha|lzh|gzip|tar|`) and cannot find the placeholder
-`.ini` files.
+When `Rom_Extension` is missing or set to a non-ini value, RL cannot find the placeholder
+`.ini` files. With 7-Zip on it tries only its `7z_Extensions` list
+(`zip|rar|7z|lha|lzh|gzip|tar|`, the one its error quotes); with 7-Zip off and no
+extension it doesn't look for a file at all.
 
 SpinDoctor's `generate-config` (and `mainmenu add` for synthetic wheels) writes
 `[PCLauncher]` with `Rom_Extension=ini` directly in the **per-system settings files** so
