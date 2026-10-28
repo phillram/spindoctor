@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
+Every `spindoctor` command, grouped by purpose. Commands that change cabinet files (HyperSpin, RocketLauncher, ROMs, media) default to **dry-run** — re-run with `--apply` to commit. Commands that only change SpinDoctor's own settings and lists save immediately: `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set`. Nothing they save reaches the cabinet until a command such as `fav rebuild --apply` writes it. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -914,7 +914,7 @@ Two synthetic HyperSpin systems — **Favorites** and **Recently Played** — an
 
 ### `fav`
 
-Cross-system Favorites. State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**.
+Cross-system Favorites. State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**. `fav add`, `fav remove` and `fav sync` change only that file and save immediately; the Favorites wheel changes when you run `fav rebuild --apply`.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
@@ -1271,7 +1271,7 @@ spindoctor scrub-restore E:\Backups\scrub-20260526_143012 --apply
 
 ## `emulator-title`
 
-Manage the per-emulator window-title correction table used by synthetic wheel launchers.
+Manage the per-emulator window-title correction table used by synthetic wheel launchers. `emulator-title set` saves to SpinDoctor's `config.json` immediately; the launcher INIs change on the next wheel rebuild with `--apply`.
 
 When a game is launched from Favorites, Recently Played, or Most Played, PCLauncher uses `FadeTitle=` in the system-level INI to locate the game window by title instead of PID (which fails for DirectX emulators in exclusive fullscreen). SpinDoctor uses the emulator's registered name as the default `FadeTitle` value — this works automatically for any emulator whose window title contains its name (the vast majority).
 
@@ -2141,7 +2141,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 > **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
 
-Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
+Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`. `ignore add` / `ignore remove` change only SpinDoctor's `config.json` and save immediately, with no `--apply`.
 
 ```bat
 spindoctor ignore add "pacman"                          :: global

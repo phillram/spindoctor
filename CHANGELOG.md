@@ -12,9 +12,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The GUI's migration list works on Python 3.8 again.** Choosing systems on the Migration tab called `str.removesuffix`, which needs Python 3.9, so on 3.8 (the supported floor, and the Windows 7 builds) it failed with `AttributeError`. A test now scans the package for Python 3.9+ string methods. Covered by `tests/test_compat.py`.
 - **`config set` saves list settings as lists.** It converted only true/false and number values, so `config set region_preferences USA,Japan` saved the string `"USA,Japan"`, and anything reading the setting got single characters. List settings now take comma-separated values (`"USA, Japan"`) or a JSON array, an empty value clears the list, and anything else is rejected without saving. Mapping settings such as `system_overrides` were overwritten with a plain string the same way; `config set` now refuses them and names the command to use instead. See `docs/configuration.md`. Covered by `tests/test_config.py`.
 - **RocketLauncher settings are read case-insensitively, as RocketLauncher reads them.** `Default_Emulator` was looked up only under `[ROMS]` (or `[Settings]` in the flat layout), so wheels whose `Emulators.ini` says `[Roms]` were reported by `doctor` as having no `Default_Emulator`, though they launch fine. The same applied to emulator sections in `Global Emulators.ini` (`Default_Emulator=mame` with a `[MAME]` section). These lookups also used configparser, which raises on a repeated key or section, and the error was swallowed, so one duplicate anywhere in `Global Emulators.ini` hid every emulator's `Emu_Path` and `Rom_Extension`. They now use one reader that matches names in any case and takes the first of repeated keys. Covered by `tests/test_rl_ini_case.py`.
 - **`doctor`'s PC games check suggests a command that actually fixes stale `Application=` paths.** It suggested `pc-rename "<System>" --apply`, which skips every per-game INI that already exists, so following it left the stale paths in place. The hint is now `pc-rename "<System>" --overwrite-pclauncher --apply`, and notes that it rewrites every per-game INI. Covered by `tests/test_health.py`.
+
+### Docs
+
+- **The "dry-run by default" rule now names its exceptions.** The cheatsheet, `commands.md` and the README said every command that modifies files previews first. `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set` save immediately. They change only SpinDoctor's own settings and lists, and nothing reaches the cabinet until a command such as `fav rebuild --apply` writes it. The docs now say so, at the rule and in each command's section.
 
 ## [2.15.0] - 2026-10-28
 
