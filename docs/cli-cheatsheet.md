@@ -49,7 +49,7 @@ Reference: [Command reference → tools-audit](commands.md#tools-audit).
 
 ### `doctor` — comprehensive install health check
 
-Validates paths, binaries, DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, optional deps; then runs per-domain checks: per-wheel HyperSpin wiring (Settings.ini, default.zip, emulator mapping, DB presence), lightgun DemulShooter wiring, PC-game PCLauncher INI / Application= path, LEDBlinky Color-RGB.ini + overlay-crash scan + reverse orphans, LED coverage (cache-only), intro-video pool / target / stale autorun, and orphan media. Each check renders ✓ / ⚠ / ✗.
+Validates paths, binaries, DB integrity, match-cache hygiene, RocketLauncher / LEDBlinky files, RocketLauncher settings (virtual-drive path, 7-Zip path, logging level), optional deps; then runs per-domain checks: per-wheel HyperSpin wiring (Settings.ini, default.zip, emulator mapping, DB presence), ROM paths (Rom_Path folders and games RocketLauncher can't find), ROM and save folders kept in emulator configs (Demul, AAE, PokeMini, Daphne), lightgun DemulShooter wiring, PC-game PCLauncher INI / Application= path, LEDBlinky Color-RGB.ini + overlay-crash scan + reverse orphans, LED coverage (cache-only), intro-video pool / target / stale autorun, and orphan media. Each check renders ✓ / ⚠ / ✗.
 
 ```bat
 spindoctor doctor              :: read-only diagnosis

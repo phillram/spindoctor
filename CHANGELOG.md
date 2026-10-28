@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-10-28
+
 ### Added
 
 - **`doctor` now checks that RocketLauncher can find every wheel's games in its `Rom_Path`.** Wheels could open fine and still launch nothing, because RocketLauncher couldn't find the ROM files, and `doctor` passed them all: no check looked at `Rom_Path`. Real examples were a Dreamcast `Rom_Path` pointing at the parent of the `roms\` folder that held all its games, a PlayStation wheel's multi-disc games in a `MultiDisc\` folder missing from the `|`-separated `Rom_Path`, a 4-player MAME wheel whose empty `xmenxbox.txt`-style placeholders had been deleted, and two PC wheels whose `Rom_Path` was on a drive letter that no longer exists. The new **ROM paths** check reads each Main Menu wheel's `Rom_Path` and `Rom_Extension` the way RocketLauncher does (folder or flat layout, `[ROMS]` in any case, relative paths from the RocketLauncher folder, `Rom_Extension` from the emulator's section in the system file or else `Global Emulators.ini`, never from `[ROMS]`, plus `7z_Extensions` when 7-Zip is on, `Games.ini` overrides, `Skipchecks` and `Rom_Match_Extension`). A `Rom_Path` folder that doesn't exist is a FAIL when no folder in `Rom_Path` exists and a warning when another one does, when RocketLauncher looks for none of the wheel's games, or under `Skipchecks=Rom Only` / `Rom and Emu`, where RocketLauncher doesn't look for ROMs. The check also looks every database game up, under its name exactly as written in the XML, as `<path>\<name>.<ext>` or `<path>\<name>\<name>.<ext>`: some missing is a WARN, all missing a FAIL. An emulator with no `Rom_Extension`, on which RocketLauncher stops before looking, gets its own row; a PCLauncher game with no extension to try isn't looked for by RocketLauncher, so it isn't checked either. The fix line names the subfolder holding most of the missing games (move the files up, or add it to `Rom_Path`), or the `<name>.txt` placeholder to recreate when a missing game has a `MameRomName` entry in `Modules\MAME\MAME.ini`. Games that a `Games.ini` `System=` sends to another system are judged by that system's `Rom_Path` and `Skipchecks`, as RocketLauncher does, on their own row. Wheels switched off on the Main Menu are checked but reported as INFO, so they can't fail `doctor`. Each folder is listed once: a 128-wheel cabinet is checked in a few seconds. Diagnosis only. Covered by `tests/test_doctor_rom_paths.py`.
@@ -2310,7 +2312,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.14.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.15.0...HEAD
+[2.15.0]: https://github.com/phillram/spindoctor/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/phillram/spindoctor/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/phillram/spindoctor/compare/v2.12.0...v2.13.0
 [2.12.0]: https://github.com/phillram/spindoctor/compare/v2.11.0...v2.12.0
