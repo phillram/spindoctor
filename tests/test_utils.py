@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shutil
 
-from spindoctor._utils import format_bytes, free_bytes
+from spindoctor._utils import format_bytes, free_bytes, unique_path
 
 
 def test_format_bytes_zero():
@@ -77,3 +77,25 @@ def test_free_bytes_returns_zero_on_oserror(monkeypatch, tmp_path):
 
     monkeypatch.setattr(shutil, "disk_usage", boom)
     assert free_bytes(tmp_path) == 0
+
+
+def test_unique_path_returns_free_path_unchanged(tmp_path):
+    target = tmp_path / "Emulators.20260614_174635.bak"
+    assert unique_path(target) == target
+
+
+def test_unique_path_never_returns_an_existing_file(tmp_path):
+    """Backups stamped in the same second must not overwrite each other."""
+    first = tmp_path / "Emulators.20260614_174635.bak"
+    first.write_text("one", encoding="utf-8")
+    second = unique_path(first)
+    assert second.name == "Emulators.20260614_174635_2.bak"
+    second.write_text("two", encoding="utf-8")
+    assert unique_path(first).name == "Emulators.20260614_174635_3.bak"
+    assert first.read_text(encoding="utf-8") == "one"
+
+
+def test_unique_path_appends_counter_to_folder_names(tmp_path):
+    folder = tmp_path / "scrub-20260614_174635"
+    folder.mkdir()
+    assert unique_path(folder).name == "scrub-20260614_174635_2"
