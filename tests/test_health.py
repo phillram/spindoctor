@@ -631,7 +631,9 @@ def test_pc_fail_when_application_path_stale(tmp_path):
     assert result.status == health.Status.FAIL
     node = _wheel_node(result, "PC Games")
     assert _sub(node, "Application paths").status == health.Status.FAIL
+    # Plain `pc-rename --apply` skips existing INIs, so it can't fix stale ones.
     assert "pc-rename" in _sub(node, "Application paths").fix
+    assert "--overwrite-pclauncher --apply" in _sub(node, "Application paths").fix
 
 
 # ─── check_led_coverage ──────────────────────────────────────────────────────
