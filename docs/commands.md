@@ -2055,7 +2055,7 @@ spindoctor ledblinky admin-leds show --emulator MAME
 
 ## Light guns
 
-`spindoctor lightgun` wires Sinden / DemulShooter into RocketLauncher's per-system `Settings/<System>.ini` via `Pre_Launch_App` / `Post_Launch_App` keys. Module .ahk files are never touched, so a stock Tur build remains intact.
+`spindoctor lightgun` wires Sinden / DemulShooter into the system's existing RocketLauncher settings file (`Settings/<System>/Emulators.ini` in the folder layout, else `Settings/<System>.ini`) via `Pre_Launch_App` / `Post_Launch_App` keys, starting DemulShooter with `-target=<target>`. Module .ahk files are never touched, so a stock Tur build remains intact.
 
 ```bat
 spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems

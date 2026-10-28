@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lightgun configure` now starts DemulShooter with `-target=<target>`.** It wrote `-target <target>`, but DemulShooter only accepts its options with `=`, so it started with no target. `lightgun audit` reads both forms, so hooks written by older versions still show their target; re-run `configure --apply` to fix them. No `-rom=` is written: the hook is per system, and RocketLauncher has no documented way to substitute each game's ROM name into it. Covered by `tests/test_lightgun.py`.
+- **`lightgun configure --apply` works on folder-layout systems and never rewrites a system's settings.** It always targeted the flat `Settings\<System>.ini`. On a folder-layout system that file doesn't exist, so `--apply` ran `generate-config`'s writer, which rewrote the system's `Rom_Path`, and then failed with `FileNotFoundError`. `configure`, `audit` and `detect` now use the system's existing settings file, folder layout first (`Settings\<System>\Emulators.ini`, `[ROMS]`), and only the two hook keys change. A system with no settings file is refused with a message instead of being generated. Covered by `tests/test_lightgun.py`.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
