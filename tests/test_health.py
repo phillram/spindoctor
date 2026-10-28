@@ -670,7 +670,7 @@ def test_led_coverage_warns_on_generatable_games(tmp_path, monkeypatch):
     (led / ledblinky.COLORS_INI_NAME).write_text("[pacman]\nP1_JOYSTICK=Red\n", encoding="utf-8")
     (tmp_path / "mame.exe").write_bytes(b"MZ")
     cfg.mame_executable = str(tmp_path / "mame.exe")
-    (cache_dir / "MAME.xml").write_text(
+    ledblinky.listxml_cache_path(cfg.mame_executable).write_text(
         "<mame>"
         '<machine name="pacman"><description>Pac</description>'
         '<input players="1"><control type="joy4way" buttons="1"/></input></machine>'
