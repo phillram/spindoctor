@@ -89,7 +89,7 @@ The `HyperSpin Startup Script.ini`
 (`D:\Arcade\Utilities\Startup and Exit\`) was simplified to suit the new design:
 
 - `[Controls] Joysticks_Enabled=False` — native joystick nav stays **off** (DS4Windows drives menus now).
-- `[Startup]` — removed `DS4Windows.exe`, `DS4Windows_startup_click.exe`, `antimicro.exe`, and `Xpadder.exe`. Only `HyperSearch.exe` remains. (Entries were renumbered to stay contiguous — the script stops reading at the first missing `Program_To_Run_Target_N`.)
+- `[Startup]` — removed `DS4Windows.exe`, `DS4Windows_startup_click.exe`, `antimicro.exe`, and `Xpadder.exe`. Only `HyperSearch.exe` remained. `ResetLEDFlash.bat` was added later as entry 2, to clear stuck LED flashing (see [cabinet-architecture-reference.md](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode)). (Entries were renumbered to stay contiguous — the script stops reading at the first missing `Program_To_Run_Target_N`.)
 - `[Exit]` — removed the Xpadder / antimicro / DS4Windows kill entries. **DS4Windows is deliberately no longer killed on exit** (see §3). `ExitScript.bat` still runs.
 
 > `ExitScript.bat` clears `D:\Arcade\cache` on exit. It originally used a
