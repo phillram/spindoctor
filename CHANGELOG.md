@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lightgun detect` no longer takes any folder with "sinden" in its path as the Sinden software.** It used the first folder whose path contained "sinden", which on a cabinet with a `Gun Games (Sinden)` wheel could be that wheel's database or media folder. The Sinden software is now recognized by `Lightgun.exe` next to `Lightgun.exe.config`. Covered by `tests/test_lightgun.py`.
+- **`lightgun detect` and `lightgun audit` now use `demulshooter_path`, and list every DemulShooter found.** Only `lightgun configure` applied the configured path, so `detect` and `audit` could report a different DemulShooter than the one `configure` writes into the hooks. When a cabinet has several builds and no `demulshooter_path` is set, `detect` lists them all so you can pick one. The scan also stops four folders down as intended; it used to walk every folder under Program Files and LocalAppData before discarding the deep ones. Covered by `tests/test_lightgun.py`.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
