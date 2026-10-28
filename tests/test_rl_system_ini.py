@@ -705,6 +705,44 @@ def test_multi_path_keeps_element_that_cannot_be_rebased(tmp_path):
     assert _rom_paths(emu_ini) == [f"{ps1}|J:\\Games\\Sony Playstation\\_Gun Games"]
 
 
+def test_subfolder_is_not_rebased_onto_unrelated_top_level_folder(tmp_path):
+    """roms_dir/_Gun Games belongs to some other wheel; the PS1 gun-games
+    element must not be pointed at it just because the leaf names match."""
+    cfg, rl = _make_config(tmp_path)
+    roms = Path(cfg.roms_dir)
+    ps1 = roms / "Sony Playstation"
+    ps1.mkdir()
+    (roms / "_Gun Games").mkdir()
+    emu_ini = rl / "Settings" / "Sony Playstation" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=ePSXe\n"
+        "Rom_Path=J:\\Games\\Sony Playstation|J:\\Games\\Sony Playstation\\_Gun Games\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sony Playstation", cfg)
+
+    assert _rom_paths(emu_ini) == [f"{ps1}|J:\\Games\\Sony Playstation\\_Gun Games"]
+
+
+def test_roms_subfolder_is_not_rebased_onto_top_level_roms_folder(tmp_path):
+    cfg, rl = _make_config(tmp_path)
+    roms = Path(cfg.roms_dir)
+    (roms / "Sega Saturn").mkdir()
+    (roms / "roms").mkdir()
+    emu_ini = rl / "Settings" / "Sega Saturn" / "Emulators.ini"
+    emu_ini.parent.mkdir(parents=True)
+    emu_ini.write_text(
+        "[ROMS]\nDefault_Emulator=SSF\nRom_Path=J:\\Games\\Sega Saturn\\roms\n",
+        encoding="utf-8",
+    )
+
+    generate_rl_system_ini("Sega Saturn", cfg)
+
+    assert _rom_paths(emu_ini) == [str(roms / "Sega Saturn")]
+
+
 def test_flat_layout_rom_drive_move_keeps_subfolder(tmp_path):
     cfg, rl = _make_config(tmp_path)
     roms = Path(cfg.roms_dir)
