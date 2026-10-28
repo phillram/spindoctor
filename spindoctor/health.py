@@ -1631,10 +1631,10 @@ def check_led_coverage(config: Config) -> Check:
         return Check(name="LED coverage", status=Status.INFO,
                      detail="mame_executable not configured; skipping")
 
-    from .ledblinky import audit_coverage, listxml_cache_path
+    from .ledblinky import _resolved_mame_path, audit_coverage, listxml_cache_path
 
     cache = listxml_cache_path(config.mame_executable)
-    mame = Path(config.mame_executable)
+    mame = Path(_resolved_mame_path(config.mame_executable))
     fresh = (
         cache.exists()
         and (not mame.exists() or cache.stat().st_mtime >= mame.stat().st_mtime)

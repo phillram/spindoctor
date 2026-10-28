@@ -154,7 +154,9 @@ def run_mame_listxml(
     If ``cache_path`` is provided and is fresh (newer than the MAME binary),
     the cached XML is returned instead.
     """
-    mame_path = Path(mame_executable)
+    # Resolve a bare "mame" through PATH: Path("mame").exists() is False, which
+    # would make any cache look fresh forever.
+    mame_path = Path(_resolved_mame_path(mame_executable))
     use_cache = (
         cache_path is not None
         and cache_path.exists()
@@ -182,7 +184,9 @@ def run_mame_listxml(
             f"{proc.stderr.decode('utf-8', errors='replace')[:200]}"
         )
 
-    if cache_path is not None:
+    # A MAME that crashed part-way leaves a truncated dump; use what there is
+    # this time, but don't cache it as fresh.
+    if cache_path is not None and proc.returncode == 0:
         _write_listxml_cache(cache_path, proc.stdout)
 
     return proc.stdout
@@ -209,7 +213,7 @@ def _write_listxml_cache(cache_path: Path, data: bytes) -> None:
 
 
 def _resolved_mame_path(mame_executable: str) -> str:
-    """Absolute, symlink-free, case-normalised path of the MAME binary.
+    """Absolute, symlink-free, case-normalized path of the MAME binary.
 
     A bare command name (``mame``) is looked up on ``PATH`` first, and kept
     as-is if it isn't there, so the result doesn't depend on the current
