@@ -862,6 +862,28 @@ _RL_7Z_DEFAULT_EXTENSIONS = "zip|rar|7z|lha|lzh|gzip|tar"
 # RocketLauncher never looks for the ROM file, so a missing one isn't an error.
 _RL_SKIP_ROM_CHECKS = ("rom only", "rom and emu")
 
+# The "games are in a subfolder" hint only looks at Rom_Path folders with at
+# most this many subfolders (roms\, MultiDisc\, _Gun Games\ and the like).
+_SUBFOLDER_HINT_MAX = 50
+
+
+def _read_windows_text(path: Path) -> str:
+    """Read a Windows config file the way the Windows profile API does.
+
+    A ``FF FE`` / ``FE FF`` BOM means UTF-16; otherwise the file is ANSI
+    (cp1252) unless it decodes as UTF-8, which is what most tools write
+    today.  Without this a cp1252 ``Jeux Rétro`` path would come back as
+    ``Jeux R\\ufffdtro`` and be reported as a missing folder.  Raises
+    ``OSError`` when the file can't be read.
+    """
+    data = path.read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="replace")
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
 
 def _read_rl_ini(path: Path) -> dict[str, dict[str, str]]:
     """Parse a RocketLauncher INI the way RocketLauncher reads it.
@@ -869,14 +891,14 @@ def _read_rl_ini(path: Path) -> dict[str, dict[str, str]]:
     Returns ``{section: {key: value}}`` with section and key names lower-cased:
     RL goes through the Windows profile API, so ``[ROMS]`` == ``[Roms]`` and
     ``Rom_Path`` == ``rom_path``; the first occurrence of a key wins.  Unlike
-    ``configparser`` this tolerates a UTF-8 BOM, duplicate keys and the
+    ``configparser`` this tolerates a BOM, UTF-16 and ANSI files (see
+    :func:`_read_windows_text`), duplicate keys and the
     ``<!--Paste ... Output Below Here-->`` lines RL tools leave in ``Games.ini``
     and module INIs.  A missing or unreadable file reads as ``{}``.
     """
     out: dict[str, dict[str, str]] = {}
     try:
-        # utf-8-sig strips the BOM RocketLauncher sometimes writes.
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        text = _read_windows_text(path)
     except OSError:
         return out
     cur: Optional[dict[str, str]] = None
@@ -1119,7 +1141,7 @@ class _RomLookup:
         return False
 
     def found(self, src: _RomSource, names: list[str]) -> bool:
-        """Whether RL finds a game under any of *names* through *src*, honouring
+        """Whether RL finds a game under any of *names* through *src*, honoring
         the ``Rom_Match_Extension`` of the system the settings belong to."""
         folders = [f for _el, f in src.folders if f is not None]
         match_exts = src.exts if self.launch_settings(src.system)[1] else None
@@ -1232,20 +1254,22 @@ def _wheel_rom_paths(system: str, look: _RomLookup, databases_dir: Path) -> Chec
     #    neither looks for ROMs nor stops on a missing folder, so only warn.
     skip = look.launch_settings(system)[0]
     skipping = look.skips_rom_check(system)
+    rom_path_rows: list[Check] = []  # severity decided once the games are checked
+    own_looked = 0  # own games RL actually looks for a file for
     if own_games:
         if not own.folders and not skipping:
-            node.children.append(Check(
-                name="Rom_Path", status=Status.FAIL,
+            rom_path_rows.append(Check(
+                name="Rom_Path", status=Status.WARN,
                 detail=f"not set in {own.ini}",
                 fix=f"Set Rom_Path in {own.ini} to the folder holding this wheel's games",
             ))
         for shown in own.missing_folders():
-            node.children.append(Check(
-                name="Rom_Path",
-                status=Status.WARN if skipping else Status.FAIL,
+            rom_path_rows.append(Check(
+                name="Rom_Path", status=Status.WARN,
                 detail=f"folder not found: {shown}",
                 fix=f"Fix Rom_Path in {own.ini} (old drive letter or moved folder?)",
             ))
+        node.children.extend(rom_path_rows)
         if not skipping and not uncheckable:
             missing: list[tuple[str, _RomSource]] = []
             stopped: dict[tuple[str, str, str], list[str]] = {}
@@ -1258,6 +1282,16 @@ def _wheel_rom_paths(system: str, look: _RomLookup, databases_dir: Path) -> Chec
                 elif not found(src, name):
                     missing.append((name, src))
                 checked += 1
+            own_looked = checked - sum(len(v) for v in stopped.values())
+            # RL only fails a launch when no Rom_Path folder holds the ROM, so
+            # a Rom_Path row is a FAIL only when RL looks for games and there
+            # is no folder left to look in.  A missing second folder (an
+            # unplugged drive) or a wheel RL never looks up stays a WARN.
+            if own_looked and not any(
+                f is not None and f.is_dir() for _el, f in own.folders
+            ):
+                for row in rom_path_rows:
+                    row.status = Status.FAIL
             if missing:
                 row = _missing_games_check(missing, checked, own, games, look)
                 node.children.append(row)
@@ -1367,9 +1401,13 @@ def _missing_games_check(
         lst = look.listing(folder) if folder is not None else None
         if lst is None or best is not None:
             continue
-        for low, real in lst[1].items():
-            if low in game_dirs:
-                continue  # a <name>\<name>.ext game folder, not a ROM folder
+        # Skip <name>\<name>.ext game folders.  A folder with many other
+        # subfolders is a per-game layout, not one ROM folder holding most
+        # of the games, and scanning them all is slow on a cabinet's HDD.
+        candidates = [real for low, real in lst[1].items() if low not in game_dirs]
+        if len(candidates) > _SUBFOLDER_HINT_MAX:
+            continue
+        for real in candidates:
             sub = folder / real
             hits = sum(1 for n, w in wanted if look.found_in(sub, n, w))
             if hits * 2 > len(missing):
