@@ -45,20 +45,20 @@ def mame(tmp_path, monkeypatch):
     monkeypatch.setattr(cleanup, "CONFIG_DIR", home)
     monkeypatch.setattr(ledblinky, "_listxml_memo", {}, raising=False)
 
-    state = types.SimpleNamespace(calls=[], xml=LISTXML, fail=False)
+    state = types.SimpleNamespace(calls=[], xml=LISTXML, fail=False, returncode=0)
 
     class _Proc:
-        returncode = 0
         stderr = b""
 
-        def __init__(self, stdout):
+        def __init__(self, stdout, returncode):
             self.stdout = stdout
+            self.returncode = returncode
 
     def fake_run(cmd, **_kwargs):
         state.calls.append(list(cmd))
         if state.fail:
             raise FileNotFoundError(cmd[0])
-        return _Proc(state.xml)
+        return _Proc(state.xml, state.returncode)
 
     monkeypatch.setattr(ledblinky.subprocess, "run", fake_run)
 
@@ -118,6 +118,29 @@ def test_cache_file_is_reused_by_a_later_process(mame):
     info = ledblinky.load_listxml_for_system(mame.cfg, "Neo Geo")
     assert len(mame.calls) == 1
     assert "galaga" in info
+
+
+def test_crashed_mame_run_is_used_but_not_cached(mame):
+    """MAME exiting non-zero after writing part of the dump: the partial data
+    is used this time, but must not sit in the cache looking fresh."""
+    mame.returncode = 1
+    xml = ledblinky.run_mame_listxml(
+        str(mame.exe), cache_path=ledblinky.listxml_cache_path(str(mame.exe)),
+    )
+    assert xml == LISTXML
+    assert _files(mame.cache_dir) == []
+
+
+def test_bare_mame_on_path_is_resolved_for_the_freshness_check(mame, monkeypatch):
+    """With mame_executable = "mame", Path("mame").exists() is False, which
+    made any cache count as fresh even after MAME was upgraded."""
+    monkeypatch.setattr(ledblinky.shutil, "which", lambda name: str(mame.exe))
+    mame.cfg.mame_executable = "mame"
+    ledblinky.load_listxml_for_system(mame.cfg, "MAME")
+    _make_exe(mame.exe, age_s=-3600)  # upgraded: now newer than the cache
+    ledblinky._listxml_memo.clear()
+    ledblinky.load_listxml_for_system(mame.cfg, "MAME")
+    assert len(mame.calls) == 2
 
 
 def test_newer_mame_binary_invalidates_cache_and_memo(mame):
