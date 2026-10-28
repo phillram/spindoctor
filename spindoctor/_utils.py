@@ -63,3 +63,22 @@ def free_bytes(path: Path) -> int:
         return shutil.disk_usage(str(p)).free
     except OSError:
         return 0
+
+
+def unique_path(path: Path) -> Path:
+    """Return *path*, or the first free ``<stem>_2<suffix>``, ``<stem>_3<suffix>``, … sibling.
+
+    Backup names carry a ``YYYYMMDD_HHMMSS`` stamp, which only has
+    one-second resolution, so two backups written in the same second
+    would otherwise overwrite each other. ``Emulators.20260614_174635.bak``
+    becomes ``Emulators.20260614_174635_2.bak``; a folder such as
+    ``scrub-20260614_174635`` becomes ``scrub-20260614_174635_2``.
+    """
+    if not path.exists():
+        return path
+    n = 2
+    while True:
+        candidate = path.with_name(f"{path.stem}_{n}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
