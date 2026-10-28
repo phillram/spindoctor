@@ -637,7 +637,7 @@ Three usual causes:
 
 ### How do I revert lightgun wiring for a system?
 
-Open `RocketLauncher\Settings\<System>.ini` in any editor and delete the `Pre_Launch_App` and `Post_Launch_App` lines, then set `"lightgun": false` under the system in `~/.spindoctor/config.json` (or run `spindoctor lightgun audit` to confirm the change took).
+Open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` in any editor and delete the `Pre_Launch_App` and `Post_Launch_App` lines, then set `"lightgun": false` under the system in `~/.spindoctor/config.json` (or run `spindoctor lightgun audit` to confirm the change took).
 
 ## Cross-system search
 

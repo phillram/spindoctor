@@ -195,15 +195,40 @@ class SystemLightgunStatus:
         return self.pre_launch is not None
 
 
+def system_settings_ini(rocketlauncher_dir: Path, system_name: str
+                        ) -> Optional[tuple[Path, str]]:
+    """The RocketLauncher settings file for *system_name* and its main section.
+
+    Folder layout first (``Settings/<System>/Emulators.ini``, ``[ROMS]``),
+    then the flat ``Settings/<System>.ini`` (``[Settings]``), as
+    :func:`~spindoctor.rocketlauncher.detect_rl_layout` decides.  None when
+    the system has neither.
+    """
+    from .rocketlauncher import detect_rl_layout
+
+    settings = Path(rocketlauncher_dir) / "Settings"
+    layout = detect_rl_layout(settings, system_name)
+    if layout == "folder":
+        return settings / system_name / "Emulators.ini", "ROMS"
+    if layout == "flat":
+        return settings / f"{system_name}.ini", "Settings"
+    return None
+
+
+# DemulShooter takes -target=<name>; older SpinDoctor versions wrote
+# "-target <name>", so both are read.
+_TARGET_RE = re.compile(r"-target(?:=|\s+)(\S+)", re.IGNORECASE)
+
+
 def audit_system_wiring(system_name: str, config: Config
                         ) -> Optional[SystemLightgunStatus]:
     """Return the DemulShooter wiring for *system_name*, or None if no INI."""
     if not config.rocketlauncher_dir:
         return None
-    ini_path = (Path(config.rocketlauncher_dir) / "Settings"
-                / f"{system_name}.ini")
-    if not ini_path.exists():
+    found = system_settings_ini(Path(config.rocketlauncher_dir), system_name)
+    if found is None:
         return None
+    ini_path = found[0]
 
     body = ini_path.read_text(encoding="utf-8", errors="replace")
     status = SystemLightgunStatus(system_name=system_name, ini_path=ini_path)
@@ -211,9 +236,9 @@ def audit_system_wiring(system_name: str, config: Config
     m = DEMULSHOOTER_PRE_RE.search(body)
     if m:
         status.pre_launch = m.group(1).strip()
-        tgt = re.search(r"-target\s+(\S+)", status.pre_launch)
+        tgt = _TARGET_RE.search(status.pre_launch)
         if tgt:
-            status.target = tgt.group(1)
+            status.target = tgt.group(1).strip('"')
 
     m = DEMULSHOOTER_POST_RE.search(body)
     if m:
@@ -229,13 +254,16 @@ def detect_lightgun_systems(config: Config) -> list[str]:
     settings = Path(config.rocketlauncher_dir) / "Settings"
     if not settings.exists():
         return []
-    found: list[str] = []
-    for ini in settings.glob("*.ini"):
-        if ini.name.lower() in {"global emulators.ini", "rocketlauncher.ini"}:
-            continue
+    found: set[str] = set()
+    skip = {"global emulators.ini", "rocketlauncher.ini", "global rocketlauncher.ini"}
+    # Flat Settings/<System>.ini and folder-layout Settings/<System>/Emulators.ini.
+    candidates = [(ini, ini.stem) for ini in settings.glob("*.ini")
+                  if ini.name.lower() not in skip]
+    candidates += [(ini, ini.parent.name) for ini in settings.glob("*/Emulators.ini")]
+    for ini, system in candidates:
         body = ini.read_text(encoding="utf-8", errors="replace")
         if DEMULSHOOTER_PRE_RE.search(body):
-            found.append(ini.stem)
+            found.add(system)
     return sorted(found)
 
 
@@ -249,7 +277,8 @@ class WirePlan:
     target: str
     pre_launch_command: str
     post_launch_command: str
-    create_ini: bool = False
+    create_ini: bool = False      # kept for callers; the plan never creates the INI
+    section: str = "Settings"     # [ROMS] in a folder-layout Emulators.ini
     replace_pre: bool = False
     replace_post: bool = False
     notes: list[str] = field(default_factory=list)
@@ -282,10 +311,20 @@ def plan_wire_system(
             "Pass --target <name> explicitly (see DemulShooter docs)."
         )
 
-    ini_path = (Path(config.rocketlauncher_dir) / "Settings"
-                / f"{system_name}.ini")
+    found = system_settings_ini(Path(config.rocketlauncher_dir), system_name)
+    if found is None:
+        # Generating the system's settings here would rewrite Rom_Path and
+        # friends as a side effect of adding two hook keys.
+        raise ValueError(
+            f"No RocketLauncher settings for '{system_name}' "
+            f"(Settings\\{system_name}\\Emulators.ini or Settings\\{system_name}.ini). "
+            "Set the system up in RocketLauncherUI or run "
+            "'spindoctor generate-config --apply' first."
+        )
+    ini_path, section = found
     demul_exe = install.demulshooter_exe
-    pre_cmd = f'"{demul_exe}" -target {target} {extra_args}'.strip()
+    # DemulShooter options take "=": -target=<name>, not "-target <name>".
+    pre_cmd = f'"{demul_exe}" -target={target} {extra_args}'.strip()
     # taskkill is the standard RL post-launch teardown for DemulShooter.
     post_cmd = f'taskkill /IM "{demul_exe.name}" /F'
 
@@ -295,44 +334,37 @@ def plan_wire_system(
         target=target,
         pre_launch_command=pre_cmd,
         post_launch_command=post_cmd,
+        section=section,
     )
-    if not ini_path.exists():
-        plan.create_ini = True
-        plan.notes.append("Settings/<system>.ini does not exist — it will be "
-                          "generated and the DemulShooter hooks added.")
-    else:
-        body = ini_path.read_text(encoding="utf-8", errors="replace")
-        existing_pre = DEMULSHOOTER_PRE_RE.search(body)
-        existing_post = DEMULSHOOTER_POST_RE.search(body)
-        if existing_pre and existing_pre.group(1).strip() != pre_cmd:
-            plan.replace_pre = True
-            plan.notes.append(
-                f"Existing Pre_Launch_App will be replaced "
-                f"(was: {existing_pre.group(1).strip()})."
-            )
-        if existing_post and existing_post.group(1).strip() != post_cmd:
-            plan.replace_post = True
-            plan.notes.append(
-                f"Existing Post_Launch_App will be replaced "
-                f"(was: {existing_post.group(1).strip()})."
-            )
+    body = ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_pre = DEMULSHOOTER_PRE_RE.search(body)
+    existing_post = DEMULSHOOTER_POST_RE.search(body)
+    if existing_pre and existing_pre.group(1).strip() != pre_cmd:
+        plan.replace_pre = True
+        plan.notes.append(
+            f"Existing Pre_Launch_App will be replaced "
+            f"(was: {existing_pre.group(1).strip()})."
+        )
+    if existing_post and existing_post.group(1).strip() != post_cmd:
+        plan.replace_post = True
+        plan.notes.append(
+            f"Existing Post_Launch_App will be replaced "
+            f"(was: {existing_post.group(1).strip()})."
+        )
     return plan
 
 
 def apply_wire_plan(plan: WirePlan, config: Config) -> Path:
-    """Execute *plan* — write the INI changes."""
-    from .rocketlauncher import generate_rl_system_ini
+    """Execute *plan* — add the hook keys to the system's existing INI.
 
+    Only ``Pre_Launch_App`` / ``Post_Launch_App`` change; the plan points at
+    a settings file that already exists (see :func:`plan_wire_system`).
+    """
     ini_path = plan.ini_path
-    if plan.create_ini:
-        # Use the standard generator so the INI is shaped like every other
-        # spindoctor-generated system file, then append the hook keys.
-        generate_rl_system_ini(plan.system_name, config)
-
     body = ini_path.read_text(encoding="utf-8", errors="replace")
-    body = _upsert_ini_key(body, "Settings", "Pre_Launch_App",
+    body = _upsert_ini_key(body, plan.section, "Pre_Launch_App",
                            plan.pre_launch_command)
-    body = _upsert_ini_key(body, "Settings", "Post_Launch_App",
+    body = _upsert_ini_key(body, plan.section, "Post_Launch_App",
                            plan.post_launch_command)
     ini_path.write_text(body, encoding="utf-8")
     return ini_path

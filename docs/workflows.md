@@ -556,7 +556,7 @@ spindoctor lightgun audit
 
 Auto-targeted systems include MAME, Sega Naomi/Atomiswave/Dreamcast, Model 2, Model 3 (Supermodel), Flycast, ChiHiro, Triforce, Lindbergh. Pass `--target <name>` to override for anything else.
 
-The wiring lives in `RocketLauncher\Settings\<System>.ini` as `Pre_Launch_App` (start DemulShooter) and `Post_Launch_App` (taskkill DemulShooter on exit). Module `.ahk` files are never modified, so a stock Tur build remains intact.
+The wiring lives in the system's RocketLauncher settings file (`Settings\<System>\Emulators.ini` in the folder layout, else `Settings\<System>.ini`) as `Pre_Launch_App` (start DemulShooter) and `Post_Launch_App` (taskkill DemulShooter on exit). Module `.ahk` files are never modified, so a stock Tur build remains intact.
 
 ---
 
