@@ -16,7 +16,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from .audit import SystemAuditResult, audit_system
+from .audit import RomPathIndex, SystemAuditResult, audit_system
 from .config import MEDIA_TYPES, Config
 
 
@@ -97,12 +97,14 @@ def _stats_from_audit(result: SystemAuditResult) -> SystemStats:
 def collect_stats(systems: Iterable[str], config: Config) -> StatsReport:
     """Run an audit per system and roll the results into a stats report."""
     report = StatsReport()
+    rom_index = RomPathIndex(config)
     for sys_name in systems:
         result = audit_system(
             sys_name, config,
             check_media_flag=True,
             fuzzy=False,
             check_mame_controls=False,
+            rom_index=rom_index,
         )
         report.per_system.append(_stats_from_audit(result))
     return report
