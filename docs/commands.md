@@ -2098,6 +2098,8 @@ If you use the intro-video randomizer, an **Intro video** check surfaces the fai
 
 An **Orphan media** check reports leftover media files (wheels, videos, themes) with no matching game — disk bloat left behind after games were removed. It's INFO-only and never deletes anything (doctor's contract); it points at `find-orphan-media --all` to preview and remove.
 
+A **RocketLauncher settings** check reads RocketLauncher's own `Settings\RocketLauncher.ini`, case-insensitively and with relative paths resolved against the RocketLauncher folder, as RocketLauncher does. **Virtual drive:** if `Virtual_Drive_Enabled` is on, globally in `Settings\Global RocketLauncher.ini` or for a system in its `Settings\<System>\RocketLauncher.ini` (`use_global`, or a Main Menu wheel with no settings folder, follows the global switch), and `Virtual_Drive_Path` doesn't exist, it's a WARN naming the systems affected, those switched on explicitly first. Those systems can't mount their disc images. When the same program is in the other Program Files folder (the usual result of reinstalling DAEMON Tools Lite as 64-bit or 32-bit), the fix line gives that exact path; otherwise it names the file and key to edit. A missing path that no system uses is only INFO. **7-Zip:** a missing `7z_Path` is a WARN, because RocketLauncher checks it at the start of every launch whether or not 7z is enabled. **Logging:** `Logging_Level` 4 (debug) or higher is INFO; it slows every launch, and 2–3 still logs warnings and errors. The check is diagnosis-only.
+
 ```bat
 spindoctor doctor              :: read-only diagnosis
 spindoctor doctor --apply      :: also run safe, idempotent repairs
