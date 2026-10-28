@@ -183,14 +183,16 @@ Clearing match decisions only resets which candidate was chosen — it does **no
 
 ### `mame_listxml_cache\`
 
-**Cache of MAME's `-listxml` output.** Used by `spindoctor ledblinky generate` to build `controls.ini` without running `mame -listxml` on every invocation (it takes 10–20 seconds for large MAME builds).
+**Cache of MAME's `-listxml` output.** Used by `spindoctor audit` (MAME control data for arcade systems) and `spindoctor ledblinky generate` / `audit` / `inspect-rom`, so `mame -listxml` doesn't run on every invocation (it takes 10–20 seconds for large MAME builds, and a full dump is about 200 MB). The `doctor` LED coverage check only reads it.
 
 ```
 %USERPROFILE%\.spindoctor\mame_listxml_cache\
-└── MAME.xml         :: raw listxml output, one file per MAME system name
+└── mame-1a2b3c4d.xml    :: raw listxml output, one file per MAME executable
 ```
 
-The cache is automatically invalidated when the MAME executable is newer than the cached file (modification time comparison). Safe to delete — SpinDoctor will regenerate on next `ledblinky generate` run.
+The file is named after the `mame_executable` binary plus a short hash of its full path. Every system shares that one file, and two MAME installs that are both called `mame.exe` get separate files. The cache is automatically invalidated when the MAME executable is newer than the cached file (modification time comparison). Safe to delete — SpinDoctor will regenerate it on the next run that needs it.
+
+Older versions wrote one identical copy per MAME system instead (`MAME.xml`, `Neo Geo.xml`, …), each the size of the full dump. Those files are no longer read. Remove them with `spindoctor cleanup run --include listxml-cache --apply`, which also removes the current file (it is rebuilt on the next run), or delete them by hand.
 
 ### Other caches
 
@@ -349,7 +351,7 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 ├── media_pick_cache\                   ← media-asset picks from fetch-media
 ├── pc_titles_cache\                    ← confirmed PC/Steam display titles
 ├── mame_listxml_cache\                 ← MAME listxml cache (auto-invalidated)
-│   └── MAME.xml
+│   └── mame-<hash>.xml                 ← one per MAME exe; old <System>.xml copies: spindoctor cleanup
 ├── curation\                           ← undo manifests: curate --action archive
 ├── edits\                              ← undo manifests: batch-edit
 ├── renames\                            ← undo manifests: rename / clone
