@@ -6,8 +6,8 @@
 
 ## Prerequisites
 
-- **Sinden Lightgun** (or another lightgun + driver). Install per the manufacturer's instructions; spindoctor only needs the install to exist on disk.
-- **DemulShooter**. Drop `DemulShooter.exe` somewhere reachable — `RocketLauncher\Modules\DemulShooter\` and `HyperSpin\Tools\DemulShooter\` are both auto-detected. If you keep it elsewhere, set `demulshooter_path` in spindoctor config.
+- **Sinden Lightgun** (or another lightgun + driver). Install per the manufacturer's instructions; spindoctor only needs the install to exist on disk. It's recognized by `Lightgun.exe` next to `Lightgun.exe.config`, so a wheel or media folder with "Sinden" in its name isn't mistaken for it.
+- **DemulShooter**. Drop `DemulShooter.exe` somewhere reachable — `RocketLauncher\Modules\DemulShooter\` and `HyperSpin\Tools\DemulShooter\` are both auto-detected. If you keep it elsewhere, or keep more than one build, set `demulshooter_path` in spindoctor config. `detect`, `audit` and `configure` all use it, and `detect` lists every DemulShooter it finds when there's more than one.
 - **RocketLauncher 1.x** with per-system INIs at `RocketLauncher\Settings\<System>.ini` (the standard layout).
 
 ## One-time setup
