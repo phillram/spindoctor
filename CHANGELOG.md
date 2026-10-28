@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **RocketLauncher settings are read case-insensitively, as RocketLauncher reads them.** `Default_Emulator` was looked up only under `[ROMS]` (or `[Settings]` in the flat layout), so wheels whose `Emulators.ini` says `[Roms]` were reported by `doctor` as having no `Default_Emulator`, though they launch fine. The same applied to emulator sections in `Global Emulators.ini` (`Default_Emulator=mame` with a `[MAME]` section). These lookups also used configparser, which raises on a repeated key or section, and the error was swallowed, so one duplicate anywhere in `Global Emulators.ini` hid every emulator's `Emu_Path` and `Rom_Extension`. They now use one reader that matches names in any case and takes the first of repeated keys. Covered by `tests/test_rl_ini_case.py`.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
