@@ -271,7 +271,7 @@ spindoctor generate-config --apply
 spindoctor doctor
 ```
 
-GUI path: **Migration tab** → set Target root to `J:\`, untick everything except `roms`, tick Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, check Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
@@ -279,8 +279,8 @@ GUI path: **Migration tab** → set Target root to `J:\`, untick everything exce
 
 `migrate` only moves files and `generate-config` only changes `Rom_Path=`, so a few settings can still point at the old drive. Go through this list once after moving your ROMs, whether you used `migrate` or moved them by hand:
 
-1. **Run `spindoctor doctor`.** Its **PC games** and **Wheel wiring** checks flag items 3 and 4 below. See [Command reference → doctor](commands.md#doctor).
-2. **Wheels whose `Rom_Path` has a subfolder or several folders.** For example `D:\Arcade\Games\Sega Dreamcast\roms`, or a `|`-separated list such as `…\Sony Playstation|…\Sony Playstation\MultiDisc`. Some SpinDoctor versions replace such a value with plain `<roms_dir>\<System>`: the Dreamcast wheel ends up on `J:\Games\Sega Dreamcast` instead of `J:\Games\Sega Dreamcast\roms`, and games in the dropped folders stop launching. Check these wheels by hand: the `generate-config` dry-run shows each wheel's current and new `Rom_Path`, and the `.bak` it writes keeps the old value. Put any missing part back in `Settings\<System>\Emulators.ini` (or `Settings\<System>.ini`), on the new drive. Those versions do the same on every later `generate-config --apply`, so check these wheels again after each run.
+1. **Run `spindoctor doctor`.** Its **ROM paths** check flags wheels whose games RocketLauncher can't find (item 2), **PC games** and **Wheel wiring** flag items 3 and 4, and **Emulator ROM folders** flags ROM and save folders kept in an emulator's own config (Demul, AAE, PokeMini, Daphne). See [Command reference → doctor](commands.md#doctor).
+2. **Wheels whose `Rom_Path` has a subfolder or several folders.** For example `D:\Arcade\Games\Sega Dreamcast\roms`, or a `|`-separated list such as `…\Sony Playstation|…\Sony Playstation\MultiDisc`. `generate-config` keeps the subfolders and every folder in the list. SpinDoctor 2.14.0 and earlier replaced such a value with plain `<roms_dir>\<System>`: the Dreamcast wheel ended up on `J:\Games\Sega Dreamcast` instead of `J:\Games\Sega Dreamcast\roms`, and games in the dropped folders stopped launching. If you ran `generate-config --apply` with one of those versions, check these wheels: `doctor`'s **ROM paths** check lists the games RocketLauncher can't find, and the `.bak` that `generate-config` wrote keeps the old value. Put any missing part back in `Settings\<System>\Emulators.ini` (or `Settings\<System>.ini`), on the new drive.
 3. **PCLauncher wheels.** Each game's `Modules\PCLauncher\<System>\<game>.ini` keeps `Application=` and `WorkingFolder=` on the old drive. Run `pc-rename` for **every** wheel whose emulator is PCLauncher, not only `PC Games`. `doctor`'s **PC games** check lists them.
 
    ```bat
@@ -307,7 +307,7 @@ spindoctor generate-config --apply
 spindoctor doctor
 ```
 
-GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Step 1: Setup** tab → update the "ROMs directory" field and click Save. Then **Step 4: Metadata & Media** tab → check Apply → click **Update RocketLauncher INIs**.
 
 `generate-config --apply` updates `Rom_Path=` in every `<RocketLauncher>\Settings\<SystemName>\Emulators.ini`. It performs a surgical in-place update: only `Rom_Path=` changes. `Default_Emulator`, `Emu_Path`, `Module`, pause/save-state keys, and any other emulator settings are preserved exactly as you configured them in HyperHQ / RLUI.
 
