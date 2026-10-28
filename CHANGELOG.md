@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`doctor`'s PC games check suggests a command that actually fixes stale `Application=` paths.** It suggested `pc-rename "<System>" --apply`, which skips every per-game INI that already exists, so following it left the stale paths in place. The hint is now `pc-rename "<System>" --overwrite-pclauncher --apply`, and notes that it rewrites every per-game INI. Covered by `tests/test_health.py`.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
