@@ -19,6 +19,15 @@ from spindoctor.lightgun import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_system_scan_roots(monkeypatch):
+    """Detection also scans Program Files, LocalAppData and the Start Menu;
+    keep a lightgun install on the test machine out of these tests."""
+    for var in ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA",
+                "APPDATA", "PROGRAMDATA"):
+        monkeypatch.delenv(var, raising=False)
+
+
 def _touch(p: Path, body: str = "x") -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(body, encoding="utf-8")
@@ -64,9 +73,89 @@ def test_detect_lightgun_install_finds_sinden(tmp_path):
         hyperspin_dir=str(tmp_path / "hs"),
         rocketlauncher_dir=str(tmp_path / "rl"),
     )
-    (tmp_path / "hs" / "Tools" / "Sinden Lightgun").mkdir(parents=True)
+    sinden = tmp_path / "hs" / "Tools" / "SindenLightgun"
+    _touch(sinden / "Lightgun.exe")
+    _touch(sinden / "Lightgun.exe.config")
     install = detect_lightgun_install(cfg)
     assert install.has_sinden
+    assert install.sinden_software_dir == sinden
+
+
+def test_detect_lightgun_install_ignores_folders_merely_named_sinden(tmp_path):
+    """A wheel called "Gun Games (Sinden)" puts "sinden" in database and
+    media paths; that isn't the Sinden software."""
+    cfg = Config(
+        roms_dir=str(tmp_path),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    (tmp_path / "hs" / "Databases" / "Gun Games (Sinden)").mkdir(parents=True)
+    (tmp_path / "hs" / "Media" / "Gun Games (Sinden)" / "Images").mkdir(parents=True)
+    install = detect_lightgun_install(cfg)
+    assert not install.has_sinden
+
+
+def _two_demulshooters(tmp_path):
+    exes = []
+    for build in ("DemulShooter", "DemulShooter Scripts"):
+        exe = tmp_path / "rl" / "Modules" / build / "DemulShooter.exe"
+        _touch(exe)
+        exes.append(exe)
+    cfg = Config(
+        roms_dir=str(tmp_path),
+        hyperspin_dir=str(tmp_path / "hs"),
+        rocketlauncher_dir=str(tmp_path / "rl"),
+    )
+    return cfg, exes
+
+
+def test_detect_lightgun_install_lists_every_demulshooter(tmp_path):
+    cfg, exes = _two_demulshooters(tmp_path)
+    install = detect_lightgun_install(cfg)
+    assert sorted(install.demulshooter_candidates) == sorted(exes)
+    assert install.demulshooter_exe in exes
+    assert not install.demulshooter_from_config
+
+
+def test_detect_lightgun_install_applies_demulshooter_path(tmp_path):
+    """detect, audit and configure all go through detect_lightgun_install,
+    so the configured exe must win there, not only in configure."""
+    cfg, exes = _two_demulshooters(tmp_path)
+    for chosen in exes:
+        cfg.demulshooter_path = str(chosen)
+        install = detect_lightgun_install(cfg)
+        assert install.demulshooter_exe == chosen
+        assert install.demulshooter_from_config
+
+
+def test_bounded_walk_does_not_descend_past_max_depth(tmp_path, monkeypatch):
+    """Filtering what's yielded isn't enough: os.walk itself must stop, or a
+    scan of Program Files visits every folder in it."""
+    import os
+
+    from spindoctor.lightgun import _bounded_walk
+
+    (tmp_path / "a" / "b" / "c" / "d").mkdir(parents=True)
+    walked: list[str] = []
+    real_walk = os.walk
+
+    def recording_walk(top, *args, **kwargs):
+        for dirpath, dirnames, filenames in real_walk(top, *args, **kwargs):
+            walked.append(Path(dirpath).relative_to(tmp_path).as_posix())
+            yield dirpath, dirnames, filenames
+
+    monkeypatch.setattr(os, "walk", recording_walk)
+    yielded = {p.relative_to(tmp_path).as_posix() for _d, p in _bounded_walk(tmp_path, max_depth=2)}
+    assert yielded == {".", "a", "a/b"}
+    assert sorted(walked) == [".", "a", "a/b"]
+
+
+def test_detect_lightgun_install_ignores_missing_demulshooter_path(tmp_path):
+    cfg, exes = _two_demulshooters(tmp_path)
+    cfg.demulshooter_path = str(tmp_path / "gone" / "DemulShooter.exe")
+    install = detect_lightgun_install(cfg)
+    assert install.demulshooter_exe in exes
+    assert not install.demulshooter_from_config
 
 
 # ─── INI scan / per-system audit ─────────────────────────────────────────────

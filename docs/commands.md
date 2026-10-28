@@ -2,7 +2,7 @@
 
 The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
 
-Every `spindoctor` command, grouped by purpose. Commands that modify files default to **dry-run** — re-run with `--apply` to commit. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
+Every `spindoctor` command, grouped by purpose. Commands that change cabinet files (HyperSpin, RocketLauncher, ROMs, media) default to **dry-run** — re-run with `--apply` to commit. Commands that only change SpinDoctor's own settings and lists save immediately: `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set`. Nothing they save reaches the cabinet until a command such as `fav rebuild --apply` writes it. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
@@ -103,7 +103,7 @@ spindoctor fetch-meta --all --auto-best --threshold 0.9 --apply :: stricter auto
 spindoctor fetch-meta --system "Sony PlayStation 2" --game "Dark Cloud" --apply  :: single game
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Without it, `default_metadata_source` decides; its default `auto` uses `both` (ScreenScraper primary, TheGamesDB fills gaps) when both credentials are configured, otherwise whichever one is. `--game "Name"` limits the run to one game (requires `--system`). `--threshold 0.0–1.0` overrides the fuzzy-match confidence required for auto-accept.
 
 API responses are cached at `~/.spindoctor/metadata_cache/`. TTL via `metadata_cache_ttl_days`. Pass `--no-cache` for a one-shot fresh run, or `--clear-cache` to wipe.
 
@@ -136,7 +136,7 @@ spindoctor fetch-media --system "Nintendo GameCube" --game "Metroid Prime" --typ
 spindoctor fetch-media --all --apply --report D:\post_fetch_audit.csv               :: write audit CSV after run
 ```
 
-`--source screenscraper|thegamesdb|both` forces a specific provider. Default when both credentials are configured: `both` (ScreenScraper primary, TheGamesDB fills gaps). `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file. `--report PATH` writes a post-fetch audit CSV to a specific path (includes before/after download columns per media slot); this is independent of the `auto_audit_export_dir` auto-export, so both can be active simultaneously.
+`--source screenscraper|thegamesdb|both` forces a specific provider. Without it, `default_metadata_source` decides; its default `auto` uses `both` (ScreenScraper primary, TheGamesDB fills gaps) when both credentials are configured, otherwise whichever one is. `--game "Name"` limits the run to one game (requires `--system`) — the auto-exported audit CSV (`auto_audit_export_dir`) is scoped to that one game too, not the whole console. Zero-byte files are treated as missing — a 0-byte `.png` or `.mp4` is re-downloaded automatically, just like a fully absent file. `--report PATH` writes a post-fetch audit CSV to a specific path (includes before/after download columns per media slot); this is independent of the `auto_audit_export_dir` auto-export, so both can be active simultaneously.
 
 A game that resolves but downloads nothing for every type is usually a name-matching problem, not a missing-media problem — see [Troubleshooting](troubleshooting.md#fetch-media-resolves-the-game-but-every-type-reports-no-url-even-with---source-both) and consider a [per-game override](configuration.md#per-game-overrides). When an override is active for a game, the metadata cache is automatically bypassed so the forced ID is always tried fresh — setting an override takes effect on the very next run without needing to clear the cache manually. `--verbose` output shows the active override IDs alongside the resolved source (`override: ss=XXXX`).
 
@@ -914,7 +914,7 @@ Two synthetic HyperSpin systems — **Favorites** and **Recently Played** — an
 
 ### `fav`
 
-Cross-system Favorites. State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**.
+Cross-system Favorites. State lives in `~/.spindoctor/favorites.json` as `(system, rom_name)` pairs. The wheel is rebuilt **alphabetically by display title**. `fav add`, `fav remove` and `fav sync` change only that file and save immediately; the Favorites wheel changes when you run `fav rebuild --apply`.
 
 ```bat
 spindoctor fav add "Super Nintendo" "Chrono Trigger"
@@ -1271,7 +1271,7 @@ spindoctor scrub-restore E:\Backups\scrub-20260526_143012 --apply
 
 ## `emulator-title`
 
-Manage the per-emulator window-title correction table used by synthetic wheel launchers.
+Manage the per-emulator window-title correction table used by synthetic wheel launchers. `emulator-title set` saves to SpinDoctor's `config.json` immediately; the launcher INIs change on the next wheel rebuild with `--apply`.
 
 When a game is launched from Favorites, Recently Played, or Most Played, PCLauncher uses `FadeTitle=` in the system-level INI to locate the game window by title instead of PID (which fails for DirectX emulators in exclusive fullscreen). SpinDoctor uses the emulator's registered name as the default `FadeTitle` value — this works automatically for any emulator whose window title contains its name (the vast majority).
 
@@ -2088,7 +2088,7 @@ For every system marked `lightgun: true`, a **Lightguns** check verifies the Dem
 
 An **Emulator ROM folders** check reads the ROM and save folders that some emulators keep in their *own* config files, which `generate-config` and `migrate` never rewrite: Demul's `Demul.ini` `roms0`…`romsN` (up to `romsPathsCount`), AAE's `aae.ini` `mame_rom_path`, PokeMini's `pokemini.cfg` `eepromfile` (its folder, only while `eepromshare` is on) and the per-game `homedir` in the Daphne module's `RocketLauncher\Modules\Daphne\Daphne.ini` (the default `.` is fine). It finds each emulator from its `Emu_Path` in `Global Emulators.ini`, or one level under `emulators_dir` when it isn't listed there. A folder that doesn't exist is a WARN naming the file, key and current value; when the same folder exists under `roms_dir` (for example `<roms_dir>\Sega Naomi`), the fix line gives the exact replacement. If the emulator's RocketLauncher module sets the folder itself before every launch (the stock AAE module, and the Demul v0.5.8 / v0.7 modules, which add the ROM folder to `Demul.ini`), the stale value is harmless and only shows as INFO. MAME's `mame.ini` `rompath` isn't checked, because RocketLauncher passes `-rompath` on the command line. Diagnosis only — edit the file yourself.
 
-For every `PCLauncher` system, a **PC games** check goes one level deeper than the wheel-wiring emulator check: it walks the per-game PCLauncher INIs and reports games with no INI at all, or whose `Application=` path no longer exists on disk (the "Cannot find this Application" / stale drive-letter bug). It points at `add-pc-system` / `pc-rename` to fix.
+For every `PCLauncher` system, a **PC games** check goes one level deeper than the wheel-wiring emulator check: it walks the per-game PCLauncher INIs and reports games with no INI at all, or whose `Application=` path no longer exists on disk (the "Cannot find this Application" / stale drive-letter bug). It points at `add-pc-system` for missing INIs and at `pc-rename --overwrite-pclauncher --apply` for stale ones: plain `pc-rename --apply` only writes INIs that don't exist yet.
 
 For every wheel on the Main Menu (PCLauncher wheels included), a **ROM paths** check confirms RocketLauncher can actually find the games — the layer that fails with RocketLauncher's "Cannot find Rom … in any Rom_Paths provided". It reads `Rom_Path` (`|`-separated, relative paths resolved from the RocketLauncher folder) and `Rom_Extension` the way RocketLauncher does: `Settings\<System>\Emulators.ini` `[ROMS]` (any case, e.g. `[Roms]`) or the flat `Settings\<System>.ini` `[Settings]`, then the emulator's section, `Global Emulators.ini` and RocketLauncher's built-in default list, honoring per-game `Games.ini` `Emulator=` overrides. A `Rom_Path` folder that doesn't exist (moved folder, old drive letter) is a FAIL when none of the wheel's `Rom_Path` folders exist, and a WARN when another one does (RocketLauncher only fails a launch when no folder holds the ROM) or when RocketLauncher looks for none of the wheel's games. Then every game in the wheel's database is looked up, under its name exactly as written in the XML, as `<path>\<name>.<ext>` or `<path>\<name>\<name>.<ext>` (plus any matching file under `<path>\<name>\` when `Rom_Match_Extension` is on): some games missing is a WARN, all of them a FAIL, with the count and an example or two. The fix line names the likely cause — a single subfolder holding most of the missing games (move the files up into the `Rom_Path` folder, or add e.g. `…\Sega Dreamcast\roms` or `…\Sony Playstation\MultiDisc` to `Rom_Path`), or MAME alternate names with a `MameRomName` entry in `RocketLauncher\Modules\MAME\MAME.ini` that are missing their empty `<name>.txt` placeholder. Games that a `Games.ini` `System=` sends to another system's settings get their own "Games via `<System>`" row, judged by that system's `Rom_Path` and `Skipchecks`, as RocketLauncher does; it's a WARN unless none of the wheel's games can be found. Wheels with `Skipchecks=Rom Only` or `Rom and Emu` only get a WARN for missing folders, since RocketLauncher doesn't look for their ROM files. Wheels switched off on the Main Menu are still checked and labeled "(hidden on the Main Menu)", but their findings are INFO, so they can't fail `doctor`. It's diagnosis-only.
 
@@ -2141,7 +2141,7 @@ See [Standalone tools → Tools audit](standalone-tools.md) for the categorised 
 
 > **GUI alternative:** the **Curate** tab's Ignore section has add / remove / list buttons, plus a **View / un-ignore** button that opens a click-to-un-ignore viewer with a system dropdown and multi-select listbox. The game name field is now a dropdown — select a system to load its game list, then pick the entry. Click **↻** to refresh. See [GUI walkthrough](gui.md).
 
-Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`.
+Per-system or global ignore lists. Ignored games are skipped by `audit`, `fetch-meta`, `fetch-media`, and `update-db`. `ignore add` / `ignore remove` change only SpinDoctor's `config.json` and save immediately, with no `--apply`.
 
 ```bat
 spindoctor ignore add "pacman"                          :: global

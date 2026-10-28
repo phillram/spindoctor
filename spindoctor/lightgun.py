@@ -8,9 +8,10 @@ the next launch.
 
 Detection runs in two passes:
 
-1.  *Folder fingerprint* — check for a Sinden install (driver folder)
-    and a DemulShooter executable in the configured tools/emulators
-    trees.  This tells us whether the cabinet has the gear at all.
+1.  *File fingerprint* — check for the Sinden software (``Lightgun.exe``
+    next to ``Lightgun.exe.config``) and DemulShooter executables in the
+    configured tools/emulators trees.  This tells us whether the cabinet
+    has the gear at all.
 
 2.  *RL module / INI scan* — for every per-system INI under
     ``RocketLauncher/Settings``, look for ``DemulShooter`` references in
@@ -83,6 +84,10 @@ class LightgunInstall:
     sinden_software_dir: Optional[Path] = None
     demulshooter_exe: Optional[Path] = None
     arcade_guns_dir: Optional[Path] = None
+    # Every DemulShooter executable found, in scan order.  More than one
+    # means demulshooter_exe is a guess unless demulshooter_path is set.
+    demulshooter_candidates: list[Path] = field(default_factory=list)
+    demulshooter_from_config: bool = False
 
     @property
     def has_sinden(self) -> bool:
@@ -100,6 +105,12 @@ def detect_lightgun_install(config: Config,
 
     Returns a :class:`LightgunInstall` populated with whichever paths
     were found.  Reuses the same scan roots as :mod:`tools_audit`.
+
+    The Sinden software is recognized by its files (``Lightgun.exe`` next
+    to ``Lightgun.exe.config``), not by a folder name: a wheel called
+    ``Gun Games (Sinden)`` has "sinden" in its database and media paths.
+    A configured ``demulshooter_path`` that exists wins over the scan, so
+    ``detect``, ``audit`` and ``configure`` all report the same exe.
     """
     from .tools_audit import default_scan_roots
 
@@ -108,9 +119,9 @@ def detect_lightgun_install(config: Config,
     if extra_roots:
         roots.extend(extra_roots)
 
-    sinden_hints = ("sinden lightgun", "sindenlightgun", "sinden")
     arcadeguns_hints = ("arcade guns", "arcadeguns")
     demul_exes = {"demulshooter.exe", "demulshooterx64.exe"}
+    seen: set[str] = set()
 
     for root in roots:
         if not root.exists():
@@ -118,31 +129,43 @@ def detect_lightgun_install(config: Config,
         # Bounded walk — Sinden + DemulShooter live ≤4 levels deep.
         for depth, dirpath in _bounded_walk(root, max_depth=4):
             lower = str(dirpath).lower()
-            if not install.sinden_software_dir and any(
-                h in lower for h in sinden_hints
-            ):
-                install.sinden_software_dir = dirpath
             if not install.arcade_guns_dir and any(
                 h in lower for h in arcadeguns_hints
             ):
                 install.arcade_guns_dir = dirpath
-            if not install.demulshooter_exe:
-                for f in dirpath.iterdir() if dirpath.is_dir() else []:
-                    if f.is_file() and f.name.lower() in demul_exes:
-                        install.demulshooter_exe = f
-                        break
+            try:
+                files = {f.name.lower(): f for f in dirpath.iterdir() if f.is_file()}
+            except OSError:
+                continue
+            if (not install.sinden_software_dir and "lightgun.exe" in files
+                    and "lightgun.exe.config" in files):
+                install.sinden_software_dir = dirpath
+            for name, f in files.items():
+                key = str(f).lower()
+                if name in demul_exes and key not in seen:
+                    seen.add(key)
+                    install.demulshooter_candidates.append(f)
 
+    if install.demulshooter_candidates:
+        install.demulshooter_exe = install.demulshooter_candidates[0]
+    if config.demulshooter_path:
+        forced = Path(config.demulshooter_path)
+        if forced.is_file():
+            install.demulshooter_exe = forced
+            install.demulshooter_from_config = True
     return install
 
 
 def _bounded_walk(root: Path, max_depth: int):
     """Yield ``(depth, dir)`` for every directory under *root*."""
     import os
-    base = len(root.resolve().parts) if root.exists() else len(root.parts)
-    for dirpath, _, _ in os.walk(root):
-        depth = len(Path(dirpath).resolve().parts) - base
-        if depth > max_depth:
-            continue
+    base = len(Path(os.path.abspath(root)).parts)
+    for dirpath, dirnames, _ in os.walk(root):
+        depth = len(Path(os.path.abspath(dirpath)).parts) - base
+        if depth >= max_depth:
+            # Don't descend further: without this, os.walk still visits
+            # every folder under Program Files and LocalAppData.
+            dirnames[:] = []
         yield depth, Path(dirpath)
 
 

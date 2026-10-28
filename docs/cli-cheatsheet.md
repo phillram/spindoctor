@@ -6,7 +6,7 @@ Quick, copy-paste-friendly index of the most-used SpinDoctor commands, grouped b
 
 > **Don't want to type any of this?** The GUI's [Console tab](gui.md#tab-tour) has all of these in a curated preset dropdown. Pick, edit the `<PLACEHOLDER>` tokens, click Run.
 
-> **Dry-run by default.** Commands that modify files preview their plan unless invoked with `--apply`. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. See [Recovery from mistakes](workflows.md#recovery-from-mistakes).
+> **Dry-run by default.** Commands that change cabinet files (HyperSpin, RocketLauncher, ROMs, media) preview their plan unless invoked with `--apply`. Commands that only change SpinDoctor's own settings and lists save immediately: `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set`. Nothing they save reaches the cabinet until a command such as `fav rebuild --apply` writes it. Most destructive commands also write a manifest under `~/.spindoctor/` and accept `--undo` to roll back. See [Recovery from mistakes](workflows.md#recovery-from-mistakes).
 
 ## Contents
 
@@ -135,7 +135,7 @@ Reference: [Command reference → inspect](commands.md#inspect).
 
 ## Edit & curate
 
-Modify the library — every command below is dry-run by default; add `--apply` to commit.
+Modify the library — every command below is dry-run by default; add `--apply` to commit. The exceptions are `ignore add` / `ignore remove`, which only change SpinDoctor's ignore list and save immediately.
 
 ### `batch-edit` — change metadata for many games at once
 
@@ -275,7 +275,7 @@ Reference: [Command reference → game](commands.md#game).
 
 ```bat
 spindoctor ignore list
-spindoctor ignore add "neogeo.zip" --system MAME
+spindoctor ignore add "neogeo.zip" --system MAME      :: saves immediately (no --apply)
 spindoctor ignore remove "neogeo.zip" --system MAME
 
 spindoctor match list                            :: cached match decisions

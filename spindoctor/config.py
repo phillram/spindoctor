@@ -202,7 +202,13 @@ class Config:
     screenscraper_devid: str = "SpinDoctor"
     screenscraper_devpassword: str = "SpinDoctor"
     thegamesdb_key: str = ""
-    default_metadata_source: str = "screenscraper"
+    # auto: ScreenScraper first with TheGamesDB filling gaps when both are
+    # configured, else whichever is.  Also screenscraper | thegamesdb | both.
+    default_metadata_source: str = "auto"
+    # Set once a config written before "auto" existed has been migrated (see
+    # from_dict); keeps an explicit "screenscraper" chosen later from being
+    # turned back into "auto".
+    metadata_source_migrated: bool = True
 
     # Behaviour
     backup_before_modify: bool = True
@@ -421,7 +427,17 @@ class Config:
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
         known = set(cls.__dataclass_fields__)
-        return cls(**{k: v for k, v in data.items() if k in known})
+        values = {k: v for k, v in data.items() if k in known}
+        # Before "auto", every saved config held the old default
+        # "screenscraper", so TheGamesDB was never used unless --source both
+        # was passed, though the docs promised both sources whenever both
+        # are configured.  A saved "screenscraper" from then can't be told
+        # apart from a deliberate choice, so it becomes "auto" once.
+        if not values.get("metadata_source_migrated"):
+            if values.get("default_metadata_source", "screenscraper") == "screenscraper":
+                values["default_metadata_source"] = "auto"
+            values["metadata_source_migrated"] = True
+        return cls(**values)
 
 
 _OVERRIDE_CACHE: Optional[dict[str, dict]] = None
