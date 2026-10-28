@@ -6946,7 +6946,7 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     # Mirror the per-element rebase in generate_rl_system_ini
                     # so the preview shows the value that will be written.
                     _planned = (
-                        _rebase_rom_path_value(current_rom_path, Path(config.roms_dir), rl_base_dry)
+                        _rebase_rom_path_value(current_rom_path, Path(config.roms_dir), rl_base_dry, sys_name)
                         if not _ovr_rom and not out_base and not _pc_placeholders
                         and config.roms_dir and rl_base_dry
                         else None
@@ -6974,7 +6974,19 @@ def generate_config(all_systems, system, gen_rl, gen_menu, gen_stubs,
                     bak = _backup_if_exists(existing_target) if existing_target else None
                     written = generate_rl_system_ini(sys_name, config, out_base)
                     written_str = ", ".join(str(p) for p in written)
-                    bak_str = f"[dim]{bak.name}[/dim]" if bak else "[dim]new[/dim]"
+                    # Most wheels need no change; drop their backup rather than
+                    # leaving one identical copy per system on every --apply.
+                    try:
+                        if bak and existing_target.read_bytes() == bak.read_bytes():
+                            bak.unlink()
+                            bak = None
+                            written_str = f"[dim]unchanged: {existing_target}[/dim]"
+                    except OSError:
+                        pass
+                    if bak:
+                        bak_str = f"[dim]{bak.name}[/dim]"
+                    else:
+                        bak_str = "" if existing_target and existing_target.exists() else "[dim]new[/dim]"
                     tbl.add_row(sys_name, emulator, written_str, bak_str)
                 except ValueError as e:
                     tbl.add_row(sys_name, emulator, f"[red]{e}[/red]", "")

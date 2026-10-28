@@ -671,3 +671,43 @@ def test_generate_config_dry_run_previews_rebased_rom_paths(tmp_path, isolated_c
     assert "preserved (existing paths)" in result.output, result.output
     assert str(placeholders) in result.output, result.output
     assert _snapshot(rl_dir) == before
+
+
+def test_generate_config_apply_keeps_backups_only_for_changed_files(tmp_path, isolated_config):
+    """A wheel whose Rom_Path needs no change must not leave a .bak behind;
+    otherwise every --apply leaves one identical copy per system."""
+    cfg = _build_nes_library(tmp_path)
+    roms_dir = Path(cfg.roms_dir)
+    settings = tmp_path / "rl" / "Settings"
+
+    # Moved: J:\ is gone, the same folder exists under roms_dir.
+    (roms_dir / "Sega Dreamcast").mkdir()
+    moved = settings / "Sega Dreamcast" / "Emulators.ini"
+    moved.parent.mkdir(parents=True)
+    moved.write_text(
+        "[ROMS]\nDefault_Emulator=Demul\nRom_Path=J:\\Games\\Sega Dreamcast\n",
+        encoding="utf-8",
+    )
+    # Already correct: nothing to change.
+    ps1 = roms_dir / "Sony Playstation"
+    ps1.mkdir()
+    current = settings / "Sony Playstation" / "Emulators.ini"
+    current.parent.mkdir(parents=True)
+    current.write_text(
+        f"[ROMS]\nDefault_Emulator=ePSXe\nRom_Path={ps1}\n", encoding="utf-8",
+    )
+
+    cfg.rocketlauncher_dir = str(tmp_path / "rl")
+    save_config(cfg)
+    config_mod.reset_override_cache()
+
+    for system in ("Sega Dreamcast", "Sony Playstation"):
+        result = CliRunner().invoke(
+            cli,
+            ["generate-config", "--no-main-menu", "--no-global-emulators",
+             "--system", system, "--apply"],
+        )
+        assert result.exit_code == 0, result.output
+
+    assert len(list(moved.parent.glob("*.bak"))) == 1
+    assert list(current.parent.glob("*.bak")) == []

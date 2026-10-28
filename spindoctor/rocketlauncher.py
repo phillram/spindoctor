@@ -460,7 +460,9 @@ def _rom_path_element_is_dir(element: str, rl_base: Path) -> bool:
         return False
 
 
-def _rebase_rom_path_element(element: str, roms_dir: Path) -> Optional[str]:
+def _rebase_rom_path_element(
+    element: str, roms_dir: Path, system_name: Optional[str] = None
+) -> Optional[str]:
     """Move one ``Rom_Path`` element under *roms_dir*, keeping its subfolders.
 
     The element's old ROM root is swapped for *roms_dir*: with ``roms_dir``
@@ -468,6 +470,13 @@ def _rebase_rom_path_element(element: str, roms_dir: Path) -> Optional[str]:
     ``E:\\Games\\Sega Dreamcast\\roms``.  Tails are tried longest first and the
     first one that exists under *roms_dir* wins, so an element is never rebased
     onto a folder that isn't there.  Returns ``None`` when no tail exists.
+
+    When the element contains a folder named *system_name*, no tail shorter
+    than the one starting at that folder is tried.  Otherwise a generic
+    subfolder name could match an unrelated top-level folder: with only
+    ``E:\\Games\\Sony Playstation`` and ``E:\\Games\\_Gun Games`` present,
+    ``J:\\Games\\Sony Playstation\\_Gun Games`` must not become
+    ``E:\\Games\\_Gun Games``.
 
     The element is parsed with ``PureWindowsPath`` because RocketLauncher INIs
     always hold Windows paths, whatever OS SpinDoctor itself runs on.
@@ -477,7 +486,12 @@ def _rebase_rom_path_element(element: str, roms_dir: Path) -> Optional[str]:
     # Only the folders after the last ".." are below the old ROM root.
     while ".." in parts:
         parts = parts[parts.index("..") + 1:]
-    for i in range(len(parts)):
+    last = len(parts)
+    if system_name:
+        folded = [part.casefold() for part in parts]
+        if system_name.casefold() in folded:
+            last = folded.index(system_name.casefold()) + 1
+    for i in range(last):
         candidate = roms_dir.joinpath(*parts[i:])
         try:
             if candidate.is_dir():
@@ -495,7 +509,9 @@ def _same_rom_dir(a: str, b: str, rl_base: Path) -> bool:
         return False
 
 
-def _rebase_rom_path_value(current: str, roms_dir: Path, rl_base: Path) -> Optional[str]:
+def _rebase_rom_path_value(
+    current: str, roms_dir: Path, rl_base: Path, system_name: Optional[str] = None
+) -> Optional[str]:
     """Plan the new value of an existing ``Rom_Path=`` line.
 
     *current* may list several folders separated by ``|`` (e.g. a system's
@@ -511,13 +527,13 @@ def _rebase_rom_path_value(current: str, roms_dir: Path, rl_base: Path) -> Optio
     Returns *current* unchanged when no element needs to move, the rebased
     value when at least one does, or ``None`` when no element exists and none
     could be rebased.  On ``None`` the caller falls back to the path derived
-    from ``roms_dir`` (the pre-existing behaviour).
+    from ``roms_dir`` (the pre-existing behavior).
     """
     elements = [e.strip() for e in current.split("|") if e.strip()]
     planned: list[str] = []
     usable = False
     for element in elements:
-        rebased = _rebase_rom_path_element(element, roms_dir)
+        rebased = _rebase_rom_path_element(element, roms_dir, system_name)
         if rebased is not None and not _same_rom_dir(rebased, element, rl_base):
             planned.append(rebased)
             usable = True
@@ -713,7 +729,7 @@ def generate_rl_system_ini(
             # (\roms) and extra |-separated paths (\MultiDisc) survive a
             # ROM-drive move; leave the file alone when nothing has to move.
             if not _skip_update and _current and config.roms_dir:
-                _planned_rom_path = _rebase_rom_path_value(_current, Path(config.roms_dir), rl_base)
+                _planned_rom_path = _rebase_rom_path_value(_current, Path(config.roms_dir), rl_base, system_name)
                 if _planned_rom_path == _current:
                     _skip_update = True
         if not _skip_update:
@@ -760,7 +776,7 @@ def generate_rl_system_ini(
                             rom_path = _flat_family_path
             # Same per-element rebase as the folder layout above.
             if not _skip_update_flat and _current_flat and config.roms_dir:
-                _planned_rom_path_flat = _rebase_rom_path_value(_current_flat, Path(config.roms_dir), rl_base)
+                _planned_rom_path_flat = _rebase_rom_path_value(_current_flat, Path(config.roms_dir), rl_base, system_name)
                 if _planned_rom_path_flat == _current_flat:
                     _skip_update_flat = True
         if not _skip_update_flat:
