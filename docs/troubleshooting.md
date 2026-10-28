@@ -503,6 +503,63 @@ Both read the same RocketLauncher `Statistics.ini` files. **Recently Played** so
 
 Automatic — `spindoctor recent rebuild --apply` reads RocketLauncher's `Statistics.ini` files (which RocketLauncher writes on every game launch). Schedule it at log-on or run from the Tools menu — see [Standalone tools](standalone-tools.md).
 
+### "Cannot find Rom … in any Rom_Paths provided", or a wheel opens but no game launches
+
+The wheel opens and scrolls normally, but choosing a game (every game, or just
+some of them) drops straight back to the wheel, or RocketLauncher shows
+**"Cannot find Rom `<name>` in any Rom_Paths provided … with any provided
+Rom_Extension …"**.
+
+**Cause:** RocketLauncher looks for each game as `<folder>\<name>.<ext>` or
+`<folder>\<name>\<name>.<ext>`, for every folder in the system's `Rom_Path` and
+every extension in `Rom_Extension`. It doesn't search any deeper. The usual ways
+this breaks:
+
+- **`Rom_Path` points at a parent folder.** For example
+  `Rom_Path=J:\Games\Sega Dreamcast` while every game sits in
+  `J:\Games\Sega Dreamcast\roms`. Either move the files up into
+  `J:\Games\Sega Dreamcast` (a flat game folder), or point `Rom_Path` at the
+  subfolder.
+- **A second folder isn't listed.** Multi-disc games kept in a `MultiDisc\`
+  folder (or gun games in `_Gun Games\`) must be added to `Rom_Path`,
+  separated with `|`:
+
+  ```ini
+  Rom_Path=J:\Games\Sony Playstation|J:\Games\Sony Playstation\MultiDisc
+  ```
+
+- **MAME alternate-name placeholders were deleted.** Wheels such as a
+  4-player wheel list games under alternate names (`xmenxbox`,
+  `3stooges2play`). The MAME module maps each one to the real ROM through
+  `RocketLauncher\Modules\MAME\MAME.ini` (`[xmenxbox]` /
+  `MameRomName = xmen`), but RocketLauncher first has to find a file with the
+  alternate name: an empty `xmenxbox.txt` in the MAME ROM folder, with `txt`
+  in the emulator's `Rom_Extension`. Clearing out "empty junk files" from
+  the ROM folder breaks every one of those games.
+- **The drive letter no longer exists.** `Rom_Path` still points at the old
+  drive after a migration or a restore. This includes a PCLauncher wheel's
+  placeholder-INI folder (`Rom_Path=…\Modules\PCLauncher\<System>`).
+- **A game borrows another system's settings.** A `System=` line in the
+  wheel's `RocketLauncher\Settings\<System>\Games.ini` makes RocketLauncher use
+  that other system's `Rom_Path` (and its `Skipchecks`) for the game, so a
+  broken `Rom_Path` there breaks the game here too.
+
+**Find them:** run `spindoctor doctor`. Its **ROM paths** check lists every
+`Rom_Path` folder that doesn't exist and, per wheel, how many games
+RocketLauncher can't find, with an example or two; games that borrow another
+system's settings get their own "Games via `<System>`" row. The `fix:` line
+names the settings file to edit, the subfolder holding most of the missing
+games (move the files up, or add the subfolder to `Rom_Path`), or the `.txt`
+placeholders to recreate. Wheels switched off on the Main Menu are checked too,
+but only reported as INFO.
+
+**Fix:** correct `Rom_Path` (and `Rom_Extension` if needed) in
+`RocketLauncher\Settings\<System>\Emulators.ini` `[ROMS]` (or the flat
+`RocketLauncher\Settings\<System>.ini` `[Settings]`), or in RocketLauncherUI.
+For MAME alternate names, recreate the empty `<name>.txt` files. Then re-run
+`spindoctor doctor` to confirm the wheel shows `N games OK`. See
+[Cabinet Architecture Reference → Multiple ROM folders and MAME alternate-name placeholders](cabinet-architecture-reference.md#multiple-rom-folders-and-mame-alternate-name-placeholders).
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
