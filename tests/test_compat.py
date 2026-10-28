@@ -260,3 +260,25 @@ def test_safe_writer_successful_write_passes_through():
     result = writer.write("ok")
     assert result == 2
     assert buf == ["ok"]
+
+
+# ─── no Python 3.9+ APIs in the package ───────────────────────────────────────
+
+# Methods that don't exist on Python 3.8, the supported floor.  CI's 3.8 job
+# only catches them on code paths a test happens to run (the GUI's migration
+# list once called str.removesuffix and failed on 3.8 with AttributeError).
+_PY39_METHODS = {"removeprefix", "removesuffix"}
+
+
+def test_package_avoids_python39_string_methods():
+    import pathlib
+
+    import spindoctor
+
+    found = []
+    for path in pathlib.Path(spindoctor.__file__).parent.rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in _PY39_METHODS:
+                found.append(f"{path.name}:{node.lineno} .{node.attr}()")
+    assert found == [], "Python 3.9+ only: " + ", ".join(found)

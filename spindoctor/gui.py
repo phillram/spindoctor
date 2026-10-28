@@ -6486,9 +6486,11 @@ class _SpinDoctorGUI:
             args += ["--include", include]
         selected_indices = self._migrate_systems_lb.curselection()
         if selected_indices:
+            # No str.removesuffix: it needs Python 3.9 and the floor is 3.8.
+            names = [self._migrate_systems_lb.get(i) for i in selected_indices]
             systems = ",".join(
-                self._migrate_systems_lb.get(i).removesuffix(_NOT_IN_WHEEL_SUFFIX)
-                for i in selected_indices
+                n[:-len(_NOT_IN_WHEEL_SUFFIX)] if n.endswith(_NOT_IN_WHEEL_SUFFIX) else n
+                for n in names
             )
             args += ["--systems", systems]
         if self._migrate_keep_source_var.get():
