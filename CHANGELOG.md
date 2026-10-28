@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`config set` saves list settings as lists.** It converted only true/false and number values, so `config set region_preferences USA,Japan` saved the string `"USA,Japan"`, and anything reading the setting got single characters. List settings now take comma-separated values (`"USA, Japan"`) or a JSON array, an empty value clears the list, and anything else is rejected without saving. Mapping settings such as `system_overrides` were overwritten with a plain string the same way; `config set` now refuses them and names the command to use instead. See `docs/configuration.md`. Covered by `tests/test_config.py`.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
