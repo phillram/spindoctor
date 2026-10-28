@@ -13,7 +13,7 @@ A librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](htt
 
 SpinDoctor is a librarian, **not** an installer. It does not install HyperSpin, RocketLauncher, or any emulator, and it does not download ROMs or BIOS. Get those in place, then SpinDoctor automates the rest.
 
-It's also careful by default: commands that modify files preview their plan until re-run with `--apply`, and most destructive commands write an undo manifest. See the [command reference](docs/commands.md) for the full safety model.
+It's also careful by default: commands that change cabinet files preview their plan until re-run with `--apply` (only SpinDoctor's own settings and lists, such as `config set` and `fav add`, save immediately), and most destructive commands write an undo manifest. See the [command reference](docs/commands.md) for the full safety model.
 
 ## Pick your install route
 
