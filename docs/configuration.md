@@ -19,6 +19,16 @@ spindoctor config show
 spindoctor config set <key> <value>
 ```
 
+For a list setting such as `region_preferences`, give the values separated by commas, or as a JSON array. An empty value clears the list:
+
+```bat
+spindoctor config set region_preferences "USA, World, Japan"
+spindoctor config set region_preferences "[\"USA\", \"Japan\"]"
+spindoctor config set gui_curate_regions ""
+```
+
+Settings that hold a mapping (`system_overrides`, `game_overrides`, `ignore_lists` and the like) can't be changed with `config set`. Use their own commands, such as `config system`, `config game-override` or `ignore add`.
+
 ## Most-used keys
 
 | Key | Description |
@@ -53,7 +63,7 @@ spindoctor config set <key> <value>
 | `gui_window_maximized` | Whether the GUI window was maximized when it closed (bool, default `false`). Restored on the next launch. Managed automatically — delete it to default to a normal window. |
 | `gui_last_active_tab` | Index of the tab that was open the last time the GUI closed (int, default unset). Restored on the next launch so users who live in a specific tab don't re-navigate from Setup every time. Managed automatically — delete it to default back to the Setup tab. On a true fresh install (no `config.json` yet), the GUI auto-focuses the Setup tab regardless. |
 | `gui_meta_subset` | Last-picked subset of systems for the Metadata & Media tab's "Pick subset" picker (list[str], default `[]`). Restored on the next launch so the "refresh the same five systems" workflow doesn't require re-ticking each time. |
-| `gui_curate_regions` | User-chosen ScreenScraper region tickboxes on the Maintenance tab (list[str], default `[]`). Empty list falls back to the top-level `region_preferences`. |
+| `gui_curate_regions` | User-chosen ScreenScraper region checkboxes on the Maintenance tab (list[str], default `[]`). Empty list falls back to the top-level `region_preferences`. |
 | `gui_meta_auto_best` | Persisted state of the "Auto-pick best match for ambiguous results" checkbox on the Metadata & Media tab (bool, default `true`). Off makes the GUI pass `--skip-ambiguous` so ambiguous matches are logged for the next audit pass instead of auto-picking. |
 | `gui_meta_all_games` | Persisted state of the "Refresh complete entries too" checkbox (bool, default `false`). |
 | `gui_meta_no_cache` | Persisted state of the "Skip cache, hit the API every game" checkbox (bool, default `false`). |
