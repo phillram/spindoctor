@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **The GUI's migration list works on Python 3.8 again.** Choosing systems on the Migration tab called `str.removesuffix`, which needs Python 3.9, so on 3.8 (the supported floor, and the Windows 7 builds) it failed with `AttributeError`. A test now scans the package for Python 3.9+ string methods. Covered by `tests/test_compat.py`.
+
+### Docs
+
+- **The "dry-run by default" rule now names its exceptions.** The cheatsheet, `commands.md` and the README said every command that modifies files previews first. `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set` save immediately. They change only SpinDoctor's own settings and lists, and nothing reaches the cabinet until a command such as `fav rebuild --apply` writes it. The docs now say so, at the rule and in each command's section.
+
 ## [2.15.0] - 2026-10-28
 
 ### Added
