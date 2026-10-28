@@ -2509,7 +2509,7 @@ Program_To_Run_Working_Dir_2=<folder holding ResetLEDFlash.bat>
 Program_To_Run_MaxMinHide_2=Hide
 ```
 
-The `.bat` runs the script below under 32-bit PowerShell (`-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ResetLEDFlash.ps1"`). The script zeroes only the flash speeds and leaves colours, states and fade time to LedBlinky. It writes `ResetLEDFlash.log` next to itself on every run. On the cabinet's first real start, it ran with LedBlinky already up, reset both boards, and the panel animated normally. To run the same reset by hand, close HyperSpin and run the `.bat`. If your LedBlinky install isn't `D:\Arcade\LEDBlinky`, change the DLL path first.
+The `.bat` runs the script below under 32-bit PowerShell (`-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%~dp0ResetLEDFlash.ps1"`). The script zeroes only the flash speeds and leaves colors, states and fade time to LedBlinky. It writes `ResetLEDFlash.log` next to itself on every run. On the cabinet's first real start, it ran with LedBlinky already up, reset both boards, and the panel animated normally. To run the same reset by hand, close HyperSpin and run the `.bat`. If your LedBlinky install isn't `D:\Arcade\LEDBlinky`, change the DLL path first.
 
 ```powershell
 $log = Join-Path $PSScriptRoot 'ResetLEDFlash.log'
