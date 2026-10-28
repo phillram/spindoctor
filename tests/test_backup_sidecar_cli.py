@@ -104,6 +104,67 @@ def test_list_ignores_unrelated_bak_files(tmp_path):
     assert "Main Menu.20250101_120000.bak" in names
 
 
+def test_list_includes_same_second_sidecars_newest_first(tmp_path):
+    """A second backup in the same second gets a ``_2`` counter instead of
+    overwriting the first; ``list`` must show it, ahead of the first."""
+    target = _make_target(tmp_path)
+    (tmp_path / "Main Menu.20260519_153045_2.bak").write_text(
+        "<?xml version=\"1.0\"?>\n<menu><game name=\"newer\"/></menu>\n",
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["backup", "sidecar", "list", str(target), "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    assert [e["name"] for e in json.loads(result.output)] == [
+        "Main Menu.20260519_153045_2.bak",
+        "Main Menu.20260519_153045.bak",
+        "Main Menu.20250101_120000.bak",
+    ]
+
+
+def test_restore_accepts_same_second_sidecar(tmp_path):
+    target = _make_target(tmp_path)
+    bak = tmp_path / "Main Menu.20260519_153045_2.bak"
+    bak.write_text("payload", encoding="utf-8")
+    runner = CliRunner()
+    result = runner.invoke(
+        cli, ["backup", "sidecar", "restore", str(target), "--from", str(bak)],
+    )
+    assert result.exit_code == 0, result.output
+
+
+def test_restore_apply_never_overwrites_an_existing_sidecar(tmp_path, monkeypatch):
+    """The live file's pre-restore backup must not replace a sidecar that
+    happens to carry the same timestamp."""
+    from datetime import datetime
+
+    import spindoctor.cli as cli_mod
+
+    class _FrozenDateTime:
+        @classmethod
+        def now(cls):
+            return datetime(2026, 5, 19, 15, 30, 45)
+
+    monkeypatch.setattr(cli_mod, "datetime", _FrozenDateTime)
+    target = _make_target(tmp_path)
+    same_stamp = tmp_path / "Main Menu.20260519_153045.bak"
+    same_stamp_before = same_stamp.read_text(encoding="utf-8")
+    live_before = target.read_text(encoding="utf-8")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        cli,
+        ["backup", "sidecar", "restore", str(target),
+         "--from", str(tmp_path / "Main Menu.20250101_120000.bak"), "--apply"],
+    )
+    assert result.exit_code == 0, result.output
+    assert same_stamp.read_text(encoding="utf-8") == same_stamp_before
+    live_backup = tmp_path / "Main Menu.20260519_153045_2.bak"
+    assert live_backup.read_text(encoding="utf-8") == live_before
+
+
 def test_restore_dry_run_does_not_modify_files(tmp_path):
     target = _make_target(tmp_path)
     bak = tmp_path / "Main Menu.20250101_120000.bak"

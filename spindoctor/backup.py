@@ -36,6 +36,7 @@ from .fileinfo import _dir_size
 # the same 6-line loop. Re-exported here so callers like
 # `from .backup import format_bytes` keep working unchanged.
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
+from ._utils import unique_path
 from .config import CONFIG_DIR, Config
 
 
@@ -242,7 +243,9 @@ def normalize_components(values: Iterable[str]) -> list[str]:
 def _new_backup_root(target: Path, label: Optional[str] = None) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     suffix = f"-{label}" if label else ""
-    return target / f"{BACKUP_DIR_PREFIX}{stamp}{suffix}"
+    # A second backup started in the same second must not merge into (and
+    # overwrite the manifest of) the first one's folder.
+    return unique_path(target / f"{BACKUP_DIR_PREFIX}{stamp}{suffix}")
 
 
 def plan_backup(
