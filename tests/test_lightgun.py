@@ -137,14 +137,16 @@ def test_bounded_walk_does_not_descend_past_max_depth(tmp_path, monkeypatch):
 
     (tmp_path / "a" / "b" / "c" / "d").mkdir(parents=True)
     walked: list[str] = []
-    real_walk = os.walk
+    real_scandir = os.scandir
 
-    def recording_walk(top, *args, **kwargs):
-        for dirpath, dirnames, filenames in real_walk(top, *args, **kwargs):
-            walked.append(Path(dirpath).relative_to(tmp_path).as_posix())
-            yield dirpath, dirnames, filenames
+    # Record the directories os.walk lists, not what it yields: before 3.12
+    # os.walk recurses through the module-level name, so wrapping os.walk
+    # itself re-enters the wrapper and records nested folders twice.
+    def recording_scandir(path="."):
+        walked.append(Path(path).relative_to(tmp_path).as_posix())
+        return real_scandir(path)
 
-    monkeypatch.setattr(os, "walk", recording_walk)
+    monkeypatch.setattr(os, "scandir", recording_scandir)
     yielded = {p.relative_to(tmp_path).as_posix() for _d, p in _bounded_walk(tmp_path, max_depth=2)}
     assert yielded == {".", "a", "a/b"}
     assert sorted(walked) == [".", "a", "a/b"]
