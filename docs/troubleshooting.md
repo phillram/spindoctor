@@ -72,6 +72,36 @@ spindoctor config system set "<System>" --rom-extensions ext1,ext2
 
 See [Configuration → Per-system overrides](configuration.md#per-system-overrides).
 
+### `audit` reports 0 ROMs (or every game missing) for a wheel whose games launch fine
+
+`spindoctor audit` shows `Total ROMs: 0` and every database game under **DB
+entries with no ROM**, or thousands of **ROMs not in database**, for a wheel
+whose games launch normally.
+
+**Cause:** `audit` used to look for ROMs only in `<roms_dir>\<System>`, with
+SpinDoctor's own guess at the system's file extensions. RocketLauncher, which
+actually launches the games, uses the wheel's `Rom_Path` and `Rom_Extension`.
+The two disagree when:
+
+- the games sit in a subfolder, such as `J:\Games\Sega Dreamcast\roms`;
+- `Rom_Path` lists more than one folder, such as
+  `J:\Games\Sony Playstation|J:\Games\Sony Playstation\MultiDisc`;
+- the folder isn't named after the wheel, or several wheels point at the MAME
+  folder;
+- `Rom_Extension` differs from SpinDoctor's guess (`.pbp` images, MAME `.txt`
+  placeholders).
+
+**Fix:** update SpinDoctor and make sure `rocketlauncher_dir` is set
+(`spindoctor config set rocketlauncher_dir D:\Arcade\RocketLauncher`). `audit`
+then reads each wheel's `Rom_Path` and `Rom_Extension` the way RocketLauncher
+does. A folder that other wheels also use is shown as **Shared ROM folder**:
+only the wheel's own games are taken from it, so the rest of the MAME folder
+no longer shows up as ROMs missing from a smaller wheel's database.
+
+If `audit` still reports games with no ROM, RocketLauncher can't find them
+either. Run `spindoctor doctor` and see *"Cannot find Rom … in any Rom_Paths
+provided", or a wheel opens but no game launches* under [Wheels](#wheels).
+
 ## Metadata / scraping
 
 ### Reading `scraper.log`
