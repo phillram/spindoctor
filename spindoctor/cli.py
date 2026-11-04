@@ -13423,8 +13423,9 @@ def lightgun_group():
 
     \b
     `lightgun detect`    — find Sinden + DemulShooter, seed config from
-                           any RL INIs already wired to DemulShooter.
-    `lightgun audit`     — show DemulShooter wiring status per system.
+                           systems already wired (RL INI DemulShooter hook,
+                           or User Functions that start the gun software).
+    `lightgun audit`     — show gun wiring status per system.
     `lightgun configure` — wire one system's RL INI (dry-run by default).
     """
 
@@ -13461,19 +13462,20 @@ def lightgun_detect(apply_changes, verbose):
         for exe in install.demulshooter_candidates:
             console.print(f"  · {exe}")
 
-    pre_wired = lg.detect_lightgun_systems(config)
+    wiring = lg.detect_lightgun_wiring(config)
+    pre_wired = list(wiring)
     already_marked = set(config.lightgun_systems())
     new_systems = [s for s in pre_wired if s not in already_marked]
 
     if pre_wired:
-        console.print(f"\n[bold]Systems already wired to DemulShooter[/bold] "
+        console.print(f"\n[bold]Systems already wired for light guns[/bold] "
                       f"({len(pre_wired)}):")
         for s in pre_wired:
             mark = " [dim](already in config)[/dim]" if s in already_marked else ""
-            console.print(f"  · {s}{mark}")
+            console.print(f"  · {escape(s)} [dim]({escape(wiring[s])})[/dim]{mark}")
     else:
         console.print("\n[dim]No systems found with DemulShooter Pre_Launch_App "
-                      "wiring.[/dim]")
+                      "or User Functions gun wiring.[/dim]")
 
     if new_systems and not apply_changes:
         console.print(f"\n[yellow]DRY RUN[/yellow] — would mark "
@@ -13496,7 +13498,7 @@ def lightgun_detect(apply_changes, verbose):
 
 @lightgun_group.command("audit")
 def lightgun_audit():
-    """Show DemulShooter wiring status for every lightgun system in config."""
+    """Show gun wiring (INI hooks, User Functions) for every lightgun system in config."""
     from . import lightgun as lg
 
     config = _cfg()
@@ -13519,15 +13521,24 @@ def lightgun_audit():
     tbl.add_column("Pre_Launch_App")
     tbl.add_column("Target")
     tbl.add_column("Post_Launch_App")
+    tbl.add_column("User Functions")
+    user_functions = (lg.index_user_functions(Path(config.rocketlauncher_dir))
+                      if config.rocketlauncher_dir else None)
     for s in systems:
-        status = lg.audit_system_wiring(s, config)
+        status = lg.audit_system_wiring(s, config, user_functions=user_functions)
         if not status:
-            tbl.add_row(s, "[red]missing[/red]", "—", "—", "—")
+            tbl.add_row(s, "[red]missing[/red]", "—", "—", "—", "—")
             continue
-        pre = "[green]wired[/green]" if status.pre_launch else "[red]none[/red]"
-        post = "[green]wired[/green]" if status.post_launch else "[yellow]none[/yellow]"
+        # No hooks are needed when User Functions start the gun software.
+        uf_only = status.wired_via_user_functions and not status.is_wired
+        pre = ("[green]wired[/green]" if status.pre_launch
+               else "[dim]none[/dim]" if uf_only else "[red]none[/red]")
+        post = ("[green]wired[/green]" if status.post_launch
+                else "[dim]none[/dim]" if uf_only else "[yellow]none[/yellow]")
+        uf = (f"[green]wired[/green] ({escape(status.user_functions_where())})"
+              if status.wired_via_user_functions else "—")
         tbl.add_row(
-            s, status.ini_path.name, pre, status.target or "—", post,
+            s, status.ini_path.name, pre, status.target or "—", post, uf,
         )
     console.print(tbl)
 
@@ -13572,6 +13583,8 @@ def lightgun_configure(system, target, extra_args, apply_changes, verbose):
     console.print(grid)
     for note in plan.notes:
         console.print(f"  [yellow]·[/yellow] {note}")
+    for warning in plan.warnings:
+        console.print(f"\n[bold yellow]Warning:[/bold yellow] {escape(warning)}")
 
     if not apply_changes:
         console.print("\n[yellow]DRY RUN[/yellow] — re-run with --apply "

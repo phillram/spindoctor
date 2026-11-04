@@ -1784,11 +1784,15 @@ def check_lightguns(config: Config) -> Check:
     teardown leaves DemulShooter running and can break the next launch.  These
     are silent failures the user only notices mid-game, so they belong in doctor.
 
+    A system whose RocketLauncher User Functions start the gun software
+    (``Lightgun.exe`` or DemulShooter) for the system or its emulators is
+    wired too, and passes; one where only some games' files do is INFO.
+
     Diagnosis only — wiring a system needs a DemulShooter path and a `-target`
     choice, so there is no safe blanket auto-fix; each finding names the exact
     ``lightgun configure`` command instead.
     """
-    from .lightgun import audit_system_wiring
+    from .lightgun import audit_system_wiring, index_user_functions
 
     systems = config.lightgun_systems()
     if not systems:
@@ -1817,18 +1821,30 @@ def check_lightguns(config: Config) -> Check:
         parent.status = _worst(c.status for c in parent.children)
         return parent
 
+    # List the User Functions folder once, not once per system.
+    user_functions = index_user_functions(Path(config.rocketlauncher_dir))
     for system in systems:
         node = Check(name=system, status=Status.OK)
-        status = audit_system_wiring(system, config)
-        if status is None or not status.is_wired:
+        status = audit_system_wiring(system, config, user_functions=user_functions)
+        if status is not None and not status.is_wired and status.wired_via_user_functions:
+            where = status.user_functions_where()
+            if status.user_functions:
+                node.detail = f"wired via User Functions ({where})"
+            else:
+                n = len(status.user_functions_games)
+                node.status = Status.INFO
+                node.detail = (f"wired via User Functions for {n} game{'s' if n != 1 else ''} "
+                               f"only ({where}); its other games may run with no gun")
+        elif status is None or not status.is_wired:
             node.status = Status.FAIL
-            node.detail = "marked lightgun but no DemulShooter Pre_Launch_App — game runs with no gun"
+            node.detail = ("marked lightgun but no DemulShooter Pre_Launch_App or User "
+                           "Functions gun wiring — game runs with no gun")
             node.fix = f'spindoctor lightgun configure --system "{system}" --apply'
         else:
             if status.post_launch is None:
                 node.children.append(Check(
                     name="teardown", status=Status.WARN,
-                    detail="no Post_Launch_App — DemulShooter may keep running after exit",
+                    detail="no DemulShooter Post_Launch_App — DemulShooter may keep running after exit",
                     fix=f'spindoctor lightgun configure --system "{system}" --apply',
                 ))
             if status.target is None:
@@ -1839,6 +1855,12 @@ def check_lightguns(config: Config) -> Check:
             else:
                 node.children.append(Check(
                     name="target", status=Status.OK, detail=f"-target {status.target}",
+                ))
+            if "demulshooter" in status.user_functions_programs:
+                node.children.append(Check(
+                    name="user functions", status=Status.INFO,
+                    detail=(f"User Functions also start DemulShooter "
+                            f"({status.user_functions_where()}) — it may run twice"),
                 ))
             node.status = _worst(c.status for c in node.children)
         parent.children.append(node)
