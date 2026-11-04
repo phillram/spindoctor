@@ -24,6 +24,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 ### Docs
 
 - **The "dry-run by default" rule now names its exceptions.** The cheatsheet, `commands.md` and the README said every command that modifies files previews first. `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set` save immediately. They change only SpinDoctor's own settings and lists, and nothing reaches the cabinet until a command such as `fav rebuild --apply` writes it. The docs now say so, at the rule and in each command's section.
+- **Two-gun setups for Model 3 and the Sinden software are documented.** `docs/lightgun.md` has a new section on what two guns in Supermodel need: raw input (and how RocketLauncher's SuperModel module passes it), a numbered mouse in every gun line, how Supermodel numbers mice, why a keymapper remap loses Start and Coin under raw input, and the `Crosshairs` values. It also gives RocketLauncher's full keymapper profile order (game, emulator, system, then `_Default`) and three Sinden software behaviours that make two guns recoil differently. `docs/troubleshooting.md` has a matching entry, and the keymapper note in `docs/cabinet-architecture-reference.md` now lists all four profile files.
 
 ## [2.15.0] - 2026-10-28
 
