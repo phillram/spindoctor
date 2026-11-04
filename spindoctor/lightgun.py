@@ -13,15 +13,18 @@ Detection runs in two passes:
     configured tools/emulators trees.  This tells us whether the cabinet
     has the gear at all.
 
-2.  *RL module / INI scan* — for every per-system INI under
-    ``RocketLauncher/Settings``, look for ``DemulShooter`` references in
-    ``Pre_Launch_App`` / ``Post_Launch_App`` (and the older AHK-module
-    pattern).  Any system already wired this way is treated as
-    lightgun-enabled and seeded into the spindoctor config.
+2.  *RL settings / User Functions scan* — for every per-system INI under
+    ``RocketLauncher/Settings``, look for a ``DemulShooter``
+    ``Pre_Launch_App``; and in ``RocketLauncher/Lib/User Functions``, for
+    a line that runs ``Lightgun.exe`` or DemulShooter in the AHK files
+    RocketLauncher runs for that system, its games or its emulators.
+    Any system already wired either way is treated as lightgun-enabled
+    and seeded into the spindoctor config.
 
 ``configure --system <name>`` writes/updates the per-system INI.  It
 never touches the global module .ahk files (that's where Tur templates
-live and breaking those would break every system at once).
+live and breaking those would break every system at once), nor the
+User Functions files.
 """
 from __future__ import annotations
 
@@ -171,11 +174,20 @@ def _bounded_walk(root: Path, max_depth: int):
 
 # ─── per-system audit ─────────────────────────────────────────────────────────
 
+# Both hooks are matched on their own line ([ \t], not \s), so an empty
+# key can't take its value from the next line.  Callers strip the value.
 DEMULSHOOTER_PRE_RE = re.compile(
-    r"^\s*Pre_Launch_App\s*=\s*(?P<value>.*demulshooter.*?)\s*$",
+    r"^[ \t]*Pre_Launch_App[ \t]*=[ \t]*(?P<value>[^\r\n]*demulshooter[^\r\n]*)",
     re.IGNORECASE | re.MULTILINE,
 )
+# Only a teardown that names DemulShooter counts: an unrelated
+# Post_Launch_App (a resolution reset, say) leaves DemulShooter running.
 DEMULSHOOTER_POST_RE = re.compile(
+    r"^[ \t]*Post_Launch_App[ \t]*=[ \t]*(?P<value>[^\r\n]*demulshooter[^\r\n]*)",
+    re.IGNORECASE | re.MULTILINE,
+)
+# Any Post_Launch_App: configure overwrites it, whatever it runs.
+_POST_LAUNCH_RE = re.compile(
     r"^\s*Post_Launch_App\s*=\s*(.+)",
     re.IGNORECASE | re.MULTILINE,
 )
@@ -189,10 +201,34 @@ class SystemLightgunStatus:
     pre_launch: Optional[str] = None
     post_launch: Optional[str] = None
     target: Optional[str] = None  # parsed from pre_launch -target arg
+    # User Functions files with a line that runs Lightgun.exe or DemulShooter
+    # for this system, as "Lib\User Functions\..." labels: the system's own
+    # file and its emulators' files (they run for every game), then
+    # per-game files.
+    user_functions: list[str] = field(default_factory=list)
+    user_functions_games: list[str] = field(default_factory=list)
+    # What those lines run: "lightgun" and/or "demulshooter".
+    user_functions_programs: set[str] = field(default_factory=set)
 
     @property
     def is_wired(self) -> bool:
         return self.pre_launch is not None
+
+    @property
+    def wired_via_user_functions(self) -> bool:
+        return bool(self.user_functions or self.user_functions_games)
+
+    def user_functions_where(self) -> str:
+        """Where the User Functions wiring is, for messages: each system-wide
+        file, then the game file or the number of them."""
+        parts = list(self.user_functions)
+        games = self.user_functions_games
+        if len(games) == 1:
+            parts.append(games[0])
+        elif games:
+            folder = games[0].rsplit("\\", 1)[0]
+            parts.append(f"{len(games)} game files in {folder}")
+        return ", ".join(parts)
 
 
 def system_settings_ini(rocketlauncher_dir: Path, system_name: str
@@ -220,9 +256,176 @@ def system_settings_ini(rocketlauncher_dir: Path, system_name: str
 _TARGET_RE = re.compile(r"-target(?:=|\s+)(\S+)", re.IGNORECASE)
 
 
-def audit_system_wiring(system_name: str, config: Config
+# ─── RocketLauncher User Functions ────────────────────────────────────────────
+#
+# Many cabinets start the gun software from RocketLauncher User Functions
+# instead of a Pre_Launch_App hook: AHK files under Lib\User Functions that
+# RL runs for one system (<System>.ahk), one of its games
+# (<System>\<Game>.ahk) or one emulator (Emulators\<Emulator>.ahk, or
+# <System>\Emulators\<Emulator>.ahk for that system only).  RL matches
+# those names case-insensitively.  Global.ahk runs for every system, so it
+# can't tell which systems are gun systems and isn't read.
+
+# An AHK comment starts with ";" at the start of a line or after a space
+# or tab ("`;" is a literal semicolon).
+_AHK_COMMENT_RE = re.compile(r"(?:^|[ \t]);")
+# Run / RunWait as a command ("Run, x" or "Run x") or a function ("Run(x)").
+_AHK_RUN_RE = re.compile(r"^\s*Run(?:Wait)?\s*[,(\s]", re.IGNORECASE)
+# The Sinden software and DemulShooter (32- or 64-bit).
+_GUN_EXE_RE = re.compile(r"\b(lightgun|demulshooter)(?:x64)?\.exe\b", re.IGNORECASE)
+
+_DEFAULT_EMULATOR_RE = re.compile(
+    r"^[ \t]*Default_Emulator[ \t]*=[ \t]*([^\r\n]*?)[ \t]*\r?$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_GAME_EMULATOR_RE = re.compile(
+    r"^[ \t]*Emulator[ \t]*=[ \t]*([^\r\n]*?)[ \t]*\r?$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _ahk_code_lines(text: str) -> Iterable[str]:
+    """The code on each line of AHK *text*: comments and ``/* … */`` blocks
+    removed, blank lines skipped."""
+    in_block = False
+    for line in text.splitlines():
+        s = line.strip()
+        if in_block:
+            in_block = not (s.startswith("*/") or s.endswith("*/"))
+            continue
+        if s.startswith("/*"):
+            in_block = not (len(s) >= 4 and s.endswith("*/"))
+            continue
+        code = _AHK_COMMENT_RE.split(line, maxsplit=1)[0]
+        if code.strip():
+            yield code
+
+
+def _read_ahk(path: Path) -> str:
+    """An AHK file's text: UTF-8 with or without a BOM, ANSI, or UTF-16 with
+    a BOM.  Bytes that don't decode are replaced, never fatal."""
+    data = path.read_bytes()
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
+        return data.decode("utf-16", errors="replace")
+    return data.decode("utf-8-sig", errors="replace")
+
+
+@dataclass
+class UserFunctionsIndex:
+    """The ``.ahk`` files under ``Lib/User Functions`` RocketLauncher can run.
+
+    *files* maps each file's path relative to that folder, lower-cased and
+    ``/``-separated (``"emulators/mame.ahk"``), to the file.  Build it once
+    with :func:`index_user_functions` and pass it to every
+    :func:`audit_system_wiring` call; each file is read the first time it's
+    asked about, and only then.
+    """
+    root: Path
+    files: dict[str, Path] = field(default_factory=dict)
+    _programs: dict[str, frozenset[str]] = field(default_factory=dict, repr=False)
+
+    def gun_programs(self, key: str) -> frozenset[str]:
+        """``"lightgun"`` / ``"demulshooter"`` for each that the file at *key*
+        runs on a line that isn't a comment; empty when it runs neither."""
+        if key not in self._programs:
+            found: set[str] = set()
+            path = self.files.get(key)
+            try:
+                text = _read_ahk(path) if path is not None else ""
+            except OSError:
+                text = ""
+            for code in _ahk_code_lines(text):
+                if _AHK_RUN_RE.match(code):
+                    found.update(m.lower() for m in _GUN_EXE_RE.findall(code))
+            self._programs[key] = frozenset(found)
+        return self._programs[key]
+
+    def label(self, key: str) -> str:
+        """``Lib\\User Functions\\...`` for the file at *key*, spelled as on disk."""
+        rel = self.files[key].relative_to(self.root)
+        return "\\".join(("Lib", "User Functions") + rel.parts)
+
+
+def index_user_functions(rocketlauncher_dir: Path) -> UserFunctionsIndex:
+    """List RocketLauncher's User Functions files in one pass.
+
+    Only folder listings are read, never a file per game: ``<System>.ahk``,
+    ``<System>/*.ahk`` (games), ``Emulators/*.ahk`` and
+    ``<System>/Emulators/*.ahk``.  A missing folder gives an empty index.
+    """
+    import os
+
+    root = Path(rocketlauncher_dir) / "Lib" / "User Functions"
+    index = UserFunctionsIndex(root=root)
+
+    def scan(folder: str, prefix: str, depth: int) -> None:
+        try:
+            with os.scandir(folder) as it:
+                entries = list(it)
+        except OSError:
+            return
+        for entry in entries:
+            name = entry.name.lower()
+            try:
+                is_dir = entry.is_dir()
+            except OSError:
+                continue
+            if not is_dir:
+                if name.endswith(".ahk"):
+                    index.files.setdefault(prefix + name, Path(entry.path))
+            elif depth == 0 or (depth == 1 and name == "emulators"):
+                scan(entry.path, f"{prefix}{name}/", depth + 1)
+
+    scan(str(root), "", 0)
+    return index
+
+
+def _system_emulators(rocketlauncher_dir: Path, system_name: str, body: str
+                      ) -> list[str]:
+    """Lower-cased names of the emulators RocketLauncher can launch
+    *system_name*'s games with: ``Default_Emulator`` in its settings *body*,
+    then each ``Emulator=`` override in ``Settings/<System>/Games.ini``."""
+    names = []
+    m = _DEFAULT_EMULATOR_RE.search(body)
+    if m:
+        names.append(m.group(1))
+    games_ini = Path(rocketlauncher_dir) / "Settings" / system_name / "Games.ini"
+    try:
+        games = games_ini.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        games = ""
+    names += [g.group(1) for g in _GAME_EMULATOR_RE.finditer(games)]
+    return list(dict.fromkeys(n.lower() for n in names if n))
+
+
+def _add_user_functions(status: SystemLightgunStatus, index: UserFunctionsIndex,
+                        emulators: list[str]) -> None:
+    """Record in *status* the User Functions files that start the gun
+    software for its system, the system's *emulators* or its games."""
+    system = status.system_name.lower()
+    system_wide = [f"{system}.ahk"]
+    for emu in emulators:
+        system_wide += [f"emulators/{emu}.ahk", f"{system}/emulators/{emu}.ahk"]
+    games = sorted(k for k in index.files
+                   if k.startswith(system + "/") and "/" not in k[len(system) + 1:])
+    for keys, labels in ((system_wide, status.user_functions),
+                         (games, status.user_functions_games)):
+        for key in keys:
+            programs = index.gun_programs(key) if key in index.files else frozenset()
+            if programs:
+                labels.append(index.label(key))
+                status.user_functions_programs.update(programs)
+
+
+def audit_system_wiring(system_name: str, config: Config,
+                        user_functions: Optional[UserFunctionsIndex] = None,
                         ) -> Optional[SystemLightgunStatus]:
-    """Return the DemulShooter wiring for *system_name*, or None if no INI."""
+    """Return the gun wiring for *system_name*, or None if no INI.
+
+    That's the DemulShooter ``Pre_Launch_App`` / ``Post_Launch_App`` hooks,
+    plus the User Functions files that start the gun software.  When
+    auditing several systems, pass one *user_functions* index to them all.
+    """
     if not config.rocketlauncher_dir:
         return None
     found = system_settings_ini(Path(config.rocketlauncher_dir), system_name)
@@ -244,17 +447,27 @@ def audit_system_wiring(system_name: str, config: Config
     if m:
         status.post_launch = m.group(1).strip()
 
+    if user_functions is None:
+        user_functions = index_user_functions(Path(config.rocketlauncher_dir))
+    if user_functions.files:
+        emulators = _system_emulators(Path(config.rocketlauncher_dir), system_name, body)
+        _add_user_functions(status, user_functions, emulators)
     return status
 
 
-def detect_lightgun_systems(config: Config) -> list[str]:
-    """Return system names whose RL INI already has DemulShooter wiring."""
+def detect_lightgun_wiring(config: Config) -> dict[str, str]:
+    """Every system already wired for light guns → how, sorted by name.
+
+    ``"Pre_Launch_App"`` for a DemulShooter hook in the system's RL INI,
+    else ``"User Functions: <where>"`` when its User Functions files start
+    the gun software (see :meth:`SystemLightgunStatus.user_functions_where`).
+    """
     if not config.rocketlauncher_dir:
-        return []
+        return {}
     settings = Path(config.rocketlauncher_dir) / "Settings"
     if not settings.exists():
-        return []
-    found: set[str] = set()
+        return {}
+    found: dict[str, str] = {}
     skip = {"global emulators.ini", "rocketlauncher.ini", "global rocketlauncher.ini"}
     # Flat Settings/<System>.ini and folder-layout Settings/<System>/Emulators.ini.
     candidates = [(ini, ini.stem) for ini in settings.glob("*.ini")
@@ -263,8 +476,21 @@ def detect_lightgun_systems(config: Config) -> list[str]:
     for ini, system in candidates:
         body = ini.read_text(encoding="utf-8", errors="replace")
         if DEMULSHOOTER_PRE_RE.search(body):
-            found.add(system)
-    return sorted(found)
+            found[system] = "Pre_Launch_App"
+    user_functions = index_user_functions(Path(config.rocketlauncher_dir))
+    if user_functions.files:
+        for system in sorted({s for _ini, s in candidates} - set(found)):
+            status = audit_system_wiring(system, config, user_functions=user_functions)
+            if status is not None and status.wired_via_user_functions:
+                found[system] = f"User Functions: {status.user_functions_where()}"
+    return dict(sorted(found.items()))
+
+
+def detect_lightgun_systems(config: Config) -> list[str]:
+    """Return system names already wired for light guns: a DemulShooter
+    ``Pre_Launch_App`` in their RL INI, or User Functions that start the gun
+    software (see :func:`detect_lightgun_wiring`)."""
+    return list(detect_lightgun_wiring(config))
 
 
 # ─── per-system configuration writer ──────────────────────────────────────────
@@ -282,6 +508,8 @@ class WirePlan:
     replace_pre: bool = False
     replace_post: bool = False
     notes: list[str] = field(default_factory=list)
+    # Reasons the hooks may do harm, e.g. the gun software starting twice.
+    warnings: list[str] = field(default_factory=list)
 
 
 def plan_wire_system(
@@ -338,7 +566,7 @@ def plan_wire_system(
     )
     body = ini_path.read_text(encoding="utf-8", errors="replace")
     existing_pre = DEMULSHOOTER_PRE_RE.search(body)
-    existing_post = DEMULSHOOTER_POST_RE.search(body)
+    existing_post = _POST_LAUNCH_RE.search(body)
     if existing_pre and existing_pre.group(1).strip() != pre_cmd:
         plan.replace_pre = True
         plan.notes.append(
@@ -351,6 +579,24 @@ def plan_wire_system(
             f"Existing Post_Launch_App will be replaced "
             f"(was: {existing_post.group(1).strip()})."
         )
+
+    # The hook comes on top of whatever User Functions already start.
+    status = audit_system_wiring(system_name, config)
+    if status is not None and status.wired_via_user_functions:
+        where = status.user_functions_where()
+        if "demulshooter" in status.user_functions_programs:
+            plan.warnings.append(
+                f"'{system_name}' already starts DemulShooter from RocketLauncher "
+                f"User Functions ({where}). This Pre_Launch_App would start it a "
+                "second time: keep only one of the two."
+            )
+        else:
+            plan.warnings.append(
+                f"'{system_name}' already starts the gun software from RocketLauncher "
+                f"User Functions ({where}). If those files also start DemulShooter "
+                "(directly or through a helper script), this Pre_Launch_App starts "
+                "it a second time: keep only one of the two."
+            )
     return plan
 
 

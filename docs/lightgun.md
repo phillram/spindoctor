@@ -33,6 +33,8 @@ spindoctor lightgun configure --system "Sega Naomi" --apply     :: commit
 
 The dry-run output shows the exact `Pre_Launch_App` and `Post_Launch_App` lines that will be inserted. `--apply` writes them and marks the system as lightgun-enabled in spindoctor config. They go into the system's existing settings file: `Settings\<System>\Emulators.ini` (under `[ROMS]`) when the system uses the folder layout, otherwise `Settings\<System>.ini` (under `[Settings]`). Nothing else in the file changes. A system with neither file has no RocketLauncher settings yet; set it up in RocketLauncherUI or with `generate-config --apply` first.
 
+If the system's RocketLauncher User Functions already start the gun software (see [Auditing](#auditing)), `configure` prints a warning: when they start DemulShooter, a `Pre_Launch_App` hook on top of them starts it a second time. `--apply` still writes the hooks, so keep only one of the two.
+
 DemulShooter is started as `"<DemulShooter.exe>" -target=<target> <extra args>`. DemulShooter only accepts its options with `=`; SpinDoctor 2.15.0 and earlier wrote `-target <target>`, which DemulShooter ignores, so re-run `configure --apply` on systems wired by them. No `-rom=` is written: the hook is per system, and RocketLauncher has no documented way to put each game's ROM name into it. Targets that need `-rom=` are better served by RocketLauncher's own DemulShooter support (DemulShooter path under **Global → Third Party** in RocketLauncherUI, then **DemulShooter Enabled** per game in the module's settings).
 
 For systems spindoctor doesn't auto-target (rare emulators, custom builds), pass `--target <name>` — anything DemulShooter accepts, see its readme:
@@ -64,7 +66,9 @@ Pass `--target` to override.
 spindoctor lightgun audit
 ```
 
-Lists every system with `"lightgun": true` and whether its INI's `Pre_Launch_App` and `Post_Launch_App` are wired. Systems with missing `Post_Launch_App` will leave DemulShooter running after the emulator quits — fix with another `lightgun configure --apply`.
+Lists every system with `"lightgun": true` and whether its INI's `Pre_Launch_App` and `Post_Launch_App` are wired. Systems with missing `Post_Launch_App` will leave DemulShooter running after the emulator quits — fix with another `lightgun configure --apply`. Only a `Post_Launch_App` that names DemulShooter counts; an unrelated one (a resolution reset, say) shows as `none`.
+
+Many cabinets start the gun software from RocketLauncher **User Functions** instead of the INI hooks: the AHK files RocketLauncher runs for one system (`RocketLauncher\Lib\User Functions\<System>.ahk`), one of its games (`<System>\<Game>.ahk`) or one emulator (`Emulators\<Emulator>.ahk`, or `<System>\Emulators\<Emulator>.ahk` for that system only). A `Run` or `RunWait` line there that starts `Lightgun.exe` (the Sinden software) or DemulShooter counts as wiring, in the system's own file, the files for its `Default_Emulator` and any `Games.ini` `Emulator=` override, and its games' files. Names match whatever their case, as in RocketLauncher. Comment lines (`;`, `/* … */`) don't count, and neither does a line that runs a helper script which then starts the gun software. `Global.ahk` runs for every system, so it isn't read. The audit's **User Functions** column names the files, `lightgun detect` lists these systems as already wired, and `doctor` passes them (INFO when only some games' files start the gun).
 
 ## Defaults and tuning
 
