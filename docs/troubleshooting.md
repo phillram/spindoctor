@@ -736,7 +736,7 @@ If they are still dark:
 
 - `Keymapper_AHK_Method` must be `Internal` or `External` in `Settings\<wheel>\RocketLauncher.ini`, or in `Global RocketLauncher.ini` when the wheel says `use_global`. With it off, RocketLauncher doesn't load the profile either.
 - The profile's name must match the game, emulator or wheel name exactly. A game's own profile replaces the wheel's, even one that remaps nothing.
-- Only plain `key::key` lines count. A key sent by a `Send` line or a hotkey with a body isn't followed.
+- Only plain `key::key` lines count. A key sent by a `Send` line or a hotkey with a body isn't followed. Conditional `#If` / `#IfWin...` regions are ignored because their runtime window or expression isn't known.
 - On wheels with "MAME" in the name, LEDBlinky reads the keys from MAME's cfg itself, so an AHK profile there can't change what lights.
 
 ## Migration / drives

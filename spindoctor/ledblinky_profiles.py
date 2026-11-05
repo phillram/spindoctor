@@ -601,18 +601,46 @@ class KeyRemap:
 # ``r::1``, ``$r::1``, ``~r::1``, optionally with a trailing comment.  Hotkeys
 # with a body, Send lines, modifier combos and directives don't match.
 _AHK_REMAP_RE = re.compile(r"([$~*]*)([^\s:]+)::(\S+?)(?:\s+;.*)?")
+_AHK_CONTEXT_RE = re.compile(r"#If(?:Win(?:Not)?(?:Active|Exist))?(?=[ \t,]|$)[ \t]*,?[ \t]*(.*)$", re.I)
+_AHK_MOUSE_KEYS = {"lbutton", "rbutton", "mbutton", "xbutton1", "xbutton2",
+                   "wheelup", "wheeldown", "wheelleft", "wheelright"}
 
 
 def read_ahk_remap(path: Path, source: str = "") -> KeyRemap:
     remap = KeyRemap(source=source or path.name)
+    block_comment = conditional = False
     for line in _read_text(path).splitlines():
         s = line.strip()
-        m = None if s.startswith(";") else _AHK_REMAP_RE.fullmatch(s)
+        if block_comment:
+            if s.startswith("*/"):
+                block_comment = False
+            continue
+        if s.startswith("/*"):
+            block_comment = True
+            continue
+        if s.startswith(";"):
+            continue
+        # AHK's context directives last until the next #If[Win...] directive,
+        # not until a Return or a closing brace. Do not guess which window wins.
+        context = _AHK_CONTEXT_RE.fullmatch(re.split(r"\s+;", s, maxsplit=1)[0].rstrip())
+        if context:
+            conditional = bool(context.group(1))
+            continue
+        if conditional:
+            continue
+        m = _AHK_REMAP_RE.fullmatch(s)
         src = key_from_ahk(m.group(2)) if m else None
         if src is None or src in remap.sends:
             continue
-        # A target we have no code for still takes the key away from the emulator.
-        remap.sends[src] = key_from_ahk(m.group(3)) or ""
+        target = m.group(3)
+        # "r::Return" is a hotkey body, not a remap onto Enter. Likewise,
+        # arbitrary commands (Reload, ExitApp, ...) are not unknown key names.
+        if target.lower() == "return":
+            continue
+        dst = key_from_ahk(target)
+        if dst is None and target.lower() not in _AHK_MOUSE_KEYS:
+            continue
+        remap.sends[src] = dst or ""
         if "~" in m.group(1):
             remap.passthrough.add(src)
     return remap
@@ -638,6 +666,7 @@ class RocketLauncherIndex:
         self._ahk_on: dict[str, bool] = {}
         self._ahk_files: dict[Path, dict[str, Path]] = {}
         self._remaps: dict[Path, KeyRemap] = {}
+        self._games: dict[str, dict[str, tuple[str, str]]] = {}
 
     def _system_ini(self, system: str) -> dict[str, dict[str, str]]:
         return _read_ini_loose(self.settings / system / "Emulators.ini")
@@ -648,11 +677,14 @@ class RocketLauncherIndex:
 
     def game_overrides(self, system: str) -> dict[str, tuple[str, str]]:
         """``Games.ini``: game -> (emulator, system) for games not on the default emulator."""
+        if system in self._games:
+            return self._games[system]
         out = {}
         for game, keys in _read_ini_loose(self.settings / system / "Games.ini").items():
             emu, sysname = keys.get("Emulator", ""), keys.get("System", "")
             if emu or sysname:
                 out[game] = (emu, sysname)
+        self._games[system] = out
         return out
 
     def launcher(self, emulator: str, system: str) -> Optional[Launcher]:
@@ -738,13 +770,17 @@ class KeymapResolver:
         exe = launcher.exe.lower()
         folder = launcher.folder
         if exe.startswith("retroarch"):
-            ra = self._ra.setdefault(folder, RetroArchIndex(folder))
+            if folder not in self._ra:
+                self._ra[folder] = RetroArchIndex(folder)
+            ra = self._ra[folder]
             km = ra.keymap(system, game)
             if km is not None:
                 km.labels = dict(CONSOLE_LABELS.get(system, {}))
             return km
         if exe.startswith(("mame", "hbmame", "mess")):
-            idx = self._mame.setdefault(folder, MameIndex(folder, launcher.exe))
+            if folder not in self._mame:
+                self._mame[folder] = MameIndex(folder, launcher.exe)
+            idx = self._mame[folder]
             if system in MESS_DRIVERS:
                 # Console run through MESS/MAME: one driver for the whole wheel.
                 km = idx.driver_keymap(MESS_DRIVERS[system]) if not game else None
@@ -771,6 +807,22 @@ class KeymapResolver:
 
     def system_launcher(self, system: str) -> Optional[Launcher]:
         return self.rl.launcher(self.rl.default_emulator(system), system)
+
+    def game_launcher(self, system: str, game: str) -> tuple[Optional[Launcher], str]:
+        """Effective emulator and config system, including Games.ini overrides."""
+        overrides = self.rl.game_overrides(system)
+        override = next((v for k, v in overrides.items() if k.lower() == game.lower()), ("", ""))
+        emulator, other = override
+        config_system = other or system
+        return self.rl.launcher(emulator or self.rl.default_emulator(config_system), config_system), config_system
+
+    def for_game(self, system: str, game: str) -> Optional[Keymap]:
+        """Effective per-game emulator keys, then the launch wheel's AHK profile."""
+        launcher, config_system = self.game_launcher(system, game)
+        km = self.for_launcher(launcher, config_system, game)
+        if km is None:
+            km = self.for_launcher(launcher, config_system)
+        return self.through_remap(km, system, game, launcher)
 
     def through_remap(self, km: Optional[Keymap], system: str, game: Optional[str],
                       launcher: Optional[Launcher]) -> Optional[Keymap]:
@@ -841,6 +893,7 @@ def community_button_labels(section: dict[str, str]) -> dict[int, str]:
 
 _EMU_RE = re.compile(r'[ \t]*<emulator\b[^>]*emuname="([^"]*)"[^>]*>.*?</emulator>[ \t]*\n?', re.S)
 _GROUP_RE = re.compile(r'[ \t]*<controlGroup\b[^>]*groupName="([^"]*)"[^>]*>.*?</controlGroup>[ \t]*\n?', re.S)
+_GENERATED_OVERRIDE = "<!-- spindoctor: generated keymap override -->"
 
 
 def _unescape(s: str) -> str:
@@ -875,11 +928,14 @@ class GroupXml:
     player0: str = ""          # raw <player number="0">…</player> block, reused verbatim
     controls: list[ControlXml] = field(default_factory=list)
     default_attrs: bool = False
+    generated_override: bool = False
 
     def render(self) -> str:
         extra = ' defaultActive="48,48,48,48" defaultInactive="0,0,0,0"' if self.default_attrs else ""
         lines = [f"    <controlGroup groupName={quoteattr(self.name)} voice={quoteattr(self.voice)} "
                  f'numPlayers="{self.num_players}" alternating="{self.alternating}"{extra} jukebox="0">']
+        if self.generated_override:
+            lines.append("      " + _GENERATED_OVERRIDE)
         if self.player0:
             lines.append("      " + self.player0.strip())
         for p in sorted({c.player for c in self.controls}):
@@ -1389,47 +1445,39 @@ class ProfileBuilder:
         lit = sorted({self.panel[k] for c in grp.controls for k in c.input_codes if k in self.panel})
         self.result.actions.append(SystemAction(system, "DEFAULT from keymap", 1, keymap.source,
                                                 "lights " + (", ".join(lit) if lit else "nothing (pad-only)")))
-        self._game_overrides(system, launcher, keymap, base, existing, player0)
+        self._game_overrides(system, keymap, existing, player0)
 
-    def _game_overrides(self, system: str, launcher: Optional[Launcher], sys_keymap: Keymap,
-                        base: Keymap, existing: Optional[ET.Element], player0: str) -> None:
-        """Per-game groups where a game launches with different keys than its system.
-
-        *sys_keymap* is the DEFAULT's keymap; *base* is the same before the
-        wheel's AHK keymapper profile.
-        """
+    def _game_overrides(self, system: str, sys_keymap: Keymap,
+                        existing: Optional[ET.Element], player0: str) -> None:
+        """Per-game groups using only the emulator/config actually launched."""
         games = {g.name for g in load_db(self.config, system) or []}
         groups = []
-        overridden = set()
-        for game, (emu, other_sys) in self.resolver.rl.game_overrides(system).items():
-            if game not in games or not emu:
-                continue
-            overridden.add(game)
-            lau = self.resolver.rl.launcher(emu, other_sys or system)
-            km = self.resolver.through_remap(self.resolver.for_launcher(lau, other_sys or system),
-                                             system, game, lau)
+        old_groups = self.doc.groups(self.doc.emulators().get(emu_key(system), ""))
+        # Only remove groups we created, never unrelated hand-authored profiles.
+        obsolete = {k for k, blocks in old_groups.items() if _GENERATED_OVERRIDE in blocks[0]}
+        overridden = {g.lower() for g in self.resolver.rl.game_overrides(system)}
+        for game in sorted(games):
+            km = self.resolver.for_game(system, game)
             if km is None:
-                self.result.warnings.append(f"{system}: '{game}' uses {emu}; its keymap isn't readable — kept system DEFAULT")
+                obsolete.discard(emu_key(game))
+                if game.lower() in overridden:
+                    self.result.warnings.append(f"{system}: '{game}' keymap isn't readable — kept system DEFAULT")
+                continue
+            if km.keys == sys_keymap.keys and game.lower() not in overridden:
                 continue
             km.labels = km.labels or sys_keymap.labels
-            groups.append(build_console_group(group_name(game), km, self.panel, existing,
-                                              player0 or self._admin_player0()))
-        retroarch = launcher is not None and launcher.exe.lower().startswith("retroarch")
-        for game in sorted(games):
-            # A per-game RetroArch cfg or an AHK profile of the game's own can
-            # move its buttons off the DEFAULT's keys.
-            km = self.resolver.for_launcher(launcher, system, game) if retroarch else None
-            if km is None and game not in overridden:
-                km = base
-            km = self.resolver.through_remap(km, system, game, launcher)
-            if km is not None and km.keys != sys_keymap.keys:
-                km.labels = sys_keymap.labels
-                groups.append(build_console_group(group_name(game), km, self.panel, existing,
-                                                  player0 or self._admin_player0()))
-        if groups:
-            self.doc.upsert_groups(system, groups)
+            old = old_groups.get(emu_key(game))
+            old_el, old_p0 = parse_group(old[0]) if old else (existing, "")
+            grp = build_console_group(group_name(game), km, self.panel, old_el,
+                                      old_p0 or player0 or self._admin_player0())
+            grp.generated_override = not old or _GENERATED_OVERRIDE in old[0]
+            groups.append(grp)
+            obsolete.discard(emu_key(game))
+        if groups or obsolete:
+            self.doc.upsert_groups(system, groups, remove=obsolete)
             self.result.actions.append(SystemAction(system, "per-game groups (emulator/keymap overrides)",
-                                                    len(groups), "Games.ini / RetroArch game cfg / AHK profile"))
+                                                    len(groups), "Games.ini / RetroArch game cfg / AHK profile",
+                                                    f"removed {len(obsolete)} obsolete generated groups" if obsolete else ""))
 
     def handheld_wheel(self, system: str) -> None:
         """Per-game groups for wheels where each game is its own MAME driver."""
@@ -1437,8 +1485,7 @@ class ProfileBuilder:
         existing, player0 = self._default_block(system)
         groups = []
         for game in load_db(self.config, system) or []:
-            km = self.resolver.through_remap(self.resolver.for_launcher(launcher, system, game.name),
-                                             system, game.name, launcher)
+            km = self.resolver.for_game(system, game.name)
             if km is not None:
                 groups.append(build_console_group(group_name(game.name), km, self.panel, None,
                                                   player0 or self._admin_player0()))
@@ -1456,7 +1503,6 @@ class ProfileBuilder:
     def arcade_wheel(self, system: str) -> None:
         """Per-game groups for an arcade wheel LEDBlinky doesn't treat as MAME."""
         launcher = self.resolver.system_launcher(system)
-        overrides = self.resolver.rl.game_overrides(system)
         player0 = self._default_block(system)[1] or self._admin_player0()
         existing_emu = self.doc.emulators().get(emu_key(system), "")
         existing_groups = self.doc.groups(existing_emu)
@@ -1464,15 +1510,12 @@ class ProfileBuilder:
         default_colors = {c.get("name"): c.get("color") for c in _existing_controls(default_el)}
         groups, unresolved, assumed, remapped = [], 0, 0, 0
         for game in load_db(self.config, system) or []:
-            emu, other = overrides.get(game.name, ("", ""))
-            lau = self.resolver.rl.launcher(emu, other or system) if emu else launcher
+            lau, config_system = self.resolver.game_launcher(system, game.name)
             km = None
             if lau is not None:
-                exe = lau.exe.lower()
-                if exe.startswith(("mame", "hbmame")):
-                    km = self.resolver.for_launcher(lau, system, game.name)
-                else:
-                    km = self.resolver.for_launcher(lau, other or system)
+                km = self.resolver.for_launcher(lau, config_system, game.name)
+                if km is None:
+                    km = self.resolver.for_launcher(lau, config_system)
                 ahk_km = self.resolver.through_remap(km, system, game.name, lau)
                 if ahk_km is not km:
                     remapped += 1
@@ -1528,7 +1571,8 @@ class ProfileBuilder:
         new_emu = emu_block
         for key, blocks in self.doc.groups(emu_block).items():
             # DEFAULT and groups for games not in the database: the wheel's AHK profile.
-            game_km = self.resolver.through_remap(km, system, names.get(key), launcher)
+            game_km = (self.resolver.for_game(system, names[key]) or arcade_layout_keymap()
+                       if key in names else self.resolver.through_remap(km, system, None, launcher))
             for b in blocks:
                 nb = self._ensure_admin(rekey_arcade_group(b, game_km, self.panel) or b)
                 if nb != b:
@@ -1553,7 +1597,7 @@ class ProfileBuilder:
             community = self.community_for(game.name)
             new.append(build_arcade_group(
                 game.name, ctl, self.colors_for(game.name),
-                self.resolver.through_remap(km, system, game.name, launcher), self.panel,
+                self.resolver.for_game(system, game.name) or arcade_layout_keymap(), self.panel,
                 set_primary_joystick(player0 or self._admin_player0(), community_joystick(community)),
                 community_button_labels(community), default_colors, game.description))
         if new:
@@ -1609,9 +1653,7 @@ class ProfileBuilder:
                 joystick = m.group(1) if m else joystick
             else:
                 voices = community_button_labels(community)
-            mame_launcher = self.resolver.system_launcher(system)
-            km = self.resolver.through_remap(self.resolver.for_launcher(mame_launcher, system, rom),
-                                             system, rom, mame_launcher) or arcade_layout_keymap()
+            km = self.resolver.for_game(system, rom) or arcade_layout_keymap()
             return build_arcade_group(rom, ctl, self.colors_for(rom), km, self.panel,
                                       set_primary_joystick(self._admin_player0(), joystick), voices)
         emu = self.doc.emulators().get(emu_key(system))
