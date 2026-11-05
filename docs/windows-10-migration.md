@@ -18,6 +18,17 @@ manual, firmware, power limits and component dimensions before buying parts.
 > for the startup/exit orchestration and input-stack details this migration
 > depends on.
 
+> **OS security support:** This is a legacy migration reference, not a
+> recommendation to install an unsupported OS. Standard Windows 10 Home/Pro
+> support ended on **October 14, 2025**; application compatibility does not mean
+> the OS still receives security updates. Check Microsoft's [Windows 10
+> lifecycle](https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro)
+> and current [Extended Security Updates eligibility and coverage](https://learn.microsoft.com/en-us/windows/whats-new/extended-security-updates).
+> Consumer and commercial ESU programs differ, and LTSC editions have separate
+> lifecycles. Prefer an OS and hardware combination that still receives security
+> updates; do not assume this guide or a working SpinDoctor installation provides
+> that coverage.
+
 ---
 
 ## 1. Hardware upgrade (SFF constraints)
@@ -39,8 +50,10 @@ and memory bottlenecks depend on emulator version, resolution and workload.
 ## 2. Clone the old drive (before installing anything)
 
 Clone the **whole disk**, not just C:. HyperSpin/RocketLauncher use hard-coded
-paths like `D:\Arcade\…`, so a full-disk clone preserves every partition's
-**drive letter and path**, and nothing needs reconfiguring.
+paths like `D:\Arcade\…`, so include the boot and cabinet partitions as well as
+Windows. Back up any cabinet data on other physical disks separately. A clone
+does not guarantee the same drive-letter assignments after a swap or reinstall:
+verify letters and paths in Disk Management before launching the frontend.
 
 - Tool: **Hasleo Disk Clone** (free, clones a system disk and resizes to a
   smaller SSD). AOMEI Backupper's free tier only clones *data* disks — not
@@ -55,17 +68,29 @@ paths like `D:\Arcade\…`, so a full-disk clone preserves every partition's
 
 ## 3. Install Windows 10 (Legacy/MBR)
 
-A Windows 7 cabinet is almost always **Legacy/MBR**, and the install must match.
+For an existing **Legacy/MBR** installation, this section keeps that layout.
+Verify the current boot mode and partition style first; do not infer them from
+the Windows version alone.
 
 - If setup errors with *"the selected disk has an MBR partition table … EFI
   systems can only install to GPT"*, your USB booted in **UEFI** mode. Reboot,
-  press **F9**, and pick the USB entry **without** the `UEFI:` prefix (Legacy).
-  Do **not** convert the disk to GPT — that would wipe the Arcade partition.
+  use the firmware's boot menu (**F9** on the example HP), and pick the USB entry
+  for Legacy mode if retaining MBR.
+- **Do not delete partitions or run `diskpart clean` just to clear a boot-mode
+  error.** Those actions can destroy the cabinet data. GPT conversion is not
+  inherently destructive: Microsoft's [MBR2GPT](https://learn.microsoft.com/en-us/windows/deployment/mbr-to-gpt)
+  can convert an eligible Windows system disk without deleting data. It has
+  layout and OS prerequisites, requires UEFI-capable firmware and a subsequent
+  switch to UEFI boot, and does not officially support offline conversion of
+  Windows 7 system disks. Treat conversion as a separate, backed-up procedure,
+  not an extra step in this Legacy/MBR walkthrough.
 - Use **Custom install** and select **only the C: partition** (identify by
-  size — the install screen shows no drive letters). Leave the Arcade partition
-  and System Reserved alone. Physically disconnect the games drive first so it
-  can't be picked by mistake.
-- Edition: **Windows 10 Pro** (Win 7 Ultimate upgrades to Pro). Avoid **Pro N** —
+  the recorded disk, size and layout, not a drive letter; setup's letters may
+  differ). Leave the Arcade partition and System Reserved alone. Physically
+  disconnect a separate games drive first so it can't be picked by mistake.
+  That does not protect a cabinet partition on the same physical disk.
+- Edition: use the edition covered by your valid license; do not assume a
+  Windows 7 license automatically activates Windows 10. Avoid **Pro N** —
   N editions strip the media components HyperSpin's video playback needs.
 - The BIOS listing "UEFI Boot Sources" above "Legacy Boot Sources" is normal;
   the machine falls through to Legacy and boots the SSD. Optionally move Legacy
@@ -75,8 +100,10 @@ A Windows 7 cabinet is almost always **Legacy/MBR**, and the install must match.
 
 ## 4. Post-install recovery checklist
 
-A clean install wipes C:, so everything that lived there is gone (the Arcade
-drive is fine). Reinstall, in roughly this order:
+Formatting or deleting the Windows partition removes its contents. Some custom
+installs may retain files in `Windows.old`, but that is not a backup or a promise
+that applications and settings survive. Verify the cabinet data too, rather
+than assuming other partitions were untouched. Reinstall, in roughly this order:
 
 | Item | Why | Gotcha |
 |---|---|---|
