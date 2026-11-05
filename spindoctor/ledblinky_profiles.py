@@ -1239,8 +1239,10 @@ class ProfileBuilder:
         self.resolver = KeymapResolver(config)
         self.xml_path = self.lb_dir / CONTROLS_XML_NAME
         self.doc = ControlsXmlDoc(self.xml_path.read_text(encoding="utf-8", errors="replace"))
-        self.controls_path = self.lb_dir / CONTROLS_INI_FILE
-        self.colors_path = self.lb_dir / COLORS_INI_NAME
+        # In any case: LEDBlinky ships `Controls.ini`, while `ledblinky generate`
+        # / `prune` name it `controls.ini`; one file on Windows, two on Linux.
+        self.controls_path = _ci_file(self.lb_dir, CONTROLS_INI_FILE) or self.lb_dir / CONTROLS_INI_FILE
+        self.colors_path = _ci_file(self.lb_dir, COLORS_INI_NAME) or self.lb_dir / COLORS_INI_NAME
         self.controls = read_ini_sections(self.controls_path)
         self.colors = read_ini_sections(self.colors_path)
         self.library = Library()
