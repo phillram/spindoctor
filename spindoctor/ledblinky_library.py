@@ -30,6 +30,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
@@ -432,6 +433,9 @@ def wheel_scope(
     db_parents: dict[str, str] = {}   # lower game -> its cloneof, any wheel
     for folder in folders:
         name = folder.name
+        if name.casefold() == "main menu":
+            # Main Menu lists wheels, not games.
+            continue
         games = load_db_file(folder / f"{name}.xml")
         if games is None:
             continue
@@ -546,6 +550,39 @@ def unused_entries(config: Config, scope: WheelScope) -> UnusedEntries:
 
 # ── prune ─────────────────────────────────────────────────────────────────────
 
+def _validate_prune_databases(config: Config) -> None:
+    """Refuse destructive pruning from a missing or partially readable cabinet."""
+    if not config.hyperspin_dir:
+        raise ValueError("No wheel databases found: check hyperspin_dir.")
+
+    def read_menu(path):
+        try:
+            root = ET.parse(path).getroot()
+            if root.tag != "menu":
+                raise ValueError("expected a HyperSpin <menu> database")
+            return root
+        except (OSError, ET.ParseError, ValueError) as exc:
+            raise ValueError(f"Cannot safely prune: unreadable wheel database {path}: {exc}") from exc
+
+    try:
+        folders = {p.name.casefold(): p for p in config.databases_dir.iterdir() if p.is_dir()}
+    except OSError as exc:
+        raise ValueError(f"No wheel databases found under {config.databases_dir}.") from exc
+    for folder in folders.values():
+        menu = read_menu(folder / f"{folder.name}.xml")
+        if folder.name.casefold() == "main menu":
+            for game in menu.iter("game"):
+                name = (game.get("name") or "").strip()
+                if name and name.casefold() not in folders:
+                    raise ValueError(f"Cannot safely prune: missing wheel database for {name}.")
+            continue
+        files = {p.name.casefold(): p for p in folder.iterdir() if p.is_file()}
+        if "genre.xml" in files:
+            for genre in read_menu(files["genre.xml"]).iter("game"):
+                name = (genre.get("name") or "").strip()
+                if name:
+                    read_menu(files.get(f"{name}.xml".casefold(), folder / f"{name}.xml"))
+
 
 @dataclass
 class PruneResult:
@@ -588,8 +625,14 @@ def prune_entries(
             "ledblinky_dir not configured. Run: spindoctor config set ledblinky_dir <path>"
         )
     lb_dir = Path(config.ledblinky_dir)
+    _validate_prune_databases(config)
     if scope is None:
-        scope = wheel_scope(config, listxml=listxml_if_cached(config))
+        from .ledblinky import load_listxml_for_system
+
+        listxml = load_listxml_for_system(config, "MAME")
+        if config.mame_executable and not listxml:
+            raise ValueError("Cannot safely prune: MAME parent data is unavailable. Check mame_executable.")
+        scope = wheel_scope(config, listxml=listxml)
     if not scope.any_wheel:
         raise ValueError(
             f"No wheel databases found under {config.databases_dir}: every entry would be "
@@ -614,6 +657,10 @@ def prune_entries(
     result.parents_kept = sum(1 for low in controls_raw.entries()
                               if low in scope.any_parent and low not in scope.any_wheel)
     if controls_raw.sections and len(result.controls_removed) == len(controls_raw):
+        if not dry_run:
+            raise ValueError(
+                "Refusing to remove every Controls.ini entry: none matches a wheel game. Check hyperspin_dir."
+            )
         result.warnings.append(
             "None of the Controls.ini entries is for a game in a wheel: is hyperspin_dir "
             "the cabinet LEDBlinky belongs to?"

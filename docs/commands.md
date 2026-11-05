@@ -1611,6 +1611,8 @@ LEDBlinky reads all of `controls.ini` and `Colors.ini` when it starts (`LoadMame
 
 **The library** is `~/.spindoctor/ledblinky_library\` (`controls.ini`, `Colors.ini`): every entry `prune` removed, plus a copy of the community controls.dat file (`controls.ini.*.bak`) that `profiles` reads. LEDBlinky never reads it. `profiles` falls back to it when it looks for a donor entry, and for the community data when the `.bak` is gone from `ledblinky_dir`.
 
+`prune` refuses missing or malformed wheel databases, missing wheels listed on Main Menu, and missing or malformed genre databases. Main Menu lists wheels, not games. When MAME is configured, pruning loads its parent data just as `generate` does, running `-listxml` if the cache is missing or stale; unavailable parent data stops pruning. A preview warns if no live control matches the cabinet, and `--apply` refuses to remove every control. Check `hyperspin_dir` and repair the databases before trying again.
+
 ```bat
 spindoctor ledblinky audit                         :: what's covered, what's missing, how many entries are unused
 spindoctor ledblinky audit --system "MAME" --report D:\ledblinky_audit.csv

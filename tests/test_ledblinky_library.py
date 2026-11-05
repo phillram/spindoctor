@@ -425,6 +425,76 @@ def test_prune_leaves_the_live_files_when_the_library_cannot_be_written(cab, mon
     assert cab.controls.read_bytes() == CONTROLS and cab.colors.read_bytes() == COLORS
 
 
+@pytest.mark.parametrize("damage", ["missing", "empty", "garbage", "wrong-root", "missing-folder"])
+def test_prune_refuses_an_incomplete_wheel_database(cab, damage):
+    path = cab.hs / "Databases" / "MAME" / "MAME.xml"
+    if damage in ("missing", "missing-folder"):
+        path.unlink()
+        if damage == "missing-folder":
+            path.parent.rmdir()
+    else:
+        path.write_bytes({"empty": b"", "garbage": b"not XML", "wrong-root": b"<unrelated/>"}[damage])
+    with pytest.raises(ValueError, match="safely prune"):
+        ll.prune_entries(cab.cfg, dry_run=False)
+    assert cab.controls.read_bytes() == CONTROLS and cab.colors.read_bytes() == COLORS
+    assert not ll.LIBRARY_DIR.exists()
+
+
+def test_main_menu_is_not_a_game_database(cab):
+    import shutil
+    for folder in (cab.hs / "Databases").iterdir():
+        if folder.name != "Main Menu":
+            shutil.rmtree(folder)
+    assert not ll.wheel_scope(cab.cfg).any_wheel
+    with pytest.raises(ValueError):
+        ll.prune_entries(cab.cfg, dry_run=False)
+    assert cab.controls.read_bytes() == CONTROLS
+
+
+def test_prune_refuses_missing_genre_database(cab):
+    _db(cab.hs, "MAME", [("Missing Genre", "")], xml_name="Genre")
+    with pytest.raises(ValueError, match="safely prune"):
+        ll.prune_entries(cab.cfg, dry_run=False)
+    assert cab.controls.read_bytes() == CONTROLS
+
+
+@pytest.mark.parametrize("cache_state", ["missing", "stale"])
+def test_prune_loads_parent_data_like_generate(cab, monkeypatch, cache_state):
+    cache = ledblinky.listxml_cache_path(cab.cfg.mame_executable)
+    if cache_state == "missing":
+        cache.unlink()
+    else:
+        os.utime(str(cache), (0, 0))
+    calls = []
+
+    def run(mame, cache_path):
+        calls.append(mame)
+        return LISTXML
+
+    monkeypatch.setattr(ledblinky, "run_mame_listxml", run)
+    cab.controls.write_bytes(CONTROLS + CRLF + _sec("sf2", "numPlayers=2"))
+    ll.prune_entries(cab.cfg, dry_run=False)
+    assert calls == [cab.cfg.mame_executable]
+    assert "sf2" in ll.RawIni.load(cab.controls).entries()
+
+
+def test_prune_refuses_unavailable_mame_parent_data(cab, monkeypatch):
+    monkeypatch.setattr(ledblinky, "load_listxml_for_system", lambda *args: {})
+    with pytest.raises(ValueError, match="parent data is unavailable"):
+        ll.prune_entries(cab.cfg, dry_run=False)
+    assert cab.controls.read_bytes() == CONTROLS
+
+
+def test_prune_refuses_to_remove_every_live_control(cab):
+    before = _ini(_sec("unknown", "numPlayers=1"))
+    cab.controls.write_bytes(before)
+    preview = ll.prune_entries(cab.cfg)
+    assert preview.warnings
+    with pytest.raises(ValueError, match="every Controls.ini entry"):
+        ll.prune_entries(cab.cfg, dry_run=False)
+    assert cab.controls.read_bytes() == before and cab.colors.read_bytes() == COLORS
+
+
 # ── audit ─────────────────────────────────────────────────────────────────────
 
 
@@ -492,7 +562,7 @@ def builder_cab(cab):
 
 
 def test_profiles_borrow_a_donor_from_the_library(builder_cab):
-    _db(builder_cab.hs, "MAME", [("robbyb", "")])          # robby is its prefix donor
+    _db(builder_cab.hs, "MAME", [("pacman", ""), ("robbyb", "")])  # robby is its prefix donor
     assert lp.ProfileBuilder(builder_cab.cfg).controls_for("robby") is not None
     _run("prune", "--apply")                                # robby moves to the library
     b = lp.ProfileBuilder(builder_cab.cfg)
