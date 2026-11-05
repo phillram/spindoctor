@@ -24,20 +24,10 @@ from typing import Iterable, Optional
 
 from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
-from .database import GameEntry, HyperspinDatabase
-from ._wheels import DEFAULT_SYNTHETIC_NAMES, mark_synthetic, synthetic_names, validate_target
-from .favorites import (
-    FavoriteEntry, _generate_pclauncher_ini,
-    _resolve_target_names, _safe_load, _source_game,
-)
-from .medialink import LinkMode, apply_plan, plan_mirror, _read_hs_video_dir, prune_mirrored_media
-from .rocketlauncher import (
-    ensure_rl_game_exe,
-    generate_synthetic_system_ini,
-    install_bundled_system_assets,
-    write_hyperspin_system_ini,
-    write_pclauncher_system_ini,
-)
+from ._wheels import DEFAULT_SYNTHETIC_NAMES, synthetic_names, validate_target
+from .favorites import FavoriteEntry, _safe_load, _write_synthetic_wheel
+from .medialink import LinkMode
+from .rocketlauncher import install_bundled_system_assets
 
 
 DEFAULT_RECENT_SYSTEM = "Recently Played"
@@ -506,7 +496,7 @@ def _build_synthetic_wheel(
     skip_launchers: bool = False,
     verbose: bool = False,
 ) -> RecentSummary:
-    """Shared synthetic-wheel builder used by ``recent`` and ``playtime``.
+    """Validate ranked entries, then use the common synthetic-wheel writer.
 
     Given a list of :class:`FavoriteEntry` records (each pointing at a
     source ``(system, rom_name)``), this:
@@ -515,7 +505,7 @@ def _build_synthetic_wheel(
          pulling metadata from the source system's database when
          available and pruning entries that are no longer in the list.
       2. Mirrors media via :func:`spindoctor.medialink.plan_mirror` /
-         :func:`apply_plan` (drops orphans first).
+         :func:`spindoctor.medialink.apply_plan` (prunes orphans after writing).
       3. Writes per-game PCLauncher INIs that defer launching back to
          the source system via RocketLauncher.
 
@@ -554,158 +544,12 @@ def _build_synthetic_wheel(
         valid_entries.append(fe)
     pseudo_entries = valid_entries
 
-    n = len(pseudo_entries)
-    print(f"[{target_system}] building wheel — {n} entr{'y' if n == 1 else 'ies'}…",
-          flush=True)
-
-    target_names = _resolve_target_names(pseudo_entries)
-    summary.entries = len(target_names)
-
-    # ── Phase 1: write / prune the HyperSpin database XML ────────────────────
-    print(f"[{target_system}] writing database…", flush=True)
-    db_path = config.databases_dir / target_system / f"{target_system}.xml"
-    db = HyperspinDatabase(target_system, db_path, preserve_order=True)
-    db.load()
-    keep = set(target_names.values())
-    # Drop every existing entry so the ranked upserts below dictate XML order —
-    # otherwise `_merge_into_tree` would keep surviving games at their prior
-    # (alphabetical) positions, defeating the recency / most-played ranking.
-    summary.pruned = sum(1 for name in db.games() if name not in keep)
-    db.reset_games()
-
-    # src_cache is pre-populated above; continue reusing it so each source
-    # system DB is parsed only once across the full build.
-    for fe in pseudo_entries:
-        target_name = target_names[f"{fe.system}::{fe.rom_name}"]
-        source_db = _safe_load(fe.system, config, src_cache)
-        source_game = _source_game(source_db, fe.system, fe.rom_name)
-        base_desc = fe.display_name or (source_game.description if source_game else fe.rom_name)
-        merged = GameEntry(
-            name=target_name,
-            description=f"{base_desc} ({fe.system})",
-            cloneof=source_game.cloneof if source_game else "",
-            crc=source_game.crc if source_game else "",
-            manufacturer=source_game.manufacturer if source_game else "",
-            year=source_game.year if source_game else "",
-            genre=source_game.genre if source_game else "",
-            rating=source_game.rating if source_game else "",
-            players=source_game.players if source_game else "",
-            extra_attrs=dict(source_game.extra_attrs) if source_game else {},
-            xml_template=source_game.xml_template if source_game else "",
-            enabled="Yes",
-        )
-        db.upsert_game(merged)
-    summary.db_path = db.save(backup=False)
-    mark_synthetic(config, target_system)
-    print(f"[{target_system}] database done — {len(keep)} games "
-          f"({summary.pruned} pruned).", flush=True)
-
-    # ── Phase 2: mirror media ─────────────────────────────────────────────────
-    if not skip_media:
-        from .media import _win_safe_stem
-        print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
-        # Mirrored media files use sanitized stems, so the orphan-cleanup
-        # allowlist must be sanitized too (else it deletes the files just
-        # written for any name with a forbidden character).
-        seen = {_win_safe_stem(v) for v in target_names.values()}
-        _target_media = config.media_dir / target_system
-        # Per-system video directory overrides: HyperSpin subsystems that use MAME
-        # (e.g. "4-Player Games", "Driving Games") redirect their video lookup to
-        # Media/MAME/Video/ via [video defaults] → path= in the system Settings INI.
-        # Cache one lookup per source system to avoid re-reading the same INI.
-        _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
-        _video_cache: dict[str, Optional[Path]] = {}
-
-        # Write new media FIRST so a mid-run failure never leaves entries
-        # without media that was deleted before the replacement was written.
-        for idx, fe in enumerate(pseudo_entries, 1):
-            if _hs_settings and fe.system not in _video_cache:
-                _video_cache[fe.system] = _read_hs_video_dir(_hs_settings, fe.system)
-            video_override = _video_cache.get(fe.system) if _hs_settings else None
-            target_name = target_names[f"{fe.system}::{fe.rom_name}"]
-            plan = plan_mirror(
-                config.media_dir, fe.system, target_system,
-                fe.rom_name, target_name,
-                video_dir_override=video_override,
-                refresh=True,
-            )
-            result = apply_plan(plan, mode=media_mode,
-                               log_fn=print if verbose else None)
-            summary.media_linked += result["linked"]
-            summary.media_copied += result["copied"]
-            summary.media_skipped += result["skipped"]
-            summary.media_errors.extend(result["errors"])
-            # Emit progress every 10 games (or on the last one) so the
-            # GUI output panel shows activity during long media copies.
-            if idx % 10 == 0 or idx == n:
-                print(
-                    f"[{target_system}] media {idx}/{n} — "
-                    f"linked {summary.media_linked} "
-                    f"copied {summary.media_copied} "
-                    f"skipped {summary.media_skipped}",
-                    flush=True,
-                )
-
-        # Remove orphan media AFTER writing new files.
-        summary.media_errors.extend(prune_mirrored_media(_target_media, seen))
-        print(f"[{target_system}] media done.", flush=True)
-
-    # ── Phase 3: write PCLauncher INIs ────────────────────────────────────────
-    if not skip_launchers and config.rocketlauncher_dir:
-        print(f"[{target_system}] writing {n} PCLauncher INI(s)…", flush=True)
-        rl_dir = Path(config.rocketlauncher_dir)
-        ini_dir = rl_dir / "Modules" / "PCLauncher" / target_system
-        # Write new INIs FIRST, then remove stale ones.
-        for fe in pseudo_entries:
-            target_name = target_names[f"{fe.system}::{fe.rom_name}"]
-            _generate_pclauncher_ini(
-                rl_dir, target_system, target_name, fe.system, fe.rom_name,
-            )
-            summary.inis_written += 1
-        # Write the system-level PCLauncher INI that PCLauncher.ahk reads.
-        # PCLauncher.ahk reads Modules/PCLauncher/<SystemName>.ini and looks up
-        # [<game_name>] sections — it does NOT read the per-game placeholder
-        # files in the subdirectory (those are only for RL game discovery).
-        pclauncher_entries = [
-            (target_names[f"{fe.system}::{fe.rom_name}"], fe.system, fe.rom_name)
-            for fe in pseudo_entries
-        ]
-        game_exe = ensure_rl_game_exe(rl_dir)
-        write_pclauncher_system_ini(
-            target_system, pclauncher_entries, rl_dir,
-            rl_exe=game_exe,
-            extra_window_titles=config.emulator_window_titles or None,
-        )
-        summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
-        # Remove stale per-game INIs AFTER writing new ones.  INI filenames are
-        # sanitized (see _generate_pclauncher_ini), so this allowlist is the
-        # sanitized form of the names — NOT the raw `keep` set used for DB
-        # pruning above (which must stay raw to match HyperSpin DB entry names).
-        if ini_dir.exists():
-            from .media import _win_safe_stem
-            keep_inis = {_win_safe_stem(v) for v in target_names.values()}
-            for ini in ini_dir.iterdir():
-                if ini.is_file() and ini.suffix == ".ini" and ini.stem not in keep_inis:
-                    try:
-                        ini.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {ini.name}: {e}")
-        print(f"[{target_system}] PCLauncher INIs done.", flush=True)
-
-    # ── Phase 4: HyperSpin system settings INI ────────────────────────────────
-    # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
-    # it the wheel reports "Cannot find <system>.ini" on selection.  We only
-    # write when the file is absent so user customisations are never clobbered.
-    hs_dir = Path(config.hyperspin_dir)
-    write_hyperspin_system_ini(target_system, hs_dir)
-
-    # ── Phase 5: Bundled system media (wheel art, background, music) ──────────
-    # Install all package-bundled assets for this synthetic system.
-    # Each asset is only written when absent — user files are never clobbered.
-    summary.bundled_assets = install_bundled_system_assets(hs_dir, target_system)
-
-    print(f"[{target_system}] wheel build complete.", flush=True)
-    return summary
+    return _write_synthetic_wheel(
+        config, target_system, pseudo_entries, summary,
+        media_mode=media_mode, skip_media=skip_media,
+        skip_launchers=skip_launchers, verbose=verbose,
+        preserve_order=True, src_cache=src_cache,
+    )
 
 
 def rebuild(

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import shutil
 
-from spindoctor._utils import format_bytes, free_bytes, unique_path
+from spindoctor._utils import dir_size, format_bytes, free_bytes, unique_path
 
 
 def test_format_bytes_zero():
@@ -99,3 +99,40 @@ def test_unique_path_appends_counter_to_folder_names(tmp_path):
     folder = tmp_path / "scrub-20260614_174635"
     folder.mkdir()
     assert unique_path(folder).name == "scrub-20260614_174635_2"
+
+
+def test_dir_size_handles_files_trees_and_missing_paths(tmp_path):
+    assert dir_size(tmp_path / "missing") == 0
+    first = tmp_path / "first"
+    first.write_bytes(b"123")
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "second").write_bytes(b"4567")
+    assert dir_size(first) == 3
+    assert dir_size(tmp_path) == 7
+
+
+def test_dir_size_skips_unreadable_files(tmp_path, monkeypatch):
+    from pathlib import Path
+
+    unreadable = tmp_path / "unreadable"
+    unreadable.write_bytes(b"123")
+    (tmp_path / "readable").write_bytes(b"4567")
+    original_stat = Path.stat
+
+    def stat(path, *args, **kwargs):
+        if path == unreadable:
+            raise PermissionError("test permission error")
+        return original_stat(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "stat", stat)
+    assert dir_size(tmp_path) == 4
+
+
+def test_dir_size_legacy_aliases_share_one_implementation():
+    from spindoctor import backup, fileinfo, migrate, self_doctor
+
+    assert backup._dir_size is dir_size
+    assert fileinfo._dir_size is dir_size
+    assert migrate._dir_size is dir_size
+    assert self_doctor._walk_size is dir_size

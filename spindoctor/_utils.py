@@ -141,6 +141,25 @@ def free_bytes(path: Path) -> int:
         return 0
 
 
+def dir_size(path: Path) -> int:
+    """Total bytes in a file or tree, skipping missing or unreadable files."""
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for p in path.rglob("*"):
+        try:
+            if p.is_file():
+                total += p.stat().st_size
+        except OSError:
+            pass
+    return total
+
+
 def unique_path(path: Path) -> Path:
     """Return *path*, or the first free ``<stem>_2<suffix>``, ``<stem>_3<suffix>``, … sibling.
 

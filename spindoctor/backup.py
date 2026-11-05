@@ -30,7 +30,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
-from .fileinfo import _dir_size
+from ._utils import dir_size as _dir_size
 
 # Byte-formatting and free-space helpers live in `_utils` so they can
 # be shared across backup / migrate / cleanup without three copies of

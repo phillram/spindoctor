@@ -24,6 +24,21 @@ from spindoctor import __app_name__, __version__
 from spindoctor import gui
 
 
+def test_vertical_scrollbar_wires_widget_without_choosing_layout():
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    app = object.__new__(gui._SpinDoctorGUI)
+    scrollbar = Mock()
+    app.ttk = SimpleNamespace(Scrollbar=Mock(return_value=scrollbar))
+    parent, widget = object(), Mock()
+    assert app._vertical_scrollbar(parent, widget) is scrollbar
+    app.ttk.Scrollbar.assert_called_once_with(parent, orient="vertical", command=widget.yview)
+    widget.configure.assert_called_once_with(yscrollcommand=scrollbar.set)
+    scrollbar.pack.assert_not_called()
+    scrollbar.grid.assert_not_called()
+
+
 # ─── main() argument handling ─────────────────────────────────────────────────
 
 def test_main_version_prints_and_exits_zero(capsys):

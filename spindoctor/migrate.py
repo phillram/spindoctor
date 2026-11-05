@@ -31,7 +31,7 @@ from typing import Iterable, Optional
 
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config, load_config, save_config
-from .fileinfo import _dir_size
+from ._utils import dir_size as _dir_size
 from ._utils import is_within, move_no_replace, numbered_path_key, unique_path
 from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 

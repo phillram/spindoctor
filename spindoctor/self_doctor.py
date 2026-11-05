@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Optional
 
 from .config import CONFIG_DIR
-from ._utils import format_bytes
+from ._utils import dir_size as _walk_size, format_bytes
 
 
 class Status(str, Enum):
@@ -82,26 +82,6 @@ _MANIFEST_DIR_WARN_BYTES = 50 * 1024 * 1024
 # A 5-minute threshold is generous enough to avoid false positives on a
 # heavily loaded machine, while still catching any genuine orphan.
 _ATOMIC_TMP_STALE_MINUTES = 5
-
-
-def _walk_size(path: Path) -> int:
-    """Total bytes under *path*. Tolerates missing files / permission errors."""
-    if not path.exists():
-        return 0
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
-    total = 0
-    for p in path.rglob("*"):
-        try:
-            if p.is_file():
-                total += p.stat().st_size
-        except OSError:
-            pass
-    return total
-
 
 
 def _days_since(path: Path) -> Optional[float]:

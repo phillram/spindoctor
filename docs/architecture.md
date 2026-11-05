@@ -27,6 +27,12 @@ Standalone wheel wrappers ───────────────┐    |
   Favorites, Recent and Stats entry points reuse domain functions rather than
   maintaining separate wheel-building implementations.
 
+Favorites and the ranked Recent/Most Played builders share the wheel writer in
+`favorites._write_synthetic_wheel`. Callers retain their selection, validation,
+dry-run and ordering policies. The writer receives the caller's summary and
+source-database cache, and writes replacements before pruning orphan media or
+launchers. Keep this ordering when changing the common pipeline.
+
 Both interfaces share `~/.spindoctor/config.json`. There is no background service
 or database server. Long-lived caches must not be confused with an operation's
 temporary view of the filesystem.

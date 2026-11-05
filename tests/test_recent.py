@@ -44,6 +44,75 @@ def test_parse_time_handles_common_formats():
     assert _parse_time("") is None
 
 
+def test_ranked_builder_reuses_source_cache_and_preserves_metadata(isolated_config, tmp_path, monkeypatch):
+    import xml.etree.ElementTree as ET
+    from spindoctor import favorites, recent
+
+    hs = tmp_path / "hs"
+    source = hs / "Databases" / "MAME" / "MAME.xml"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        '<menu><game name="A"><description>Alpha</description></game>'
+        '<game name="B" custom="keep"><description>Beta</description>'
+        '<manufacturer>Maker</manufacturer><custom-child>value</custom-child></game></menu>',
+        encoding="utf-8",
+    )
+    cfg = Config(hyperspin_dir=str(hs))
+    entries = [favorites.FavoriteEntry("MAME", name, "", "") for name in ("B", "A", "stale")]
+    calls = []
+    original = favorites.load_database
+
+    def load(system, config):
+        calls.append(system)
+        return original(system, config)
+
+    monkeypatch.setattr(favorites, "load_database", load)
+    summary = recent._build_synthetic_wheel(
+        cfg, "Recently Played", entries, skip_media=True, skip_launchers=True,
+    )
+    assert isinstance(summary, recent.RecentSummary)
+    assert calls == ["MAME"]  # validation and writing share one parsed source
+    assert summary.entries == 2
+    games = ET.parse(summary.db_path).getroot().findall("game")
+    assert [game.get("name") for game in games] == ["B", "A"]
+    assert games[0].findtext("description") == "Beta (MAME)"
+    assert games[0].get("custom") == "keep"
+    assert games[0].findtext("custom-child") == "value"
+
+
+@pytest.mark.parametrize("ranked", [False, True])
+def test_shared_writer_does_not_prune_after_media_write_failure(isolated_config, tmp_path, monkeypatch, ranked):
+    from spindoctor import favorites, recent
+    from spindoctor._wheels import mark_synthetic
+
+    hs = tmp_path / "hs"
+    source = hs / "Databases" / "MAME" / "MAME.xml"
+    source.parent.mkdir(parents=True)
+    source.write_text('<menu><game name="A"><description>Alpha</description></game></menu>', encoding="utf-8")
+    cfg = Config(hyperspin_dir=str(hs))
+    target = "Recently Played" if ranked else "Favorites"
+    (cfg.databases_dir / target).mkdir()
+    mark_synthetic(cfg, target)
+    orphan = hs / "Media" / target / "Images" / "Wheel" / "old.png"
+    orphan.parent.mkdir(parents=True)
+    orphan.write_bytes(b"keep until replacement succeeds")
+    entries = [favorites.FavoriteEntry("MAME", "A", "", "")]
+    pruned = []
+
+    def fail(*args, **kwargs):
+        raise OSError("simulated disk full")
+
+    monkeypatch.setattr(favorites, "apply_plan", fail)
+    monkeypatch.setattr(favorites, "prune_mirrored_media", lambda *args: pruned.append(args) or [])
+    with pytest.raises(OSError, match="simulated disk full"):
+        if ranked:
+            recent._build_synthetic_wheel(cfg, target, entries, skip_launchers=True)
+        else:
+            favorites.rebuild(favorites.FavoriteStore(entries, target), cfg, skip_launchers=True)
+    assert pruned == []
+    assert orphan.read_bytes() == b"keep until replacement succeeds"
+
+
 def test_read_stats_file_parses_records(tmp_path):
     ini = tmp_path / "snes.ini"
     _write_stats_ini(ini, [

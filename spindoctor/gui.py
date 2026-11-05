@@ -9,8 +9,8 @@ The GUI deliberately does not duplicate command logic — it just builds an
 argv and spawns ``spindoctor.exe`` (or one of the standalone wheel binaries)
 sitting next to it. Two side benefits:
 
-* The frozen GUI binary stays small — it doesn't bundle lxml/Pillow/etc.,
-  those live in the CLI exes that ship in the same release zip.
+* Command execution stays in sibling binaries. The GUI needs only the
+  dependencies used directly by its forms and callbacks.
 * Behaviour stays identical to the CLI, so a bug fix in either surface
   never has to be ported to the other.
 
@@ -2158,6 +2158,12 @@ class _SpinDoctorGUI:
         show_step(0)
         win.bind("<Escape>", lambda _e: _save_and_close(skip=True))
 
+    def _vertical_scrollbar(self, parent, widget):
+        """Wire a themed scrollbar without changing the caller's layout."""
+        scrollbar = self.ttk.Scrollbar(parent, orient="vertical", command=widget.yview)
+        widget.configure(yscrollcommand=scrollbar.set)
+        return scrollbar
+
     # ── themed scrolled text ──────────────────────────────────────────────────
 
     def _make_scrolled_text(self, parent, **text_options):
@@ -2181,10 +2187,7 @@ class _SpinDoctorGUI:
         # background matches the dark theme without needing option_add.
         container = self.ttk.Frame(parent)
         text = self.tk.Text(container, **text_options)
-        vsb = self.ttk.Scrollbar(
-            container, orient="vertical", command=text.yview,
-        )
-        text.configure(yscrollcommand=vsb.set)
+        vsb = self._vertical_scrollbar(container, text)
         vsb.pack(side="right", fill="y")
         text.pack(side="left", fill="both", expand=True)
         # Stash the frame on the text so callers that want to ``pack``
@@ -2604,10 +2607,7 @@ class _SpinDoctorGUI:
         """
         container = self.ttk.Frame(nb)
         canvas = self.tk.Canvas(container, highlightthickness=0)
-        vsb = self.ttk.Scrollbar(
-            container, orient="vertical", command=canvas.yview,
-        )
-        canvas.configure(yscrollcommand=vsb.set)
+        vsb = self._vertical_scrollbar(container, canvas)
         # Scrollbar always packed (not auto-hide) so users on the
         # smallest screens always know scrolling is available, even
         # before they realise content is clipped.
@@ -2716,10 +2716,7 @@ class _SpinDoctorGUI:
         tree.column("status", width=90, stretch=False)
         tree.column("time", width=140, stretch=False)
         tree.column("command", width=420, stretch=True)
-        tscroll = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=tscroll.set)
+        tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
         paned.add(tree_frame, weight=1)
@@ -3428,10 +3425,7 @@ class _SpinDoctorGUI:
         tree.column("#0", width=320, stretch=True)
         tree.column("modified", width=160, stretch=False, anchor="w")
         tree.column("size", width=80, stretch=False, anchor="e")
-        scrollbar = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         paned.add(tree_frame, weight=1)
@@ -3762,10 +3756,7 @@ class _SpinDoctorGUI:
                     display = str(v)
                 diff_tree.insert("", "end", values=(k, display))
 
-        vsb = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=diff_tree.yview,
-        )
-        diff_tree.configure(yscrollcommand=vsb.set)
+        vsb = self._vertical_scrollbar(tree_frame, diff_tree)
         diff_tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
@@ -3843,8 +3834,7 @@ class _SpinDoctorGUI:
         for s in systems:
             lb.insert("end", s)
         lb.selection_set(0)
-        lb_sb = self.ttk.Scrollbar(lb_frame, orient="vertical", command=lb.yview)
-        lb.configure(yscrollcommand=lb_sb.set)
+        lb_sb = self._vertical_scrollbar(lb_frame, lb)
         lb.pack(side="left", fill="both", expand=True)
         lb_sb.pack(side="right", fill="y")
 
@@ -3951,10 +3941,7 @@ class _SpinDoctorGUI:
         tree.column("kind", width=60, stretch=False, anchor="w")
         tree.column("size", width=80, stretch=False, anchor="e")
         tree.column("modified", width=140, stretch=False, anchor="w")
-        scrollbar = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -4164,10 +4151,7 @@ class _SpinDoctorGUI:
         tree.column("scope", width=140, stretch=False)
         tree.column("bucket", width=130, stretch=False)
         tree.column("target", width=420, stretch=True)
-        tscroll = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=tscroll.set)
+        tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
 
@@ -6287,11 +6271,7 @@ class _SpinDoctorGUI:
             height=5,
             exportselection=False,
         )
-        migrate_lb_vsb = self.ttk.Scrollbar(
-            migrate_list_frame, orient="vertical",
-            command=self._migrate_systems_lb.yview,
-        )
-        self._migrate_systems_lb.configure(yscrollcommand=migrate_lb_vsb.set)
+        migrate_lb_vsb = self._vertical_scrollbar(migrate_list_frame, self._migrate_systems_lb)
         self._migrate_systems_lb.grid(row=0, column=0, sticky="ew")
         migrate_lb_vsb.grid(row=0, column=1, sticky="ns")
         migrate_lb_btns = self.ttk.Frame(mig_frame)
@@ -6714,10 +6694,7 @@ class _SpinDoctorGUI:
         self._gwm_tree.column("name", width=280, stretch=True,  anchor="w")
         self._gwm_tree.column("desc", width=320, stretch=True,  anchor="w")
 
-        gwm_vsb = self.ttk.Scrollbar(
-            gwm_tree_frame, orient="vertical", command=self._gwm_tree.yview,
-        )
-        self._gwm_tree.configure(yscrollcommand=gwm_vsb.set)
+        gwm_vsb = self._vertical_scrollbar(gwm_tree_frame, self._gwm_tree)
         self._gwm_tree.grid(row=0, column=0, sticky="nsew")
         gwm_vsb.grid(row=0, column=1, sticky="ns")
         self._gwm_tree.bind("<Alt-Up>",   lambda e: self._gwm_move_up())
@@ -6927,11 +6904,7 @@ class _SpinDoctorGUI:
             fixexe_lb_frame, height=5, selectmode="single",
             activestyle="none",
         )
-        fixexe_lb_vsb = self.ttk.Scrollbar(
-            fixexe_lb_frame, orient="vertical",
-            command=self._fixexe_listbox.yview,
-        )
-        self._fixexe_listbox.configure(yscrollcommand=fixexe_lb_vsb.set)
+        fixexe_lb_vsb = self._vertical_scrollbar(fixexe_lb_frame, self._fixexe_listbox)
         self._fixexe_listbox.pack(side="left", fill="both", expand=True)
         fixexe_lb_vsb.pack(side="right", fill="y")
         self._fixexe_listbox.bind(
@@ -7336,10 +7309,7 @@ class _SpinDoctorGUI:
         tree.column("#0", width=380, stretch=True)
         tree.column("when", width=180, stretch=False, anchor="w")
         tree.column("size", width=90, stretch=False, anchor="e")
-        vsb = self.ttk.Scrollbar(
-            list_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=vsb.set)
+        vsb = self._vertical_scrollbar(list_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
 
@@ -8838,10 +8808,7 @@ class _SpinDoctorGUI:
             lb_frame, selectmode="extended", height=14,
             exportselection=False,
         )
-        sb = self.ttk.Scrollbar(
-            lb_frame, orient="vertical", command=lb.yview,
-        )
-        lb.configure(yscrollcommand=sb.set)
+        sb = self._vertical_scrollbar(lb_frame, lb)
         lb.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
         for s in systems:
@@ -9627,10 +9594,7 @@ class _SpinDoctorGUI:
         tree.column("#0", width=440, stretch=True)
         tree.column("status", width=110, stretch=False, anchor="w")
         tree.column("reason", width=420, stretch=True)
-        scrollbar = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=scrollbar.set)
+        scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -9986,10 +9950,7 @@ class _SpinDoctorGUI:
         list_frame = self.ttk.Frame(win)
         list_frame.pack(fill="both", expand=True, padx=8, pady=4)
         listbox = self.tk.Listbox(list_frame, selectmode="extended")
-        scrollbar = self.ttk.Scrollbar(
-            list_frame, orient="vertical", command=listbox.yview,
-        )
-        listbox.configure(yscrollcommand=scrollbar.set)
+        scrollbar = self._vertical_scrollbar(list_frame, listbox)
         listbox.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -10161,9 +10122,7 @@ class _SpinDoctorGUI:
         self._mm_tree.column("visible", width=80,  stretch=False, anchor="center")
         self._mm_tree.tag_configure("hidden", foreground=_FG_DIMMER)
 
-        vsb = self.ttk.Scrollbar(tree_frame, orient="vertical",
-                                 command=self._mm_tree.yview)
-        self._mm_tree.configure(yscrollcommand=vsb.set)
+        vsb = self._vertical_scrollbar(tree_frame, self._mm_tree)
         self._mm_tree.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
         self._mm_tree.bind("<Alt-Up>",   lambda e: self._mm_move_up())
@@ -11487,10 +11446,7 @@ class _SpinDoctorGUI:
         ]:
             self._color_tree.heading(_col, text=_heading)
             self._color_tree.column(_col, width=_w, stretch=_stretch)
-        _led_vsb = self.ttk.Scrollbar(
-            tree_outer, orient="vertical", command=self._color_tree.yview,
-        )
-        self._color_tree.configure(yscrollcommand=_led_vsb.set)
+        _led_vsb = self._vertical_scrollbar(tree_outer, self._color_tree)
         self._color_tree.grid(row=0, column=0, sticky="nsew")
         _led_vsb.grid(row=0, column=1, sticky="ns")
         self._color_tree.bind("<<TreeviewSelect>>", self._on_color_tree_select)
@@ -13078,10 +13034,7 @@ class _SpinDoctorGUI:
         tree.column("#0", width=380)
         tree.column("status", width=100, anchor="center")
         tree.column("size", width=90, anchor="e")
-        tscroll = self.ttk.Scrollbar(
-            tree_frame, orient="vertical", command=tree.yview,
-        )
-        tree.configure(yscrollcommand=tscroll.set)
+        tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.grid(row=0, column=0, sticky="nsew")
         tscroll.grid(row=0, column=1, sticky="ns")
         self._introvideo_tree = tree
