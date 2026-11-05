@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` checks the programs RocketLauncher User Functions start.** A new **User Functions** check reads the AutoHotkey files RocketLauncher runs around every launch (`Lib\User Functions`: Global, system, game and emulator files). It WARNs for a `Run` line whose program isn't there, because AutoHotkey then stops the launch with "Failed attempt to launch program or document". It also WARNs for a key mapper (JoyToKey, Xpadder, antimicro) that keeps running in HyperSpin after a game, started as the game ends or never closed, where it doubles every pad press that DS4Windows Auto Profiles or another mapper also map. Files no player can reach (a wheel hidden on or missing from the Main Menu, a game not on its wheel, an emulator no visible wheel uses) are only INFO.
+
 ### Changed
 
 - **A configured TheGamesDB key is now used without `--source both`.** The docs said `fetch-meta` / `fetch-media` use both sources (ScreenScraper first, TheGamesDB filling gaps) when both are configured. But `default_metadata_source` defaulted to `screenscraper`, and that value was written into every saved config, so TheGamesDB was used only with `--source both`. The new default is `auto`: both sources when both are configured, otherwise whichever one is. A saved `screenscraper` from an earlier version is switched to `auto` once. Set `default_metadata_source screenscraper` again afterwards to use ScreenScraper only; that choice is kept. `config set` now rejects values other than `auto`, `screenscraper`, `thegamesdb` and `both`. Covered by `tests/test_metadata_source_default.py`.

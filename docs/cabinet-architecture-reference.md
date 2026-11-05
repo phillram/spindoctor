@@ -2700,7 +2700,10 @@ Arcade panel (Mini-PAC) ──────────────────�
 - Running **more than one** of Xpadder / antimicro / the script's built-in
   joystick nav / DS4Windows Auto Profiles at once is redundant and causes
   double-navigation (one button press moves the menu cursor twice). Pick
-  exactly one.
+  exactly one. A mapper started from a RocketLauncher User Functions file
+  counts too when it's never closed, or started again as a game ends to load
+  a front-end profile: it keeps running in HyperSpin next to the others.
+  `doctor`'s **User Functions** check flags both.
 
 ### Tool inventory (common startup-script payload)
 
