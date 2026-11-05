@@ -184,10 +184,29 @@ services. They do not replace testing on a real cabinet.
   of the CLI/GUI modules remain refactoring candidates.
 - HTTP servers without validators cannot provide strong same-resource proof
   across interrupted requests, even when the URL matches.
-- No live scraping, hardware integration, frozen-executable build, Python 3.8
-  runtime, or Windows 7 runtime validation was performed.
+- No live scraping, cabinet hardware, Windows 7 runtime, or power-loss
+  validation was performed. Python 3.8 runtime and frozen-executable builds are
+  covered by CI only (see Validation).
 
 ## Validation
+
+### Continuous integration
+
+GitHub Actions passed every check on PRs #509–#512 and on the follow-up fixes
+pushed to them: tests on Ubuntu with Python 3.8 and 3.12 and on Windows with
+Python 3.12, Ruff, the legacy and modern PyInstaller frozen-build smoke tests,
+Bandit, and the pip-audit dependency scan. The legacy build and the 3.8 tests
+are the evidence for Python 3.8 compatibility; neither runs on Windows 7 or on
+cabinet hardware.
+
+### Storage consistency follow-up
+
+`tests/test_storage_consistency.py` covers settings, color, hook, profile and
+XML edits in UTF-8, UTF-8 with BOM, ANSI (including undefined bytes), and
+UTF-16 LE/BE files; atomic-write failure; LEDBlinky comment banners around
+pruned and replaced sections; Windows-safe preview names; and sidecar discovery
+across both backup name styles and the configured backup folders. The full
+suite passed on Windows 10 and Python 3.14.0 with Ruff and `git diff --check`.
 
 ### Recorded-risk follow-up
 

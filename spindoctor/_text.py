@@ -1,4 +1,6 @@
 """Lossless Windows text reads and atomic edits shared by cabinet writers."""
+from __future__ import annotations
+
 from pathlib import Path
 from typing import Optional
 
