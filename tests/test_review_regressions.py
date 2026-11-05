@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import json
+import shutil
 from datetime import datetime
 from pathlib import Path
 
 import pytest
 
-from spindoctor import backup, cache, cleanup, config, database, migrate
-from spindoctor import edit
-from spindoctor import rocketlauncher, scraper
+from spindoctor import backup, cache, cleanup, config, database, migrate, organize
+from spindoctor import curate, edit, media_scan
+from spindoctor import misplaced, rocketlauncher, scraper
 
 
 @pytest.fixture(autouse=True)
@@ -41,6 +42,150 @@ def freeze_time(monkeypatch, *modules):
         monkeypatch.setattr(module, "datetime", Frozen)
 
 
+def test_restore_uses_selected_backup_not_original_location(tmp_path):
+    src = tmp_path / "live"
+    touch(src / "game.zip")
+    cfg = config.Config(roms_dir=str(src))
+    original = backup.apply_backup(backup.plan_backup(cfg, tmp_path / "backups", ["roms"]), cfg)
+    relocated = tmp_path / "relocated"
+    shutil.copytree(original, relocated)
+    touch(original / "Games" / "game.zip", b"stale")
+    plan = backup.plan_restore(relocated)
+    assert Path(plan.items[0].src) == relocated / "Games"
+    shutil.rmtree(src)
+    backup.apply_restore(plan)
+    assert (src / "game.zip").read_bytes() == b"original"
+
+
+@pytest.mark.parametrize("operation", ["backup", "migration"])
+def test_planning_rejects_destination_inside_source(tmp_path, operation):
+    src = tmp_path / "live"
+    touch(src / "game.zip")
+    cfg = config.Config(roms_dir=str(src))
+    if operation == "backup":
+        plan = backup.plan_backup(cfg, src / "backups", ["roms"])
+    else:
+        plan = migrate.plan_migration(cfg, src / "new", ["roms"])
+    assert plan.empty
+    assert plan.skipped
+    assert not (src / "new").exists()
+    assert not (src / "backups").exists()
+
+
+def test_settings_backup_excludes_runtime_lock(tmp_path):
+    touch(backup.CONFIG_DIR / "gui.lock", b"locked")
+    touch(backup.CONFIG_DIR / "config.json", b"{}")
+    cfg = config.Config()
+    root = backup.apply_backup(backup.plan_backup(cfg, tmp_path / "backups", ["settings"]), cfg)
+    assert not (root / "Settings" / "gui.lock").exists()
+    assert (root / "Settings" / "config.json").exists()
+
+
+def test_settings_restore_does_not_delete_live_lock(tmp_path, monkeypatch):
+    source = tmp_path / "saved"
+    touch(source / "config.json", b'{"new":true}')
+    touch(source / "gui.lock", b"obsolete lock")
+    live_lock = touch(backup.CONFIG_DIR / "gui.lock", b"active lock")
+    touch(backup.CONFIG_DIR / "config.json", b"{}")
+    real_rmtree = shutil.rmtree
+
+    def guarded_rmtree(path, *args, **kwargs):
+        assert Path(path) != backup.CONFIG_DIR
+        return real_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "rmtree", guarded_rmtree)
+    plan = backup.RestorePlan(str(tmp_path), [
+        backup.RestoreItem("settings", str(source), str(backup.CONFIG_DIR)),
+    ])
+    assert backup.apply_restore(plan, overwrite=True) == 1
+    assert live_lock.read_bytes() == b"active lock"
+    assert json.loads((backup.CONFIG_DIR / "config.json").read_text()) == {"new": True}
+
+
+def test_migration_verification_detects_missing_copy(tmp_path):
+    source = tmp_path / "source"
+    target = tmp_path / "target"
+    touch(source / "missing.zip")
+    target.mkdir()
+    assert migrate._verify_tree(source, target)
+
+
+@pytest.mark.parametrize("kind", ["migration", "organize", "misplaced", "curate", "import"])
+def test_undo_keeps_conflicting_files_and_recovery_record(tmp_path, kind):
+    original = touch(tmp_path / "original.zip", b"new user data")
+    moved = touch(tmp_path / "moved.zip", b"archived data")
+    entry = {"src": str(original), "dest": str(moved)}
+    payload = {"moves": [entry]}
+    if kind == "migration":
+        entry["component"] = "roms"
+        undo = migrate.undo_migration
+    elif kind == "organize":
+        undo = organize.undo_restructure
+    elif kind == "misplaced":
+        undo = misplaced.undo_moves
+    elif kind == "curate":
+        undo = curate.undo_curation
+    else:
+        entry["action"] = "move"
+        payload = {"imports": [entry]}
+        undo = media_scan.undo_import
+    manifest = touch(tmp_path / "manifest.json", json.dumps(payload).encode())
+    result = undo(manifest)
+    assert result["errors"]
+    assert original.read_bytes() == b"new user data"
+    assert moved.read_bytes() == b"archived data"
+    assert manifest.exists()
+    original.unlink()
+    result = undo(manifest)
+    assert not result["errors"]
+    assert original.read_bytes() == b"archived data"
+    assert not manifest.exists()
+
+
+def test_organize_does_not_move_its_own_manifest(tmp_path):
+    folder = tmp_path / "Sony Playstation 3"
+    touch(folder / "Game.iso")
+    manifest = organize.apply_restructure(organize.plan_restructure(folder.name, tmp_path))
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    assert plan.empty
+    assert manifest.exists()
+
+
+def test_organize_counts_discs_not_bin_cue_files(tmp_path):
+    folder = tmp_path / "Sega Saturn"
+    for ext in (".bin", ".cue"):
+        touch(folder / f"Game (Disc 1){ext}")
+    assert organize.plan_restructure(folder.name, tmp_path).empty
+    for ext in (".bin", ".cue"):
+        touch(folder / f"Game (Disc 2){ext}")
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    assert len(plan.moves) == 4
+    assert plan.creates[0].content.splitlines() == ["Game (Disc 1).cue", "Game (Disc 2).cue"]
+
+
+@pytest.mark.parametrize("exception", [OSError, KeyboardInterrupt])
+def test_organize_interruption_keeps_partial_undo(tmp_path, monkeypatch, exception):
+    folder = tmp_path / "Sony Playstation 3"
+    touch(folder / "A.iso")
+    touch(folder / "B.iso")
+    plan = organize.plan_restructure(folder.name, tmp_path)
+    real_move = shutil.move
+    calls = []
+
+    def interrupted(src, dest, *args, **kwargs):
+        if calls:
+            raise exception("interrupted")
+        calls.append(src)
+        return real_move(src, dest, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "move", interrupted)
+    with pytest.raises(exception):
+        organize.apply_restructure(plan)
+    manifests = list(folder.glob("_spindoctor-restructure-*.json"))
+    assert len(manifests) == 1
+    assert len(json.loads(manifests[0].read_text())["moves"]) == 1
+
+
 def test_two_database_saves_keep_original_backup(tmp_path, monkeypatch):
     freeze_time(monkeypatch, database)
     path = touch(tmp_path / "MAME.xml", b'<menu><game name="A"/></menu>')
@@ -53,6 +198,15 @@ def test_two_database_saves_keep_original_backup(tmp_path, monkeypatch):
     backups = sorted(tmp_path.glob("*.bak"))
     assert len(backups) == 2
     assert backups[0].read_bytes() == original
+
+
+def test_two_migrations_keep_distinct_manifests(tmp_path, monkeypatch):
+    freeze_time(monkeypatch, migrate)
+    plan = migrate.MigrationPlan(str(tmp_path))
+    first = migrate.apply_migration(plan)
+    second = migrate.apply_migration(plan)
+    assert first != second
+    assert first.exists() and second.exists()
 
 
 def test_atomic_write_handles_short_os_writes(tmp_path, monkeypatch):
@@ -111,6 +265,29 @@ def test_ini_rom_path_update_preserves_encoding(tmp_path, encoding):
     assert path.read_bytes().decode(encoding) == "[ROMS]\r\nRom_Path=new\r\n; Émulateurs\r\n"
 
 
+def test_fuzzy_match_short_circuits_first_normalized_exact_match(monkeypatch):
+    from spindoctor import romutils
+    def fail(*args, **kwargs):
+        pytest.fail("an exact match should not need fuzzy scoring")
+    monkeypatch.setattr(romutils, "SequenceMatcher", fail)
+    assert romutils.find_best_match("Mario", ["Mario (USA)", "Mario"]) == ("Mario (USA)", 1.0)
+
+
+def test_import_matching_indexes_exact_names_and_reuses_repeated_stems(tmp_path, monkeypatch):
+    hs = tmp_path / "hs"
+    touch(hs / "Databases" / "NES" / "NES.xml", b'<menu><game name="Mario (USA)"/></menu>')
+    source = tmp_path / "pack"
+    touch(source / "Wheels" / "Mario.png")
+    touch(source / "Snaps" / "Mario.png")
+    def fail(*args, **kwargs):
+        pytest.fail("normalized exact matches should use the precomputed index")
+    monkeypatch.setattr(media_scan, "find_best_match", fail)
+    report = media_scan.match_to_database(media_scan.scan_local_media(source), "NES",
+                                          config.Config(hyperspin_dir=str(hs)))
+    assert len(report.matched) == 2
+    assert all(m.game_name == "Mario (USA)" for m in report.matched)
+
+
 def test_cached_direct_match_is_reconsidered_at_higher_threshold(tmp_path, monkeypatch):
     monkeypatch.setattr(scraper, "get_game_override", lambda *args: {})
     class Client(scraper._FetchWithSearchMixin):
@@ -142,6 +319,22 @@ def test_legacy_metadata_cache_requires_original_identity(tmp_path):
     touch(legacy, json.dumps(payload).encode())
     assert c.get("screenscraper", "MAME", "忍者")[0].name == "Ninja"
     assert c.get("screenscraper", "MAME", "将棋") is None
+
+
+def test_undo_retry_does_not_replay_already_completed_moves(tmp_path):
+    first_src, first_dest = tmp_path / "one.zip", touch(tmp_path / "moved-one.zip")
+    second_src = touch(tmp_path / "two.zip", b"conflicting")
+    second_dest = touch(tmp_path / "moved-two.zip")
+    manifest = touch(tmp_path / "undo.json", json.dumps({"moves": [
+        {"src": str(first_src), "dest": str(first_dest)},
+        {"src": str(second_src), "dest": str(second_dest)},
+    ]}).encode())
+    summary = misplaced.undo_moves(manifest)
+    assert summary["reverted"] == 1 and summary["errors"]
+    assert len(json.loads(manifest.read_text())["moves"]) == 1
+    second_src.unlink()
+    assert misplaced.undo_moves(manifest) == {"reverted": 1, "errors": []}
+    assert first_src.exists() and second_src.exists() and not manifest.exists()
 
 
 @pytest.mark.parametrize("encoding", ["cp1252", "utf-16", "utf-16-be", "utf-8-sig"])
@@ -186,6 +379,41 @@ def test_atomic_cleanup_does_not_hide_original_failure(tmp_path, monkeypatch):
     assert target.read_bytes() == b"original"
 
 
+def test_backup_apply_rejects_hand_built_nested_plan(tmp_path):
+    src = tmp_path / "live"
+    touch(src / "game.zip")
+    root = src / "backup"
+    plan = backup.BackupPlan(str(root), [
+        backup.BackupItem("roms", str(src), str(root / "Games")),
+    ])
+    with pytest.raises(ValueError, match="inside its source"):
+        backup.apply_backup(plan, config.Config())
+    assert not root.exists()
+
+
+def test_restore_rechecks_sources_before_removing_destination(tmp_path):
+    live = touch(tmp_path / "live" / "valuable", b"keep")
+    plan = backup.RestorePlan(str(tmp_path / "backup"), [
+        backup.RestoreItem("roms", str(tmp_path / "missing"), str(live.parent)),
+    ])
+    with pytest.raises(FileNotFoundError):
+        backup.apply_restore(plan, overwrite=True)
+    assert live.read_bytes() == b"keep"
+
+
+def test_old_backup_settings_locks_are_never_restored(tmp_path):
+    saved = tmp_path / "backup"
+    touch(saved / "config.json", b"{}")
+    touch(saved / "gui.lock")
+    live = tmp_path / "live"
+    plan = backup.RestorePlan(str(saved), [
+        backup.RestoreItem("settings", str(saved), str(live)),
+    ])
+    assert backup.apply_restore(plan) == 1
+    assert (live / "config.json").exists()
+    assert not (live / "gui.lock").exists()
+
+
 @pytest.mark.parametrize("clone", [False, True])
 def test_rename_and_clone_preserve_custom_xml_attributes(tmp_path, clone):
     hs = tmp_path / "hs"
@@ -211,6 +439,32 @@ def test_rename_and_clone_use_safe_media_destinations(tmp_path, clone):
     assert (wheel.parent / "New Name.png").exists()
     assert (theme.parent.parent / "New Name" / "Theme.xml").exists()
     assert database.load_database("PC", cfg.databases_dir).get("New: Name")
+
+
+def test_organize_partial_undo_never_deletes_recreated_playlist(tmp_path):
+    original = touch(tmp_path / "original.iso", b"conflicting")
+    moved = touch(tmp_path / "organized" / "disc.iso")
+    playlist = touch(moved.parent / "game.m3u")
+    payload = {
+        "moves": [{"src": str(original), "dest": str(moved)}],
+        "creates": [{"path": str(playlist), "content": "disc.iso\n"}],
+    }
+    manifest = touch(tmp_path / "manifest.json", json.dumps(payload).encode())
+    assert organize.undo_restructure(manifest)["errors"]
+    assert not playlist.exists()
+    assert json.loads(manifest.read_text())["creates"] == []
+    touch(playlist, b"new user playlist")
+    original.unlink()
+    assert not organize.undo_restructure(manifest)["errors"]
+    assert playlist.read_bytes() == b"new user playlist"
+
+
+def test_latest_manifest_uses_numeric_same_second_counter(tmp_path, monkeypatch):
+    freeze_time(monkeypatch, migrate)
+    plan = migrate.MigrationPlan(str(tmp_path))
+    manifests = [migrate.apply_migration(plan) for _ in range(12)]
+    assert migrate.list_manifests() == manifests
+    assert migrate.find_latest_manifest() == manifests[-1]
 
 
 def test_rom_rename_preserves_windows_case_insensitivity(tmp_path, monkeypatch):

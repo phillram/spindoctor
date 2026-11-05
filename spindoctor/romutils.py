@@ -118,7 +118,10 @@ def find_best_match(
     best: Optional[tuple[str, float]] = None
     norm_rom = normalize(rom_name)
     for candidate in candidates:
-        score = SequenceMatcher(None, norm_rom, normalize(candidate)).ratio()
+        norm_candidate = normalize(candidate)
+        if norm_rom == norm_candidate:
+            return (candidate, 1.0) if threshold <= 1.0 else None
+        score = SequenceMatcher(None, norm_rom, norm_candidate).ratio()
         if best is None or score > best[1]:
             best = (candidate, score)
     if best and best[1] >= threshold:
