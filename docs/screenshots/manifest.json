@@ -1,0 +1,62 @@
+{
+  "version": "2.15.0",
+  "ui_scale": 1.25,
+  "tabs": [
+    {
+      "tab": "Setup",
+      "file": "01-setup.png"
+    },
+    {
+      "tab": "Diagnostics",
+      "file": "02-diagnostics.png"
+    },
+    {
+      "tab": "Systems",
+      "file": "03-systems.png"
+    },
+    {
+      "tab": "Games",
+      "file": "04-games.png"
+    },
+    {
+      "tab": "Metadata & Media",
+      "file": "05-metadata-media.png"
+    },
+    {
+      "tab": "Maintenance",
+      "file": "06-maintenance.png"
+    },
+    {
+      "tab": "Custom Wheels",
+      "file": "07-custom-wheels.png"
+    },
+    {
+      "tab": "Intro Video",
+      "file": "08-intro-video.png"
+    },
+    {
+      "tab": "LEDBlinky",
+      "file": "09-ledblinky.png"
+    },
+    {
+      "tab": "Lightgun",
+      "file": "10-lightgun.png"
+    },
+    {
+      "tab": "Backup & Restore",
+      "file": "11-backup-restore.png"
+    },
+    {
+      "tab": "Migration",
+      "file": "12-migration.png"
+    },
+    {
+      "tab": "Console",
+      "file": "13-console.png"
+    },
+    {
+      "tab": "History",
+      "file": "14-history.png"
+    }
+  ]
+}
