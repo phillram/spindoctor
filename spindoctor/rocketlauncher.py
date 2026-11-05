@@ -1835,7 +1835,12 @@ def _read_windows_text(path: Path) -> str:
     ``Jeux R\\ufffdtro`` and be reported as a missing folder.  Raises
     ``OSError`` when the file can't be read.
     """
-    text, encoding = _read_windows_text_with_encoding(path)
+    try:
+        text, encoding = _read_windows_text_with_encoding(path)
+    except UnicodeDecodeError:
+        # Diagnostics tolerate damaged UTF-16, but lossless editors still
+        # refuse it rather than writing replacement characters back to disk.
+        return path.read_bytes().decode("utf-16", errors="replace").lstrip("\ufeff")
     if encoding == "cp1252":
         # Read-only diagnostics must remain printable even for undefined ANSI
         # bytes. Only read-modify-write callers need surrogateescape.
