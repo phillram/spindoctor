@@ -242,6 +242,17 @@ def test_metadata_cache_treats_wrong_schema_as_miss(tmp_path, value):
     assert c.get("screenscraper", "MAME", "A") is None
 
 
+def test_cleanup_does_not_mark_misplaced_undo_safe():
+    assert not cleanup.scan(config.Config(), ["misplaced-manifests"])["misplaced-manifests"].safe
+
+
+def test_filtered_cleanup_does_not_scan_other_categories(monkeypatch):
+    def fail(*args, **kwargs):
+        pytest.fail("unselected cache category was scanned")
+    monkeypatch.setattr(cleanup, "_scan_glob", fail)
+    assert cleanup.scan(config.Config(), []) == {}
+
+
 def test_fade_discovery_and_safe_media_names(tmp_path):
     name = "Metal Gear: VR"
     stem = "Metal Gear VR"
@@ -325,6 +336,37 @@ def test_theme_pack_roundtrip_respects_scope(tmp_path):
     themes.apply_plan(plans, manifest_dir=tmp_path / "undo")
     for system, path in paths.items():
         assert path.read_bytes() == system.encode()
+
+
+def test_gui_output_drain_yields_and_preserves_completion_order():
+    import queue
+    from types import SimpleNamespace
+    from spindoctor import gui
+    q = queue.Queue()
+    lines = [f"line {n}\n" for n in range(501)]
+    for line in lines:
+        q.put(line)
+    q.put(gui._DoneMarker(0, None))
+    output, recorded, done, scheduled, stuck_checks = [], [], [], [], []
+    app = SimpleNamespace(
+        _line_queue=q, _current_run=SimpleNamespace(append=recorded.append),
+        _append_output=output.append,
+        _on_proc_done=lambda marker: done.append("".join(output)),
+        _check_stuck_proc=lambda: stuck_checks.append(True),
+        root=SimpleNamespace(after=lambda delay, callback: scheduled.append(delay)),
+    )
+    app._drain_queue = lambda: gui._SpinDoctorGUI._drain_queue(app)
+    app._drain_queue()
+    assert q.qsize() == 302
+    assert len(output) == 1
+    assert not done and not stuck_checks and scheduled
+    assert scheduled == [1]
+    app._drain_queue()
+    app._drain_queue()
+    assert done == ["".join(lines)]
+    assert "".join(recorded) == "".join(lines)
+    assert len(output) == 3
+    assert scheduled == [1, 1, 50]
 
 
 def test_fuzzy_match_short_circuits_first_normalized_exact_match(monkeypatch):
@@ -551,6 +593,19 @@ def test_rom_rename_preserves_windows_case_insensitivity(tmp_path, monkeypatch):
     monkeypatch.setattr(edit.os.path, "normcase", lambda name: name.casefold())
     plan = edit.plan_rename(cfg, "Arcade", "Pacman", "New")
     assert [change.src for change in plan.file_changes if change.kind == "rom"] == [rom]
+
+
+def test_cleanup_includes_partial_identity_sidecars(tmp_path):
+    hs = tmp_path / "hs"
+    folder = hs / "Media" / "PC" / "Images" / "Wheel"
+    part = touch(folder / "game.png.part")
+    identity = touch(folder / "game.png.part.json", b"{}")
+    orphan_identity = touch(folder / "other.png.part.json", b"{}")
+    touch(folder / "game.png.part.bak")
+    reports = cleanup.scan(config.Config(hyperspin_dir=str(hs)), ["partial-downloads"])
+    assert {entry.path for entry in reports["partial-downloads"].files} == {
+        part, identity, orphan_identity,
+    }
 
 
 def test_undefined_ansi_bytes_are_lossless_for_edits_but_printable_in_diagnostics(tmp_path):
