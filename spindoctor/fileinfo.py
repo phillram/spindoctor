@@ -28,6 +28,7 @@ from .database import GameEntry
 # so the flag is a no-op on macOS / Linux.
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 from .media import MEDIA_DIR_MAP
+from ._utils import win_safe_stem
 
 
 def human_size(n: int) -> str:
@@ -49,6 +50,7 @@ _MEDIA_SEARCH_EXTS: dict[str, list[str]] = {
     "artwork":    [".png", ".jpg", ".jpeg"],
     "title":      [".png", ".jpg", ".jpeg"],
     "snap":       [".png", ".jpg", ".jpeg"],
+    "fade":       [".png", ".jpg", ".jpeg"],
     "video":      [".mp4", ".avi", ".flv", ".mkv", ".mov"],
     "trailer":    [".mp4", ".avi", ".flv", ".mkv", ".mov"],
     "sound":      [".mp3", ".wav", ".ogg"],
@@ -206,6 +208,7 @@ def find_media_file(
     FileDetail with exists=False pointing to the canonical expected path
     if nothing is found.
     """
+    game_name = win_safe_stem(game_name)
     dir_parts = MEDIA_DIR_MAP.get(media_type, (media_type.capitalize(),))
     directory = media_base / system_name / Path(*dir_parts)
 

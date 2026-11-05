@@ -456,6 +456,8 @@ def _list_rom_folder(look: _RomLookup, folder: Path, exts: list[str]) -> dict[st
 
 
 def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStatus:
+    from ._utils import win_safe_stem
+    game_name = win_safe_stem(game_name)
     sys_dir = media_base / system_name
     status = MediaStatus()
 
