@@ -101,7 +101,7 @@ def _supermodel(folder, text):
     ("JOYCODE_1_BUTTON9", False, False, "joystick only"),
     ("NOT KEYCODE_LALT JOYCODE_1_BUTTON1", False, False, "joystick only"),
     ("JOYCODE_1_UNKNOWN_SWITCH", False, True, "a device MAME no longer finds"),
-    ("JOYCODE_2_BUTTON3 OR JOYCODE_1_UNKNOWN_SWITCH", False, True, "a device MAME no longer finds"),
+    ("JOYCODE_2_BUTTON3 OR JOYCODE_1_UNKNOWN_SWITCH", False, False, "joystick only"),
     ("MOUSECODE_1_BUTTON1 OR GUNCODE_1_BUTTON1", False, False, "mouse or light gun only"),
     ("NONE", False, False, "nothing"),
 ])
@@ -192,6 +192,7 @@ def test_inputs_for_other_emulators(tmp_path):
     ({"COIN1": "KEYCODE_S"}, "JOYCODE_1_BUTTON9", True),  # took the panel's key away
     ({"COIN1": "JOYCODE_1_BUTTON9"}, "JOYCODE_1_BUTTON8", False),  # joystick-encoder panel
     ({"COIN1": "JOYCODE_1_BUTTON9"}, "JOYCODE_1_UNKNOWN_SWITCH", True),  # device gone
+    ({"COIN1": "JOYCODE_1_BUTTON9"}, "JOYCODE_2_BUTTON3 OR JOYCODE_1_UNKNOWN_SWITCH", False),
     (None, "KEYCODE_S OR JOYCODE_1_BUTTON9", False),
 ])
 def test_check_game(tmp_path, default, own, reported):
@@ -215,12 +216,12 @@ def test_supermodel_sections(tmp_path):
         "[ srally2 ]\nInputCoin1 = \"JOY1_BUTTON9\"\nInputStart1 = \"KEY_R\"\n"))
     inputs = SupermodelInputs(folder)
     assert inputs.folder_binding("COIN1").has_key
-    assert inputs.folder_binding("START1") is BUILT_IN
+    assert not inputs.folder_binding("START1").has_key
     assert inputs.game_binding("SRally2", "COIN1").source == "Config\\Supermodel.ini [ SRally2 ]"
     assert inputs.game_binding("scud", "COIN1") is None
     finding = check_game(inputs, "srally2")
     assert list(finding.bindings) == ["COIN1"]
-    assert SupermodelInputs(tmp_path / "nowhere").folder_binding("COIN1") is BUILT_IN
+    assert not SupermodelInputs(tmp_path / "nowhere").folder_binding("COIN1").has_key
 
 
 # ── doctor ──────────────────────────────────────────────────────────────────
@@ -298,7 +299,7 @@ def test_doctor_follows_games_ini_overrides(tmp_path):
         emulators={"Driving Games": "Model 2", "Sega Model 3": "SuperModel"},
         games_ini={"Driving Games": f"[outrun]\nEmulator={MAME}\n\n[srally2]\nSystem=Sega Model 3\n"})
     _mame(emus / MAME, games={"outrun": {"COIN1": "JOYCODE_1_BUTTON9"}})
-    _supermodel(emus / "Supermodel", "[ Global ]\nInputCoin1 = \"KEY_S\"\n"
+    _supermodel(emus / "Supermodel", "[ Global ]\nInputCoin1 = \"KEY_S\"\nInputStart1 = \"KEY_1\"\n"
                                      "[ srally2 ]\nInputStart1 = \"JOY1_BUTTON10\"\n")
     result = health.check_coin_start(cfg)
     assert result.detail == "2 of 2 MAME / Supermodel games can't take a coin or start from a key"
@@ -326,3 +327,142 @@ def test_doctor_runs_the_check_after_user_functions(tmp_path):
     cfg, _ = _cabinet(tmp_path)
     names = [c.name for c in health.run_health_checks(cfg, fix=False).checks]
     assert names.index("Coin/Start") == names.index("User Functions") + 1
+
+
+@pytest.mark.parametrize("section, flat", [("roms", False), ("RoMs", False), ("sEtTiNgS", True)])
+def test_doctor_reads_rl_layouts_case_insensitively(tmp_path, section, flat):
+    cfg, emus = _cabinet(tmp_path)
+    settings = tmp_path / "RocketLauncher" / "Settings"
+    local = settings / "Driving Games" / "Emulators.ini"
+    if flat:
+        _write(local, "; no folder settings\n")
+        local = settings / "Driving Games.ini"
+    _write(local, f"[{section}]\ndefault_EMULATOR={MAME.lower()}\n")
+    _mame(emus / MAME, games={"outrun": {"COIN1": "JOYCODE_1_BUTTON9"}})
+    assert health.check_coin_start(cfg).detail.startswith("1 of 2 ")
+
+
+def test_doctor_prefers_local_emulator_section(tmp_path):
+    cfg, emus = _cabinet(tmp_path)
+    _mame(emus / "local", games={"outrun": {"COIN1": "JOYCODE_1_BUTTON9"}})
+    _mame(emus / MAME)
+    local = tmp_path / "RocketLauncher" / "Settings" / "Driving Games" / "Emulators.ini"
+    _write(local, f"[ROMS]\nDefault_Emulator={MAME}\n"
+                  f"[{MAME}]\nEmulator_Application_Path=..\\Emulators\\local\\mame64.exe\n")
+    assert health.check_coin_start(cfg).detail.startswith("1 of 2 ")
+    # An empty local section must not fall back to the global emulator path.
+    _write(local, f"[ROMS]\nDefault_Emulator={MAME}\n[{MAME}]\n")
+    assert health.check_coin_start(cfg).detail.startswith("no MAME")
+
+
+@pytest.mark.parametrize("first_exe", ["uncovered.exe", "hbmame.exe"])
+def test_doctor_reader_cache_includes_executable(tmp_path, first_exe):
+    cfg, emus = _cabinet(tmp_path, emulators={"Driving Games": "Other"},
+                         games_ini={"Driving Games": f"[outrun]\nEmulator={MAME}\n"})
+    _mame(emus / MAME, games={"outrun": {"COIN1": "JOYCODE_1_BUTTON9"}})
+    _write(emus / MAME / first_exe)
+    _write(emus / MAME / "hbmame.ini", "cfg_directory other\n")
+    _write(tmp_path / "RocketLauncher" / "Settings" / "Global Emulators.ini",
+           f"[Other]\nEmu_Path=..\\Emulators\\{MAME}\\{first_exe}\n"
+           f"[{MAME}]\nEmu_Path=..\\Emulators\\{MAME}\\mame64.exe\n")
+    result = health.check_coin_start(cfg)
+    assert result.status == WARN
+    assert _node(_node(result, MAME), "games").detail.endswith("outrun (Coin: joystick only)")
+
+
+def test_supermodel_comments_duplicates_and_multiple_sections(tmp_path):
+    folder = _supermodel(tmp_path / "Supermodel", (
+        'InputCoin1 = "KEY_S" ; root belongs to Global\n'
+        '[ Global ] ; header comment\nInputStart1 = "KEY_1"\n'
+        '[ srally2, scud ] ; shared overrides\nInputCoin1 = "KEY_S"\n'
+        'InputCoin1 = "JOY1_BUTTON9" ; last assignment wins\n'
+        '[ srally2 ]\nInputStart1 = "JOY1_BUTTON10"\n'))
+    inputs = SupermodelInputs(folder)
+    assert inputs.folder_binding("COIN1").has_key
+    assert inputs.folder_binding("START1").has_key
+    assert set(check_game(inputs, "srally2").bindings) == {"COIN1", "START1"}
+    assert set(check_game(inputs, "scud").bindings) == {"COIN1"}
+
+
+def test_supermodel_none_is_not_a_built_in_key(tmp_path):
+    folder = _supermodel(tmp_path / "Supermodel", '[ srally2 ]\nInputCoin1 = "JOY1_BUTTON9"\n')
+    inputs = SupermodelInputs(folder)
+    assert inputs.folder_binding("COIN1").seq == "NONE"
+    assert check_game(inputs, "srally2") is None
+
+
+@pytest.mark.parametrize("attributes, reported", [
+    ("", False), ('tag=":IN" mask="1"', True),
+    ('tag=":IN" mask="0"', False), ('tag=":IN"', False),
+])
+def test_controller_defaults_vs_tagged_fields(tmp_path, attributes, reported):
+    folder = _mame(tmp_path / "MAME", ini="ctrlr arcade\n", default={"COIN1": "KEYCODE_S"})
+    _write(folder / "ctrlr" / "arcade.cfg",
+           '<mameconfig version="10"><system name="outrun"><input>'
+           f'<port type="COIN1" {attributes}>'
+           '<newseq type="standard">JOYCODE_1_BUTTON9</newseq>'
+           '</port></input></system></mameconfig>')
+    assert (check_game(MameInputs(folder, "mame64.exe"), "outrun") is not None) == reported
+
+
+def test_controller_remap_and_default_cfg_precedence(tmp_path):
+    folder = _mame(tmp_path / "MAME", ini="ctrlr arcade\nctrlrpath .\n")
+    _write(folder / "arcade.cfg",
+           '<mameconfig version="10"><system name="default"><input>'
+           '<remap origcode="KEYCODE_5" newcode="JOYCODE_1_BUTTON9"/>'
+           '</input></system></mameconfig>')
+    assert not MameInputs(folder, "mame64.exe").folder_binding("COIN1").has_key
+    _write(folder / "cfg" / "default.cfg", _cfg_xml("default", {"COIN1": "KEYCODE_S"}))
+    assert MameInputs(folder, "mame64.exe").folder_binding("COIN1").has_key
+
+
+@pytest.mark.parametrize("section", ["drivers.cpp", "parent", "grandparent"])
+def test_controller_matches_cached_source_and_ancestors(tmp_path, monkeypatch, section):
+    from spindoctor import ledblinky
+
+    folder = _mame(tmp_path / "MAME", ini="ctrlr arcade\n")
+    cache = _write(tmp_path / "cache.xml",
+                   '<mame><machine name="outrun" sourcefile="sega/drivers.cpp" cloneof="parent"/>'
+                   '<machine name="parent" cloneof="grandparent"/><machine name="grandparent"/></mame>')
+    monkeypatch.setattr(ledblinky, "listxml_cache_path", lambda exe: cache)
+    _write(folder / "ctrlr" / "arcade.cfg",
+           _cfg_xml(section, {"COIN1": "JOYCODE_1_BUTTON9"}))
+    inputs = MameInputs(folder, "mame64.exe")
+    assert check_game(inputs, "outrun") is not None
+    assert not any("no fresh" in limit for limit in inputs.limits)
+    assert any("not validated" in limit for limit in inputs.limits)
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_doctor_discloses_missing_or_stale_controller_metadata(tmp_path, monkeypatch, stale):
+    import os
+    from spindoctor import ledblinky
+
+    cfg, emus = _cabinet(tmp_path)
+    folder = _mame(emus / MAME, ini="ctrlr arcade\n")
+    cache = tmp_path / "cache.xml"
+    if stale:
+        _write(cache, '<mame><machine name="outrun" cloneof="parent"/></mame>')
+        os.utime(cache, (1, 1))
+    monkeypatch.setattr(ledblinky, "listxml_cache_path", lambda exe: cache)
+    _write(folder / "ctrlr" / "arcade.cfg", _cfg_xml("parent", {"COIN1": "JOYCODE_1_BUTTON9"}))
+    result = health.check_coin_start(cfg)
+    assert result.status == INFO
+    assert "coverage limits" in result.detail
+    assert "source/parent sections cannot be matched" in _node(_node(result, MAME), "coverage").detail
+
+
+@pytest.mark.parametrize("search", [".;ini", "ini;."])
+def test_mame_inipath_merges_all_matches_in_order(tmp_path, search):
+    folder = _mame(tmp_path / "MAME", ini=f'inipath "{search}" # bootstrap\ncfg_directory rootcfg\n')
+    _write(folder / "ini" / "mame.ini", "cfg_directory inicfg # later wins\n")
+    for cfgdir, seq in [("rootcfg", "KEYCODE_5"), ("inicfg", "JOYCODE_1_BUTTON9")]:
+        _write(folder / cfgdir / "outrun.cfg", _cfg_xml("outrun", {"COIN1": seq}))
+    inputs = MameInputs(folder, "mame64.exe")
+    assert inputs.game_binding("outrun", "COIN1").has_key == (search == "ini;.")
+
+
+def test_mame_cfg_directory_can_be_current_folder(tmp_path):
+    folder = _mame(tmp_path / "MAME", ini="cfg_directory .\n")
+    _write(folder / "outrun.cfg", _cfg_xml("outrun", {"COIN1": "JOYCODE_1_BUTTON9"}))
+    assert check_game(MameInputs(folder, "mame64.exe"), "outrun") is not None

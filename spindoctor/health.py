@@ -1636,7 +1636,8 @@ def check_coin_start(config: Config) -> Check:
     console wheels are skipped.  Diagnosis only.
     """
     from .coin_start import LABELS, PORTS, check_game, inputs_for
-    from .ledblinky_profiles import MESS_DRIVERS, MESS_PER_GAME_DRIVER, RocketLauncherIndex
+    from .ledblinky_profiles import MESS_DRIVERS, MESS_PER_GAME_DRIVER
+    from .rl_rom_paths import _resolve_rom_path
 
     name = "Coin/Start"
     if not config.rocketlauncher_dir:
@@ -1645,35 +1646,40 @@ def check_coin_start(config: Config) -> Check:
     mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
     hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
     wheels = [w for w in _main_menu_wheels(mm_path) if w.lower() not in hidden]
-    rl = RocketLauncherIndex(config)
+    rl = _RomLookup(Path(config.rocketlauncher_dir))
+    mess_systems = {s.lower() for s in (*MESS_DRIVERS, *MESS_PER_GAME_DRIVER)}
 
     defaults: dict[str, str] = {}
-    launchers: dict[tuple[str, str], object] = {}
-    readers: dict[Path, object] = {}
+    readers: dict[tuple[Path, str], object] = {}
 
     def default_emulator(system: str) -> str:
         if system not in defaults:
-            defaults[system] = rl.default_emulator(system)
+            found = rl.system(system)
+            defaults[system] = found[2][found[1]].get("default_emulator", "") if found else ""
         return defaults[system]
 
     def reader_for(emulator: str, system: str):
         """``(reader, emulator name)`` for games *system* launches with *emulator*."""
-        if not emulator or system in MESS_DRIVERS or system in MESS_PER_GAME_DRIVER:
+        if not emulator or system.lower() in mess_systems:
             return None, ""
-        if (emulator, system) not in launchers:
-            launchers[(emulator, system)] = rl.launcher(emulator, system)
-        launcher = launchers[(emulator, system)]
-        if launcher is None or launcher.folder is None:
+        found = rl.system(system)
+        data = found[2] if found else {}
+        # Like RL, use the local emulator section when present, even if empty.
+        section = data.get(emulator.lower(), rl.global_emus.get(emulator.lower(), {}))
+        raw = next((section[k] for k in _EMU_PATH_KEYS if section.get(k)), "")
+        path = _resolve_rom_path(raw, rl.rl_dir) if raw else None
+        if path is None:
             return None, ""
-        if launcher.folder not in readers:
-            readers[launcher.folder] = (inputs_for(launcher.folder, launcher.exe)
-                                        if launcher.folder.is_dir() else None)
-        return readers[launcher.folder], launcher.emulator
+        identity = (path.parent, path.name.lower())
+        if identity not in readers:
+            readers[identity] = (inputs_for(path.parent, path.name)
+                                 if path.parent.is_dir() else None)
+        return readers[identity], emulator
 
-    # folder -> emulator names, wheels, and {game (lower case): (name, finding)}
-    groups: dict[Path, dict] = {}
+    # Reader identity includes the executable: MAME and HBMAME may share a folder.
+    groups: dict[object, dict] = {}
     for wheel in wheels:
-        overrides = {k.lower(): v for k, v in rl.game_overrides(wheel).items()}
+        overrides = rl.game_overrides(wheel)
         if reader_for(default_emulator(wheel), wheel)[0] is None and not any(
                 reader_for(emu or default_emulator(other or wheel), other or wheel)[0] is not None
                 for emu, other in overrides.values()):
@@ -1685,8 +1691,8 @@ def check_coin_start(config: Config) -> Check:
             reader, emulator = reader_for(emu or default_emulator(system), system)
             if reader is None:
                 continue
-            g = groups.setdefault(reader.folder, {"emulators": [], "wheels": [], "games": {},
-                                                  "reader": reader})
+            g = groups.setdefault(reader, {"emulators": [], "wheels": [], "games": {},
+                                          "reader": reader})
             for key, value in (("emulators", emulator), ("wheels", wheel)):
                 if value not in g[key]:
                     g[key].append(value)
@@ -1695,14 +1701,14 @@ def check_coin_start(config: Config) -> Check:
 
     parent = Check(name=name, status=Status.OK)
     checked, bad = 0, set()
-    for folder, g in groups.items():
+    for identity, g in groups.items():
         reader, games = g["reader"], list(g["games"].values())
         checked += len(games)
         node = Check(name=" / ".join(g["emulators"]), status=Status.OK)
         wheels_text = ", ".join(g["wheels"])
         findings = [f for _, f in games if f is not None]
         if findings:
-            bad.update((folder, f.game.lower()) for f in findings)
+            bad.update((identity, f.game.lower()) for f in findings)
             findings.sort(key=lambda f: (not any(b.lost for b in f.bindings.values()),
                                          f.game.lower()))
             listed = ", ".join(f.text() for f in findings[:5])
@@ -1724,7 +1730,7 @@ def check_coin_start(config: Config) -> Check:
             label = LABELS[port]
             n_games = f"{affected} game{'s' if affected != 1 else ''}"
             if wide.lost:
-                bad.update((folder, game.lower()) for game in without)
+                bad.update((identity, game.lower()) for game in without)
                 verb = "take a coin" if port == "COIN1" else "start"
                 node.children.append(Check(
                     name=wide.source, status=Status.WARN,
@@ -1741,6 +1747,9 @@ def check_coin_start(config: Config) -> Check:
                             f"joystick-encoder panel, but a keyboard panel can't use {label} "
                             f"in {n_games}"),
                 ))
+        if reader.limits:
+            node.children.append(Check(name="coverage", status=Status.INFO,
+                                       detail="; ".join(reader.limits)))
         if node.children:
             node.detail = f"{len(games)} game{'s' if len(games) != 1 else ''} on {wheels_text}"
             node.status = _worst(c.status for c in node.children)
@@ -1754,6 +1763,8 @@ def check_coin_start(config: Config) -> Check:
     elif bad:
         parent.detail = (f"{len(bad)} of {checked} MAME / Supermodel games can't take a coin "
                          "or start from a key")
+    elif any(g["reader"].limits for g in groups.values()):
+        parent.detail = f"{checked} MAME / Supermodel games; see per-emulator coverage limits"
     else:
         parent.detail = (f"{checked} MAME / Supermodel games; some folder-wide bindings "
                          "have no key (fine for a joystick-encoder panel)")

@@ -28,6 +28,7 @@ from pathlib import Path, PureWindowsPath
 from typing import Optional
 
 from .rocketlauncher import _read_windows_text
+from .rl_rom_paths import _resolve_rom_path
 
 # MAME port types, in the order findings name them.
 PORTS = ("COIN1", "START1")
@@ -40,7 +41,7 @@ class Binding:
     seq: str          # as written ("" = the emulator's built-in default)
     source: str       # file (and section) it comes from; "" = built in
     has_key: bool     # some alternative is pressed with keys alone
-    lost: bool        # no key, and it names a device the emulator no longer finds
+    lost: bool        # every alternative requires an UNKNOWN device input
 
     def why(self) -> str:
         """Why it can't be pressed from a key, in a few words."""
@@ -60,8 +61,8 @@ BUILT_IN = Binding(seq="", source="", has_key=True, lost=False)
 
 # ── MAME ──────────────────────────────────────────────────────────────────────
 
-def _mame_alternative_is_key(tokens: list[str]) -> bool:
-    """``KEYCODE_LSHIFT KEYCODE_1`` or ``KEYCODE_5 NOT KEYCODE_LALT``: keys only."""
+def _mame_positive_tokens(tokens: list[str]) -> list[str]:
+    """Positive requirements; an absent negated input does not block an alternative."""
     positive, skip = [], False
     for token in tokens:
         if skip:
@@ -70,62 +71,90 @@ def _mame_alternative_is_key(tokens: list[str]) -> bool:
             skip = True
         else:
             positive.append(token)
-    return bool(positive) and all(t.startswith("KEYCODE_") for t in positive)
+    return positive
 
 
 def mame_binding(seq: str, source: str) -> Binding:
     """A MAME input sequence (``KEYCODE_5 OR JOYCODE_1_BUTTON9``)."""
     seq = " ".join(seq.split())
-    has_key = any(_mame_alternative_is_key(alt.split()) for alt in seq.split(" OR "))
-    lost = not has_key and "_UNKNOWN_" in seq.upper()
+    alternatives = [_mame_positive_tokens(alt.split()) for alt in seq.upper().split(" OR ")]
+    usable = [alt for alt in alternatives if alt and all(
+        t.startswith(("KEYCODE_", "JOYCODE_", "MOUSECODE_", "GUNCODE_")) and "_UNKNOWN_" not in t
+        for t in alt)]
+    has_key = any(all(t.startswith("KEYCODE_") for t in alt) for alt in usable)
+    lost = not usable and any("_UNKNOWN_" in t for alt in alternatives for t in alt)
     return Binding(seq=seq, source=source, has_key=has_key, lost=lost)
 
 
+def _strip_comment(line: str, marker: str) -> str:
+    """MAME (#) and Supermodel (;) comments stop at the first unquoted marker."""
+    quoted = False
+    for i, char in enumerate(line):
+        if char == '"':
+            quoted = not quoted
+        elif char == marker and not quoted:
+            return line[:i]
+    return line
+
+
+def _mame_path(value: str, folder: Path) -> Optional[Path]:
+    # Unlike an empty RL Rom_Path, "." is a valid MAME search directory.
+    return folder if value.strip() in ("", ".") else _resolve_rom_path(value.strip(), folder)
+
+
 def _mame_ini_values(folder: Path, exe: str) -> dict[str, str]:
-    """``cfg_directory``, ``ctrlrpath`` and ``ctrlr`` from the folder's MAME ini
-    (``mame64.exe`` reads ``mame.ini``), in the folder or its ``ini\\``."""
-    names = [Path(exe).stem.replace("64", "") + ".ini", "mame.ini", "hbmame.ini", "mess.ini"]
-    for name in dict.fromkeys(n.lower() for n in names):
-        for cand in (folder / name, folder / "ini" / name):
-            if not cand.is_file():
-                continue
-            try:
-                text = _read_windows_text(cand).replace("\r\n", "\n")
-            except OSError:
-                return {}
-            out = {}
-            for key in ("cfg_directory", "ctrlrpath", "ctrlr"):
-                # [ \t], not \s: a blank "ctrlr" line must not run on into the next one.
-                m = re.search(rf"^{key}[ \t]+(\S[^\r\n]*?)[ \t]*$", text, re.M | re.I)
-                if m:
-                    out[key] = m.group(1).strip('"')
-            return out
-    return {}
+    """Merge main INIs in search order, including the initial inipath bootstrap.
+
+    This does not evaluate orientation/source/driver INIs or command-line
+    overrides. The configuration name of custom builds cannot be inferred;
+    the supported stock families use mame.ini and hbmame.ini respectively.
+    """
+    name = "hbmame.ini" if exe.lower().startswith("hbmame") else "mame.ini"
+
+    def read(path):
+        try:
+            lines = _read_windows_text(path).splitlines()
+        except OSError:
+            return {}
+        out = {}
+        for line in lines:
+            match = re.match(r"^\s*(\w+)[ \t]+(.*?)\s*$", _strip_comment(line, "#"))
+            if match:
+                out[match.group(1).lower()] = match.group(2).strip('"')
+        return out
+
+    def candidates(search):
+        for base in search.split(";"):
+            directory = _mame_path(base, folder)
+            if directory is not None:
+                yield directory / name
+
+    search = ".;ini;ini/presets"
+    for path in candidates(search):
+        if path.is_file():
+            search = read(path).get("inipath", search)
+            break
+    out = {}
+    for path in candidates(search):
+        out.update(read(path))
+    return out
 
 
-def _folder_setting(folder: Path, value: str) -> Optional[Path]:
-    """A MAME folder setting, relative to the emulator's folder (where
-    RocketLauncher starts it).  A Windows drive path is only usable on Windows."""
-    pw = PureWindowsPath(value)
-    if pw.drive:
-        return Path(value) if os.name == "nt" else None
-    if Path(value).is_absolute():
-        return Path(value)
-    return folder.joinpath(*pw.parts)
-
-
-def _mame_cfg_systems(path: Path) -> dict[str, dict[str, str]]:
-    """``{system name (lower case): {port type: sequence}}`` for the Coin 1 and
-    1 Player Start ports a MAME cfg or ctrlr file sets."""
+def _mame_cfg_root(path: Path) -> Optional[ET.Element]:
     try:
         text = _read_windows_text(path)
     except OSError:
-        return {}
-    if not any(p in text for p in PORTS):
-        return {}
+        return None
     try:
-        root = ET.fromstring(text)
+        return ET.fromstring(text)
     except (ET.ParseError, ValueError):
+        return None
+
+
+def _mame_cfg_systems(path: Path) -> dict[str, dict[str, str]]:
+    """Coin/Start sequences in a default or game cfg; later entries win."""
+    root = _mame_cfg_root(path)
+    if root is None:
         return {}
     out: dict[str, dict[str, str]] = {}
     for system in root.iter("system"):
@@ -133,27 +162,52 @@ def _mame_cfg_systems(path: Path) -> dict[str, dict[str, str]]:
         for port in system.iter("port"):
             kind = port.get("type") or ""
             seq = port.find("newseq[@type='standard']")
-            if kind in PORTS and kind not in ports and seq is not None:
+            if kind in PORTS and seq is not None and seq.text and seq.text.strip():
                 ports[kind] = " ".join((seq.text or "").split())
+    return out
+
+
+def _cached_mame_drivers(folder: Path, exe: str) -> dict[str, tuple[str, str]]:
+    """Source basename and clone parent from this executable's fresh XML cache.
+
+    Never execute MAME, and never borrow metadata from a different MAME build.
+    BIOS ancestry and field/tag validity are not established by this metadata.
+    """
+    from .ledblinky import listxml_cache_path
+
+    binary = folder / exe
+    cache = listxml_cache_path(str(binary))
+    out = {}
+    try:
+        if not binary.is_file() or cache.stat().st_mtime < binary.stat().st_mtime:
+            return {}
+        with cache.open("rb") as fh:
+            for _, node in ET.iterparse(fh, events=("end",)):
+                if node.tag in ("machine", "game"):
+                    name = node.get("name", "").lower()
+                    source = PureWindowsPath(node.get("sourcefile", "")).name.lower()
+                    out[name] = (source, node.get("cloneof", "").lower())
+                    node.clear()
+    except (OSError, ET.ParseError, ValueError):
+        return {}
     return out
 
 
 class MameInputs:
     """Coin 1 / 1 Player Start bindings of one MAME folder.
 
-    MAME applies, lowest first: its built-in keys (5 and 1), the ctrlr file's
-    ``default`` section, ``cfg\\default.cfg``, the ctrlr file's section for the
-    game, and the game's own ``cfg\\<game>.cfg``.  The first two layers are the
-    folder-wide binding (:meth:`folder_binding`), the last two the game's
-    (:meth:`game_binding`).  The cfg folder is listed once.
+    The controller is applied in XML order before default.cfg. Its tagged
+    game ports override individual fields, while untagged ports alter general
+    defaults (which default.cfg can replace). Game cfgs win over both.
+    Source/clone matching uses only fresh cached metadata for this executable;
+    without it only default and exact-game sections are known. We cannot
+    validate controller tags/masks against the driver's live input fields.
     """
-
-    kind = "MAME"
 
     def __init__(self, folder: Path, exe: str):
         self.folder = folder
         ini = _mame_ini_values(folder, exe)
-        cfg_dir = _folder_setting(folder, ini.get("cfg_directory") or "cfg")
+        cfg_dir = _mame_path(ini.get("cfg_directory") or "cfg", folder)
         self.cfg_label = ini.get("cfg_directory") or "cfg"
         self._cfgs: dict[str, Path] = {}
         if cfg_dir is not None:
@@ -163,26 +217,84 @@ class MameInputs:
                                   if e.name.lower().endswith(".cfg") and e.is_file()}
             except OSError:
                 pass
-        self._ctrlr: dict[str, dict[str, str]] = {}
+        self._ctrlr: list[ET.Element] = []
         self._ctrlr_label = ""
+        self.limits: list[str] = []
+        self._drivers: dict[str, tuple[str, str]] = {}
         ctrlr = ini.get("ctrlr", "")
         if ctrlr and ctrlr.lower() != "none":
             for base in (ini.get("ctrlrpath") or "ctrlr").split(";"):
-                d = _folder_setting(folder, base.strip()) if base.strip() else None
+                d = _mame_path(base, folder)
                 if d is not None and (d / f"{ctrlr}.cfg").is_file():
-                    self._ctrlr = _mame_cfg_systems(d / f"{ctrlr}.cfg")
+                    root = _mame_cfg_root(d / f"{ctrlr}.cfg")
+                    self._ctrlr = list(root.iter("system")) if root is not None else []
                     self._ctrlr_label = f"{base.strip()}\\{ctrlr}.cfg"
                     break
+            if self._ctrlr:
+                self._drivers = _cached_mame_drivers(folder, exe)
+                if not self._drivers:
+                    self.limits.append("no fresh -listxml cache for this executable; controller "
+                                       "source/parent sections cannot be matched")
+                self.limits.append("controller tag/mask/defvalue matches and BIOS ancestry "
+                                   "are not validated against live driver fields")
         default_cfg = self._cfgs.get("default.cfg")
         self._defaults = _mame_cfg_systems(default_cfg).get("default", {}) if default_cfg else {}
         self._games: dict[str, dict[str, str]] = {}
+        self._controller_cache: dict[str, dict[str, Binding]] = {}
+        self._wide = self._controller_bindings("")
 
     def folder_binding(self, port: str) -> Binding:
-        if port in self._defaults:
-            return mame_binding(self._defaults[port], f"{self.cfg_label}\\default.cfg")
-        if port in self._ctrlr.get("default", {}):
-            return mame_binding(self._ctrlr["default"][port], self._ctrlr_label)
-        return BUILT_IN
+        return self._wide.get(port, BUILT_IN)
+
+    def _controller_bindings(self, game: str) -> dict[str, Binding]:
+        """Resolve general defaults and tagged overrides without reordering XML."""
+        names = {"default"}
+        if game:
+            names.add(game)
+            source, parent = self._drivers.get(game, ("", ""))
+            if source:
+                names.add(source)
+            for _ in range(2):
+                if not parent:
+                    break
+                names.add(parent)
+                parent = self._drivers.get(parent, ("", ""))[1]
+        defaults: dict[str, Binding] = {}
+        tagged: dict[str, Binding] = {}
+        for system in self._ctrlr:
+            name = system.get("name", "").lower()
+            if name not in names:
+                continue
+            for remap in system.iter("remap"):
+                old, new = remap.get("origcode", ""), remap.get("newcode", "")
+                if not old or not new:
+                    continue
+                for port, built_in in (("COIN1", "KEYCODE_5"), ("START1", "KEYCODE_1")):
+                    seq = defaults[port].seq if port in defaults else built_in
+                    tokens = seq.split()
+                    if old in tokens:
+                        defaults[port] = mame_binding(
+                            " ".join(new if t == old else t for t in tokens), self._ctrlr_label)
+            for node in system.iter("port"):
+                port = node.get("type", "")
+                seq = node.find("newseq[@type='standard']")
+                if port not in PORTS or seq is None or not seq.text or not seq.text.strip():
+                    continue
+                target = defaults
+                if name != "default" and node.get("tag") is not None:
+                    # MAME ignores tagged controller ports without a nonzero mask.
+                    try:
+                        mask = int(node.get("mask", "0"), 0)
+                    except ValueError:
+                        continue
+                    if not mask:
+                        continue
+                    target = tagged
+                target[port] = mame_binding(seq.text, self._ctrlr_label)
+        for port, seq in self._defaults.items():
+            defaults[port] = mame_binding(seq, f"{self.cfg_label}\\default.cfg")
+        defaults.update(tagged)
+        return defaults
 
     def game_binding(self, game: str, port: str) -> Optional[Binding]:
         """The game's own binding, or None when the folder-wide one applies."""
@@ -193,8 +305,11 @@ class MameInputs:
                 self._games[low] = _mame_cfg_systems(path).get(low, {})
             if port in self._games[low]:
                 return mame_binding(self._games[low][port], f"{self.cfg_label}\\{path.name}")
-        if port in self._ctrlr.get(low, {}):
-            return mame_binding(self._ctrlr[low][port], self._ctrlr_label)
+        if low not in self._controller_cache:
+            self._controller_cache[low] = self._controller_bindings(low)
+        binding = self._controller_cache[low].get(port)
+        if binding is not None and binding != self.folder_binding(port):
+            return binding
         return None
 
     def fix(self) -> str:
@@ -228,17 +343,19 @@ def _supermodel_sections(path: Path) -> dict[str, dict[str, str]]:
     except OSError:
         return {}
     out: dict[str, dict[str, str]] = {}
-    cur: Optional[dict[str, str]] = None
+    current = [out.setdefault("global", {})]
     for line in text.splitlines():
-        s = line.strip()
+        s = _strip_comment(line, ";").strip()
         if not s or s[0] in ";#":
             continue
         m = re.match(r"\[\s*(.*?)\s*\]$", s)
         if m:
-            cur = out.setdefault(m.group(1).lower(), {})
-        elif cur is not None and "=" in s:
+            current = [out.setdefault(name.strip().lower() or "global", {})
+                       for name in m.group(1).split(",")]
+        elif "=" in s:
             key, value = s.split("=", 1)
-            cur.setdefault(key.strip().lower(), value.strip())
+            for section in current:
+                section[key.strip().lower()] = value.strip()
     return out
 
 
@@ -246,13 +363,12 @@ class SupermodelInputs:
     """Coin 1 / Start 1 bindings of one Supermodel folder (``Config\\Supermodel.ini``).
 
     A game's ``[ <game> ]`` section overrides ``[ Global ]``, which overrides
-    Supermodel's built-in keys.
+    Supermodel's built-in NONE bindings.
     """
-
-    kind = "Supermodel"
 
     def __init__(self, folder: Path):
         self.folder = folder
+        self.limits: list[str] = []
         self._sections: dict[str, dict[str, str]] = {}
         config_dir = folder / "Config"
         try:
@@ -266,7 +382,7 @@ class SupermodelInputs:
     def folder_binding(self, port: str) -> Binding:
         value = self._sections.get("global", {}).get(_SUPERMODEL_KEYS[port])
         if value is None:
-            return BUILT_IN
+            return supermodel_binding("NONE", "")
         return supermodel_binding(value, "Config\\Supermodel.ini [ Global ]")
 
     def game_binding(self, game: str, port: str) -> Optional[Binding]:
