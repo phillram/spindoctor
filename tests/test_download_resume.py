@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import hashlib
+import json
 
 import pytest
 
@@ -41,6 +43,13 @@ def _make_downloader(tmp_path: Path) -> MediaDownloader:
     return MediaDownloader(cfg)
 
 
+def _seed_partial(part: Path, data: bytes) -> None:
+    part.write_bytes(data)
+    part.with_name(part.name + ".json").write_text(json.dumps({
+        "url_hash": hashlib.sha256(b"https://x/1942.png").hexdigest(),
+    }), encoding="utf-8")
+
+
 def test_successful_download_uses_part_then_atomic_rename(tmp_path, monkeypatch):
     dl = _make_downloader(tmp_path)
     payload = b"\x89PNGfullbody"
@@ -71,13 +80,13 @@ def test_resume_appends_partial_with_range_header(tmp_path, monkeypatch):
     dest = dl.media_path("MAME", "1942", "wheel")
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    part.write_bytes(prefix)
+    _seed_partial(part, prefix)
 
     seen: dict = {}
 
     def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
         seen["headers"] = headers
-        return _FakeResp(suffix, status_code=206)
+        return _FakeResp(suffix, status_code=206, headers={"Content-Range": "bytes 10-25/26"})
 
     monkeypatch.setattr(dl._session, "get", fake_get)
 
@@ -96,7 +105,7 @@ def test_server_ignores_range_returns_200_truncates_partial(tmp_path, monkeypatc
     dest = dl.media_path("MAME", "1942", "wheel")
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    part.write_bytes(b"stale-junk")
+    _seed_partial(part, b"stale-junk")
 
     def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
         # Server received Range but chose to send the whole file.
@@ -119,7 +128,7 @@ def test_416_drops_partial_and_restarts(tmp_path, monkeypatch):
     dest = dl.media_path("MAME", "1942", "wheel")
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    part.write_bytes(b"way-too-many-bytes-for-server")
+    _seed_partial(part, b"way-too-many-bytes-for-server")
 
     calls = {"n": 0}
 
@@ -182,7 +191,7 @@ def test_network_failure_preserves_part_for_next_run(tmp_path, monkeypatch):
     dest = dl.media_path("MAME", "1942", "wheel")
     dest.parent.mkdir(parents=True, exist_ok=True)
     part = dest.with_name(dest.name + ".part")
-    part.write_bytes(b"already-downloaded-prefix")
+    _seed_partial(part, b"already-downloaded-prefix")
 
     def fake_get(url, timeout=30, stream=True, headers=None):  # noqa: ARG001
         raise requests.ConnectionError("network down")
@@ -1163,3 +1172,85 @@ def test_download_hls_audio_pre_download_used_as_ffmpeg_input(tmp_path, monkeypa
     assert "https://cdn/audio.m3u8" not in cmd, "HLS audio URL must not be passed to ffmpeg when pre-download succeeds"
     assert "0:v:0" in cmd
     assert "1:a:0" in cmd
+
+
+def test_changing_candidate_restarts_partial_without_mixing_bytes(tmp_path, monkeypatch):
+    import requests
+    dl = _make_downloader(tmp_path)
+
+    class Interrupted(_FakeResp):
+        def iter_content(self, chunk_size=8192):
+            yield b"candidate A prefix"
+            raise requests.ConnectionError("interrupted")
+
+    monkeypatch.setattr(dl._session, "get", lambda *a, **kw: Interrupted(b""))
+    assert not dl.download("1942", "MAME", "wheel", "https://x/a.png", max_retries=1).success
+    seen = []
+
+    def candidate_b(url, **kwargs):
+        seen.append(kwargs.get("headers"))
+        return _FakeResp(b"candidate B complete")
+
+    monkeypatch.setattr(dl._session, "get", candidate_b)
+    result = dl.download("1942", "MAME", "wheel", "https://x/b.png")
+    assert result.success and result.path.read_bytes() == b"candidate B complete"
+    assert seen == [None]
+    assert not list(result.path.parent.glob("*.part*"))
+
+
+@pytest.mark.parametrize("headers", [
+    {"Content-Range": "bytes 1-12/13"},
+    {"Content-Range": "bytes 3-12/13", "ETag": '"changed"'},
+    {},
+    {"Content-Range": "bytes 3-12/*"},
+])
+def test_resume_rejects_wrong_range_or_changed_validator(tmp_path, monkeypatch, headers):
+    dl = _make_downloader(tmp_path)
+    dest = dl.media_path("MAME", "1942", "wheel")
+    dest.parent.mkdir(parents=True)
+    part = dest.with_name(dest.name + ".part")
+    _seed_partial(part, b"old")
+    info = part.with_name(part.name + ".json")
+    saved = json.loads(info.read_text())
+    saved["validator"] = '"original"'
+    info.write_text(json.dumps(saved), encoding="utf-8")
+    seen = []
+
+    def get(url, **kwargs):
+        seen.append(kwargs.get("headers"))
+        if len(seen) == 1:
+            return _FakeResp(b"incorrect bytes", 206, headers)
+        return _FakeResp(b"fresh complete")
+
+    monkeypatch.setattr(dl._session, "get", get)
+    result = dl.download("1942", "MAME", "wheel", "https://x/1942.png")
+    assert result.success and result.path.read_bytes() == b"fresh complete"
+    assert seen == [{"Range": "bytes=3-", "If-Range": '"original"'}, None]
+
+
+def test_streamed_response_is_closed_on_failure(tmp_path, monkeypatch):
+    import requests
+    dl = _make_downloader(tmp_path)
+    closed = []
+
+    class Interrupted(_FakeResp):
+        def iter_content(self, chunk_size=8192):
+            yield b"prefix"
+            raise requests.ConnectionError("lost connection")
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(dl._session, "get", lambda *a, **kw: Interrupted(b""))
+    assert not dl.download("A", "MAME", "wheel", "https://x/a.png", max_retries=1).success
+    assert closed == [True]
+
+
+def test_response_cleanup_failure_does_not_hide_success(tmp_path, monkeypatch):
+    dl = _make_downloader(tmp_path)
+    class Response(_FakeResp):
+        def close(self):
+            raise OSError("socket cleanup")
+    monkeypatch.setattr(dl._session, "get", lambda *a, **kw: Response(b"complete"))
+    result = dl.download("A", "MAME", "wheel", "https://x/a.png")
+    assert result.success and result.path.read_bytes() == b"complete"

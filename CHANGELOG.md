@@ -12,6 +12,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Existing PCLauncher wheels are not mistaken for SpinDoctor-owned synthetic wheels.** Custom targets with an existing database now require the ownership marker, protecting real PC game databases and media. Community theme packs using `Images/Special A` still match by filename instead of being mistaken for scoped exports. Covered by `tests/test_pr_media_safety.py`.
 - **Backup overlap guards work with relative paths on older Windows Python builds.** Same-second backup counters sort numerically, and refused overlapping restores produce a CLI error instead of a traceback. Covered by `tests/test_pr_recovery_safety.py`.
 - **Clone undo cannot delete files shared by sanitized game names.** Cloning now refuses source and destination names that map to the same file, and undo protects originals in older manifests. Config read errors propagate instead of silently supplying defaults, lightgun hook edits preserve line endings, and diagnostics tolerate damaged UTF-16 without allowing lossy edits. Covered by `tests/test_pr_storage_safety.py`.
 - **Tests no longer use the developer's real `~/.spindoctor` folder.** The suite redirects the home directory before importing SpinDoctor, keeping unpatched config, cache and manifest paths inside a temporary test home. Covered by `tests/test_home_isolation.py`.
