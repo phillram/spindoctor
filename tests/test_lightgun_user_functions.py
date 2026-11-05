@@ -431,3 +431,89 @@ def test_configure_cli_prints_the_warning_and_stays_a_dry_run(tmp_path, isolated
     assert "Warning:" in out
     assert f"User Functions ({UF}\\Gun Games.ahk)" in out
     assert ini.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("line", [
+    'Run, taskkill /IM "DemulShooter.exe" /F',
+    'RunWait, %comspec% /c taskkill /IM "DemulShooterX64.exe" /F,, Hide',
+    'Run, notepad.exe D:\\Tools\\Lightgun.exe',
+    'Run, helper.bat, D:\\Tools\\Lightgun.exe',
+    'Run, D:\\Tools\\Lightgun.exe.config',
+    'Run, D:\\Tools\\not-Lightgun.exe',
+    'Run, C:\\Windows\\System32\\taskkill.exe /IM D:\\Tools\\DemulShooter.exe /F',
+    'Run, C:\\Windows\\notepad.exe D:\\Tools\\Lightgun.exe',
+    'Run, D:\\Tools\\helper.bat D:\\Tools\\Lightgun.exe',
+])
+def test_run_must_launch_the_gun_not_merely_name_it(tmp_path, line):
+    cfg, uf = _cabinet(tmp_path)
+    _write(uf / "Gun Games.ahk", _ahk(line))
+    assert not audit_system_wiring("Gun Games", cfg).wired_via_user_functions
+    assert detect_lightgun_systems(cfg) == []
+    cfg.set_lightgun("Gun Games", True)
+    assert _node(health.check_lightguns(cfg), "Gun Games").status == health.Status.FAIL
+    plan = plan_wire_system("Gun Games", cfg, _install(tmp_path), target_override="mame")
+    assert plan.warnings == []
+
+
+@pytest.mark.parametrize("wired_emulators, expected", [
+    (("PCSX2 (Gun Games)",), health.Status.INFO),
+    (("MAME (Gun Games)",), health.Status.INFO),
+    (("MAME (Gun Games)", "PCSX2 (Gun Games)"), health.Status.OK),
+])
+def test_emulator_wiring_must_cover_default_and_game_overrides(
+        tmp_path, wired_emulators, expected):
+    cfg, uf = _cabinet(tmp_path, games_ini="[Time Crisis]\nEmulator=PCSX2 (Gun Games)\n")
+    for emu in wired_emulators:
+        _write(uf / "Emulators" / f"{emu}.ahk", _ahk(SINDEN_RUN))
+    cfg.set_lightgun("Gun Games", True)
+    node = _node(health.check_lightguns(cfg), "Gun Games")
+    assert node.status == expected
+    if expected == health.Status.INFO:
+        assert "other games may run with no gun" in node.detail
+    assert detect_lightgun_systems(cfg) == ["Gun Games"]
+
+
+def test_empty_post_launch_does_not_warn_about_replacing_the_next_key(tmp_path):
+    cfg, _uf = _cabinet(tmp_path)
+    ini = Path(cfg.rocketlauncher_dir) / "Settings" / "Gun Games" / "Emulators.ini"
+    _write(ini, "[ROMS]\nPost_Launch_App=\nRom_Path=D:\\Games\n")
+    plan = plan_wire_system("Gun Games", cfg, _install(tmp_path), target_override="mame")
+    assert not plan.replace_post
+    assert plan.notes == []
+
+
+@pytest.mark.parametrize("line", [
+    'Run, "C:\\Program Files\\Sinden\\Lightgun.exe", C:\\Program Files\\Sinden',
+    'Run, C:\\Program Files\\DemulShooter\\DemulShooterX64.exe -target=model2',
+    'Run, *RunAs "D:\\Tools\\DemulShooter.exe" -target=model2',
+    'Run, % "D:\\Tools\\Lightgun.exe"',
+    'Run, %comspec% /c start "" "D:\\Tools\\Lightgun.exe"',
+])
+def test_launch_target_matching_preserves_common_ahk_forms(tmp_path, line):
+    cfg, uf = _cabinet(tmp_path)
+    _write(uf / "Gun Games.ahk", _ahk(line))
+    assert audit_system_wiring("Gun Games", cfg).wired_via_user_functions
+
+
+def test_system_file_covers_unwired_emulator_overrides(tmp_path):
+    cfg, uf = _cabinet(tmp_path, games_ini="[Time Crisis]\nEmulator=PCSX2\n")
+    _write(uf / "Gun Games.ahk", _ahk(SINDEN_RUN))
+    cfg.set_lightgun("Gun Games", True)
+    assert _node(health.check_lightguns(cfg), "Gun Games").status == health.Status.OK
+
+
+def test_audit_cli_labels_emulator_only_coverage_partial(tmp_path, isolated_config):
+    cfg, uf = _cabinet(tmp_path, games_ini="[Time Crisis]\nEmulator=PCSX2\n")
+    _write(uf / "Emulators" / "PCSX2.ahk", _ahk(SINDEN_RUN))
+    cfg.set_lightgun("Gun Games", True)
+    save_config(cfg)
+    result = CliRunner().invoke(cli, ["lightgun", "audit"])
+    assert result.exit_code == 0, result.output
+    assert "partial" in result.output
+
+
+def test_empty_game_emulator_inherits_wired_default(tmp_path):
+    cfg, uf = _cabinet(tmp_path, games_ini="[vcop]\nEmulator=\n")
+    _write(uf / "Emulators" / "MAME (Gun Games).ahk", _ahk(SINDEN_RUN))
+    cfg.set_lightgun("Gun Games", True)
+    assert _node(health.check_lightguns(cfg), "Gun Games").status == health.Status.OK

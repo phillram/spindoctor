@@ -1828,8 +1828,12 @@ def check_lightguns(config: Config) -> Check:
         status = audit_system_wiring(system, config, user_functions=user_functions)
         if status is not None and not status.is_wired and status.wired_via_user_functions:
             where = status.user_functions_where()
-            if status.user_functions:
+            if status.user_functions_system_wide:
                 node.detail = f"wired via User Functions ({where})"
+            elif status.user_functions:
+                node.status = Status.INFO
+                node.detail = (f"wired via User Functions for some emulators only ({where}); "
+                               "its other games may run with no gun")
             else:
                 n = len(status.user_functions_games)
                 node.status = Status.INFO

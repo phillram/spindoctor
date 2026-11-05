@@ -13529,13 +13529,15 @@ def lightgun_audit():
         if not status:
             tbl.add_row(s, "[red]missing[/red]", "—", "—", "—", "—")
             continue
-        # No hooks are needed when User Functions start the gun software.
-        uf_only = status.wired_via_user_functions and not status.is_wired
+        # No hooks are needed when User Functions cover every launch choice.
+        uf_only = status.user_functions_system_wide and not status.is_wired
         pre = ("[green]wired[/green]" if status.pre_launch
                else "[dim]none[/dim]" if uf_only else "[red]none[/red]")
         post = ("[green]wired[/green]" if status.post_launch
                 else "[dim]none[/dim]" if uf_only else "[yellow]none[/yellow]")
-        uf = (f"[green]wired[/green] ({escape(status.user_functions_where())})"
+        uf_label = ("[green]wired[/green]" if status.user_functions_system_wide
+                    else "[yellow]partial[/yellow]")
+        uf = (f"{uf_label} ({escape(status.user_functions_where())})"
               if status.wired_via_user_functions else "—")
         tbl.add_row(
             s, status.ini_path.name, pre, status.target or "—", post, uf,

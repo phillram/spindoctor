@@ -188,7 +188,7 @@ DEMULSHOOTER_POST_RE = re.compile(
 )
 # Any Post_Launch_App: configure overwrites it, whatever it runs.
 _POST_LAUNCH_RE = re.compile(
-    r"^\s*Post_Launch_App\s*=\s*(.+)",
+    r"^[ \t]*Post_Launch_App[ \t]*=[ \t]*([^\r\n]*)",
     re.IGNORECASE | re.MULTILINE,
 )
 
@@ -203,12 +203,15 @@ class SystemLightgunStatus:
     target: Optional[str] = None  # parsed from pre_launch -target arg
     # User Functions files with a line that runs Lightgun.exe or DemulShooter
     # for this system, as "Lib\User Functions\..." labels: the system's own
-    # file and its emulators' files (they run for every game), then
+    # file and its emulators' files, then
     # per-game files.
     user_functions: list[str] = field(default_factory=list)
     user_functions_games: list[str] = field(default_factory=list)
     # What those lines run: "lightgun" and/or "demulshooter".
     user_functions_programs: set[str] = field(default_factory=set)
+    # An emulator file runs only for games using that emulator. All launch
+    # choices must be covered before doctor can call the whole system wired.
+    user_functions_system_wide: bool = False
 
     @property
     def is_wired(self) -> bool:
@@ -271,8 +274,20 @@ _TARGET_RE = re.compile(r"-target(?:=|\s+)(\S+)", re.IGNORECASE)
 _AHK_COMMENT_RE = re.compile(r"(?:^|[ \t]);")
 # Run / RunWait as a command ("Run, x" or "Run x") or a function ("Run(x)").
 _AHK_RUN_RE = re.compile(r"^\s*Run(?:Wait)?\s*[,(\s]", re.IGNORECASE)
-# The Sinden software and DemulShooter (32- or 64-bit).
-_GUN_EXE_RE = re.compile(r"\b(lightgun|demulshooter)(?:x64)?\.exe\b", re.IGNORECASE)
+# Match the executable being launched, not a taskkill argument, working
+# directory, or similarly named file. Paths may contain spaces after the
+# first directory separator, as accepted by AHK's Run command.
+_GUN_EXE_RE = re.compile(
+    r'^(?:[^\s",]+[\\/](?:[^",]*[\\/])?)?(lightgun|demulshooter)(?:x64)?\.exe(?=["\s,)]|$)',
+    re.IGNORECASE,
+)
+_AHK_TARGET_RE = re.compile(
+    r'^[^",]*?\.(?:exe|com|bat|cmd|lnk|ahk)(?=["\s,)]|$)', re.IGNORECASE,
+)
+_AHK_SHELL_RE = re.compile(
+    r"^%comspec%[ \t]+/[ck][ \t]+(?:start[ \t]+(?:\"\"[ \t]+)?)?",
+    re.IGNORECASE,
+)
 
 _DEFAULT_EMULATOR_RE = re.compile(
     r"^[ \t]*Default_Emulator[ \t]*=[ \t]*([^\r\n]*?)[ \t]*\r?$",
@@ -335,8 +350,25 @@ class UserFunctionsIndex:
             except OSError:
                 text = ""
             for code in _ahk_code_lines(text):
-                if _AHK_RUN_RE.match(code):
-                    found.update(m.lower() for m in _GUN_EXE_RE.findall(code))
+                run = _AHK_RUN_RE.match(code)
+                if run:
+                    command = code[run.end():].lstrip()
+                    command = _AHK_SHELL_RE.sub("", command, count=1)
+                    if command.lower().startswith("*runas "):
+                        command = command[7:].lstrip()
+                    # AHK expression-mode commands may start with "% ".
+                    if command.startswith("% "):
+                        command = command[2:].lstrip()
+                    if command.startswith('"'):
+                        target = command[1:].split('"', 1)[0]
+                    else:
+                        # Stop at the first executable/script, not a later
+                        # argument such as taskkill's /IM path.
+                        launched = _AHK_TARGET_RE.match(command)
+                        target = launched.group(0) if launched else ""
+                    exe = _GUN_EXE_RE.fullmatch(target)
+                    if exe:
+                        found.add(exe.group(1).lower())
             self._programs[key] = frozenset(found)
         return self._programs[key]
 
@@ -385,17 +417,19 @@ def _system_emulators(rocketlauncher_dir: Path, system_name: str, body: str
     """Lower-cased names of the emulators RocketLauncher can launch
     *system_name*'s games with: ``Default_Emulator`` in its settings *body*,
     then each ``Emulator=`` override in ``Settings/<System>/Games.ini``."""
-    names = []
+    # Keep an empty default as an uncovered launch choice: overrides alone
+    # do not establish system-wide wiring.
+    names = [""]
     m = _DEFAULT_EMULATOR_RE.search(body)
     if m:
-        names.append(m.group(1))
+        names[0] = m.group(1)
     games_ini = Path(rocketlauncher_dir) / "Settings" / system_name / "Games.ini"
     try:
         games = games_ini.read_text(encoding="utf-8", errors="replace")
     except OSError:
         games = ""
-    names += [g.group(1) for g in _GAME_EMULATOR_RE.finditer(games)]
-    return list(dict.fromkeys(n.lower() for n in names if n))
+    names += [g.group(1) for g in _GAME_EMULATOR_RE.finditer(games) if g.group(1)]
+    return list(dict.fromkeys(n.lower() for n in names))
 
 
 def _add_user_functions(status: SystemLightgunStatus, index: UserFunctionsIndex,
@@ -405,7 +439,8 @@ def _add_user_functions(status: SystemLightgunStatus, index: UserFunctionsIndex,
     system = status.system_name.lower()
     system_wide = [f"{system}.ahk"]
     for emu in emulators:
-        system_wide += [f"emulators/{emu}.ahk", f"{system}/emulators/{emu}.ahk"]
+        if emu:
+            system_wide += [f"emulators/{emu}.ahk", f"{system}/emulators/{emu}.ahk"]
     games = sorted(k for k in index.files
                    if k.startswith(system + "/") and "/" not in k[len(system) + 1:])
     for keys, labels in ((system_wide, status.user_functions),
@@ -415,6 +450,14 @@ def _add_user_functions(status: SystemLightgunStatus, index: UserFunctionsIndex,
             if programs:
                 labels.append(index.label(key))
                 status.user_functions_programs.update(programs)
+    status.user_functions_system_wide = bool(
+        index.gun_programs(f"{system}.ahk")
+        or (emulators and all(
+            emu and (index.gun_programs(f"emulators/{emu}.ahk")
+                     or index.gun_programs(f"{system}/emulators/{emu}.ahk"))
+            for emu in emulators
+        ))
+    )
 
 
 def audit_system_wiring(system_name: str, config: Config,
@@ -573,7 +616,7 @@ def plan_wire_system(
             f"Existing Pre_Launch_App will be replaced "
             f"(was: {existing_pre.group(1).strip()})."
         )
-    if existing_post and existing_post.group(1).strip() != post_cmd:
+    if existing_post and existing_post.group(1).strip() and existing_post.group(1).strip() != post_cmd:
         plan.replace_post = True
         plan.notes.append(
             f"Existing Post_Launch_App will be replaced "
