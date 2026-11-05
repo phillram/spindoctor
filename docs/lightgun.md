@@ -107,8 +107,32 @@ With the internal AHK keymapper, RocketLauncher runs one remap file per game, th
 
 Only exact system, game and emulator names match. A file named after an emulator, holding only comments, switches a system-wide remap off for that emulator.
 
+**Bind the emulator to the key the remap sends, not the key that's pressed.** While a remap such as `r::1` runs, the emulator never sees R: the panel's or gun's R button reaches it as 1. A Start or Coin bound to R then does nothing in that game, and an R binding added "to be safe" can never fire. Bind it to 1. Each game loads only the first profile in the order above, so a game or emulator profile that changes or drops the remap also changes which keys the emulator has to listen for. Check which profile a game loads before changing its emulator's keys.
+
 ### Sinden software (v2)
 
 - **Run both guns for a two-player game.** A gun set to "none" in the Sinden software is never sent any settings. It still recoils from its own firmware when its trigger is pulled, in whatever mode it was last given, so the two guns can recoil differently.
 - **Recoil settings go to every gun.** The software sends the same recoil mode and strength to every gun it runs. When the **Lightgun B** single-shot strength box is filled in, its value is used for both guns, not only gun B, and the main strength slider is ignored.
 - **Matching single shot to automatic:** a single-shot kick is the strength × 10, and each automatic pulse is the pulse-length slider (40–80). Strength 5 kicks as hard as a pulse length of 50.
+
+## SNES Super Scope games (Snes9x)
+
+Snes9x maps the Super Scope's turbo switch to one key, `Key:ScopeTurbo` in `snes9x.conf`; on a gun cabinet that's usually a gun button. The key **toggles** turbo, and Snes9x starts every game with turbo **off**. Games played with the scope held in turbo (Battle Clash, Metal Combat, X Zone, Yoshi's Safari, Bazooka Blitzkrieg) therefore start firing single shots until the player presses the turbo key.
+
+- **To start a game in turbo,** press the key once after the game has loaded, from the game's RocketLauncher User Functions file (`Lib\User Functions\<System>\<Game>.ahk`). Its `PostLoad()` method runs after RocketLauncher's fade-in. The same button still switches turbo off and on during play. With `Key:ScopeTurbo = 5`:
+
+  ```autohotkey
+  PostLoad() {
+      WinWait, ahk_exe snes9x.exe,, 15
+      If (!ErrorLevel) {
+          Sleep, 3000                 ; let the game finish loading
+          WinActivate, ahk_exe snes9x.exe
+          Send, {5 down}
+          Sleep, 80
+          Send, {5 up}
+      }
+  }
+  ```
+
+- **Use automatic recoil for these games.** In turbo the game keeps firing while the trigger is held, but a gun in single-shot recoil kicks only once per trigger pull. Automatic recoil pulses for as long as the trigger is held.
+- **Edit `snes9x.conf` only while Snes9x is closed.** Snes9x writes the file back on exit, so changes made while it runs are lost.
