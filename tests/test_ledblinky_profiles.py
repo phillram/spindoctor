@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from spindoctor import ledblinky_library
 from spindoctor import ledblinky_profiles as lp
 from spindoctor.config import Config
 
@@ -81,8 +82,10 @@ def _mame_cfg(ports: dict[str, str], tag: bool = False) -> str:
 
 
 @pytest.fixture
-def cabinet(tmp_path):
+def cabinet(tmp_path, monkeypatch):
     """A miniature cabinet: RocketLauncher settings, emulators, databases, LEDBlinky."""
+    # Never read the user's own LEDBlinky library.
+    monkeypatch.setattr(ledblinky_library, "LIBRARY_DIR", tmp_path / "ledblinky_library")
     root = tmp_path / "Arcade"
     led = root / "LEDBlinky"
     led.mkdir(parents=True)

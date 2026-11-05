@@ -774,7 +774,26 @@ The script, the diagnosis and a HyperSpin startup step that repeats the reset at
 
 ### Where does `ledblinky generate` pull its data from?
 
-Locally — `mame -listxml` is run as a subprocess and the output is cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.
+Locally. A missing entry is copied from SpinDoctor's LEDBlinky library (`~/.spindoctor/ledblinky_library/`, the entries `ledblinky prune` removed) when it's there; otherwise it's built from `mame -listxml`, which is run as a subprocess and cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.
+
+### LEDs and the ServoStik come alive a minute after HyperSpin starts
+
+HyperSpin is up, but the panel stays dark (or shows its last colours) and the ServoStik stays in the wrong mode for a minute or more after every start. Wheel changes made in that time don't light anything. `LEDBlinky.log` shows "Timeout waiting for Primary Instance Handle" for those events.
+
+LEDBlinky reads all of `controls.ini` and `Colors.ini` when it starts (`LoadMameFilesAtStartup=1` in its `Settings.ini`), and only then sets the ServoStik, plays its start animation and answers the front end. Every LED event HyperSpin sends before that times out after 5 seconds and is dropped. Older versions of `ledblinky generate` / `setup` wrote an entry for every ROM file in the MAME folder. With a full ROM set that's tens of thousands of entries and over 10 MB. On one cabinet, LEDBlinky started on its own with 33,700 entries per file (15 MB) used 28–30 seconds of CPU and was busy for 36–40 seconds, dropping events for the first 20. With the 6,100 entries its wheels need (2.8 MB), it used 14 seconds and was ready after 22–24 seconds, start animation included, with nothing dropped. Started alongside HyperSpin, the full files kept the lights and the ServoStik waiting about a minute. `spindoctor doctor` warns about it under **LED coverage**, and `spindoctor ledblinky audit` shows how many entries are for games in no wheel.
+
+1. Preview, then remove the entries for games in no wheel. Games in any wheel, hidden ones included, and their parent ROMs keep their entries unchanged:
+
+   ```bat
+   spindoctor ledblinky prune
+   spindoctor ledblinky prune --apply
+   ```
+
+   Each removed entry is saved to SpinDoctor's LEDBlinky library first, and both files are backed up.
+2. Restart HyperSpin and time it: the gap between HyperSpin starting and the last "Timeout waiting for Primary Instance Handle" line in `LEDBlinky.log` should shrink sharply, or the line disappear. LEDBlinky still plays its start animation before it's ready; shorten that animation if the rest of the wait bothers you.
+3. After adding MAME games to a wheel, run `spindoctor ledblinky generate --apply`: it adds only the missing entries, from the library exactly as they were when it has them. `spindoctor ledblinky generate --all-roms --apply` puts every pruned entry back.
+
+`LoadMameFilesAtStartup=0` doesn't help: LEDBlinky then reads the same files the first time a MAME wheel opens.
 
 ### Start and Coin stay dark in a game, though they work when pressed
 

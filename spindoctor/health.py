@@ -1837,61 +1837,78 @@ def check_emulator_rom_paths(config: Config) -> Check:
 
 
 def check_led_coverage(config: Config) -> Check:
-    """Report how much of the MAME set has LEDBlinky control/color coverage.
+    """Report how many wheel games have LEDBlinky control/color entries.
 
     Purely informational, and deliberately **cache-only**: it never triggers a
-    fresh ``mame -listxml`` (which can take minutes), so it only runs when a
-    fresh cached listxml already exists from a prior ``ledblinky audit`` /
-    ``generate``.  Otherwise it points the user at that command instead.
+    fresh ``mame -listxml`` (which can take minutes). Games are those in every
+    wheel that uses MAME ROM names, plus their parents, the set ``ledblinky
+    generate`` works on. Without a fresh cached listxml it still counts what
+    SpinDoctor's LEDBlinky library can restore; with neither it points the
+    user at ``ledblinky audit``.
 
-    "would-synth" games are the actionable bucket — they have MAME input data
-    but no LEDBlinky entry yet, so ``ledblinky generate`` can light them up.
+    "Could be generated" games are the actionable bucket: no LEDBlinky entry
+    yet, but the library or MAME's input data has one, so ``ledblinky
+    generate`` can light them up. A child WARN flags live files holding
+    thousands of entries for games in no wheel: LEDBlinky loads them all at
+    startup before it answers the front end (``ledblinky prune`` fixes it).
     """
     if not config.ledblinky_dir:
         return Check(name="LED coverage", status=Status.INFO,
                      detail="ledblinky_dir not configured; skipping")
-    if not config.mame_executable:
-        return Check(name="LED coverage", status=Status.INFO,
-                     detail="mame_executable not configured; skipping")
 
-    from .ledblinky import _resolved_mame_path, audit_coverage, listxml_cache_path
-
-    cache = listxml_cache_path(config.mame_executable)
-    mame = Path(_resolved_mame_path(config.mame_executable))
-    fresh = (
-        cache.exists()
-        and (not mame.exists() or cache.stat().st_mtime >= mame.stat().st_mtime)
+    from .ledblinky import audit_coverage
+    from .ledblinky_library import (
+        PRUNE_WARN_ENTRIES,
+        Library,
+        listxml_if_cached,
+        unused_entries,
+        wheel_scope,
     )
-    if not fresh:
-        return Check(
-            name="LED coverage", status=Status.INFO,
-            detail="MAME control data not cached (won't run -listxml from doctor)",
-            fix="spindoctor ledblinky audit --system MAME",
-        )
 
-    try:
-        roms = list(load_database("MAME", config.databases_dir).games().keys())
-    except Exception:  # noqa: BLE001
-        roms = []
+    listxml = listxml_if_cached(config)
+    library = Library()
+    scope = wheel_scope(config, listxml=listxml)
+
+    children: list[Check] = []
+    unused = unused_entries(config, scope)
+    if unused.controls >= PRUNE_WARN_ENTRIES:
+        children.append(Check(
+            name="Entries for games in no wheel", status=Status.WARN,
+            detail=(f"{unused.controls} of {unused.controls_total} controls.ini entries "
+                    f"({unused.colors} of {unused.colors_total} in Colors.ini); LEDBlinky loads "
+                    "them all at startup, delaying its lights"),
+            fix="spindoctor ledblinky prune --apply",
+        ))
+
+    def done(status: Status, detail: str, fix: Optional[str] = None) -> Check:
+        return Check(name="LED coverage", status=_worst([status] + [c.status for c in children]),
+                     detail=detail, fix=fix, children=children)
+
+    if not listxml and not library:
+        if not config.mame_executable:
+            return done(Status.INFO, "mame_executable not configured; skipping")
+        return done(Status.INFO, "MAME control data not cached (won't run -listxml from doctor)",
+                    "spindoctor ledblinky audit")
+
+    roms = scope.names()
     if not roms:
-        return Check(name="LED coverage", status=Status.INFO,
-                     detail="no MAME database; skipping")
+        return done(Status.INFO, "no wheel uses MAME ROM names; skipping")
 
-    rows = audit_coverage(config, roms)
+    rows = audit_coverage(config, roms, library=library, listxml=listxml, scope=scope)
     counts: dict[str, int] = {}
     for r in rows:
         counts[r.status] = counts.get(r.status, 0) + 1
     covered = counts.get("covered", 0)
-    would = counts.get("would-synth", 0)
-    detail = (f"{covered}/{len(roms)} covered · {would} could be generated · "
-              f"{counts.get('no-input', 0)} no-input · "
-              f"{counts.get('missing', 0)} not in listxml")
+    from_library = counts.get("from-library", 0)
+    would = counts.get("would-synth", 0) + from_library
+    detail = (f"{covered}/{len(roms)} covered (wheel games and their parents) · {would} could be generated"
+              + (f" ({from_library} from SpinDoctor's library)" if from_library else "")
+              + f" · {counts.get('no-input', 0)} no-input · "
+              f"{counts.get('missing', 0)} no data"
+              + ("" if listxml else " (MAME data not cached: library only)"))
     if would:
-        return Check(
-            name="LED coverage", status=Status.WARN, detail=detail,
-            fix="spindoctor ledblinky generate --apply",
-        )
-    return Check(name="LED coverage", status=Status.OK, detail=detail)
+        return done(Status.WARN, detail, "spindoctor ledblinky generate --apply")
+    return done(Status.OK, detail)
 
 
 def _mmss(seconds: float) -> str:

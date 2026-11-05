@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from spindoctor import ledblinky_profiles as lp
+from spindoctor import ledblinky_library as ll, ledblinky_profiles as lp
 from spindoctor.config import Config
 
 INPUT_MAP = Path(__file__).resolve().parent.parent / "docs" / "reference" / "LEDBlinkyInputMap.xml"
@@ -67,8 +67,9 @@ def _ahk(config: Config, rel: str, text: str) -> Path:
 
 
 @pytest.fixture
-def cabinet(tmp_path):
+def cabinet(tmp_path, monkeypatch):
     """A miniature cabinet with the AHK keymapper on (Internal) and no AHK profiles yet."""
+    monkeypatch.setattr(ll, "LIBRARY_DIR", tmp_path / "ledblinky_library")
     root = tmp_path / "Arcade"
     led = root / "LEDBlinky"
     led.mkdir(parents=True)
