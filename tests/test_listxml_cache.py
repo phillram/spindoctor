@@ -14,7 +14,7 @@ import types
 
 import pytest
 
-from spindoctor import cleanup, health, ledblinky
+from spindoctor import cleanup, health, ledblinky, ledblinky_library
 from spindoctor.audit import audit_system
 from spindoctor.config import Config
 
@@ -44,6 +44,7 @@ def mame(tmp_path, monkeypatch):
     monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", cache_dir)
     monkeypatch.setattr(cleanup, "CONFIG_DIR", home)
     monkeypatch.setattr(ledblinky, "_listxml_memo", {}, raising=False)
+    monkeypatch.setattr(ledblinky_library, "LIBRARY_DIR", home / "ledblinky_library")
 
     state = types.SimpleNamespace(calls=[], xml=LISTXML, fail=False, returncode=0)
 

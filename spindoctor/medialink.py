@@ -170,6 +170,8 @@ def plan_mirror(
     source_stem = _win_safe_stem(source_stem)
     target_stem = _win_safe_stem(target_stem)
     plan = LinkPlan()
+    if not source_stem or not target_stem:
+        return plan
 
     src_root = media_root / source_system
     dst_root = media_root / target_system
@@ -330,7 +332,9 @@ def remove_target(media_root: Path, target_system: str, target_stem: str) -> int
     target_stem = win_safe_stem(target_stem)
     removed = 0
     sys_root = media_root / target_system
-    if not sys_root.exists():
+    # Names such as ".." normalize to "", which would select the whole
+    # media subfolder for deletion.
+    if not target_stem or not sys_root.exists():
         return 0
 
     for sub in MEDIA_FILE_SUBDIRS:

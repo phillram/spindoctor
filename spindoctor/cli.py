@@ -1125,7 +1125,8 @@ def _write_audit_csv(
 def _write_ledblinky_audit_csv(rows, path: Path) -> None:
     """Write a LEDBlinky coverage audit to a CSV file."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fields = ["rom_name", "in_listxml", "has_input", "in_controls_ini", "in_colors_ini", "status"]
+    fields = ["rom_name", "in_listxml", "has_input", "in_controls_ini", "in_colors_ini", "status",
+              "in_library", "wheels", "parent_of"]
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fields)
         writer.writeheader()
@@ -1137,6 +1138,9 @@ def _write_ledblinky_audit_csv(rows, path: Path) -> None:
                 "in_controls_ini": row.in_controls_ini,
                 "in_colors_ini": row.in_colors_ini,
                 "status": row.status,
+                "in_library": row.in_library,
+                "wheels": "; ".join(row.wheels),
+                "parent_of": row.parent_of,
             })
 
 
@@ -7663,9 +7667,10 @@ def ledblinky_group():
 
     \b
     Subcommands:
-      generate       Generate / merge controls.ini and Colors.ini from MAME data
+      generate       Add missing controls.ini / Colors.ini entries for the wheel games
       setup          Run generate + colors sync-players in one step (MAME)
-      audit          Audit ROM → Colors.ini coverage
+      audit          Audit wheel game → controls.ini / Colors.ini coverage
+      prune          Remove entries for games in no wheel (kept in SpinDoctor's library)
       inspect-rom    Show what LEDBlinky would see for one ROM (diagnostic)
       check          Check LEDBlinky compatibility with HyperSpin
       fix            Fix LEDBlinky compatibility issues
@@ -7678,22 +7683,111 @@ def ledblinky_group():
     """
 
 
+def _ledblinky_targets(config, system, all_roms, warnings=None):
+    """The ROM names ``ledblinky generate`` / ``setup`` / ``audit`` work on.
+
+    Returns ``(names, scope, listxml, label, empty_message)``. By default the
+    games in every wheel that uses MAME ROM names (or in *system*'s wheel),
+    plus their parent ROMs; *scope* is the
+    :class:`~spindoctor.ledblinky_library.WheelScope`. With *all_roms*, every
+    ROM file in ``<roms_dir>\\<system>`` (default MAME) plus every entry in
+    SpinDoctor's LEDBlinky library, so ``generate --all-roms`` undoes a
+    prune, and *scope* is None. *listxml* is MAME's data, loaded once for the
+    caller to pass on.
+    """
+    from .ledblinky import load_listxml_for_system
+
+    listxml = load_listxml_for_system(config, "MAME", warnings=warnings)
+    if all_roms:
+        from .audit import scan_roms
+        from .ledblinky_library import Library
+
+        sysname = system or "MAME"
+        rom_dir = Path(config.roms_dir) / sysname
+        roms = scan_roms(sysname, Path(config.roms_dir))
+        names = {name.lower(): name for name in roms}
+        lib = Library()
+        stored = 0
+        for raw in (lib.controls, lib.colors):
+            for low in raw.entries():
+                if low not in names:
+                    names[low] = raw.spelling(low)
+                    stored += 1
+        label = f"{len(roms)} ROM files in {rom_dir}"
+        if stored:
+            label += f", plus {stored} more in SpinDoctor's library"
+        return (sorted(names.values(), key=str.lower), None, listxml, label,
+                f"[yellow]No ROMs found for system [cyan]{sysname}[/cyan] in [cyan]{rom_dir}[/cyan].[/yellow] "
+                "Drop ROM files there and re-run.")
+    from .ledblinky_library import wheel_scope
+
+    scope = wheel_scope(config, system=system, listxml=listxml)
+    if system:
+        empty = (f"[yellow]No games found in the [cyan]{system}[/cyan] wheel "
+                 f"([cyan]{config.databases_dir / system}[/cyan]).[/yellow]")
+    else:
+        empty = ("[yellow]No wheel uses MAME ROM names[/yellow]: no database folder has MAME in its "
+                 "name, and no wheel's default emulator is MAME, HBMAME or Zinc. "
+                 "Use --all-roms to work from the MAME ROM folder instead.")
+    label = (f"{len(scope.games)} games in {len(scope.systems)} "
+             f"wheel{'s' if len(scope.systems) != 1 else ''}, plus {len(scope.parents)} parent ROMs")
+    return scope.names(), scope, listxml, label, empty
+
+
+def _print_generate_counts(result, verbose: bool) -> None:
+    """The counts ``ledblinky generate`` and ``setup`` print after step 1."""
+    console.print(
+        f"  From SpinDoctor's library: [cyan]{result.controls_from_library}[/cyan] controls, "
+        f"[cyan]{result.colors_from_library}[/cyan] colors"
+    )
+    console.print(
+        f"  Synthesised: [cyan]{result.controls_synthesised}[/cyan] controls, "
+        f"[cyan]{result.colors_synthesised}[/cyan] colors"
+    )
+    console.print(
+        f"  Kept existing: [dim]{result.controls_existing_kept}[/dim] controls, "
+        f"[dim]{result.colors_existing_kept}[/dim] colors"
+    )
+    if result.skipped_no_input:
+        console.print(
+            f"  No data (not in the library, no -listxml input): "
+            f"[yellow]{result.skipped_no_input}[/yellow]"
+        )
+    if verbose:
+        for title, names in (("added", result.added), ("no data", result.no_data)):
+            if names:
+                shown = names[:50]
+                more = f" … and {len(names) - len(shown)} more" if len(names) > len(shown) else ""
+                console.print(f"[dim][verbose] {title}: {', '.join(shown)}{more}[/dim]")
+
+
 @ledblinky_group.command("generate")
-@click.option("--system", "-s", default="MAME",
-              help="System to generate for (default: MAME).")
+@click.option("--system", "-s", default=None,
+              help="Only this wheel's games (with --all-roms: this system's ROM folder; default MAME).")
+@click.option("--all-roms", is_flag=True,
+              help="Every ROM file in <roms_dir>\\<system> (and every entry in SpinDoctor's library), "
+                   "not just the games in the wheels.")
 @click.option("--overwrite", is_flag=True,
               help="Overwrite existing entries (default: keep community-maintained ones).")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Commit writes (default: dry-run preview).")
 @click.option("--output-dir", type=click.Path(), default=None,
               help="Write to this directory instead of <ledblinky_dir>.")
-@click.option("--verbose", is_flag=True, help="Print the controls and colors file paths written.")
-def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
-    """Generate / merge LEDBlinky controls.ini and Colors.ini.
+@click.option("--verbose", is_flag=True, help="Print the files written and the ROMs added.")
+def ledblinky_generate(system, all_roms, overwrite, apply_changes, output_dir, verbose):
+    """Add the missing LEDBlinky controls.ini and Colors.ini entries.
 
-    Strategy: existing entries from <ledblinky_dir> are preserved verbatim;
-    ROMs not yet covered get synthesized entries derived from
-    `mame -listxml`.
+    By default: the games in every wheel that uses MAME ROM names (MAME in
+    the wheel's name, or MAME / HBMAME / Zinc as its default emulator), plus
+    their parent ROMs, and only those with no entry yet. Existing entries
+    are never changed. A missing entry comes from SpinDoctor's LEDBlinky
+    library when it holds one (see `ledblinky prune`), exactly as it was,
+    else is synthesized from `mame -listxml`.
+
+    --all-roms covers every ROM file in the MAME folder instead, as before,
+    plus every entry in the library, so it undoes `ledblinky prune`.
+    LEDBlinky loads every entry when it starts, so tens of thousands of them
+    delay its start.
     """
     config = _cfg()
     _check_config(config)
@@ -7705,27 +7799,26 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
         )
         sys.exit(1)
 
-    from .audit import scan_roms
     from .ledblinky import generate_for_roms
 
-    rom_dir = Path(config.roms_dir) / system
-    roms = scan_roms(system, Path(config.roms_dir))
-    if not roms:
-        console.print(
-            f"[yellow]No ROMs found for system [cyan]{system}[/cyan] "
-            f"in [cyan]{rom_dir}[/cyan].[/yellow] "
-            "Drop ROM files there and re-run."
-        )
+    warnings: list[str] = []
+    names, _scope, listxml, label, empty = _ledblinky_targets(config, system, all_roms, warnings)
+    for w in warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
+    if not names:
+        console.print(empty)
         return
+    console.print(f"Scope: {label}")
 
     out_path = Path(output_dir) if output_dir else None
     try:
         result = generate_for_roms(
             config,
-            rom_names=sorted(roms.keys()),
+            rom_names=names,
             output_dir=out_path,
             overwrite_existing=overwrite,
             dry_run=not apply_changes,
+            listxml=listxml,
         )
     except ValueError as e:
         err_console.print(f"[red]{e}[/red]")
@@ -7733,21 +7826,14 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
 
     for w in result.warnings:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
-    label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
-    console.print(f"\n{label} controls.ini → {result.controls_path}")
-    console.print(f"{label} Colors.ini   → {result.colors_path}")
-    console.print(
-        f"  Synthesised: [cyan]{result.controls_synthesised}[/cyan] controls, "
-        f"[cyan]{result.colors_synthesised}[/cyan] colors"
-    )
-    console.print(
-        f"  Kept existing: [dim]{result.controls_existing_kept}[/dim] controls, "
-        f"[dim]{result.colors_existing_kept}[/dim] colors"
-    )
-    if result.skipped_no_input:
-        console.print(
-            f"  Skipped (no -listxml input data): [yellow]{result.skipped_no_input}[/yellow]"
-        )
+    changed = bool(result.added or (overwrite and (result.controls_synthesised or result.colors_synthesised)))
+    if not changed and out_path is None:
+        console.print("\n[green]Nothing missing[/green]: controls.ini and Colors.ini are left as they are.")
+    else:
+        label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
+        console.print(f"\n{label} controls.ini → {result.controls_path}")
+        console.print(f"{label} Colors.ini   → {result.colors_path}")
+    _print_generate_counts(result, verbose)
     # Warn if Color-RGB.ini was missing (colors written in legacy format)
     has_legacy_warning = any("ledcolor=" in w or "P1_BUTTON1=" in w for w in result.warnings)
     if not has_legacy_warning and result.colors_synthesised:
@@ -7761,9 +7847,16 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
         if result.colors_synthesised:
             fmt = "legacy ledcolor=" if has_legacy_warning else "native P1_BUTTON1="
             console.print(f"[dim][verbose] colors format: {fmt}[/dim]")
+    for b in result.backups:
+        console.print(f"[dim]Backup: {b}[/dim]")
+    if changed and not apply_changes:
+        console.print("\n[yellow]Dry-run — pass [bold]--apply[/bold] to write.[/yellow]")
 
 
 @ledblinky_group.command("setup")
+@click.option("--all-roms", is_flag=True,
+              help="Generate for every ROM file in <roms_dir>\\MAME (and every entry in SpinDoctor's "
+                   "library), not just the games in the wheels.")
 @click.option("--overwrite", is_flag=True,
               help="Overwrite existing entries (default: preserve community-maintained ones).")
 @click.option("--apply", "apply_changes", is_flag=True,
@@ -7772,18 +7865,20 @@ def ledblinky_generate(system, overwrite, apply_changes, output_dir, verbose):
               help="Skip the automatic .bak backup before writing.")
 @click.option("--verbose", is_flag=True,
               help="Print per-ROM detail from each step.")
-def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
+def ledblinky_setup(all_roms, overwrite, apply_changes, no_backup, verbose):
     """Run the full MAME LED setup in one step: generate + sync-players.
 
     Chains two operations in order:
 
     \b
-      1. ledblinky generate --system MAME [--overwrite]
+      1. ledblinky generate [--all-roms] [--overwrite]
       2. ledblinky colors sync-players
 
     Equivalent to running those two commands in sequence with the same flags.
-    Existing Colors.ini entries are preserved unless --overwrite is passed.
-    Run after installing SpinDoctor, and again whenever new MAME ROMs are added.
+    Step 1 adds entries only for wheel games (and their parents) that have
+    none; existing entries are preserved unless --overwrite is passed.
+    Run after installing SpinDoctor, and again whenever you add MAME games
+    to a wheel.
 
     \b
     Examples:
@@ -7791,8 +7886,8 @@ def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
       spindoctor ledblinky setup --apply            :: commit both steps
       spindoctor ledblinky setup --apply --verbose
       spindoctor ledblinky setup --overwrite --apply
+      spindoctor ledblinky setup --all-roms --apply :: every ROM file, as before
     """
-    from .audit import scan_roms
     from . import ledblinky as lb
 
     config = _cfg()
@@ -7808,22 +7903,23 @@ def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
     # ── 1/2: Generate ─────────────────────────────────────────────────────────
     console.rule("[bold blue]1/2  Generate (MAME)[/bold blue]")
 
-    roms = scan_roms("MAME", Path(config.roms_dir))
-    if not roms:
-        console.print(
-            f"[yellow]No ROMs found for MAME in "
-            f"[cyan]{Path(config.roms_dir) / 'MAME'}[/cyan].[/yellow]  "
-            "Drop ROM files there and re-run."
-        )
+    warnings: list[str] = []
+    names, _scope, listxml, scope_label, empty = _ledblinky_targets(config, None, all_roms, warnings)
+    for w in warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
+    if not names:
+        console.print(empty)
         return
+    console.print(f"Scope: {scope_label}")
 
     try:
         gen_result = lb.generate_for_roms(
             config,
-            rom_names=sorted(roms.keys()),
+            rom_names=names,
             output_dir=None,
             overwrite_existing=overwrite,
             dry_run=not apply_changes,
+            listxml=listxml,
         )
     except ValueError as e:
         err_console.print(f"[red]{e}[/red]")
@@ -7831,15 +7927,13 @@ def ledblinky_setup(overwrite, apply_changes, no_backup, verbose):
 
     for w in gen_result.warnings:
         console.print(f"[yellow]WARNING:[/yellow] {w}")
-    label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
-    console.print(f"{label} controls.ini → {gen_result.controls_path}")
-    console.print(f"{label} Colors.ini   → {gen_result.colors_path}")
-    console.print(
-        f"  Synthesised: [cyan]{gen_result.controls_synthesised}[/cyan] controls, "
-        f"[cyan]{gen_result.colors_synthesised}[/cyan] colors  "
-        f"([dim]kept existing: {gen_result.controls_existing_kept} / "
-        f"{gen_result.colors_existing_kept}[/dim])"
-    )
+    if gen_result.added or (overwrite and (gen_result.controls_synthesised or gen_result.colors_synthesised)):
+        label = "[green]wrote[/green]" if apply_changes else "[yellow]would write[/yellow]"
+        console.print(f"{label} controls.ini → {gen_result.controls_path}")
+        console.print(f"{label} Colors.ini   → {gen_result.colors_path}")
+    else:
+        console.print("[green]Nothing missing[/green]: controls.ini and Colors.ini are left as they are.")
+    _print_generate_counts(gen_result, verbose)
     if verbose:
         console.print(f"[dim][verbose] controls → {gen_result.controls_path}[/dim]")
         console.print(f"[dim][verbose] colors   → {gen_result.colors_path}[/dim]")
@@ -8039,65 +8133,168 @@ def ledblinky_inspect_rom(rom_name):
 
 
 @ledblinky_group.command("audit")
-@click.option("--system", "-s", default="MAME")
+@click.option("--system", "-s", default=None,
+              help="Only this wheel's games (with --all-roms: this system's ROM folder; default MAME).")
+@click.option("--all-roms", is_flag=True,
+              help="Audit every ROM file in <roms_dir>\\<system> (and every entry in SpinDoctor's "
+                   "library) instead of the wheel games.")
 @click.option("--report", "report_csv", type=click.Path(), default=None,
               help="Write a CSV report to this path.")
-def ledblinky_audit(system, report_csv):
-    """Show LEDBlinky coverage per ROM (covered / would-synth / no-input / missing)."""
+def ledblinky_audit(system, all_roms, report_csv):
+    """Show LEDBlinky coverage of the wheel games: covered / can be added / no data.
+
+    Checks every game in the wheels that use MAME ROM names (and their
+    parent ROMs) against controls.ini and Colors.ini. A game that's missing
+    can be added by `ledblinky generate` when SpinDoctor's LEDBlinky library
+    holds its entry ("from-library") or MAME -listxml has its controls
+    ("would-synth"). Also counts the live entries for games in no wheel,
+    which `ledblinky prune` removes. Read-only.
+    """
     config = _cfg()
     _check_config(config)
 
-    from .audit import scan_roms
     from .ledblinky import audit_coverage
+    from .ledblinky_library import Library, unused_entries
 
-    rom_dir = Path(config.roms_dir) / system
-    roms = scan_roms(system, Path(config.roms_dir))
-    if not roms:
-        console.print(
-            f"[yellow]No ROMs found for system [cyan]{system}[/cyan] "
-            f"in [cyan]{rom_dir}[/cyan].[/yellow] "
-            "Drop ROM files there and re-run."
-        )
+    warnings: list[str] = []
+    names, scope, listxml, scope_label, empty = _ledblinky_targets(config, system, all_roms, warnings)
+    for w in warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
+    if not names:
+        console.print(empty)
         return
 
-    rows = audit_coverage(config, sorted(roms.keys()))
+    library = Library()
+    rows = audit_coverage(config, names, library=library, listxml=listxml, scope=scope)
 
-    counts = {"covered": 0, "would-synth": 0, "no-input": 0, "missing": 0}
+    counts = {"covered": 0, "from-library": 0, "would-synth": 0, "no-input": 0, "missing": 0}
     for r in rows:
         counts[r.status] = counts.get(r.status, 0) + 1
 
-    summary = Table(title=f"LEDBlinky coverage — {system}", box=box.ROUNDED)
+    summary = Table(title=f"LEDBlinky coverage — {scope_label}", box=box.ROUNDED)
     summary.add_column("Status", style="cyan")
     summary.add_column("Count", justify="right")
     summary.add_row("[green]Covered (controls.ini + Colors.ini)[/green]", str(counts["covered"]))
-    summary.add_row("[yellow]Would synthesise from -listxml[/yellow]", str(counts["would-synth"]))
-    summary.add_row("[dim]Game has no input[/dim]", str(counts["no-input"]))
-    summary.add_row("[red]Not in -listxml[/red]", str(counts["missing"]))
+    summary.add_row("[yellow]Missing, in SpinDoctor's library[/yellow]", str(counts["from-library"]))
+    summary.add_row("[yellow]Missing, would synthesise from -listxml[/yellow]", str(counts["would-synth"]))
+    summary.add_row("[dim]No data: game has no input[/dim]", str(counts["no-input"]))
+    summary.add_row("[red]No data: not in -listxml or the library[/red]", str(counts["missing"]))
     console.print(summary)
 
-    missing_or_synth = [r for r in rows if r.status in ("would-synth", "missing")]
+    missing_or_synth = [r for r in rows if r.status in ("from-library", "would-synth", "missing")]
     if missing_or_synth:
         tbl = Table(box=box.SIMPLE, show_header=True)
         tbl.add_column("ROM", style="cyan")
+        if scope is not None:
+            tbl.add_column("Wheels")
         tbl.add_column("In -listxml", justify="center")
         tbl.add_column("controls.ini", justify="center")
         tbl.add_column("Colors.ini", justify="center")
+        tbl.add_column("Library", justify="center")
         tbl.add_column("Status")
         for r in missing_or_synth[:60]:
-            tbl.add_row(
-                r.rom_name,
+            cells = [r.rom_name]
+            if scope is not None:
+                cells.append(", ".join(r.wheels) or (f"parent of {r.parent_of}" if r.parent_of else ""))
+            cells += [
                 _status(r.in_listxml),
                 _status(r.in_controls_ini),
                 _status(r.in_colors_ini),
+                _status(r.in_library),
                 r.status,
-            )
+            ]
+            tbl.add_row(*cells)
         console.print(tbl)
         if len(missing_or_synth) > 60:
             console.print(f"  [dim]... and {len(missing_or_synth) - 60} more[/dim]")
+    if counts["from-library"] or counts["would-synth"]:
+        console.print("\nTo add them: [cyan]spindoctor ledblinky generate --apply[/cyan]")
+
+    if scope is not None and scope.any_wheel:
+        unused = unused_entries(config, scope)
+        if unused.controls or unused.colors:
+            console.print(
+                f"\nThe live files also hold entries for games in no wheel: "
+                f"[yellow]{unused.controls}[/yellow] of {unused.controls_total} in controls.ini, "
+                f"[yellow]{unused.colors}[/yellow] of {unused.colors_total} in Colors.ini. "
+                "LEDBlinky loads them all when it starts. "
+                "[cyan]spindoctor ledblinky prune[/cyan] removes them (saved to SpinDoctor's library first)."
+            )
 
     if report_csv:
         _write_ledblinky_audit_csv(rows, Path(report_csv))
         console.print(f"\n[dim]Report saved:[/dim] {report_csv}")
+
+
+@ledblinky_group.command("prune")
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Commit (default: dry-run preview).")
+@click.option("--no-backup", is_flag=True,
+              help="Skip the .bak backup of controls.ini / Colors.ini before writing.")
+@click.option("--verbose", is_flag=True,
+              help="List the entries removed (first 200 of each file).")
+def ledblinky_prune(apply_changes, no_backup, verbose):
+    """Remove controls.ini / Colors.ini entries for games in no wheel.
+
+    LEDBlinky loads both files in full when it starts (LoadMameFilesAtStartup=1)
+    and answers HyperSpin only after that, so an entry for every MAME ROM on
+    disk delays its lights, and the ServoStik, by tens of seconds. Games in any
+    wheel (hidden wheels included) and their parent ROMs keep their entries,
+    untouched.
+
+    Every removed entry is first saved to SpinDoctor's LEDBlinky library
+    (~/.spindoctor/ledblinky_library), so nothing is lost:
+    `ledblinky generate` puts an entry back, exactly as it was, when its game
+    is added to a wheel, and `ledblinky generate --all-roms --apply` puts them
+    all back. Dry-run by default.
+    """
+    config = _cfg()
+    _check_config(config)
+
+    from .ledblinky_library import prune_entries
+
+    try:
+        result = prune_entries(config, dry_run=not apply_changes, backup=not no_backup)
+    except ValueError as e:
+        err_console.print(f"[red]{e}[/red]")
+        sys.exit(1)
+
+    for w in result.warnings:
+        console.print(f"[yellow]WARNING:[/yellow] {w}")
+    console.print(f"Wheel databases read: {result.databases} (hidden wheels included)")
+    for label, before, removed in (("controls.ini", result.controls_before, result.controls_removed),
+                                   ("Colors.ini  ", result.colors_before, result.colors_removed)):
+        console.print(
+            f"  {label}: {before} entries, [yellow]{len(removed)}[/yellow] for games in no wheel, "
+            f"[green]{before - len(removed)}[/green] kept"
+        )
+    if result.parents_kept:
+        console.print(f"  [dim]{result.parents_kept} kept only as the parent of a wheel game[/dim]")
+    if not (result.controls_removed or result.colors_removed):
+        console.print("\n[green]Nothing to prune.[/green]")
+        return
+    mb = 1024 * 1024
+    console.print(f"  Size: {result.bytes_before / mb:.1f} MB → {result.bytes_after / mb:.1f} MB")
+    if verbose:
+        for label, removed in (("controls.ini", result.controls_removed), ("Colors.ini", result.colors_removed)):
+            shown = removed[:200]
+            more = f" … and {len(removed) - len(shown)} more" if len(removed) > len(shown) else ""
+            console.print(f"[dim][verbose] {label}: {', '.join(shown)}{more}[/dim]")
+    if not apply_changes:
+        console.print(
+            f"\nRemoved entries would be saved to SpinDoctor's library first: {result.library_dir}"
+        )
+        console.print("[yellow]Dry-run — pass [bold]--apply[/bold] to prune.[/yellow]")
+        return
+    console.print(f"\n[green]Pruned.[/green] Removed entries saved to {result.library_dir}")
+    if result.community_saved:
+        console.print(f"[dim]Community controls file copied to {result.community_saved}[/dim]")
+    for b in result.backups:
+        console.print(f"[dim]Backup: {b}[/dim]")
+    console.print(
+        "Put an entry back with [cyan]spindoctor ledblinky generate --apply[/cyan] once its game is "
+        "in a wheel, or all of them with [cyan]--all-roms[/cyan]."
+    )
 
 
 # ─── report ───────────────────────────────────────────────────────────────────
