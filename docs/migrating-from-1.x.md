@@ -26,7 +26,7 @@ A 3-step modal (Welcome → pick `roms_dir` + `hyperspin_dir` → run `doctor`) 
 
 ### New GUI config keys
 
-The GUI remembers window geometry and maximized state, the last active tab, each tab's selected system, region choices and metadata preferences. See [Configuration → Most-used keys](configuration.md#most-used-keys) for the current `gui_*` fields and defaults.
+The GUI remembers window geometry and maximized state, the last active tab, region choices and metadata preferences. See [Configuration → Most-used keys](configuration.md#most-used-keys) for the current `gui_*` fields and defaults.
 
 These settings are managed by the GUI. **Apply / dry-run toggles for destructive operations are deliberately NOT persisted**; re-enable Apply for each session only after checking the plan.
 

@@ -190,7 +190,7 @@ C:\Users\<username>\.spindoctor\config.json
 
 (equivalently `%USERPROFILE%\.spindoctor\config.json`)
 
-All paths are absolute. the example cabinet's `config.json`:
+All paths are absolute. The example cabinet's `config.json`:
 
 ```json
 {
@@ -378,7 +378,7 @@ The Toolkit system's stats file (`Data\Statistics\Toolkit.ini`) is explicitly ex
 
 ## Settings Layout: Folder vs Flat
 
-RocketLauncher supports two layouts for per-system routing. the example cabinet uses the
+RocketLauncher supports two layouts for per-system routing. The example cabinet uses the
 **folder layout** (produced by HyperHQ):
 
 | Layout  | File location                        | Section | Key read              |
@@ -390,7 +390,7 @@ SpinDoctor writes **both** files for new systems so the cabinet works regardless
 layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Path=` update
 only — all other keys are preserved.
 
-**Some emulator families share a single ROM folder.** the example cabinet has two known families:
+**Some emulator families share a single ROM folder.** The example cabinet has two known families:
 
 | Family | Shared folder | Systems | Emulators |
 |--------|--------------|---------|-----------|
@@ -620,7 +620,7 @@ Key points:
   `..\Games\<name>\<exe>` for emulators installed alongside their ROMs (e.g. AAE, Daphne).
 - `Emu_Path=` is the key RocketLauncher reads. SpinDoctor's `generate-config` uses
   `Emu_Path=` when creating a new `Global Emulators.ini` from scratch.
-- the example cabinet has 40+ emulator sections including many variant instances
+- The example cabinet has 40+ emulator sections including many variant instances
   (`MAME (Gun Games)`, `RetroArch (MultiPlayer)`, `Demul58`, etc.).
 
 ### `[PCLauncher]` — Rom_Extension requirement
@@ -1002,7 +1002,7 @@ Dolphin.ini settings automatically.
 ### Dolphin portable mode
 
 Dolphin stores its settings under `User\Config\Dolphin.ini` relative to the emulator
-folder when a `portable.txt` file is present. the example cabinet uses portable mode:
+folder when a `portable.txt` file is present. The example cabinet uses portable mode:
 
 ```
 D:\Arcade\Emulators\Dolphin Ishiiruka\
@@ -1196,7 +1196,7 @@ launch a game and gets the cryptic *"No valid roms found in the archive"* error.
 
 ### Controller input — DS4Windows and XInput
 
-the example cabinet uses a PS4 DualShock 4 controller. Windows does not natively expose PS4
+The example cabinet uses a PS4 DualShock 4 controller. Windows does not natively expose PS4
 controllers as XInput devices; DS4Windows provides that translation layer.
 
 #### How DS4Windows works
@@ -1962,7 +1962,7 @@ The cabinet uses two Ultimarc boards over USB:
 | **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
 | **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
-> **the example cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
+> **The example cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
 
 The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
 
@@ -2289,7 +2289,7 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
-> **Which admin mechanism does *your* cabinet use? (`Colors.ini P3_*` vs `LEDBlinkyControls.xml` UI controls).** The `admin-buttons set` / `fill-defaults --admin-buttons` commands above write `P{n}_BUTTON` keys into `Colors.ini`. That only lights an admin button in-game if your `LEDBlinkyControls.xml` actually maps that player slot's buttons to the physical admin controls *and* marks them active. **the example cabinet does not work that way.** Its in-game admin lights are three MAME UI controls that are `alwaysActive="1"` in the `player number="0"` block of every `<controlGroup>` in `LEDBlinkyControls.xml`:
+> **Which admin mechanism does *your* cabinet use? (`Colors.ini P3_*` vs `LEDBlinkyControls.xml` UI controls).** The `admin-buttons set` / `fill-defaults --admin-buttons` commands above write `P{n}_BUTTON` keys into `Colors.ini`. That only lights an admin button in-game if your `LEDBlinkyControls.xml` actually maps that player slot's buttons to the physical admin controls *and* marks them active. **The example cabinet does not work that way.** Its in-game admin lights are three MAME UI controls that are `alwaysActive="1"` in the `player number="0"` block of every `<controlGroup>` in `LEDBlinkyControls.xml`:
 >
 > | Physical button | XML control | Key | Default colour |
 > |---|---|---|---|
@@ -2592,7 +2592,7 @@ Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" 
 
 > **Buttons 4-7 on both players had a real port-label bug — found, fixed, and confirmed resolved on the actual cabinet.** `LEDBlinkyInputMap.xml`'s port `label` attribute for `P1B4`/`P1B5`/`P1B6`/`P1B7` and `P2B4`/`P2B5`/`P2B6`/`P2B7` was wrong on both boards — see the Master control reference's provenance note below for the full story (a 4-way rotation per board, found by decoding a real generated `.lwax` against what a one-at-a-time calibration animation actually lit on the cabinet). Fixed in the table and in the map used for generation; every animation was regenerated against the corrected data, and the corrected `LEDBlinkyInputMap.xml` has since been installed on the real cabinet in place of the original — confirmed working, all 27 controls light in their correct position.
 
-> **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** the example cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
+> **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** The example cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
 
 ### File format
 

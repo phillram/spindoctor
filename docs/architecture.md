@@ -100,7 +100,8 @@ and retain encoding-aware handling for legacy Windows INIs. macOS/Linux testing
 does not validate cabinet hardware or Windows-only behavior.
 
 Run focused tests for changed modules, then the appropriate broader checks from
-the repository root:
+the repository root. The `dev` extra does not include `pytest-xdist` (for
+`-n 4`) or Ruff; install them first with `python -m pip install pytest-xdist ruff`:
 
 ```text
 python -m pytest -q -n 4 --ignore=tests/test_gui.py --tb=short -rs
