@@ -20,6 +20,8 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .config import Config, ROM_EXTENSIONS, get_rom_extensions, get_system_overrides
+from ._utils import move_no_replace, numbered_path_key, unique_path
+from ._undo import finish_undo
 
 
 MANIFEST_PREFIX = "_spindoctor-misplaced-"
@@ -169,7 +171,7 @@ def apply_moves(
     out_dir = manifest_dir or roms_root
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = out_dir / f"{MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
     manifest_path.write_text(
         json.dumps(
             {"timestamp": stamp, "moves": manifest_entries},
@@ -184,6 +186,7 @@ def undo_moves(manifest_path: Path) -> dict:
     """Reverse the moves described by *manifest_path*. Returns a summary."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary = {"reverted": 0, "errors": []}
+    completed = set()
     for entry in reversed(data.get("moves", [])):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
@@ -191,20 +194,17 @@ def undo_moves(manifest_path: Path) -> dict:
             if not dest.exists():
                 summary["errors"].append(f"missing during undo: {dest}")
                 continue
-            src.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(dest), str(src))
+            move_no_replace(dest, src)
             summary["reverted"] += 1
+            completed.add(entry["dest"])
         except OSError as e:
             summary["errors"].append(f"could not revert {dest} → {src}: {e}")
-    try:
-        manifest_path.unlink()
-    except OSError:
-        pass
+    finish_undo(manifest_path, data, "moves", completed, summary["errors"])
     return summary
 
 
 def find_latest_misplaced_manifest(roms_dir: Path) -> Optional[Path]:
     if not roms_dir.exists():
         return None
-    manifests = sorted(roms_dir.glob(f"{MANIFEST_PREFIX}*.json"))
+    manifests = sorted(roms_dir.glob(f"{MANIFEST_PREFIX}*.json"), key=numbered_path_key)
     return manifests[-1] if manifests else None

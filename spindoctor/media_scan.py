@@ -26,7 +26,9 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, MEDIA_TYPES
 from .database import load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
-from .romutils import find_best_match
+from .romutils import find_best_match, normalize
+from ._utils import move_no_replace, numbered_path_key, unique_path
+from ._undo import finish_undo
 
 
 MANIFEST_DIR = CONFIG_DIR / "media_imports"
@@ -242,6 +244,10 @@ def match_to_database(
 
     db = load_database(system_name, config.databases_dir)
     candidates = list(db.games().keys())
+    exact = {}
+    for candidate in candidates:
+        exact.setdefault(normalize(candidate), candidate)
+    matches = {}
 
     type_filter = set(types) if types else None
     threshold = config.match_threshold
@@ -255,7 +261,14 @@ def match_to_database(
         if type_filter and f.media_type not in type_filter:
             continue
 
-        match = find_best_match(f.path.stem, candidates, threshold=threshold)
+        stem = f.path.stem
+        if stem not in matches:
+            normalized = normalize(stem)
+            if normalized in exact and threshold <= 1.0:
+                matches[stem] = (exact[normalized], 1.0)
+            else:
+                matches[stem] = find_best_match(stem, candidates, threshold=threshold)
+        match = matches[stem]
         if match is None:
             report.unmatched.append(ScanMatch(
                 local=f, system=system_name, bucket="unmatched",
@@ -375,7 +388,7 @@ def import_media(
     out_dir = manifest_dir or MANIFEST_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = out_dir / f"{MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
     manifest_path.write_text(
         json.dumps({
             "timestamp": stamp,
@@ -398,6 +411,7 @@ def undo_import(manifest_path: Path) -> dict:
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary: dict = {"reverted": 0, "errors": []}
+    completed = set()
     for entry in reversed(data.get("imports", [])):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
@@ -407,19 +421,16 @@ def undo_import(manifest_path: Path) -> dict:
                 if not dest.exists():
                     summary["errors"].append(f"missing during undo: {dest}")
                     continue
-                src.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(dest), str(src))
+                move_no_replace(dest, src)
             else:
                 # copy / link: just remove the destination
                 if dest.is_symlink() or dest.exists():
                     dest.unlink()
             summary["reverted"] += 1
+            completed.add(entry["dest"])
         except OSError as e:
             summary["errors"].append(f"could not revert {dest}: {e}")
-    try:
-        manifest_path.unlink()
-    except OSError:
-        pass
+    finish_undo(manifest_path, data, "imports", completed, summary["errors"])
     return summary
 
 
@@ -427,7 +438,7 @@ def list_manifests(manifest_dir: Optional[Path] = None) -> list[Path]:
     out_dir = manifest_dir or MANIFEST_DIR
     if not out_dir.exists():
         return []
-    return sorted(out_dir.glob(f"{MANIFEST_PREFIX}*.json"))
+    return sorted(out_dir.glob(f"{MANIFEST_PREFIX}*.json"), key=numbered_path_key)
 
 
 def find_latest_manifest(manifest_dir: Optional[Path] = None) -> Optional[Path]:
