@@ -49,17 +49,19 @@ def atomic_write_bytes(target: Path, data: bytes, tmp_dir: Optional[Path] = None
         os.close(fd)
         fd = -1
         os.replace(tmp, target)
+        tmp = None
     finally:
         if fd >= 0:
             try:
                 os.close(fd)
             except OSError:
                 pass
-        try:
-            os.unlink(tmp)
-        except OSError:
-            # Best-effort cleanup must not mask a failed write or replacement.
-            pass
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                # Best-effort cleanup must not mask a failed write or replacement.
+                pass
 
 
 def is_within(path: Path, parent: Path) -> bool:

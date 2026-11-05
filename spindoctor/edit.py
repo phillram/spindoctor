@@ -32,7 +32,8 @@ from .database import GameEntry, load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
 from .rocketlauncher import _win_safe_stem
 from .rocketlauncher import _read_windows_text_with_encoding
-from ._utils import atomic_write_bytes, numbered_path_key, unique_path
+from ._utils import atomic_write_bytes, move_no_replace, numbered_path_key, unique_path
+from ._undo import finish_undo
 
 
 EDIT_DIR = CONFIG_DIR / "edits"
@@ -693,7 +694,8 @@ def apply_rename(
     for ch in plan.file_changes:
         if clone and ch.src is not None and ch.src == ch.dest:
             raise ValueError("refusing to clone a file onto itself")
-        if ch.dest is not None and ch.dest != ch.src and ch.dest.exists():
+        if (ch.dest is not None and ch.dest != ch.src
+                and (ch.dest.exists() or ch.dest.is_symlink())):
             raise FileExistsError(
                 f"refusing to overwrite existing target: {ch.dest}"
             )
@@ -705,6 +707,8 @@ def apply_rename(
         raise RuntimeError(
             f"database changed under us: {op.old_rom_name!r} no longer present"
         )
+    if db.get(op.new_rom_name) is not None:
+        raise RuntimeError(f"database changed under us: {op.new_rom_name!r} now exists")
 
     # 2) Files first, DB last — that way the DB edit reflects what's on disk.
     db_change: Optional[FileChange] = None
@@ -713,6 +717,9 @@ def apply_rename(
             db_change = ch
             continue
         assert ch.src is not None and ch.dest is not None
+        if ch.src == ch.dest and ch.kind != "rl-pclauncher":
+            # Shared sanitized media names need no copy or undo entry.
+            continue
         if ch.src != ch.dest:
             _move_or_copy(ch.src, ch.dest, clone=clone)
         if ch.kind == "rl-pclauncher" and ch.ini_old_section and ch.ini_new_section:
@@ -781,7 +788,7 @@ def undo_rename(
     manifest_path: Path,
     config: Config,
 ) -> list[FileChange]:
-    """Reverse a rename or clone described by *manifest_path*."""
+    """Reverse a rename or clone, preserving unfinished work for retry."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     system = data.get("system", "")
     old_name = data.get("old_name", "")
@@ -789,81 +796,74 @@ def undo_rename(
     is_clone = bool(data.get("clone"))
 
     reversed_changes: list[FileChange] = []
+    completed = set()
+    errors: list[str] = []
 
     # Reverse file moves last-first so we mirror the apply order.
     for entry in reversed(data.get("moves", [])):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
-        if is_clone and src == dest:
-            # Older manifests may record an in-place change, not a copy.
-            continue
-        if not dest.exists():
-            reversed_changes.append(FileChange(
-                kind=entry.get("kind", ""),
-                src=src, dest=dest,
-                note="missing during undo",
-            ))
-            continue
-        if is_clone:
-            # The clone copied — undo by deleting the copies.
-            try:
+        kind = entry.get("kind", "")
+        try:
+            if src == dest and kind != "rl-pclauncher":
+                # Older manifests recorded unchanged, shared media as copies.
+                completed.add(entry["dest"])
+                continue
+            if not dest.exists():
+                raise FileNotFoundError(f"missing during undo: {dest}")
+            if is_clone and src != dest:
+                # The clone copied — undo by deleting the copies.
                 if dest.is_dir():
                     shutil.rmtree(dest)
                 else:
                     dest.unlink()
-                reversed_changes.append(FileChange(
-                    kind=entry.get("kind", ""),
-                    src=src, dest=dest,
-                    note="deleted clone copy",
-                ))
-            except OSError as e:
-                reversed_changes.append(FileChange(
-                    kind=entry.get("kind", ""),
-                    src=src, dest=dest,
-                    note=f"could not remove clone copy: {e}",
-                ))
-        else:
-            # Rename — move dest back to src.
-            src.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                shutil.move(str(dest), str(src))
-                reversed_changes.append(FileChange(
-                    kind=entry.get("kind", ""),
-                    src=dest, dest=src,
-                    note="restored",
-                ))
-            except OSError as e:
-                reversed_changes.append(FileChange(
-                    kind=entry.get("kind", ""),
-                    src=dest, dest=src,
-                    note=f"restore failed: {e}",
-                ))
+                note = "deleted clone copy"
+            else:
+                if src != dest and (src.exists() or src.is_symlink()):
+                    raise FileExistsError(f"Destination already exists: {src}")
+                if kind == "rl-pclauncher":
+                    # Rewrite before moving, so a failed edit remains retryable
+                    # at the manifest's destination path.
+                    _rewrite_pclauncher_section(dest, new_name, old_name)
+                if src != dest:
+                    move_no_replace(dest, src)
+                note = "restored"
+            completed.add(entry["dest"])
+            reversed_changes.append(FileChange(kind=kind, src=dest, dest=src, note=note))
+        except (OSError, UnicodeError) as exc:
+            note = f"restore failed: {exc}"
+            errors.append(note)
+            reversed_changes.append(FileChange(kind=kind, src=dest, dest=src, note=note))
 
-    # DB undo.
-    db = load_database(system, config.databases_dir)
-    if is_clone:
-        db.remove_game(new_name)
-    else:
-        # Drop the new entry; restore the old one from the snapshot.
-        db.remove_game(new_name)
-        before = data.get("db_before") or {}
-        if before:
-            restored = GameEntry(**{
-                k: v for k, v in before.items()
-                if k in GameEntry.__dataclass_fields__
-            })
-            db.upsert_game(restored)
-    db.save(tmp_dir=config.effective_atomic_tmp_dir)
+    # DB undo runs only once every file move succeeded, so a retry finishes
+    # file work first instead of leaving the DB pointing at missing files.
+    if not errors:
+        try:
+            db = load_database(system, config.databases_dir)
+            db.remove_game(new_name)
+            if not is_clone:
+                before = data.get("db_before") or {}
+                if before:
+                    db.upsert_game(GameEntry(**{
+                        k: v for k, v in before.items()
+                        if k in GameEntry.__dataclass_fields__
+                    }))
+            db.save(tmp_dir=config.effective_atomic_tmp_dir)
+            reversed_changes.append(FileChange(
+                kind="db", src=None, dest=None,
+                note=f"reverted DB {new_name!r} -> {old_name!r}",
+            ))
+        except (OSError, ValueError) as exc:
+            note = f"DB restore failed: {exc}"
+            errors.append(note)
+            reversed_changes.append(FileChange(kind="db", src=None, dest=None, note=note))
 
-    reversed_changes.append(FileChange(
-        kind="db", src=None, dest=None,
-        note=f"reverted DB {new_name!r} -> {old_name!r}",
-    ))
-
-    try:
-        manifest_path.unlink()
-    except OSError:
-        pass
+    previous_errors = len(errors)
+    finish_undo(manifest_path, data, "moves", completed, errors)
+    for error in errors[previous_errors:]:
+        reversed_changes.append(FileChange(
+            kind="manifest", src=None, dest=manifest_path, note=f"undo failed: {error}",
+        ))
     return reversed_changes
 
 

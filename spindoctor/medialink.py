@@ -165,10 +165,9 @@ def plan_mirror(
     # sanitized stem — not the raw game name, which may contain ':' etc.  Using
     # the raw name meant zero media was mirrored for any game with a forbidden
     # character in its title (e.g. "Metal Gear Solid: VR Missions").
-    from .media import _win_safe_stem
     target_stem = target_stem or source_stem
-    source_stem = _win_safe_stem(source_stem)
-    target_stem = _win_safe_stem(target_stem)
+    source_stem = win_safe_stem(source_stem)
+    target_stem = win_safe_stem(target_stem)
     plan = LinkPlan()
     if not source_stem or not target_stem:
         return plan

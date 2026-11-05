@@ -25,7 +25,7 @@ from typing import Iterable, Optional
 from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
 from .database import GameEntry, HyperspinDatabase
-from ._wheels import mark_synthetic, synthetic_names, validate_target
+from ._wheels import DEFAULT_SYNTHETIC_NAMES, mark_synthetic, synthetic_names, validate_target
 from .favorites import (
     FavoriteEntry, _generate_pclauncher_ini,
     _resolve_target_names, _safe_load,
@@ -47,11 +47,7 @@ DEFAULT_LIMIT = 20
 # default when reading play statistics so that sessions launched *from* a
 # synthetic wheel (Favorites → RL#1 records the play under "Favorites") do not
 # pollute the Recently Played / Most Played lists.
-SYNTHETIC_SYSTEM_NAMES: frozenset[str] = frozenset({
-    "Favorites",
-    "Recently Played",
-    "Most Played",
-})
+SYNTHETIC_SYSTEM_NAMES: frozenset[str] = DEFAULT_SYNTHETIC_NAMES
 
 # Extended exclusion set for collecting play statistics.
 # Adds the Toolkit launcher to SYNTHETIC_SYSTEM_NAMES so that tool runs

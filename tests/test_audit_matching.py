@@ -43,3 +43,18 @@ def test_audit_entry_order_is_deterministic(tmp_path):
                           check_mame_controls=False)
     names = [e.rom_name for e in result.entries]
     assert names == sorted(names, key=str.lower)
+
+
+def test_audit_fuzzy_matches_unclaimed_database_name_once(tmp_path):
+    cfg = _cabinet(tmp_path, rom_stems=["Mario (USA)", "Mario (Japan)"], db_names=["Mario"])
+    result = audit_system("NES", cfg, check_media_flag=False, check_mame_controls=False)
+    assert len(result.fuzzy_matches) == 1
+    assert result.fuzzy_matches[0].db_name == "Mario"
+    assert result.fuzzy_matches[0].rom_name == "Mario (Japan)"
+
+
+def test_audit_fuzzy_does_not_claim_exact_matches(tmp_path):
+    cfg = _cabinet(tmp_path, rom_stems=["Mario", "Mario (USA)"], db_names=["Mario"])
+    result = audit_system("NES", cfg, check_media_flag=False, check_mame_controls=False)
+    assert result.roms_in_db == 1
+    assert result.fuzzy_matches == []

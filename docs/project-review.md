@@ -6,6 +6,9 @@ This review inventoried the package and tests, ran the existing suite, and
 used separate correctness, reuse, and efficiency reviews to identify problems.
 Verified findings received focused regression tests before or alongside fixes.
 A second set of reviews examined the complete implementation patch.
+A follow-up pass on the merged stack added the rename-undo recovery,
+bulk-matching, and media-inventory work noted below, with no new runtime
+dependencies.
 
 This is not a proof of correctness or an exhaustive semantic review of every
 line in the large CLI and GUI modules. Tests use temporary libraries and mocked
@@ -26,6 +29,12 @@ services. They do not replace testing on a real cabinet.
   is written before the final configuration update.
 - Migration, restructure, curation, misplaced-ROM, and media-import undo refuse
   occupied original paths and retain unfinished work for retry.
+- Rename undo now uses the same occupied-path protection and partial-progress
+  persistence. File failures leave the database unchanged; database read/write
+  failures retain a database-only retry without replaying completed file work.
+- Rename undo restores launcher sections, including in-place
+  filename-preserving renames, and rename application rechecks database target
+  collisions before moving files.
 - Restructure undo also removes completed playlist deletions from its recovery
   record, so retrying cannot delete a subsequently recreated playlist.
 - Timestamp collisions no longer overwrite the affected backups or manifests.
@@ -66,6 +75,16 @@ services. They do not replace testing on a real cabinet.
 - Exact normalized matching short-circuits fuzzy scoring. Media imports index
   normalized database names and reuse results across repeated media stems,
   preserving the first-candidate tie rule.
+- Bulk fuzzy matching normalizes candidates once and uses SequenceMatcher's
+  upper bounds to avoid full scoring when a candidate cannot improve the best
+  result. Argument order, thresholds, and first-candidate ties are preserved.
+- Audit no longer marks database entries without ROMs as already claimed,
+  which previously prevented fuzzy suggestions. A database entry can still
+  be claimed only once, with exact matches taking precedence.
+- Bulk audit and fetch-media inventory list each media folder once per system,
+  then use case-insensitive in-memory lookups. Single-game checks keep direct
+  probes. Snapshots are operation-local, not a global cache that could go stale.
+- Cleanup safety flags are regression-tested against CLI keys and GUI defaults.
 - A cached metadata choice below a newly requested threshold is reconsidered.
 - GUI output is batched with a per-tick budget and preserves completion order.
   Backlogs re-arm promptly instead of waiting for the normal idle interval.
@@ -86,6 +105,10 @@ services. They do not replace testing on a real cabinet.
 - Keep cache-file validation inside `cache`, shared by loading and listing;
   distinguish a valid empty cache from a malformed one.
 - Keep existing private filename/atomic helper import aliases for callers.
+- Keep `find_best_match` as the existing public entry point and use its shared
+  normalized scoring core for bulk consumers. `MediaIndex` stores only names,
+  uses the same slot/extension definitions as single-game checks, and is rebuilt
+  per operation.
 - Keep old metadata cache files readable only when their persisted
   source/system/stem fields prove the requested identity. The old format
   existed before this change.
@@ -99,8 +122,9 @@ services. They do not replace testing on a real cabinet.
 
 - Multi-file rename/import and several other writers are not fully
   transactional. Some failures or interruptions can leave partial changes
-  without a complete recovery record. Rename undo has not received the shared
-  partial-success treatment. Keep an independent backup for these operations.
+  without a complete recovery record. Undo checkpoints also cannot guarantee
+  recovery across a process crash or a failed checkpoint write. Keep an
+  independent backup for these operations.
 - Missing undo destinations remain errors requiring investigation. Recovery
   manifests are retained rather than guessing whether files were restored,
   moved elsewhere, or lost.
@@ -121,8 +145,9 @@ services. They do not replace testing on a real cabinet.
   section. Pruning can remove those comment banners, and restoring sections
   can normalize boundary spacing. Use the file backup for byte-identical
   reversal, rather than relying on library regeneration for that guarantee.
-- Cleanup category safety flags and default synthetic-wheel names still have
-  duplicated declarations. They agree today; consolidation is deferred.
+- Cleanup category safety flags still have duplicated declarations across the
+  category reports, CLI keys, and GUI defaults, now pinned by a regression
+  test. Synthetic-wheel names share one declaration.
 - GUI run records and output widgets remain unbounded. Large wheel-table
   refreshes and the size of the CLI/GUI modules remain refactoring candidates.
 - HTTP servers without validators cannot provide strong same-resource proof
@@ -147,6 +172,15 @@ and Python 3.13. Ruff, the single-Unreleased changelog check, and
 `git diff --check` passed. Changed Python sources passed the Python 3.8
 grammar/API scan (the only API hit was `copytree(dirs_exist_ok=...)`, which
 Python 3.8 supports). This did not run the CI matrix or frozen builds locally.
+
+### Review follow-up validation
+
+The rebased follow-up branch (`refactor/review-followup`, on top of `e6130c2`)
+passed **2,052 non-GUI tests and 172 GUI tests (2,224 total), with 7 skipped**
+on Windows 10 and Python 3.14.0. Ruff, `git diff --check`, and the Python 3.8
+grammar scan (178 files) passed. On a 1,000-game synthetic library, bulk fuzzy
+matching ran 5.3x faster and bulk media inventory 69.8x faster than the
+previous implementation, with identical outputs.
 
 ### Original stack validation
 

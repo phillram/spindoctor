@@ -90,6 +90,15 @@ def test_safe_flag_categories(isolated_home):
     assert safe["restructure-manifests"] is False
 
 
+def test_cleanup_safety_flags_agree_across_cli_and_gui(isolated_home):
+    from spindoctor.gui import _CLEANUP_CATEGORIES
+    reports = scan(Config())
+    assert set(reports) == set(cleanup_mod.CATEGORY_KEYS)
+    assert {key for key, report in reports.items() if report.safe} == set(cleanup_mod.SAFE_CATEGORY_KEYS)
+    for key, _label, safe in _CLEANUP_CATEGORIES:
+        assert reports[key].safe == safe
+
+
 def test_scan_finds_partial_download_sidecars(isolated_home, tmp_path):
     hyperspin = tmp_path / "HyperSpin"
     media = hyperspin / "Media"

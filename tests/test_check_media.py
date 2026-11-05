@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from spindoctor.audit import check_media, _exists
+from spindoctor.audit import MediaIndex, check_media, _exists
 
 
 # ─── _exists ──────────────────────────────────────────────────────────────────
@@ -114,3 +114,52 @@ def test_check_media_fetch_media_would_redownload_zero_byte(media_base):
     (base / "Images/Wheel/Zelda.png").write_bytes(b"")
     status = check_media("Zelda", "SNES", media_base)
     assert status.missing()  # gate that fetch-media uses to decide to (re-)download
+
+
+def test_media_index_matches_individual_checks(media_base):
+    base = media_base / "SNES"
+    _write(base / "Images/Wheel/Zelda.jpg")
+    _write(base / "Images/Artwork4/Zelda.png", b"")
+    _write(base / "Themes/Zelda.zip")
+    (base / "Themes" / "Mario").mkdir()
+    _write(base / "Images/Wheel/CON_.png")
+    index = MediaIndex("SNES", media_base)
+    for name in ("Zelda", "Mario", "CON", "Absent"):
+        assert index.check(name) == check_media(name, "SNES", media_base)
+    assert index.check("zelda").wheel
+    assert not index.check("zelda").fade
+
+
+def test_media_index_looks_up_case_insensitive_names_and_extensions(media_base):
+    _write(media_base / "SNES" / "Images/Wheel/ZELDA.PNG")
+    _write(media_base / "SNES" / "Themes/ZELDA.ZIP")
+    status = MediaIndex("SNES", media_base).check("zelda")
+    assert status.wheel and status.theme
+
+
+def test_media_index_does_not_touch_disk_per_game(media_base, monkeypatch):
+    _write(media_base / "SNES" / "Images/Wheel/Zelda.png")
+    index = MediaIndex("SNES", media_base)
+    def unexpected_stat(*args, **kwargs):
+        pytest.fail("indexed media lookup must not stat files")
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "stat", unexpected_stat)
+        assert index.check("Zelda").wheel
+        assert not index.check("Missing").wheel
+
+
+def test_media_index_is_an_operation_local_snapshot(media_base):
+    first = MediaIndex("SNES", media_base)
+    _write(media_base / "SNES" / "Images/Wheel/Zelda.png")
+    assert not first.check("Zelda").wheel
+    assert MediaIndex("SNES", media_base).check("Zelda").wheel
+
+
+def test_media_checks_ignore_directories_named_like_images(media_base):
+    (media_base / "SNES" / "Images/Wheel/Zelda.png").mkdir()
+    assert not check_media("Zelda", "SNES", media_base).wheel
+    assert not MediaIndex("SNES", media_base).check("Zelda").wheel
+
+
+def test_media_index_handles_missing_system(media_base):
+    assert MediaIndex("Missing", media_base).check("Zelda").present() == []

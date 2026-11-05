@@ -26,7 +26,7 @@ from typing import Iterable, Optional
 from .config import CONFIG_DIR, Config, MEDIA_TYPES
 from .database import load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
-from .romutils import find_best_match, normalize
+from .romutils import _find_best_normalized_match, normalize
 from ._utils import move_no_replace, numbered_path_key, unique_path
 from ._undo import finish_undo
 
@@ -243,10 +243,10 @@ def match_to_database(
     report = MediaScanReport(source_dir=src_dir)
 
     db = load_database(system_name, config.databases_dir)
-    candidates = list(db.games().keys())
+    candidates = [(name, normalize(name)) for name in db.games()]
     exact = {}
-    for candidate in candidates:
-        exact.setdefault(normalize(candidate), candidate)
+    for candidate, normalized in candidates:
+        exact.setdefault(normalized, candidate)
     matches = {}
 
     type_filter = set(types) if types else None
@@ -267,7 +267,7 @@ def match_to_database(
             if normalized in exact and threshold <= 1.0:
                 matches[stem] = (exact[normalized], 1.0)
             else:
-                matches[stem] = find_best_match(stem, candidates, threshold=threshold)
+                matches[stem] = _find_best_normalized_match(normalized, candidates, threshold=threshold)
         match = matches[stem]
         if match is None:
             report.unmatched.append(ScanMatch(

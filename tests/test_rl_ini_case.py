@@ -23,8 +23,24 @@ from spindoctor.rocketlauncher import (
     _read_emulator_exe,
     _read_rl_ini,
     _read_system_default_emulator,
+    _read_windows_text_with_encoding,
     read_rl_rom_extensions,
 )
+
+
+@pytest.mark.parametrize("encoding,bom", [
+    ("utf-16-le", b"\xff\xfe"), ("utf-16-be", b"\xfe\xff"),
+])
+@pytest.mark.parametrize("damage", ["truncated", "surrogate"])
+def test_corrupt_utf16_is_tolerated_for_diagnostics_only(tmp_path, encoding, bom, damage):
+    ini = tmp_path / "Emulators.ini"
+    content = bom + "[ROMS]\nDefault_Emulator=Mesen\nBroken=".encode(encoding)
+    content += b"\x00" if damage == "truncated" else "\ud800".encode(encoding, errors="surrogatepass")
+    ini.write_bytes(content)
+    assert _read_rl_ini(ini)["roms"]["default_emulator"] == "Mesen"
+    with pytest.raises(UnicodeDecodeError):
+        _read_windows_text_with_encoding(ini)
+    assert ini.read_bytes() == content
 
 
 def _write(path, text):
