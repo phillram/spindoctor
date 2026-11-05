@@ -83,3 +83,11 @@ def test_damaged_utf16_is_readable_but_not_losslessly_editable(tmp_path, encodin
     with pytest.raises(UnicodeDecodeError):
         rocketlauncher._read_windows_text_with_encoding(path)
     assert path.read_bytes() == content
+
+
+@pytest.mark.parametrize("eol", ["\n", "\r\n"])
+@pytest.mark.parametrize("body", ["[Settings]{eol}", "[Settings]{eol}[Next]{eol}Keep=1{eol}"])
+def test_lightgun_insert_into_empty_section_preserves_line_endings(eol, body):
+    before = body.format(eol=eol)
+    expected = before.replace(f"[Settings]{eol}", f"[Settings]{eol}Pre_Launch_App=new{eol}")
+    assert lightgun._upsert_ini_key(before, "Settings", "Pre_Launch_App", "new") == expected
