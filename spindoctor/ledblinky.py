@@ -6,9 +6,11 @@ This module covers two related concerns:
 
    - Read existing ``<ledblinky_dir>/controls.ini`` and ``colors.ini``
      (community-maintained, trusted).
-   - For ROMs not covered there, synthesise entries from
+   - For ROMs not covered there, take the entry from SpinDoctor's LEDBlinky
+     library (see :mod:`spindoctor.ledblinky_library`) or synthesise it from
      ``mame -listxml <rom>`` output.
-   - Emit a new combined file, never blindly overwriting existing entries.
+   - Insert the new sections into the existing files, leaving every
+     existing entry exactly as it was.
    - ``parse_listxml`` is reused by ``audit.py`` to flag ROMs that lack
      control metadata.
 
@@ -42,10 +44,13 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import TYPE_CHECKING, Iterable, Optional
 
 from ._compat import et_indent
 from .config import CONFIG_DIR, Config
+
+if TYPE_CHECKING:
+    from .ledblinky_library import Library, WheelScope
 
 # Hide the console window when ``subprocess.run`` launches MAME from
 # the GUI on Windows. Without this, every ``audit`` / ``controls
@@ -78,6 +83,7 @@ class ControlInfo:
     control_types: list[str] = field(default_factory=list)  # e.g. ['joy', 'button']
     has_input: bool = False
     raw_input: list[dict] = field(default_factory=list)
+    cloneof: str = ""   # parent ROM, from the machine's ``cloneof`` attribute
 
 
 @dataclass
@@ -270,6 +276,7 @@ def parse_listxml(
         info = ControlInfo(
             rom_name=name,
             description=(desc_el.text or "") if desc_el is not None else "",
+            cloneof=machine.get("cloneof") or "",
         )
         input_el = machine.find("input")
         if input_el is not None:
@@ -513,8 +520,18 @@ class GenerateResult:
     colors_existing_kept: int = 0
     controls_synthesised: int = 0
     colors_synthesised: int = 0
+    #: ROMs still missing an entry afterwards: not in SpinDoctor's library and
+    #: no ``-listxml`` input data.
     skipped_no_input: int = 0
     warnings: list[str] = field(default_factory=list)
+    #: Entries copied back from SpinDoctor's LEDBlinky library.
+    controls_from_library: int = 0
+    colors_from_library: int = 0
+    #: Names of the ROMs that got a new entry in either file.
+    added: list[str] = field(default_factory=list)
+    #: Names of the ROMs counted in ``skipped_no_input``.
+    no_data: list[str] = field(default_factory=list)
+    backups: list[Path] = field(default_factory=list)
 
 
 def generate_for_roms(
@@ -523,14 +540,34 @@ def generate_for_roms(
     output_dir: Optional[Path] = None,
     overwrite_existing: bool = False,
     dry_run: bool = False,
+    library: "Optional[Library]" = None,
+    listxml: Optional[dict] = None,
 ) -> GenerateResult:
-    """Generate / merge controls.ini and colors.ini for the given ROMs.
+    """Add controls.ini and colors.ini entries for the given ROMs that have none.
 
-    Existing entries are preserved unless ``overwrite_existing`` is True.
-    When ``output_dir`` is given the files are written there instead of
-    overwriting ``<ledblinky_dir>/controls.ini`` and ``colors.ini``.
+    Each file is handled on its own: a ROM with a controls.ini entry but no
+    Colors.ini entry gets just the Colors.ini one. A missing entry comes from
+    SpinDoctor's LEDBlinky library when it holds one (exactly as it was
+    pruned), else is synthesised from ``mame -listxml``. Names match
+    case-insensitively. New sections are inserted in name order, and every
+    existing entry is left exactly as it was, unless ``overwrite_existing``
+    is True: then entries for ROMs with ``-listxml`` input data are
+    re-synthesised in place (the library is only a fallback).
+
+    A file with nothing to add isn't written. When ``output_dir`` is given,
+    both files are written there (the existing entries plus the new ones)
+    instead of into ``<ledblinky_dir>``. *library* defaults to
+    :class:`~spindoctor.ledblinky_library.Library` at its usual place, and
+    *listxml* to MAME's data (pass it when the caller has loaded it already).
     """
-    rom_list = list(rom_names)
+    from . import ledblinky_library as _library
+
+    seen: set[str] = set()
+    rom_list = []
+    for rom in rom_names:
+        if rom and rom.lower() not in seen:
+            seen.add(rom.lower())
+            rom_list.append(rom)
     result = GenerateResult()
 
     base = output_dir or (Path(config.ledblinky_dir) if config.ledblinky_dir else None)
@@ -544,12 +581,9 @@ def generate_for_roms(
     src_controls = (src_base / CONTROLS_INI_NAME) if src_base else None
     src_colors = (src_base / COLORS_INI_NAME) if src_base else None
 
-    existing_controls = (
-        parse_existing_controls_ini(src_controls, warnings=result.warnings) if src_controls else {}
-    )
-    existing_colors = (
-        parse_existing_colors_ini(src_colors, warnings=result.warnings) if src_colors else {}
-    )
+    live_controls = _library.RawIni.load(src_controls)
+    live_colors = _library.RawIni.load(src_colors)
+    lib = library if library is not None else _library.Library()
 
     # Load Color-RGB.ini so generate writes native P1_BUTTON1=Red format that
     # LedBlinky can actually read.  Fall back to legacy hex format with a warning
@@ -573,42 +607,63 @@ def generate_for_roms(
                 f"Run 'ledblinky colors normalize --apply' after generating."
             )
 
-    listxml = load_listxml_for_system(config, "MAME", warnings=result.warnings)
+    if listxml is None:
+        listxml = load_listxml_for_system(config, "MAME", warnings=result.warnings)
 
-    out_controls: dict[str, IniSection] = dict(existing_controls)
-    out_colors: dict[str, IniSection] = dict(existing_colors)
+    def synth_controls(rom: str, info: ControlInfo, nl: str) -> str:
+        return _library.render_section(rom, synth_controls_section(info).lines, nl)
 
+    def synth_colors(rom: str, info: ControlInfo, nl: str) -> str:
+        section = synth_colors_section(info, config.ledblinky_default_colors,
+                                       named_palette=named_palette)
+        return _library.render_section(rom, section.lines, nl)
+
+    # (kind, live file, library file, synthesiser)
+    files = (
+        ("controls", live_controls, lib.controls, synth_controls),
+        ("colors", live_colors, lib.colors, synth_colors),
+    )
+    adds: dict[str, dict[str, str]] = {"controls": {}, "colors": {}}
+    swaps: dict[str, dict[str, str]] = {"controls": {}, "colors": {}}
+    counts = {key: 0 for key in ("controls_kept", "colors_kept", "controls_synth", "colors_synth",
+                                 "controls_lib", "colors_lib")}
+    added: set[str] = set()
     for rom in rom_list:
-        info = listxml.get(rom)
-        if info is None or not info.has_input:
+        low = rom.lower()
+        info = listxml.get(rom) or listxml.get(low)
+        can_synth = info is not None and info.has_input
+        missing = False
+        for kind, live, stored, synth in files:
+            if low in live:
+                if overwrite_existing and can_synth:
+                    swaps[kind][low] = synth(rom, info, live.newline)
+                    counts[kind + "_synth"] += 1
+                else:
+                    counts[kind + "_kept"] += 1
+            elif low in stored and not (overwrite_existing and can_synth):
+                adds[kind][low] = stored.entries()[low]
+                counts[kind + "_lib"] += 1
+                added.add(low)
+            elif can_synth:
+                adds[kind][low] = synth(rom, info, live.newline)
+                counts[kind + "_synth"] += 1
+                added.add(low)
+            else:
+                missing = True
+        if missing:
             result.skipped_no_input += 1
-            # Keep any existing entries verbatim.
-            if rom in existing_controls:
-                result.controls_existing_kept += 1
-            if rom in existing_colors:
-                result.colors_existing_kept += 1
-            continue
+            result.no_data.append(rom)
+    result.controls_existing_kept = counts["controls_kept"]
+    result.colors_existing_kept = counts["colors_kept"]
+    result.controls_synthesised = counts["controls_synth"]
+    result.colors_synthesised = counts["colors_synth"]
+    result.controls_from_library = counts["controls_lib"]
+    result.colors_from_library = counts["colors_lib"]
+    result.added = [rom for rom in rom_list if rom.lower() in added]
 
-        if rom in existing_controls and not overwrite_existing:
-            result.controls_existing_kept += 1
-        else:
-            out_controls[rom] = synth_controls_section(info)
-            result.controls_synthesised += 1
-
-        if rom in existing_colors and not overwrite_existing:
-            result.colors_existing_kept += 1
-        else:
-            out_colors[rom] = synth_colors_section(
-                info, config.ledblinky_default_colors, named_palette=named_palette,
-            )
-            result.colors_synthesised += 1
-
-    controls_path = base / CONTROLS_INI_NAME
-    colors_path = base / COLORS_INI_NAME
-
+    result.controls_path = base / CONTROLS_INI_NAME
+    result.colors_path = base / COLORS_INI_NAME
     if dry_run:
-        result.controls_path = controls_path
-        result.colors_path = colors_path
         return result
 
     header = [
@@ -616,15 +671,18 @@ def generate_for_roms(
         f"; {datetime.now().isoformat(timespec='seconds')}",
         "; Existing community-maintained entries are preserved as-is.",
     ]
-    if output_dir is None and config.backup_before_modify:
-        _bd = _config_backup_dir(config)
-        _backup(controls_path, _bd)
-        _backup(colors_path, _bd)
-
-    emit_ini(out_controls, controls_path, header)
-    emit_ini(out_colors, colors_path, header)
-    result.controls_path = controls_path
-    result.colors_path = colors_path
+    for kind, live, _stored, _synth in files:
+        path = result.controls_path if kind == "controls" else result.colors_path
+        if not (adds[kind] or swaps[kind]) and output_dir is None:
+            continue   # nothing missing: leave the file alone
+        if not live.sections and not live.preamble.strip():
+            live = _library.RawIni(live.newline.join(header + ["", ""]))
+        text = live.render(add=adds[kind], replace=swaps[kind])
+        if output_dir is None and config.backup_before_modify:
+            b = _backup(path, _config_backup_dir(config))
+            if b:
+                result.backups.append(b)
+        _library.write_raw(path, text)
     return result
 
 
@@ -638,11 +696,19 @@ class CoverageRow:
     has_input: bool = False
     in_controls_ini: bool = False
     in_colors_ini: bool = False
+    #: SpinDoctor's LEDBlinky library holds an entry the live files lack.
+    in_library: bool = False
+    #: Wheels listing the game (empty for a parent or a ROM-folder audit).
+    wheels: list[str] = field(default_factory=list)
+    #: For a parent ROM that's in no wheel: one of its clones that is.
+    parent_of: str = ""
 
     @property
     def status(self) -> str:
         if self.in_controls_ini and self.in_colors_ini:
             return "covered"
+        if self.in_library:
+            return "from-library"
         if self.has_input:
             return "would-synth"
         if self.in_listxml:
@@ -822,28 +888,46 @@ def inspect_rom(config: Config, rom_name: str) -> dict:
     return result
 
 
-def audit_coverage(config: Config, rom_names: Iterable[str]) -> list[CoverageRow]:
-    """Return per-ROM coverage info: existing entries vs. -listxml synthesis."""
+def audit_coverage(
+    config: Config,
+    rom_names: Iterable[str],
+    *,
+    library: "Optional[Library]" = None,
+    listxml: Optional[dict] = None,
+    scope: "Optional[WheelScope]" = None,
+) -> list[CoverageRow]:
+    """Return per-ROM coverage info: existing entries vs. library / -listxml.
+
+    Names match case-insensitively, as ``generate`` adds them. *library*
+    defaults to SpinDoctor's LEDBlinky library; *listxml* to MAME's data
+    (which runs ``mame -listxml`` if it isn't cached; ``doctor`` passes the
+    cached data or ``{}``). With *scope* each row names the wheels listing it.
+    """
+    from . import ledblinky_library as _library
+
     src_base = Path(config.ledblinky_dir) if config.ledblinky_dir else None
-    existing_controls = (
-        parse_existing_controls_ini(src_base / CONTROLS_INI_NAME)
-        if src_base else {}
-    )
-    existing_colors = (
-        parse_existing_colors_ini(src_base / COLORS_INI_NAME)
-        if src_base else {}
-    )
-    listxml = load_listxml_for_system(config, "MAME")
+    live_controls = _library.RawIni.load(src_base / CONTROLS_INI_NAME if src_base else None)
+    live_colors = _library.RawIni.load(src_base / COLORS_INI_NAME if src_base else None)
+    lib = library if library is not None else _library.Library()
+    if listxml is None:
+        listxml = load_listxml_for_system(config, "MAME")
 
     rows: list[CoverageRow] = []
     for rom in rom_names:
-        info = listxml.get(rom)
+        low = rom.lower()
+        info = listxml.get(rom) or listxml.get(low)
+        in_controls = low in live_controls
+        in_colors = low in live_colors
         rows.append(CoverageRow(
             rom_name=rom,
             in_listxml=info is not None,
             has_input=bool(info and info.has_input),
-            in_controls_ini=rom in existing_controls,
-            in_colors_ini=rom in existing_colors,
+            in_controls_ini=in_controls,
+            in_colors_ini=in_colors,
+            in_library=((not in_controls and low in lib.controls)
+                        or (not in_colors and low in lib.colors)),
+            wheels=list(scope.wheels_of.get(low, [])) if scope else [],
+            parent_of=scope.parent_of.get(low, "") if scope else "",
         ))
     return rows
 

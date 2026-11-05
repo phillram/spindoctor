@@ -1118,7 +1118,7 @@ def generate_batch(controllers, out_dir):
 
     # 23. COLOUR CYCLES -- one whole-panel breathe cycle and one radial-pulse
     # cycle, each stepping through several globally-unique solid colours and
-    # looping. (Phill: "a cycle of solid colour changes that repeat".)
+    # looping. (Requested: "a cycle of solid colour changes that repeat".)
     cyc_breathe = [c for (_s, _h, c) in pal.take_n(6)]
     add("breathe", "cycle", "slow", build_breathe_cycle(controllers, cyc_breathe, steps=BREATHE_SPEED["slow"][0],
                                                         duration_ms=BREATHE_SPEED["slow"][1]),
@@ -1129,7 +1129,7 @@ def generate_batch(controllers, out_dir):
 
     # 24. BREATHE -- whole panel fading one solid colour in and out. One file per
     # named colour so it doubles as a pickable colour library. Slow by default
-    # (Phill: "red slowly fading in and out"); build_color_cycle from off ->
+    # (requested: "red slowly fading in and out"); build_color_cycle from off ->
     # colour -> off gives the smooth in/out breath. Standard, extra-vivid, and
     # pastel sets, plus one rainbow breath.
     off = (0, 0, 0)

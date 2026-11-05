@@ -631,11 +631,21 @@ Reference: [Command reference → theme-fill](commands.md#theme-fill).
 ```bat
 :: ── Quick start: Full MAME setup in one step ─────────────────────────────────
 :: Chains generate + sync-players. Run once after initial setup, then again
-:: whenever you add new MAME ROMs.
+:: whenever you add MAME games to a wheel. Only wheel games get entries.
 spindoctor ledblinky setup                                                :: dry-run preview
 spindoctor ledblinky setup --apply                                        :: commit generate + sync-players
 spindoctor ledblinky setup --apply --verbose                              :: also show per-step detail
 spindoctor ledblinky setup --overwrite --apply                            :: replace all existing entries too
+spindoctor ledblinky setup --all-roms --apply                             :: every ROM file in the MAME folder
+
+:: ── Keep controls.ini / Colors.ini to the wheel games ────────────────────────
+:: LEDBlinky loads both files in full at startup; entries for every ROM on disk
+:: delay its lights and the ServoStik by tens of seconds after HyperSpin starts.
+spindoctor ledblinky audit                                                :: covered / missing but available / no data
+spindoctor ledblinky audit --report D:\ledblinky_audit.csv                :: same, as CSV
+spindoctor ledblinky prune                                                :: dry-run: entries for games in no wheel
+spindoctor ledblinky prune --apply                                        :: remove them (saved to SpinDoctor's library first)
+spindoctor ledblinky generate --all-roms --apply                          :: put every pruned entry back
 
 :: ── Per-game profiles: light only the buttons each game uses ─────────────────
 spindoctor ledblinky profiles                                             :: dry-run preview
@@ -644,8 +654,8 @@ spindoctor ledblinky profiles --apply                                     :: com
 :: ── Step 3a: Generate MAME control + color data (individual step) ─────────────
 :: Since 2.4.22: controls.ini uses LedBlinky runtime keys (P1_BUTTON1=1).
 :: Since 2.4.21: Colors.ini uses native named format (P1_BUTTON1=Red).
-spindoctor ledblinky generate                                             :: dry-run preview
-spindoctor ledblinky generate --apply                                     :: commit
+spindoctor ledblinky generate                                             :: dry-run preview: missing entries for wheel games
+spindoctor ledblinky generate --apply                                     :: commit (existing entries untouched)
 spindoctor ledblinky generate --overwrite --apply                         :: replace existing entries (required after upgrading from <=2.4.21)
 
 :: ── Step 3b: Normalize (individual step) ────────────────────────────────────

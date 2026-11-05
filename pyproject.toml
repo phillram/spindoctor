@@ -12,7 +12,7 @@ readme = "README.md"
 # GitHub Releases are built against 3.8.10 for the same reason.
 requires-python = ">=3.8"
 license = { text = "MIT" }
-authors = [{ name = "Phillip Ramirez" }]
+authors = [{ name = "phillram" }]
 keywords = ["hyperspin", "rocketlauncher", "arcade", "mame", "emulation"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
