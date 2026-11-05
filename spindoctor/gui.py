@@ -631,7 +631,7 @@ _CLEANUP_CATEGORIES: tuple[tuple[str, str, bool], ...] = (
     ("listxml-cache",         "MAME -listxml cache",            True),
     ("preview-temp",          "Preview thumbnails",             True),
     ("partial-downloads",     "Interrupted downloads",          True),
-    ("misplaced-manifests",   "Misplaced-ROM reports",          True),
+    ("misplaced-manifests",   "Misplaced-ROM undo manifests",   False),
     ("audit-exports",         "Audit CSV exports",              True),
     ("migration-manifests",   "Migration undo manifests",       False),
     ("restructure-manifests", "Restructure undo manifests",     False),
@@ -681,7 +681,7 @@ _READ_ONLY_COMMANDS: frozenset[str] = frozenset({
     "tools-audit", "systems", "report", "preview",
     "audit", "inspect", "find-dupes",
     "check-discs", "check-archive-ext", "verify", "lint", "stats",
-    "find-global", "theme-scan", "theme-fill", "theme-pack-create", "diff",
+    "find-global", "theme-scan", "theme-pack-create", "diff",
     "install-tools", "stats-report", "self-doctor",
     "cleanup categories", "cleanup audit",
     "ignore list", "match list",
@@ -6580,8 +6580,9 @@ class _SpinDoctorGUI:
     def _refresh_migrate_manifests(self) -> None:
         """Populate the undo Combobox with manifests from the migrations dir."""
         from .config import CONFIG_DIR
+        from ._utils import numbered_path_key
         migrations_dir = CONFIG_DIR / "migrations"
-        manifests = sorted(migrations_dir.glob("migrate-*.json"), reverse=True)
+        manifests = sorted(migrations_dir.glob("migrate-*.json"), key=numbered_path_key, reverse=True)
         names = ["latest"] + [p.name for p in manifests]
         self._migrate_undo_combo["values"] = names
         if not self._migrate_undo_var.get():
@@ -13436,7 +13437,7 @@ class _SpinDoctorGUI:
         # The --apply check runs first so commands that are read-only
         # *without* the flag but write *with* it (doctor --apply,
         # lightgun detect --apply) are still recorded as actual writes.
-        if "--apply" in args:
+        if "--apply" in args or (args and args[0] == "self-doctor" and "--fix" in args):
             is_dry_run: Optional[bool] = False
         elif _is_read_only_invocation(tuple(args)):
             is_dry_run = None
@@ -13561,23 +13562,30 @@ class _SpinDoctorGUI:
         # destination, but the tab badge / Stop button / status bar
         # never clear). Wrap *everything* in try/except so the loop
         # always re-arms.
+        pending = []
+
+        def flush_output():
+            if pending:
+                text = "".join(pending)
+                pending.clear()
+                self._append_output(text)
+                if self._current_run is not None:
+                    self._current_run.append(text)
+
         try:
-            while True:
+            # Bound each tick and batch widget inserts so verbose commands
+            # cannot starve redraws or the Stop button.
+            for _ in range(200):
                 try:
                     item = self._line_queue.get_nowait()
                 except queue.Empty:
                     break
                 try:
                     if isinstance(item, _DoneMarker):
+                        flush_output()
                         self._on_proc_done(item)
                     else:
-                        self._append_output(item)
-                        # Mirror into the current run's per-record buffer
-                        # so the Logs tab can replay the same content
-                        # later. The Output panel and the Logs tab show
-                        # identical text at the moment a run finishes.
-                        if self._current_run is not None:
-                            self._current_run.append(item)
+                        pending.append(item)
                 except Exception as exc:  # noqa: BLE001 — never break drain
                     try:
                         self._append_output(
@@ -13593,7 +13601,11 @@ class _SpinDoctorGUI:
             # ``for line in proc.stdout`` loop in _pump_output is still
             # waiting on EOF. Synthesise a marker so we don't sit in
             # the running state forever.
-            self._check_stuck_proc()
+            flush_output()
+            if self._line_queue.empty():
+                self._check_stuck_proc()
+            else:
+                self._stuck_check_since = None
         except Exception as exc:  # noqa: BLE001 — outer guard
             try:
                 self._append_output(f"\n[drain error: {exc!r}]\n")
@@ -13602,7 +13614,8 @@ class _SpinDoctorGUI:
 
         # Always re-arm, even if the body above raised.
         try:
-            self._drain_after_id = self.root.after(50, self._drain_queue)
+            delay = 1 if not self._line_queue.empty() else 50
+            self._drain_after_id = self.root.after(delay, self._drain_queue)
         except Exception:  # noqa: BLE001 — root may be destroyed
             self._drain_after_id = None
 
