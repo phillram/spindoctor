@@ -1,10 +1,12 @@
 """Media asset downloading and local file management for SpinDoctor."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -21,6 +23,7 @@ _log = logging.getLogger(__name__)
 import requests
 
 from ._net import make_session
+from ._utils import win_safe_stem as _win_safe_stem
 from .config import Config
 
 
@@ -62,35 +65,6 @@ SYSTEM_MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
 }
 
 MAIN_MENU_DIR = "Main Menu"
-
-
-_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
-
-# Windows device names that cannot be used as filenames regardless of extension.
-# "NUL.png" writes to the null device; "CON.mp4" maps to the console, etc.
-_WIN_RESERVED_NAMES: frozenset = frozenset({
-    "CON", "PRN", "AUX", "NUL",
-    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-})
-
-
-def _win_safe_stem(name: str) -> str:
-    """Strip Windows-invalid characters from *name* to produce a safe filename stem.
-
-    Mirrors the function of the same name in rocketlauncher.py — kept local
-    here to avoid a circular import.  HyperSpin itself applies the same
-    stripping when resolving media filenames from game database names, so
-    ``media_path()`` must use this function to produce paths that HyperSpin
-    can actually find.
-    """
-    out = name
-    for ch in _WIN_FILENAME_FORBIDDEN:
-        out = out.replace(ch, "")
-    out = out.strip().rstrip(".")
-    if out.upper() in _WIN_RESERVED_NAMES:
-        out = out + "_"
-    return out
 
 
 def _convert_to_png_inplace(path: Path) -> None:
@@ -695,6 +669,14 @@ class MediaDownloader:
         # the next run can resume via HTTP Range without serving a half-written
         # file as if it were complete.
         part = dest.with_name(dest.name + ".part")
+        part_info = part.with_name(part.name + ".json")
+        url_hash = hashlib.sha256(url.encode("utf-8")).hexdigest()
+        try:
+            saved_info = json.loads(part_info.read_text(encoding="utf-8"))
+            if not isinstance(saved_info, dict):
+                saved_info = {}
+        except (OSError, ValueError):
+            saved_info = {}
         if overwrite and part.exists():
             try:
                 part.unlink()
@@ -708,11 +690,16 @@ class MediaDownloader:
         last_error = ""
         while attempt < max_retries:
             attempt += 1
+            resp = None
             try:
                 existing = part.stat().st_size if part.exists() else 0
+                if saved_info.get("url_hash") != url_hash or not saved_info.get("resumable", True):
+                    existing = 0
                 kwargs: dict = {"timeout": 30, "stream": True}
                 if existing > 0:
                     kwargs["headers"] = {"Range": f"bytes={existing}-"}
+                    if saved_info.get("validator"):
+                        kwargs["headers"]["If-Range"] = saved_info["validator"]
                 resp = self._session.get(url, **kwargs)
 
                 if resp.status_code in (429, 503):
@@ -740,6 +727,31 @@ class MediaDownloader:
 
                 resp.raise_for_status()
 
+                validator = resp.headers.get("ETag") or resp.headers.get("Last-Modified", "")
+                range_end = range_total = None
+                if resp.status_code == 206:
+                    content_range = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+)",
+                                                 resp.headers.get("Content-Range", ""))
+                    valid_range = content_range and int(content_range[1]) == existing
+                    if (not valid_range or int(content_range[2]) < existing
+                            or (existing and saved_info.get("validator") and validator
+                                and saved_info["validator"] != validator)):
+                        part.unlink(missing_ok=True)
+                        saved_info = {}
+                        last_error = "Invalid or changed partial response; restarting download"
+                        continue
+                    range_end = int(content_range[2])
+                    range_total = int(content_range[3]) if content_range[3] != "*" else None
+                saved_info = {
+                    "url_hash": url_hash,
+                    "validator": validator,
+                    # iter_content decodes compressed bodies; their offsets are
+                    # not safe HTTP Range offsets on a subsequent request.
+                    "resumable": resp.headers.get("Content-Encoding", "identity") == "identity",
+                }
+                if not (resp.status_code == 206 and existing > 0):
+                    part.unlink(missing_ok=True)
+                part_info.write_text(json.dumps(saved_info), encoding="utf-8")
                 # 206 → server honored Range; append. Otherwise (incl. 200)
                 # the server is sending the full body, so truncate.
                 mode = "ab" if (resp.status_code == 206 and existing > 0) else "wb"
@@ -747,6 +759,18 @@ class MediaDownloader:
                     for chunk in resp.iter_content(chunk_size=8192):
                         f.write(chunk)
 
+                downloaded = part.stat().st_size
+                if range_end is not None:
+                    if downloaded != range_end + 1:
+                        last_error = "Partial response length does not match Content-Range"
+                        continue
+                    if range_total is not None and downloaded < range_total:
+                        last_error = "Partial response has more bytes remaining"
+                        continue
+                    if range_total is not None and downloaded != range_total:
+                        part.unlink(missing_ok=True)
+                        last_error = "Partial response exceeds resource length"
+                        continue
                 # Check for empty body BEFORE replacing dest so a server that
                 # returns HTTP 200 with 0 bytes can't overwrite a valid file.
                 try:
@@ -765,6 +789,10 @@ class MediaDownloader:
                     pass
 
                 os.replace(part, dest)
+                try:
+                    part_info.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
                 if dest.suffix == ".png":
                     _convert_to_png_inplace(dest)
@@ -809,6 +837,14 @@ class MediaDownloader:
                     game_name=label, media_type=media_type,
                     success=False, error=f"OSError: {e}",
                 )
+            finally:
+                if resp is not None:
+                    close = getattr(resp, "close", None)
+                    if close is not None:
+                        try:
+                            close()
+                        except (OSError, requests.RequestException):
+                            pass
 
         return DownloadResult(
             game_name=label, media_type=media_type,

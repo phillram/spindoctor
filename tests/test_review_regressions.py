@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from spindoctor import backup, cache, cleanup, config, database, migrate, organize
-from spindoctor import curate, edit, media_scan
-from spindoctor import misplaced, rocketlauncher, scraper
+from spindoctor import audit, curate, edit, favorites, fileinfo, media_scan, medialink
+from spindoctor import misplaced, recent, rocketlauncher, scraper, themes
 
 
 @pytest.fixture(autouse=True)
@@ -242,6 +242,51 @@ def test_metadata_cache_treats_wrong_schema_as_miss(tmp_path, value):
     assert c.get("screenscraper", "MAME", "A") is None
 
 
+def test_fade_discovery_and_safe_media_names(tmp_path):
+    name = "Metal Gear: VR"
+    stem = "Metal Gear VR"
+    media = tmp_path / "Media"
+    touch(media / "MAME" / "Images" / "Artwork4" / f"{stem}.png")
+    assert audit.check_media(name, "MAME", media).fade
+    assert fileinfo.find_media_file(name, "MAME", "fade", media).exists
+    assert medialink.remove_target(media, "MAME", name) == 1
+
+
+@pytest.mark.parametrize("builder", ["favorites", "recent"])
+def test_wheel_rebuild_preserves_theme_contents_and_system_media(tmp_path, builder):
+    hs = tmp_path / "hs"
+    source = "SNES"
+    target = "Favorites" if builder == "favorites" else "Recently Played"
+    touch(hs / "Databases" / source / f"{source}.xml", b'<menu><game name="Tetris"/></menu>')
+    media = hs / "Media"
+    touch(media / source / "Themes" / "Tetris" / "Theme.xml")
+    touch(media / source / "Themes" / "Tetris" / "bg.png")
+    protected = [
+        touch(media / target / "Themes" / "default.zip", b"custom theme"),
+        touch(media / target / "Sound" / "Wheel Click.mp3", b"custom click"),
+        touch(media / target / "Images" / "Letters" / "A.png", b"letter"),
+    ]
+    stale = touch(media / target / "Images" / "Wheel" / "Removed.png")
+    cfg = config.Config(hyperspin_dir=str(hs))
+    entry = favorites.FavoriteEntry(source, "Tetris", "Tetris", "")
+    for _ in range(2):
+        if builder == "favorites":
+            favorites.rebuild(favorites.FavoriteStore([entry], target), cfg, skip_launchers=True)
+        else:
+            recent._build_synthetic_wheel(cfg, target, [entry], skip_launchers=True)
+    assert (media / target / "Themes" / "Tetris" / "Theme.xml").exists()
+    assert (media / target / "Themes" / "Tetris" / "bg.png").exists()
+    assert [p.read_bytes() for p in protected] == [b"custom theme", b"custom click", b"letter"]
+    assert not stale.exists()
+
+
+@pytest.mark.parametrize("name", ["", " ", "..", "../MAME", "MAME/child", "C:\\MAME"])
+def test_clear_wheel_rejects_invalid_target(tmp_path, name):
+    cfg = config.Config(hyperspin_dir=str(tmp_path))
+    with pytest.raises(ValueError):
+        recent.clear_wheel_artifacts(cfg, name, dry_run=True)
+
+
 def test_rename_matches_literal_rom_stem(tmp_path):
     name = "Tetris [T+Fre]"
     hs = tmp_path / "hs"
@@ -263,6 +308,23 @@ def test_ini_rom_path_update_preserves_encoding(tmp_path, encoding):
                  "[ROMS]\r\nRom_Path=old\r\n; Émulateurs\r\n".encode(encoding))
     assert rocketlauncher._update_rom_path_in_ini(path, "new")
     assert path.read_bytes().decode(encoding) == "[ROMS]\r\nRom_Path=new\r\n; Émulateurs\r\n"
+
+
+def test_theme_pack_roundtrip_respects_scope(tmp_path):
+    hs = tmp_path / "hs"
+    paths = {}
+    for system in ("MAME", "NES"):
+        paths[system] = touch(hs / "Media" / system / "Images" / "Special A" / "same.png",
+                              system.encode())
+    cfg = config.Config(hyperspin_dir=str(hs))
+    pack = tmp_path / "pack"
+    themes.create_pack(cfg, pack)
+    for path in paths.values():
+        path.write_bytes(b"changed")
+    plans = themes.plan_apply(cfg, pack)
+    themes.apply_plan(plans, manifest_dir=tmp_path / "undo")
+    for system, path in paths.items():
+        assert path.read_bytes() == system.encode()
 
 
 def test_fuzzy_match_short_circuits_first_normalized_exact_match(monkeypatch):
@@ -335,6 +397,20 @@ def test_undo_retry_does_not_replay_already_completed_moves(tmp_path):
     second_src.unlink()
     assert misplaced.undo_moves(manifest) == {"reverted": 1, "errors": []}
     assert first_src.exists() and second_src.exists() and not manifest.exists()
+
+
+def test_orphan_media_keeps_sanitized_names_and_system_assets(tmp_path):
+    from spindoctor import orphan_media
+    hs = tmp_path / "hs"
+    touch(hs / "Databases" / "PC" / "PC.xml", b'<menu><game name="Game: Test"/></menu>')
+    media = hs / "Media" / "PC"
+    touch(media / "Images" / "Wheel" / "Game Test.png")
+    touch(media / "Images" / "Artwork4" / "game test.png")
+    touch(media / "Sound" / "Wheel Click.mp3")
+    touch(media / "Themes" / "default.zip")
+    stale = touch(media / "Themes" / "Removed.zip")
+    report = orphan_media.find_orphan_media("PC", config.Config(hyperspin_dir=str(hs)))
+    assert [o.path for o in report.orphans] == [stale]
 
 
 @pytest.mark.parametrize("encoding", ["cp1252", "utf-16", "utf-16-be", "utf-8-sig"])

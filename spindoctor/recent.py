@@ -25,11 +25,12 @@ from typing import Iterable, Optional
 from . import __app_name__, __version__
 from .config import Config, get_systems, load_config
 from .database import GameEntry, HyperspinDatabase
+from ._wheels import mark_synthetic, synthetic_names, validate_target
 from .favorites import (
     FavoriteEntry, _generate_pclauncher_ini,
     _resolve_target_names, _safe_load,
 )
-from .medialink import LinkMode, apply_plan, plan_mirror, _read_hs_video_dir
+from .medialink import LinkMode, apply_plan, plan_mirror, _read_hs_video_dir, prune_mirrored_media
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
@@ -433,6 +434,7 @@ def clear_wheel_artifacts(
     When *dry_run* is ``True`` (the default) no files are changed; the
     returned summary describes what *would* be removed.
     """
+    validate_target(config, target_system)
     summary = ClearWheelSummary(target_system=target_system)
 
     if config.hyperspin_dir:
@@ -526,6 +528,7 @@ def _build_synthetic_wheel(
     synthetic wheels (Favorites, Recently Played, Most Played) behave
     identically inside HyperSpin.
     """
+    validate_target(config, target_system, (e.system for e in pseudo_entries))
     summary = RecentSummary(target_system=target_system)
     if not config.hyperspin_dir:
         return summary
@@ -594,6 +597,7 @@ def _build_synthetic_wheel(
         )
         db.upsert_game(merged)
     summary.db_path = db.save(backup=False)
+    mark_synthetic(config, target_system)
     print(f"[{target_system}] database done — {len(keep)} games "
           f"({summary.pruned} pruned).", flush=True)
 
@@ -643,13 +647,7 @@ def _build_synthetic_wheel(
                 )
 
         # Remove orphan media AFTER writing new files.
-        if _target_media.is_dir():
-            for media_path in _target_media.rglob("*"):
-                if media_path.is_file() and media_path.stem not in seen:
-                    try:
-                        media_path.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        summary.media_errors.extend(prune_mirrored_media(_target_media, seen))
         print(f"[{target_system}] media done.", flush=True)
 
     # ── Phase 3: write PCLauncher INIs ────────────────────────────────────────
@@ -736,12 +734,13 @@ def rebuild(
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
     # known-system filter, letting stray stats entries leak into this wheel).
-    known = set(get_systems(config)) - _STATS_EXCLUDE - {target_system}
+    excluded = _STATS_EXCLUDE | synthetic_names(config) | {target_system}
+    known = set(get_systems(config)) - excluded
     read_warnings: list[str] = []
     read_notes: list[str] = []
     raw = collect_play_records(
         config,
-        exclude_systems=_STATS_EXCLUDE | {target_system},
+        exclude_systems=excluded,
         warnings=read_warnings,
         notes=read_notes,
     )
