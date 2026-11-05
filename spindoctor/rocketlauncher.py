@@ -4,6 +4,7 @@ from __future__ import annotations
 import configparser
 import re
 import shutil
+import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path, PureWindowsPath
 from typing import Optional
@@ -1035,6 +1036,18 @@ def _install_asset(
     return dest, "overwritten" if already_exists else "installed"
 
 
+def _asset_path(filename: str) -> Optional[Path]:
+    """Find embedded media first, then an offline pack beside a frozen EXE."""
+    bundled = Path(__file__).parent / "assets" / filename
+    if bundled.is_file():
+        return bundled
+    if getattr(sys, "frozen", False):
+        shared = Path(sys.executable).resolve().parent / "spindoctor-media" / filename
+        if shared.is_file():
+            return shared
+    return None
+
+
 def _resolve_asset(
     registry: dict[str, str],
     system_name: str,
@@ -1043,8 +1056,7 @@ def _resolve_asset(
     filename = registry.get(system_name)
     if not filename:
         return None
-    src = Path(__file__).parent / "assets" / filename
-    return src if src.exists() else None
+    return _asset_path(filename)
 
 
 def install_system_wheel_art(
@@ -1302,8 +1314,8 @@ def fill_missing_themes(
     * ``"dry_run"`` — would install but *dry_run* is True.
     * ``"no_asset"`` — ``theme_blank.zip`` is missing from the package.
     """
-    src = Path(__file__).parent / "assets" / "theme_blank.zip"
-    if not src.exists():
+    src = _asset_path("theme_blank.zip")
+    if src is None:
         video_dir = hyperspin_dir / "Media" / system_name / "Video"
         return {
             p.stem: "no_asset"
@@ -1361,8 +1373,8 @@ def fill_default_theme(
     dest = hyperspin_dir / "Media" / system_name / "Themes" / "default.zip"
     if dest.exists():
         return "skipped"
-    src = Path(__file__).parent / "assets" / "theme_blank.zip"
-    if not src.exists():
+    src = _asset_path("theme_blank.zip")
+    if src is None:
         return "no_asset"
     if dry_run:
         return "dry_run"

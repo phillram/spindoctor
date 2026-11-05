@@ -32,6 +32,72 @@ SYNTHETIC = ("Favorites", "Most Played", "Recently Played", "Recompiled")
 NON_SYNTHETIC = "MAME"
 
 
+@pytest.fixture
+def external_media(tmp_path, monkeypatch):
+    """A frozen install without embedded assets, with one local media folder."""
+    from spindoctor import rocketlauncher as rl
+
+    monkeypatch.setattr(rl, "__file__", str(tmp_path / "extracted" / "spindoctor" / "rocketlauncher.py"))
+    monkeypatch.setattr(rl.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(rl.sys, "executable", str(tmp_path / "bin" / "spindoctor.exe"))
+    media = tmp_path / "bin" / "spindoctor-media"
+    media.mkdir(parents=True)
+    for registry in (
+        rl._WHEEL_ART_ASSETS, rl._BACKGROUND_ASSETS, rl._MUSIC_ASSETS,
+        rl._VIDEO_ASSETS, rl._THEME_ASSETS, rl._NAVIGATE_SOUND_ASSETS,
+    ):
+        for filename in registry.values():
+            (media / filename).write_bytes(filename.encode("utf-8"))
+    (media / "theme_blank.zip").write_bytes(b"blank theme")
+    return media
+
+
+@pytest.mark.parametrize("system_name", SYNTHETIC)
+def test_external_media_installs_complete_wheel(external_media, tmp_path, system_name):
+    hs = tmp_path / "hs"
+    preview = install_bundled_system_assets(hs, system_name, dry_run=True)
+    assert all(status == "dry_run" for _, status in preview.values())
+    assert not hs.exists()
+    results = install_bundled_system_assets(hs, system_name)
+    assert all(status == "installed" for _, status in results.values())
+    assert all(path.is_file() for path, _ in results.values())
+    repeated = install_bundled_system_assets(hs, system_name)
+    assert all(status == "skipped" for _, status in repeated.values())
+
+
+def test_external_media_supports_both_blank_theme_commands(external_media, tmp_path):
+    hs = tmp_path / "hs"
+    video = hs / "Media" / "MAME" / "Video" / "pacman.mp4"
+    video.parent.mkdir(parents=True)
+    video.write_bytes(b"video")
+    assert fill_missing_themes(hs, "MAME") == {"pacman": "installed"}
+    assert fill_default_theme(hs, "MAME") == "installed"
+    themes = hs / "Media" / "MAME" / "Themes"
+    assert (themes / "pacman.zip").read_bytes() == b"blank theme"
+    assert (themes / "default.zip").read_bytes() == b"blank theme"
+
+
+def test_embedded_asset_takes_priority_over_external_pack(external_media):
+    from spindoctor import rocketlauncher as rl
+
+    embedded = Path(rl.__file__).parent / "assets" / "theme_blank.zip"
+    embedded.parent.mkdir(parents=True)
+    embedded.write_bytes(b"embedded")
+    assert rl._asset_path("theme_blank.zip") == embedded
+
+
+def test_pip_install_does_not_search_beside_interpreter(external_media, monkeypatch):
+    from spindoctor import rocketlauncher as rl
+
+    monkeypatch.setattr(rl.sys, "frozen", False)
+    assert rl._asset_path("theme_blank.zip") is None
+
+
+def test_missing_external_pack_preserves_no_asset_behavior(external_media, tmp_path):
+    (external_media / "theme_Favorites.zip").unlink()
+    assert install_system_theme(tmp_path / "hs", "Favorites") == (None, "no_asset")
+
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _hs_dir(tmp_path: Path) -> Path:

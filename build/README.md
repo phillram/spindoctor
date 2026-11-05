@@ -27,12 +27,18 @@ One `spindoctor-win10/` folder in `dist/`. The Python 3.12 runtime lives once in
 Hidden imports are split per-target so each EXE only bundles what it actually uses:
 
 - `_CORE_BASE` — shared by all five binaries: the spindoctor package itself and `update_check`.
-- `_CORE_CLI` — `click` and `rich`, used only by the full CLI and GUI binaries.
+- `_CORE_CLI` — explicit `click` and `rich.logging` imports for the full CLI only.
 - `_CORE_LXML` — `lxml` C extensions, used only by the full CLI and GUI binaries. The standalone tools use `database.py`'s stdlib `xml.etree.ElementTree` fallback when lxml is absent — `lxml` is imported lazily via `_lxml_etree()` and `--exclude-module lxml` (in `_STANDALONE_EXCLUDES`) prevents bundling even though the import statement is visible to static analysis.
 
 `_STANDALONE_EXCLUDES` passes `--exclude-module` for `lxml`, `click`, `rich`, `tkinter`, and `PIL` so PyInstaller's stdlib sweep and any `.pyc` files in the build environment can't pull them back in.
 
 The tradeoff for the standalone tools: XML comment round-tripping is not preserved (lxml preserves comments and attribute order; the stdlib fallback does not). HyperSpin XML files written by the standalone tools are valid and HyperSpin reads them correctly — comments are not present in those files in practice.
+
+The GUI does not force the CLI or its command modules into its own bundle.
+It invokes sibling executables instead. PyInstaller still discovers the GUI's
+direct imports (including those inside callbacks), and lxml remains bundled
+for the forms that read and edit XML. Do not exclude shared domain dependencies
+just because the CLI also uses them.
 
 ## Windows 7 compatibility
 
@@ -64,6 +70,32 @@ python build/build_windows.py --modern
 ```
 
 Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
+
+### Smaller offline builds with shared media
+
+```bat
+python build/build_windows.py --shared-media
+:: Output: five EXEs plus dist\spindoctor-media\
+```
+
+This opt-in layout stores the bundled artwork, videos, music and themes only
+once in `spindoctor-media/` beside the EXEs. Keep that folder with them, including
+when copying a standalone helper to another location. The normal build remains
+self-contained and unchanged. Icons remain embedded in every build.
+
+The shared folder contains the original media files, not lower-quality versions,
+and needs no internet connection. Synthetic-wheel installers and both blank-theme
+commands use it automatically when their embedded asset is absent. Ordinary pip
+installs do not search beside the Python interpreter.
+
+This primarily benefits Win7 builds: it removes the Favorites/Recent duplicate
+media and prevents every invocation of a one-file helper from extracting its
+videos to a temporary directory. `--modern --shared-media` is also supported, but
+modern builds already deduplicate deployment media in `_internal/`.
+
+Zip the **entire** output, including `spindoctor-media/`, not just `*.exe`.
+The release workflow's manual `shared_media` input builds and packages this
+layout for evaluation; tag-triggered releases retain the existing layout.
 
 ## How the build works
 

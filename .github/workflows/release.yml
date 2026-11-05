@@ -11,6 +11,10 @@ on:
       tag:
         description: 'Tag to build (no release published)'
         required: false
+      shared_media:
+        description: 'Use smaller offline shared-media layout for the Win7 artifact'
+        type: boolean
+        default: false
 
 permissions:
   contents: write       # create the GitHub Release and upload assets
@@ -45,7 +49,14 @@ jobs:
 
       - name: Build Windows executables (Win7)
         shell: bash
-        run: python build/build_windows.py
+        env:
+          SHARED_MEDIA: ${{ github.event.inputs.shared_media || 'false' }}
+        run: |
+          args=()
+          if [ "$SHARED_MEDIA" = "true" ]; then
+            args+=(--shared-media)
+          fi
+          python build/build_windows.py "${args[@]}"
 
       - name: Smoke-test every binary
         # --onefile build: each binary is a self-contained exe in dist\.
@@ -79,11 +90,17 @@ jobs:
           fi
 
       - name: Package Win7 zip
-        # Zip just the five flat EXEs from dist/ — each is self-contained.
+        # Normal releases contain standalone EXEs. Manual shared-media builds
+        # must also carry the offline media folder beside those EXEs.
         shell: bash
         run: |
           mkdir -p artifacts
-          cd dist && 7z a "../artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip" *.exe
+          cd dist
+          files=(*.exe)
+          if [ -d spindoctor-media ]; then
+            files+=(spindoctor-media)
+          fi
+          7z a "../artifacts/spindoctor-win7-${{ steps.tag.outputs.tag }}.zip" "${files[@]}"
 
       - name: Generate SHA256 checksums (Win7)
         shell: bash

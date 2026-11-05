@@ -50,7 +50,7 @@ TARGETS = [
 # Hidden imports PyInstaller's static analysis misses because they are
 # imported lazily, via plugin discovery, or through C-extension hooks.
 #
-# _CORE_CLI   — modules needed by every CLI/GUI binary (click, rich).
+# _CORE_CLI   — explicit imports for the full CLI (click, rich).
 # _CORE_LXML  — lxml C extensions; needed by CLI/GUI, excluded from
 #               standalone tools (database.py uses the stdlib ET fallback
 #               when lxml is absent — see _lxml_etree() in database.py).
@@ -113,20 +113,11 @@ HIDDEN_IMPORTS: dict[str, list[str]] = {
         "spindoctor.lightgun",
         "spindoctor.verify",
     ],
-    "spindoctor-gui": _CORE_BASE + _CORE_CLI + _CORE_LXML + [
-        "spindoctor.cli",
-        "spindoctor.favorites",
-        "spindoctor.recent",
-        "spindoctor.playtime",
+    # Commands run in sibling EXEs, not inside the GUI. Static analysis of
+    # gui.py discovers its direct domain imports; forcing the CLI here also
+    # bundles its entire dependency graph a second time in the GUI's PYZ.
+    "spindoctor-gui": _CORE_BASE + _CORE_LXML + [
         "spindoctor.gui",
-        "spindoctor.autostart",
-        "spindoctor.themes",
-        "spindoctor.scraper",
-        "spindoctor.archives",
-        "spindoctor.preview",
-        "spindoctor.tools_audit",
-        "spindoctor.lightgun",
-        "spindoctor.verify",
         "tkinterdnd2",
     ],
     "spindoctor-fav":    _CORE_BASE + ["spindoctor.favorites"],
@@ -217,7 +208,7 @@ def _bundle_asset(path: Path, exe_name: str) -> bool:
 _STANDALONE_NAMES = {"spindoctor-fav", "spindoctor-recent", "spindoctor-stats"}
 
 
-def iter_bundle_assets(name: str) -> list[Path]:
+def iter_bundle_assets(name: str, *, shared_media: bool = False) -> list[Path]:
     """Return the top-level asset files to bundle into *name*'s EXE.
 
     Single source of truth for both the Win7 (--onefile) and modern
@@ -232,10 +223,21 @@ def iter_bundle_assets(name: str) -> list[Path]:
         asset_file
         for asset_file in sorted(ASSETS_DIR.iterdir())
         if asset_file.is_file() and _bundle_asset(asset_file, name)
+        and not (shared_media and _is_deployment_media(asset_file))
     ]
 
 
-def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
+def copy_shared_media(out_dir: Path) -> Path:
+    """Copy deployment media once beside the EXEs, without archived originals."""
+    dest = out_dir / "spindoctor-media"
+    dest.mkdir(parents=True, exist_ok=True)
+    for asset_file in iter_bundle_assets("spindoctor"):
+        if _is_deployment_media(asset_file):
+            shutil.copy2(asset_file, dest / asset_file.name)
+    return dest
+
+
+def run_pyinstaller(shim: Path, name: str, windowed: bool, *, shared_media: bool = False) -> None:
     mode_flag = "--windowed" if windowed else "--console"
     cmd = [
         sys.executable, "-m", "PyInstaller",
@@ -248,7 +250,7 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
     ]
     if ICON.exists():
         cmd += ["--icon", str(ICON)]
-    for asset_file in iter_bundle_assets(name):
+    for asset_file in iter_bundle_assets(name, shared_media=shared_media):
         cmd += ["--add-data", f"{asset_file}{os.pathsep}spindoctor/assets"]
     for hi in HIDDEN_IMPORTS[name]:
         cmd += ["--hidden-import", hi]
@@ -260,7 +262,7 @@ def run_pyinstaller(shim: Path, name: str, windowed: bool) -> None:
     subprocess.check_call(cmd)
 
 
-def generate_onedir_spec(shims: dict[str, Path]) -> Path:
+def generate_onedir_spec(shims: dict[str, Path], *, shared_media: bool = False) -> Path:
     """Write a PyInstaller 6.x spec for the shared-runtime --onedir modern build.
 
     PyInstaller 6.x produces a clean _internal/ subdirectory for the shared
@@ -279,7 +281,7 @@ def generate_onedir_spec(shims: dict[str, Path]) -> Path:
         safe = name.replace("-", "_")
         datas: list[tuple[str, str]] = [
             (asset_file.as_posix(), "spindoctor/assets")
-            for asset_file in iter_bundle_assets(name)
+            for asset_file in iter_bundle_assets(name, shared_media=shared_media)
         ]
         excludes = _STANDALONE_EXCLUDES if name in _STANDALONE_NAMES else []
         icon_repr = repr(ICON.as_posix()) if ICON.exists() else "None"
@@ -358,6 +360,15 @@ def main() -> int:
             "produces dist/spindoctor-win10/."
         ),
     )
+    ap.add_argument(
+        "--shared-media",
+        action="store_true",
+        help=(
+            "Keep deployment artwork, music and videos once in spindoctor-media/ "
+            "beside the EXEs instead of embedding them. Fully offline; keep the "
+            "folder with the EXEs. Most useful for the Win7 --onefile build."
+        ),
+    )
     args = ap.parse_args()
 
     if DIST.exists():
@@ -368,7 +379,7 @@ def main() -> int:
 
     if args.modern:
         shims = {name: write_shim(entry, name) for entry, name, _ in TARGETS}
-        spec = generate_onedir_spec(shims)
+        spec = generate_onedir_spec(shims, shared_media=args.shared_media)
         subprocess.check_call([
             sys.executable, "-m", "PyInstaller",
             "--noconfirm",
@@ -390,7 +401,7 @@ def main() -> int:
     else:
         for entry, name, windowed in TARGETS:
             shim = write_shim(entry, name)
-            run_pyinstaller(shim, name, windowed)
+            run_pyinstaller(shim, name, windowed, shared_media=args.shared_media)
 
         suffix = ".exe" if sys.platform == "win32" else ""
         print("\nBuilt (--onefile):")
@@ -398,6 +409,12 @@ def main() -> int:
             exe = DIST / f"{name}{suffix}"
             if exe.exists():
                 print(f"  {exe.name}  ({exe.stat().st_size // (1024 * 1024)} MB)")
+    if args.shared_media:
+        out_dir = DIST / "spindoctor-win10" if args.modern else DIST
+        media_dir = copy_shared_media(out_dir)
+        total = sum(p.stat().st_size for p in media_dir.iterdir())
+        print(f"  {media_dir.name}/  ({total / (1024 * 1024):.1f} MiB shared media)")
+        print("Keep spindoctor-media/ beside the EXEs; no network download is needed.")
     return 0
 
 

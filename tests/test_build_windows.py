@@ -107,3 +107,101 @@ class TestGenerateOnedirSpecExcludesArchive:
         archive_path = (bw.ASSETS_DIR / "archive").as_posix()
         assert archive_path not in text, \
             "generate_onedir_spec() bundled the archive/ directory into a Win10 EXE"
+
+
+def test_gui_keeps_xml_and_drag_drop_without_forcing_cli(bw):
+    imports = set(bw.HIDDEN_IMPORTS["spindoctor-gui"])
+    assert imports == {
+        "spindoctor", "spindoctor.update_check", "spindoctor.gui",
+        "lxml._elementpath", "lxml.etree", "tkinterdnd2",
+    }
+    assert "spindoctor.cli" in bw.HIDDEN_IMPORTS["spindoctor"]
+
+
+def test_onefile_gui_does_not_force_cli_imports(bw, monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(bw.subprocess, "check_call", calls.append)
+    bw.run_pyinstaller(tmp_path / "gui_entry.py", "spindoctor-gui", True)
+    cmd, = calls
+    imports = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--hidden-import"]
+    assert imports == bw.HIDDEN_IMPORTS["spindoctor-gui"]
+    assert "spindoctor.cli" not in imports
+    assert "--windowed" in cmd
+
+
+def test_onedir_gui_uses_the_same_lean_imports(bw, tmp_path):
+    analyses = []
+
+    def analysis(*args, **kwargs):
+        from types import SimpleNamespace
+
+        analyses.append(kwargs)
+        return SimpleNamespace(pure=[], scripts=[], binaries=[], datas=[])
+
+    shims = {name: tmp_path / f"shim_{name}.py" for _, name, _ in bw.TARGETS}
+    spec = bw.generate_onedir_spec(shims)
+    namespace = dict(Analysis=analysis, PYZ=lambda *a: None,
+                     EXE=lambda *a, **kw: None, COLLECT=lambda *a, **kw: None)
+    exec(compile(spec.read_text(), str(spec), "exec"), namespace)
+    gui_index = next(i for i, (_, name, _) in enumerate(bw.TARGETS) if name == "spindoctor-gui")
+    gui_analysis = analyses[gui_index]
+    assert gui_analysis["hiddenimports"] == bw.HIDDEN_IMPORTS["spindoctor-gui"]
+    assert "spindoctor.cli" not in gui_analysis["hiddenimports"]
+    assert gui_analysis["excludes"] == []
+
+
+@pytest.mark.parametrize("name", [
+    "spindoctor", "spindoctor-gui", "spindoctor-fav", "spindoctor-recent", "spindoctor-stats",
+])
+def test_shared_media_leaves_only_app_assets_embedded(bw, name):
+    assert {p.name for p in bw.iter_bundle_assets(name, shared_media=True)} == {"icon.ico"}
+
+
+def test_shared_media_copy_contains_one_complete_media_set(bw, tmp_path):
+    dest = bw.copy_shared_media(tmp_path / "dist")
+    expected = {p for p in bw.iter_bundle_assets("spindoctor") if bw._is_deployment_media(p)}
+    assert {p.name for p in dest.iterdir()} == {p.name for p in expected}
+    for source in expected:
+        assert (dest / source.name).read_bytes() == source.read_bytes()
+    assert not (dest / "archive").exists()
+    assert not (dest / "icon.ico").exists()
+
+
+def test_onefile_shared_media_omits_deployment_data(bw, monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(bw.subprocess, "check_call", calls.append)
+    bw.run_pyinstaller(tmp_path / "cli_entry.py", "spindoctor", False, shared_media=True)
+    cmd, = calls
+    datas = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--add-data"]
+    assert len(datas) == 1
+    assert "icon.ico" in datas[0]
+
+
+def test_onedir_shared_media_omits_deployment_data(bw, tmp_path):
+    shims = {name: tmp_path / f"shim_{name}.py" for _, name, _ in bw.TARGETS}
+    spec = bw.generate_onedir_spec(shims, shared_media=True).read_text()
+    assert "icon.ico" in spec
+    assert "bg_Favorites.png" not in spec
+    assert "theme_blank.zip" not in spec
+
+
+@pytest.mark.parametrize("modern", [False, True])
+def test_main_routes_shared_media_and_copies_pack(bw, monkeypatch, tmp_path, modern):
+    from unittest.mock import Mock
+
+    monkeypatch.setattr(bw, "DIST", tmp_path / "dist")
+    onefile, onedir = Mock(), Mock(return_value=tmp_path / "build.spec")
+    monkeypatch.setattr(bw, "run_pyinstaller", onefile)
+    monkeypatch.setattr(bw, "generate_onedir_spec", onedir)
+    monkeypatch.setattr(bw.subprocess, "check_call", Mock())
+    monkeypatch.setattr(bw.sys, "argv", ["build_windows.py", "--shared-media"] + (["--modern"] if modern else []))
+    assert bw.main() == 0
+    out_dir = bw.DIST / "spindoctor-win10" if modern else bw.DIST
+    assert (out_dir / "spindoctor-media" / "bg_Favorites.png").read_bytes() == b"bg"
+    if modern:
+        assert onedir.call_args.kwargs["shared_media"] is True
+        onefile.assert_not_called()
+    else:
+        assert onefile.call_count == len(bw.TARGETS)
+        assert all(call.kwargs["shared_media"] is True for call in onefile.call_args_list)
+        onedir.assert_not_called()
