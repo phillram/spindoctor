@@ -639,6 +639,14 @@ Diagnostic steps, in the order that actually resolves this fastest:
 
 Supermodel sees two guns as one mouse unless it runs with raw input and every gun line names its own mouse. Start and Coin can also stop working once raw input is on, because raw input ignores keys sent by a keymapper remap. See [Two guns: Model 3 and the Sinden software](lightgun.md#two-guns-model-3-and-the-sinden-software) for the settings, how Supermodel numbers mice, and the `Crosshairs` values. If player 2's gun aims but doesn't recoil like player 1's, check that the Sinden software runs both guns for that game (same section).
 
+### Start or Coin does nothing in one game, though the same button works in others
+
+The game's emulator is probably bound to the key the button sends, while a RocketLauncher keymapper remap turns that key into another one. With `r::1`, a Start bound to R never fires; bind it to 1. A game can also load a different profile from the rest of its system (a game- or emulator-named one), so its emulator may need other keys. See [RocketLauncher's keymapper profile order](lightgun.md#rocketlaunchers-keymapper-profile-order) for which profile a game loads.
+
+### A Super Scope game starts firing single shots, though turbo works
+
+Snes9x starts every game with the Super Scope's turbo off, and its turbo key toggles it. To start a game in turbo, press the key from the game's User Functions `PostLoad()`, and give the game automatic recoil. See [SNES Super Scope games](lightgun.md#snes-super-scope-games-snes9x).
+
 ### `spindoctor lightgun detect` reports "DemulShooter not found"
 
 DemulShooter must be on disk somewhere spindoctor scans, at most four folders deep. The auto-detected roots are `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, `<RocketLauncher>/Plugins`, `<emulators_dir>`, plus `Program Files` and the Start Menu. If yours lives elsewhere, or `detect` lists several DemulShooter executables and picked the wrong one:
