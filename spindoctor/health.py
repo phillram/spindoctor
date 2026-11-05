@@ -1911,6 +1911,61 @@ def check_led_coverage(config: Config) -> Check:
     return done(Status.OK, detail)
 
 
+def _mmss(seconds: float) -> str:
+    return f"{int(seconds // 60)}:{int(seconds % 60):02d}"
+
+
+def _intro_clip_length_checks(config: Config) -> "list[Check]":
+    """Can the logon swap wait out every clip in the pool?
+
+    HyperSpin holds ``intro_video_target`` open while the clip plays, and the
+    swap retries for that clip's length plus a margin, up to
+    ``SWAP_RETRY_MAX_SECONDS``. A longer clip makes the swap fail at every
+    boot it's the one playing; a clip whose length can't be read gets the
+    old fixed 3 minutes. Reads only each file's header.
+    """
+    from .introvideo import (
+        SWAP_RETRY_ATTEMPTS,
+        SWAP_RETRY_DELAY_SECONDS,
+        SWAP_RETRY_MARGIN_SECONDS,
+        SWAP_RETRY_MAX_SECONDS,
+        pool_clip_lengths,
+    )
+
+    lengths = pool_clip_lengths(config)
+    out: list[Check] = []
+    if lengths.too_long:
+        shown = ", ".join(f"{name} ({_mmss(s)})" for name, s in lengths.too_long[:3])
+        more = f" and {len(lengths.too_long) - 3} more" if len(lengths.too_long) > 3 else ""
+        out.append(Check(
+            name="clip length", status=Status.WARN,
+            detail=(f"{len(lengths.too_long)} clip(s) too long for the logon swap to wait out "
+                    f"(it waits at most {_mmss(SWAP_RETRY_MAX_SECONDS)}): {shown}{more}"),
+            fix=f'spindoctor introvideo remove "{lengths.too_long[0][0]}" --apply',
+        ))
+    elif lengths.longest:
+        wait = min(lengths.longest_seconds + SWAP_RETRY_MARGIN_SECONDS, SWAP_RETRY_MAX_SECONDS)
+        wait = max(wait, SWAP_RETRY_ATTEMPTS * SWAP_RETRY_DELAY_SECONDS)
+        out.append(Check(
+            name="clip length", status=Status.OK,
+            detail=(f"longest clip {_mmss(lengths.longest_seconds)} ({lengths.longest}); "
+                    f"the logon swap waits up to {_mmss(wait)} for it"),
+        ))
+    if lengths.unreadable:
+        shown = ", ".join(lengths.unreadable[:3])
+        more = f" and {len(lengths.unreadable) - 3} more" if len(lengths.unreadable) > 3 else ""
+        out.append(Check(
+            name="clip length (unread)", status=Status.INFO,
+            detail=(f"{len(lengths.unreadable)} video(s) whose length can't be read (only MP4 / M4V / "
+                    f"MOV are): {shown}{more}. While one of them plays, the swap waits as long as for "
+                    f"the longest clip it can read, and at least "
+                    f"{_mmss(SWAP_RETRY_ATTEMPTS * SWAP_RETRY_DELAY_SECONDS)}"),
+            fix=("convert them to MP4, or give the logon task a head start: "
+                 "spindoctor introvideo install-autorun --delay-minutes <N> --apply"),
+        ))
+    return out
+
+
 def check_intro_video(config: Config) -> Check:
     """Health of the intro-video randomizer (opt-in feature).
 
@@ -1948,6 +2003,7 @@ def check_intro_video(config: Config) -> Check:
                     name="pool", status=Status.OK,
                     detail=f"{len(enabled)} video(s) in rotation",
                 ))
+                parent.children.extend(_intro_clip_length_checks(config))
 
     if config.intro_video_target:
         target_parent = Path(config.intro_video_target).parent
