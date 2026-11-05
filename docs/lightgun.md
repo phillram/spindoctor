@@ -81,3 +81,34 @@ User Functions coverage is **partial** in the audit and INFO in `doctor` when on
 ## Reverting
 
 The INI is plain text — open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` and delete the `Pre_Launch_App` / `Post_Launch_App` lines. Or set `"lightgun": false` in the per-system override and re-run `lightgun audit` to confirm.
+
+## Two guns: Model 3 and the Sinden software
+
+spindoctor doesn't touch the emulators' own gun settings or the Sinden software's settings. These are the setups that most often leave player 2's gun dead.
+
+### Model 3 (Supermodel)
+
+Supermodel reads the guns itself, as mice. Two guns need all of the following:
+
+- **Raw input.** Only Supermodel's `rawinput` input system tells two mice apart; `dinput` and `xinput` merge every mouse into one. RocketLauncher's SuperModel module passes `-input-system=` on the command line, which wins over `InputSystem` in `Supermodel.ini`. Set `InputSystem=rawinput` in the module's settings (`Modules\SuperModel\SuperModel.ini`): under `[Settings]` for every game, or in a section named after a game for that game only. The module's default is `dinput`.
+- **A numbered mouse in every gun line** of `Config\Supermodel.ini`, for example `InputGunX = "MOUSE2_XAXIS"` for player 1 and `InputGunX2 = "MOUSE3_XAXIS"` for player 2. In raw input an unnumbered `MOUSE_` means *any* mouse, so player 2's trigger would fire player 1's gun too. The lines are `InputGunX`, `InputGunY`, `InputTrigger`, `InputOffscreen`, `InputAnalogGunX`, `InputAnalogGunY`, `InputAnalogTriggerLeft` and `InputAnalogTriggerRight`, plus the same eight ending in `2` for player 2. `KEY_` and `JOY` entries in the same lines stay as they are.
+- **The right numbers.** Supermodel numbers mice in the reverse of Windows' raw-input device list, skips Remote Desktop devices (`Root#RDP_…`), and doesn't sort them. Anything Windows lists as a mouse counts, such as a trackball or encoder board, or a Bluetooth HID device. A number with no mouse behind it fails silently. The order can change when a device is added or removed, so if devices come and go, have a launch script recompute the numbers before each game.
+- **Real keys for Start and Coin.** In raw input, Supermodel accepts keys only from real keyboards and ignores keys sent by software. A RocketLauncher keymapper remap (for example `r::1`) or any other AutoHotkey remap therefore loses Start and Coin. Bind Supermodel to the keys the panel and guns really send, and switch the remap off for Supermodel with an emulator-named profile that has no remaps (see the profile order below).
+- **Both crosshairs:** `Crosshairs = 3` in `Supermodel.ini`. The values are 0 = none, 1 = player 1 only, 2 = player 2 only, 3 = both. Alt+I cycles them in game.
+
+### RocketLauncher's keymapper profile order
+
+With the internal AHK keymapper, RocketLauncher runs one remap file per game, the first of these that exists:
+
+1. `Profiles\AHK\<System>\<Game>.ahk`
+2. `Profiles\AHK\<System>\<Emulator>.ahk`
+3. `Profiles\AHK\<System>.ahk`
+4. `Profiles\AHK\_Default.ahk`
+
+Only exact system, game and emulator names match. A file named after an emulator, holding only comments, switches a system-wide remap off for that emulator.
+
+### Sinden software (v2)
+
+- **Run both guns for a two-player game.** A gun set to "none" in the Sinden software is never sent any settings. It still recoils from its own firmware when its trigger is pulled, in whatever mode it was last given, so the two guns can recoil differently.
+- **Recoil settings go to every gun.** The software sends the same recoil mode and strength to every gun it runs. When the **Lightgun B** single-shot strength box is filled in, its value is used for both guns, not only gun B, and the main strength slider is ignored.
+- **Matching single shot to automatic:** a single-shot kick is the strength × 10, and each automatic pulse is the pulse-length slider (40–80). Strength 5 kicks as hard as a pulse length of 50.

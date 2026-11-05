@@ -2171,7 +2171,7 @@ The `Nintendo Game & Watch.cfg` on this cabinet uses `Tab`. The Xpadder profile 
 
 The system cfg had all `input_player1_*` and `input_player2_*` bindings set to `"nul"`, making controls completely non-functional. Fixed by patching both keyboard encoder and Xbox 360 controller bindings into the cfg (see *Dual keyboard + controller binding* above).
 
-No AHK keymapper profile exists for this system — `D:\Arcade\RocketLauncher\Profiles\AHK\Nintendo Game & Watch\RetroArch.ahk` and `_Default.ahk` are both absent. This is logged as a WARNING by RocketLauncher but is not an error.
+No AHK keymapper profile exists for this system: `Profiles\AHK\Nintendo Game & Watch\<game>.ahk`, `Nintendo Game & Watch\RetroArch.ahk`, `Nintendo Game & Watch.ahk` and `_Default.ahk` are all absent under `D:\Arcade\RocketLauncher`. This is logged as a WARNING by RocketLauncher but is not an error. RocketLauncher uses the first of those four that exists, in that order; see [RocketLauncher's keymapper profile order](lightgun.md#rocketlaunchers-keymapper-profile-order).
 
 ---
 
