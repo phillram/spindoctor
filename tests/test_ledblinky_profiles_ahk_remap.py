@@ -322,3 +322,141 @@ def test_collection_copy_of_a_mame_rom_uses_the_mame_wheel_profile(cabinet):
     b = lp.plan_profiles(cabinet)
     # The profile remaps only P1's Start / Coin.
     assert _lit(_groups(b, "Favorites")["SF2"], b.panel) == ["EXIT", "P1B1", "P1COIN", "P1START", "PAUSE"]
+
+
+def test_ahk_block_comments_do_not_supply_remaps_or_directives(tmp_path):
+    path = _write(tmp_path / "Wheel.ahk",
+                  "/*\nr::9\n#IfWinActive Notepad\n*/\nr::1\ns::5\n")
+    assert lp.read_ahk_remap(path).sends == {"KEYCODE_R": "KEYCODE_1", "KEYCODE_S": "KEYCODE_5"}
+
+
+@pytest.mark.parametrize("directive", ["#IfWinActive", "#IfWinNotActive", "#IfWinExist",
+                                        "#IfWinNotExist", "#If", "#IfWinActive,"])
+def test_ahk_conditional_remaps_are_not_applied_globally(tmp_path, directive):
+    path = _write(tmp_path / "Wheel.ahk",
+                  f'{directive} SomeOtherWindow\nr::9\ns::6\n{directive} ; global again\nr::1\n')
+    assert lp.read_ahk_remap(path).sends == {"KEYCODE_R": "KEYCODE_1"}
+
+
+def test_ahk_one_line_commands_are_not_key_remaps(tmp_path):
+    path = _write(tmp_path / "Wheel.ahk", "r::return\ns::Reload\nt::ListLines\nu::ExitApp\na::LButton\n")
+    assert lp.read_ahk_remap(path).sends == {"KEYCODE_A": ""}
+
+
+def test_ahk_if_timeout_is_not_a_conditional_region(tmp_path):
+    path = _write(tmp_path / "Wheel.ahk", "#IfTimeout 1000\nr::1\n")
+    assert lp.read_ahk_remap(path).sends == {"KEYCODE_R": "KEYCODE_1"}
+
+
+@pytest.mark.parametrize("change", ["disabled", "deleted", "same_as_default"])
+def test_obsolete_generated_console_ahk_group_is_removed(cabinet, change):
+    system, game = "Nintendo Entertainment System", "Duck Hunt (World)"
+    profile = _ahk(cabinet, f"{system}/{game}.ahk", "r::1\ns::5\n")
+    lp.plan_profiles(cabinet).write(dry_run=False, backup=False)
+    # A user's unrelated per-game profile must survive cleanup verbatim.
+    xml = Path(cabinet.ledblinky_dir) / "LEDBlinkyControls.xml"
+    custom = ('    <controlGroup groupName="Contra_(USA)" voice="Custom" numPlayers="1">'
+              '<player number="1"><control name="P1_BUTTON1" voice="Fire" '
+              'color="Cyan" inputCodes="KEYCODE_F" /></player></controlGroup>\n')
+    text = xml.read_text(encoding="utf-8")
+    needle = '<emulator emuname="Nintendo_Entertainment_System" emuDesc="">'
+    xml.write_text(text.replace(needle, needle + "\n" + custom), encoding="utf-8")
+    if change == "disabled":
+        _write(Path(cabinet.rocketlauncher_dir) / "Settings" / system / "RocketLauncher.ini",
+               "[Keymapper]\nKeymapper_AHK_Method=false\n")
+    elif change == "deleted":
+        profile.unlink()
+    else:
+        profile.write_text("; now identical to the system\n", encoding="utf-8")
+    b = lp.plan_profiles(cabinet)
+    assert lp.emu_key(game) not in _groups(b, system)
+    assert custom in b.doc.text
+    b.write(dry_run=False, backup=False)
+    assert lp.plan_profiles(cabinet).write(dry_run=True).written == []
+
+
+def test_console_override_uses_only_effective_emulator_and_its_game_cfg(cabinet):
+    system, game = "Nintendo Entertainment System", "Duck Hunt (World)"
+    settings = Path(cabinet.rocketlauncher_dir) / "Settings"
+    emus = Path(cabinet.emulators_dir)
+    _write(settings / system / "Games.ini", f"[{game}]\nEmulator=Alternate\nSystem=Other Console\n")
+    _write(settings / "Other Console" / "Emulators.ini",
+           "[Alternate]\nEmu_Path=..\\Emulators\\Alternate\\retroarch.exe\n")
+    _write(emus / "Alternate" / "config" / "Other Console.cfg", 'input_player1_b = "c"\n')
+    _write(emus / "Alternate" / "config" / "Core" / f"{game}.cfg", 'input_player1_b = "num1"\n')
+    # This cfg belongs to the *non-launched* emulator and must not win.
+    _write(emus / "RetroArch" / "config" / "Core" / f"{game}.cfg", 'input_player1_b = "d"\n')
+    _ahk(cabinet, f"{system}/Alternate.ahk", "r::1\n")
+    b = lp.plan_profiles(cabinet)
+    grp = _groups(b, system)[lp.emu_key(game)]
+    codes = [c.get("inputCodes") for p in grp.findall("player") if p.get("number") == "1"
+             for c in p.findall("control")]
+    assert codes == ["KEYCODE_1|KEYCODE_R"]
+    assert "P1START" in _lit(grp, b.panel)
+
+
+def test_rekey_existing_arcade_uses_games_emulator_ahk_profile(cabinet):
+    settings = Path(cabinet.rocketlauncher_dir) / "Settings"
+    _write(settings / "Sega Naomi" / "Games.ini", "[doa2]\nEmulator=MAME\n")
+    _ahk(cabinet, "Sega Naomi/Demul.ahk", "s::1\n")
+    _ahk(cabinet, "Sega Naomi/MAME.ahk", "r::1\n")
+    b = lp.plan_profiles(cabinet)
+    grp = _groups(b, "Sega Naomi")["DOA2"]
+    assert [c.get("inputCodes") for c in grp.iter("control") if c.get("name") == "START1"] == ["KEYCODE_R"]
+
+
+def test_mame_collection_uses_games_emulator_ahk_profile(cabinet):
+    settings = Path(cabinet.rocketlauncher_dir) / "Settings"
+    _write(settings / "MAME" / "Games.ini", "[sf2]\nEmulator=Demul\n")
+    _ahk(cabinet, "MAME/MAME.ahk", "s::1\n")
+    _ahk(cabinet, "MAME/Demul.ahk", "r::1\n")
+    b = lp.plan_profiles(cabinet)
+    grp = _groups(b, "Favorites")["SF2"]
+    assert "P1START" in _lit(grp, b.panel)
+    assert "P1COIN" not in _lit(grp, b.panel)
+
+
+def test_arcade_game_uses_effective_system_config_before_remapping(cabinet):
+    settings = Path(cabinet.rocketlauncher_dir) / "Settings"
+    _write(settings / "Gun Games" / "Games.ini", "[alien3]\nEmulator=MAME\nSystem=Colecovision\n")
+    _write(Path(cabinet.emulators_dir) / "MAME" / "cfg" / "coleco.cfg",
+           _mame_cfg({"START1": "KEYCODE_7"}))
+    _ahk(cabinet, "Gun Games/MAME.ahk", "r::7\n")
+    b = lp.plan_profiles(cabinet)
+    grp = _groups(b, "Gun Games")["ALIEN3"]
+    assert [c.get("inputCodes") for c in grp.iter("control") if c.get("name") == "START1"] == [
+        "KEYCODE_7|KEYCODE_R"]
+
+
+def test_console_remap_keeps_existing_game_colors_and_admin(cabinet):
+    system, game = "Nintendo Entertainment System", "Duck Hunt (World)"
+    _ahk(cabinet, f"{system}/{game}.ahk", "r::1\n")
+    b = lp.plan_profiles(cabinet)
+    b.write(dry_run=False, backup=False)
+    xml = Path(cabinet.ledblinky_dir) / "LEDBlinkyControls.xml"
+    doc = lp.ControlsXmlDoc(xml.read_text(encoding="utf-8"))
+    block = doc.groups(doc.emulators()[lp.emu_key(system)])[lp.emu_key(game)][0]
+    edited = block.replace('color="Red"', 'color="Cyan"').replace('color="Plum"', 'color="Blue"')
+    xml.write_text(doc.text.replace(block, edited), encoding="utf-8")
+    b = lp.plan_profiles(cabinet)
+    grp = _groups(b, system)[lp.emu_key(game)]
+    assert next(c for c in grp.iter("control") if c.get("voice") == "Button B").get("color") == "Cyan"
+    assert next(c for c in grp.iter("control") if c.get("name") == "UI_CANCEL").get("color") == "Blue"
+    assert b.write(dry_run=True).written == []
+
+
+@pytest.mark.parametrize("system,index_name", [("Gun Games", "MameIndex"),
+                                              ("Nintendo Entertainment System", "RetroArchIndex")])
+def test_resolver_reuses_emulator_indexes(cabinet, monkeypatch, system, index_name):
+    real_index = getattr(lp, index_name)
+    constructed = []
+
+    def make_index(*args):
+        constructed.append(args)
+        return real_index(*args)
+
+    monkeypatch.setattr(lp, index_name, make_index)
+    resolver = lp.KeymapResolver(cabinet)
+    resolver.for_game(system, "first")
+    resolver.for_game(system, "second")
+    assert len(constructed) == 1
