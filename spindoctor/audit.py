@@ -1,15 +1,17 @@
 """Audit and scan logic for SpinDoctor."""
 from __future__ import annotations
 
+import os
 import re
 import warnings
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
-from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides
+from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides, get_systems
 from .database import GameEntry, load_database
+from .rl_rom_paths import _raw_game_names, _RomLookup
 from .romutils import clean_display_name, derive_pc_title, find_best_match
 
 # Stems that indicate an installer / helper, not the game itself.
@@ -116,6 +118,8 @@ class GameAuditEntry:
     # are populated only when config.mame_executable is set and the system
     # routes through MAME.
     has_mame_input: Optional[bool] = None
+    # The ROM file the audit found (None when rom_exists is False).
+    rom_path: Optional[Path] = None
 
     @property
     def needs_attention(self) -> bool:
@@ -147,6 +151,11 @@ class SystemAuditResult:
     # silently reports "no control data" — indistinguishable from a real
     # MAME entry that genuinely lacks input mappings.
     listxml_error: Optional[str] = None
+    # RocketLauncher Rom_Path folders this wheel shares with other systems
+    # (several MAME-based wheels pointing at one MAME folder) → those systems.
+    # Their other ROMs aren't this wheel's, so they're left out of entries,
+    # total_roms and "ROMs not in DB".  See find_system_roms().
+    shared_rom_folders: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def roms_only(self) -> list[GameAuditEntry]:
@@ -170,6 +179,11 @@ class SystemAuditResult:
 
 
 def scan_roms(system_name: str, roms_dir: Path) -> dict[str, RomFileInfo]:
+    """ROM files in ``<roms_dir>/<system_name>``, by SpinDoctor's extension map.
+
+    ``audit`` goes through :func:`find_system_roms`, which looks where
+    RocketLauncher looks and falls back to this.
+    """
     system_rom_dir = roms_dir / system_name
     if not system_rom_dir.exists():
         return {}
@@ -268,6 +282,179 @@ def _scan_recursive(
     return roms
 
 
+# ─── ROMs where RocketLauncher looks for them ────────────────────────────────
+
+
+@dataclass
+class SystemRoms:
+    """What :func:`find_system_roms` found for one system."""
+    roms: dict[str, RomFileInfo]
+    # Rom_Path folders shared with other systems → those systems.  Only this
+    # system's own games are taken from them.
+    shared_folders: dict[str, list[str]] = field(default_factory=dict)
+
+
+class RomPathIndex:
+    """RocketLauncher ROM settings and folder listings for one run.
+
+    Several wheels point at the same 36,000-file MAME folder, so build one
+    index per command and pass it to every :func:`audit_system` call: each
+    settings file is then read once and each folder listed once, however
+    many wheels use it.  Does nothing when ``rocketlauncher_dir`` is unset.
+    """
+
+    def __init__(self, config: Config):
+        self.config = config
+        self.look: Optional[_RomLookup] = (
+            _RomLookup(Path(config.rocketlauncher_dir)) if config.rocketlauncher_dir else None
+        )
+        self._users: Optional[dict[str, list[str]]] = None
+
+    def users(self, folder: Path) -> list[str]:
+        """Every known system (``spindoctor systems``) whose ``Rom_Path`` includes *folder*."""
+        if self._users is None:
+            self._users = {}
+            if self.look is not None:
+                for system in get_systems(self.config):
+                    src = self.look.source(system)
+                    if src is None:
+                        continue
+                    for _el, f in src.folders:
+                        if f is not None:
+                            names = self._users.setdefault(os.path.normcase(str(f)), [])
+                            if system not in names:
+                                names.append(system)
+        return self._users.get(os.path.normcase(str(folder)), [])
+
+
+def find_system_roms(
+    system_name: str,
+    config: Config,
+    game_names: Iterable[str] = (),
+    rom_index: Optional[RomPathIndex] = None,
+) -> SystemRoms:
+    """Find *system_name*'s ROM files where RocketLauncher looks for them.
+
+    With ``rocketlauncher_dir`` configured and a ``Rom_Path`` in the system's
+    RocketLauncher settings, every ``Rom_Path`` folder is listed for
+    ``<folder>\\<name>.<ext>`` and ``<folder>\\<name>\\<name>.<ext>`` with the
+    system's ``Rom_Extension`` list (see :mod:`spindoctor.rl_rom_paths`).
+    *game_names* (the database's games) are then individually looked up
+    exactly as RocketLauncher looks for them: under the name as the XML
+    writes it (trailing spaces included), with ``Games.ini`` ``Emulator=``
+    overrides, ``System=`` overrides (that system's ``Rom_Path`` and
+    ``Rom_Match_Extension``) and ``Rom_Match_Extension``.
+
+    A ``Rom_Path`` folder that other systems use too (several MAME-based
+    wheels sharing the MAME folder) only supplies this system's own games:
+    the rest of its files belong to those wheels, and listing them as "ROMs
+    not in DB" would bury the real findings.  The system named like the
+    folder (``MAME`` for ``...\\MAME``) still gets the full listing.
+
+    Otherwise (no RocketLauncher, no settings or ``Rom_Path`` for the system,
+    no extension RocketLauncher would try, or a ``recursive_scan`` PC
+    library) this is :func:`scan_roms` on ``<roms_dir>/<system>``.  Except for
+    recursive libraries, usable per-game overrides are still looked up.
+    """
+    index = rom_index if rom_index is not None else RomPathIndex(config)
+    if index.look is not None and not get_system_overrides().get(system_name, {}).get("recursive_scan"):
+        found = _scan_rom_paths(system_name, index, game_names)
+        if found is not None:
+            return found
+    return SystemRoms(roms=scan_roms(system_name, Path(config.roms_dir)))
+
+
+def _scan_rom_paths(
+    system_name: str, index: RomPathIndex, game_names: Iterable[str],
+) -> Optional[SystemRoms]:
+    """List the default source (or legacy folder), then resolve database games
+    through their effective RocketLauncher settings."""
+    look = index.look
+    if look is None:
+        return None
+    own = look.source(system_name)
+    folders: list[Path] = []
+    for _el, folder in own.folders if own is not None else ():
+        if folder is not None and folder not in folders:
+            folders.append(folder)
+
+    found: dict[str, RomFileInfo] = {}  # lower-cased name → ROM
+    shared: dict[str, list[str]] = {}
+    use_rl = own is not None and bool(own.exts) and bool(folders)
+    if use_rl:
+        for folder in folders:
+            others = [s for s in index.users(folder) if s.lower() != system_name.lower()]
+            if others and folder.name.lower() != system_name.lower():
+                shared[str(folder)] = others
+                continue
+            for low, rom in _list_rom_folder(look, folder, own.exts).items():
+                found.setdefault(low, rom)
+    else:
+        found = {
+            name.lower(): rom for name, rom in
+            scan_roms(system_name, Path(index.config.roms_dir)).items()
+        }
+
+    # Bulk listings describe the default emulator, not necessarily the game.
+    # Resolve every database game through its effective source, even when a
+    # same-named default ROM exists.  With legacy scanning, only explicit
+    # overrides replace the fallback result.
+    names = list(game_names)
+    raw = _raw_game_names(system_name, index.config.databases_dir) if names else {}
+    overrides = look.game_overrides(system_name)
+    for name in names:
+        low = name.lower()
+        emu, other = overrides.get(low, ("", ""))
+        if not use_rl and not (emu or other):
+            continue
+        found.pop(low, None)
+        as_written = raw.get(name)
+        if as_written:
+            found.pop(as_written.lower(), None)
+        src = look.source(other or system_name, emu)
+        if src is None:
+            continue  # System= names a system with no settings
+        hit = look.find(src, [as_written or name])
+        if hit is not None:
+            found[low] = RomFileInfo(name=name, path=hit, extension=hit.suffix.lower())
+    return SystemRoms(roms={r.name: r for r in found.values()}, shared_folders=shared)
+
+
+def _list_rom_folder(look: _RomLookup, folder: Path, exts: list[str]) -> dict[str, RomFileInfo]:
+    """Every game RL could launch from *folder* with *exts*, keyed by
+    lower-cased name: ``<folder>\\<name>.<ext>`` and
+    ``<folder>\\<name>\\<name>.<ext>``.  A game with several matching files
+    gets the one whose extension comes first in ``Rom_Extension``, as in RL."""
+    listed = look.listing(folder)
+    if listed is None:
+        return {}
+    files, subdirs = listed
+    suffixes = [f".{ext}" for ext in exts]
+    best: dict[str, tuple[int, RomFileInfo]] = {}
+    for low, real in files.items():
+        for rank, suffix in enumerate(suffixes):
+            if low.endswith(suffix) and len(low) > len(suffix):
+                key = low[:-len(suffix)]
+                if key not in best or rank < best[key][0]:
+                    best[key] = (rank, RomFileInfo(
+                        name=real[:-len(suffix)], path=folder / real, extension=suffix,
+                    ))
+                break
+    for low, real in subdirs.items():
+        if low in best:
+            continue  # already found as <name>.<ext>
+        inner = look.listing(folder / real)
+        if inner is None:
+            continue
+        for rank, suffix in enumerate(suffixes):
+            if low + suffix in inner[0]:
+                best[low] = (rank, RomFileInfo(
+                    name=real, path=folder / real / inner[0][low + suffix], extension=suffix,
+                ))
+                break
+    return {key: rom for key, (_rank, rom) in best.items()}
+
+
 def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStatus:
     sys_dir = media_base / system_name
     status = MediaStatus()
@@ -309,13 +496,21 @@ def audit_system(
     check_media_flag: bool = True,
     fuzzy: bool = True,
     check_mame_controls: bool = True,
+    rom_index: Optional[RomPathIndex] = None,
 ) -> SystemAuditResult:
-    """Full audit of one system: ROMs vs database vs media, with fuzzy matching."""
+    """Full audit of one system: ROMs vs database vs media, with fuzzy matching.
+
+    ROMs are found where RocketLauncher looks for them when it's configured
+    (:func:`find_system_roms`).  Multi-system callers pass one shared
+    *rom_index* so each ROM folder is listed once per run.
+    """
     result = SystemAuditResult(system_name=system_name)
 
-    roms = scan_roms(system_name, Path(config.roms_dir))
     db = load_database(system_name, config.databases_dir)
     db_games = db.games()
+    found = find_system_roms(system_name, config, db_games, rom_index)
+    roms = found.roms
+    result.shared_rom_folders = found.shared_folders
 
     # Optional: load MAME -listxml input data when configured + system is arcade-ish.
     listxml_lookup: dict[str, bool] = {}
@@ -389,6 +584,7 @@ def audit_system(
             missing_metadata=missing_meta,
             ignored=is_ignored,
             has_mame_input=controls_state,
+            rom_path=roms[rom_key].path if rom_key is not None else None,
         )
         result.entries.append(entry)
 
