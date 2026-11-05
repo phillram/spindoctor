@@ -39,6 +39,7 @@ from typing import Optional
 
 from .config import Config
 from .database import GameEntry, load_database
+from ._utils import win_safe_stem, atomic_write_bytes
 
 
 _IMG_EXTS = (".png", ".jpg", ".jpeg")
@@ -99,12 +100,13 @@ def pillow_available() -> bool:
 
 
 def _first_existing(directory: Path, stem: str, exts: tuple[str, ...]) -> Optional[Path]:
-    if not directory.exists():
+    stem = win_safe_stem(stem)
+    if not stem or not directory.exists():
         return None
     for ext in exts:
         candidate = directory / f"{stem}{ext}"
         try:
-            if candidate.stat().st_size > 0:
+            if candidate.is_file() and candidate.stat().st_size > 0:
                 return candidate
         except OSError:
             pass
@@ -113,6 +115,9 @@ def _first_existing(directory: Path, stem: str, exts: tuple[str, ...]) -> Option
 
 def _resolve_theme(media_root: Path, stem: str) -> Optional[Path]:
     """Theme is either a folder Themes/<game>/ or Themes/<game>.zip|.swf."""
+    stem = win_safe_stem(stem)
+    if not stem:
+        return None
     folder = media_root / "Themes" / stem
     if folder.exists() and folder.is_dir():
         return folder
@@ -442,7 +447,7 @@ def render_contact_sheet_html(
         f'</div>'
         "</body></html>"
     )
-    output_path.write_text(html_doc, encoding="utf-8")
+    atomic_write_bytes(output_path, html_doc.encode("utf-8"))
     return output_path
 
 
@@ -530,7 +535,7 @@ def render_game_card_html(
         f'<div class="card">{"".join(layers)}</div>'
         "</body></html>"
     )
-    output_path.write_text(html_doc, encoding="utf-8")
+    atomic_write_bytes(output_path, html_doc.encode("utf-8"))
     return output_path
 
 

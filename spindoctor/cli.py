@@ -34,7 +34,9 @@ from .scraper import (
     extract_screenscraper_id, extract_thegamesdb_id, extract_steam_app_id,
 )
 from .database import GameEntry, HyperspinDatabase, load_database
-from ._utils import unique_path
+from ._utils import unique_path, atomic_write_bytes
+from ._text import read_editable_text, write_windows_text
+from .backup import find_sidecars as _find_sidecars, sidecar_pattern as _sidecar_pattern
 
 console = Console(soft_wrap=True)
 err_console = Console(stderr=True, soft_wrap=True)
@@ -4793,7 +4795,7 @@ def uninstall_tools(add_to_system, apply_changes):
         from .rocketlauncher import _TOOLKIT_TOOL_NAMES
         module_ini = rl_dir / "Modules" / "PCLauncher" / f"{add_to_system}.ini"
         if module_ini.exists():
-            existing = module_ini.read_text(encoding="utf-8", errors="replace")
+            existing = read_editable_text(module_ini)
             preserved_lines: list[str] = []
             in_sd_section = False
             found_sd_sections = False
@@ -4814,9 +4816,9 @@ def uninstall_tools(add_to_system, apply_changes):
                     f"[cyan]{module_ini}[/cyan]"
                 )
                 if apply_changes:
-                    content = "".join(preserved_lines).rstrip("\n")
-                    if content:
-                        module_ini.write_text(content + "\n", encoding="utf-8")
+                    content = "".join(preserved_lines)
+                    if content.strip():
+                        write_windows_text(module_ini, content)
                     else:
                         module_ini.unlink()
             else:
@@ -12161,40 +12163,6 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
 # ─── per-modify sidecar backups (.YYYYMMDD_HHMMSS.bak files) ─────────────────
 
 
-def _sidecar_pattern(path: Path):
-    """Compile the regex that matches sidecar siblings of *path*.
-
-    SpinDoctor's apply commands write ``<stem>.YYYYMMDD_HHMMSS.bak``
-    next to each mutated file via ``Path.with_suffix(...)``. For
-    ``Main Menu.xml`` that's ``Main Menu.20260519_153045.bak`` —
-    ``stem`` is ``Main Menu``, the timestamp is 8+1+6 digits. A second
-    backup in the same second gets a counter from ``unique_path``
-    (``Main Menu.20260519_153045_2.bak``).
-    """
-    import re as _re
-    return _re.compile(
-        rf"^{_re.escape(path.stem)}\.(\d{{8}}_\d{{6}})(?:_(\d+))?\.bak$"
-    )
-
-
-def _find_sidecars(path: Path) -> list[Path]:
-    """Return sidecar ``.bak`` siblings of *path*, newest first."""
-    if not path.parent.exists():
-        return []
-    pat = _sidecar_pattern(path)
-    matches = [p for p in path.parent.iterdir() if pat.match(p.name)]
-
-    # The timestamp lexicographically sorts as chronological order and the
-    # same-second counter sorts numerically, so ``reverse=True`` puts newest
-    # first without needing mtime.
-    def _order(p: Path) -> tuple[str, int]:
-        m = pat.match(p.name)
-        return (m.group(1), int(m.group(2) or 1))
-
-    matches.sort(key=_order, reverse=True)
-    return matches
-
-
 @backup_group.group("sidecar")
 def backup_sidecar_group():
     """List and restore the per-modify ``.YYYYMMDD_HHMMSS.bak`` sidecars
@@ -12223,7 +12191,7 @@ def backup_sidecar_list(file, as_json):
       spindoctor backup sidecar list "D:/HyperSpin/Databases/Main Menu/Main Menu.xml"
     """
     file = file.expanduser()
-    matches = _find_sidecars(file)
+    matches = _find_sidecars(file, _cfg())
     if as_json:
         click.echo(json.dumps([
             {
@@ -12236,7 +12204,7 @@ def backup_sidecar_list(file, as_json):
         return
     if not matches:
         console.print(
-            f"[yellow]No .bak sidecars found next to {file}.[/yellow]"
+            f"[yellow]No .bak sidecars found for {file}.[/yellow]"
         )
         return
     tbl = Table(title=f"Sidecar backups of {file.name}", box=box.SIMPLE)
@@ -12280,7 +12248,7 @@ def backup_sidecar_restore(file, source, apply_changes):
     """
     file = file.expanduser()
     source = source.expanduser()
-    if not source.name.endswith(".bak"):
+    if not source.name.lower().endswith(".bak"):
         err_console.print(
             f"[red]Refusing:[/red] --from must point to a .bak file, "
             f"got {source.name}."
@@ -12319,7 +12287,7 @@ def backup_sidecar_restore(file, source, apply_changes):
             sys.exit(1)
         console.print(f"[dim]Saved current file as {live_backup.name}[/dim]")
     try:
-        shutil.copy2(source, file)
+        atomic_write_bytes(file, source.read_bytes())
     except OSError as e:
         from ._errors import humanize_oserror
         err_console.print(

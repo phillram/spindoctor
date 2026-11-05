@@ -23,6 +23,7 @@ component names.
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -43,6 +44,39 @@ from .config import CONFIG_DIR, Config
 BACKUP_DIR_PREFIX = "spindoctor-backup-"
 MANIFEST_FILENAME = "manifest.json"
 MANIFEST_VERSION = 1
+
+
+def sidecar_pattern(path: Path):
+    """Match both historical stem backups and LEDBlinky's full-name backups."""
+    names = "|".join(re.escape(n) for n in dict.fromkeys((path.stem, path.name)))
+    return re.compile(rf"^(?:{names})\.(\d{{8}}_\d{{6}})(?:_(\d+))?\.bak$", re.I)
+
+
+def find_sidecars(path: Path, config: Optional[Config] = None) -> list[Path]:
+    """Discover file backups beside the target and in its configured backup tree."""
+    folders = [path.parent]
+    if config is not None and config.backup_dir:
+        # Mirrors the writers: HyperSpin and LEDBlinky backups are flat,
+        # RocketLauncher backups keep the file's folder below its root.
+        for attr, component, nested in (("hyperspin_dir", "HyperSpin", False),
+                                        ("rocketlauncher_dir", "RocketLauncher", True),
+                                        ("ledblinky_dir", "LEDBlinky", False)):
+            root = getattr(config, attr, "")
+            if root and is_within(path, Path(root)):
+                base = Path(config.backup_dir) / component
+                if nested:
+                    base = base / path.resolve().relative_to(Path(root).resolve()).parent
+                folders.append(base)
+    pattern = sidecar_pattern(path)
+    matches: dict[Path, tuple[str, int]] = {}
+    for folder in dict.fromkeys(folders):
+        if not folder.is_dir():
+            continue
+        for candidate in folder.iterdir():
+            match = pattern.fullmatch(candidate.name)
+            if match and candidate.is_file():
+                matches[candidate] = (match.group(1), int(match.group(2) or 1))
+    return sorted(matches, key=lambda p: (matches[p], str(p)), reverse=True)
 
 
 # ─── component definitions ────────────────────────────────────────────────────

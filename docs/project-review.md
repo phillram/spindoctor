@@ -162,14 +162,20 @@ services. They do not replace testing on a real cabinet.
 - XML preservation is structural, not byte-identical. Formatting, declarations,
   and header dates can change. The stdlib parser does not retain document-level
   comments outside the root or doctypes; lxml remains recommended.
-- Not every preview/media path or LEDBlinky/lightgun/CLI text writer was
-  converted to the shared normalization and lossless-writing helpers.
-- Centralized sidecar-backup discovery and LEDBlinky backup-name handling need
-  a separate cross-CLI/GUI consistency pass.
-- LEDBlinky raw section boundaries attach trailing comments to the preceding
-  section. Pruning can remove those comment banners, and restoring sections
-  can normalize boundary spacing. Use the file backup for byte-identical
-  reversal, rather than relying on library regeneration for that guarantee.
+- Preview media lookup uses the shared Windows-safe filename stem. LEDBlinky,
+  lightgun, PCLauncher-module and preview writes that edit existing files keep
+  their encoding, BOM, line endings, undefined ANSI bytes and unrelated lines,
+  and write atomically. Whole-file generators (for example `emit_ini`) still
+  write their own fresh layout.
+- `backup sidecar list/restore` (and the GUI picker that calls it) finds both
+  `<stem>.<stamp>.bak` and LEDBlinky's `<name>.<stamp>.bak` backups, beside
+  the file and in `backup_dir`'s HyperSpin, RocketLauncher and LEDBlinky
+  folders, ordered by stamp and numeric counter. HyperSpin and LEDBlinky
+  central folders are flat, so two different files with the same name share
+  one list there; check the path before restoring.
+- LEDBlinky raw section edits keep comment banners between sections when the
+  section before them is pruned or replaced. Spacing around newly inserted
+  sections can still change; use the file backup for byte-identical reversal.
 - Cleanup category safety flags still have duplicated declarations across the
   category reports, CLI keys, and GUI defaults, now pinned by a regression
   test. Synthetic-wheel names share one declaration.

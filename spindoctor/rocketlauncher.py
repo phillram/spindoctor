@@ -12,6 +12,10 @@ from ._compat import et_indent
 from .config import Config, get_rom_extensions, get_system_overrides
 from .mainmenu import _main_menu_path
 from ._utils import atomic_write_bytes
+from ._text import (
+    read_windows_text as _read_windows_text,
+    read_windows_text_with_encoding as _read_windows_text_with_encoding,
+)
 
 
 # System names that generate-config must never overwrite.
@@ -1824,42 +1828,6 @@ def pclauncher_settings_text(executable, parameters: str = "") -> str:
         f"ApplicationParameters={parameters}\n"
         f"StartIn={exe.parent}\n"
     )
-
-
-def _read_windows_text(path: Path) -> str:
-    """Read a Windows config file the way the Windows profile API does.
-
-    A ``FF FE`` / ``FE FF`` BOM means UTF-16; otherwise the file is ANSI
-    (cp1252) unless it decodes as UTF-8, which is what most tools write
-    today.  Without this a cp1252 ``Jeux Rétro`` path would come back as
-    ``Jeux R\\ufffdtro`` and be reported as a missing folder.  Raises
-    ``OSError`` when the file can't be read.
-    """
-    try:
-        text, encoding = _read_windows_text_with_encoding(path)
-    except UnicodeDecodeError:
-        # Diagnostics tolerate damaged UTF-16, but lossless editors still
-        # refuse it rather than writing replacement characters back to disk.
-        return path.read_bytes().decode("utf-16", errors="replace").lstrip("\ufeff")
-    if encoding == "cp1252":
-        # Read-only diagnostics must remain printable even for undefined ANSI
-        # bytes. Only read-modify-write callers need surrogateescape.
-        text = text.encode(encoding, errors="surrogateescape").decode(encoding, errors="replace")
-    return text.lstrip("\ufeff")
-
-
-def _read_windows_text_with_encoding(path: Path) -> tuple[str, str]:
-    """Read losslessly so edits preserve the original encoding, BOM and newlines."""
-    data = path.read_bytes()
-    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        encoding = "utf-16-le" if data.startswith(b"\xff\xfe") else "utf-16-be"
-        # Keep the BOM in the decoded text, preserving byte order on writes.
-        return data.decode(encoding), encoding
-    try:
-        encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8"
-        return data.decode(encoding), encoding
-    except UnicodeDecodeError:
-        return data.decode("cp1252", errors="surrogateescape"), "cp1252"
 
 
 def _read_rl_ini(path: Path) -> dict[str, dict[str, str]]:

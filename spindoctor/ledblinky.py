@@ -47,6 +47,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterable, Optional
 
 from ._compat import et_indent
+from ._text import read_editable_text as _read_editable_text, write_windows_text as _write_windows_text
 from .config import CONFIG_DIR, Config
 
 if TYPE_CHECKING:
@@ -111,7 +112,7 @@ def parse_ini_sections(path: Path, *, warnings: "list[str] | None" = None) -> di
     sections: dict[str, IniSection] = {}
     current: Optional[IniSection] = None
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = _read_editable_text(path)
     except OSError as exc:
         if warnings is not None:
             warnings.append(
@@ -481,7 +482,7 @@ def emit_ini(sections: dict[str, IniSection], path: Path, header_lines: list[str
         out.append(f"[{name}]")
         out.extend(section.lines)
         out.append("")
-    path.write_text("\n".join(out), encoding="utf-8")
+    _write_windows_text(path, "\n".join(out))
 
 
 def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
@@ -1006,7 +1007,7 @@ def _ini_has_ledblinky_hook(path: Path) -> bool:
     if not path.exists():
         return False
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = _read_editable_text(path)
     except OSError:
         return False
     for line in text.splitlines():
@@ -1025,7 +1026,7 @@ def _comment_out_hooks(text: str) -> tuple[str, int]:
     """
     out_lines: list[str] = []
     changed = 0
-    for line in text.splitlines():
+    for line in text.splitlines(keepends=True):
         stripped = line.lstrip()
         if stripped.startswith(";") or stripped.startswith("#"):
             out_lines.append(line)
@@ -1036,12 +1037,11 @@ def _comment_out_hooks(text: str) -> tuple[str, int]:
         if LEDBLINKY_HOOK_MARKER.lower() not in line.lower():
             out_lines.append(line)
             continue
-        out_lines.append(f";{line}  {LEDBLINKY_DISABLE_TAG}")
+        body = line.rstrip("\r\n")
+        ending = line[len(body):]
+        out_lines.append(f";{body}  {LEDBLINKY_DISABLE_TAG}{ending}")
         changed += 1
-    new_text = "\n".join(out_lines)
-    if text.endswith("\n") and not new_text.endswith("\n"):
-        new_text += "\n"
-    return new_text, changed
+    return "".join(out_lines), changed
 
 
 # ─── controls XML scanning / patching ─────────────────────────────────────────
@@ -1094,7 +1094,8 @@ def _ensure_controls_xml_entries(
             # collide with the subsequent ``open(dst_path, "wb")``
             # when ``src_path == dst_path``.
             with open(src_path, "rb") as fh:
-                tree = ET.parse(fh)
+                tree = ET.parse(fh, parser=ET.XMLParser(
+                    target=ET.TreeBuilder(insert_comments=True, insert_pis=True)))
             root = tree.getroot()
         except ET.ParseError as e:
             raise ValueError(f"Failed to parse {src_path}: {e}") from e
@@ -1121,9 +1122,13 @@ def _ensure_controls_xml_entries(
 
     dst_path.parent.mkdir(parents=True, exist_ok=True)
     et_indent(tree)
-    with open(dst_path, "wb") as f:
-        f.write(b'<?xml version="1.0"?>\n')
-        tree.write(f, encoding="utf-8", xml_declaration=False)
+    declaration = '<?xml version="1.0"?>'
+    if src_path.exists():
+        match = re.match(r"<\?xml[^?]*\?>", _read_editable_text(src_path))
+        if match:
+            declaration = match.group(0)
+    _write_windows_text(dst_path, declaration + "\n" + ET.tostring(root, encoding="unicode"),
+                        source=src_path)
     return True, added
 
 
@@ -1285,7 +1290,7 @@ def apply_fix(
             continue
 
         try:
-            text = src_ini.read_text(encoding="utf-8", errors="replace")
+            text = _read_editable_text(src_ini)
         except OSError as e:
             results["errors"].append(f"{menu} INI: {e}")
             results["menu_inis"].append(info)
@@ -1299,7 +1304,7 @@ def apply_fix(
                 if backup and output_base is None:
                     _backup(src_ini, _config_backup_dir(config))
                 dst_ini.parent.mkdir(parents=True, exist_ok=True)
-                dst_ini.write_text(new_text, encoding="utf-8")
+                _write_windows_text(dst_ini, new_text, source=src_ini)
                 info["wrote"] = True
             except OSError as e:
                 results["errors"].append(f"{menu} INI: {e}")
@@ -1452,7 +1457,7 @@ def patch_ledblinky_settings(
     if not settings_path.exists():
         raise ValueError(f"Settings.ini not found at {settings_path}")
 
-    text = settings_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(settings_path)
 
     # Build patch map — only include FE/SS keys if caller explicitly passed a value.
     patches: dict[str, dict[str, str]] = {
@@ -1471,7 +1476,7 @@ def patch_ledblinky_settings(
     if changes and not dry_run:
         if backup:
             result.backup_path = _backup(settings_path, _config_backup_dir(config))
-        settings_path.write_text(new_text, encoding="utf-8")
+        _write_windows_text(settings_path, new_text)
 
     return result
 
@@ -1498,7 +1503,7 @@ def read_ledblinky_settings_keys(config: Config) -> "dict[str, str]":
     result: dict[str, str] = {}
     current_section: Optional[str] = None
 
-    for line in settings_path.read_text(encoding="utf-8", errors="replace").splitlines():
+    for line in _read_editable_text(settings_path).splitlines():
         stripped = line.strip()
         if stripped.startswith("[") and stripped.endswith("]"):
             current_section = stripped[1:-1]
@@ -1570,7 +1575,7 @@ def parse_color_rgb_ini(path: Path) -> "tuple[list[str], list[ColorEntry]]":
     blanks, version sections) and is preserved verbatim on write so the file
     round-trips cleanly.
     """
-    raw = path.read_text(encoding="utf-8", errors="replace")
+    raw = _read_editable_text(path)
     header: list[str] = []
     entries: list[ColorEntry] = []
     in_colors = False
@@ -1609,10 +1614,58 @@ def write_color_rgb_ini(
     entries: "list[ColorEntry]",
     path: Path,
 ) -> None:
-    """Write ``Color-RGB.ini``, reproducing the original header verbatim.
+    """Update palette entries in order, retaining comments and other sections."""
+    if path.exists():
+        raw = _read_editable_text(path)
+        newline = "\r\n" if "\r\n" in raw else "\n"
+        out: list[str] = []
+        index = 0
+        in_colors = False
+        saw_colors = False
+        pattern = re.compile(
+            r"^([ \t]*)([^=]+?)([ \t]*=[ \t]*)(-?\d+)[ \t]*,"
+            r"[ \t]*(-?\d+)[ \t]*,[ \t]*(-?\d+)([ \t]*)$"
+        )
 
-    Uses ``\\r\\n`` line endings (standard for LedBlinky Windows files).
-    """
+        def append_remaining() -> None:
+            nonlocal index
+            if index < len(entries) and out and not out[-1].endswith(("\n", "\r")):
+                out.append(newline)
+            for entry in entries[index:]:
+                out.append(f"{entry.name}={entry.r},{entry.g},{entry.b}{newline}")
+            index = len(entries)
+
+        for line in raw.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                if in_colors:
+                    append_remaining()
+                in_colors = stripped.lower() == "[colors]"
+                saw_colors |= in_colors
+                out.append(line)
+                continue
+            match = pattern.fullmatch(line.rstrip("\r\n")) if in_colors else None
+            if match and not stripped.startswith(";"):
+                if index < len(entries):
+                    entry = entries[index]
+                    previous = ColorEntry(match[2].strip(), int(match[4]), int(match[5]), int(match[6]))
+                    if entry == previous:
+                        out.append(line)
+                    else:
+                        ending = line[len(line.rstrip("\r\n")):]
+                        out.append(f"{match[1]}{entry.name}{match[3]}"
+                                   f"{entry.r},{entry.g},{entry.b}{match[7]}{ending}")
+                    index += 1
+            else:
+                out.append(line)
+        if not saw_colors:
+            if out and not out[-1].endswith(("\n", "\r")):
+                out.append(newline)
+            out.append(f"[Colors]{newline}")
+        append_remaining()
+        _write_windows_text(path, "".join(out))
+        return
+
     lines: list[str] = list(header)
     # Drop trailing blank lines from the header — we'll add a fresh one
     while lines and not lines[-1].strip():
@@ -1625,8 +1678,7 @@ def write_color_rgb_ini(
     # Write with explicit newline="" so Python's text-mode translation does not
     # double the \r on Windows (open() newline="" has been supported since
     # Python 3.0; write_text(newline=) only exists from Python 3.10+).
-    with path.open("w", encoding="utf-8", newline="") as _fh:
-        _fh.write("\r\n".join(lines))
+    _write_windows_text(path, "\r\n".join(lines))
 
 
 def _replace_color_in_colors_ini(
@@ -1642,11 +1694,11 @@ def _replace_color_in_colors_ini(
     """
     if not path.exists():
         return "", 0
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(path)
     # ^(?!;)([^=]+=)  — non-comment line with a key=
     # \s*<OldName>\s*\r?$  — value is exactly old_name (with optional blanks)
     pattern = re.compile(
-        rf"^(?!;)([^=]+=)\s*{re.escape(old_name)}\s*\r?$",
+        rf"^(?![ \t]*;)([^=\r\n]+=)[ \t]*{re.escape(old_name)}[ \t]*(?=\r?$)",
         re.MULTILINE,
     )
     # Callable replacement: a color name may legitimately contain characters
@@ -1666,7 +1718,7 @@ def _replace_color_in_controls_xml(
     """
     if not path.exists():
         return "", 0
-    text = path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(path)
     # Callable replacement so a backslash/escape sequence in new_name is
     # written literally rather than interpreted as a regex backreference.
     new_text, count = re.subn(
@@ -1797,14 +1849,14 @@ def apply_color_rename(
             bp = _backup(colors_ini_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
-        colors_ini_path.write_text(new_colors_ini_text, encoding="utf-8")
+        _write_windows_text(colors_ini_path, new_colors_ini_text)
 
     if controls_xml_count > 0:
         if backup and controls_xml_path.exists():
             bp = _backup(controls_xml_path, _bd)
             if bp:
                 result.backup_paths.append(bp)
-        controls_xml_path.write_text(new_controls_xml_text, encoding="utf-8")
+        _write_windows_text(controls_xml_path, new_controls_xml_text)
 
     return result
 
@@ -2018,7 +2070,7 @@ def normalize_colors_ini(
     if not palette:
         raise ValueError(f"{COLOR_RGB_NAME} contains no colour entries")
 
-    text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(colors_ini_path)
     lines = text.splitlines(keepends=True)
 
     # key_changes accumulates (old_key, new_key, color_name) per converted line
@@ -2111,7 +2163,7 @@ def normalize_colors_ini(
     if keys_converted > 0 and not dry_run:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
-        colors_ini_path.write_text("".join(out_lines), encoding="utf-8")
+        _write_windows_text(colors_ini_path, "".join(out_lines))
 
     return result
 
@@ -2468,7 +2520,7 @@ def fill_default_colors(
     admin_player = n_players + 1  # e.g. P3 when n_players=2
 
     # Read existing Colors.ini sections (strip whitespace from names to be safe)
-    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_text = _read_editable_text(colors_ini_path)
     existing_sections: set[str] = {
         m.strip()
         for m in re.findall(r"^\[([^\]]+)\]", existing_text, re.MULTILINE)
@@ -2572,7 +2624,7 @@ def fill_default_colors(
             separator = "\n" if new_text.endswith("\n") else "\n\n"
             new_text = new_text + separator + "\n".join(new_entries)
 
-        colors_ini_path.write_text(new_text, encoding="utf-8")
+        _write_windows_text(colors_ini_path, new_text)
 
     return result
 
@@ -2952,7 +3004,7 @@ def read_admin_led_state(
     Pass ``emulator`` to restrict the summary to one console's groups.
     """
     xml_path = _require_controls_xml(config)
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
     if emulator:
         _pre, text, _post = _scoped_region(text, emulator)
     return _summarise_admin_led_text(text)
@@ -2966,7 +3018,7 @@ def read_admin_led_state_by_emulator(
     what colors) versus which have none — the key check when a system's admin
     buttons aren't changing."""
     xml_path = _require_controls_xml(config)
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
     out: "list[tuple[str, list[AdminLedControlState]]]" = []
     for m in re.finditer(r'<emulator emuname="([^"]+)"[^>]*>(.*?)</emulator>', text, re.S):
         out.append((m.group(1), _summarise_admin_led_text(m.group(2))))
@@ -2991,7 +3043,7 @@ def _require_controls_xml(config: Config) -> Path:
 def list_admin_led_emulators(config: Config) -> "list[str]":
     """Return every ``emuname`` declared in LEDBlinkyControls.xml, sorted."""
     xml_path = _require_controls_xml(config)
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
     return sorted(set(re.findall(r'<emulator emuname="([^"]+)"', text)))
 
 
@@ -3126,8 +3178,7 @@ def _write_xml(result: AdminLedPatchResult, xml_path: Path, text: str,
         return
     if backup:
         result.backup_path = _backup(xml_path, _config_backup_dir(config))
-    with xml_path.open("w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
+    _write_windows_text(xml_path, text)
 
 
 def set_admin_led_controls(
@@ -3194,7 +3245,7 @@ def set_admin_led_controls(
     for b in on_buttons:
         result.requested[b] = "on"
 
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
     matched_off: "set[str]" = set()
     matched_on: "set[str]" = set()
 
@@ -3304,7 +3355,7 @@ def randomize_admin_led_controls(
         )
     result.requested = {b: "random" for b in buttons}
     rng = random.Random(seed)
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
 
     # Optionally clone DEFAULT into a dedicated group per named game first, so
     # each ends up with its own (independently-randomized) control group.
@@ -3364,7 +3415,7 @@ def add_admin_led_controls(
     colors = dict(ADMIN_LED_ADD_DEFAULTS, **(colors or {}))
     _validate_admin_colors(config, list(colors.values()))
     result.requested = {f: f"{colors[f]} (add)" for f in ADMIN_LED_CONTROLS}
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
 
     def _fn(block):
         missing = [f for f, c in ADMIN_LED_CONTROLS.items() if f'name="{c}"' not in block]
@@ -3406,7 +3457,7 @@ def remove_admin_led_controls(
     xml_path = _require_controls_xml(config)
     result.controls_xml_path = xml_path
     result.requested = {f: "removed" for f in ADMIN_LED_CONTROLS}
-    text = xml_path.read_text(encoding="utf-8", errors="replace")
+    text = _read_editable_text(xml_path)
 
     def _fn(block):
         for control in ADMIN_LED_CONTROLS.values():
@@ -3505,7 +3556,7 @@ def patch_admin_button_colors(
                 f"Available: {', '.join(sorted(valid_names))}"
             )
 
-    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_text = _read_editable_text(colors_ini_path)
     new_text, updated_names = _patch_admin_buttons_in_text(
         existing_text, admin_player, list(button_colors)
     )
@@ -3515,7 +3566,7 @@ def patch_admin_button_colors(
     if not dry_run and result.sections_updated > 0:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
-        colors_ini_path.write_text(new_text, encoding="utf-8")
+        _write_windows_text(colors_ini_path, new_text)
 
     return result
 
@@ -3655,7 +3706,7 @@ def randomize_entry_colors(
     rng = _random.Random(seed)
 
     # Parse Colors.ini into (name, header, body) sections
-    existing_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    existing_text = _read_editable_text(colors_ini_path)
     sections = _split_ini_by_sections(existing_text)
 
     # Pre-compile the regex for old-format keys so we can classify skips.
@@ -3712,7 +3763,7 @@ def randomize_entry_colors(
     if not dry_run and sections_updated > 0:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
-        colors_ini_path.write_text("".join(parts), encoding="utf-8")
+        _write_windows_text(colors_ini_path, "".join(parts))
 
     return result
 
@@ -3828,7 +3879,7 @@ def sync_player_colors(
             controls_multi[rom.lower()] = multi_keys
 
     # Rewrite Colors.ini in-place, section by section.
-    colors_text = colors_ini_path.read_text(encoding="utf-8", errors="replace")
+    colors_text = _read_editable_text(colors_ini_path)
     sections = _split_ini_by_sections(colors_text)
     parts: list[str] = []
 
@@ -3928,6 +3979,6 @@ def sync_player_colors(
     if not dry_run and result.roms_updated > 0:
         if backup:
             result.backup_path = _backup(colors_ini_path, _config_backup_dir(config))
-        colors_ini_path.write_text("".join(parts), encoding="utf-8")
+        _write_windows_text(colors_ini_path, "".join(parts))
 
     return result

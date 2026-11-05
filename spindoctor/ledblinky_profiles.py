@@ -36,9 +36,9 @@ from .ledblinky import (
     CONTROLS_XML_NAME,
     _backup,
     _config_backup_dir,
-    _split_ini_by_sections,
 )
-from .ledblinky_library import Library
+from .ledblinky_library import Library, RawIni, find_community_controls, render_section
+from ._text import read_editable_text, read_windows_text, write_windows_text
 
 INPUT_MAP_NAME = "LEDBlinkyInputMap.xml"
 CONTROLS_INI_FILE = "Controls.ini"
@@ -209,7 +209,7 @@ def arcade_layout_keymap(source: str = "arcade layout (assumed)") -> Keymap:
 
 
 def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8-sig", errors="replace")
+    return read_windows_text(path).replace("\r\n", "\n").replace("\r", "\n")
 
 
 # RetroArch --------------------------------------------------------------------
@@ -1238,7 +1238,12 @@ class ProfileBuilder:
         self.panel = load_panel(self.lb_dir)
         self.resolver = KeymapResolver(config)
         self.xml_path = self.lb_dir / CONTROLS_XML_NAME
-        self.doc = ControlsXmlDoc(self.xml_path.read_text(encoding="utf-8", errors="replace"))
+        # The document's regex edits insert "\n"; keep the file's own line
+        # endings by editing LF text and restoring CRLF on write.
+        xml_text = read_editable_text(self.xml_path)
+        self._xml_crlf = "\r\n" in xml_text
+        self._xml_original = xml_text.replace("\r\n", "\n")
+        self.doc = ControlsXmlDoc(self._xml_original)
         # In any case: LEDBlinky ships `Controls.ini`, while `ledblinky generate`
         # / `prune` name it `controls.ini`; one file on Windows, two on Linux.
         self.controls_path = _ci_file(self.lb_dir, CONTROLS_INI_FILE) or self.lb_dir / CONTROLS_INI_FILE
@@ -1246,11 +1251,11 @@ class ProfileBuilder:
         self.controls = read_ini_sections(self.controls_path)
         self.colors = read_ini_sections(self.colors_path)
         self.library = Library()
-        community = sorted(self.lb_dir.glob(COMMUNITY_CONTROLS_GLOB))
-        if not community and self.library.community_path.is_file():
+        community = find_community_controls(self.lb_dir, config)
+        if community is None and self.library.community_path.is_file():
             # Moved out of ledblinky_dir: the library keeps a copy.
-            community = [self.library.community_path]
-        self.community = read_ini_sections(community[0]) if community else {}
+            community = self.library.community_path
+        self.community = read_ini_sections(community) if community else {}
         self._lib_controls: Optional[dict[str, dict[str, str]]] = None
         self._lib_colors: Optional[dict[str, dict[str, str]]] = None
         self.result = ProfilesResult()
@@ -1734,32 +1739,42 @@ class ProfileBuilder:
     def _rewrite_ini(self, path: Path, new: dict[str, dict[str, str]]) -> Optional[str]:
         if not new:
             return None
-        text = path.read_text(encoding="utf-8", errors="replace")
-        parts: list[str] = []
-        seen: set[str] = set()
-        for name, header, body in _split_ini_by_sections(text):
-            if name is None or name.lower() not in new:
-                if header:
-                    parts.append(header)
-                parts.extend(body)
+        raw = RawIni(read_editable_text(path))
+        replacements: dict[str, str] = {}
+        for name, text in raw.sections:
+            low = name.lower()
+            if low not in new or low in replacements:
                 continue
-            seen.add(name.lower())
-            parts.append(header)
-            parts.extend(f"{k}={v}\n" for k, v in new[name.lower()].items())
-            parts.append("\n")
-        tail = [r for r in new if r not in seen]
-        if tail and parts and not parts[-1].endswith("\n"):
-            parts.append("\n")
-        for rom in tail:
-            parts.append(f"[{rom}]\n")
-            parts.extend(f"{k}={v}\n" for k, v in new[rom].items())
-            parts.append("\n")
-        return "".join(parts)
+            values = dict(new[low])
+            lines = text.splitlines(keepends=True)
+            out = [lines[0]]
+            for line in lines[1:]:
+                stripped = line.strip()
+                if "=" not in line or stripped.startswith((";", "#")):
+                    out.append(line)
+                    continue
+                key, _, old_value = line.partition("=")
+                if key.strip() in values:
+                    value = values.pop(key.strip())
+                    ending = line[len(line.rstrip("\r\n")):]
+                    out.append(line if old_value.rstrip("\r\n") == value
+                               else f"{key}={value}{ending}")
+            if values and out and not out[-1].endswith(("\n", "\r")):
+                out.append(raw.newline)
+            out.extend(f"{key}={value}{raw.newline}" for key, value in values.items())
+            replacements[low] = "".join(out)
+        additions = {
+            name: render_section(name, (f"{k}={v}" for k, v in values.items()), raw.newline)
+            for name, values in new.items() if name not in raw
+        }
+        return raw.render(add=additions, replace=replacements)
 
     def write(self, dry_run: bool, backup: bool = True) -> ProfilesResult:
         self.result.dry_run = dry_run
-        outputs = [(self.xml_path, self.doc.text if self.doc.text != self.xml_path.read_text(
-            encoding="utf-8", errors="replace") else None),
+        xml_text = None
+        if self.doc.text != self._xml_original:
+            xml_text = self.doc.text.replace("\n", "\r\n") if self._xml_crlf else self.doc.text
+        outputs = [(self.xml_path, xml_text),
             (self.controls_path, self._rewrite_ini(self.controls_path, self._controls_new)),
             (self.colors_path, self._rewrite_ini(self.colors_path, self._colors_new))]
         for path, text in outputs:
@@ -1772,7 +1787,7 @@ class ProfileBuilder:
                     b = _backup(path, _config_backup_dir(self.config))
                     if b:
                         self.result.backups.append(b)
-                path.write_text(text, encoding="utf-8")
+                write_windows_text(path, text)
             self.result.written.append(path)
         return self.result
 
