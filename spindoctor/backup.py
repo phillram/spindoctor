@@ -36,7 +36,7 @@ from .fileinfo import _dir_size
 # the same 6-line loop. Re-exported here so callers like
 # `from .backup import format_bytes` keep working unchanged.
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
-from ._utils import unique_path
+from ._utils import is_within, numbered_path_key, unique_path
 from .config import CONFIG_DIR, Config
 
 
@@ -287,6 +287,9 @@ def plan_backup(
             continue
 
         dest = backup_root / spec.subfolder
+        if is_within(backup_root, src):
+            plan.skipped.append(f"{comp}: backup destination is inside its source ({src})")
+            continue
         plan.items.append(
             BackupItem(
                 component=comp,
@@ -310,6 +313,10 @@ def apply_backup(
 ) -> Path:
     """Execute *plan*, writing manifest. Returns the backup root path."""
     backup_root = Path(plan.backup_root)
+    for item in plan.items:
+        src, dest = Path(item.src), Path(item.dest)
+        if is_within(backup_root, src) or is_within(dest, src):
+            raise ValueError(f"Backup destination is inside its source: {dest}")
     backup_root.mkdir(parents=True, exist_ok=True)
 
     completed: list[BackupItem] = []
@@ -332,7 +339,8 @@ def apply_backup(
 
             current_dest = dest
             if src.is_dir():
-                shutil.copytree(str(src), str(dest))
+                shutil.copytree(str(src), str(dest),
+                                ignore=shutil.ignore_patterns("*.lock") if item.component == "settings" else None)
             else:
                 shutil.copy2(str(src), str(dest))
             current_dest = None
@@ -423,7 +431,7 @@ def list_backups(target: Path) -> list[Path]:
             continue
         if (child / MANIFEST_FILENAME).exists():
             out.append(child)
-    return sorted(out, key=lambda p: p.name)
+    return sorted(out, key=numbered_path_key)
 
 
 def find_latest_backup(target: Path) -> Optional[Path]:
@@ -465,7 +473,9 @@ def plan_restore(
         if wanted is not None and item.component not in wanted:
             continue
         spec = COMPONENTS.get(item.component)
-        backup_path = Path(item.dest)
+        # Version 1 has always stored canonical component subfolders. Resolve
+        # against the selected backup, never an obsolete absolute location.
+        backup_path = backup_root / spec.subfolder if spec is not None else Path(item.dest)
         if not backup_path.exists():
             plan.skipped.append(
                 f"{item.component}: missing in backup ({backup_path})"
@@ -506,8 +516,15 @@ def apply_restore(
     """Execute *plan*. Returns the number of components restored.
 
     By default refuses to clobber an existing destination that is non-empty;
-    pass ``overwrite=True`` to remove and replace it.
+    pass ``overwrite=True`` to remove and replace it. Settings are merged
+    instead, preserving the running application's directory and live locks.
     """
+    for item in plan.items:
+        src, dest = Path(item.src), Path(item.dest)
+        if not src.exists():
+            raise FileNotFoundError(f"Restore source no longer exists: {src}")
+        if is_within(src, dest) or is_within(dest, src):
+            raise ValueError(f"Restore source and destination overlap: {src} and {dest}")
     restored = 0
     for item in plan.items:
         if progress_cb:
@@ -515,6 +532,15 @@ def apply_restore(
 
         src = Path(item.src)
         dest = Path(item.dest)
+
+        if item.component == "settings" and src.is_dir() and dest.is_dir() and overwrite:
+            # The running GUI holds gui.lock open. Never remove its directory,
+            # and never copy a lock from an older backup over the live lock.
+            shutil.copytree(src, dest, dirs_exist_ok=True, ignore=shutil.ignore_patterns("*.lock"))
+            restored += 1
+            if progress_cb:
+                progress_cb(item, "done")
+            continue
 
         if dest.exists():
             is_empty_dir = dest.is_dir() and not any(dest.iterdir())
@@ -535,7 +561,8 @@ def apply_restore(
 
         dest.parent.mkdir(parents=True, exist_ok=True)
         if src.is_dir():
-            shutil.copytree(str(src), str(dest))
+            shutil.copytree(str(src), str(dest),
+                            ignore=shutil.ignore_patterns("*.lock") if item.component == "settings" else None)
         else:
             shutil.copy2(str(src), str(dest))
 

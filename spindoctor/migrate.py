@@ -32,6 +32,8 @@ from typing import Iterable, Optional
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config, load_config, save_config
 from .fileinfo import _dir_size
+from ._utils import is_within, move_no_replace, numbered_path_key, unique_path
+from ._undo import finish_undo
 
 
 COMPONENT_TO_CONFIG_KEY: dict[str, str] = {
@@ -208,6 +210,9 @@ def plan_migration(
         chosen_subfolders[component] = sub
 
         component_target = target_root / sub
+        if is_within(component_target, src):
+            plan.skipped.append(f"{component}: destination is inside its source ({src})")
+            continue
 
         if component == "roms" and systems_filter:
             _plan_roms_per_system(plan, src, component_target, systems_filter)
@@ -251,6 +256,9 @@ def _plan_roms_per_system(
             plan.skipped.append(f"roms: system '{system}' not found under {roms_dir}")
             continue
         sys_dest = component_target / system
+        if is_within(sys_dest, sys_src):
+            plan.skipped.append(f"roms: destination is inside its source ({sys_src})")
+            continue
         if sys_dest.exists() and any(sys_dest.iterdir()):
             plan.skipped.append(
                 f"roms: target {sys_dest} already exists and is non-empty"
@@ -297,13 +305,13 @@ def _verify_tree(src: Path, dest: Path) -> list[str]:
         except OSError as e:
             errors.append(f"could not hash {dest}: {e}")
         return errors
-    for d_file in dest.rglob("*"):
-        if not d_file.is_file():
+    for s_file in src.rglob("*"):
+        if not s_file.is_file():
             continue
-        rel = d_file.relative_to(dest)
-        s_file = src / rel
-        if not s_file.exists():
-            errors.append(f"missing in source: {rel}")
+        rel = s_file.relative_to(src)
+        d_file = dest / rel
+        if not d_file.is_file():
+            errors.append(f"missing in destination: {rel}")
             continue
         try:
             if _sha1(s_file) != _sha1(d_file):
@@ -347,6 +355,8 @@ def apply_migration(
 
             src = Path(move.src)
             dest = Path(move.dest)
+            if is_within(dest, src):
+                raise ValueError(f"Migration destination is inside its source: {dest}")
             if dest.exists():
                 if dest.is_dir() and not any(dest.iterdir()):
                     dest.rmdir()
@@ -442,13 +452,14 @@ def apply_migration(
                 )
         raise
 
+    manifest_path = _write_manifest(plan, applied, cfg_before, keep_source)
     if update_config and not keep_source and plan.config_updates:
         cfg = load_config()
         for key, new_path in plan.config_updates.items():
             setattr(cfg, key, new_path)
         save_config(cfg)
 
-    return _write_manifest(plan, applied, cfg_before, keep_source)
+    return manifest_path
 
 
 # ─── undo ─────────────────────────────────────────────────────────────────────
@@ -472,6 +483,7 @@ def undo_migration(manifest_path: Path) -> dict:
         "errors": [],
         "config_restored": False,
     }
+    completed = set()
 
     if keep_source:
         # Just remove the copied destinations.
@@ -484,6 +496,7 @@ def undo_migration(manifest_path: Path) -> dict:
                 elif dest.exists():
                     dest.unlink()
                     summary["destinations_removed"] += 1
+                completed.add(move.dest)
             except OSError as e:
                 summary["errors"].append(f"Could not remove {dest}: {e}")
     else:
@@ -492,26 +505,23 @@ def undo_migration(manifest_path: Path) -> dict:
             dest = Path(move.dest)
             try:
                 if dest.exists():
-                    src.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.move(str(dest), str(src))
+                    move_no_replace(dest, src)
                     summary["moves_reverted"] += 1
+                    completed.add(move.dest)
                 else:
                     summary["errors"].append(f"Missing during undo: {dest}")
             except OSError as e:
                 summary["errors"].append(f"Could not undo move {dest} → {src}: {e}")
 
         # Restore config snapshot if we have one.
-        if cfg_before:
+        if cfg_before and not summary["errors"]:
             try:
                 save_config(Config.from_dict(cfg_before))
                 summary["config_restored"] = True
-            except (TypeError, ValueError) as e:
+            except (OSError, TypeError, ValueError) as e:
                 summary["errors"].append(f"Could not restore config: {e}")
 
-    try:
-        manifest_path.unlink()
-    except OSError:
-        pass
+    finish_undo(manifest_path, data, "moves", completed, summary["errors"])
 
     return summary
 
@@ -527,7 +537,7 @@ def _write_manifest(
 ) -> Path:
     MIGRATIONS_DIR.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = MIGRATIONS_DIR / f"{MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(MIGRATIONS_DIR / f"{MANIFEST_PREFIX}{stamp}.json")
     payload = {
         "timestamp": stamp,
         "target_root": plan.target_root,
@@ -543,7 +553,7 @@ def list_manifests() -> list[Path]:
     """Return migration manifests sorted oldest→newest."""
     if not MIGRATIONS_DIR.exists():
         return []
-    return sorted(MIGRATIONS_DIR.glob(f"{MANIFEST_PREFIX}*.json"))
+    return sorted(MIGRATIONS_DIR.glob(f"{MANIFEST_PREFIX}*.json"), key=numbered_path_key)
 
 
 def find_latest_manifest() -> Optional[Path]:
