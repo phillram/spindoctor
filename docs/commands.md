@@ -1478,14 +1478,17 @@ spindoctor ledblinky setup                 :: dry-run: preview generate + sync-p
 spindoctor ledblinky setup --apply         :: commit both steps
 spindoctor ledblinky setup --apply --verbose :: also show per-step detail
 spindoctor ledblinky setup --overwrite --apply :: regenerate all entries, including existing ones
-spindoctor ledblinky generate              :: dry-run preview
-spindoctor ledblinky generate --apply      :: commit controls.ini / Colors.ini (native P1_BUTTON1= format)
-spindoctor ledblinky generate --apply --verbose  :: also print file paths + format used
+spindoctor ledblinky generate              :: dry-run preview: entries missing for wheel games
+spindoctor ledblinky generate --apply      :: add them to controls.ini / Colors.ini (native P1_BUTTON1= format)
+spindoctor ledblinky generate --apply --verbose  :: also print file paths, format used and ROMs added
+spindoctor ledblinky generate --all-roms --apply :: every ROM file in the MAME folder (puts pruned entries back)
 spindoctor ledblinky profiles              :: dry-run: a per-game profile for every game, from the real keymaps
 spindoctor ledblinky profiles --apply      :: commit (backs up LEDBlinkyControls.xml, Controls.ini, Colors.ini)
 spindoctor ledblinky inspect-rom 005       :: diagnose why 005's LED colors may not be applying
-spindoctor ledblinky audit
+spindoctor ledblinky audit                 :: wheel games: covered / missing but available / no data
 spindoctor ledblinky audit --report D:\ledblinky_audit.csv
+spindoctor ledblinky prune                 :: dry-run: entries for games in no wheel
+spindoctor ledblinky prune --apply         :: remove them (saved to SpinDoctor's library first, with .bak backups)
 spindoctor ledblinky check                 :: scan for overlay hook compatibility issues (read-only)
 spindoctor ledblinky fix                   :: dry-run preview of the overlay hook patch
 spindoctor ledblinky fix --apply           :: commit in-place (writes to ledblinky_dir / hyperspin_dir)
@@ -1568,23 +1571,25 @@ This is a one-time **setup/diagnostic aid run from the CLI**, not a GUI button �
 
 ### `ledblinky setup`
 
-One-click command that runs the full MAME LED setup in sequence: **generate** (`controls.ini` + `Colors.ini` from MAME listxml) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add new MAME ROMs.
+One-click command that runs the full MAME LED setup in sequence: **generate** (the missing `controls.ini` + `Colors.ini` entries for your wheel games) followed by **sync-players** (mirror P1 colors to P2/P3/P4+ for all multi-player ROMs). This is the recommended starting point for any MAME cabinet — run it once after initial setup, and again whenever you add MAME games to a wheel.
 
 ```bat
 spindoctor ledblinky setup                 :: dry-run: preview both steps
 spindoctor ledblinky setup --apply         :: commit generate + sync-players
 spindoctor ledblinky setup --apply --verbose
 spindoctor ledblinky setup --overwrite --apply  :: replace existing entries (required after upgrading from <=2.4.21)
+spindoctor ledblinky setup --all-roms --apply   :: generate for every ROM file in the MAME folder, as before
 ```
 
 | Flag | Effect |
 |------|--------|
+| `--all-roms` | Passed through to `generate` — every ROM file in `<roms_dir>\MAME`, not just the wheel games |
 | `--overwrite` | Passed through to `generate` — replaces entries that already exist in `controls.ini` / `Colors.ini` |
 | `--apply` | Commit both steps; omit for a dry-run preview |
 | `--no-backup` | Skip the timestamped `.bak` backup written before each file is modified |
 | `--verbose` | Print per-step detail: file paths for generate, per-ROM key counts for sync-players |
 
-`generate` builds `controls.ini` and `Colors.ini` from MAME `-listxml`, preserving any community-maintained entries already present in `<ledblinky_dir>`. Data comes from a local `mame -listxml` cache — no scraper API, no quota.
+`generate` adds the `controls.ini` and `Colors.ini` entries your wheel games are missing (see [`ledblinky generate`, `audit` and `prune`](#ledblinky-generate-audit-and-prune)), preserving every entry already present in `<ledblinky_dir>`, community-maintained ones included. Data comes from SpinDoctor's LEDBlinky library and a local `mame -listxml` cache — no scraper API, no quota.
 
 **`Colors.ini` format (since 2.4.21):** `generate` writes `Colors.ini` entries in LedBlinky's native named format (`P1_BUTTON1=Red`, `P1_JOYSTICK=White`). Versions prior to 2.4.21 wrote a legacy hex format (`ledcolor1=FF0000`) that LedBlinky cannot read. If you have a `Colors.ini` from an older version, run `spindoctor ledblinky colors normalize --apply` once to convert it.
 
@@ -1593,6 +1598,36 @@ spindoctor ledblinky setup --overwrite --apply  :: replace existing entries (req
 ```bat
 spindoctor ledblinky generate --overwrite --apply
 ```
+
+### `ledblinky generate`, `audit` and `prune`
+
+LEDBlinky reads all of `controls.ini` and `Colors.ini` when it starts (`LoadMameFilesAtStartup=1` in its `Settings.ini`), and only then lights the panel, sets the ServoStik and answers the front end. So these commands keep both files to the games in your wheels:
+
+- **Which games:** every game in a wheel that uses MAME ROM names — a wheel with MAME in its name (LEDBlinky treats those as MAME), or one whose RocketLauncher default emulator is MAME, HBMAME or Zinc — plus each game's parent ROM (`cloneof`, from the wheel's database or MAME's `-listxml`) and the ROM RocketLauncher's MAME module runs it as (`MameRomName`). `ledblinky profiles` borrows a parent's entry for a clone that has none. A wheel's games are those in `Databases\<System>\<System>.xml` and in the genre databases its `Genre.xml` lists; games commented out of the XML don't count, as in HyperSpin. Wheels of consoles run through MAME's MESS drivers don't count. `--system <wheel>` limits a run to one wheel.
+- **`generate`** adds an entry only where one is missing, each file on its own, and never changes an existing entry (unless `--overwrite`). A missing entry is copied back from SpinDoctor's LEDBlinky library when it holds one, exactly as it was, else synthesised from `-listxml`. New entries go in name order; every other byte of the file stays as it was. A file with nothing missing isn't written.
+- **`audit`** sorts those games into **covered**, **from-library** or **would-synth** (missing, and `generate` can add them), and **no-input** or **missing** (no data anywhere). It also counts the live entries for games in no wheel. Read-only; `--report` writes the rows as CSV, with the wheels each game is in.
+- **`prune`** removes the entries for games in no wheel. A game in any wheel keeps its entries, hidden wheels, genre databases and console wheels included, as do the parent of any wheel game, the ROM its `MameRomName` names, and its name without an `xbox` / `2play` / `4play` suffix (the entry `profiles` borrows for those). Every removed entry is saved to the library first, and both files get a `.bak` backup (in `backup_dir` when set). Dry-run by default.
+- **`--all-roms`** (on `generate`, `setup` and `audit`) works from every ROM file in `<roms_dir>\<system>` (default `MAME`) instead, as these commands did before, plus every entry in the library. So `generate --all-roms --apply` puts every pruned entry back, including those for games with no ROM file.
+
+**The library** is `~/.spindoctor/ledblinky_library\` (`controls.ini`, `Colors.ini`): every entry `prune` removed, plus a copy of the community controls.dat file (`controls.ini.*.bak`) that `profiles` reads. LEDBlinky never reads it. `profiles` falls back to it when it looks for a donor entry, and for the community data when the `.bak` is gone from `ledblinky_dir`.
+
+```bat
+spindoctor ledblinky audit                         :: what's covered, what's missing, how many entries are unused
+spindoctor ledblinky audit --system "MAME" --report D:\ledblinky_audit.csv
+spindoctor ledblinky prune                         :: dry-run: how many entries would go, and the size before/after
+spindoctor ledblinky prune --apply --verbose       :: remove them, listing the first 200 per file
+spindoctor ledblinky generate --apply              :: after adding games to a wheel
+spindoctor ledblinky generate --all-roms --apply   :: undo a prune: every ROM file gets its entry back
+```
+
+| Flag | Command | Effect |
+|------|---------|--------|
+| `--system <wheel>` | `generate`, `audit` | Only that wheel's games (with `--all-roms`: that system's ROM folder) |
+| `--all-roms` | `generate`, `setup`, `audit` | Every ROM file in the folder, plus everything in the library, instead of the wheel games |
+| `--report <csv>` | `audit` | Write every row to a CSV file |
+| `--apply` | `generate`, `prune` | Commit; omit for a dry-run preview |
+| `--no-backup` | `prune` | Skip the `.bak` backup of both files |
+| `--verbose` | `generate`, `prune` | List the ROMs added / the entries removed |
 
 ### `ledblinky profiles`
 
@@ -1817,8 +1852,8 @@ spindoctor ledblinky fill-defaults --color White --override-uniform --no-add-key
 **Recommended workflow** for a 2-player cabinet with mixed MAME + console games:
 
 ```bat
-:: 1. Generate MAME entries — now writes native P1_BUTTON1= format that LedBlinky can read
-spindoctor ledblinky generate --system MAME --apply
+:: 1. Generate MAME entries for your wheel games — native P1_BUTTON1= format that LedBlinky can read
+spindoctor ledblinky generate --apply
 
 :: 1b. (Only needed for existing Colors.ini files generated by older SpinDoctor versions)
 ::     Convert any legacy ledcolor= hex entries to native named format.
@@ -2100,7 +2135,7 @@ For every wheel on the Main Menu (PCLauncher wheels included), a **ROM paths** c
 
 The **LEDBlinky** check goes beyond confirming the core files parse: it also flags a missing `Color-RGB.ini` (without it `ledblinky generate` degrades to a legacy color format LedBlinky can't read) and runs the Search/Genre/Favorites crash scan (a LedBlinky process hook in a menu's `Settings.ini`, or a missing `LEDBlinkyControls.xml` entry, is the documented cause of HyperSpin crashing when you open those menus — fix with `ledblinky fix --apply`). The wheel-wiring check additionally reports **reverse orphans** — systems fully set up under `Databases/` but missing from the Main Menu, so invisible in HyperSpin.
 
-A **LED coverage** check reports how much of the MAME set has LEDBlinky control/color entries, and how many games could be lit up with `ledblinky generate`. It is **cache-only** — it never triggers a fresh `mame -listxml` (which can take minutes) from `doctor`; if no cached control data exists it just points you at `ledblinky audit`.
+A **LED coverage** check reports how many games in the wheels that use MAME ROM names (and their parents) have LEDBlinky control/color entries, and how many could be lit up with `ledblinky generate --apply`, from SpinDoctor's LEDBlinky library or MAME's data. It is **cache-only** — it never triggers a fresh `mame -listxml` (which can take minutes) from `doctor`; with no cached control data it counts only what the library holds, and with neither it just points you at `ledblinky audit`. It also WARNs when `controls.ini` holds 5,000 or more entries for games in no wheel: LEDBlinky loads them all before it lights anything, so the fix is `ledblinky prune --apply` (see [`ledblinky generate`, `audit` and `prune`](#ledblinky-generate-audit-and-prune)).
 
 If you use the intro-video randomizer, an **Intro video** check surfaces the failures that otherwise have no symptom until the boot video stops changing: an empty pool (`introvideo swap` is a silent no-op), a target whose folder no longer exists, and a logon auto-run task that's registered but stale after a portable upgrade (re-run `introvideo install-autorun --apply`).
 

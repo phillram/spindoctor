@@ -38,6 +38,7 @@ from .ledblinky import (
     _config_backup_dir,
     _split_ini_by_sections,
 )
+from .ledblinky_library import Library
 
 INPUT_MAP_NAME = "LEDBlinkyInputMap.xml"
 CONTROLS_INI_FILE = "Controls.ini"
@@ -1192,7 +1193,11 @@ class DbGame:
 
 
 def load_db(config: Config, system: str) -> Optional[list[DbGame]]:
-    path = config.databases_dir / system / f"{system}.xml"
+    return load_db_file(config.databases_dir / system / f"{system}.xml")
+
+
+def load_db_file(path: Path) -> Optional[list[DbGame]]:
+    """Games in a HyperSpin database XML (``None`` if there's no such file)."""
     if not path.is_file():
         return None
     text = path.read_text(encoding="utf-8", errors="replace")
@@ -1238,8 +1243,14 @@ class ProfileBuilder:
         self.colors_path = self.lb_dir / COLORS_INI_NAME
         self.controls = read_ini_sections(self.controls_path)
         self.colors = read_ini_sections(self.colors_path)
+        self.library = Library()
         community = sorted(self.lb_dir.glob(COMMUNITY_CONTROLS_GLOB))
+        if not community and self.library.community_path.is_file():
+            # Moved out of ledblinky_dir: the library keeps a copy.
+            community = [self.library.community_path]
         self.community = read_ini_sections(community[0]) if community else {}
+        self._lib_controls: Optional[dict[str, dict[str, str]]] = None
+        self._lib_colors: Optional[dict[str, dict[str, str]]] = None
         self.result = ProfilesResult()
         # Controls.ini / Colors.ini edits: rom -> new body lines (None = unchanged)
         self._controls_new: dict[str, dict[str, str]] = {}
@@ -1324,18 +1335,36 @@ class ProfileBuilder:
         low = rom.lower()
         return self._colors_new.get(low) or self.colors.get(low) or {}
 
+    def _library_ini(self) -> tuple[dict[str, dict[str, str]], dict[str, dict[str, str]]]:
+        """SpinDoctor's LEDBlinky library (entries pruned from the live files), read once."""
+        if self._lib_controls is None or self._lib_colors is None:
+            self._lib_controls = read_ini_sections(self.library.controls_path)
+            self._lib_colors = read_ini_sections(self.library.colors_path)
+        return self._lib_controls, self._lib_colors
+
+    def donor_controls(self, rom: str) -> Optional[dict[str, str]]:
+        """A donor's Controls.ini entry: live first, then the library.
+
+        Donors may be games in no wheel, and ``ledblinky prune`` moves those
+        to the library; looking there too keeps the same donors after a prune.
+        """
+        return self.controls_for(rom) or self._library_ini()[0].get(rom.lower())
+
+    def donor_colors(self, rom: str) -> dict[str, str]:
+        return self.colors_for(rom) or self._library_ini()[1].get(rom.lower()) or {}
+
     def _donor(self, game: DbGame, by_desc: dict[str, str]) -> Optional[str]:
-        """Best Controls.ini entry for a ROM that has none of its own."""
+        """Best Controls.ini entry for a ROM that has none of its own (live, else library)."""
         for cand in (game.cloneof, _SUFFIX_RE.sub("", game.name)):
-            if cand and cand.lower() != game.name.lower() and self.controls_for(cand):
+            if cand and cand.lower() != game.name.lower() and self.donor_controls(cand):
                 return cand
         name = game.name.lower()
         for cut in range(len(name) - 1, len(name) - 3, -1):
-            if cut > 2 and self.controls_for(name[:cut]):
+            if cut > 2 and self.donor_controls(name[:cut]):
                 return name[:cut]
         if len(name) > 4:
             # Regional clone differing only in its last letter (souledga -> souledge).
-            known = set(self.controls) | set(self._controls_new)
+            known = set(self.controls) | set(self._controls_new) | set(self._library_ini()[0])
             same = sorted(k for k in known if len(k) == len(name) and k[:-1] == name[:-1])
             if same:
                 return same[0]
@@ -1394,7 +1423,7 @@ class ProfileBuilder:
         by_desc = {}
         for g in mame_db:
             base = re.sub(r"\s*[\(\[].*$", "", g.description).strip().lower()
-            if self.controls_for(g.name):
+            if self.donor_controls(g.name):
                 by_desc.setdefault(base, g.name)
         pending = [(s, g) for s in systems for g in load_db(self.config, s) or []
                    if not self.controls_for(g.name) and emu_key(g.name) not in self._mame_groups]
@@ -1406,12 +1435,14 @@ class ProfileBuilder:
             for system, game in pending:
                 if self.controls_for(game.name):
                     continue   # same ROM in two wheels, already added
-                donor = self._donor(game, by_desc)
+                # Its own entry, if `ledblinky prune` moved it to the library.
+                own = game.name if self._library_ini()[0].get(game.name.lower()) else None
+                donor = own or self._donor(game, by_desc)
                 if not donor:
                     left.append((system, game))
                     continue
-                self._controls_new[game.name.lower()] = dict(self.controls_for(donor) or {})
-                self._colors_new[game.name.lower()] = dict(self.colors_for(donor))
+                self._controls_new[game.name.lower()] = dict(self.donor_controls(donor) or {})
+                self._colors_new[game.name.lower()] = dict(self.donor_colors(donor))
                 self.result.controls_ini_added.append((game.name, donor))
                 added[system] = added.get(system, 0) + 1
             if len(left) == len(pending):
@@ -1531,7 +1562,7 @@ class ProfileBuilder:
             ctl = self.controls_for(game.name)
             if ctl is None:
                 donor = self._donor(game, {})
-                ctl = self.controls_for(donor) if donor else None
+                ctl = self.donor_controls(donor) if donor else None
             if ctl is None:
                 if emu_key(game.name) in existing_groups:
                     continue
