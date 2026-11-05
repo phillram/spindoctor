@@ -98,9 +98,10 @@ does. A folder that other wheels also use is shown as **Shared ROM folder**:
 only the wheel's own games are taken from it, so the rest of the MAME folder
 no longer shows up as ROMs missing from a smaller wheel's database.
 
-If `audit` still reports games with no ROM, RocketLauncher can't find them
-either. Run `spindoctor doctor` and see *"Cannot find Rom … in any Rom_Paths
-provided", or a wheel opens but no game launches* under [Wheels](#wheels).
+If `audit` still reports games with no ROM, run `spindoctor doctor` to check
+the launch settings (PCLauncher and `Skipchecks` can launch without a ROM
+file). See *"Cannot find Rom … in any Rom_Paths provided", or a wheel opens
+but no game launches* under [Wheels](#wheels).
 
 ## Metadata / scraping
 

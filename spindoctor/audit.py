@@ -339,7 +339,7 @@ def find_system_roms(
     RocketLauncher settings, every ``Rom_Path`` folder is listed for
     ``<folder>\\<name>.<ext>`` and ``<folder>\\<name>\\<name>.<ext>`` with the
     system's ``Rom_Extension`` list (see :mod:`spindoctor.rl_rom_paths`).
-    *game_names* (the database's games) not found that way are then looked up
+    *game_names* (the database's games) are then individually looked up
     exactly as RocketLauncher looks for them: under the name as the XML
     writes it (trailing spaces included), with ``Games.ini`` ``Emulator=``
     overrides, ``System=`` overrides (that system's ``Rom_Path`` and
@@ -353,7 +353,8 @@ def find_system_roms(
 
     Otherwise (no RocketLauncher, no settings or ``Rom_Path`` for the system,
     no extension RocketLauncher would try, or a ``recursive_scan`` PC
-    library) this is :func:`scan_roms` on ``<roms_dir>/<system>``, unchanged.
+    library) this is :func:`scan_roms` on ``<roms_dir>/<system>``.  Except for
+    recursive libraries, usable per-game overrides are still looked up.
     """
     index = rom_index if rom_index is not None else RomPathIndex(config)
     if index.look is not None and not get_system_overrides().get(system_name, {}).get("recursive_scan"):
@@ -366,53 +367,54 @@ def find_system_roms(
 def _scan_rom_paths(
     system_name: str, index: RomPathIndex, game_names: Iterable[str],
 ) -> Optional[SystemRoms]:
-    """:func:`find_system_roms` for a system with RocketLauncher settings;
-    None when it has no ``Rom_Path`` this OS can check, or RocketLauncher has
-    no extension to look for there (a PCLauncher wheel, or an emulator with
-    no ``Rom_Extension``)."""
+    """List the default source (or legacy folder), then resolve database games
+    through their effective RocketLauncher settings."""
     look = index.look
-    own = look.source(system_name) if look is not None else None
-    if own is None or not own.exts:
+    if look is None:
         return None
+    own = look.source(system_name)
     folders: list[Path] = []
-    for _el, folder in own.folders:
+    for _el, folder in own.folders if own is not None else ():
         if folder is not None and folder not in folders:
             folders.append(folder)
-    if not folders:
-        return None
 
     found: dict[str, RomFileInfo] = {}  # lower-cased name → ROM
     shared: dict[str, list[str]] = {}
-    for folder in folders:
-        others = [s for s in index.users(folder) if s.lower() != system_name.lower()]
-        if others and folder.name.lower() != system_name.lower():
-            shared[str(folder)] = others
-            continue
-        for low, rom in _list_rom_folder(look, folder, own.exts).items():
-            found.setdefault(low, rom)
+    use_rl = own is not None and bool(own.exts) and bool(folders)
+    if use_rl:
+        for folder in folders:
+            others = [s for s in index.users(folder) if s.lower() != system_name.lower()]
+            if others and folder.name.lower() != system_name.lower():
+                shared[str(folder)] = others
+                continue
+            for low, rom in _list_rom_folder(look, folder, own.exts).items():
+                found.setdefault(low, rom)
+    else:
+        found = {
+            name.lower(): rom for name, rom in
+            scan_roms(system_name, Path(index.config.roms_dir)).items()
+        }
 
-    # Database games not listed above: look where RL looks for each one, also
-    # under its name exactly as the XML writes it (load_database strips
-    # spaces RL keeps) — another emulator's extensions, or with Games.ini
-    # System= that system's Rom_Path and Rom_Match_Extension; the shared
-    # folders; any matching file under <name>\ with Rom_Match_Extension.
+    # Bulk listings describe the default emulator, not necessarily the game.
+    # Resolve every database game through its effective source, even when a
+    # same-named default ROM exists.  With legacy scanning, only explicit
+    # overrides replace the fallback result.
     names = list(game_names)
     raw = _raw_game_names(system_name, index.config.databases_dir) if names else {}
     overrides = look.game_overrides(system_name)
     for name in names:
         low = name.lower()
-        if low in found:
-            continue
-        as_written = raw.get(name)
-        listed = found.pop(as_written.lower(), None) if as_written else None
-        if listed is not None:  # listed above under its unstripped name
-            found[low] = RomFileInfo(name=name, path=listed.path, extension=listed.extension)
-            continue
         emu, other = overrides.get(low, ("", ""))
+        if not use_rl and not (emu or other):
+            continue
+        found.pop(low, None)
+        as_written = raw.get(name)
+        if as_written:
+            found.pop(as_written.lower(), None)
         src = look.source(other or system_name, emu)
         if src is None:
             continue  # System= names a system with no settings
-        hit = look.find(src, [name, as_written] if as_written else [name])
+        hit = look.find(src, [as_written or name])
         if hit is not None:
             found[low] = RomFileInfo(name=name, path=hit, extension=hit.suffix.lower())
     return SystemRoms(roms={r.name: r for r in found.values()}, shared_folders=shared)

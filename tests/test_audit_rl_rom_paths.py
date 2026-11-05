@@ -9,6 +9,7 @@ small HyperSpin + RocketLauncher tree in a temp dir.
 from __future__ import annotations
 
 import csv
+import importlib
 import os
 
 import pytest
@@ -214,6 +215,49 @@ def test_games_ini_system_override(tmp_path):
     assert _names(result.entries) == ["daytona", "initd", "outrun"]
 
 
+@pytest.mark.parametrize("override", ["Emulator=Other", "System=Model 2"])
+@pytest.mark.parametrize("override_rom_exists", [False, True])
+def test_override_takes_precedence_over_a_default_folder_match(
+    tmp_path, override, override_rom_exists,
+):
+    cfg, rl, roms = _cabinet(tmp_path, {"Driving Games": ["daytona"]})
+    default = roms / "Arcade"
+    other = roms / "Model 2"
+    _touch(default, "daytona.zip")
+    _emulators_ini(rl, "Driving Games", default, rom_ext="zip")
+    _emulators_ini(rl, "Model 2", other, rom_ext="dat")
+    _write(rl / "Settings" / "Global Emulators.ini", "[Other]\nRom_Extension=dat\n")
+    _write(rl / "Settings" / "Driving Games" / "Games.ini", f"[daytona]\n{override}\n")
+    target = default if override.startswith("Emulator=") else other
+    if override_rom_exists:
+        _touch(target, "daytona.dat")
+
+    result = _audit(cfg, "Driving Games")
+    [entry] = result.entries
+    assert entry.rom_exists == override_rom_exists
+    assert entry.rom_path == (target / "daytona.dat" if override_rom_exists else None)
+
+
+@pytest.mark.parametrize("fallback_reason", ["no extensions", "blank Rom_Path"])
+def test_fallback_still_finds_games_with_valid_overrides(tmp_path, fallback_reason):
+    cfg, rl, roms = _cabinet(tmp_path, {"Driving Games": ["daytona"]})
+    target = roms / "Arcade"
+    _touch(target, "daytona.dat")
+    if fallback_reason == "no extensions":
+        _emulators_ini(rl, "Driving Games", target, rom_ext="")
+        override = "Emulator=Other"
+        _write(rl / "Settings" / "Global Emulators.ini", "[Other]\nRom_Extension=dat\n")
+    else:
+        _emulators_ini(rl, "Driving Games", "", rom_ext="zip")
+        _emulators_ini(rl, "Model 2", target, rom_ext="dat")
+        override = "System=Model 2"
+    _write(rl / "Settings" / "Driving Games" / "Games.ini", f"[daytona]\n{override}\n")
+
+    result = _audit(cfg, "Driving Games")
+    [entry] = result.matched
+    assert entry.rom_path == target / "daytona.dat"
+
+
 def test_system_override_uses_that_systems_rom_match_extension(tmp_path):
     """With System=, RL reads the other system's RocketLauncher.ini too, so its
     Rom_Match_Extension decides, not the wheel's."""
@@ -248,6 +292,22 @@ def test_name_with_trailing_space_is_looked_up_as_written(tmp_path):
     assert result.db_only == []
     hack = next(e for e in result.entries if e.rom_name == "Super Hack - Type V2")
     assert hack.rom_path == hacks / "Super Hack - Type V2 .nes"
+
+
+@pytest.mark.parametrize("raw_rom_exists", [False, True])
+def test_raw_xml_name_wins_when_a_stripped_name_rom_also_exists(tmp_path, raw_rom_exists):
+    cfg, rl, roms = _cabinet(tmp_path, {"NES Hacks": ["Super Hack "]})
+    hacks = roms / "Hacks"
+    _touch(hacks, "Super Hack.nes")
+    if raw_rom_exists:
+        _touch(hacks, "Super Hack .nes")
+    _emulators_ini(rl, "NES Hacks", hacks, rom_ext="nes")
+
+    result = _audit(cfg, "NES Hacks")
+    [entry] = result.entries
+    assert entry.rom_exists == raw_rom_exists
+    assert entry.rom_path == (hacks / "Super Hack .nes" if raw_rom_exists else None)
+    assert result.roms_only == []
 
 
 # ─── a folder several wheels share ───────────────────────────────────────────
@@ -309,6 +369,17 @@ def test_one_index_lists_a_shared_folder_once(tmp_path, monkeypatch):
     assert listed.count(os.path.normcase(str(mame))) == 1
 
 
+def test_shared_folder_paths_with_parent_components_are_equivalent(tmp_path):
+    cfg, mame = _shared_mame_cabinet(tmp_path)
+    rl = tmp_path / "RocketLauncher"
+    _emulators_ini(rl, "Fighting Games", mame / ".." / "MAME", emulator="MAME")
+
+    result = _audit(cfg, "Fighting Games")
+    assert _names(result.matched) == ["sf2"]
+    assert result.roms_only == []
+    assert list(result.shared_rom_folders) == [str(mame)]
+
+
 def test_audit_command_reports_the_shared_folder(tmp_path):
     """Console row and CSV: the shared folder's other ROMs aren't rows."""
     cfg, _mame = _shared_mame_cabinet(tmp_path)
@@ -323,6 +394,56 @@ def test_audit_command_reports_the_shared_folder(tmp_path):
     with open(report, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     assert {r["rom_name"]: r["rom_exists"] for r in rows} == {"mk2": "False", "sf2": "True"}
+
+
+@pytest.mark.parametrize("legacy_rom", [False, True])
+@pytest.mark.parametrize("actual_rom", [False, True])
+def test_detailed_audit_shows_the_rom_that_was_found(tmp_path, monkeypatch, legacy_rom, actual_rom):
+    cfg, rl, roms = _cabinet(tmp_path, {"NES": ["Contra"]})
+    actual = roms / "NES" / "roms"
+    actual.mkdir(parents=True)
+    if actual_rom:
+        _touch(actual, "Contra.nes")
+    if legacy_rom:
+        _touch(roms / "NES", "Contra.zip")
+    _emulators_ini(rl, "NES", actual, rom_ext="nes")
+    save_config(cfg)
+    reports = []
+    cli_mod = importlib.import_module("spindoctor.cli")
+    monkeypatch.setattr(cli_mod, "_print_game_detail", reports.append)
+
+    result = CliRunner().invoke(cli, ["audit", "--system", "NES", "--no-media", "--detailed"])
+
+    assert result.exit_code == 0, result.output
+    [report] = reports
+    if actual_rom:
+        assert report.rom.path == actual / "Contra.nes"
+        assert report.rom.exists
+    else:
+        assert report.rom is None
+
+
+def test_update_db_preserves_shared_games_and_does_not_import_other_wheels(tmp_path):
+    from spindoctor.database import load_database
+
+    cfg, _mame = _shared_mame_cabinet(tmp_path)
+    save_config(cfg)
+    result = CliRunner().invoke(cli, [
+        "update-db", "--system", "Fighting Games", "--add-missing", "--remove-orphans", "--apply",
+    ])
+
+    assert result.exit_code == 0, result.output
+    assert set(load_database("Fighting Games", cfg.databases_dir).games()) == {"sf2"}
+
+
+def test_stats_uses_rocketlauncher_shared_folder_results(tmp_path):
+    from spindoctor.stats import collect_stats
+
+    cfg, _mame = _shared_mame_cabinet(tmp_path)
+    report = collect_stats(["Fighting Games", "4-Player Games"], cfg)
+    fighting, four = report.per_system
+    assert (fighting.total_roms, fighting.matched) == (1, 1)
+    assert (four.total_roms, four.matched) == (2, 2)
 
 
 # ─── unchanged without RocketLauncher settings ───────────────────────────────
