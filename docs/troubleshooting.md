@@ -635,6 +635,10 @@ Diagnostic steps, in the order that actually resolves this fastest:
 
 ## Light guns
 
+### Model 3: player 2's gun does nothing, or both guns move one crosshair
+
+Supermodel sees two guns as one mouse unless it runs with raw input and every gun line names its own mouse. Start and Coin can also stop working once raw input is on, because raw input ignores keys sent by a keymapper remap. See [Two guns: Model 3 and the Sinden software](lightgun.md#two-guns-model-3-and-the-sinden-software) for the settings, how Supermodel numbers mice, and the `Crosshairs` values. If player 2's gun aims but doesn't recoil like player 1's, check that the Sinden software runs both guns for that game (same section).
+
 ### `spindoctor lightgun detect` reports "DemulShooter not found"
 
 DemulShooter must be on disk somewhere spindoctor scans, at most four folders deep. The auto-detected roots are `<HyperSpin>/Tools`, `<RocketLauncher>/Modules`, `<RocketLauncher>/Plugins`, `<emulators_dir>`, plus `Program Files` and the Start Menu. If yours lives elsewhere, or `detect` lists several DemulShooter executables and picked the wrong one:
