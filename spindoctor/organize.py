@@ -21,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ._utils import move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
 # Map a HyperSpin/RocketLauncher system name → required ROM layout.
@@ -206,36 +206,34 @@ def apply_restructure(plan: RestructurePlan) -> Path:
     if plan.empty:
         return _write_manifest(plan, applied_moves=[], applied_creates=[])
 
-    applied_moves: list[FileMove] = []
-    applied_creates: list[FileCreate] = []
-
-    try:
-        for move in plan.moves:
-            move_no_replace(Path(move.src), Path(move.dest))
-            applied_moves.append(move)
-        for create in plan.creates:
-            path = Path(create.path)
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("x", encoding="utf-8") as stream:
-                stream.write(create.content)
-            applied_creates.append(create)
-    except BaseException:
-        if applied_moves or applied_creates:
-            _write_manifest(plan, applied_moves, applied_creates)
-        raise
-
-    return _write_manifest(plan, applied_moves, applied_creates)
+    manifest_path = _write_manifest(plan, [], [])
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for move in plan.moves:
+        entry = asdict(move)
+        begin_step(manifest_path, data, "moves", entry)
+        move_no_replace(Path(move.src), Path(move.dest))
+        complete_step(manifest_path, data, entry)
+    for create in plan.creates:
+        path = Path(create.path)
+        if path.exists() or path.is_symlink():
+            raise FileExistsError(f"Destination already exists: {path}")
+        data["creates"].append(asdict(create))
+        checkpoint(manifest_path, data)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8") as stream:
+            stream.write(create.content)
+    return manifest_path
 
 
 def undo_restructure(manifest_path: Path) -> dict:
     """Reverse the restructure described by *manifest_path*. Returns a summary dict."""
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    moves = [FileMove(**m) for m in data.get("moves", [])]
     creates = [FileCreate(**c) for c in data.get("creates", [])]
 
     summary = {"moves_reverted": 0, "creates_removed": 0, "errors": []}
     completed = set()
     completed_creates = set()
+    moves = [FileMove(**m) for m in undo_entries(data, "moves", completed, summary["errors"])]
 
     # Remove generated files first so empty group folders can be cleaned up.
     for create in creates:
@@ -304,5 +302,5 @@ def _write_manifest(
         "moves": [asdict(m) for m in applied_moves],
         "creates": [asdict(c) for c in applied_creates],
     }
-    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    checkpoint(manifest_path, payload)
     return manifest_path

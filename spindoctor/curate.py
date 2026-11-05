@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from ._utils import move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, complete_step, finish_undo, undo_entries
 from typing import Iterable, Optional
 
 from .audit import scan_roms
@@ -253,26 +253,10 @@ def apply_curation(
     roms_root = Path(config.roms_dir)
     retired_dir = roms_root / system_name / RETIRED_SUBFOLDER
 
-    def _write_partial_manifest() -> Optional[Path]:
-        if not entries:
-            return None
-        out_dir = manifest_dir or CURATION_DIR
-        out_dir.mkdir(parents=True, exist_ok=True)
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
-        path.write_text(
-            json.dumps(
-                {
-                    "timestamp": stamp,
-                    "system": system_name,
-                    "action": action,
-                    "moves": entries,
-                },
-                indent=2,
-            ),
-            encoding="utf-8",
-        )
-        return path
+    out_dir = manifest_dir or CURATION_DIR
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
+    data = {"timestamp": stamp, "system": system_name, "action": action, "moves": entries}
 
     try:
         for group in groups:
@@ -293,6 +277,11 @@ def apply_curation(
                 if dest.exists():
                     result.skipped.append((path, f"target exists: {dest}"))
                     continue
+                entry = {
+                    "src": str(path), "dest": str(dest),
+                    "title": group.title, "kept": str(group.keep),
+                }
+                begin_step(manifest_path, data, "moves", entry)
                 try:
                     retired_dir.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(path), str(dest))
@@ -300,30 +289,12 @@ def apply_curation(
                     result.skipped.append((path, f"move failed: {e}"))
                     continue
                 result.archived.append((path, dest))
-                entries.append({
-                    "src": str(path),
-                    "dest": str(dest),
-                    "title": group.title,
-                    "kept": str(group.keep),
-                })
+                complete_step(manifest_path, data, entry)
     except KeyboardInterrupt:
-        # Persist whatever we've already archived so `curate --undo`
-        # can roll them back. Without this, a Ctrl+C mid-archive
-        # leaves files stranded in _retired with no manifest record.
-        try:
-            _write_partial_manifest()
-        except OSError as exc:
-            import sys
-            print(
-                f"WARNING: curation interrupted and undo manifest could not be "
-                f"written ({exc}). Files already moved to _retired cannot be "
-                "reversed with `curate --undo`.",
-                file=sys.stderr,
-            )
+        # The current intent and every earlier move are already on disk.
         raise
 
-    manifest_path = _write_partial_manifest()
-    if manifest_path is None:
+    if not entries:
         return result, None
     return result, manifest_path
 
@@ -337,7 +308,8 @@ def undo_curation(manifest_path: Path) -> dict:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary: dict = {"reverted": 0, "errors": []}
     completed = set()
-    for entry in reversed(data.get("moves", [])):
+    entries = list(undo_entries(data, "moves", completed, summary["errors"]))
+    for entry in reversed(entries):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
         try:

@@ -28,7 +28,7 @@ from .database import load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
 from .romutils import _find_best_normalized_match, normalize
 from ._utils import move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
 MANIFEST_DIR = CONFIG_DIR / "media_imports"
@@ -358,48 +358,62 @@ def import_media(
         items.extend(report.replacement)
 
     manifest_entries: list[dict] = []
+    out_dir = manifest_dir or MANIFEST_DIR
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
+    data = {
+        "timestamp": stamp,
+        "source_dir": str(report.source_dir),
+        "action": action,
+        "output_dir": str(output_dir) if output_dir else "",
+        "imports": manifest_entries,
+    }
+    seen_targets = set()
     for sm in items:
         if sm.target_path is None:
             result.skipped.append((sm.local.path, "no target path"))
             continue
         target = sm.target_path
-        if _nonempty(target) and not overwrite:
+        if target in seen_targets:
+            result.skipped.append((sm.local.path, f"duplicate target: {target}"))
+            continue
+        if sm.local.path.resolve() == target.resolve():
+            result.skipped.append((sm.local.path, "source is target"))
+            continue
+        if target.is_dir():
+            result.skipped.append((sm.local.path, f"target is a directory: {target}"))
+            continue
+        if (_nonempty(target) or target.is_symlink()) and not overwrite:
             result.skipped.append((sm.local.path, f"exists: {target}"))
             continue
-        try:
-            _do_action(sm.local.path, target, action)
-        except (OSError, shutil.Error) as e:
-            result.skipped.append((sm.local.path, f"{action} failed: {e}"))
-            continue
-        result.imported.append((sm.local.path, target))
-        manifest_entries.append({
+        entry = {
             "src": str(sm.local.path),
             "dest": str(target),
             "system": sm.system,
             "game": sm.game_name or "",
             "media_type": sm.local.media_type or "",
             "action": action,
-            "overwrote": bool(overwrite and sm.target_exists),
-        })
-
-    if not manifest_entries:
-        return result
-
-    out_dir = manifest_dir or MANIFEST_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
-    manifest_path.write_text(
-        json.dumps({
-            "timestamp": stamp,
-            "source_dir": str(report.source_dir),
-            "action": action,
-            "output_dir": str(output_dir) if output_dir else "",
-            "imports": manifest_entries,
-        }, indent=2),
-        encoding="utf-8",
-    )
-    result.manifest_path = manifest_path
+            "overwrote": target.exists() or target.is_symlink(),
+        }
+        if entry["overwrote"]:
+            backup_dir = manifest_path.with_suffix(".files")
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            backup = backup_dir / str(len(manifest_entries))
+            # Finish the backup before recording an intent to overwrite.
+            shutil.copy2(target, backup, follow_symlinks=False)
+            entry["backup"] = str(backup)
+        begin_step(manifest_path, data, "imports", entry)
+        result.manifest_path = manifest_path
+        seen_targets.add(target)
+        try:
+            if target.is_symlink():
+                target.unlink()
+            _do_action(sm.local.path, target, action)
+        except (OSError, shutil.Error) as e:
+            result.skipped.append((sm.local.path, f"{action} failed: {e}"))
+            continue
+        result.imported.append((sm.local.path, target))
+        complete_step(manifest_path, data, entry)
     return result
 
 
@@ -412,25 +426,47 @@ def undo_import(manifest_path: Path) -> dict:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary: dict = {"reverted": 0, "errors": []}
     completed = set()
-    for entry in reversed(data.get("imports", [])):
+    entries = list(undo_entries(data, "imports", completed, summary["errors"]))
+    for entry in reversed(entries):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
         action = entry.get("action", "copy")
         try:
+            backup = Path(entry["backup"]) if entry.get("backup") else None
+            if backup is not None and not (backup.exists() or backup.is_symlink()):
+                raise FileNotFoundError(f"missing import backup: {backup}")
             if action == "move":
                 if not dest.exists():
                     summary["errors"].append(f"missing during undo: {dest}")
                     continue
                 move_no_replace(dest, src)
+                if backup is not None:
+                    # A failed backup restore must retry only that restore,
+                    # not move the imported file a second time.
+                    entry["action"] = "restore-backup"
+                    data["imports"] = [item for item in data["imports"] if item["dest"] not in completed]
+                    data["pending"] = [item for item in data.get("pending", []) if item not in completed]
+                    checkpoint(manifest_path, data)
             else:
                 # copy / link: just remove the destination
                 if dest.is_symlink() or dest.exists():
                     dest.unlink()
+            if backup is not None:
+                # Retain the backup until all undo work succeeds, so retrying
+                # a failed manifest checkpoint cannot consume the only copy.
+                shutil.copy2(backup, dest, follow_symlinks=False)
             summary["reverted"] += 1
             completed.add(entry["dest"])
         except OSError as e:
             summary["errors"].append(f"could not revert {dest}: {e}")
     finish_undo(manifest_path, data, "imports", completed, summary["errors"])
+    if not summary["errors"]:
+        backup_dir = manifest_path.with_suffix(".files")
+        if backup_dir.is_dir():
+            try:
+                shutil.rmtree(backup_dir)
+            except OSError as exc:
+                summary["errors"].append(f"Could not remove import backups {backup_dir}: {exc}")
     return summary
 
 

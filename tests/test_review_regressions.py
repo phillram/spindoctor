@@ -183,7 +183,13 @@ def test_organize_interruption_keeps_partial_undo(tmp_path, monkeypatch, excepti
         organize.apply_restructure(plan)
     manifests = list(folder.glob("_spindoctor-restructure-*.json"))
     assert len(manifests) == 1
-    assert len(json.loads(manifests[0].read_text())["moves"]) == 1
+    record = json.loads(manifests[0].read_text())
+    assert len(record["moves"]) == 2
+    assert record["pending"] == [plan.moves[1].dest]
+    monkeypatch.setattr(shutil, "move", real_move)
+    assert organize.undo_restructure(manifests[0])["errors"] == []
+    assert (folder / "A.iso").exists()
+    assert (folder / "B.iso").exists()
 
 
 def test_two_database_saves_keep_original_backup(tmp_path, monkeypatch):

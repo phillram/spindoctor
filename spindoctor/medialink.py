@@ -15,6 +15,7 @@ from __future__ import annotations
 import configparser
 import os
 import shutil
+import tempfile
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -84,6 +85,7 @@ class LinkAction:
     dest: Path
     is_dir: bool = False
     skip_reason: str = ""  # set when nothing needs doing
+    replace_existing: bool = False
 
 
 @dataclass
@@ -145,6 +147,7 @@ def plan_mirror(
     target_stem: Optional[str] = None,
     *,
     video_dir_override: Optional[Path] = None,
+    refresh: bool = False,
 ) -> LinkPlan:
     """Build the action list to mirror one game's media from src→target.
 
@@ -158,6 +161,9 @@ def plan_mirror(
     system settings INI (``[video defaults]`` → ``path=``).  This handles
     MAME subsystems ("4-Player Games", "Driving Games", etc.) that store all
     their videos under ``Media/MAME/Video/`` rather than a per-system folder.
+
+    ``refresh`` permits replacing stale targets. Only wheel builders that have
+    validated ownership should enable it; ordinary mirrors preserve conflicts.
     """
     # Media files on disk are always written with a Windows-safe stem
     # (media.py sanitizes game names before writing, and HyperSpin resolves
@@ -204,7 +210,7 @@ def plan_mirror(
             if sub == "Themes":
                 theme_found = True
             dest = dst_root / sub / f"{target_stem}{entry.suffix}"
-            plan.actions.append(_classify(entry, dest, is_dir=False))
+            plan.actions.append(_classify(entry, dest, is_dir=False, refresh=refresh))
 
         # When the source system has no per-game theme, fall back to
         # Default.zip (the console-level fallback HyperSpin uses in the
@@ -219,22 +225,24 @@ def plan_mirror(
                 default_theme = src_dir / "Default.zip"
             if default_theme.is_file():
                 dest = dst_root / sub / f"{target_stem}.zip"
-                plan.actions.append(_classify(default_theme, dest, is_dir=False))
+                plan.actions.append(_classify(default_theme, dest, is_dir=False, refresh=refresh))
 
     for sub in MEDIA_DIR_SUBDIRS:
         src_dir = src_root / sub / source_stem
         if src_dir.is_dir():
             dest = dst_root / sub / target_stem
-            plan.actions.append(_classify(src_dir, dest, is_dir=True))
+            plan.actions.append(_classify(src_dir, dest, is_dir=True, refresh=refresh))
 
     return plan
 
 
-def _classify(src: Path, dest: Path, is_dir: bool) -> LinkAction:
+def _classify(src: Path, dest: Path, is_dir: bool, refresh: bool = False) -> LinkAction:
     if dest.exists() or dest.is_symlink():
         if _same_target(src, dest):
             return LinkAction(src=src, dest=dest, is_dir=is_dir,
                               skip_reason="already linked")
+        if refresh:
+            return LinkAction(src=src, dest=dest, is_dir=is_dir, replace_existing=True)
         return LinkAction(src=src, dest=dest, is_dir=is_dir,
                           skip_reason="target exists, different content")
     return LinkAction(src=src, dest=dest, is_dir=is_dir)
@@ -250,9 +258,22 @@ def _same_target(src: Path, dest: Path) -> bool:
         # Same inode → hardlink / junction
         if (s_stat.st_dev, s_stat.st_ino) == (d_stat.st_dev, d_stat.st_ino):
             return True
-        # Same size + mtime is a cheap "probably already copied" hint
-        return s_stat.st_size == d_stat.st_size and abs(
-            s_stat.st_mtime - d_stat.st_mtime) < 1.0
+        if src.is_dir() and dest.is_dir():
+            src_names = {p.name for p in src.iterdir()}
+            return src_names == {p.name for p in dest.iterdir()} and all(
+                _same_target(src / name, dest / name) for name in src_names
+            )
+        # filecmp's global stat cache can be stale after same-size/mtime edits.
+        # Compare bytes directly rather than treating timestamps as identity.
+        if not src.is_file() or not dest.is_file() or s_stat.st_size != d_stat.st_size:
+            return False
+        with src.open("rb") as left, dest.open("rb") as right:
+            while True:
+                chunk = left.read(1024 * 1024)
+                if chunk != right.read(1024 * 1024):
+                    return False
+                if not chunk:
+                    return True
     except OSError:
         return False
 
@@ -278,7 +299,10 @@ def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO,
             continue
         action.dest.parent.mkdir(parents=True, exist_ok=True)
         try:
-            outcome = _apply_one(action.src, action.dest, action.is_dir, mode)
+            if action.replace_existing:
+                outcome = _refresh_one(action, mode)
+            else:
+                outcome = _apply_one(action.src, action.dest, action.is_dir, mode)
             summary[outcome] += 1
             if log_fn is not None:
                 verb = "copy " if outcome == "copied" else "link "
@@ -288,6 +312,24 @@ def apply_plan(plan: LinkPlan, mode: LinkMode = LinkMode.AUTO,
             if log_fn is not None:
                 log_fn(f"  ERROR {action.src} → {action.dest}: {e}")
     return summary
+
+
+def _refresh_one(action: LinkAction, mode: LinkMode) -> str:
+    """Stage replacements so a failed copy leaves the previous mirror intact."""
+    with tempfile.TemporaryDirectory(prefix=".spindoctor-mirror-", dir=action.dest.parent) as tmp:
+        staged = Path(tmp) / "new"
+        outcome = _apply_one(action.src, staged, action.is_dir, mode)
+        if action.dest.is_dir() and not action.dest.is_symlink():
+            previous = Path(tmp) / "previous"
+            os.replace(action.dest, previous)
+            try:
+                os.replace(staged, action.dest)
+            except BaseException:
+                os.replace(previous, action.dest)
+                raise
+        else:
+            os.replace(staged, action.dest)
+        return outcome
 
 
 def _apply_one(src: Path, dest: Path, is_dir: bool, mode: LinkMode) -> str:

@@ -787,6 +787,57 @@ def test_run_record_joined_output_concatenates_fragments():
     assert rec.joined_output() == "line1\nline2\n"
 
 
+def test_run_record_retains_bounded_tail_with_visible_truncation(monkeypatch):
+    monkeypatch.setattr(gui, "_RUN_OUTPUT_CHARS", 100)
+    record = gui._RunRecord("now", "command", False)
+    for _ in range(1000):
+        record.append("old output\n")
+    record.append("final status\n")
+    assert len(record.joined_output()) <= 100
+    assert record.joined_output().startswith(gui._OUTPUT_TRUNCATED)
+    assert record.joined_output().endswith("final status\n")
+    record.append("x" * 1000)
+    assert len(record.joined_output()) <= 100
+    assert record.joined_output().endswith("x" * (100 - len(gui._OUTPUT_TRUNCATED)))
+
+
+def test_run_record_bounds_fragment_count(monkeypatch):
+    monkeypatch.setattr(gui, "_RUN_OUTPUT_FRAGMENTS", 5)
+    record = gui._RunRecord("now", "command", False)
+    for _ in range(100):
+        record.append("x")
+        record.append("")
+    assert len(record.output) == 5
+    assert record.joined_output() == gui._OUTPUT_TRUNCATED + "xxxxx"
+
+
+def test_pump_bounds_newline_free_chunks_and_preserves_completion_order():
+    import io
+    import queue
+    import threading
+    from types import SimpleNamespace
+
+    app = gui._SpinDoctorGUI.__new__(gui._SpinDoctorGUI)
+    app._line_queue = queue.Queue(maxsize=2)
+    text = "x" * (gui._OUTPUT_CHUNK_CHARS * 5 + 7)
+    proc = SimpleNamespace(stdout=io.StringIO(text), wait=lambda: 3)
+    callback = lambda rc: None
+    worker = threading.Thread(target=app._pump_output, args=(proc, callback), daemon=True)
+    worker.start()
+    received = []
+    while True:
+        item = app._line_queue.get(timeout=5)
+        if isinstance(item, gui._DoneMarker):
+            assert item.rc == 3
+            assert item.callback is callback
+            break
+        assert len(item) <= gui._OUTPUT_CHUNK_CHARS
+        received.append(item)
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert "".join(received) == text + "\n[exit code 3]\n"
+
+
 # ─── _format_run_log_text / _default_run_log_filename (Save Log) ─────────────
 
 def test_format_run_log_text_includes_header_and_output():
@@ -1345,6 +1396,32 @@ def _build_gui_for_test(monkeypatch):
 
     app = gui._SpinDoctorGUI(tk, ttk, filedialog, messagebox, scrolledtext)
     return app, tk
+
+
+def test_output_widget_trims_chars_lines_and_invalidates_find_indices(monkeypatch):
+    monkeypatch.setattr(gui, "_WIDGET_OUTPUT_CHARS", 200)
+    monkeypatch.setattr(gui, "_WIDGET_OUTPUT_LINES", 10)
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app._line_queue.maxsize == gui._OUTPUT_QUEUE_ITEMS
+        app._find_matches = ["1.0"]
+        app._find_cursor = 0
+        app._append_output("x" * 1000)
+        text = app._output.get("1.0", "end-1c")
+        assert len(text) <= 200
+        assert text.startswith(gui._OUTPUT_TRUNCATED)
+        assert app._find_matches == []
+        assert app._find_cursor == -1
+        app._append_output("line\n" * 50 + "final status")
+        text = app._output.get("1.0", "end-1c")
+        assert len(text) <= 200
+        assert len(text.splitlines()) <= 10
+        assert text.endswith("final status")
+        app._clear_output()
+        app._append_output("")
+        assert app._output.get("1.0", "end-1c") == ""
+    finally:
+        app.root.destroy()
 
 
 def test_find_bar_open_navigates_and_close(monkeypatch):

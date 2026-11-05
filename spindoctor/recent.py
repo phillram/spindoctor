@@ -589,6 +589,9 @@ def _build_synthetic_wheel(
             year=source_game.year if source_game else "",
             genre=source_game.genre if source_game else "",
             rating=source_game.rating if source_game else "",
+            players=source_game.players if source_game else "",
+            extra_attrs=dict(source_game.extra_attrs) if source_game else {},
+            xml_template=source_game.xml_template if source_game else "",
             enabled="Yes",
         )
         db.upsert_game(merged)
@@ -624,6 +627,7 @@ def _build_synthetic_wheel(
                 config.media_dir, fe.system, target_system,
                 fe.rom_name, target_name,
                 video_dir_override=video_override,
+                refresh=True,
             )
             result = apply_plan(plan, mode=media_mode,
                                log_fn=print if verbose else None)

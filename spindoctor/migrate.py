@@ -33,7 +33,7 @@ from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
 from .config import CONFIG_DIR, Config, load_config, save_config
 from .fileinfo import _dir_size
 from ._utils import is_within, move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
 COMPONENT_TO_CONFIG_KEY: dict[str, str] = {
@@ -345,6 +345,8 @@ def apply_migration(
     # Snapshot config so undo can restore exact prior values.
     cfg_before = load_config().to_dict()
 
+    manifest_path = _write_manifest(plan, [], cfg_before, keep_source)
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
     applied: list[MigrateMove] = []
     current_dest: Optional[Path] = None
     current_src: Optional[Path] = None
@@ -366,6 +368,8 @@ def apply_migration(
 
             current_dest = dest
             current_src = src
+            entry = asdict(move)
+            begin_step(manifest_path, data, "moves", entry)
             if keep_source:
                 if src.is_dir():
                     shutil.copytree(str(src), str(dest))
@@ -384,6 +388,7 @@ def apply_migration(
             current_src = None
 
             applied.append(move)
+            complete_step(manifest_path, data, entry)
             if progress_cb:
                 progress_cb(move, "done")
     except BaseException:
@@ -440,19 +445,10 @@ def apply_migration(
                     "run: spindoctor config show  to verify.",
                     file=sys.stderr,
                 )
-            try:
-                _write_manifest(plan, applied, cfg_before, keep_source)
-            except OSError as exc:
-                import sys
-                print(
-                    f"WARNING: migration interrupted and undo manifest could not be "
-                    f"written ({exc}). The {len(applied)} completed move(s) cannot be "
-                    "reversed with `migrate --undo`.",
-                    file=sys.stderr,
-                )
+            # The in-flight move and completed moves were recorded before
+            # mutation. Do not replace that journal with only completed work.
         raise
 
-    manifest_path = _write_manifest(plan, applied, cfg_before, keep_source)
     if update_config and not keep_source and plan.config_updates:
         cfg = load_config()
         for key, new_path in plan.config_updates.items():
@@ -473,7 +469,6 @@ def undo_migration(manifest_path: Path) -> dict:
     destination tree (the source was never touched).
     """
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
-    moves = [MigrateMove(**m) for m in data.get("moves", [])]
     keep_source = bool(data.get("keep_source", False))
     cfg_before = data.get("config_before") or {}
 
@@ -484,6 +479,7 @@ def undo_migration(manifest_path: Path) -> dict:
         "config_restored": False,
     }
     completed = set()
+    moves = [MigrateMove(**m) for m in undo_entries(data, "moves", completed, summary["errors"])]
 
     if keep_source:
         # Just remove the copied destinations.
@@ -545,7 +541,7 @@ def _write_manifest(
         "moves": [asdict(m) for m in applied],
         "config_before": config_before,
     }
-    manifest_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    checkpoint(manifest_path, payload)
     return manifest_path
 
 
