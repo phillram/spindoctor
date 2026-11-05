@@ -631,13 +631,21 @@ Diagnostic steps, in the order that actually resolves this fastest:
    echo Exit code: %errorlevel% >> "<same folder>\swap-debug.log"
    ```
    Click **Run** again, then check whether `swap-debug.log` was created at all. **No log file at all** (not even an empty one) means the `.bat` never started — that's the `.vbs` path-derivation bug (fixed on current versions; re-run `install-autorun --apply` to regenerate the launcher files). A log file **with** a `PermissionError` inside points at the lock scenario in step 4 instead.
-4. If the `.bat` does run (confirmed via step 3) but still doesn't change the video, it's the lock: HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. Reproduce it directly: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. `swap_video` retries for up to `SWAP_RETRY_ATTEMPTS` × `SWAP_RETRY_DELAY_SECONDS` (currently 90 × 2s = 3 minutes) to ride this out — sized off intro clips observed up to ~2 minutes long. If your clips run longer than that, increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) for a bigger head start on top of the retry.
+4. If the `.bat` does run (confirmed via step 3) but still doesn't change the video, it's the lock: HyperSpin holds `intro_video_target` open for the **entire duration** it's playing the *previous* intro video — not just an instant. Reproduce it directly: run `introvideo swap --apply` while an intro clip is actively playing and it fails immediately with `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process`; run it again once the clip finishes and it succeeds instantly. `swap_video` retries every 2 seconds to ride this out, for the playing clip's length plus a minute (at least 3 minutes, at most 30). It reads the length from the MP4 / M4V / MOV header; when it can't, it uses the longest clip in the pool, or 3 minutes. Older versions retried for a fixed 3 minutes, so a longer clip that was playing made the swap fail, and the same clip then played again at the next boot. `spindoctor doctor`'s **Intro video** check shows the longest clip and how long the swap waits for it, and warns about clips too long to wait out. For a clip in another format, or one over 29 minutes, convert or remove it, or increase `--delay-minutes` on `install-autorun` (or the GUI's **Delay after login** field) for a bigger head start.
 
 ## Light guns
 
 ### Model 3: player 2's gun does nothing, or both guns move one crosshair
 
 Supermodel sees two guns as one mouse unless it runs with raw input and every gun line names its own mouse. Start and Coin can also stop working once raw input is on, because raw input ignores keys sent by a keymapper remap. See [Two guns: Model 3 and the Sinden software](lightgun.md#two-guns-model-3-and-the-sinden-software) for the settings, how Supermodel numbers mice, and the `Crosshairs` values. If player 2's gun aims but doesn't recoil like player 1's, check that the Sinden software runs both guns for that game (same section).
+
+### Start or Coin does nothing in one game, though the same button works in others
+
+The game's emulator is probably bound to the key the button sends, while a RocketLauncher keymapper remap turns that key into another one. With `r::1`, a Start bound to R never fires; bind it to 1. A game can also load a different profile from the rest of its system (a game- or emulator-named one), so its emulator may need other keys. See [RocketLauncher's keymapper profile order](lightgun.md#rocketlaunchers-keymapper-profile-order) for which profile a game loads.
+
+### A Super Scope game starts firing single shots, though turbo works
+
+Snes9x starts every game with the Super Scope's turbo off, and its turbo key toggles it. To start a game in turbo, press the key from the game's User Functions `PostLoad()`, and give the game automatic recoil. See [SNES Super Scope games](lightgun.md#snes-super-scope-games-snes9x).
 
 ### `spindoctor lightgun detect` reports "DemulShooter not found"
 
