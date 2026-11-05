@@ -476,7 +476,8 @@ def audit_system_wiring(system_name: str, config: Config,
         return None
     ini_path = found[0]
 
-    body = ini_path.read_text(encoding="utf-8", errors="replace")
+    from .rocketlauncher import _read_windows_text
+    body = _read_windows_text(ini_path)
     status = SystemLightgunStatus(system_name=system_name, ini_path=ini_path)
 
     m = DEMULSHOOTER_PRE_RE.search(body)
@@ -650,12 +651,16 @@ def apply_wire_plan(plan: WirePlan, config: Config) -> Path:
     a settings file that already exists (see :func:`plan_wire_system`).
     """
     ini_path = plan.ini_path
-    body = ini_path.read_text(encoding="utf-8", errors="replace")
+    from .rocketlauncher import _read_windows_text_with_encoding
+    from ._utils import atomic_write_bytes
+    body, encoding = _read_windows_text_with_encoding(ini_path)
+    bom = "\ufeff" if body.startswith("\ufeff") else ""
+    body = body.lstrip("\ufeff")
     body = _upsert_ini_key(body, plan.section, "Pre_Launch_App",
                            plan.pre_launch_command)
     body = _upsert_ini_key(body, plan.section, "Post_Launch_App",
                            plan.post_launch_command)
-    ini_path.write_text(body, encoding="utf-8")
+    atomic_write_bytes(ini_path, (bom + body).encode(encoding, errors="surrogateescape"))
     return ini_path
 
 
