@@ -479,12 +479,13 @@ def load_config() -> Config:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return Config.from_dict(json.load(f))
-        except (json.JSONDecodeError, TypeError, AttributeError) as exc:
+        except (ValueError, TypeError, AttributeError) as exc:
             # Preserve the corrupt file so the user can recover hand-edited
             # values; falling through to Config() would overwrite it on the
             # next save with no trace of what was there.
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            backup = CONFIG_FILE.with_suffix(f".corrupt-{stamp}.json")
+            from ._utils import unique_path
+            backup = unique_path(CONFIG_FILE.with_suffix(f".corrupt-{stamp}.json"))
             try:
                 shutil.copy2(CONFIG_FILE, backup)
                 backup_note = f" Backed up to {backup}."
@@ -499,19 +500,12 @@ def load_config() -> Config:
 
 
 def save_config(config: Config) -> None:
-    import os
+    from ._utils import atomic_write_bytes
     from ._errors import humanize_oserror
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = CONFIG_FILE.with_suffix(".tmp")
     try:
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(config.to_dict(), f, indent=2)
-        os.replace(tmp, CONFIG_FILE)
+        atomic_write_bytes(CONFIG_FILE, json.dumps(config.to_dict(), indent=2).encode("utf-8"))
     except OSError as exc:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
         raise OSError(humanize_oserror(exc, action="save config.json")) from exc
     reset_override_cache()
 

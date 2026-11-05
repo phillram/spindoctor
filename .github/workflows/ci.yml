@@ -192,10 +192,10 @@ jobs:
         # verify the file exists via bash instead.
         shell: cmd
         run: |
-          dist\spindoctor.exe --version
-          dist\spindoctor-fav.exe --help
-          dist\spindoctor-recent.exe --help
-          dist\spindoctor-stats.exe --help
+          dist\spindoctor.exe --version || exit /b 1
+          dist\spindoctor-fav.exe --help || exit /b 1
+          dist\spindoctor-recent.exe --help || exit /b 1
+          dist\spindoctor-stats.exe --help || exit /b 1
 
       - name: Smoke-test GUI binary exists
         shell: bash
@@ -235,10 +235,10 @@ jobs:
         # spindoctor-gui.exe is --windowed; verify the file exists via bash.
         shell: cmd
         run: |
-          dist\spindoctor-win10\spindoctor.exe --version
-          dist\spindoctor-win10\spindoctor-fav.exe --help
-          dist\spindoctor-win10\spindoctor-recent.exe --help
-          dist\spindoctor-win10\spindoctor-stats.exe --help
+          dist\spindoctor-win10\spindoctor.exe --version || exit /b 1
+          dist\spindoctor-win10\spindoctor-fav.exe --help || exit /b 1
+          dist\spindoctor-win10\spindoctor-recent.exe --help || exit /b 1
+          dist\spindoctor-win10\spindoctor-stats.exe --help || exit /b 1
 
       - name: Smoke-test GUI binary exists
         shell: bash

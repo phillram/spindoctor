@@ -51,10 +51,10 @@ jobs:
         # --onefile build: each binary is a self-contained exe in dist\.
         shell: cmd
         run: |
-          dist\spindoctor.exe --version
-          dist\spindoctor-fav.exe --help
-          dist\spindoctor-recent.exe --help
-          dist\spindoctor-stats.exe --help
+          dist\spindoctor.exe --version || exit /b 1
+          dist\spindoctor-fav.exe --help || exit /b 1
+          dist\spindoctor-recent.exe --help || exit /b 1
+          dist\spindoctor-stats.exe --help || exit /b 1
 
       # spindoctor-gui.exe is a `--windowed` build (Win32 GUI subsystem),
       # so cmd doesn't wait for it and stdout is detached — `--version`
@@ -139,10 +139,10 @@ jobs:
       - name: Smoke-test every binary
         shell: cmd
         run: |
-          dist\spindoctor-win10\spindoctor.exe --version
-          dist\spindoctor-win10\spindoctor-fav.exe --help
-          dist\spindoctor-win10\spindoctor-recent.exe --help
-          dist\spindoctor-win10\spindoctor-stats.exe --help
+          dist\spindoctor-win10\spindoctor.exe --version || exit /b 1
+          dist\spindoctor-win10\spindoctor-fav.exe --help || exit /b 1
+          dist\spindoctor-win10\spindoctor-recent.exe --help || exit /b 1
+          dist\spindoctor-win10\spindoctor-stats.exe --help || exit /b 1
 
       # GUI in --onedir mode: the EXE sits in spindoctor-win10/ alongside its
       # siblings, so Path(sys.executable).parent finds them correctly.

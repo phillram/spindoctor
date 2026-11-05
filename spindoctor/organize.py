@@ -16,11 +16,12 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from ._utils import move_no_replace, numbered_path_key, unique_path
+from ._undo import finish_undo
 
 
 # Map a HyperSpin/RocketLauncher system name → required ROM layout.
@@ -123,6 +124,8 @@ def plan_restructure(system_name: str, roms_dir: Path) -> RestructurePlan:
 
 def _plan_per_game_folder(plan: RestructurePlan, sys_dir: Path) -> None:
     for entry in sorted(sys_dir.iterdir()):
+        if entry.name.startswith(("_spindoctor-", ".")):
+            continue
         if entry.is_dir():
             plan.skipped.append(str(entry))
             continue
@@ -155,7 +158,8 @@ def _plan_multi_disc_m3u(plan: RestructurePlan, sys_dir: Path) -> None:
 
     # Only restructure groups that actually have >1 disc.
     for base, files in groups.items():
-        if len(files) < 2:
+        disc_numbers = {int(_DISC_RE.match(f.stem).group("n")) for f in files}
+        if len(disc_numbers) < 2:
             continue
         target_dir = sys_dir / base
         if target_dir.exists() and any(target_dir.iterdir()):
@@ -175,7 +179,16 @@ def _plan_multi_disc_m3u(plan: RestructurePlan, sys_dir: Path) -> None:
             ))
 
         # Build the m3u that lists discs by relative filename.
-        m3u_lines = [f.name for f in files_sorted]
+        # Descriptor files load their BIN/IMG tracks themselves. List each
+        # physical disc once, preferring CUE/GDI over raw track images.
+        priority = {".cue": 0, ".gdi": 1, ".chd": 2, ".iso": 3}
+        discs = {}
+        for f in files_sorted:
+            number = int(_DISC_RE.match(f.stem).group("n"))
+            current = discs.get(number)
+            if current is None or priority.get(f.suffix.lower(), 4) < priority.get(current.suffix.lower(), 4):
+                discs[number] = f
+        m3u_lines = [discs[n].name for n in sorted(discs)]
         plan.creates.append(FileCreate(
             path=str(target_dir / f"{base}.m3u"),
             content="\n".join(m3u_lines) + "\n",
@@ -196,20 +209,20 @@ def apply_restructure(plan: RestructurePlan) -> Path:
     applied_moves: list[FileMove] = []
     applied_creates: list[FileCreate] = []
 
-    for move in plan.moves:
-        src = Path(move.src)
-        dest = Path(move.dest)
-        if dest.exists():
-            raise FileExistsError(f"Destination already exists: {dest}")
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(src), str(dest))
-        applied_moves.append(move)
-
-    for create in plan.creates:
-        path = Path(create.path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(create.content, encoding="utf-8")
-        applied_creates.append(create)
+    try:
+        for move in plan.moves:
+            move_no_replace(Path(move.src), Path(move.dest))
+            applied_moves.append(move)
+        for create in plan.creates:
+            path = Path(create.path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("x", encoding="utf-8") as stream:
+                stream.write(create.content)
+            applied_creates.append(create)
+    except BaseException:
+        if applied_moves or applied_creates:
+            _write_manifest(plan, applied_moves, applied_creates)
+        raise
 
     return _write_manifest(plan, applied_moves, applied_creates)
 
@@ -221,6 +234,8 @@ def undo_restructure(manifest_path: Path) -> dict:
     creates = [FileCreate(**c) for c in data.get("creates", [])]
 
     summary = {"moves_reverted": 0, "creates_removed": 0, "errors": []}
+    completed = set()
+    completed_creates = set()
 
     # Remove generated files first so empty group folders can be cleaned up.
     for create in creates:
@@ -229,6 +244,7 @@ def undo_restructure(manifest_path: Path) -> dict:
             if p.exists():
                 p.unlink()
                 summary["creates_removed"] += 1
+            completed_creates.add(create.path)
         except OSError as e:
             summary["errors"].append(f"Could not remove {p}: {e}")
 
@@ -239,9 +255,9 @@ def undo_restructure(manifest_path: Path) -> dict:
         dest = Path(move.dest)
         try:
             if dest.exists():
-                src.parent.mkdir(parents=True, exist_ok=True)
-                shutil.move(str(dest), str(src))
+                move_no_replace(dest, src)
                 summary["moves_reverted"] += 1
+                completed.add(move.dest)
             else:
                 summary["errors"].append(f"Missing during undo: {dest}")
         except OSError as e:
@@ -256,10 +272,9 @@ def undo_restructure(manifest_path: Path) -> dict:
         except OSError:
             pass
 
-    try:
-        manifest_path.unlink()
-    except OSError:
-        pass
+    data["creates"] = [entry for entry in data.get("creates", [])
+                       if entry["path"] not in completed_creates]
+    finish_undo(manifest_path, data, "moves", completed, summary["errors"])
 
     return summary
 
@@ -268,7 +283,7 @@ def find_latest_manifest(system_name: str, roms_dir: Path) -> Optional[Path]:
     sys_dir = roms_dir / system_name
     if not sys_dir.exists():
         return None
-    manifests = sorted(sys_dir.glob(f"{MANIFEST_PREFIX}*.json"))
+    manifests = sorted(sys_dir.glob(f"{MANIFEST_PREFIX}*.json"), key=numbered_path_key)
     return manifests[-1] if manifests else None
 
 
@@ -280,7 +295,7 @@ def _write_manifest(
     sys_dir = Path(plan.roms_dir)
     sys_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = sys_dir / f"{MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(sys_dir / f"{MANIFEST_PREFIX}{stamp}.json")
     payload = {
         "system": plan.system_name,
         "layout": plan.layout,

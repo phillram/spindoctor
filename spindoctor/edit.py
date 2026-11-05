@@ -19,9 +19,10 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import shutil
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
@@ -30,6 +31,8 @@ from .config import CONFIG_DIR, Config
 from .database import GameEntry, load_database
 from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
 from .rocketlauncher import _win_safe_stem
+from .rocketlauncher import _read_windows_text_with_encoding
+from ._utils import atomic_write_bytes, numbered_path_key, unique_path
 
 
 EDIT_DIR = CONFIG_DIR / "edits"
@@ -339,7 +342,7 @@ def apply_batch_edit(
     out_dir = manifest_dir or EDIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = out_dir / f"{EDIT_MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(out_dir / f"{EDIT_MANIFEST_PREFIX}{stamp}.json")
     manifest_path.write_text(
         json.dumps(
             {
@@ -410,13 +413,13 @@ def undo_batch_edit(
 def list_edit_manifests() -> list[Path]:
     if not EDIT_DIR.exists():
         return []
-    return sorted(EDIT_DIR.glob(f"{EDIT_MANIFEST_PREFIX}*.json"))
+    return sorted(EDIT_DIR.glob(f"{EDIT_MANIFEST_PREFIX}*.json"), key=numbered_path_key)
 
 
 def list_rename_manifests() -> list[Path]:
     if not RENAME_DIR.exists():
         return []
-    return sorted(RENAME_DIR.glob(f"{RENAME_MANIFEST_PREFIX}*.json"))
+    return sorted(RENAME_DIR.glob(f"{RENAME_MANIFEST_PREFIX}*.json"), key=numbered_path_key)
 
 
 def find_latest_edit_manifest() -> Optional[Path]:
@@ -503,6 +506,7 @@ def _scan_media_for_game(
     sys_dir = media_base / system
     if not sys_dir.exists():
         return []
+    game_name = _win_safe_stem(game_name)
     found: list[tuple[str, Path]] = []
     for media_type, segments in MEDIA_DIR_MAP.items():
         slot_dir = sys_dir / Path(*segments)
@@ -539,20 +543,21 @@ def _rewrite_pclauncher_section(ini_path: Path, old_section: str, new_section: s
     """
     if not ini_path.exists():
         return
-    text = ini_path.read_text(encoding="utf-8", errors="replace")
+    text, encoding = _read_windows_text_with_encoding(ini_path)
     old_header = f"[{old_section}]"
     new_header = f"[{new_section}]"
     lines = text.splitlines(keepends=True)
     rewritten = []
     replaced = False
     for line in lines:
-        if not replaced and line.strip() == old_header:
-            rewritten.append(new_header + ("\r\n" if line.endswith("\r\n") else "\n"))
+        if not replaced and line.strip().lstrip("\ufeff") == old_header:
+            prefix = "\ufeff" if line.startswith("\ufeff") else ""
+            rewritten.append(prefix + new_header + ("\r\n" if line.endswith("\r\n") else "\n"))
             replaced = True
         else:
             rewritten.append(line)
     if replaced:
-        ini_path.write_text("".join(rewritten), encoding="utf-8")
+        atomic_write_bytes(ini_path, "".join(rewritten).encode(encoding, errors="surrogateescape"))
 
 
 def plan_rename(
@@ -593,7 +598,10 @@ def plan_rename(
 
     # 1) ROM file (or per-game folder).
     roms_root = Path(config.roms_dir) / system
-    rom_candidates = list(roms_root.glob(f"{old_name}.*")) if roms_root.exists() else []
+    rom_candidates = [
+        p for p in roms_root.iterdir()
+        if os.path.normcase(p.stem) == os.path.normcase(old_name)
+    ] if roms_root.exists() else []
     rom_folder = roms_root / old_name if (roms_root / old_name).is_dir() else None
 
     for rom_path in rom_candidates:
@@ -628,7 +636,7 @@ def plan_rename(
         for media_type, src in _scan_media_for_game(
             config.media_dir, system, old_name
         ):
-            dest = src.parent / (new_name + ("" if src.is_dir() else src.suffix))
+            dest = src.parent / (_win_safe_stem(new_name) + ("" if src.is_dir() else src.suffix))
             changes.append(FileChange(
                 kind="media",
                 src=src,
@@ -652,6 +660,8 @@ def plan_rename(
             ini_new_section=new_name,
         ))
 
+    if clone and any(ch.src is not None and ch.src == ch.dest for ch in changes):
+        raise ValueError("clone names resolve to the same file after Windows filename sanitization")
     return RenamePlan(op=op, file_changes=changes)
 
 
@@ -681,10 +691,20 @@ def apply_rename(
     # 1) Pre-flight: refuse to overwrite anything.
     # Allow src == dest (in-place section rewrite for rl-pclauncher changes).
     for ch in plan.file_changes:
+        if clone and ch.src is not None and ch.src == ch.dest:
+            raise ValueError("refusing to clone a file onto itself")
         if ch.dest is not None and ch.dest != ch.src and ch.dest.exists():
             raise FileExistsError(
                 f"refusing to overwrite existing target: {ch.dest}"
             )
+
+    # Validate the DB before moving files, but save it last.
+    db = load_database(op.system, config.databases_dir)
+    existing = db.get(op.old_rom_name)
+    if existing is None:
+        raise RuntimeError(
+            f"database changed under us: {op.old_rom_name!r} no longer present"
+        )
 
     # 2) Files first, DB last — that way the DB edit reflects what's on disk.
     db_change: Optional[FileChange] = None
@@ -707,43 +727,16 @@ def apply_rename(
         })
 
     # 3) DB edit.
-    db = load_database(op.system, config.databases_dir)
-    existing = db.get(op.old_rom_name)
-    if existing is None:
-        raise RuntimeError(
-            f"database changed under us: {op.old_rom_name!r} no longer present"
-        )
-
-    if clone:
-        new_entry = GameEntry(
-            name=op.new_rom_name,
-            description=op.new_display_name or existing.description or op.new_rom_name,
-            cloneof=existing.cloneof,
-            crc=existing.crc,
-            manufacturer=existing.manufacturer,
-            year=existing.year,
-            genre=existing.genre,
-            rating=existing.rating,
-            players=existing.players,
-            enabled=existing.enabled or "Yes",
-        )
-        db.upsert_game(new_entry)
-    else:
-        # Rebuild the entry under the new key, then drop the old one.
-        renamed = GameEntry(
-            name=op.new_rom_name,
-            description=op.new_display_name or existing.description or op.new_rom_name,
-            cloneof=existing.cloneof,
-            crc=existing.crc,
-            manufacturer=existing.manufacturer,
-            year=existing.year,
-            genre=existing.genre,
-            rating=existing.rating,
-            players=existing.players,
-            enabled=existing.enabled or "Yes",
-        )
+    renamed = replace(
+        existing,
+        name=op.new_rom_name,
+        description=op.new_display_name or existing.description or op.new_rom_name,
+        enabled=existing.enabled or "Yes",
+        extra_attrs=dict(existing.extra_attrs),
+    )
+    if not clone:
         db.remove_game(op.old_rom_name)
-        db.upsert_game(renamed)
+    db.upsert_game(renamed)
 
     # Use explicit output_dir only — do NOT fall back to config.output_dir.
     out_root = output_dir
@@ -763,7 +756,7 @@ def apply_rename(
     out_dir = manifest_dir or RENAME_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = out_dir / f"{RENAME_MANIFEST_PREFIX}{stamp}.json"
+    manifest_path = unique_path(out_dir / f"{RENAME_MANIFEST_PREFIX}{stamp}.json")
     manifest_path.write_text(
         json.dumps(
             {
@@ -801,6 +794,9 @@ def undo_rename(
     for entry in reversed(data.get("moves", [])):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
+        if is_clone and src == dest:
+            # Older manifests may record an in-place change, not a copy.
+            continue
         if not dest.exists():
             reversed_changes.append(FileChange(
                 kind=entry.get("kind", ""),

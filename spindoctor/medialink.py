@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from ._utils import win_safe_stem
 
 
 class LinkMode(str, Enum):
@@ -326,6 +327,7 @@ def remove_target(media_root: Path, target_system: str, target_stem: str) -> int
     Returns count removed. Used when un-favoriting a game so we don't
     leave orphan media behind.
     """
+    target_stem = win_safe_stem(target_stem)
     removed = 0
     sys_root = media_root / target_system
     if not sys_root.exists():
@@ -355,3 +357,42 @@ def remove_target(media_root: Path, target_system: str, target_stem: str) -> int
             except OSError:
                 pass
     return removed
+
+
+def prune_mirrored_media(target_root: Path, keep: set[str]) -> list[str]:
+    """Remove stale game media, without entering themes or deleting system art."""
+    errors = []
+    keep = {win_safe_stem(stem).casefold() for stem in keep}
+    for sub in MEDIA_FILE_SUBDIRS:
+        # Letters and wheel sounds belong to the system, not individual games.
+        if sub == "Images/Letters":
+            continue
+        directory = target_root / sub
+        if not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if not path.is_file() or path.suffix.lower() not in _FILE_EXTS:
+                continue
+            if (path.stem.casefold() in keep
+                    or (sub == "Themes" and path.stem.casefold() == "default")
+                    or (sub == "Sound" and path.stem.casefold() == "wheel click")):
+                continue
+            try:
+                path.unlink()
+            except OSError as exc:
+                errors.append(f"cleanup {path.name}: {exc}")
+    for sub in MEDIA_DIR_SUBDIRS:
+        directory = target_root / sub
+        if not directory.is_dir():
+            continue
+        for path in directory.iterdir():
+            if not path.is_dir() or path.name.casefold() in keep or path.name.casefold() == "default":
+                continue
+            try:
+                if path.is_symlink():
+                    path.unlink()
+                else:
+                    shutil.rmtree(path)
+            except OSError as exc:
+                errors.append(f"cleanup {path.name}: {exc}")
+    return errors

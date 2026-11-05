@@ -169,14 +169,16 @@ def _partial_downloads(config: Config) -> CategoryReport:
     base = config.media_dir if config.hyperspin_dir else None
     files: list[FileEntry] = []
     if base and base.exists():
-        files = _scan_glob(base, "*.part", recursive=True)
+        files = [entry for entry in _scan_glob(base, "*.part*", recursive=True)
+                 if entry.path.name.lower().endswith((".part", ".part.json"))]
     return CategoryReport(
         key="partial-downloads",
         label="Interrupted media downloads",
         description=(
-            "Sidecar `.part` files left behind by `fetch-media` when a download "
-            "is interrupted. Inert by themselves: the next fetch resumes them "
-            "via HTTP Range. Safe to delete — deletion just forces a full "
+            "Partial `.part` files and their `.part.json` identity records left "
+            "behind by interrupted `fetch-media` downloads. Matching partials "
+            "can resume via HTTP Range; older files without identity restart. "
+            "Safe to delete — deletion just forces a full "
             "re-download next time."
         ),
         location=str(base) if base else "<hyperspin_dir not set>",
@@ -221,11 +223,12 @@ def _misplaced_manifests(config: Config) -> CategoryReport:
         files = _scan_glob(base, "_spindoctor-misplaced-*.json", recursive=True)
     return CategoryReport(
         key="misplaced-manifests",
-        label="Misplaced-ROM reports",
-        description="Reports written by `misplaced --report`. Informational only.",
+        label="Misplaced-ROM undo manifests",
+        description="Undo records for `find-misplaced --apply`.",
         location=str(base) if base else "<roms_dir not set>",
-        safe=True,
+        safe=False,
         files=files,
+        note="Removing these makes past misplaced-ROM moves un-undoable.",
     )
 
 
@@ -341,25 +344,28 @@ def _stale_atomic_writes(config: Config) -> CategoryReport:
     )
 
 
-_CATEGORY_FNS: tuple[_CategoryFn, ...] = (
-    _match_cache,
-    _media_pick_cache,
-    _pc_titles_cache,
-    _metadata_cache,
-    _listxml_cache,
-    _preview_temp,
-    _partial_downloads,
-    _stale_atomic_writes,
-    _audit_exports,
-    _misplaced_manifests,
-    _migration_manifests,
-    _restructure_manifests,
-    _db_backups,
-    _ledblinky_backups,
-)
+_CATEGORY_FNS: dict[str, _CategoryFn] = {
+    "match-cache": _match_cache,
+    "media-pick-cache": _media_pick_cache,
+    "pc-titles-cache": _pc_titles_cache,
+    "metadata-cache": _metadata_cache,
+    "listxml-cache": _listxml_cache,
+    "preview-temp": _preview_temp,
+    "partial-downloads": _partial_downloads,
+    "stale-atomic-writes": _stale_atomic_writes,
+    "audit-exports": _audit_exports,
+    "misplaced-manifests": _misplaced_manifests,
+    "migration-manifests": _migration_manifests,
+    "restructure-manifests": _restructure_manifests,
+    "db-backups": _db_backups,
+    "ledblinky-backups": _ledblinky_backups,
+}
 
 
-CATEGORY_KEYS: tuple[str, ...] = tuple(fn(Config()).key for fn in _CATEGORY_FNS)
+CATEGORY_KEYS: tuple[str, ...] = tuple(_CATEGORY_FNS)
+SAFE_CATEGORY_KEYS = tuple(k for k in CATEGORY_KEYS if k not in {
+    "misplaced-manifests", "migration-manifests", "restructure-manifests", "db-backups", "ledblinky-backups",
+})
 
 
 # ─── public API ───────────────────────────────────────────────────────────────
@@ -369,10 +375,9 @@ def scan(config: Config, keys: Optional[Iterable[str]] = None) -> dict[str, Cate
     """Discover files for *keys* (default: all categories) under *config*."""
     wanted = set(keys) if keys is not None else None
     out: dict[str, CategoryReport] = {}
-    for fn in _CATEGORY_FNS:
-        report = fn(config)
-        if wanted is None or report.key in wanted:
-            out[report.key] = report
+    for key, fn in _CATEGORY_FNS.items():
+        if wanted is None or key in wanted:
+            out[key] = fn(config)
     return out
 
 
