@@ -80,7 +80,7 @@ The full tour — including the menubar, keyboard shortcuts, find bar, dark mode
 
 ## CLI commands
 
-A curated cheatsheet with copy-paste examples for every common workflow lives at **[docs/cli-cheatsheet.md](docs/cli-cheatsheet.md)**. For the full per-command reference with every flag, see **[docs/commands.md](docs/commands.md)**.
+A curated cheatsheet with copy-paste examples for common workflows lives at **[docs/cli-cheatsheet.md](docs/cli-cheatsheet.md)**. For command behavior and options, see **[docs/commands.md](docs/commands.md)**; `spindoctor <command> --help` gives the installed release's complete flag syntax.
 
 A few greatest hits to get oriented:
 
@@ -122,7 +122,10 @@ Start at [docs/index.md](docs/index.md) for a guided table of contents, or skim 
 | [Light guns](docs/lightgun.md) | Sinden + DemulShooter wiring per system |
 | [Where SpinDoctor stores its files](docs/spindoctor-files.md) | Every file and directory it creates — config, caches, logs, undo manifests |
 | [Troubleshooting](docs/troubleshooting.md) | FAQ + common errors |
+| [Software architecture](docs/architecture.md) | Package boundaries, data flow, and safety limits |
+| [Example cabinet reference](docs/cabinet-architecture-reference.md) | HyperSpin/RocketLauncher layouts and hardware integration examples |
+| [Privacy and sharing diagnostics](docs/privacy.md) | Review logs, configuration and screenshots before sharing |
 
 ## Reporting issues
 
-Check [Troubleshooting](docs/troubleshooting.md) first — most scraper, video, and launch problems are covered there. If yours isn't, open an issue at the [project repository](https://github.com/phillram/spindoctor/issues).
+Check [Troubleshooting](docs/troubleshooting.md) first. If yours isn't covered, open an issue at the [project repository](https://github.com/phillram/spindoctor/issues). Include the version, command and a small reviewed error excerpt, not your full configuration or logs. See [Privacy and sharing diagnostics](docs/privacy.md).

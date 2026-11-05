@@ -2,24 +2,13 @@
 
 A Tkinter GUI + CLI librarian for [HyperSpin](http://www.hyperspin-fe.com/) + [RocketLauncher](https://rocketlauncher.net/) arcade cabinets. Audits ROMs, syncs HyperSpin XML, fetches metadata and media, manages cross-system Favorites / Recently Played / Most Played wheels, and migrates the whole library between drives or PCs.
 
-> **Convention.** Commands that modify files are dry-run by default — re-run with `--apply` to commit. The [Command reference](commands.md) lists which commands are read-only, and [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes) maps every destructive command to its undo manifest.
+> **Convention.** Cabinet write commands generally preview until you pass `--apply`; settings/list commands can save immediately. The [Command reference](commands.md) names exceptions. [Recovery from mistakes](workflows.md#recovery-from-mistakes) explains which operations have undo and which permanently delete data.
 
 ## Pick your install route
 
-SpinDoctor ships in three forms. Pick the one that fits, then either click your way through the GUI or stay on the command line:
+Use [Installation](installation.md) to choose between prebuilt Windows binaries, a pip install and running from a source checkout. For bundle layout and OS requirements, see [Windows binaries](windows-binaries.md).
 
-| Route | Best for | Walkthrough |
-|---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python. Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1+, standalone `.exe`s). Both include a GUI launcher. | [Windows binaries](windows-binaries.md) |
-| 🐍 **Pip install from source** | Dev machines, custom builds, anyone already on Python 3.8+. Cross-platform. | [Installation](installation.md) |
-| 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is. | [Installation → Running without `pip install`](installation.md#running-without-pip-install) |
-
-Then pick how to launch:
-
-| Mode | When to use it | How |
-|---|---|---|
-| 🖱️ **GUI launcher** (`spindoctor-gui`) | First-time setup, refreshing wheels, casual use | Double-click `spindoctor-gui.exe` (binary route) or run `spindoctor-gui` (pip route). See the [GUI walkthrough](gui.md). |
-| ⌨️ **CLI** (`spindoctor`) | Every command, scripts, scheduled tasks, advanced workflows | Open `cmd.exe` and run `spindoctor …`. See the [Command reference](commands.md). |
+After installation, launch `spindoctor-gui` for guided forms or `spindoctor` from a terminal for the CLI. Both use the same configuration. The [README quick starts](../README.md#pick-your-install-route) are the shortest path to a first run.
 
 ## Where to start
 
@@ -31,7 +20,7 @@ Then pick how to launch:
 | Find a control on the GUI launcher | [GUI walkthrough](gui.md) |
 | Upgrade from SpinDoctor 1.x | [Migrating from 1.x](migrating-from-1.x.md) |
 | Get the punchy copy-paste cheatsheet for the most-used commands | [CLI cheatsheet](cli-cheatsheet.md) |
-| Look up a specific command (every flag, every option) | [Command reference](commands.md) |
+| Look up command behavior and options | [Command reference](commands.md), then `<command> --help` for complete syntax |
 | See or change configuration | [Configuration](configuration.md) |
 | Do something common (backup, migrate, daily refresh, recovery) | [Workflows](workflows.md) |
 | Wire Favorites / Recently Played / Most Played into HyperSpin Tools menu or boot | [Standalone tools](standalone-tools.md) |
@@ -40,6 +29,17 @@ Then pick how to launch:
 | Audit other arcade tools installed on the cabinet | [Standalone tools → Tools audit](standalone-tools.md#tools-audit--what-other-arcade-utilities-does-this-cabinet-already-have) |
 | Diagnose an error | [Troubleshooting](troubleshooting.md) |
 | Find where SpinDoctor stores its files | [SpinDoctor Files](spindoctor-files.md) |
+| Share logs or examples without exposing private details | [Privacy and sharing diagnostics](privacy.md) |
+| Understand package boundaries and data flow | [Software architecture](architecture.md) |
+| Understand HyperSpin/RocketLauncher file layouts and hardware examples | [Example cabinet reference](cabinet-architecture-reference.md) |
+
+## How the guides fit together
+
+- **README / Installation / Setup:** choose a route, install, then configure a cabinet.
+- **GUI walkthrough / Command reference:** look up a control or command; use `--help` for the installed release's complete flag syntax.
+- **CLI cheatsheet / Workflows:** copy short examples or follow a multi-step task, with links back to the reference.
+- **Troubleshooting:** diagnose symptoms. The cabinet reference supplies deeper layout and integration context, not a required configuration.
+- **Software architecture / Project review:** developer-oriented module boundaries and the dated review's findings, respectively.
 
 ## What SpinDoctor is, and isn't
 
