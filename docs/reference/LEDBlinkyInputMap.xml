@@ -1,10 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- Example two-board wiring map for animation generation and tests.
+     Adapt ports and labels to the target cabinet; no installation timestamp is retained. -->
 <dat>
   <meta>
     <description name="Used by LEDBlinky for LED Input Map Data."/>
     <generatedBy name=">LEDBlinkyConfigWizard.exe"/>
     <version name="8.2.2.0"/>
-    <date name="06/12/2025 09:58:04"/>
   </meta>
   <ledController type="3" id="1" name="PACLED64">
     <port number="1" label="TRACKBALL" type="R" inputCodes="TRACKBALL"/>

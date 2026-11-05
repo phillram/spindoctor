@@ -5,9 +5,10 @@ Windows 7 to Windows 10 on older small-form-factor (SFF) hardware, including the
 GPU/SSD upgrade, disk cloning, the Windows install, and — the part that bites
 everyone — getting the frontend and emulators working again afterward.
 
-It is written from a real migration on an **HP EliteDesk 800 G1 SFF**
-(i5-4590, 32 GB RAM, Intel HD 4600 → discrete GPU) but the gotchas apply to any
-Haswell-era Legacy/MBR cabinet.
+The hardware examples use an **HP EliteDesk 800 G1 SFF** with Haswell-era
+Legacy/MBR storage. They are examples, not a current machine inventory or a
+guarantee that the same parts fit another SFF model. Verify your system's service
+manual, firmware, power limits and component dimensions before buying parts.
 
 > SpinDoctor does not perform any of the steps below — it's a librarian, not an
 > installer (see the [README](../README.md)). This doc is reference material for
@@ -21,17 +22,17 @@ Haswell-era Legacy/MBR cabinet.
 
 ## 1. Hardware upgrade (SFF constraints)
 
-SFF cases only take **low-profile, single-slot, slot-powered** cards, and the
-stock ~240 W PSU rules out anything needing a power connector.
+Many SFF cases require low-profile, slot-powered cards. Slot width and available
+power vary by model; a low-profile card is not necessarily single-slot.
 
 | Part | What fits an 800 G1 SFF | Notes |
 |---|---|---|
-| GPU | Low-profile **RTX 3050 6 GB** (~70 W, slot-powered) | Ships with a tall bracket attached + a low-profile bracket in the box — **swap to the low-profile bracket** or the case won't close. Ignore the "300 W PSU recommended" label; the 240 W HP PSU runs it. |
-| GPU (alt) | Low-profile **GTX 1650** | Was the value pick, but new stock is now scarce/overpriced — the 3050 is the better buy. |
+| GPU example | Low-profile **RTX 3050 6 GB** | Check the exact card's bracket, slot width, airflow and PSU requirements. Do not disregard the GPU or system manufacturer's power limits. |
+| GPU example | Low-profile **GTX 1650** | Compare the exact model's dimensions and power requirements; availability and value change over time. |
 | SSD | **2.5" SATA** (flat), 500 GB–1 TB | **Not** an M.2 stick — this chipset predates M.2/NVMe boot support and a stick won't boot without a BIOS mod. |
 
-Do **not** bother upgrading RAM, CPU, or motherboard for emulation up to Wii —
-they're not the bottleneck.
+Measure the games and emulators you intend to run before upgrading. CPU, graphics
+and memory bottlenecks depend on emulator version, resolution and workload.
 
 ---
 

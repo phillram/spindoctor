@@ -267,7 +267,7 @@ Apply checkbox + **Randomize Entry Colors** button. CLI: `spindoctor ledblinky c
 
 **Step 6 — In-Game Admin Buttons (Exit / Pause / Select)**
 
-Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on this cabinet.
+Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on the example cabinet.
 
 - **Exit / Pause / Select** — a color dropdown each, offering `(leave unchanged)`, `off (dark)`, or any palette color. Pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons (Exit + Pause) stay lit.
 - **Search / Left Mouse / Right Mouse** — an optional dropdown row offering `(leave unchanged)`, `off (dark)`, or `on (lit)`. Unlike Exit/Pause/Select these aren't their own LED (their key rides on another always-active control — e.g. Search's `/` is on Pause), so they can't be independently coloured: `off` removes just that key so Search goes dark while Pause stays lit, and `on` re-attaches it (lit in Pause's colour). `on` respects the **Console** scope below — on `(all consoles)` it lights the button on *every* system, so pick a console to target one.
@@ -275,7 +275,7 @@ Sets the admin buttons that stay lit **while a game is running** — Exit, Pause
 
 Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (incl. `--search-off`/`--lmouse-off`/`--rmouse-off` and their `--search-on`/`--lmouse-on`/`--rmouse-on` inverses) — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
 
-> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. This cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
+> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. The example cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
 
 **Step 7 — Brightness**
 
@@ -295,7 +295,7 @@ Quick backup and restore scoped to LEDBlinky files. Both folder fields default t
 
 **Step 10 — LED Animations (.lwax)**
 
-Build moving LED animations — the FE / screen-saver files you pick in Step 2 — as opposed to the per-game colors in Steps 3–8. Files are written to `~/Downloads/spindoctor-lwax-patterns/`.
+Build moving LED animations, as opposed to the per-game colors in Steps 3–8. **Generate pattern library** writes to `~/Downloads/spindoctor-lwax-patterns/`. **Generate fade** writes to `<output_dir>/LEDBlinky/lwax/fade.lwax` and needs `output_dir` configured. The CLI also accepts explicit output paths. See the [animation command reference](commands.md#ledblinky-lwax-fade) for destinations and signing.
 
 - **Generate pattern library** — the whole ~170-file batch (sweeps, pulses, rain, breathe, rainbow, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox).
 - **Generate fade** — a single custom colour-cycle fade from the comma-separated hex colours in the field (e.g. `FF0000,00FF00,0000FF`). CLI: `spindoctor ledblinky lwax fade --color …`.
@@ -454,10 +454,17 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 
 The **Stop** button in the bottom-right of the window terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
 
-Interrupting a long-running `backup`, `migrate`, or `curate` operation is safe — the CLI cleans up the in-flight component and writes a *partial manifest* of whatever finished before it died. That means:
+**Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
+Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from
+running. Prefer letting a destructive operation finish when possible.
 
-- An interrupted **backup** still shows up in the Restore picker, and you can replay it like any other backup. Only the partially-copied component is missing.
-- An interrupted **move-mode migrate** is reversible via `Logs → Browse manifests / undo → Undo`. The completed moves are recorded; the source folders that were already migrated can be put back. (Move-mode is the one operation where Stop without this safety net would be unrecoverable, since the source is destroyed during the move.)
-- An interrupted **curate** in archive mode is reversible the same way — files moved to `_retired/` before the interrupt are recorded in the partial manifest.
+The CLI handles normal terminal interrupts for backup, move-mode migration and
+curate-archive by attempting to record partial progress. That protection does not
+make abrupt termination, a crash or a failed manifest write safe.
 
-Stopping does not roll back work already committed — a manifest exists so that *you* can roll it back if you choose to.
+After stopping, inspect the files and any available manifest through
+**File → View logs & manifests** before retrying or undoing. A partial backup is
+not a complete snapshot. For migration or curation, confirm which files actually
+moved; if a record is missing or incomplete, use your independent backup rather
+than assuming undo can reconstruct the run. See
+[Recovery from mistakes](workflows.md#recovery-from-mistakes).
