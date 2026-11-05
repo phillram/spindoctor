@@ -660,6 +660,8 @@ def plan_rename(
             ini_new_section=new_name,
         ))
 
+    if clone and any(ch.src is not None and ch.src == ch.dest for ch in changes):
+        raise ValueError("clone names resolve to the same file after Windows filename sanitization")
     return RenamePlan(op=op, file_changes=changes)
 
 
@@ -689,6 +691,8 @@ def apply_rename(
     # 1) Pre-flight: refuse to overwrite anything.
     # Allow src == dest (in-place section rewrite for rl-pclauncher changes).
     for ch in plan.file_changes:
+        if clone and ch.src is not None and ch.src == ch.dest:
+            raise ValueError("refusing to clone a file onto itself")
         if ch.dest is not None and ch.dest != ch.src and ch.dest.exists():
             raise FileExistsError(
                 f"refusing to overwrite existing target: {ch.dest}"
@@ -790,6 +794,9 @@ def undo_rename(
     for entry in reversed(data.get("moves", [])):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
+        if is_clone and src == dest:
+            # Older manifests may record an in-place change, not a copy.
+            continue
         if not dest.exists():
             reversed_changes.append(FileChange(
                 kind=entry.get("kind", ""),
