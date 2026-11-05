@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .config import Config
+from ._text import read_windows_text as _read_windows_text
 
 
 # ─── DemulShooter target mapping ──────────────────────────────────────────────
@@ -425,7 +426,7 @@ def _system_emulators(rocketlauncher_dir: Path, system_name: str, body: str
         names[0] = m.group(1)
     games_ini = Path(rocketlauncher_dir) / "Settings" / system_name / "Games.ini"
     try:
-        games = games_ini.read_text(encoding="utf-8", errors="replace")
+        games = _read_windows_text(games_ini)
     except OSError:
         games = ""
     names += [g.group(1) for g in _GAME_EMULATOR_RE.finditer(games) if g.group(1)]
@@ -518,7 +519,7 @@ def detect_lightgun_wiring(config: Config) -> dict[str, str]:
                   if ini.name.lower() not in skip]
     candidates += [(ini, ini.parent.name) for ini in settings.glob("*/Emulators.ini")]
     for ini, system in candidates:
-        body = ini.read_text(encoding="utf-8", errors="replace")
+        body = _read_windows_text(ini)
         if DEMULSHOOTER_PRE_RE.search(body):
             found[system] = "Pre_Launch_App"
     user_functions = index_user_functions(Path(config.rocketlauncher_dir))
@@ -608,7 +609,7 @@ def plan_wire_system(
         post_launch_command=post_cmd,
         section=section,
     )
-    body = ini_path.read_text(encoding="utf-8", errors="replace")
+    body = _read_windows_text(ini_path)
     existing_pre = DEMULSHOOTER_PRE_RE.search(body)
     existing_post = _POST_LAUNCH_RE.search(body)
     if existing_pre and existing_pre.group(1).strip() != pre_cmd:

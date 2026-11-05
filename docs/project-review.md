@@ -162,14 +162,20 @@ services. They do not replace testing on a real cabinet.
 - XML preservation is structural, not byte-identical. Formatting, declarations,
   and header dates can change. The stdlib parser does not retain document-level
   comments outside the root or doctypes; lxml remains recommended.
-- Not every preview/media path or LEDBlinky/lightgun/CLI text writer was
-  converted to the shared normalization and lossless-writing helpers.
-- Centralized sidecar-backup discovery and LEDBlinky backup-name handling need
-  a separate cross-CLI/GUI consistency pass.
-- LEDBlinky raw section boundaries attach trailing comments to the preceding
-  section. Pruning can remove those comment banners, and restoring sections
-  can normalize boundary spacing. Use the file backup for byte-identical
-  reversal, rather than relying on library regeneration for that guarantee.
+- Preview media lookup uses the shared Windows-safe filename stem. LEDBlinky,
+  lightgun, PCLauncher-module and preview writes that edit existing files keep
+  their encoding, BOM, line endings, undefined ANSI bytes and unrelated lines,
+  and write atomically. Whole-file generators (for example `emit_ini`) still
+  write their own fresh layout.
+- `backup sidecar list/restore` (and the GUI picker that calls it) finds both
+  `<stem>.<stamp>.bak` and LEDBlinky's `<name>.<stamp>.bak` backups, beside
+  the file and in `backup_dir`'s HyperSpin, RocketLauncher and LEDBlinky
+  folders, ordered by stamp and numeric counter. HyperSpin and LEDBlinky
+  central folders are flat, so two different files with the same name share
+  one list there; check the path before restoring.
+- LEDBlinky raw section edits keep comment banners between sections when the
+  section before them is pruned or replaced. Spacing around newly inserted
+  sections can still change; use the file backup for byte-identical reversal.
 - Cleanup category safety flags still have duplicated declarations across the
   category reports, CLI keys, and GUI defaults, now pinned by a regression
   test. Synthetic-wheel names share one declaration.
@@ -178,10 +184,29 @@ services. They do not replace testing on a real cabinet.
   of the CLI/GUI modules remain refactoring candidates.
 - HTTP servers without validators cannot provide strong same-resource proof
   across interrupted requests, even when the URL matches.
-- No live scraping, hardware integration, frozen-executable build, Python 3.8
-  runtime, or Windows 7 runtime validation was performed.
+- No live scraping, cabinet hardware, Windows 7 runtime, or power-loss
+  validation was performed. Python 3.8 runtime and frozen-executable builds are
+  covered by CI only (see Validation).
 
 ## Validation
+
+### Continuous integration
+
+GitHub Actions passed every check on PRs #509–#512 and on the follow-up fixes
+pushed to them: tests on Ubuntu with Python 3.8 and 3.12 and on Windows with
+Python 3.12, Ruff, the legacy and modern PyInstaller frozen-build smoke tests,
+Bandit, and the pip-audit dependency scan. The legacy build and the 3.8 tests
+are the evidence for Python 3.8 compatibility; neither runs on Windows 7 or on
+cabinet hardware.
+
+### Storage consistency follow-up
+
+`tests/test_storage_consistency.py` covers settings, color, hook, profile and
+XML edits in UTF-8, UTF-8 with BOM, ANSI (including undefined bytes), and
+UTF-16 LE/BE files; atomic-write failure; LEDBlinky comment banners around
+pruned and replaced sections; Windows-safe preview names; and sidecar discovery
+across both backup name styles and the configured backup folders. The full
+suite passed on Windows 10 and Python 3.14.0 with Ruff and `git diff --check`.
 
 ### Recorded-risk follow-up
 

@@ -756,6 +756,8 @@ spindoctor backup restore --backup E:\Backups\... --overwrite --apply          :
 
 Every SpinDoctor command that modifies a file in-place writes a timestamped `.YYYYMMDD_HHMMSS.bak` sibling next to the modified file (when `backup_before_modify` is on, which is the default). These are *sidecar backups* — tiny single-file snapshots distinct from the full-library `backup create` archives.
 
+`backup sidecar list` shows both `<stem>.<stamp>.bak` and `<file name>.<stamp>.bak` (LEDBlinky) backups, found next to the file and, when `backup_dir` is set, in its `HyperSpin`, `RocketLauncher` and `LEDBlinky` folders. The `HyperSpin` and `LEDBlinky` folders are flat, so check the listed path when two files share a name.
+
 Use `backup sidecar` when you want to roll back one bad edit (e.g. a corrupted `Main Menu.xml`, a `Colors.ini` you accidentally overrode) without restoring the entire library.
 
 ```bat

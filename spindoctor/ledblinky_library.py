@@ -36,6 +36,9 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .config import CONFIG_DIR, Config
+from ._utils import atomic_write_bytes
+from .backup import find_sidecars
+from ._text import read_windows_text, read_windows_text_with_encoding, write_windows_text
 from .ledblinky import (
     COLORS_INI_NAME,
     CONTROLS_INI_NAME,
@@ -63,8 +66,10 @@ _MAME_NAMED_EXES = ("mame", "hbmame", "zinc")
 def read_raw(path: Path) -> str:
     """The file's text with every byte kept; ``""`` when it doesn't exist."""
     try:
-        with open(path, encoding="utf-8", errors="surrogateescape", newline="") as fh:
-            return fh.read()
+        data = path.read_bytes()
+        if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+            return read_windows_text_with_encoding(path)[0]
+        return data.decode("utf-8", errors="surrogateescape")
     except FileNotFoundError:
         return ""
 
@@ -72,17 +77,10 @@ def read_raw(path: Path) -> str:
 def write_raw(path: Path, text: str) -> None:
     """Write *text* exactly (no newline translation) through a temp file + rename."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-    try:
-        with open(tmp, "w", encoding="utf-8", errors="surrogateescape", newline="") as fh:
-            fh.write(text)
-        os.replace(str(tmp), str(path))
-    except BaseException:
-        try:
-            tmp.unlink()
-        except OSError:
-            pass
-        raise
+    if path.exists() and path.read_bytes().startswith((b"\xff\xfe", b"\xfe\xff")):
+        write_windows_text(path, text)
+        return
+    atomic_write_bytes(path, text.encode("utf-8", errors="surrogateescape"))
 
 
 def _ends_blank(tail: str) -> bool:
@@ -114,9 +112,19 @@ class RawIni:
         self.preamble = "".join(parts[0][2])
         #: ``(name, text)`` in file order; *text* is the header line and
         #: every line up to the next header.
-        self.sections: list[tuple[str, str]] = [
-            (name or "", (header or "") + "".join(lines)) for name, header, lines in parts[1:]
-        ]
+        self.sections: list[tuple[str, str]] = []
+        self._boundaries: list[str] = []
+        for name, header, lines in parts[1:]:
+            # A trailing comment banner belongs to the file, not to the
+            # preceding game's entry. Keep it even when that game is pruned.
+            split = len(lines)
+            while split and (not lines[split - 1].strip()
+                             or lines[split - 1].lstrip().startswith((";", "#"))):
+                split -= 1
+            if not any(line.lstrip().startswith((";", "#")) for line in lines[split:]):
+                split = len(lines)
+            self.sections.append((name or "", (header or "") + "".join(lines[:split])))
+            self._boundaries.append("".join(lines[split:]))
         self._entries: Optional[dict[str, str]] = None
         self._spelling: Optional[dict[str, str]] = None
         #: Size of the file this was loaded from, in bytes (0 if none).
@@ -177,22 +185,27 @@ class RawIni:
         pending = sorted((k, v) for k, v in (add or {}).items() if k not in have)
         drop = {n.lower() for n in remove}
         swap = dict(replace or {})
-        pieces: list[tuple[str, bool]] = []   # (text, inserted)
+        # (text, inserted). Replacements and boundary comments stay in place
+        # verbatim; only new sections get missing blank lines added.
+        pieces: list[tuple[str, bool]] = []
         swapped: set[str] = set()
         i = 0
-        for name, text in self.sections:
+        for (name, text), boundary in zip(self.sections, self._boundaries):
             low = name.lower()
             while i < len(pending) and pending[i][0] < low:
                 pieces.append((pending[i][1], True))
                 i += 1
             if low in drop:
+                pieces.append((boundary, False))
                 continue
             if low in swap:
                 if low not in swapped:
                     swapped.add(low)
-                    pieces.append((swap[low], True))
+                    pieces.append((swap[low], False))
+                pieces.append((boundary, False))
                 continue
             pieces.append((text, False))
+            pieces.append((boundary, False))
         pieces.extend((text, True) for _low, text in pending[i:])
 
         nl = self.newline
@@ -217,23 +230,20 @@ class RawIni:
 # ── the library ───────────────────────────────────────────────────────────────
 
 
-def find_community_controls(ledblinky_dir: Path) -> Optional[Path]:
+def find_community_controls(ledblinky_dir: Path, config: Optional[Config] = None) -> Optional[Path]:
     """The community controls.dat file ``ledblinky profiles`` reads, if any.
 
     It's the oldest ``controls.ini.*.bak`` next to the live file: the file
     LEDBlinky shipped with, backed up the first time SpinDoctor wrote
     Controls.ini. Only a file that looks like controls.dat data counts.
     """
-    from .ledblinky_profiles import COMMUNITY_CONTROLS_GLOB
-
     try:
-        found = sorted(Path(ledblinky_dir).glob(COMMUNITY_CONTROLS_GLOB))
+        found = list(reversed(find_sidecars(Path(ledblinky_dir) / CONTROLS_INI_NAME, config)))
     except OSError:
         return None
     for path in found:
         try:
-            with open(path, encoding="utf-8", errors="replace") as fh:
-                head = fh.read(65536)
+            head = read_windows_text(path)[:65536]
         except OSError:
             continue
         if "P1NumButtons=" in head:
@@ -290,11 +300,11 @@ class Library:
             write_raw(path, text)
             setattr(self, attr, None)
 
-    def keep_community(self, ledblinky_dir: Path) -> Optional[Path]:
+    def keep_community(self, ledblinky_dir: Path, config: Optional[Config] = None) -> Optional[Path]:
         """Copy the community controls.dat file into the library, once."""
         if self.community_path.is_file():
             return None
-        src = find_community_controls(ledblinky_dir)
+        src = find_community_controls(ledblinky_dir, config)
         if src is None:
             return None
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -682,7 +692,7 @@ def prune_entries(
     lib.save(controls={low: entries_c[low] for low in plans[0][2]},
              colors={low: entries_k[low] for low in plans[1][2]})
     try:
-        result.community_saved = lib.keep_community(lb_dir)
+        result.community_saved = lib.keep_community(lb_dir, config)
     except OSError as exc:
         result.warnings.append(f"Could not copy the community controls file to the library: {exc}")
     for path, text in new_texts:
