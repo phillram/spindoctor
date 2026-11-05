@@ -20,10 +20,9 @@ def validate_target(config, name, sources=()):
     if config.hyperspin_dir and name not in DEFAULT_SYNTHETIC_NAMES:
         folder = config.databases_dir / name
         if (folder / f"{name}.xml").exists() and not (folder / ".spindoctor-synthetic").exists():
-            # Older custom synthetic wheels have generated launcher placeholders.
-            launchers = Path(config.rocketlauncher_dir) / "Modules" / "PCLauncher" / name
-            if not config.rocketlauncher_dir or not launchers.is_dir():
-                raise ValueError(f"Refusing to replace an existing non-synthetic database: {name}")
+            # Real PC wheels also have PCLauncher directories. Their presence
+            # is not evidence that SpinDoctor owns the database or its media.
+            raise ValueError(f"Refusing to replace an existing non-synthetic database: {name}")
 
 
 def mark_synthetic(config, name):

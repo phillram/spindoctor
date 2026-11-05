@@ -11948,10 +11948,11 @@ def backup_restore(backup_path, include, use_current_paths, overwrite, apply_cha
 
         try:
             restored = apply_restore(plan, overwrite=overwrite, progress_cb=_cb)
-        except (FileExistsError, OSError) as e:
+        except (OSError, ValueError) as e:
             from ._errors import humanize_oserror
+            msg = humanize_oserror(e, action="restore from the backup") if isinstance(e, OSError) else str(e)
             err_console.print(
-                f"[red]Aborted:[/red] {humanize_oserror(e, action='restore from the backup')}"
+                f"[red]Aborted:[/red] {msg}"
             )
             sys.exit(1)
 
