@@ -28,7 +28,7 @@ from .database import GameEntry, HyperspinDatabase
 from ._wheels import DEFAULT_SYNTHETIC_NAMES, mark_synthetic, synthetic_names, validate_target
 from .favorites import (
     FavoriteEntry, _generate_pclauncher_ini,
-    _resolve_target_names, _safe_load,
+    _resolve_target_names, _safe_load, _source_game,
 )
 from .medialink import LinkMode, apply_plan, plan_mirror, _read_hs_video_dir, prune_mirrored_media
 from .rocketlauncher import (
@@ -578,7 +578,7 @@ def _build_synthetic_wheel(
     for fe in pseudo_entries:
         target_name = target_names[f"{fe.system}::{fe.rom_name}"]
         source_db = _safe_load(fe.system, config, src_cache)
-        source_game = source_db.get(fe.rom_name) if source_db else None
+        source_game = _source_game(source_db, fe.system, fe.rom_name)
         base_desc = fe.display_name or (source_game.description if source_game else fe.rom_name)
         merged = GameEntry(
             name=target_name,

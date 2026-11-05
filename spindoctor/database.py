@@ -123,6 +123,10 @@ class GameEntry:
         return missing
 
 
+class DuplicateGameNameError(ValueError):
+    """A database with duplicate game names cannot be saved without loss."""
+
+
 class HyperspinDatabase:
     def __init__(
         self,
@@ -150,12 +154,18 @@ class HyperspinDatabase:
         self._tree: Any = None
         self._root: Any = None
         self._game_elements: dict[str, Any] = {}
+        # Reads keep the historical last-entry-wins view of duplicate names,
+        # but saving would update one element and leave the other unchanged.
+        self._duplicate_names: set[str] = set()
+        self._shadowed_elements: list[Any] = []
 
     # ── load ───────────────────────────────────────────────────────────────────
 
     def load(self) -> None:
         self._games.clear()
         self._game_elements.clear()
+        self._duplicate_names.clear()
+        self._shadowed_elements.clear()
         self._tree = self._root = None
         self._loaded = False
         if not self.xml_path.exists():
@@ -189,10 +199,8 @@ class HyperspinDatabase:
                 if not name:
                     continue
                 if name in self._games:
-                    raise ValueError(
-                        f"Duplicate game name {name!r} in {self.xml_path}; "
-                        "resolve duplicate entries before editing this database"
-                    )
+                    self._duplicate_names.add(name)
+                    self._shadowed_elements.append(self._game_elements[name])
                 extras = {
                     k: v for k, v in game_el.attrib.items()
                     if k not in _KNOWN_GAME_ATTRS
@@ -248,6 +256,22 @@ class HyperspinDatabase:
                     yield self._games[name]
         else:
             yield from self._games.values()
+
+    @property
+    def duplicate_names(self) -> frozenset[str]:
+        """Game names that appear on more than one ``<game>`` element."""
+        self._ensure_loaded()
+        return frozenset(self._duplicate_names)
+
+    def ensure_writable(self) -> None:
+        """Raise before any edit could save a database with duplicate names."""
+        self._ensure_loaded()
+        if self._duplicate_names:
+            names = ", ".join(repr(n) for n in sorted(self._duplicate_names))
+            raise DuplicateGameNameError(
+                f"Duplicate game name {names} in {self.xml_path}; "
+                "resolve duplicate entries before editing this database"
+            )
 
     def get(self, name: str) -> Optional[GameEntry]:
         self._ensure_loaded()
@@ -311,9 +335,12 @@ class HyperspinDatabase:
         self._ensure_loaded()
         self._games.clear()
         if self._root is not None:
-            for el in list(self._game_elements.values()):
+            for el in [*self._game_elements.values(), *self._shadowed_elements]:
                 self._root.remove(el)
         self._game_elements.clear()
+        # Every entry, including each duplicate, is now caller-supplied.
+        self._shadowed_elements.clear()
+        self._duplicate_names.clear()
 
     def iter_incomplete(self) -> Iterator[GameEntry]:
         self._ensure_loaded()
@@ -336,7 +363,7 @@ class HyperspinDatabase:
         :func:`resolve_atomic_tmp_dir` handles the same-filesystem check
         so a cross-drive *tmp_dir* is silently ignored.
         """
-        self._ensure_loaded()
+        self.ensure_writable()
         target = output_path or self.xml_path
         target.parent.mkdir(parents=True, exist_ok=True)
 

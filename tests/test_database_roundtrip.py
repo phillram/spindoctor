@@ -289,3 +289,39 @@ def test_write_sort_databases_skips_existing_without_overwrite(tmp_path):
     # Second write without overwrite — file should be untouched
     write_sort_databases("Arcade", games, tmp_path)
     assert year_file.stat().st_mtime == original_mtime
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_duplicate_game_names_keep_last_entry_reads(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    elif not HAS_LXML:
+        pytest.skip("lxml not installed")
+    path = _write(tmp_path, '<menu><game name="same"><year>1981</year></game>'
+                            '<game name="other"><year>1990</year></game>'
+                            '<game name=" same "><year>1982</year></game></menu>')
+    db = HyperspinDatabase("MAME", path)
+    assert set(db.games()) == {"same", "other"}
+    assert db.get("same").year == "1982"
+    assert db.duplicate_names == {"same"}
+    with pytest.raises(database.DuplicateGameNameError, match="Duplicate game name 'same'"):
+        db.ensure_writable()
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_reset_games_removes_duplicates_before_full_rebuild(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    elif not HAS_LXML:
+        pytest.skip("lxml not installed")
+    path = _write(tmp_path, '<menu><game name="same"><year>1981</year></game>'
+                            '<game name="same"><year>1982</year></game></menu>')
+    db = HyperspinDatabase("Favorites", path)
+    db.reset_games()
+    db.upsert_game(GameEntry(name="fresh", description="Fresh"))
+    db.save(backup=False)
+    reloaded = HyperspinDatabase("Favorites", path)
+    assert set(reloaded.games()) == {"fresh"}
+    assert reloaded.duplicate_names == frozenset()

@@ -289,6 +289,7 @@ def apply_batch_edit(
         return [], None
 
     db = load_database(system, config.databases_dir)
+    db.ensure_writable()
     plan = plan_batch_edit(games, changes)
 
     results: list[EditResult] = []
@@ -701,6 +702,7 @@ def apply_rename(
 
     # Validate the DB before moving files, but save it last.
     db = load_database(op.system, config.databases_dir)
+    db.ensure_writable()
     existing = db.get(op.old_rom_name)
     if existing is None:
         raise RuntimeError(

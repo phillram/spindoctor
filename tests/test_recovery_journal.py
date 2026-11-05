@@ -324,3 +324,65 @@ def test_custom_wheel_rebuild_refreshes_source_media_and_preserves_xml(cabinet, 
     assert dest.read_bytes() == b"updated art"
     game = database.load_database("Custom Wheel", cfg.databases_dir).get("old")
     assert '<custom key="v"' in game.xml_template
+
+
+def test_rename_refuses_duplicate_database_before_moving_files(cabinet, tmp_path):
+    cfg = cabinet
+    write(cfg.databases_dir / "NES" / "NES.xml",
+          b'<menu><game name="old"><description>Old</description></game>'
+          b'<game name="old"><description>Other</description></game></menu>')
+    plan = edit.plan_rename(cfg, "NES", "old", "new")
+    manifests = tmp_path / "manifests"
+    with pytest.raises(database.DuplicateGameNameError):
+        edit.apply_rename(plan, cfg, manifest_dir=manifests)
+    assert (Path(cfg.roms_dir) / "NES" / "old.nes").read_bytes() == b"original"
+    assert not (Path(cfg.roms_dir) / "NES" / "new.nes").exists()
+    assert not manifests.exists()
+
+
+@pytest.mark.parametrize("builder", ["favorites", "recent"])
+def test_wheel_rebuild_does_not_copy_ambiguous_source_entry(cabinet, builder):
+    cfg = cabinet
+    write(cfg.databases_dir / "NES" / "NES.xml",
+          b'<menu><game name="old"><year>1981</year><custom key="first"/></game>'
+          b'<game name="old"><year>1982</year><custom key="second"/></game></menu>')
+    entry = favorites.FavoriteEntry("NES", "old", "Old", "")
+    with pytest.warns(RuntimeWarning, match="appears more than once"):
+        if builder == "favorites":
+            store = favorites.FavoriteStore([entry], target_system="Custom Wheel")
+            favorites.rebuild(store, cfg, skip_media=True, skip_launchers=True)
+        else:
+            recent._build_synthetic_wheel(cfg, "Custom Wheel", [entry],
+                                          skip_media=True, skip_launchers=True)
+    game, = database.load_database("Custom Wheel", cfg.databases_dir).games().values()
+    assert game.year == ""
+    assert "custom" not in game.xml_template
+
+
+def test_import_backup_failure_skips_only_that_item(tmp_path, monkeypatch):
+    first_src = write(tmp_path / "in" / "first.png", b"new first")
+    second_src = write(tmp_path / "in" / "second.png", b"new second")
+    first = write(tmp_path / "media" / "first.png", b"previous first")
+    second = tmp_path / "media" / "second.png"
+    report = media_scan.MediaScanReport(first_src.parent, matched=[
+        media_scan.ScanMatch(media_scan.LocalMediaFile(first_src, "wheel"), "NES", "first", target_path=first),
+        media_scan.ScanMatch(media_scan.LocalMediaFile(second_src, "wheel"), "NES", "second", target_path=second),
+    ])
+    real_copy = shutil.copy2
+
+    def blocked_backup(source, target, *args, **kwargs):
+        if Path(target).parent.suffix == ".files":
+            raise PermissionError("backup blocked")
+        return real_copy(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(media_scan.shutil, "copy2", blocked_backup)
+    result = media_scan.import_media(report, config.Config(), overwrite=True,
+                                     manifest_dir=tmp_path / "manifests")
+    assert [(src, reason.split(":")[0]) for src, reason in result.skipped] == [(first_src, "backup failed")]
+    assert result.imported == [(second_src, second)]
+    assert first.read_bytes() == b"previous first"
+    assert second.read_bytes() == b"new second"
+    monkeypatch.setattr(media_scan.shutil, "copy2", real_copy)
+    assert media_scan.undo_import(result.manifest_path)["errors"] == []
+    assert not second.exists()
+    assert first.read_bytes() == b"previous first"

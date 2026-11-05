@@ -319,7 +319,9 @@ def _refresh_one(action: LinkAction, mode: LinkMode) -> str:
     with tempfile.TemporaryDirectory(prefix=".spindoctor-mirror-", dir=action.dest.parent) as tmp:
         staged = Path(tmp) / "new"
         outcome = _apply_one(action.src, staged, action.is_dir, mode)
-        if action.dest.is_dir() and not action.dest.is_symlink():
+        # os.replace cannot put a directory over a symlink or a file, and on
+        # Windows cannot replace a directory or directory symlink at all.
+        if action.dest.is_symlink() or action.dest.is_dir() or staged.is_dir():
             previous = Path(tmp) / "previous"
             os.replace(action.dest, previous)
             try:

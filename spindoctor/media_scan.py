@@ -397,10 +397,18 @@ def import_media(
         }
         if entry["overwrote"]:
             backup_dir = manifest_path.with_suffix(".files")
-            backup_dir.mkdir(parents=True, exist_ok=True)
             backup = backup_dir / str(len(manifest_entries))
             # Finish the backup before recording an intent to overwrite.
-            shutil.copy2(target, backup, follow_symlinks=False)
+            try:
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(target, backup, follow_symlinks=False)
+            except (OSError, shutil.Error) as e:
+                try:
+                    backup.unlink()
+                except OSError:
+                    pass
+                result.skipped.append((sm.local.path, f"backup failed: {e}"))
+                continue
             entry["backup"] = str(backup)
         begin_step(manifest_path, data, "imports", entry)
         result.manifest_path = manifest_path

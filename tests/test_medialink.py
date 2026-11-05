@@ -414,3 +414,32 @@ def test_plan_mirror_default_theme_lowercase(tmp_path):
     assert any(a.dest.name == "pacman.zip" for a in plan.actions), (
         "lowercase default.zip must be used as the per-game theme fallback"
     )
+
+
+def test_refresh_replaces_file_where_directory_mirror_belongs(tmp_path):
+    media = _layout(tmp_path)
+    dest = media / "Custom" / "Themes" / "Mario"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"stale file")
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert not result["errors"]
+    assert (dest / "Theme.xml").read_bytes() == b"<theme/>"
+    assert not list(dest.parent.glob(".spindoctor-mirror-*"))
+
+
+def test_refresh_replaces_stale_directory_symlink(tmp_path):
+    media = _layout(tmp_path)
+    stale = tmp_path / "old-theme"
+    stale.mkdir()
+    (stale / "old.xml").write_bytes(b"old")
+    dest = media / "Custom" / "Themes" / "Mario"
+    dest.parent.mkdir(parents=True)
+    try:
+        os.symlink(stale, dest, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks unavailable")
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert not result["errors"]
+    assert not dest.is_symlink()
+    assert (dest / "Theme.xml").read_bytes() == b"<theme/>"
+    assert (stale / "old.xml").read_bytes() == b"old"
