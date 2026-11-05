@@ -36,7 +36,7 @@ from .fileinfo import _dir_size
 # the same 6-line loop. Re-exported here so callers like
 # `from .backup import format_bytes` keep working unchanged.
 from ._utils import format_bytes, free_bytes  # noqa: F401 — re-export
-from ._utils import is_within, unique_path
+from ._utils import is_within, numbered_path_key, unique_path
 from .config import CONFIG_DIR, Config
 
 
@@ -431,7 +431,7 @@ def list_backups(target: Path) -> list[Path]:
             continue
         if (child / MANIFEST_FILENAME).exists():
             out.append(child)
-    return sorted(out, key=lambda p: p.name)
+    return sorted(out, key=numbered_path_key)
 
 
 def find_latest_backup(target: Path) -> Optional[Path]:

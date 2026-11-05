@@ -65,7 +65,7 @@ def atomic_write_bytes(target: Path, data: bytes, tmp_dir: Optional[Path] = None
 def is_within(path: Path, parent: Path) -> bool:
     """Whether a resolved path is the parent itself or one of its descendants."""
     try:
-        path.resolve().relative_to(parent.resolve())
+        Path(os.path.abspath(path)).resolve().relative_to(Path(os.path.abspath(parent)).resolve())
         return True
     except ValueError:
         return False
