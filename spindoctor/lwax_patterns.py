@@ -1118,7 +1118,7 @@ def generate_batch(controllers, out_dir):
 
     # 23. COLOUR CYCLES -- one whole-panel breathe cycle and one radial-pulse
     # cycle, each stepping through several globally-unique solid colours and
-    # looping. (requested: "a cycle of solid colour changes that repeat".)
+    # looping. (Requested: "a cycle of solid colour changes that repeat".)
     cyc_breathe = [c for (_s, _h, c) in pal.take_n(6)]
     add("breathe", "cycle", "slow", build_breathe_cycle(controllers, cyc_breathe, steps=BREATHE_SPEED["slow"][0],
                                                         duration_ms=BREATHE_SPEED["slow"][1]),

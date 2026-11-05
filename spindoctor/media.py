@@ -41,6 +41,14 @@ MEDIA_DIR_MAP: dict[str, tuple[str, ...]] = {
     "theme":      ("Themes",),
 }
 
+# Preview hands the file to the OS default app, so only media types may be
+# opened; an extension taken from a remote URL could otherwise be .bat/.exe.
+_PREVIEW_EXTS = frozenset({
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp",
+    ".mp4", ".avi", ".flv", ".mkv", ".mov", ".webm",
+    ".mp3", ".wav", ".ogg", ".flac",
+})
+
 MEDIA_EXTENSIONS: dict[str, str] = {
     "wheel":      ".png",
     "background": ".jpg",
@@ -932,11 +940,17 @@ class MediaDownloader:
         url = candidate.url
         if not url:
             return None
-        ext = Path(urlparse(url).path).suffix or f".{candidate.format or 'bin'}"
         # _download_hls saves HLS streams as .mp4, not .m3u8 — use the same
         # extension so tmp_path matches the file the downloader actually creates.
-        if ext == ".m3u8":
-            ext = ".mp4"
+        url_ext = Path(urlparse(url).path).suffix.lower()
+        if url_ext == ".m3u8":
+            url_ext = ".mp4"
+        # ScreenScraper serves media from mediaJeu.php, so the URL suffix is
+        # often not the media type; its ``format`` field is.
+        ext = url_ext if url_ext in _PREVIEW_EXTS else f".{(candidate.format or '').lower()}"
+        if ext not in _PREVIEW_EXTS:
+            _log.warning("Not previewing %s: %r is not a media file type", url, ext)
+            return None
         tmp_dir = Path(tempfile.gettempdir()) / "spindoctor_preview"
         tmp_dir.mkdir(parents=True, exist_ok=True)
         tmp_path = tmp_dir / f"candidate_{idx}_{abs(hash(url))}{ext}"
