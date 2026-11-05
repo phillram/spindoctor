@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 
 # Filenames whose stem is the title — Windows/Steam shortcuts.  Bare .exe
@@ -115,13 +115,29 @@ def find_best_match(
     threshold: float = 0.80,
 ) -> Optional[tuple[str, float]]:
     """Return (best_candidate, score) or None if nothing clears the threshold."""
+    return _find_best_normalized_match(
+        normalize(rom_name), ((name, normalize(name)) for name in candidates), threshold,
+    )
+
+
+def _find_best_normalized_match(
+    norm_rom: str,
+    candidates: Iterable[tuple[str, str]],
+    threshold: float = 0.80,
+) -> Optional[tuple[str, float]]:
+    """Score pre-normalized names, preserving candidate order and first ties."""
     best: Optional[tuple[str, float]] = None
-    norm_rom = normalize(rom_name)
-    for candidate in candidates:
-        norm_candidate = normalize(candidate)
+    for candidate, norm_candidate in candidates:
         if norm_rom == norm_candidate:
             return (candidate, 1.0) if threshold <= 1.0 else None
-        score = SequenceMatcher(None, norm_rom, norm_candidate).ratio()
+        matcher = SequenceMatcher(None, norm_rom, norm_candidate)
+        # Both quick ratios are upper bounds. Equal scores cannot replace the
+        # first candidate, and argument order must stay unchanged.
+        if best is not None and (
+            matcher.real_quick_ratio() <= best[1] or matcher.quick_ratio() <= best[1]
+        ):
+            continue
+        score = matcher.ratio()
         if best is None or score > best[1]:
             best = (candidate, score)
     if best and best[1] >= threshold:

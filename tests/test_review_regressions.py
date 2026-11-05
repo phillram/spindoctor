@@ -385,7 +385,7 @@ def test_import_matching_indexes_exact_names_and_reuses_repeated_stems(tmp_path,
     touch(source / "Snaps" / "Mario.png")
     def fail(*args, **kwargs):
         pytest.fail("normalized exact matches should use the precomputed index")
-    monkeypatch.setattr(media_scan, "find_best_match", fail)
+    monkeypatch.setattr(media_scan, "_find_best_normalized_match", fail)
     report = media_scan.match_to_database(media_scan.scan_local_media(source), "NES",
                                           config.Config(hyperspin_dir=str(hs)))
     assert len(report.matched) == 2

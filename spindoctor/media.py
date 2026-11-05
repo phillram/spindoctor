@@ -749,7 +749,7 @@ class MediaDownloader:
                         last_error = "Invalid or changed partial response; restarting download"
                         continue
                     range_end = int(content_range[2])
-                    range_total = int(content_range[3]) if content_range[3] != "*" else None
+                    range_total = int(content_range[3])
                 saved_info = {
                     "url_hash": url_hash,
                     "validator": validator,
@@ -772,10 +772,10 @@ class MediaDownloader:
                     if downloaded != range_end + 1:
                         last_error = "Partial response length does not match Content-Range"
                         continue
-                    if range_total is not None and downloaded < range_total:
+                    if downloaded < range_total:
                         last_error = "Partial response has more bytes remaining"
                         continue
-                    if range_total is not None and downloaded != range_total:
+                    if downloaded != range_total:
                         part.unlink(missing_ok=True)
                         last_error = "Partial response exceeds resource length"
                         continue

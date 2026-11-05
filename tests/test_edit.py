@@ -447,3 +447,118 @@ def test_apply_rename_rewrites_pclauncher_section_header(isolated_config, tmp_pa
     content = ini.read_text(encoding="utf-8")
     assert "[Submachine: Legacy]" in content
     assert "[Submachine Legacy]" not in content
+
+
+@pytest.mark.parametrize("clone", [False, True])
+def test_undo_preserves_shared_media_stems(isolated_config, tmp_path, clone):
+    cfg = _build_cfg(tmp_path)
+    cfg.roms_dir = str(tmp_path / "no_roms")
+    theme = cfg.media_dir / "nes" / "Themes" / "mario"
+    theme.mkdir(parents=True)
+    (theme / "theme.xml").write_bytes(b"original theme")
+    wheel = cfg.media_dir / "nes" / "Images" / "Wheel" / "mario.png"
+    if clone:
+        # New clone plans refuse sanitized-name collisions outright.
+        with pytest.raises(ValueError, match="same file"):
+            plan_rename(cfg, "nes", "mario", "mario:", clone=True)
+        return
+    _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "mario:", clone=clone), cfg)
+    undo_rename(manifest, cfg)
+    assert wheel.read_bytes() == b"wheel"
+    assert (theme / "theme.xml").read_bytes() == b"original theme"
+    assert not manifest.exists()
+
+
+def test_clone_rejects_shared_launcher_filename(isolated_config, tmp_path):
+    cfg, rl = _build_pc_cfg(tmp_path)
+    ini = rl / "Modules" / "PCLauncher" / "PC Games" / "Submachine Legacy.ini"
+    before = ini.read_bytes()
+    with pytest.raises(ValueError, match="same file"):
+        plan_rename(cfg, "PC Games", "Submachine Legacy", "Submachine: Legacy", clone=True)
+    assert ini.read_bytes() == before
+
+
+@pytest.mark.parametrize("new_name", ["Submachine: Legacy", "Submachine Remastered"])
+def test_undo_rename_restores_launcher_section(isolated_config, tmp_path, new_name):
+    cfg, rl = _build_pc_cfg(tmp_path)
+    ini = rl / "Modules" / "PCLauncher" / "PC Games" / "Submachine Legacy.ini"
+    before = ini.read_bytes()
+    _, manifest = apply_rename(plan_rename(cfg, "PC Games", "Submachine Legacy", new_name), cfg)
+    undo_rename(manifest, cfg)
+    assert ini.read_bytes() == before
+    assert not manifest.exists()
+
+
+def test_rename_undo_refuses_occupied_original_and_retries(isolated_config, tmp_path):
+    cfg = _build_cfg(tmp_path)
+    _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "renamed"), cfg)
+    original = Path(cfg.roms_dir) / "nes" / "mario.nes"
+    original.write_bytes(b"new user data")
+    results = undo_rename(manifest, cfg)
+    assert any("failed" in change.note for change in results)
+    assert original.read_bytes() == b"new user data"
+    assert (original.parent / "renamed.nes").read_bytes() == b"rom"
+    pending = json.loads(manifest.read_text(encoding="utf-8"))
+    assert len(pending["moves"]) == 1
+    db = edit_mod.load_database("nes", cfg.databases_dir)
+    assert db.get("renamed") is not None
+    # Completed media must not be touched when undo is retried.
+    wheel = cfg.media_dir / "nes" / "Images" / "Wheel" / "renamed.png"
+    wheel.write_bytes(b"later artwork")
+    original.unlink()
+    undo_rename(manifest, cfg)
+    assert original.read_bytes() == b"rom"
+    assert wheel.read_bytes() == b"later artwork"
+    assert not manifest.exists()
+    assert edit_mod.load_database("nes", cfg.databases_dir).get("mario") is not None
+
+
+@pytest.mark.parametrize("failure", ["load", "save"])
+def test_rename_undo_retries_database_failure_without_replaying_files(
+    isolated_config, tmp_path, monkeypatch, failure,
+):
+    cfg = _build_cfg(tmp_path)
+    _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "renamed"), cfg)
+    real_save = HyperspinDatabase.save
+    with monkeypatch.context() as patcher:
+        def fail_save(*args, **kwargs):
+            raise OSError("database locked")
+        def fail_load(*args, **kwargs):
+            raise ValueError("invalid database XML")
+        if failure == "save":
+            patcher.setattr(HyperspinDatabase, "save", fail_save)
+        else:
+            patcher.setattr(edit_mod, "load_database", fail_load)
+        results = undo_rename(manifest, cfg)
+    assert any("failed" in change.note for change in results)
+    assert json.loads(manifest.read_text(encoding="utf-8"))["moves"] == []
+    assert HyperspinDatabase.save is real_save
+    wheel = cfg.media_dir / "nes" / "Images" / "Wheel" / "renamed.png"
+    wheel.write_bytes(b"new artwork")
+    undo_rename(manifest, cfg)
+    assert wheel.read_bytes() == b"new artwork"
+    assert not manifest.exists()
+
+
+def test_apply_rename_rechecks_database_target_before_moving_files(isolated_config, tmp_path):
+    cfg = _build_cfg(tmp_path)
+    plan = plan_rename(cfg, "nes", "mario", "renamed")
+    db = edit_mod.load_database("nes", cfg.databases_dir)
+    db.upsert_game(GameEntry(name="renamed", description="New user entry"))
+    db.save()
+    with pytest.raises(RuntimeError, match="now exists"):
+        apply_rename(plan, cfg)
+    assert (Path(cfg.roms_dir) / "nes" / "mario.nes").read_bytes() == b"rom"
+    assert not (Path(cfg.roms_dir) / "nes" / "renamed.nes").exists()
+
+
+def test_undo_legacy_clone_manifest_preserves_shared_media(isolated_config, tmp_path):
+    cfg = _build_cfg(tmp_path)
+    _, manifest = apply_rename(plan_rename(cfg, "nes", "mario", "mario_hack", clone=True), cfg)
+    original = cfg.media_dir / "nes" / "Images" / "Wheel" / "mario.png"
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    data["moves"].append({"kind": "media", "src": str(original), "dest": str(original), "clone": True})
+    manifest.write_text(json.dumps(data), encoding="utf-8")
+    undo_rename(manifest, cfg)
+    assert original.read_bytes() == b"wheel"
+    assert not manifest.exists()

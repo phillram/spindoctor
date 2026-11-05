@@ -5724,7 +5724,7 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
     # audit-export scoping at the end of this function still sees it.
     game_filter = game
 
-    from .audit import check_media
+    from .audit import MediaIndex, check_media
     from .media import MediaDownloader
     from .scraper import MetadataError, build_client
 
@@ -5781,8 +5781,10 @@ def fetch_media(system, all_systems, game, types, source, overwrite, pick_media,
                 continue
 
         media_base = downloader._media_base()
+        media_index = MediaIndex(sys_name, media_base) if len(games) > 1 else None
         before_status = {
-            g.name: check_media(g.name, sys_name, media_base) for g in games
+            g.name: (media_index.check(g.name) if media_index is not None
+                     else check_media(g.name, sys_name, media_base)) for g in games
         }
         if not overwrite:
             games = [g for g in games if before_status[g.name].missing()]

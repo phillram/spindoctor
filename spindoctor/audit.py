@@ -9,10 +9,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
 
+from ._utils import win_safe_stem
 from .config import Config, MEDIA_TYPES, get_rom_extensions, get_system_overrides, get_systems
 from .database import GameEntry, load_database
 from .rl_rom_paths import _raw_game_names, _RomLookup
-from .romutils import clean_display_name, derive_pc_title, find_best_match
+from .romutils import clean_display_name, derive_pc_title, _find_best_normalized_match, normalize
 
 # Stems that indicate an installer / helper, not the game itself.
 _JUNK_STEM_RE = re.compile(
@@ -455,37 +456,73 @@ def _list_rom_folder(look: _RomLookup, folder: Path, exts: list[str]) -> dict[st
     return {key: rom for key, (_rank, rom) in best.items()}
 
 
+_IMAGE_EXTENSIONS = frozenset({".png", ".jpg", ".jpeg"})
+_VIDEO_EXTENSIONS = frozenset({".mp4", ".avi", ".flv", ".mkv"})
+_MEDIA_SLOTS = {
+    "wheel": ("Images/Wheel", _IMAGE_EXTENSIONS),
+    "background": ("Images/Backgrounds", _IMAGE_EXTENSIONS),
+    "artwork": ("Images/Artwork1", _IMAGE_EXTENSIONS),
+    "title": ("Images/Artwork2", _IMAGE_EXTENSIONS),
+    "snap": ("Images/Artwork3", _IMAGE_EXTENSIONS),
+    "fade": ("Images/Artwork4", _IMAGE_EXTENSIONS),
+    "video": ("Video", _VIDEO_EXTENSIONS),
+    "trailer": ("Video/Trailers", _VIDEO_EXTENSIONS),
+    "sound": ("Sound", frozenset({".mp3", ".wav", ".ogg"})),
+    "theme": ("Themes", frozenset({".zip", ".swf"})),
+}
+
+
+class MediaIndex:
+    """One read-only media snapshot per system, never cached between operations."""
+
+    def __init__(self, system_name: str, media_base: Path) -> None:
+        self._stems: dict[str, set[str]] = {}
+        self._theme_names: set[str] = set()
+        for kind, (subdir, extensions) in _MEDIA_SLOTS.items():
+            stems: set[str] = set()
+            self._stems[kind] = stems
+            try:
+                with os.scandir(media_base / system_name / subdir) as entries:
+                    for entry in entries:
+                        try:
+                            if kind == "theme" and (entry.is_file() or entry.is_dir()):
+                                self._theme_names.add(entry.name.casefold())
+                            stem, ext = os.path.splitext(entry.name)
+                            if ext.lower() not in extensions:
+                                continue
+                            if entry.is_file() and entry.stat().st_size > 0:
+                                stems.add(stem.casefold())
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+
+    def check(self, game_name: str) -> MediaStatus:
+        stem = win_safe_stem(game_name).casefold()
+        status = MediaStatus(**{kind: stem in names for kind, names in self._stems.items()})
+        status.theme = status.theme or stem in self._theme_names
+        return status
+
+
 def check_media(game_name: str, system_name: str, media_base: Path) -> MediaStatus:
-    from ._utils import win_safe_stem
+    """Check a single game without listing entire media folders."""
     game_name = win_safe_stem(game_name)
     sys_dir = media_base / system_name
     status = MediaStatus()
 
-    img_exts = {".png", ".jpg", ".jpeg"}
-    video_exts = {".mp4", ".avi", ".flv", ".mkv"}
-    sound_exts = {".mp3", ".wav", ".ogg"}
-
-    status.wheel = _exists(sys_dir / "Images" / "Wheel", game_name, img_exts)
-    status.background = _exists(sys_dir / "Images" / "Backgrounds", game_name, img_exts)
-    status.artwork = _exists(sys_dir / "Images" / "Artwork1", game_name, img_exts)
-    status.title = _exists(sys_dir / "Images" / "Artwork2", game_name, img_exts)
-    status.snap = _exists(sys_dir / "Images" / "Artwork3", game_name, img_exts)
-    status.fade = _exists(sys_dir / "Images" / "Artwork4", game_name, img_exts)
-    status.video = _exists(sys_dir / "Video", game_name, video_exts)
-    status.trailer = _exists(sys_dir / "Video" / "Trailers", game_name, video_exts)
-    status.sound = _exists(sys_dir / "Sound", game_name, sound_exts)
-    status.theme = (sys_dir / "Themes" / game_name).exists() or _exists(
-        sys_dir / "Themes", game_name, {".zip", ".swf"}
-    )
+    for kind, (subdir, extensions) in _MEDIA_SLOTS.items():
+        setattr(status, kind, _exists(sys_dir / subdir, game_name, extensions))
+    status.theme = status.theme or (sys_dir / "Themes" / game_name).exists()
     return status
 
 
-def _exists(directory: Path, stem: str, extensions: set[str]) -> bool:
+def _exists(directory: Path, stem: str, extensions: Iterable[str]) -> bool:
     if not directory.exists():
         return False
     for ext in extensions:
         try:
-            if (directory / f"{stem}{ext}").stat().st_size > 0:
+            path = directory / f"{stem}{ext}"
+            if path.is_file() and path.stat().st_size > 0:
                 return True
         except OSError:
             pass
@@ -547,6 +584,7 @@ def audit_system(
         db_by_lower.setdefault(k.lower(), k)
 
     db_name_list = list(db_games.keys())
+    media_index = MediaIndex(system_name, config.media_dir) if check_media_flag and config.hyperspin_dir else None
 
     # Track which DB entries have been claimed by a ROM (exact or fuzzy)
     claimed_db_names: set[str] = set()
@@ -563,12 +601,12 @@ def audit_system(
         name = db_key or rom_key  # canonical display name
         is_ignored = config.is_ignored(name, system_name)
 
-        if in_database:
+        if in_database and rom_exists:
             claimed_db_names.add(db_key)
 
         media = (
-            check_media(name, system_name, config.media_dir)
-            if check_media_flag and config.hyperspin_dir
+            media_index.check(name)
+            if media_index is not None
             else MediaStatus()
         )
         missing_meta = db_entry.missing_fields() if db_entry else []
@@ -595,11 +633,12 @@ def audit_system(
 
     # Fuzzy pass: for ROMs with no exact DB match, find near-matches
     if fuzzy and db_name_list:
+        candidates = [(name, normalize(name)) for name in db_name_list if name not in claimed_db_names]
         for entry in result.entries:
             if entry.rom_exists and not entry.in_database and not entry.ignored:
-                match = find_best_match(
-                    entry.rom_name,
-                    [n for n in db_name_list if n not in claimed_db_names],
+                match = _find_best_normalized_match(
+                    normalize(entry.rom_name),
+                    (pair for pair in candidates if pair[0] not in claimed_db_names),
                     threshold=config.match_threshold,
                 )
                 if match:
