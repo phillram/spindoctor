@@ -28,11 +28,14 @@ writes ``Random.ini`` at all.
 """
 from __future__ import annotations
 
+import math
+import os
 import random
 import shutil
+import struct
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
@@ -50,18 +53,30 @@ VIDEO_EXTENSIONS = frozenset({
 AUTORUN_TASK_NAME = "SpinDoctor Intro Swap"
 SWAP_BAT_FILENAME = "spindoctor-intro-swap.bat"
 
-#: Retry window for copying over intro_video_target when it's briefly
-#: locked — expected at boot, since HyperSpin itself may still be holding
-#: the file open playing the *previous* intro video at the exact moment
-#: the logon-triggered swap runs. Confirmed on a real cabinet: intro clips
-#: range from ~10 seconds to ~2 minutes, and the lock is held for the
-#: clip's *entire* playback (a PermissionError reproduces on demand by
-#: running `swap` while an intro is actively playing, and succeeds
-#: immediately once it finishes) — not just a brief moment. 90 attempts
-#: x 2s = 3 minutes comfortably outlasts the longest observed clip
-#: without hanging the logon task indefinitely.
+#: Retry window for copying over intro_video_target while it's locked —
+#: expected at boot, since HyperSpin itself may still be holding the file
+#: open playing the *previous* intro video at the exact moment the
+#: logon-triggered swap runs. Confirmed on a real cabinet: the lock is held
+#: for the clip's *entire* playback (a PermissionError reproduces on demand
+#: by running `swap` while an intro is actively playing, and succeeds
+#: immediately once it finishes) — not just a brief moment. Clips there run
+#: from 2 seconds to 4.5 minutes, so no fixed window fits every pool: the
+#: swap waits for the clip in the target to finish (its length plus
+#: SWAP_RETRY_MARGIN_SECONDS, at most SWAP_RETRY_MAX_SECONDS; see
+#: swap_retry_attempts), and never less than these 90 attempts x 2 s
+#: = 3 minutes, which is also the window when the length can't be read.
 SWAP_RETRY_ATTEMPTS = 90
 SWAP_RETRY_DELAY_SECONDS = 2.0
+#: Slack on top of the clip's length: HyperSpin starts the intro a few
+#: seconds after it opens, and the swap can start before HyperSpin does.
+SWAP_RETRY_MARGIN_SECONDS = 60.0
+#: Upper bound, so a mislabelled hour-long file can't hold the logon task
+#: for an hour. ``doctor`` warns about clips longer than this.
+SWAP_RETRY_MAX_SECONDS = 30 * 60.0
+
+#: Containers whose length :func:`video_duration_seconds` can read (ISO base
+#: media / QuickTime: the movie header, ``mvhd``).
+DURATION_EXTENSIONS = frozenset({".mp4", ".m4v", ".mov"})
 
 
 class IntroVideoError(Exception):
@@ -166,6 +181,121 @@ def _find_case_insensitive(d: Path, filename: str) -> Optional[Path]:
         if p.is_file() and p.name.lower() == target:
             return p
     return None
+
+
+# ── clip length ───────────────────────────────────────────────────────────────
+
+def _find_box(fh, start: int, end: int, kind: bytes) -> "Optional[tuple[int, int]]":
+    """``(payload start, box end)`` of the first *kind* box in ``[start, end)``.
+
+    Walks one level of ISO base media boxes by their sizes, so a large
+    ``mdat`` before the ``moov`` box is skipped with a seek, not read.
+    """
+    pos = start
+    while pos + 8 <= end:
+        fh.seek(pos)
+        head = fh.read(8)
+        if len(head) < 8:
+            return None
+        size, box = struct.unpack(">I4s", head)
+        header = 8
+        if size == 1:                      # 64-bit size follows
+            big = fh.read(8)
+            if len(big) < 8:
+                return None
+            size = struct.unpack(">Q", big)[0]
+            header = 16
+        elif size == 0:                    # runs to the end of its parent
+            size = end - pos
+        if size < header:
+            return None
+        if box == kind:
+            return pos + header, min(pos + size, end)
+        pos += size
+    return None
+
+
+def video_duration_seconds(path: Path) -> Optional[float]:
+    """Length of an MP4 / M4V / MOV file from its movie header, or ``None``.
+
+    Pure Python, reading a few header bytes (no ffprobe). ``None`` for other
+    containers, a file that can't be read (it may be locked), or one with no
+    usable ``mvhd`` box.
+    """
+    if Path(path).suffix.lower() not in DURATION_EXTENSIONS:
+        return None
+    try:
+        with open(path, "rb") as fh:
+            end = os.fstat(fh.fileno()).st_size
+            moov = _find_box(fh, 0, end, b"moov")
+            mvhd = _find_box(fh, moov[0], moov[1], b"mvhd") if moov else None
+            if mvhd is None:
+                return None
+            fh.seek(mvhd[0])
+            head = fh.read(32)
+            if len(head) >= 32 and head[0] == 1:
+                timescale, duration = struct.unpack(">IQ", head[20:32])
+                unknown = duration == 0xFFFFFFFFFFFFFFFF
+            elif len(head) >= 20 and head[0] == 0:
+                timescale, duration = struct.unpack(">II", head[12:20])
+                unknown = duration == 0xFFFFFFFF
+            else:
+                return None
+    except (OSError, struct.error):
+        return None
+    if not timescale or unknown:
+        return None
+    return duration / timescale
+
+
+def swap_retry_attempts(target: Path, pool: Optional[Path] = None) -> int:
+    """How many times :func:`swap_video` tries the copy before giving up.
+
+    Enough to outlast the clip in *target* (the one HyperSpin may be playing,
+    holding the file open): its length plus :data:`SWAP_RETRY_MARGIN_SECONDS`,
+    capped at :data:`SWAP_RETRY_MAX_SECONDS`, and never fewer than
+    :data:`SWAP_RETRY_ATTEMPTS`. If the target can't be read (HyperSpin's
+    lock may block reading too), the longest clip in *pool* stands in for
+    it, enabled or disabled, since the target is always a copy of one of
+    them. With no length at all, it's :data:`SWAP_RETRY_ATTEMPTS`.
+    """
+    attempts = SWAP_RETRY_ATTEMPTS
+    length = video_duration_seconds(target)
+    if length is None and pool is not None:
+        lengths = [video_duration_seconds(d / name)
+                   for d in (pool, _disabled_dir(pool)) for name in _list_dir_videos(d)]
+        length = max((s for s in lengths if s is not None), default=None)
+    if length is not None and SWAP_RETRY_DELAY_SECONDS > 0:
+        window = min(length + SWAP_RETRY_MARGIN_SECONDS, SWAP_RETRY_MAX_SECONDS)
+        attempts = max(attempts, int(math.ceil(window / SWAP_RETRY_DELAY_SECONDS)))
+    return attempts
+
+
+@dataclass
+class ClipLengths:
+    """Lengths of the enabled pool videos, for ``doctor``."""
+    longest: Optional[str] = None        # file name of the longest readable clip
+    longest_seconds: float = 0.0
+    #: Clips the swap can't wait out (length + margin over SWAP_RETRY_MAX_SECONDS).
+    too_long: "list[tuple[str, float]]" = field(default_factory=list)
+    #: Enabled videos whose length can't be read (the swap waits 3 minutes).
+    unreadable: "list[str]" = field(default_factory=list)
+
+
+def pool_clip_lengths(config: Config) -> ClipLengths:
+    """Read the length of every enabled pool video (headers only)."""
+    pool = _pool_dir(config)
+    out = ClipLengths()
+    for name in sorted(_list_dir_videos(pool), key=str.lower):
+        seconds = video_duration_seconds(pool / name)
+        if seconds is None:
+            out.unreadable.append(name)
+            continue
+        if seconds > out.longest_seconds:
+            out.longest, out.longest_seconds = name, seconds
+        if seconds + SWAP_RETRY_MARGIN_SECONDS > SWAP_RETRY_MAX_SECONDS:
+            out.too_long.append((name, seconds))
+    return out
 
 
 # ── pool management ──────────────────────────────────────────────────────────
@@ -287,11 +417,12 @@ def swap_video(
     unattended. *rng* lets callers (tests) pass a seeded ``random.Random``
     instead of the module-level RNG.
 
-    The copy is retried (:data:`SWAP_RETRY_ATTEMPTS` times, spaced
-    :data:`SWAP_RETRY_DELAY_SECONDS` apart) if the target file is locked —
-    expected at boot, since HyperSpin itself may still be holding
-    ``intro_video_target`` open playing the *previous* intro video at the
-    exact moment the logon-triggered swap runs. Raises
+    The copy is retried, :data:`SWAP_RETRY_DELAY_SECONDS` apart, while the
+    target file is locked — expected at boot, since HyperSpin itself may
+    still be holding ``intro_video_target`` open playing the *previous*
+    intro video at the exact moment the logon-triggered swap runs, for the
+    clip's whole length. :func:`swap_retry_attempts` sizes the window from
+    that clip's length (3 minutes at least). Raises
     :class:`IntroVideoError` (not the raw ``OSError``) if every attempt
     fails, so the CLI reports it clearly and — once wired through the
     logon task's bat/vbs — Task Scheduler's Last Result reflects the
@@ -305,20 +436,21 @@ def swap_video(
     picker = rng if rng is not None else random
     picked = picker.choice(candidates)
     if apply:
+        attempts = swap_retry_attempts(target, pool)
         last_exc: Optional[OSError] = None
-        for attempt in range(SWAP_RETRY_ATTEMPTS):
+        for attempt in range(attempts):
             try:
                 shutil.copy2(pool / picked, target)
                 last_exc = None
                 break
             except OSError as exc:
                 last_exc = exc
-                if attempt < SWAP_RETRY_ATTEMPTS - 1:
+                if attempt < attempts - 1:
                     time.sleep(SWAP_RETRY_DELAY_SECONDS)
         if last_exc is not None:
             raise IntroVideoError(
                 f"Could not copy {picked!r} over {target} after "
-                f"{SWAP_RETRY_ATTEMPTS} attempts, {SWAP_RETRY_DELAY_SECONDS}s "
+                f"{attempts} attempts, {SWAP_RETRY_DELAY_SECONDS}s "
                 f"apart — still in use? ({last_exc})"
             ) from last_exc
     return SwapResult(picked=picked, target=target, pool_size=len(candidates))
