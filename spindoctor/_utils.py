@@ -16,8 +16,82 @@ shape looks similar across modules; their semantics diverge.
 """
 from __future__ import annotations
 
+import os
+import re
 import shutil
+import tempfile
 from pathlib import Path
+from typing import Optional
+
+
+def resolve_atomic_tmp_dir(target: Path, configured: Optional[Path]) -> Path:
+    """Use a configured scratch folder only on the target's filesystem."""
+    if configured is not None:
+        try:
+            configured.mkdir(parents=True, exist_ok=True)
+            if configured.stat().st_dev == target.parent.stat().st_dev:
+                return configured
+        except OSError:
+            pass
+    return target.parent
+
+
+def atomic_write_bytes(target: Path, data: bytes, tmp_dir: Optional[Path] = None) -> None:
+    """Write complete bytes through a unique temp file, then replace the target."""
+    fd, tmp = tempfile.mkstemp(dir=resolve_atomic_tmp_dir(target, tmp_dir), suffix=".tmp")
+    try:
+        remaining = memoryview(data)
+        while remaining:
+            written = os.write(fd, remaining)
+            if written <= 0:
+                raise OSError("Could not complete atomic write")
+            remaining = remaining[written:]
+        os.close(fd)
+        fd = -1
+        os.replace(tmp, target)
+    finally:
+        if fd >= 0:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+        try:
+            os.unlink(tmp)
+        except OSError:
+            # Best-effort cleanup must not mask a failed write or replacement.
+            pass
+
+
+def is_within(path: Path, parent: Path) -> bool:
+    """Whether a resolved path is the parent itself or one of its descendants."""
+    try:
+        path.resolve().relative_to(parent.resolve())
+        return True
+    except ValueError:
+        return False
+
+
+def move_no_replace(src: Path, dest: Path) -> None:
+    """Move to an exact path, refusing occupied files, folders and broken links."""
+    if dest.exists() or dest.is_symlink():
+        raise FileExistsError(f"Destination already exists: {dest}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dest))
+
+
+_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
+_WIN_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"{prefix}{n}" for prefix in ("COM", "LPT") for n in range(10)}
+)
+
+
+def win_safe_stem(name: str) -> str:
+    """Match HyperSpin's Windows-safe media and PCLauncher filename convention."""
+    for ch in _WIN_FILENAME_FORBIDDEN:
+        name = name.replace(ch, "")
+    name = name.strip().rstrip(".")
+    return name + "_" if name.upper() in _WIN_RESERVED_NAMES else name
 
 
 def format_bytes(n: int) -> str:
@@ -82,3 +156,9 @@ def unique_path(path: Path) -> Path:
         if not candidate.exists():
             return candidate
         n += 1
+
+
+def numbered_path_key(path: Path) -> tuple:
+    """Sort timestamped names and unique_path counters numerically."""
+    return tuple((1, int(part)) if part.isdecimal() else (0, part)
+                 for part in re.split(r"(\d+)", path.name))

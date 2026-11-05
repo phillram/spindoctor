@@ -1,6 +1,7 @@
 """Metadata scraping from ScreenScraper and TheGamesDB."""
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
@@ -15,6 +16,7 @@ from typing import Optional
 import requests
 
 from ._net import make_session, request_get
+from ._utils import atomic_write_bytes
 from .config import (
     CONFIG_DIR, SCREENSCRAPER_API, THEGAMESDB_API, Config, get_game_override,
     get_system_overrides, load_config,
@@ -917,7 +919,7 @@ class MetadataCache:
             self.root
             / _safe_name(source)
             / _safe_name(system)
-            / f"{_safe_name(rom_stem)}.json"
+            / f"{_safe_name(rom_stem)[:80]}-{hashlib.sha256(json.dumps([source, system, rom_stem]).encode()).hexdigest()}.json"
         )
 
     def get(self, source: str, system: str, rom_stem: str) -> Optional[list["GameMetadata"]]:
@@ -925,20 +927,26 @@ class MetadataCache:
             return None
         p = self._path(source, system, rom_stem)
         if not p.exists():
-            return None
+            # Released versions used lossy filename sanitization. Their
+            # entries remain usable only when the recorded identity agrees.
+            p = self.root / _safe_name(source) / _safe_name(system) / f"{_safe_name(rom_stem)}.json"
         try:
             data = json.loads(p.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            return None
-        ts = data.get("cached_at")
-        if self.ttl and ts:
-            try:
+            if not isinstance(data, dict) or any(data.get(k) != v for k, v in (
+                ("source", source), ("system", system), ("rom_stem", rom_stem),
+            )):
+                return None
+            ts = data.get("cached_at")
+            if self.ttl:
                 cached_at = datetime.fromisoformat(ts)
                 if datetime.now() - cached_at > self.ttl:
                     return None
-            except ValueError:
+            results = data.get("results")
+            if not isinstance(results, list) or not all(isinstance(entry, dict) for entry in results):
                 return None
-        return [_metadata_from_dict(entry) for entry in data.get("results", [])]
+            return [_metadata_from_dict(entry) for entry in results]
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
 
     def put(
         self,
@@ -950,7 +958,6 @@ class MetadataCache:
         if not self.enabled:
             return
         p = self._path(source, system, rom_stem)
-        p.parent.mkdir(parents=True, exist_ok=True)
         payload = {
             "cached_at": datetime.now().isoformat(timespec="seconds"),
             "source": source,
@@ -959,7 +966,8 @@ class MetadataCache:
             "results": [asdict(r) for r in results],
         }
         try:
-            p.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            atomic_write_bytes(p, json.dumps(payload, indent=2).encode("utf-8"))
         except OSError:
             pass
 
@@ -1028,7 +1036,7 @@ class _FetchWithSearchMixin:
 
         if self._cache is not None and not has_override:
             cached = self._cache.get(self.source_name, system_name, game_name)
-            if cached is not None:
+            if cached is not None and (not cached or cached[0].match_score >= threshold):
                 return cached
 
         try:
