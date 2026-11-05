@@ -966,6 +966,8 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky admin-buttons set --player 3 --colors \"<C1,C2,C3,C4,C5,C6>\" --apply",
     "ledblinky audit",
     "ledblinky audit --system MAME",
+    "ledblinky audit --all-roms",
+    "ledblinky audit --report <PATH>",
     "ledblinky check",
     "ledblinky colors brightness --scale 100",
     "ledblinky colors brightness --scale 100 --apply",
@@ -997,10 +999,15 @@ _CUSTOM_COMMAND_PRESETS: tuple[str, ...] = (
     "ledblinky setup --apply",
     "ledblinky setup --apply --verbose",
     "ledblinky setup --overwrite --apply",
+    "ledblinky setup --all-roms --apply",
     "ledblinky generate",
     "ledblinky generate --apply",
     "ledblinky generate --overwrite --apply",
     "ledblinky generate --system MAME --apply",
+    "ledblinky generate --all-roms --apply",
+    "ledblinky prune",
+    "ledblinky prune --apply",
+    "ledblinky prune --verbose",
     "ledblinky inspect-rom <ROM>",
     "ledblinky profiles",
     "ledblinky profiles --apply",
@@ -10953,8 +10960,11 @@ class _SpinDoctorGUI:
                   "individual buttons below. "
                   "3b (Normalize) is only needed for a legacy Colors.ini in hex format "
                   "(ledcolor1=FF0000) — skip it after a fresh Generate. "
-                  "Added new MAME ROMs? Re-run Full Setup — existing entries are "
-                  "preserved unless Overwrite is ticked."),
+                  "Generate adds entries only for games in your MAME wheels that have "
+                  "none (existing entries are preserved unless Overwrite is ticked), so "
+                  "re-run Full Setup after adding games to a wheel. LEDBlinky loads every "
+                  "entry when it starts: Prune removes the ones for games in no wheel, "
+                  "saving them to SpinDoctor's library."),
             wraplength=820, justify="left",
         ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
 
@@ -10962,7 +10972,12 @@ class _SpinDoctorGUI:
         self.ttk.Checkbutton(
             gen_frame, text="Overwrite existing entries (Generate step only)",
             variable=self._led_overwrite_var,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=2)
+        ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
+        self._led_all_roms_var = self.tk.BooleanVar(value=False)
+        self.ttk.Checkbutton(
+            gen_frame, text="Every MAME ROM file, not just wheel games (--all-roms)",
+            variable=self._led_all_roms_var,
+        ).grid(row=1, column=2, columnspan=2, sticky="w", padx=6, pady=2)
 
         # Chain button — runs 3a + 3c via ledblinky setup
         gen_chain_row = self.ttk.Frame(gen_frame)
@@ -10995,8 +11010,12 @@ class _SpinDoctorGUI:
             command=self._run_led_sync_players,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
-            gen_btn_row, text="Audit MAME coverage",
+            gen_btn_row, text="Audit wheel coverage",
             command=self._run_led_audit,
+        ).pack(side="left", padx=(8, 0))
+        self.ttk.Button(
+            gen_btn_row, text="Prune unused entries",
+            command=self._run_led_prune,
         ).pack(side="left", padx=(8, 0))
 
         # Inspect ROM row
@@ -11627,6 +11646,8 @@ class _SpinDoctorGUI:
     def _run_led_setup(self) -> None:
         """Run ledblinky setup (3a generate + 3c sync-players) in one step."""
         args = ["ledblinky", "setup"]
+        if self._led_all_roms_var.get():
+            args.append("--all-roms")
         if self._led_overwrite_var.get():
             args.append("--overwrite")
         if self._global_apply_var.get():
@@ -11644,7 +11665,10 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", ["ledblinky", "inspect-rom", rom])
 
     def _run_led_generate(self) -> None:
-        args = ["ledblinky", "generate", "--system", "MAME"]
+        # Every wheel that uses MAME ROM names; --all-roms for the MAME ROM folder.
+        args = ["ledblinky", "generate"]
+        if self._led_all_roms_var.get():
+            args.append("--all-roms")
         if self._led_overwrite_var.get():
             args.append("--overwrite")
         if self._global_apply_var.get():
@@ -11654,9 +11678,19 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", args)
 
     def _run_led_audit(self) -> None:
-        self._run_cli(
-            "spindoctor", ["ledblinky", "audit", "--system", "MAME"],
-        )
+        args = ["ledblinky", "audit"]
+        if self._led_all_roms_var.get():
+            args.append("--all-roms")
+        self._run_cli("spindoctor", args)
+
+    def _run_led_prune(self) -> None:
+        """Remove entries for games in no wheel (saved to the library first)."""
+        args = ["ledblinky", "prune"]
+        if self._global_apply_var.get():
+            args.append("--apply")
+        if self._global_verbose_var.get():
+            args.append("--verbose")
+        self._run_cli("spindoctor", args)
 
     def _run_led_lwax_batch(self) -> None:
         """Generate the whole .lwax pattern library (respects Apply checkbox)."""

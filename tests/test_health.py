@@ -645,8 +645,9 @@ def test_led_coverage_info_when_unconfigured(tmp_path):
 
 
 def test_led_coverage_info_when_no_cache(tmp_path, monkeypatch):
-    from spindoctor import ledblinky
+    from spindoctor import ledblinky, ledblinky_library
     monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", tmp_path / "empty_cache")
+    monkeypatch.setattr(ledblinky_library, "LIBRARY_DIR", tmp_path / "no_library")
     cfg = _mk_cabinet(tmp_path)
     (tmp_path / "led").mkdir()
     cfg.ledblinky_dir = str(tmp_path / "led")
@@ -658,10 +659,11 @@ def test_led_coverage_info_when_no_cache(tmp_path, monkeypatch):
 
 
 def test_led_coverage_warns_on_generatable_games(tmp_path, monkeypatch):
-    from spindoctor import ledblinky
+    from spindoctor import ledblinky, ledblinky_library
     cache_dir = tmp_path / "listxml_cache"
     cache_dir.mkdir()
     monkeypatch.setattr(ledblinky, "LISTXML_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(ledblinky_library, "LIBRARY_DIR", tmp_path / "no_library")
 
     cfg = _mk_cabinet(tmp_path)
     led = tmp_path / "led"
