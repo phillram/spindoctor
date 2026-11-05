@@ -94,6 +94,36 @@ Also re-apply the cabinet settings that lived on C:: **auto-logon** (`netplwiz`)
 **auto-start of the frontend** (Startup folder), power plan set to **never
 sleep**, and Windows Update **active hours**.
 
+Two more settings decide how fast the cabinet reaches HyperSpin after power-on:
+
+- **Turn off the start-up delay.** Explorer holds back everything in the
+  Startup folder and the `Run` registry keys for about 10 seconds after the
+  desktop appears, so HyperSpin, and anything else started that way, waits
+  too. On one cabinet the desktop was ready at 06:24:20.0 and HyperSpin and
+  DS4Windows were started at 06:24:30.5. This turns the delay off for your
+  account only; run it in a normal command prompt (no admin needed), and it
+  applies from the next sign-in:
+
+  ```bat
+  reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v StartupDelayInMSec /t REG_DWORD /d 0 /f
+  ```
+
+  To undo it:
+
+  ```bat
+  reg delete "HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize" /v StartupDelayInMSec /f
+  ```
+
+- **Keep Fast Startup on** (Control Panel → Power Options → *Choose what the
+  power buttons do*). With it, a power-on resumes the kernel session saved at
+  shutdown instead of starting Windows from scratch. On one cabinet, sign-in
+  came about 1 second after Windows had resumed on those power-ons, and
+  11–14 seconds after the kernel started on full boots. To check which kind a
+  start was, look in Event Viewer → Windows Logs → System for **Kernel-Boot**
+  event **27**: boot type `0x1` is Fast Startup, `0x0` a full boot. **Restart**
+  always does a full boot, so use Restart, not Shut down, after installing a
+  driver or a Windows update.
+
 ---
 
 ## 5. HyperSpin on Windows 10 — the silent-exit fix
