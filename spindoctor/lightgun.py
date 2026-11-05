@@ -672,7 +672,7 @@ def _upsert_ini_key(body: str, section: str, key: str, value: str) -> str:
     RocketLauncher — full INI parsing would lose blank lines and the
     handwritten comments many Tur builds keep around.
     """
-    section_re = re.compile(rf"^\[{re.escape(section)}\][ \t]*\r?$",
+    section_re = re.compile(rf"^\[{re.escape(section)}\][ \t]*(?=\r?$)",
                             re.IGNORECASE | re.MULTILINE)
     key_re = re.compile(rf"^[ \t]*{re.escape(key)}[ \t]*=[^\r\n]*",
                         re.IGNORECASE | re.MULTILINE)
@@ -699,7 +699,7 @@ def _upsert_ini_key(body: str, section: str, key: str, value: str) -> str:
         replacement = f"{key}={value}"
         chunk = key_re.sub(lambda _: replacement, chunk, count=1)
     else:
-        eol = "\r\n" if "\r\n" in chunk else "\n"
+        eol = "\r\n" if "\r\n" in body else "\n"
         chunk = chunk.rstrip() + f"{eol}{key}={value}{eol}"
 
     return body[:start] + chunk + body[end:]
