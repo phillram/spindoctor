@@ -70,7 +70,8 @@ services. They do not replace testing on a real cabinet.
 - GUI output is batched with a per-tick budget and preserves completion order.
   Backlogs re-arm promptly instead of waiting for the normal idle interval.
   Write-command classification includes theme filling and self-doctor fixes.
-- Windows build workflows fail immediately when any executable build fails.
+- The `cmd`-based Windows build-smoke loops propagate an executable build's
+  failure instead of letting a later successful command hide it.
 
 ## Simplification and compatibility decisions
 
@@ -88,9 +89,9 @@ services. They do not replace testing on a real cabinet.
 - Keep old metadata cache files readable only when their persisted
   source/system/stem fields prove the requested identity. The old format
   existed before this change.
-- Retain recognition of older custom wheels through their PCLauncher folder.
-  This is a compatibility heuristic, not strong proof of ownership. Verify the
-  target when rebuilding or clearing an older, unmarked custom wheel.
+- Require an ownership marker before replacing an existing custom wheel.
+  A PCLauncher folder alone is not proof: real PC game wheels have one too.
+  Older unmarked custom wheels are refused rather than risking their contents.
 - Preserve Python 3.8 and Windows 7 as supported targets. Syntax checks are
   useful evidence, but are not equivalent to running on that platform.
 
@@ -100,6 +101,11 @@ services. They do not replace testing on a real cabinet.
   transactional. Some failures or interruptions can leave partial changes
   without a complete recovery record. Rename undo has not received the shared
   partial-success treatment. Keep an independent backup for these operations.
+- Missing undo destinations remain errors requiring investigation. Recovery
+  manifests are retained rather than guessing whether files were restored,
+  moved elsewhere, or lost.
+- Atomic replacement protects against partial writes, but the shared writer
+  does not provide an `fsync`-based power-loss durability guarantee.
 - `move_no_replace` rejects an already occupied destination, but its precheck
   and move are not one concurrency-atomic operation. Do not run competing
   filesystem writers against the same library.
@@ -111,6 +117,12 @@ services. They do not replace testing on a real cabinet.
   converted to the shared normalization and lossless-writing helpers.
 - Centralized sidecar-backup discovery and LEDBlinky backup-name handling need
   a separate cross-CLI/GUI consistency pass.
+- LEDBlinky raw section boundaries attach trailing comments to the preceding
+  section. Pruning can remove those comment banners, and restoring sections
+  can normalize boundary spacing. Use the file backup for byte-identical
+  reversal, rather than relying on library regeneration for that guarantee.
+- Cleanup category safety flags and default synthetic-wheel names still have
+  duplicated declarations. They agree today; consolidation is deferred.
 - GUI run records and output widgets remain unbounded. Large wheel-table
   refreshes and the size of the CLI/GUI modules remain refactoring candidates.
 - HTTP servers without validators cannot provide strong same-resource proof
@@ -119,6 +131,24 @@ services. They do not replace testing on a real cabinet.
   runtime, or Windows 7 runtime validation was performed.
 
 ## Validation
+
+### PR integration follow-up
+
+The PR review added regressions and fixes for sanitized clone-name collisions
+and legacy clone undo, config sharing violations, lightgun hook line endings,
+damaged UTF-16 diagnostics, legacy Windows relative-path overlap checks,
+numeric backup ordering, real PCLauncher wheel ownership, and community
+theme-pack layouts. Tests now redirect the home directory before package
+imports, rather than relying on every fixture to patch every per-user path.
+
+The combined tree with the documentation PR and LEDBlinky library/prune PR
+passed **1,947 non-GUI tests and 172 GUI tests, with 7 skipped** on Windows 10
+and Python 3.13. Ruff, the single-Unreleased changelog check, and
+`git diff --check` passed. Changed Python sources passed the Python 3.8
+grammar/API scan (the only API hit was `copytree(dirs_exist_ok=...)`, which
+Python 3.8 supports). This did not run the CI matrix or frozen builds locally.
+
+### Original stack validation
 
 Validated on Windows 10 with an isolated Python 3.13.7 environment:
 
