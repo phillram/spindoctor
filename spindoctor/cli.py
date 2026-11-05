@@ -5008,10 +5008,8 @@ def _cleanup_resolve_keys(
     categories only). ``unsafe`` is rejected — pick the unsafe category by
     name so users opt-in deliberately.
     """
-    from .cleanup import CATEGORY_KEYS, scan
-    from .config import Config as _Cfg
-
-    safe_keys = [r.key for r in scan(_Cfg()).values() if r.safe]
+    from .cleanup import CATEGORY_KEYS, SAFE_CATEGORY_KEYS
+    safe_keys = SAFE_CATEGORY_KEYS
 
     chosen: list[str] = []
     for token in include:
@@ -5045,8 +5043,7 @@ def _cleanup_resolve_keys(
         resolved.append(k)
 
     if not include_unsafe:
-        from .cleanup import scan as _scan
-        unsafe = {r.key for r in _scan(_Cfg()).values() if not r.safe}
+        unsafe = set(CATEGORY_KEYS) - set(SAFE_CATEGORY_KEYS)
         # Drop unsafe keys only if they came in via 'all' / 'safe'.
         # Direct opt-in (named in --include) keeps them.
         explicit = set()
