@@ -283,12 +283,13 @@ def plan_apply(
     if not sources:
         return []
 
-    structured = any(
-        len(p.relative_to(source_dir).parts) >= 3
-        and p.relative_to(source_dir).parts[1] in ("Special A", "Special B", "Frontend")
-        for p in sources.values()
-    )
     all_targets = scan_frontend_art(config)
+    # Community packs commonly use Images/Special A, which is not our
+    # scope/bucket layout. Only a matching cabinet scope establishes identity.
+    structured = any(
+        (source_dir / t.scope / t.bucket.replace(" / ", "/")).is_dir()
+        for t in all_targets
+    )
 
     if systems:
         # Multi-system filter: include Frontend + every named system.

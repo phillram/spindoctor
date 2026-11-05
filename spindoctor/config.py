@@ -479,7 +479,7 @@ def load_config() -> Config:
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 return Config.from_dict(json.load(f))
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
+        except (ValueError, TypeError, AttributeError) as exc:
             # Preserve the corrupt file so the user can recover hand-edited
             # values; falling through to Config() would overwrite it on the
             # next save with no trace of what was there.
