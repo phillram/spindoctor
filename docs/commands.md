@@ -52,6 +52,8 @@ spindoctor audit --system MAME --no-fuzzy   :: exact-name matching only (faster)
 spindoctor audit --system MAME --show-matched  :: also print the fully-matched count
 ```
 
+When `rocketlauncher_dir` is set, ROMs are found where RocketLauncher looks for them: in every folder of the system's `Rom_Path` (`|`-separated, relative paths from the RocketLauncher folder), as `<name>.<ext>` or `<name>\<name>.<ext>` with its `Rom_Extension` list and `Games.ini` overrides; systems with no RocketLauncher `Rom_Path` are still scanned in `<roms_dir>\<System>`. A `Rom_Path` folder that other wheels also use (several wheels pointing at the MAME folder) only supplies the wheel's own games and is shown as **Shared ROM folder**, instead of listing every other ROM in it as not in the database.
+
 ### `inspect`
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
@@ -2062,10 +2064,10 @@ spindoctor ledblinky admin-leds show --emulator MAME
 `spindoctor lightgun` wires Sinden / DemulShooter into the system's existing RocketLauncher settings file (`Settings/<System>/Emulators.ini` in the folder layout, else `Settings/<System>.ini`) via `Pre_Launch_App` / `Post_Launch_App` keys, starting DemulShooter with `-target=<target>`. Module .ahk files are never touched, so a stock Tur build remains intact.
 
 ```bat
-spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems
+spindoctor lightgun detect                            :: read-only — find Sinden + DemulShooter, list pre-wired systems (Pre_Launch_App or User Functions)
 spindoctor lightgun detect --apply                    :: also seed lightgun: true for each pre-wired system
 spindoctor lightgun detect --apply --verbose          :: print install paths + system counts
-spindoctor lightgun audit                             :: status table for every system marked lightgun
+spindoctor lightgun audit                             :: status table for every system marked lightgun: INI hooks + User Functions files
 spindoctor lightgun configure --system "Sega Naomi"   :: dry-run preview of the INI hooks
 spindoctor lightgun configure --system "Sega Naomi" --apply
 spindoctor lightgun configure --system "Sega Naomi" --apply --verbose  :: print INI path + hook values written
@@ -2088,7 +2090,7 @@ Self-diagnose your install: paths, binaries, XML DB integrity, match-cache hygie
 
 It also runs a **per-wheel wiring** check: for every wheel on the Main Menu it verifies the pieces HyperSpin and RocketLauncher need at *select* and *launch* time — the HyperSpin `Settings\<System>.ini` (missing → "Cannot find `<System>.ini`" when you open the wheel), the console-level `Media\<System>\Themes\default.zip` fallback theme, the RocketLauncher emulator mapping (`Default_Emulator` resolving to an executable that exists on disk — games won't launch without it), and that the wheel has a database. This catches broken wheels that the install-wide checks miss.
 
-For every system marked `lightgun: true`, a **Lightguns** check verifies the DemulShooter wiring: a system flagged for a light gun but with no `Pre_Launch_App` (game runs with no gun) is a FAIL; a missing `Post_Launch_App` teardown (DemulShooter left running) is a WARN. It's diagnosis-only — it prints the `lightgun configure` command to run.
+For every system marked `lightgun: true`, a **Lightguns** check verifies the DemulShooter wiring: a system flagged for a light gun but with no `Pre_Launch_App` (game runs with no gun) is a FAIL; a missing DemulShooter `Post_Launch_App` teardown (DemulShooter left running) is a WARN. A system whose RocketLauncher User Functions start the gun software (a `Run` line for `Lightgun.exe` or DemulShooter in `Lib\User Functions\<System>.ahk` or its emulators' or games' files, see [Light guns → Auditing](lightgun.md#auditing)) is wired too: it passes and names the file, or is INFO when only some games' files, or only some of its emulators' files, start the gun. It's diagnosis-only — it prints the `lightgun configure` command to run.
 
 An **Emulator ROM folders** check reads the ROM and save folders that some emulators keep in their *own* config files, which `generate-config` and `migrate` never rewrite: Demul's `Demul.ini` `roms0`…`romsN` (up to `romsPathsCount`), AAE's `aae.ini` `mame_rom_path`, PokeMini's `pokemini.cfg` `eepromfile` (its folder, only while `eepromshare` is on) and the per-game `homedir` in the Daphne module's `RocketLauncher\Modules\Daphne\Daphne.ini` (the default `.` is fine). It finds each emulator from its `Emu_Path` in `Global Emulators.ini`, or one level under `emulators_dir` when it isn't listed there. A folder that doesn't exist is a WARN naming the file, key and current value; when the same folder exists under `roms_dir` (for example `<roms_dir>\Sega Naomi`), the fix line gives the exact replacement. If the emulator's RocketLauncher module sets the folder itself before every launch (the stock AAE module, and the Demul v0.5.8 / v0.7 modules, which add the ROM folder to `Demul.ini`), the stale value is harmless and only shows as INFO. MAME's `mame.ini` `rompath` isn't checked, because RocketLauncher passes `-rompath` on the command line. Diagnosis only — edit the file yourself.
 
