@@ -1321,9 +1321,11 @@ def _print_detailed_section(
                 config.media_dir,
                 db_entry=entry.db_entry,
             )
-            if entry.rom_path is not None and not (report.rom and report.rom.exists):
-                # The audit found it outside <roms_dir>/<system> (a Rom_Path folder).
+            if entry.rom_path is not None:
+                # Use the audited file even if a stale copy exists in the old folder.
                 report.rom = scan_file(entry.rom_path, "rom")
+            else:
+                report.rom = None  # Legacy discovery must not contradict the audit.
             reports.append(report)
             prog.advance(task)
 

@@ -51,7 +51,7 @@ def _resolve_rom_path(element: str, rl_dir: Path) -> Optional[Path]:
     from pathlib import PureWindowsPath
 
     if Path(element).is_absolute():
-        return Path(element)
+        return Path(os.path.normpath(element))
     pw = PureWindowsPath(element)
     if pw.drive:
         return Path(element) if os.name == "nt" else None
