@@ -6,6 +6,10 @@ error (the first one wins).  configparser is case-sensitive about sections
 and raises on duplicates, so wheels that launch fine were reported as having
 no ``Default_Emulator``, and a single duplicate anywhere in
 ``Global Emulators.ini`` hid every emulator's ``Emu_Path``.
+
+These lookups, the ``doctor`` ROM paths check and ``audit`` share one reader
+(``rocketlauncher._read_rl_ini``), so they also agree on encodings and on
+where a section name ends.
 """
 from __future__ import annotations
 
@@ -13,9 +17,11 @@ import pytest
 
 from spindoctor import health
 from spindoctor.config import Config
+from spindoctor.rl_rom_paths import _RomLookup
 from spindoctor.rocketlauncher import (
     _read_emulator_emu_path,
     _read_emulator_exe,
+    _read_rl_ini,
     _read_system_default_emulator,
     read_rl_rom_extensions,
 )
@@ -80,3 +86,32 @@ def test_doctor_wheel_wiring_reads_roms_section_in_any_case(tmp_path):
     wheel = next(c for c in result.children if c.name == "Sega Model 3")
     emulator = next(c for c in wheel.children if c.name == "Emulator")
     assert "no Default_Emulator" not in (emulator.detail or "")
+
+
+def test_utf16_and_ansi_inis(tmp_path):
+    # The Windows profile API reads UTF-16 (with a BOM) and ANSI files too.
+    utf16 = tmp_path / "Settings" / "Famicom" / "Emulators.ini"
+    utf16.parent.mkdir(parents=True)
+    utf16.write_bytes("[ROMS]\r\nDefault_Emulator=Mesen\r\n".encode("utf-16"))
+    ansi = tmp_path / "Settings" / "Global Emulators.ini"
+    ansi.write_bytes("[Mesen]\r\nEmu_Path=D:\\Émulateurs\\Mesen\\Mesen.exe\r\n"
+                     "Rom_Extension=nes|fds\r\n".encode("cp1252"))
+    assert _read_system_default_emulator("Famicom", tmp_path) == "Mesen"
+    assert _read_emulator_emu_path("Mesen", tmp_path) == "D:\\Émulateurs\\Mesen\\Mesen.exe"
+    assert read_rl_rom_extensions("Famicom", tmp_path) == {"nes", "fds"}
+
+
+def test_section_name_runs_to_the_last_bracket(tmp_path):
+    # A comment after [ROMS] doesn't hide the section, and a Games.ini
+    # section for a game named "Name [!]" keeps its brackets.
+    _write(tmp_path / "Settings" / "NES" / "Emulators.ini",
+           "[ROMS] ; edited by hand\nDefault_Emulator=Nestopia\nRom_Path=..\\Games\\NES\n"
+           "[Nestopia]\nRom_Extension=nes|zip\n")
+    games = _write(tmp_path / "Settings" / "NES" / "Games.ini",
+                   "[Super Game [!]]\nEmulator=Mesen\n")
+    assert _read_rl_ini(games) == {"super game [!]": {"emulator": "Mesen"}}
+    assert _read_system_default_emulator("NES", tmp_path) == "Nestopia"
+    look = _RomLookup(tmp_path)
+    src = look.source("NES")
+    assert (src.emulator, src.exts) == ("Nestopia", ["nes", "zip"])
+    assert look.game_overrides("NES") == {"super game [!]": ("Mesen", "")}
