@@ -723,6 +723,22 @@ The script, the diagnosis and a HyperSpin startup step that repeats the reset at
 
 Locally — `mame -listxml` is run as a subprocess and the output is cached in `~/.spindoctor/mame_listxml_cache/`. No scraper API, no quota. The cache is invalidated automatically when the MAME binary is newer than the cached file.
 
+### Start and Coin stay dark in a game, though they work when pressed
+
+The wheel probably uses RocketLauncher's AHK keymapper to turn panel keys into the keys the emulator listens for, for example `r::1 s::5 t::2 u::6` in `RocketLauncher\Profiles\AHK\<wheel>.ahk`. Older versions of `ledblinky profiles` didn't read those remaps: they looked for a panel button that sends 1, found none, and lit only Exit and Pause. Re-run it:
+
+```bat
+spindoctor ledblinky profiles              :: dry-run: the table notes the AHK profiles used
+spindoctor ledblinky profiles --apply
+```
+
+If they are still dark:
+
+- `Keymapper_AHK_Method` must be `Internal` or `External` in `Settings\<wheel>\RocketLauncher.ini`, or in `Global RocketLauncher.ini` when the wheel says `use_global`. With it off, RocketLauncher doesn't load the profile either.
+- The profile's name must match the game, emulator or wheel name exactly. A game's own profile replaces the wheel's, even one that remaps nothing.
+- Only plain `key::key` lines count. A key sent by a `Send` line or a hotkey with a body isn't followed.
+- On wheels with "MAME" in the name, LEDBlinky reads the keys from MAME's cfg itself, so an AHK profile there can't change what lights.
+
 ## Migration / drives
 
 ### Disc-based games stop launching after reinstalling DAEMON Tools (or moving to a new PC)
