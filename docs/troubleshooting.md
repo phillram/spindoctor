@@ -72,6 +72,37 @@ spindoctor config system set "<System>" --rom-extensions ext1,ext2
 
 See [Configuration → Per-system overrides](configuration.md#per-system-overrides).
 
+### `audit` reports 0 ROMs (or every game missing) for a wheel whose games launch fine
+
+`spindoctor audit` shows `Total ROMs: 0` and every database game under **DB
+entries with no ROM**, or thousands of **ROMs not in database**, for a wheel
+whose games launch normally.
+
+**Cause:** `audit` used to look for ROMs only in `<roms_dir>\<System>`, with
+SpinDoctor's own guess at the system's file extensions. RocketLauncher, which
+actually launches the games, uses the wheel's `Rom_Path` and `Rom_Extension`.
+The two disagree when:
+
+- the games sit in a subfolder, such as `J:\Games\Sega Dreamcast\roms`;
+- `Rom_Path` lists more than one folder, such as
+  `J:\Games\Sony Playstation|J:\Games\Sony Playstation\MultiDisc`;
+- the folder isn't named after the wheel, or several wheels point at the MAME
+  folder;
+- `Rom_Extension` differs from SpinDoctor's guess (`.pbp` images, MAME `.txt`
+  placeholders).
+
+**Fix:** update SpinDoctor and make sure `rocketlauncher_dir` is set
+(`spindoctor config set rocketlauncher_dir D:\Arcade\RocketLauncher`). `audit`
+then reads each wheel's `Rom_Path` and `Rom_Extension` the way RocketLauncher
+does. A folder that other wheels also use is shown as **Shared ROM folder**:
+only the wheel's own games are taken from it, so the rest of the MAME folder
+no longer shows up as ROMs missing from a smaller wheel's database.
+
+If `audit` still reports games with no ROM, run `spindoctor doctor` to check
+the launch settings (PCLauncher and `Skipchecks` can launch without a ROM
+file). See *"Cannot find Rom … in any Rom_Paths provided", or a wheel opens
+but no game launches* under [Wheels](#wheels).
+
 ## Metadata / scraping
 
 ### Reading `scraper.log`
@@ -642,6 +673,16 @@ Three usual causes:
 ### How do I revert lightgun wiring for a system?
 
 Open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` in any editor and delete the `Pre_Launch_App` and `Post_Launch_App` lines, then set `"lightgun": false` under the system in `~/.spindoctor/config.json` (or run `spindoctor lightgun audit` to confirm the change took).
+
+### `doctor` says a light-gun system "runs with no gun", but the guns work
+
+The guns are probably started from RocketLauncher User Functions, not from a `Pre_Launch_App` hook; SpinDoctor 2.15.0 and earlier only looked for the hook. Now a `Run` or `RunWait` line that starts `Lightgun.exe` or DemulShooter in `RocketLauncher\Lib\User Functions\<System>.ahk`, `<System>\<Game>.ahk`, `Emulators\<Emulator>.ahk` or `<System>\Emulators\<Emulator>.ahk` counts, and `lightgun audit` names the file. If `doctor` still fails the system:
+
+1. **The `Run` line is commented out** (`;` in front, or inside `/* … */`).
+2. **The file runs a helper** (a `.ps1`, `.bat` or another script) that starts the gun software. SpinDoctor doesn't follow helpers, so the system shows as unwired although it works. To make `doctor` see it, start `Lightgun.exe` or DemulShooter from the User Functions file itself.
+3. **The emulator file doesn't match.** `Emulators\<Emulator>.ahk` counts only when `<Emulator>` is the system's `Default_Emulator` or a `Games.ini` `Emulator=` value. `Global.ahk` isn't read: it runs for every system.
+
+Don't add a `Pre_Launch_App` hook to a system whose User Functions already start DemulShooter, or it starts twice; `lightgun configure` warns about this.
 
 ## Cross-system search
 
