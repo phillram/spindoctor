@@ -1523,6 +1523,102 @@ def check_lightguns(config: Config) -> Check:
     return parent
 
 
+def check_user_functions(config: Config) -> Check:
+    """Programs started from RocketLauncher User Functions.
+
+    Two mistakes in the AHK files RocketLauncher runs around a launch only
+    show when someone plays: a ``Run`` line naming a program that isn't there
+    (AutoHotkey stops with "Failed attempt to launch program or document"),
+    and a key mapper (JoyToKey, Xpadder, antimicro) left running in HyperSpin
+    after the game, where it doubles every pad press that DS4Windows Auto
+    Profiles or another mapper also turn into keys.  Both are a WARN naming
+    the file and line (see :mod:`spindoctor.rl_user_functions`).
+
+    A file nothing a player can reach would run is listed as INFO: a wheel
+    that's hidden or not on the Main Menu, a game that isn't on its wheel, or
+    an emulator no visible wheel launches with.  Diagnosis only.
+    """
+    from .lightgun import _system_emulators, index_user_functions, system_settings_ini
+    from .rl_user_functions import scan_user_functions
+
+    if not config.rocketlauncher_dir:
+        return Check(name="User Functions", status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    rl = Path(config.rocketlauncher_dir)
+    index = index_user_functions(rl)
+    if not index.files:
+        return Check(name="User Functions", status=Status.OK,
+                     detail="no User Functions files")
+
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = {w.lower(): w for w in _main_menu_wheels(mm_path)}
+    hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
+    emulator_systems: dict[str, set[str]] = {}
+    for low, wheel in wheels.items():
+        found = system_settings_ini(rl, wheel)
+        if found is None:
+            continue
+        try:
+            body = found[0].read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for emu in _system_emulators(rl, wheel, body):
+            if emu:
+                emulator_systems.setdefault(emu, set()).add(low)
+
+    wheel_games: dict[str, set[str]] = {}
+
+    def unreachable(key: str) -> str:
+        """Why nothing a player can reach runs the file at *key*, or ``""``."""
+        if not wheels:
+            return ""  # no Main Menu to tell by
+        parts = key.split("/")
+        if parts == ["global.ahk"]:
+            return ""
+        if parts[0] == "emulators":
+            users = emulator_systems.get(parts[1][:-4], set())
+            if not users:
+                return "no wheel on the Main Menu uses this emulator"
+            return "" if users - hidden else "only hidden wheels use this emulator"
+        system = parts[0][:-4] if len(parts) == 1 else parts[0]
+        if system not in wheels:
+            return "not on the Main Menu"
+        if system in hidden:
+            return "hidden on the Main Menu"
+        if len(parts) == 2:
+            if system not in wheel_games:
+                games, _ = _wheel_games(wheels[system], config.databases_dir)
+                wheel_games[system] = {g.lower() for g in games}
+            if wheel_games[system] and parts[1][:-4] not in wheel_games[system]:
+                return f"not on the {wheels[system]} wheel"
+        return ""
+
+    findings = scan_user_functions(index, emulator_systems)
+    parent = Check(name="User Functions", status=Status.OK)
+    for key, items in findings.items():
+        node = Check(name=index.label(key), status=Status.WARN,
+                     detail="; ".join(f.text for f in items),
+                     fix=" / ".join(dict.fromkeys(f.fix for f in items)))
+        why = unreachable(key)
+        if why:
+            node.name += f" ({why})"
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    n = len(index.files)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    if not parent.children:
+        parent.detail = (f"{n} file{'s' if n != 1 else ''}: no missing programs, "
+                         "no key mapper left running")
+    elif warned:
+        parent.detail = f"{warned} of {n} files need a look"
+    else:
+        parent.detail = (f"{len(parent.children)} of {n} files have findings, all on "
+                         "wheels, games or emulators players can't reach")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -2101,6 +2197,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
+    _safe("User Functions", lambda: check_user_functions(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))

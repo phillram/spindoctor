@@ -591,6 +591,41 @@ For MAME alternate names, recreate the empty `<name>.txt` files. Then re-run
 `spindoctor doctor` to confirm the wheel shows `N games OK`. See
 [Cabinet Architecture Reference → Multiple ROM folders and MAME alternate-name placeholders](cabinet-architecture-reference.md#multiple-rom-folders-and-mame-alternate-name-placeholders).
 
+### A game won't launch: AutoHotkey says "Failed attempt to launch program or document"
+
+A RocketLauncher User Functions file (`RocketLauncher\Lib\User Functions\...`)
+runs a program that isn't there any more: a helper that was moved, uninstalled
+or archived, such as a key mapper, gun software or a vendor tool. AutoHotkey
+stops at that `Run` line, so the game never starts.
+
+**Find it:** run `spindoctor doctor`. Its **User Functions** check names the
+file, the line and the missing path.
+
+**Fix:** correct the path, or comment the line out with `;` if the program is
+gone for good. When you retire a helper program, comment its `Run` lines out
+*before* removing it, so no launch looks for it.
+
+### Every pad press moves the HyperSpin menu twice, but only after playing certain games
+
+Something besides your normal pad mapping is turning presses into keys in
+HyperSpin. The usual cause is a key mapper (JoyToKey, Xpadder, antimicro)
+started from a RocketLauncher User Functions file, either started for a game
+and never closed, or started again as the game ends to load a "HyperSpin"
+profile. If DS4Windows Auto Profiles (or another mapper) already map the pad
+in HyperSpin, each press now arrives twice. DS4Windows doesn't hide the real
+controller from other programs unless its exclusive mode is on, so a mapper
+can read the pad while DS4Windows maps it too.
+
+**Find it:** run `spindoctor doctor`. Its **User Functions** check lists each
+file and line that starts a key mapper as the game ends, or starts one that
+nothing closes. After quitting a game, Task Manager shows it still running.
+
+**Fix:** keep one mapper for the menus. If DS4Windows Auto Profiles already
+handle HyperSpin, comment out (`;`) the mapper's `Run` lines in those files.
+Otherwise close it when the game ends, in `PostExit()`:
+`Process, Close, JoyToKey.exe` (or the mapper you use). See
+[Controller input](controller-input.md) for the DS4Windows setup.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
