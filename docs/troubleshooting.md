@@ -670,6 +670,16 @@ Three usual causes:
 
 Open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` in any editor and delete the `Pre_Launch_App` and `Post_Launch_App` lines, then set `"lightgun": false` under the system in `~/.spindoctor/config.json` (or run `spindoctor lightgun audit` to confirm the change took).
 
+### `doctor` says a light-gun system "runs with no gun", but the guns work
+
+The guns are probably started from RocketLauncher User Functions, not from a `Pre_Launch_App` hook; SpinDoctor 2.15.0 and earlier only looked for the hook. Now a `Run` or `RunWait` line that starts `Lightgun.exe` or DemulShooter in `RocketLauncher\Lib\User Functions\<System>.ahk`, `<System>\<Game>.ahk`, `Emulators\<Emulator>.ahk` or `<System>\Emulators\<Emulator>.ahk` counts, and `lightgun audit` names the file. If `doctor` still fails the system:
+
+1. **The `Run` line is commented out** (`;` in front, or inside `/* … */`).
+2. **The file runs a helper** (a `.ps1`, `.bat` or another script) that starts the gun software. SpinDoctor doesn't follow helpers, so the system shows as unwired although it works. To make `doctor` see it, start `Lightgun.exe` or DemulShooter from the User Functions file itself.
+3. **The emulator file doesn't match.** `Emulators\<Emulator>.ahk` counts only when `<Emulator>` is the system's `Default_Emulator` or a `Games.ini` `Emulator=` value. `Global.ahk` isn't read: it runs for every system.
+
+Don't add a `Pre_Launch_App` hook to a system whose User Functions already start DemulShooter, or it starts twice; `lightgun configure` warns about this.
+
 ## Cross-system search
 
 ### How do I find a game when I'm not sure which system has it?
