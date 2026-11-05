@@ -1,6 +1,6 @@
 # PS4 controller: menu keystrokes + in-game controller (DS4Windows Auto Profiles)
 
-This cabinet uses a single **PS4 DualShock 4** that has to do two different jobs:
+This example uses a **PS4 DualShock 4** for two different jobs. Adapt the paths and key mappings to your cabinet; it is not a record of a reader's current setup.
 
 1. **Navigate the HyperSpin menus**, which read the **keyboard** only.
 2. **Play games**, where emulators expect an **XInput (Xbox 360) controller**.
@@ -11,10 +11,7 @@ HyperSpin is in front and behaves as a normal Xbox controller the moment a game
 launches. One tool does both jobs, with no separate key-mapper and no reliance
 on HyperSpin's native joystick support.
 
-> Supersedes the earlier "started alongside HyperSpin / exits when HyperSpin
-> exits" description in
-> [cabinet-architecture-reference.md](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput).
-> DS4Windows now runs independently at Windows login (see §3).
+> This is the setup walkthrough for the DS4Windows example. Keep DS4Windows independent of HyperSpin's lifetime (see §3). The [cabinet reference](cabinet-architecture-reference.md#controller-input--ds4windows-and-xinput) supplies integration context; do not run both this setup and an older separate mapper stack.
 
 ---
 
@@ -85,15 +82,14 @@ Port 1 = `XInput/0/Gamepad` (see the [architecture reference](cabinet-architectu
 
 ## 4. HyperSpin Startup Script changes
 
-The `HyperSpin Startup Script.ini`
-(`D:\Arcade\Utilities\Startup and Exit\`) was simplified to suit the new design:
+If your cabinet uses `HyperSpin Startup Script.ini` (for example under
+`<hyperspin_dir>\Utilities\Startup and Exit\`), simplify it for this design:
 
 - `[Controls] Joysticks_Enabled=False` — native joystick nav stays **off** (DS4Windows drives menus now).
-- `[Startup]` — removed `DS4Windows.exe`, `DS4Windows_startup_click.exe`, `antimicro.exe`, and `Xpadder.exe`. Only `HyperSearch.exe` remained. `ResetLEDFlash.bat` was added later as entry 2, to clear stuck LED flashing (see [cabinet-architecture-reference.md](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode)). (Entries were renumbered to stay contiguous — the script stops reading at the first missing `Program_To_Run_Target_N`.)
-- `[Exit]` — removed the Xpadder / antimicro / DS4Windows kill entries. **DS4Windows is deliberately no longer killed on exit** (see §3). `ExitScript.bat` still runs.
+- `[Startup]` — remove duplicate `DS4Windows.exe` launches and unused Xpadder/antimicro helpers. Keep unrelated tools only if needed. Keep numbered entries contiguous: the script stops reading at the first missing `Program_To_Run_Target_N`. For PAC-LED64 flash reset, see the [separate hardware example](cabinet-architecture-reference.md#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode).
+- `[Exit]` — remove DS4Windows kill entries so a game cannot lose its virtual pad when HyperSpin closes. Remove obsolete mapper kill entries; keep any independently needed exit script.
 
-> `ExitScript.bat` clears `D:\Arcade\cache` on exit. It originally used a
-> relative path and an `ECHO` typo (`CHO`); prefer the absolute-path version.
+> Inspect any exit script before retaining it. Use explicit paths and do not copy a cache-deletion command from another cabinet without checking its target.
 
 ---
 
@@ -112,11 +108,11 @@ and the controller never drops mid-game.
 
 ## 6. Removing Xpadder completely
 
-Xpadder is retired on this cabinet (§1 — DS4Windows Auto Profiles replaced it). If
-it still launches or throws an error after you've disabled the obvious autostarts,
+If DS4Windows Auto Profiles replaces Xpadder for your cabinet (§1), but Xpadder
+still launches or throws an error after you've disabled the obvious autostarts,
 it's because Xpadder can be started from **more than one** place. The easily-missed
 one is **RocketLauncher's own Keymapper**, which can be pointed at Xpadder —
-confirmed on this cabinet's `RocketLauncher.log`:
+identifiable in a RocketLauncher log by entries such as:
 
 ```
 keymapperEnabled := "true"
@@ -144,7 +140,7 @@ Clear every launch point, in this order:
    `Wow6432Node`).
 3. **HyperSpin Startup Script** — confirm `[Startup]`/`[Exit]` in `HyperSpin Startup
    Script.ini` has no Xpadder entry ([§4](#4-hyperspin-startup-script-changes) —
-   already done here).
+   adapt this to your own startup list).
 4. **Uninstall the exe** — `spindoctor tools-audit` (or `where /r D:\ Xpadder.exe`)
    reports where `xpadder.exe` lives. Once the steps above are clear, uninstall it /
    delete the folder(s) so nothing can start it even if a stray reference survives.
@@ -155,11 +151,9 @@ Clear every launch point, in this order:
 > the Xpadder error dialog open and run the PowerShell parent-process query in
 > [Troubleshooting → Xpadder still launches](troubleshooting.md#xpadder-still-launches-and-throws-errors-after-i-disabled-it-in-windows-and-hyperspin).
 >
-> **Confirmed on this cabinet:** every Windows autostart and scheduled task was clean
-> of Xpadder and the HyperSpin Startup Script referenced only `HyperSearch.exe`; the
-> error reproduced on **exiting a PCLauncher game**, so RocketLauncher's Keymapper
-> (`keymapper := "xpadder"`) was the sole invoker. Disabling it (step 1) also stops the
-> control-switching fight between Xpadder's AutoProfileScan and DS4Windows Auto Profiles.
+> Check the actual launcher rather than assuming a clean Windows Startup list
+> rules Xpadder out: RocketLauncher's Keymapper can still invoke it at game
+> launch or exit. Keep only one menu-mapping path active.
 
 See also [Cabinet architecture reference → HyperSpin Startup/Exit
 Orchestration](cabinet-architecture-reference.md#hyperspin-startupexit-orchestration).
