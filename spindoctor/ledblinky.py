@@ -494,6 +494,8 @@ def _backup(path: Path, backup_dir: Optional[Path] = None) -> Optional[Path]:
         backup = dest_dir / f"{path.name}.{stamp}.bak"
     else:
         backup = path.with_suffix(path.suffix + f".{stamp}.bak")
+    from ._utils import unique_path
+    backup = unique_path(backup)
     shutil.copy2(path, backup)
     return backup
 
