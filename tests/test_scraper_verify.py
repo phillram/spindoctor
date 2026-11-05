@@ -39,13 +39,13 @@ def test_screenscraper_blank_credentials():
 def test_screenscraper_happy_path():
     payload = {
         "response": {
-            "ssuser": {"id": "phillipr", "niveau": "1", "maxthreads": "4"},
+            "ssuser": {"id": "testuser", "niveau": "1", "maxthreads": "4"},
         },
     }
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
-        ok, msg = scraper.verify_screenscraper("phillipr", "hunter2")
+        ok, msg = scraper.verify_screenscraper("testuser", "hunter2")
     assert ok is True
-    assert "phillipr" in msg
+    assert "testuser" in msg
     assert "level 1" in msg
     assert "threads 4" in msg
 
@@ -262,10 +262,10 @@ def test_screenscraper_failure_message_includes_devid():
 
 
 def test_screenscraper_success_message_includes_devid():
-    payload = {"response": {"ssuser": {"id": "phillipr", "niveau": "1"}}}
+    payload = {"response": {"ssuser": {"id": "testuser", "niveau": "1"}}}
     with patch.object(scraper, "request_get", return_value=_FakeResponse(200, payload)):
         ok, msg = scraper.verify_screenscraper(
-            "phillipr", "pw", devid="SpinDoctor", devpassword="SpinDoctor",
+            "testuser", "pw", devid="SpinDoctor", devpassword="SpinDoctor",
         )
     assert ok is True
     assert "devid=SpinDoctor" in msg
@@ -300,14 +300,14 @@ def test_redact_params_masks_secrets():
     redacted = scraper._redact_params({
         "devid": "SpinDoctor",
         "devpassword": "secret-app-pw",
-        "ssid": "phillipr",
+        "ssid": "testuser",
         "sspassword": "secret-user-pw",
         "apikey": "abc123",
         "softname": "SpinDoctor",
     })
     # Non-secret fields pass through unchanged.
     assert redacted["devid"] == "SpinDoctor"
-    assert redacted["ssid"] == "phillipr"
+    assert redacted["ssid"] == "testuser"
     assert redacted["softname"] == "SpinDoctor"
     # Every secret-bearing field is masked.
     assert redacted["devpassword"] == "***"
