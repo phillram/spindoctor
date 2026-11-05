@@ -52,6 +52,8 @@ spindoctor audit --system MAME --no-fuzzy   :: exact-name matching only (faster)
 spindoctor audit --system MAME --show-matched  :: also print the fully-matched count
 ```
 
+When `rocketlauncher_dir` is set, ROMs are found where RocketLauncher looks for them: in every folder of the system's `Rom_Path` (`|`-separated, relative paths from the RocketLauncher folder), as `<name>.<ext>` or `<name>\<name>.<ext>` with its `Rom_Extension` list and `Games.ini` overrides; systems with no RocketLauncher `Rom_Path` are still scanned in `<roms_dir>\<System>`. A `Rom_Path` folder that other wheels also use (several wheels pointing at the MAME folder) only supplies the wheel's own games and is shown as **Shared ROM folder**, instead of listing every other ROM in it as not in the database.
+
 ### `inspect`
 
 Per-file deep-dive for a single game or every game with issues in a system. Shows the ROM file, every media slot, image dimensions, video length, and modification times.
