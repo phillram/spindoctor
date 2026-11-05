@@ -2,7 +2,8 @@
 
 Uses ``lxml`` when available so that comments, attribute order, and any custom
 elements added by HyperHQ / Don's tools survive a save round-trip.  Falls back
-to ``xml.etree.ElementTree`` (which loses comments) with a one-time warning.
+to ``xml.etree.ElementTree`` with a one-time warning about document-level
+comments and doctypes. Both parsers preserve comments inside the root.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ from ._utils import atomic_write_bytes as _atomic_write_bytes, resolve_atomic_tm
 # standalone EXEs (spindoctor-fav, spindoctor-recent, spindoctor-stats) via
 # --exclude-module lxml.  The full CLI and GUI still get lxml bundled because
 # they list lxml.etree as a hidden import.  Without lxml the stdlib ET fallback
-# is used, which loses XML comment round-tripping but is otherwise correct.
+# is used, preserving comments and processing instructions inside the root.
 _LXML_NOT_CHECKED = object()
 _LET = _LXML_NOT_CHECKED  # type: ignore
 
@@ -75,8 +76,8 @@ def _warn_no_lxml_once() -> None:
     if not _LXML_WARNED:
         _LXML_WARNED = True
         warnings.warn(
-            "lxml not installed; XML comments and attribute order will not be "
-            "preserved on round-trip. Install with: pip install spindoctor[xml]",
+            "lxml not installed; document-level XML comments and doctypes may "
+            "not be preserved on round-trip. Install with: pip install spindoctor[xml]",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -102,6 +103,9 @@ class GameEntry:
     # _KNOWN_GAME_ATTRS is captured here on load and re-applied on save so
     # third-party / HyperHQ extensions survive a rewrite.
     extra_attrs: dict = field(default_factory=dict)
+    # Serialized original element travels with clones, renames, undo snapshots,
+    # and synthetic wheels. Keep unknown children and their attributes intact.
+    xml_template: str = field(default="", repr=False, compare=False)
 
     def is_metadata_complete(self) -> bool:
         return all([self.description, self.manufacturer, self.year, self.genre])
@@ -117,6 +121,10 @@ class GameEntry:
         if not self.genre:
             missing.append("genre")
         return missing
+
+
+class DuplicateGameNameError(ValueError):
+    """A database with duplicate game names cannot be saved without loss."""
 
 
 class HyperspinDatabase:
@@ -146,10 +154,20 @@ class HyperspinDatabase:
         self._tree: Any = None
         self._root: Any = None
         self._game_elements: dict[str, Any] = {}
+        # Reads keep the historical last-entry-wins view of duplicate names,
+        # but saving would update one element and leave the other unchanged.
+        self._duplicate_names: set[str] = set()
+        self._shadowed_elements: list[Any] = []
 
     # ── load ───────────────────────────────────────────────────────────────────
 
     def load(self) -> None:
+        self._games.clear()
+        self._game_elements.clear()
+        self._duplicate_names.clear()
+        self._shadowed_elements.clear()
+        self._tree = self._root = None
+        self._loaded = False
         if not self.xml_path.exists():
             self._loaded = True
             return
@@ -172,13 +190,17 @@ class HyperspinDatabase:
             else:
                 _warn_no_lxml_once()
                 with open(self.xml_path, "rb") as fh:
-                    self._tree = ET.parse(fh)
+                    parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True))
+                    self._tree = ET.parse(fh, parser=parser)
 
             self._root = self._tree.getroot()
             for game_el in self._root.findall("game"):
                 name = (game_el.get("name") or "").strip()
                 if not name:
                     continue
+                if name in self._games:
+                    self._duplicate_names.add(name)
+                    self._shadowed_elements.append(self._game_elements[name])
                 extras = {
                     k: v for k, v in game_el.attrib.items()
                     if k not in _KNOWN_GAME_ATTRS
@@ -195,6 +217,8 @@ class HyperspinDatabase:
                     players=_text(game_el, "players"),
                     enabled=_read_enabled(game_el, self._enabled_as_attribute),
                     extra_attrs=extras,
+                    xml_template=(LET.tostring(game_el, encoding="unicode", with_tail=False)
+                                  if LET is not None else ET.tostring(game_el, encoding="unicode")),
                 )
                 self._game_elements[name] = game_el
         except ET.ParseError as e:
@@ -232,6 +256,22 @@ class HyperspinDatabase:
                     yield self._games[name]
         else:
             yield from self._games.values()
+
+    @property
+    def duplicate_names(self) -> frozenset[str]:
+        """Game names that appear on more than one ``<game>`` element."""
+        self._ensure_loaded()
+        return frozenset(self._duplicate_names)
+
+    def ensure_writable(self) -> None:
+        """Raise before any edit could save a database with duplicate names."""
+        self._ensure_loaded()
+        if self._duplicate_names:
+            names = ", ".join(repr(n) for n in sorted(self._duplicate_names))
+            raise DuplicateGameNameError(
+                f"Duplicate game name {names} in {self.xml_path}; "
+                "resolve duplicate entries before editing this database"
+            )
 
     def get(self, name: str) -> Optional[GameEntry]:
         self._ensure_loaded()
@@ -295,9 +335,12 @@ class HyperspinDatabase:
         self._ensure_loaded()
         self._games.clear()
         if self._root is not None:
-            for el in list(self._game_elements.values()):
+            for el in [*self._game_elements.values(), *self._shadowed_elements]:
                 self._root.remove(el)
         self._game_elements.clear()
+        # Every entry, including each duplicate, is now caller-supplied.
+        self._shadowed_elements.clear()
+        self._duplicate_names.clear()
 
     def iter_incomplete(self) -> Iterator[GameEntry]:
         self._ensure_loaded()
@@ -320,7 +363,7 @@ class HyperspinDatabase:
         :func:`resolve_atomic_tmp_dir` handles the same-filesystem check
         so a cross-drive *tmp_dir* is silently ignored.
         """
-        self._ensure_loaded()
+        self.ensure_writable()
         target = output_path or self.xml_path
         target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -542,7 +585,10 @@ def _update_game_element(el, game: "GameEntry", enabled_as_attribute: bool = Fal
                 continue
             _set_text(el, field_name, value)
         else:
-            child.text = value
+            # Do not normalize unchanged text, including mixed content used by
+            # third-party tools. An actual field edit changes only its text.
+            if _text(el, field_name) != value:
+                child.text = value
     for key, value in (game.extra_attrs or {}).items():
         if key in _KNOWN_GAME_ATTRS:
             continue
@@ -676,6 +722,18 @@ def _new_game_element(game: "GameEntry", root=None, enabled_as_attribute: bool =
     full HyperHQ schema with ``<description>``, ``<manufacturer>``, etc.
     """
     LET = _lxml_etree()
+    if game.xml_template:
+        raw = game.xml_template.encode("utf-8")
+        if LET is not None and (root is None or hasattr(root, "nsmap")):
+            el = LET.fromstring(raw, parser=LET.XMLParser(remove_comments=False))
+        else:
+            parser = ET.XMLParser(target=ET.TreeBuilder(insert_comments=True, insert_pis=True))
+            el = ET.fromstring(raw, parser=parser)
+        el.tail = None
+        _update_game_element(el, game, enabled_as_attribute=enabled_as_attribute)
+        if root is not None:
+            root.append(el)
+        return el
     if LET is not None and (root is None or hasattr(root, "nsmap")):
         if root is not None:
             el = LET.SubElement(root, "game")

@@ -33,7 +33,7 @@ from .media import MEDIA_DIR_MAP, MEDIA_EXTENSIONS
 from .rocketlauncher import _win_safe_stem
 from .rocketlauncher import _read_windows_text_with_encoding
 from ._utils import atomic_write_bytes, move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, checkpoint, complete_step, finish_undo, undo_entries
 
 
 EDIT_DIR = CONFIG_DIR / "edits"
@@ -289,6 +289,7 @@ def apply_batch_edit(
         return [], None
 
     db = load_database(system, config.databases_dir)
+    db.ensure_writable()
     plan = plan_batch_edit(games, changes)
 
     results: list[EditResult] = []
@@ -329,36 +330,30 @@ def apply_batch_edit(
     if not manifest_entries:
         return results, None
 
-    # Use explicit output_dir only — do NOT fall back to config.output_dir.
-    out_root = output_dir
-    _tmp = config.effective_atomic_tmp_dir
-    if out_root is not None:
-        target = out_root / "Databases" / system / f"{system}.xml"
-        target.parent.mkdir(parents=True, exist_ok=True)
-        db.save(output_path=target, tmp_dir=_tmp)
-    else:
-        _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
-        db.save(backup_dir=_bak_dir, tmp_dir=_tmp)
-
     out_dir = manifest_dir or EDIT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     manifest_path = unique_path(out_dir / f"{EDIT_MANIFEST_PREFIX}{stamp}.json")
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "timestamp": stamp,
-                "system": system,
-                "changes": [
-                    {"field": c.field, "value": c.value, "mode": c.mode}
-                    for c in changes
-                ],
-                "games": manifest_entries,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    checkpoint(manifest_path, {
+        "timestamp": stamp,
+        "system": system,
+        "db_output": output_dir is not None,
+        "db_path": str(output_dir / "Databases" / system / f"{system}.xml"
+                       if output_dir is not None else db.xml_path),
+        "changes": [
+            {"field": c.field, "value": c.value, "mode": c.mode}
+            for c in changes
+        ],
+        "games": manifest_entries,
+    })
+    # Recovery must exist before replacing the database, not afterwards.
+    _tmp = config.effective_atomic_tmp_dir
+    if output_dir is not None:
+        target = output_dir / "Databases" / system / f"{system}.xml"
+        db.save(output_path=target, tmp_dir=_tmp)
+    else:
+        _bak_dir = Path(config.backup_dir) if getattr(config, "backup_dir", "") else None
+        db.save(backup_dir=_bak_dir, tmp_dir=_tmp)
     return results, manifest_path
 
 
@@ -372,7 +367,12 @@ def undo_batch_edit(
     if not system:
         raise ValueError(f"manifest missing 'system': {manifest_path}")
 
-    db = load_database(system, config.databases_dir)
+    if data.get("db_output") and data.get("db_path"):
+        from .database import HyperspinDatabase
+        db = HyperspinDatabase(system, Path(data["db_path"]))
+        db.load()
+    else:
+        db = load_database(system, config.databases_dir)
     results: list[EditResult] = []
     for entry in data.get("games", []):
         name = entry.get("game", "")
@@ -702,6 +702,7 @@ def apply_rename(
 
     # Validate the DB before moving files, but save it last.
     db = load_database(op.system, config.databases_dir)
+    db.ensure_writable()
     existing = db.get(op.old_rom_name)
     if existing is None:
         raise RuntimeError(
@@ -710,7 +711,24 @@ def apply_rename(
     if db.get(op.new_rom_name) is not None:
         raise RuntimeError(f"database changed under us: {op.new_rom_name!r} now exists")
 
-    # 2) Files first, DB last — that way the DB edit reflects what's on disk.
+    out_dir = manifest_dir or RENAME_DIR
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_path = unique_path(out_dir / f"{RENAME_MANIFEST_PREFIX}{stamp}.json")
+    data = {
+        "timestamp": stamp,
+        "system": op.system,
+        "old_name": op.old_rom_name,
+        "new_name": op.new_rom_name,
+        "old_display_name": op.old_display_name,
+        "new_display_name": op.new_display_name,
+        "clone": clone,
+        "moves": manifest_moves,
+        "db_before": asdict(existing),
+        "db_state": "untouched",
+    }
+    checkpoint(manifest_path, data)
+
+    # 2) Files first, DB last. Persist intent before even a partial copy.
     db_change: Optional[FileChange] = None
     for ch in plan.file_changes:
         if ch.kind == "db":
@@ -720,18 +738,20 @@ def apply_rename(
         if ch.src == ch.dest and ch.kind != "rl-pclauncher":
             # Shared sanitized media names need no copy or undo entry.
             continue
-        if ch.src != ch.dest:
-            _move_or_copy(ch.src, ch.dest, clone=clone)
-        if ch.kind == "rl-pclauncher" and ch.ini_old_section and ch.ini_new_section:
-            _rewrite_pclauncher_section(ch.dest, ch.ini_old_section, ch.ini_new_section)
-        applied.append(ch)
-        manifest_moves.append({
+        entry = {
             "kind": ch.kind,
             "src": str(ch.src),
             "dest": str(ch.dest),
             "media_type": ch.media_type,
             "clone": clone,
-        })
+        }
+        begin_step(manifest_path, data, "moves", entry)
+        if ch.src != ch.dest:
+            _move_or_copy(ch.src, ch.dest, clone=clone)
+        if ch.kind == "rl-pclauncher" and ch.ini_old_section and ch.ini_new_section:
+            _rewrite_pclauncher_section(ch.dest, ch.ini_old_section, ch.ini_new_section)
+        complete_step(manifest_path, data, entry)
+        applied.append(ch)
 
     # 3) DB edit.
     renamed = replace(
@@ -748,6 +768,13 @@ def apply_rename(
     # Use explicit output_dir only — do NOT fall back to config.output_dir.
     out_root = output_dir
     _tmp = config.effective_atomic_tmp_dir
+    data["db_state"] = "pending"
+    data["db_output"] = out_root is not None
+    data["db_path"] = str(
+        out_root / "Databases" / op.system / f"{op.system}.xml"
+        if out_root is not None else db.xml_path
+    )
+    checkpoint(manifest_path, data)
     if out_root is not None:
         target = out_root / "Databases" / op.system / f"{op.system}.xml"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -759,28 +786,8 @@ def apply_rename(
     if db_change is not None:
         applied.append(db_change)
 
-    # 4) Manifest.
-    out_dir = manifest_dir or RENAME_DIR
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = unique_path(out_dir / f"{RENAME_MANIFEST_PREFIX}{stamp}.json")
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "timestamp": stamp,
-                "system": op.system,
-                "old_name": op.old_rom_name,
-                "new_name": op.new_rom_name,
-                "old_display_name": op.old_display_name,
-                "new_display_name": op.new_display_name,
-                "clone": clone,
-                "moves": manifest_moves,
-                "db_before": asdict(existing),
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
+    data["db_state"] = "applied"
+    checkpoint(manifest_path, data)
     return applied, manifest_path
 
 
@@ -800,7 +807,8 @@ def undo_rename(
     errors: list[str] = []
 
     # Reverse file moves last-first so we mirror the apply order.
-    for entry in reversed(data.get("moves", [])):
+    entries = list(undo_entries(data, "moves", completed, errors))
+    for entry in reversed(entries):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
         kind = entry.get("kind", "")
@@ -837,9 +845,14 @@ def undo_rename(
 
     # DB undo runs only once every file move succeeded, so a retry finishes
     # file work first instead of leaving the DB pointing at missing files.
-    if not errors:
+    if not errors and data.get("db_state") != "untouched":
         try:
-            db = load_database(system, config.databases_dir)
+            if data.get("db_output") and data.get("db_path"):
+                from .database import HyperspinDatabase
+                db = HyperspinDatabase(system, Path(data["db_path"]))
+                db.load()
+            else:
+                db = load_database(system, config.databases_dir)
             db.remove_game(new_name)
             if not is_clone:
                 before = data.get("db_before") or {}

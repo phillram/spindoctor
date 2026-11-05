@@ -18,6 +18,14 @@ services. They do not replace testing on a real cabinet.
 
 ### Backup, migration, and recovery
 
+- Rename/clone, media import, curation, misplaced-ROM moves, migration, and
+  restructure now atomically checkpoint each file intent before changing it.
+  Records include an interrupted in-flight operation, not just operations that
+  returned successfully. Batch-edit snapshots also precede database writes.
+  Undo reconciles pending intents with the paths on disk; ambiguous partial
+  cross-drive moves retain both paths and the record for investigation.
+- Media import backs up overwritten targets beside its manifest and restores
+  them on undo. Duplicate target imports are skipped within one run.
 - Relocated backups restore from the selected backup, not its old absolute path.
 - Backup and migration reject destinations nested inside their source.
   Backup application also validates manually constructed plans.
@@ -44,6 +52,10 @@ services. They do not replace testing on a real cabinet.
 
 ### Media and synthetic wheels
 
+- Owned synthetic-wheel rebuilds refresh changed hardlinks, copies, and theme
+  folders. Replacements are staged before switching the destination; ordinary
+  mirrors still preserve conflicting targets. Copy comparison checks bytes,
+  not just file size and timestamps.
 - Favorites and recent-wheel pruning share a bounded traversal that preserves
   retained theme contents, default themes, wheel-click sounds, and letter art.
 - Wheel builders and clear operations validate target names and reject source
@@ -63,6 +75,16 @@ services. They do not replace testing on a real cabinet.
 
 ### Storage, matching, GUI, and builds
 
+- XML loading rejects duplicate game names (after trimming) before edits can discard
+  an entry. Serialized game templates preserve unmodeled children, comments,
+  processing instructions, and attributes through rename, clone, undo, and
+  synthetic-wheel generation. The stdlib parser also preserves comments and
+  processing instructions inside the root. Unchanged field text is retained.
+- GUI run history keeps at most 200 records, each retaining at most 256 Ki
+  characters and 4,096 fragments. The Output widget keeps at most 1 Mi
+  characters and 10,000 lines. Truncated buffers display a notice, including
+  in saved logs. A bounded 256-item subprocess queue and 8,192-character reads
+  limit backlogs and newline-free output without dropping completion markers.
 - Shared unique-temp atomic writes handle short writes and do not let temporary
   file cleanup mask the original failure.
 - JSON caches reject malformed shapes while preserving valid empty entries.
@@ -120,11 +142,12 @@ services. They do not replace testing on a real cabinet.
 
 ## Remaining risks and follow-up work
 
-- Multi-file rename/import and several other writers are not fully
-  transactional. Some failures or interruptions can leave partial changes
-  without a complete recovery record. Undo checkpoints also cannot guarantee
-  recovery across a process crash or a failed checkpoint write. Keep an
-  independent backup for these operations.
+- Multi-file changes are not fully transactional. The checkpointed writers
+  above record in-flight work before mutation, but an interrupted cross-drive
+  move can leave both source and destination partially populated. Undo refuses
+  to guess how to merge them. Other writers and undo checkpoints still cannot
+  guarantee recovery across a process crash or a failed checkpoint write.
+  Keep an independent backup for these operations.
 - Missing undo destinations remain errors requiring investigation. Recovery
   manifests are retained rather than guessing whether files were restored,
   moved elsewhere, or lost.
@@ -133,10 +156,12 @@ services. They do not replace testing on a real cabinet.
 - `move_no_replace` rejects an already occupied destination, but its precheck
   and move are not one concurrency-atomic operation. Do not run competing
   filesystem writers against the same library.
-- Synthetic-wheel hardlinks/copies can remain stale after a source file is
-  replaced. Ownership markers do not solve synchronization.
-- Duplicate XML game-name handling and preservation of unmodeled child
-  elements still need deeper review.
+- Synthetic-wheel media refreshes on rebuild, not immediately when a source
+  changes. Interrupted theme-folder replacement can leave a staging directory;
+  rebuilding regenerates the derived target.
+- XML preservation is structural, not byte-identical. Formatting, declarations,
+  and header dates can change. The stdlib parser does not retain document-level
+  comments outside the root or doctypes; lxml remains recommended.
 - Not every preview/media path or LEDBlinky/lightgun/CLI text writer was
   converted to the shared normalization and lossless-writing helpers.
 - Centralized sidecar-backup discovery and LEDBlinky backup-name handling need
@@ -148,14 +173,32 @@ services. They do not replace testing on a real cabinet.
 - Cleanup category safety flags still have duplicated declarations across the
   category reports, CLI keys, and GUI defaults, now pinned by a regression
   test. Synthetic-wheel names share one declaration.
-- GUI run records and output widgets remain unbounded. Large wheel-table
-  refreshes and the size of the CLI/GUI modules remain refactoring candidates.
+- GUI retained output is bounded and saved logs contain the retained tail,
+  not a full stream after truncation. Large wheel-table refreshes and the size
+  of the CLI/GUI modules remain refactoring candidates.
 - HTTP servers without validators cannot provide strong same-resource proof
   across interrupted requests, even when the URL matches.
 - No live scraping, hardware integration, frozen-executable build, Python 3.8
   runtime, or Windows 7 runtime validation was performed.
 
 ## Validation
+
+### Recorded-risk follow-up
+
+Regression coverage includes write-ahead intent checks before and after
+interrupted filesystem moves, failed checkpoint writes, database-save failure,
+a child process exiting during media import, overwrite restoration, both XML
+parsers, custom-wheel rebuild refreshes, stale hardlinks/copies with unchanged
+size and timestamp, failed mirror staging, and GUI character/fragment/line
+limits and completion ordering. These are synthetic and fault-injection tests,
+not cabinet or power-loss validation.
+
+Validated on Windows 10 and Python 3.14.0: **2,089 non-GUI tests and 176 GUI
+tests passed (2,265 total), with 7 skipped** (four need unavailable `ffprobe`;
+three test non-Windows guards). The forced stdlib XML test emits the expected
+fallback warning. Ruff, the single-Unreleased changelog check,
+`git diff --check`, and the Python 3.8 grammar scan (180 files) passed.
+Python 3.8/Windows 7 runtimes and frozen builds were not tested.
 
 ### PR integration follow-up
 

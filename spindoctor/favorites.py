@@ -547,7 +547,7 @@ def rebuild(
     for entry in sorted_entries:
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
         source_db = _safe_load(entry.system, config, src_cache)
-        source_game = source_db.get(entry.rom_name) if source_db else None
+        source_game = _source_game(source_db, entry.system, entry.rom_name)
         base_desc = entry.display_name or (source_game.description if source_game else entry.rom_name)
         merged = GameEntry(
             name=target_name,
@@ -558,6 +558,9 @@ def rebuild(
             year=source_game.year if source_game else "",
             genre=source_game.genre if source_game else "",
             rating=source_game.rating if source_game else "",
+            players=source_game.players if source_game else "",
+            extra_attrs=dict(source_game.extra_attrs) if source_game else {},
+            xml_template=source_game.xml_template if source_game else "",
             enabled="Yes",
         )
         db.upsert_game(merged)
@@ -594,6 +597,7 @@ def rebuild(
                 config.media_dir, entry.system, store.target_system,
                 entry.rom_name, target_name,
                 video_dir_override=video_override,
+                refresh=True,
             )
             result = apply_plan(plan, mode=media_mode,
                                log_fn=print if verbose else None)
@@ -893,6 +897,23 @@ def _safe_load(
     if cache is not None:
         cache[system_name] = db
     return db
+
+
+def _source_game(
+    source_db: Optional[HyperspinDatabase], system_name: str, rom_name: str,
+) -> Optional[GameEntry]:
+    """Return the source entry, or ``None`` when its name is ambiguous."""
+    if source_db is None:
+        return None
+    if rom_name in source_db.duplicate_names:
+        warnings.warn(
+            f"'{rom_name}' appears more than once in the '{system_name}' database. "
+            "Its rebuilt entry will have empty metadata fields.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+        return None
+    return source_db.get(rom_name)
 
 
 # ─── standalone CLI (python -m spindoctor.favorites …) ───────────────────────

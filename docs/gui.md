@@ -382,6 +382,13 @@ The History tab captures both CLI subprocess invocations *and* in-process GUI op
 
 The bottom Output panel only shows the *current* run; this tab indexes everything since launch so you can answer "what did that dry-run output again?" without re-running. Buffer caps at 200 entries (FIFO) and is in-memory only — restarting the GUI clears it. For longer-term history of apply-mode commands that wrote a JSON manifest, use **File → View logs & manifests**.
 
+Each run retains its latest 256 Ki characters (at most 4,096 output fragments).
+The Output panel retains its latest 1 Mi characters and 10,000 lines. When a
+limit is reached, older output is removed and an **Earlier output truncated**
+notice appears. Saved and automatically saved logs contain this retained tail
+and the notice, not the full original stream. Run the CLI directly and redirect
+its output to a file when you need a complete verbose log.
+
 A **Browse manifests / undo** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
 
 ## Menubar

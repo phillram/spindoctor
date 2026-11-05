@@ -7,6 +7,7 @@ remove the partial output before re-raising.
 from __future__ import annotations
 
 import shutil
+import json
 from pathlib import Path
 
 import pytest
@@ -177,12 +178,14 @@ def test_curate_keyboard_interrupt_persists_partial_manifest(
     finally:
         monkeypatch.setattr(shutil, "move", real_move)
 
-    # A manifest exists, and it records the one file that DID get archived.
+    # Record completed work and the in-flight intent, even when the move
+    # raises before returning. Undo reconciles the latter against the paths.
     manifests = list(manifest_dir.glob("*.json"))
     assert len(manifests) == 1, f"expected one partial manifest, got: {manifests}"
     text = manifests[0].read_text(encoding="utf-8")
     assert "ToRetire-A.zip" in text
-    assert "ToRetire-B.zip" not in text  # never reached
+    data = json.loads(text)
+    assert data["pending"] == [str(rom_dir / "_retired" / "ToRetire-B.zip")]
 
 
 # ─── partial-manifest persistence (PR follow-up) ─────────────────────────────

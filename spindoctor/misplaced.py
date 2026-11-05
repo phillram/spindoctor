@@ -21,7 +21,7 @@ from typing import Iterable, Optional
 
 from .config import Config, ROM_EXTENSIONS, get_rom_extensions, get_system_overrides
 from ._utils import move_no_replace, numbered_path_key, unique_path
-from ._undo import finish_undo
+from ._undo import begin_step, complete_step, finish_undo, undo_entries
 
 
 MANIFEST_PREFIX = "_spindoctor-misplaced-"
@@ -141,6 +141,10 @@ def apply_moves(
     manifest_entries: list[dict] = []
     roms_root = Path(config.roms_dir)
 
+    out_dir = manifest_dir or roms_root
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
+    data = {"timestamp": stamp, "moves": manifest_entries}
     for item in items:
         if not item.suggested_systems:
             result.skipped.append((item.path, "no suggested system"))
@@ -151,6 +155,13 @@ def apply_moves(
         if target_path.exists():
             result.skipped.append((item.path, f"target exists: {target_path}"))
             continue
+        entry = {
+            "src": str(item.path),
+            "dest": str(target_path),
+            "from_system": item.current_system,
+            "to_system": target_system,
+        }
+        begin_step(manifest_path, data, "moves", entry)
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
             shutil.move(str(item.path), str(target_path))
@@ -158,27 +169,11 @@ def apply_moves(
             result.skipped.append((item.path, f"move failed: {e}"))
             continue
         result.moved.append((item.path, target_path))
-        manifest_entries.append({
-            "src": str(item.path),
-            "dest": str(target_path),
-            "from_system": item.current_system,
-            "to_system": target_system,
-        })
+        complete_step(manifest_path, data, entry)
 
     if not manifest_entries:
         return result, None
 
-    out_dir = manifest_dir or roms_root
-    out_dir.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    manifest_path = unique_path(out_dir / f"{MANIFEST_PREFIX}{stamp}.json")
-    manifest_path.write_text(
-        json.dumps(
-            {"timestamp": stamp, "moves": manifest_entries},
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
     return result, manifest_path
 
 
@@ -187,7 +182,8 @@ def undo_moves(manifest_path: Path) -> dict:
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     summary = {"reverted": 0, "errors": []}
     completed = set()
-    for entry in reversed(data.get("moves", [])):
+    entries = list(undo_entries(data, "moves", completed, summary["errors"]))
+    for entry in reversed(entries):
         src = Path(entry["src"])
         dest = Path(entry["dest"])
         try:

@@ -6,6 +6,7 @@ HyperHQ or other tools must survive a save() round-trip.
 from __future__ import annotations
 
 import textwrap
+from dataclasses import replace
 
 import pytest
 
@@ -48,6 +49,67 @@ def _write(tmp_path, content):
     p = tmp_path / "MAME.xml"
     p.write_text(content, encoding="utf-8")
     return p
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_cloning_entry_preserves_unknown_children_and_comments(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    elif not HAS_LXML:
+        pytest.skip("lxml not installed")
+    source = _write(tmp_path, """<menu><game name="original" custom="value">
+      <description lang="en"> Original <b>bold</b> tail </description>
+      <!-- keep game comment --><?tool instruction?>
+      <extension mode="custom"><nested id="1">payload</nested></extension>
+      <extension mode="second">other</extension>
+    </game></menu>""")
+    db = HyperspinDatabase("MAME", source)
+    game = db.get("original")
+    copied = replace(game, name="clone", year="1999")
+    target = tmp_path / "clone.xml"
+    fresh = HyperspinDatabase("Clone", target)
+    fresh.upsert_game(copied)
+    fresh.save(backup=False)
+    text = target.read_text(encoding="utf-8")
+    assert "keep game comment" in text
+    assert "<?tool instruction?>" in text
+    import xml.etree.ElementTree as ET
+    el = ET.parse(target).getroot().find("game")
+    assert el.get("name") == "clone"
+    assert el.get("custom") == "value"
+    assert [child.get("mode") for child in el.findall("extension")] == ["custom", "second"]
+    assert el.find("extension/nested").text == "payload"
+    assert el.find("description").get("lang") == "en"
+    assert el.find("description/b").text == "bold"
+    assert el.find("year").text == "1999"
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_duplicate_game_names_refuse_edit_without_changing_xml(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    path = _write(tmp_path, '<menu><game name="same"><custom>one</custom></game>'
+                            '<game name=" same "><custom>two</custom></game></menu>')
+    original = path.read_bytes()
+    db = HyperspinDatabase("MAME", path)
+    with pytest.raises(ValueError, match="Duplicate game name"):
+        db.save(backup=False)
+    assert path.read_bytes() == original
+    assert not list(tmp_path.glob("*.bak"))
+
+
+def test_stdlib_roundtrip_preserves_inner_comments_and_processing_instructions(tmp_path, monkeypatch):
+    from spindoctor import database
+    monkeypatch.setattr(database, "_LET", None)
+    path = _write(tmp_path, '<menu><!--keep--><?tool value?><game name="one"><custom/></game></menu>')
+    db = HyperspinDatabase("MAME", path)
+    db.save(backup=False)
+    text = path.read_text(encoding="utf-8")
+    assert "<!--keep-->" in text
+    assert "<?tool value?>" in text
+    assert "<custom" in text
 
 
 def test_load_parses_known_games(tmp_path):
@@ -227,3 +289,39 @@ def test_write_sort_databases_skips_existing_without_overwrite(tmp_path):
     # Second write without overwrite — file should be untouched
     write_sort_databases("Arcade", games, tmp_path)
     assert year_file.stat().st_mtime == original_mtime
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_duplicate_game_names_keep_last_entry_reads(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    elif not HAS_LXML:
+        pytest.skip("lxml not installed")
+    path = _write(tmp_path, '<menu><game name="same"><year>1981</year></game>'
+                            '<game name="other"><year>1990</year></game>'
+                            '<game name=" same "><year>1982</year></game></menu>')
+    db = HyperspinDatabase("MAME", path)
+    assert set(db.games()) == {"same", "other"}
+    assert db.get("same").year == "1982"
+    assert db.duplicate_names == {"same"}
+    with pytest.raises(database.DuplicateGameNameError, match="Duplicate game name 'same'"):
+        db.ensure_writable()
+
+
+@pytest.mark.parametrize("stdlib", [False, True])
+def test_reset_games_removes_duplicates_before_full_rebuild(tmp_path, monkeypatch, stdlib):
+    from spindoctor import database
+    if stdlib:
+        monkeypatch.setattr(database, "_LET", None)
+    elif not HAS_LXML:
+        pytest.skip("lxml not installed")
+    path = _write(tmp_path, '<menu><game name="same"><year>1981</year></game>'
+                            '<game name="same"><year>1982</year></game></menu>')
+    db = HyperspinDatabase("Favorites", path)
+    db.reset_games()
+    db.upsert_game(GameEntry(name="fresh", description="Fresh"))
+    db.save(backup=False)
+    reloaded = HyperspinDatabase("Favorites", path)
+    assert set(reloaded.games()) == {"fresh"}
+    assert reloaded.duplicate_names == frozenset()

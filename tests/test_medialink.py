@@ -1,6 +1,11 @@
 """Media-link planning + apply (hardlink / symlink / copy)."""
 from __future__ import annotations
 
+import os
+
+import pytest
+
+from spindoctor import medialink
 from spindoctor.medialink import (
     LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir,
 )
@@ -77,6 +82,69 @@ def test_remove_target_drops_mirrored_files(tmp_path):
 def test_missing_source_returns_empty_plan(tmp_path):
     plan = plan_mirror(tmp_path / "Media", "Nope", "Favorites", "Mario")
     assert plan.actions == []
+
+
+@pytest.mark.parametrize("mode", [LinkMode.COPY, LinkMode.HARDLINK])
+def test_refresh_replaces_stale_mirror_after_source_atomic_replacement(tmp_path, mode):
+    media = _layout(tmp_path)
+    src = media / "Super Nintendo" / "Images" / "Wheel" / "Mario.png"
+    dest = media / "Custom" / "Images" / "Wheel" / "Mario.png"
+    apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario"), mode)
+    replacement = src.with_suffix(".new")
+    replacement.write_bytes(b"new-artwork")
+    # Same size and mtime must not be mistaken for an unchanged copy.
+    stat = src.stat()
+    assert replacement.stat().st_size == stat.st_size
+    os.utime(replacement, ns=(stat.st_atime_ns, stat.st_mtime_ns))
+    os.replace(replacement, src)
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), mode)
+    assert not result["errors"]
+    assert dest.read_bytes() == b"new-artwork"
+    if mode == LinkMode.HARDLINK:
+        assert os.path.samefile(src, dest)
+
+
+def test_refresh_directory_copy_includes_changes_and_removes_obsolete_files(tmp_path):
+    media = _layout(tmp_path)
+    apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario"), LinkMode.COPY)
+    src = media / "Super Nintendo" / "Themes" / "Mario"
+    dest = media / "Custom" / "Themes" / "Mario"
+    (src / "Theme.xml").unlink()
+    (src / "new.xml").write_bytes(b"new theme")
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert not result["errors"]
+    assert not (dest / "Theme.xml").exists()
+    assert (dest / "new.xml").read_bytes() == b"new theme"
+
+
+def test_refresh_failure_preserves_previous_mirror(tmp_path, monkeypatch):
+    media = _layout(tmp_path)
+    apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario"), LinkMode.COPY)
+    src = media / "Super Nintendo" / "Images" / "Wheel" / "Mario.png"
+    dest = media / "Custom" / "Images" / "Wheel" / "Mario.png"
+    src.write_bytes(b"new media")
+    real_copy = medialink.shutil.copy2
+
+    def fail(source, target, *args, **kwargs):
+        if source == src:
+            target.write_bytes(b"partial")
+            raise OSError("disk full")
+        return real_copy(source, target, *args, **kwargs)
+
+    monkeypatch.setattr(medialink.shutil, "copy2", fail)
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert result["errors"]
+    assert dest.read_bytes() == b"wheel-bytes"
+    assert not list(dest.parent.glob(".spindoctor-mirror-*"))
+
+
+def test_conflicting_target_is_preserved_without_refresh_permission(tmp_path):
+    media = _layout(tmp_path)
+    dest = media / "Custom" / "Images" / "Wheel" / "Mario.png"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"user media")
+    apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario"), LinkMode.COPY)
+    assert dest.read_bytes() == b"user media"
 
 
 def test_zip_theme_is_copied(tmp_path):
@@ -346,3 +414,32 @@ def test_plan_mirror_default_theme_lowercase(tmp_path):
     assert any(a.dest.name == "pacman.zip" for a in plan.actions), (
         "lowercase default.zip must be used as the per-game theme fallback"
     )
+
+
+def test_refresh_replaces_file_where_directory_mirror_belongs(tmp_path):
+    media = _layout(tmp_path)
+    dest = media / "Custom" / "Themes" / "Mario"
+    dest.parent.mkdir(parents=True)
+    dest.write_bytes(b"stale file")
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert not result["errors"]
+    assert (dest / "Theme.xml").read_bytes() == b"<theme/>"
+    assert not list(dest.parent.glob(".spindoctor-mirror-*"))
+
+
+def test_refresh_replaces_stale_directory_symlink(tmp_path):
+    media = _layout(tmp_path)
+    stale = tmp_path / "old-theme"
+    stale.mkdir()
+    (stale / "old.xml").write_bytes(b"old")
+    dest = media / "Custom" / "Themes" / "Mario"
+    dest.parent.mkdir(parents=True)
+    try:
+        os.symlink(stale, dest, target_is_directory=True)
+    except (OSError, NotImplementedError):
+        pytest.skip("directory symlinks unavailable")
+    result = apply_plan(plan_mirror(media, "Super Nintendo", "Custom", "Mario", refresh=True), LinkMode.COPY)
+    assert not result["errors"]
+    assert not dest.is_symlink()
+    assert (dest / "Theme.xml").read_bytes() == b"<theme/>"
+    assert (stale / "old.xml").read_bytes() == b"old"

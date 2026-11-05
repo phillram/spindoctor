@@ -54,6 +54,15 @@ from ._utils import format_bytes as _format_bytes_util
 # briefly flashes a console window on top of the GUI.
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 
+# Bound both queued and retained output, including commands with no newlines.
+_OUTPUT_CHUNK_CHARS = 8192
+_OUTPUT_QUEUE_ITEMS = 256
+_RUN_OUTPUT_CHARS = 256 * 1024
+_RUN_OUTPUT_FRAGMENTS = 4096
+_WIDGET_OUTPUT_CHARS = 1024 * 1024
+_WIDGET_OUTPUT_LINES = 10000
+_OUTPUT_TRUNCATED = "[Earlier output truncated]\n"
+
 # Map "console script name" → "module to run with -m" for dev installs where
 # the frozen exes don't exist. Mirrors [project.scripts] in pyproject.toml.
 _DEV_MODULE_MAP = {
@@ -1280,7 +1289,7 @@ class _SpinDoctorGUI:
         self._ttk_style.configure("Warn.TLabel", foreground="#c07000")
 
         self._proc: Optional[subprocess.Popen] = None
-        self._line_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._line_queue = queue.Queue(maxsize=_OUTPUT_QUEUE_ITEMS)
         self._reader_thread: Optional[threading.Thread] = None
         # First monotonic time we saw ``_proc.poll()`` return non-None
         # without a DoneMarker landing in the queue. The stuck detector
@@ -13578,7 +13587,10 @@ class _SpinDoctorGUI:
             self._line_queue.put(_DoneMarker(proc.wait(), on_complete))
             return
         try:
-            for line in proc.stdout:
+            while True:
+                line = proc.stdout.readline(_OUTPUT_CHUNK_CHARS)
+                if not line:
+                    break
                 self._line_queue.put(line)
         finally:
             rc = proc.wait()
@@ -14002,7 +14014,27 @@ class _SpinDoctorGUI:
 
     def _append_output(self, text: str) -> None:
         self._output.configure(state="normal")
-        self._output.insert("end", text)
+        truncated = len(text) > _WIDGET_OUTPUT_CHARS
+        self._output.insert("end", text[-_WIDGET_OUTPUT_CHARS:])
+        lines = int(self._output.index("end-1c").split(".")[0])
+        if lines >= _WIDGET_OUTPUT_LINES:
+            self._output.delete("1.0", f"{lines - _WIDGET_OUTPUT_LINES + 2}.0")
+            truncated = True
+        counts = self._output.count("1.0", "end-1c", "chars")
+        chars = counts[0] if counts else 0
+        if chars > _WIDGET_OUTPUT_CHARS - len(_OUTPUT_TRUNCATED):
+            excess = max(len(_OUTPUT_TRUNCATED), chars - _WIDGET_OUTPUT_CHARS + len(_OUTPUT_TRUNCATED))
+            self._output.delete("1.0", f"1.0+{excess}c")
+            truncated = True
+        if truncated:
+            self._output.insert("1.0", _OUTPUT_TRUNCATED)
+            # Trimming invalidates saved Text indices used by Find.
+            self._find_matches = []
+            self._find_cursor = -1
+            self._output.tag_remove("find-match", "1.0", "end")
+            self._output.tag_remove("find-current", "1.0", "end")
+            if getattr(self, "_find_match_var", None) is not None:
+                self._find_match_var.set("")
         self._output.see("end")
         self._output.configure(state="disabled")
 
@@ -14332,25 +14364,39 @@ class _RunRecord:
     - ``None``  — N/A (read-only command; dry-run concept doesn't apply)
     """
 
-    __slots__ = ("started_at", "argv_str", "command_slug", "output", "exit_code", "dry_run")
+    __slots__ = ("started_at", "argv_str", "command_slug", "output", "exit_code", "dry_run",
+                 "_output_chars", "_truncated")
 
     def __init__(self, started_at: str, argv_str: str, dry_run: Optional[bool]) -> None:
         self.started_at = started_at
         self.argv_str = argv_str
         self.command_slug: str = ""
-        self.output: list[str] = []
+        self.output: Deque[str] = deque()
+        self._output_chars = 0
+        self._truncated = False
         self.exit_code: Optional[int] = None
         self.dry_run = dry_run
 
     def append(self, text: str) -> None:
-        # Per-run buffer is plain str fragments, joined on demand.
-        # Keeping fragments rather than a single growing string avoids
-        # repeated O(n²) string copies on long-running commands like
-        # `audit --all` that emit thousands of lines.
+        if not text:
+            return
+        limit = _RUN_OUTPUT_CHARS - len(_OUTPUT_TRUNCATED)
+        if len(text) > limit:
+            text = text[-limit:]
+            self._truncated = True
         self.output.append(text)
+        self._output_chars += len(text)
+        while self._output_chars > limit or len(self.output) > _RUN_OUTPUT_FRAGMENTS:
+            oldest = self.output.popleft()
+            excess = self._output_chars - limit
+            self._output_chars -= len(oldest)
+            if 0 < excess < len(oldest) and len(self.output) < _RUN_OUTPUT_FRAGMENTS:
+                self.output.appendleft(oldest[excess:])
+                self._output_chars += len(oldest) - excess
+            self._truncated = True
 
     def joined_output(self) -> str:
-        return "".join(self.output)
+        return (_OUTPUT_TRUNCATED if self._truncated else "") + "".join(self.output)
 
     def tag(self) -> str:
         """Short label for the Logs tree's leftmost column."""
