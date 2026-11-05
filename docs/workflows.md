@@ -333,11 +333,21 @@ Almost everything SpinDoctor writes is reversible. The mechanics:
 
 ### `.bak` files (XML/INI round-trips)
 
-Every in-place XML or INI write — HyperSpin database XML, LEDBlinky's `Colors.ini`/`Settings.ini`, RocketLauncher configs — leaves a `.YYYYMMDD_HHMMSS.bak` next to the original, or under `backup_dir` if configured (see [Where SpinDoctor stores its files → `backup_dir`](spindoctor-files.md#backup_dir)). Toggle via `backup_before_modify` (default `true`). To restore, copy the `.bak` over the live file. To clear old `.bak`s once you're confident: `spindoctor cleanup run --include db-backups --keep-recent 5 --apply`. If `backup_dir` is configured but not actually writable, the write is aborted with a clear error rather than silently backing up elsewhere or leaving a half-applied change. (The Intro Video pool doesn't use this mechanism — `introvideo add`/`remove`/`restore` only ever copy or move video files, which are trivially reversible by doing the opposite operation; see [Managing intro videos](#managing-intro-videos).)
+In-place XML and INI writers commonly create timestamped `.bak` copies, beside the
+original or under `backup_dir` where supported. Backup behavior and filenames are
+command-specific; `backup_before_modify` defaults to `true`, but is not a promise
+that every generated or overwritten file has a sidecar. Check the command's output
+and retain an independent snapshot.
+
+To restore a sidecar, close the software that uses the file and copy the `.bak`
+over the live version. See [Backup locations](spindoctor-files.md#backup_dir).
+The `db-backups` cleanup category prunes database backups, not necessarily every
+kind of INI backup. Intro pool add/remove/restore copy or move video files rather
+than using sidecars; see [Managing intro videos](#managing-intro-videos).
 
 ### Manifests + `--undo`
 
-Every destructive command writes a JSON manifest — most to a per-category folder under `~/.spindoctor/`; `find-misplaced` and `organize --restructure` write theirs into the ROM tree next to the files they moved. Re-running the same command with `--undo` reverses the most recent run.
+The commands in the table below support manifest-based recovery. Most records live in per-category folders under `~/.spindoctor/`; `find-misplaced` and `organize --restructure` write theirs into the ROM tree. Undo syntax differs: some commands choose the latest run, while others require a manifest path. Permanent deletion modes do not acquire undo merely because they accept `--apply`.
 
 | Command | Manifest location | Undo flag |
 |---|---|---|
@@ -356,6 +366,11 @@ Most also accept `--list-manifests` to show every run on disk.
 > **GUI alternative:** **`File → View logs & manifests`** in `spindoctor-gui` lists every manifest above (categorised, newest first) and has an **Undo this run** button that runs the matching `--undo` command for the selected row. For commands that always reverse the most recent run (curate, media-scan), the button warns you if you pick an older row so you don't accidentally reverse the wrong one.
 
 `curate --action delete` is permanent (no manifest). `find-orphan-media --apply` is permanent (prompts first).
+
+Undo is not a substitute for an independent backup. Occupied restore paths and
+missing files can stop recovery; retryable undo keeps unfinished work where
+supported. A normal handled interrupt differs from a process crash, power loss or
+failed checkpoint write, which can leave changes without a complete record.
 
 ### Common recovery patterns
 

@@ -67,9 +67,13 @@ Apply and Verbose replace the per-section Apply checkboxes that previously lived
 
 Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
 
+Screenshots below show SpinDoctor's dark theme at 125% UI scale with a synthetic sample cabinet, not a real library. Your systems, paths and enabled controls will differ. Maintainers can regenerate them on Windows with `python scripts/capture_gui_screenshots.py`.
+
 Most action tabs use numbered **Step N** sections that read top-to-bottom — follow them in order when setting something up for the first time, or jump directly to the step you need for ongoing maintenance.
 
 ### Setup
+
+![Setup tab, shown with a sample cabinet](screenshots/01-setup.png)
 
 A **Run first-run wizard** button sits at the very top — the friendliest entry point for a brand-new cabinet owner (also reachable any time from **Help → First-run setup**).
 
@@ -80,6 +84,8 @@ Below the path fields, a **Scraper credentials** section stores your ScreenScrap
 Click **Save configuration** to validate and write everything to `config.json` in one step. A History tab entry is created recording the saved path, any validation warnings, and an exit code (0 = valid, 1 = warnings). CLI equivalent: `spindoctor config init`.
 
 ### Diagnostics
+
+![Diagnostics tab, shown with a sample cabinet](screenshots/02-diagnostics.png)
 
 The cabinet's "is everything OK?" diagnostic surface — nothing on this tab writes to disk. Four numbered steps cover the main diagnostic workflow.
 
@@ -98,6 +104,8 @@ The cabinet's "is everything OK?" diagnostic surface — nothing on this tab wri
 CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
 ### Systems
+
+![Systems tab, shown with a sample cabinet](screenshots/03-systems.png)
 
 Manage the systems that HyperSpin exposes. Three numbered steps cover the common setup journey; the remaining sections are optional. To add, remove, reorder, or rename individual games within a system, use the **Games** tab (next tab along).
 
@@ -119,6 +127,8 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 ### Games
 
+![Games tab, shown with a sample cabinet](screenshots/04-games.png)
+
 Manage individual games across any system. A single **System** picker at the top of the tab drives all four steps — pick the system once and every step below operates on that selection. The tab is the central place for day-to-day game management: reordering the wheel, removing stale entries, renaming or cloning, adding freshly installed PC games, and fixing a bad executable path.
 
 **System picker:** Select any system from the dropdown. When a system named “PC Games” exists it is pre-selected (this tab is used almost exclusively for PC-game repairs); otherwise the first system alphabetically is. Changing the selection automatically clears the game-wheel table (Step 1), reloads the rename/clone game list (Step 2), and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
@@ -134,6 +144,8 @@ Reposition games with one of three methods: click **Move Up** / **Move Down**, p
 **Step 4 — Fix a game that launches the wrong executable:** For PC games that open an uninstaller, GOG/Steam cache file, NW.js runtime, or wrong `.ahk` launcher. SpinDoctor scans the game folder and ranks candidates: real `.exe` files first (shallower paths ranked above deeper ones), then `.ahk` scripts, then `.bat` files, then known junk at the bottom. Select the game from the dropdown (the list reads from disk so it includes newly installed games not yet in the XML), pick the correct candidate, and click **Apply fix** to update `Application=` and `WorkingFolder=` in the PCLauncher INI. Other keys (`FadeTitle=`, `AppWaitExe=`, etc.) are left untouched. **INI targeting:** the per-game INI (`Modules/PCLauncher/<System>/<game>.ini`) is updated when it exists — this is the file used by PC Games, Windows Games, and any system set up by `add-pc-system`. The system-level INI (`Modules/PCLauncher/<System>.ini`) is the fallback for Taito Type X / NESiCAxLive systems that have no per-game subfolder. CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
 
 ### Metadata & Media
+
+![Metadata & Media tab, shown with a sample cabinet](screenshots/05-metadata-media.png)
 
 Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps. Changing the System dropdown always blanks the Game dropdown — a game from the previous system never carries over.
 
@@ -164,6 +176,8 @@ Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML
 
 ### Maintenance
 
+![Maintenance tab, shown with a sample cabinet](screenshots/06-maintenance.png)
+
 Thin out region/revision duplicates, prune library caches, and manage ignore lists.
 
 **Step 1 — Curate region/revision variants:** Wraps `spindoctor curate` (region checkboxes, prefer-revision latest/oldest, `--include-proto`, archive vs delete with an inline tooltip explaining archive is reversible and delete is permanent, dry-run by default). Region tickboxes persist across launches via the `gui_curate_regions` config key. The **Preview (interactive)** button opens a Toplevel with a `☑/☐` per-row keep/skip toggle so you can veto specific retirements before committing. Choosing delete + Apply shows a final confirmation dialog.
@@ -175,6 +189,8 @@ Thin out region/revision duplicates, prune library caches, and manage ignore lis
 **Metadata-match cache:** **List cached matches** and **Clear cache** buttons drive `spindoctor match list|clear` with an optional system filter.
 
 ### Custom Wheels
+
+![Custom Wheels tab, shown with a sample cabinet](screenshots/07-custom-wheels.png)
 
 Four numbered steps cover building and wiring up the custom wheels; the remaining sections are optional one-time setup.
 
@@ -197,6 +213,8 @@ Four numbered steps cover building and wiring up the custom wheels; the remainin
 
 ### Intro Video
 
+![Intro Video tab, shown with a sample cabinet](screenshots/08-intro-video.png)
+
 Manages the pool of videos HyperSpin plays on boot, and swaps between them. The pool folder **is** the list — no third-party tool, no `Random.ini` (see [Cabinet Architecture Reference → Intro Video Randomizer](cabinet-architecture-reference.md#intro-video-randomizer) for the background and file layout). Requires **Intro video pool directory** and **Intro video target file** to be set on the Setup tab first.
 
 The **Videos** table (with a vertical scrollbar for longer pools) lists every video in the pool folder, with columns for status (enabled / disabled) and file size. "Disabled" means the file has been moved into a `Disabled\` subfolder by **Remove selected** — it's still on disk, just out of rotation.
@@ -206,6 +224,8 @@ The **Videos** table (with a vertical scrollbar for longer pools) lists every vi
 **Auto-run on Windows login** — a **Delay after login (minutes)** field (default `1`; `0` = no delay), a status label (Enabled / Disabled / "not available" on non-Windows), and **Enable auto-run** / **Disable auto-run** buttons wrapping `introvideo install-autorun --delay-minutes <N>` / `uninstall-autorun`. Registers a Windows Task Scheduler logon task that runs a swap automatically at every login — no HyperSpin, RocketLauncher, or HyperHQ configuration involved, it's a plain login task that copies a file. The delay is CLI's `--delay-minutes` (`schtasks /DELAY`) — it gives HyperSpin's own intro playback a head start so the swap doesn't collide with it; the field is only read when you click **Enable auto-run** (changing it doesn't retroactively update an already-registered task — click Enable again to apply a new value). The status label refreshes automatically after either button runs, and distinguishes a working registration from a **stale** one — shown in amber as "Outdated: Enable auto-run to fix" when the task is registered but its `.bat` no longer matches the currently-running install (e.g. after a SpinDoctor upgrade); click **Enable auto-run** again to fix it in place.
 
 ### LEDBlinky
+
+![LEDBlinky tab, shown with a sample cabinet](screenshots/09-ledblinky.png)
 
 The LEDBlinky tab is organized as a numbered step-by-step workflow. Follow the sections top to bottom when setting up LED colors for the first time. Steps 1 and 2 are one-time setup; Steps 3 onward are the regular ongoing workflow.
 
@@ -267,7 +287,7 @@ Apply checkbox + **Randomize Entry Colors** button. CLI: `spindoctor ledblinky c
 
 **Step 6 — In-Game Admin Buttons (Exit / Pause / Select)**
 
-Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on this cabinet.
+Sets the admin buttons that stay lit **while a game is running** — Exit, Pause, and Select — the always-active `UI_*` controls in `LEDBlinkyControls.xml`. This is the mechanism that actually drives the physical admin LEDs in-game on the example cabinet.
 
 - **Exit / Pause / Select** — a color dropdown each, offering `(leave unchanged)`, `off (dark)`, or any palette color. Pick e.g. **Select → off (dark)** for a clean arcade look where only the usable buttons (Exit + Pause) stay lit.
 - **Search / Left Mouse / Right Mouse** — an optional dropdown row offering `(leave unchanged)`, `off (dark)`, or `on (lit)`. Unlike Exit/Pause/Select these aren't their own LED (their key rides on another always-active control — e.g. Search's `/` is on Pause), so they can't be independently coloured: `off` removes just that key so Search goes dark while Pause stays lit, and `on` re-attaches it (lit in Pause's colour). `on` respects the **Console** scope below — on `(all consoles)` it lights the button on *every* system, so pick a console to target one.
@@ -275,7 +295,7 @@ Sets the admin buttons that stay lit **while a game is running** — Exit, Pause
 
 Apply checkbox + **Apply in-game admin buttons**. Restart LEDBlinky afterward so it reloads the file. CLI: `spindoctor ledblinky admin-leds set [--emulator NAME]` (incl. `--search-off`/`--lmouse-off`/`--rmouse-off` and their `--search-on`/`--lmouse-on`/`--rmouse-on` inverses) — the GUI covers this uniform mode; the CLI also has `show` (incl. `--by-console`), `randomize` (incl. `--games` per-game variety), `add`, and `remove`.
 
-> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. This cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
+> **What happened to the old "Player slot / P3 / BUTTON1–8" controls?** They wrote `Colors.ini` `P{n}_BUTTON` keys — a different LEDBlinky mechanism that only lights admin buttons on cabinets which map them to a spare player slot. The example cabinet uses the `UI_*` controls above instead, so that block had no in-game effect and was removed to avoid confusion. The `spindoctor ledblinky admin-buttons set` CLI command still exists for cabinets that do use the player-slot wiring.
 
 **Step 7 — Brightness**
 
@@ -295,7 +315,7 @@ Quick backup and restore scoped to LEDBlinky files. Both folder fields default t
 
 **Step 10 — LED Animations (.lwax)**
 
-Build moving LED animations — the FE / screen-saver files you pick in Step 2 — as opposed to the per-game colors in Steps 3–8. Files are written to `~/Downloads/spindoctor-lwax-patterns/`.
+Build moving LED animations, as opposed to the per-game colors in Steps 3–8. **Generate pattern library** writes to `~/Downloads/spindoctor-lwax-patterns/`. **Generate fade** writes to `<output_dir>/LEDBlinky/lwax/fade.lwax` and needs `output_dir` configured. The CLI also accepts explicit output paths. See the [animation command reference](commands.md#ledblinky-lwax-fade) for destinations and signing.
 
 - **Generate pattern library** — the whole ~170-file batch (sweeps, pulses, rain, breathe, rainbow, etc.). CLI: `spindoctor ledblinky lwax batch` (honours the global Apply checkbox).
 - **Generate fade** — a single custom colour-cycle fade from the comma-separated hex colours in the field (e.g. `FF0000,00FF00,0000FF`). CLI: `spindoctor ledblinky lwax fade --color …`.
@@ -304,6 +324,8 @@ Generated files are **unsigned** — before LedBlinky will load one, open it in 
 
 ### Lightgun
 
+![Lightgun tab, shown with a sample cabinet](screenshots/10-lightgun.png)
+
 Two numbered steps cover the lightgun setup workflow.
 
 **Step 1 — Detect & audit:** **Detect installed gear** reads existing RocketLauncher INIs and seeds SpinDoctor config with discovered DemulShooter targets (optional `--apply` to persist). **Audit wiring** shows per-system hook status. CLI: `spindoctor lightgun detect / audit`.
@@ -311,6 +333,8 @@ Two numbered steps cover the lightgun setup workflow.
 **Step 2 — Configure one system:** Pick a system, optionally choose a DemulShooter `-target` value (auto-detected from system name if left blank), and add optional extra args. **Configure system** writes the Pre/Post launch hooks. CLI: `spindoctor lightgun configure --system <NAME>`.
 
 ### Backup & Restore
+
+![Backup & Restore tab, shown with a sample cabinet](screenshots/11-backup-restore.png)
 
 Three numbered steps walk through the full backup / restore workflow.
 
@@ -321,6 +345,8 @@ Three numbered steps walk through the full backup / restore workflow.
 **Step 3 — Restore from a backup:** **Scan** populates the dropdown from your configured backup folder; **Browse** picks a folder manually. **Show backup info** and **Compare to live** are read-only. **Restore backup** (separated by a visual divider from the safe buttons) triggers the actual restore. Restore-time toggles: `--use-current-paths` (drive letters changed since backup) and `--overwrite`. CLI: `spindoctor backup info / diff / restore`.
 
 ### Migration
+
+![Migration tab, shown with a sample cabinet](screenshots/12-migration.png)
 
 Six numbered steps walk through the full migration workflow.
 
@@ -340,11 +366,15 @@ Ticking **Apply** pops a confirmation dialog before running — the wording adap
 
 ### Console
 
+![Console tab, shown with a sample cabinet](screenshots/13-console.png)
+
 Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
 
 Quoting values with spaces (e.g. `emulator-title set "Model 2" "Sega Model 2"`) works the same as on the command line — the quote characters themselves are stripped before the arguments reach the CLI, so `"Daphne"` and `Daphne` are equivalent input here.
 
 ### History
+
+![History tab, shown with a sample cabinet](screenshots/14-history.png)
 
 Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
 
@@ -454,10 +484,17 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 
 The **Stop** button in the bottom-right of the window terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
 
-Interrupting a long-running `backup`, `migrate`, or `curate` operation is safe — the CLI cleans up the in-flight component and writes a *partial manifest* of whatever finished before it died. That means:
+**Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
+Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from
+running. Prefer letting a destructive operation finish when possible.
 
-- An interrupted **backup** still shows up in the Restore picker, and you can replay it like any other backup. Only the partially-copied component is missing.
-- An interrupted **move-mode migrate** is reversible via `Logs → Browse manifests / undo → Undo`. The completed moves are recorded; the source folders that were already migrated can be put back. (Move-mode is the one operation where Stop without this safety net would be unrecoverable, since the source is destroyed during the move.)
-- An interrupted **curate** in archive mode is reversible the same way — files moved to `_retired/` before the interrupt are recorded in the partial manifest.
+The CLI handles normal terminal interrupts for backup, move-mode migration and
+curate-archive by attempting to record partial progress. That protection does not
+make abrupt termination, a crash or a failed manifest write safe.
 
-Stopping does not roll back work already committed — a manifest exists so that *you* can roll it back if you choose to.
+After stopping, inspect the files and any available manifest through
+**File → View logs & manifests** before retrying or undoing. A partial backup is
+not a complete snapshot. For migration or curation, confirm which files actually
+moved; if a record is missing or incomplete, use your independent backup rather
+than assuming undo can reconstruct the run. See
+[Recovery from mistakes](workflows.md#recovery-from-mistakes).

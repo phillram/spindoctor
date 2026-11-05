@@ -8,7 +8,7 @@
 
 - **Sinden Lightgun** (or another lightgun + driver). Install per the manufacturer's instructions; spindoctor only needs the install to exist on disk. It's recognized by `Lightgun.exe` next to `Lightgun.exe.config`, so a wheel or media folder with "Sinden" in its name isn't mistaken for it.
 - **DemulShooter**. Drop `DemulShooter.exe` somewhere reachable — `RocketLauncher\Modules\DemulShooter\` and `HyperSpin\Tools\DemulShooter\` are both auto-detected. If you keep it elsewhere, or keep more than one build, set `demulshooter_path` in spindoctor config. `detect`, `audit` and `configure` all use it, and `detect` lists every DemulShooter it finds when there's more than one.
-- **RocketLauncher 1.x** with per-system INIs at `RocketLauncher\Settings\<System>.ini` (the standard layout).
+- **RocketLauncher 1.x** with existing per-system settings: either `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` (flat layout).
 
 ## One-time setup
 
@@ -80,7 +80,9 @@ User Functions coverage is **partial** in the audit and INFO in `doctor` when on
 
 ## Reverting
 
-The INI is plain text — open `RocketLauncher\Settings\<System>\Emulators.ini` (folder layout) or `RocketLauncher\Settings\<System>.ini` and delete the `Pre_Launch_App` / `Post_Launch_App` lines. Or set `"lightgun": false` in the per-system override and re-run `lightgun audit` to confirm.
+Close RocketLauncherUI before editing. In the system's existing settings file (`Settings\<System>\Emulators.ini` for folder layout, or `Settings\<System>.ini` for flat layout), remove the DemulShooter `Pre_Launch_App` / `Post_Launch_App` values, or restore their prior values from your backup. Do not remove unrelated hooks.
+
+Setting `"lightgun": false` in SpinDoctor's per-system override only changes its tracking; it **does not remove launch hooks or stop gun software**. A system disappearing from `lightgun audit` is not proof that it has been unwired. Also check User Functions and RocketLauncher's own DemulShooter settings if those start it. Test a game launch and exit after reverting.
 
 ## Two guns: Model 3 and the Sinden software
 

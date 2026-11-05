@@ -1,6 +1,6 @@
 # SpinDoctor Files and Storage Locations
 
-This document lists every file and directory SpinDoctor creates or manages, where it lives, and what it is for.
+This document describes SpinDoctor's main storage locations and the cabinet files it manages. Paths are examples, not a required drive layout. See [Privacy and sharing diagnostics](privacy.md) before sharing any of these files.
 
 ---
 
@@ -24,6 +24,7 @@ explorer %USERPROFILE%\.spindoctor
 %USERPROFILE%\.spindoctor\metadata_cache\
 %USERPROFILE%\.spindoctor\match_cache\
 %USERPROFILE%\.spindoctor\mame_listxml_cache\
+%USERPROFILE%\.spindoctor\ledblinky_library\
 ```
 
 On a typical Windows cabinet, `%USERPROFILE%` expands to `C:\Users\<YourWindowsUsername>`, so the full path looks like:
@@ -47,13 +48,14 @@ open ~/.spindoctor
 ~/.spindoctor/metadata_cache/
 ~/.spindoctor/match_cache/
 ~/.spindoctor/mame_listxml_cache/
+~/.spindoctor/ledblinky_library/
 ```
 
 ---
 
 ## Config Directory — `%USERPROFILE%\.spindoctor\`
 
-Everything in this directory is created and managed by SpinDoctor. None of these files are read by HyperSpin, RocketLauncher, or any other cabinet software.
+This directory holds SpinDoctor's settings, caches, recovery records and library data. HyperSpin and LEDBlinky do not read these stores directly. Generated autorun scripts may also live here and are run by Windows Task Scheduler.
 
 ### `config.json`
 
@@ -109,7 +111,7 @@ Each line is one request:
 2026-06-14 12:45:17,015 DEBUG screenscraper.fetch body: Erreur : Rom/Iso/Dossier non trouvée !
 ```
 
-**Passwords and API keys are always redacted (`***`) before writing.** The log is safe to share with maintainers.
+SpinDoctor redacts scraper passwords and API keys (`***`), but that does not anonymize the log. Account identifiers, game names, URLs and error paths may remain. Review a small relevant excerpt before sharing it; see [Privacy and sharing diagnostics](privacy.md#sharing-logs-and-reports).
 
 Log prefixes by call site:
 
@@ -133,24 +135,26 @@ Log prefixes by call site:
 ```
 %USERPROFILE%\.spindoctor\metadata_cache\
 ├── screenscraper\
-│   └── Nintendo Gamecube\
-│       ├── Animal_Crossing__USA_.json
-│       ├── Baten_Kaitos_-_Eternal_Wings.json
+│   └── Nintendo_Gamecube\
+│       ├── Animal_Crossing_USA_-<sha256>.json
+│       ├── Baten_Kaitos_-_Eternal_Wings-<sha256>.json
 │       └── ...
 ├── thegamesdb\
-│   └── Nintendo Gamecube\
+│   └── Nintendo_Gamecube\
 │       └── ...
 └── combined\
     └── ...
 ```
+
+Source and system folder names are filename-sanitized. Each filename contains a sanitized ROM stem (up to 80 characters) and a SHA-256 hash of the full source/system/stem identity, preventing sanitized-name collisions. Legacy unhashed files are read only when their recorded identity matches the request.
 
 Each file is a JSON object with a `cached_at` timestamp. Entries older than `metadata_cache_ttl_days` (default: 30 days) are silently skipped on next read and a fresh API call is made.
 
 **Management commands:**
 
 ```bat
-spindoctor fetch-meta --no-cache           :: bypass cache for this run only
-spindoctor fetch-meta --clear-cache        :: wipe all cached entries for the system
+spindoctor fetch-meta --system MAME --no-cache     :: bypass cache for this run only
+spindoctor fetch-meta --system MAME --clear-cache  :: clear this system's API cache and exit
 spindoctor cleanup run --include metadata-cache          :: preview cache deletion
 spindoctor cleanup run --include metadata-cache --apply  :: delete it
 ```
@@ -203,6 +207,12 @@ Older versions wrote one identical copy per MAME system instead (`MAME.xml`, `Ne
 
 Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache` and `pc-titles-cache`).
 
+### `ledblinky_library\`
+
+**Preserved LEDBlinky entries, not a disposable cache.** `ledblinky prune --apply` saves removed live sections here before pruning them. The library contains `controls.ini`, `Colors.ini` and, when available, `community-controls.ini` (a saved community controls file). LEDBlinky never reads this folder.
+
+`ledblinky generate` and `setup` restore missing entries from the library before synthesizing them from MAME data. `profiles` can also use it for donor and community data. Keep it in your independent backups: deleting it can discard custom sections that are no longer in the live files. See [Command reference → LEDBlinky](commands.md#ledblinky) for pruning and regeneration.
+
 ### `favorites.json`
 
 **The cross-system Favorites store** — one `(system, rom_name)` pair per favorited game. Read and written by `spindoctor fav add / remove / sync / rebuild / clear` and the GUI's Custom Wheels tab. Deleting it empties your Favorites (the generated wheel itself lives in the HyperSpin tree and is rebuilt by `fav rebuild --apply`). See [Commands → Custom wheels](commands.md#custom-wheels).
@@ -213,7 +223,7 @@ Both are also covered by `spindoctor cleanup run` (categories `media-pick-cache`
 
 ### Undo manifest directories
 
-Every destructive command records what it changed as a JSON manifest so `--undo` can reverse it. Most manifests live in per-category folders here:
+Commands with manifest-based undo record their changes here or in the ROM tree. This is not universal: deletion modes such as `curate --action delete` have no undo. Most manifests live in per-category folders here:
 
 | Directory | Written by |
 |-----------|-----------|
@@ -226,7 +236,7 @@ Every destructive command records what it changed as a JSON manifest so `--undo`
 
 Two commands write their manifests into the ROM tree instead, next to the files they moved: `find-misplaced --apply` (`_spindoctor-misplaced-<stamp>.json` at the `roms_dir` root) and `organize --restructure --apply` (`_spindoctor-restructure-<stamp>.json` inside the system's ROM folder).
 
-Manifests are small and are never deleted automatically — they are the undo path. The full command ↔ manifest ↔ undo map is at [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes); `spindoctor cleanup run` can prune old ones once you're sure you won't roll back.
+Successful undo may remove its manifest; failed partial undo retains unfinished work where supported. Manifests are not expired automatically, but `spindoctor cleanup run` can prune old ones once you're sure you won't roll back. The full command ↔ manifest ↔ undo map is at [Workflows → Recovery from mistakes](workflows.md#recovery-from-mistakes).
 
 ---
 
@@ -236,7 +246,7 @@ These are **not** inside `%USERPROFILE%\.spindoctor\`. They live wherever you po
 
 ### `output_dir`
 
-Example: `C:\SpinDoctor\output\`. Staging directory for files SpinDoctor generates before `--apply` commits them. Most commands write directly to their target (in-place) with atomic rename — `output_dir` is used only by commands that explicitly accept `--output-dir`.
+Example: `C:\SpinDoctor\output\`. A destination for generated output, not a universal staging area. Commands that accept `--output-dir` can write a separate output tree instead of editing live files. Other commands use `config.output_dir` directly, such as the GUI's saved run logs and `ledblinky lwax fade`. Check each command's destination and Apply behavior in the [command reference](commands.md).
 
 ### `backup_dir`
 
@@ -263,9 +273,9 @@ If `backup_dir` is not configured, `.bak` files are written **next to the source
 
 ### `atomic_tmp_dir`
 
-Example: `C:\SpinDoctor\temps\`. Scratch area for the `.tmp` files written during atomic XML/JSON saves. **Must be on the same drive as your HyperSpin directory** — cross-drive atomic rename is not possible on Windows; SpinDoctor silently falls back to `target.parent` if it detects a drive mismatch.
+Example: `C:\SpinDoctor\temps\`. Optional scratch area for atomic writes that support it. It must be on the **same filesystem as the individual destination**, not necessarily the HyperSpin directory. The shared writer falls back to the destination's parent if the configured scratch directory is unavailable or on another filesystem.
 
-If not configured, `.tmp` files land next to their targets inside the HyperSpin tree (safe but clutters the folders).
+If not configured, temporary files land next to their targets, which may be in the cabinet tree or SpinDoctor's own data directory.
 
 ### `auto_audit_export_dir`
 
@@ -297,7 +307,7 @@ The footer is omitted entirely on a clean run (nothing missing) or when the CSV 
 
 ## HyperSpin Files SpinDoctor Reads and Writes
 
-These files live inside your HyperSpin / RocketLauncher directories. SpinDoctor writes them only when `--apply` is passed and backs them up first.
+These files live inside your cabinet directories. Cabinet write commands normally require `--apply`; backup and recovery behavior is command-specific. Read the [recovery guide](workflows.md#recovery-from-mistakes) before destructive operations. Downloaded media, generated files and the intro-video target do not all receive sidecar backups.
 
 | File | Location | Read? | Written? |
 |------|----------|-------|---------|
@@ -305,7 +315,7 @@ These files live inside your HyperSpin / RocketLauncher directories. SpinDoctor 
 | HyperSpin Settings INI | `hyperspin_dir\Settings\<System>.ini` | ✅ | ✅ (generate-config for video defaults) |
 | HyperSpin wheel media | `hyperspin_dir\Media\<System>\Images\Wheel\<game>.png` | ✅ | ✅ (fetch-media, media-scan, fav rebuild) |
 | RL per-system Emulators.ini | `rocketlauncher_dir\Settings\<System>\Emulators.ini` | ✅ | ✅ (generate-config) |
-| RL Global Emulators.ini | `rocketlauncher_dir\Settings\Global Emulators.ini` | ✅ | ✅ (generate-config, only if missing) |
+| RL Global Emulators.ini | `rocketlauncher_dir\Settings\Global Emulators.ini` | ✅ | ✅ (generate-config: creates if missing; replaces existing only with `--overwrite-global`) |
 | RL play stats | `rocketlauncher_dir\Data\Statistics\<System>.ini` | ✅ | ✗ |
 | PCLauncher per-game INI | `rocketlauncher_dir\Modules\PCLauncher\<System>\<Game>.ini` | ✅ | ✅ (pc-rename, fav/recent/stats rebuild) |
 | PCLauncher system INI | `rocketlauncher_dir\Modules\PCLauncher\<System>.ini` | ✅ | ✅ (fav/recent/stats rebuild) |
@@ -317,22 +327,20 @@ These files live inside your HyperSpin / RocketLauncher directories. SpinDoctor 
 | Intro video pool | `intro_randomizer_dir\` (and its `Disabled\` subfolder) | ✅ | ✅ (introvideo add — copies in, never overwrites; remove/restore — moves between pool root and `Disabled\`, never deletes) |
 | Intro video target | `intro_video_target` (e.g. `Intro.mp4`) | ✗ | ✅ (introvideo swap — overwritten on every swap, by design) |
 | Intro-swap launcher bat/vbs | next to the frozen exe, or `~/.spindoctor/` for source installs | ✗ | ✅ (introvideo install-autorun) |
+| ROM files and folders | `roms_dir\<System>\` and other resolved ROM paths | ✅ | ✅ (rename/clone, curate, find-misplaced, organize/restructure, migrate; scope depends on command) |
+| Generated LED animations | `<output_dir>\LEDBlinky\lwax\` for fade/calibrate; Downloads pattern folder for batch, unless overridden | ✗ | ✅ (`ledblinky lwax ... --apply`; unsigned output requires manual signing) |
 
 ---
 
-## Files SpinDoctor Never Touches
+## Executables and destructive operations
 
-SpinDoctor reads these but will **never write or delete** them:
+SpinDoctor does not patch the executable contents of RocketLauncher or your emulators. `RocketLauncherGame.exe` is a separate copy of `RocketLauncher.exe`. Backup, migration and restore can still copy, move or replace whole emulator/RocketLauncher trees.
 
-- `RocketLauncher.exe` — never modified; `RocketLauncherGame.exe` is created as a separate copy
-- `Global Emulators.ini` — only written if the file does not exist at all
-- HyperSpin ROM files in `roms_dir`
-- Emulator executables in `emulators_dir`
-- LEDBlinky animation files (`.lwa`, `.lwax`)
+ROMs are **not read-only** to SpinDoctor: curation can permanently delete them, and rename, restructure and migration can move them. Animation generators also write files, and the batch generator refreshes its output directory. Keep backups outside the affected trees and inspect each dry-run plan.
 
 ---
 
-## Full Directory Tree (this cabinet)
+## Example Directory Tree
 
 ```
 C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always here)
@@ -352,6 +360,10 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 ├── pc_titles_cache\                    ← confirmed PC/Steam display titles
 ├── mame_listxml_cache\                 ← MAME listxml cache (auto-invalidated)
 │   └── mame-<hash>.xml                 ← one per MAME exe; old <System>.xml copies: spindoctor cleanup
+├── ledblinky_library\                  ← preserved pruned entries; keep backed up
+│   ├── controls.ini
+│   ├── Colors.ini
+│   └── community-controls.ini         ← when a community copy is available
 ├── curation\                           ← undo manifests: curate --action archive
 ├── edits\                              ← undo manifests: batch-edit
 ├── renames\                            ← undo manifests: rename / clone
@@ -360,12 +372,12 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 └── themes\                             ← theme-apply manifests + file backups
 
 C:\SpinDoctor\                          ← SpinDoctor output (configured in config.json)
-├── output\                             ← generated files staging area
+├── output\                             ← selected generated output and saved logs
 ├── backups\                            ← timestamped .bak files
 │   ├── HyperSpin\
 │   ├── LEDBlinky\
 │   └── RocketLauncher\
-├── temps\                              ← atomic write staging (must be same drive as HyperSpin)
+├── temps\                              ← optional same-filesystem atomic write staging
 └── audits\                             ← auto-exported audit CSVs
     └── audit_YYYYMMDD_HHMMSS.csv
 
@@ -375,7 +387,7 @@ D:\Arcade\                              ← HyperSpin root (hyperspin_dir)
 ├── Settings\<System>.ini               ← SpinDoctor reads + writes (video defaults)
 └── RocketLauncher\
     ├── RocketLauncherGame.exe          ← SpinDoctor creates (copy of RocketLauncher.exe)
-    ├── Settings\Global Emulators.ini   ← SpinDoctor reads; writes only if missing
+    ├── Settings\Global Emulators.ini   ← creates if missing; --overwrite-global permits replacement
     ├── Settings\<System>\Emulators.ini ← SpinDoctor reads + writes
     ├── Data\Statistics\<System>.ini    ← SpinDoctor reads only (play stats)
     └── Modules\PCLauncher\             ← SpinDoctor reads + writes

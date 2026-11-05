@@ -1,12 +1,12 @@
 # Command reference
 
-The full per-command reference: every command, every flag, every option. If you just want a copy-paste cheatsheet of the most-used commands grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md) — it links back here for the per-flag detail.
+The per-command reference explains behavior and common options. Use `spindoctor <command> --help` for the installed release's complete flag syntax. For short copy-paste examples grouped by intent, start at [CLI cheatsheet](cli-cheatsheet.md).
 
 Every `spindoctor` command, grouped by purpose. Commands that change cabinet files (HyperSpin, RocketLauncher, ROMs, media) default to **dry-run** — re-run with `--apply` to commit. Commands that only change SpinDoctor's own settings and lists save immediately: `config set`, `ignore add` / `ignore remove`, `fav add` / `fav remove` / `fav sync` and `emulator-title set`. Nothing they save reaches the cabinet until a command such as `fav rebuild --apply` writes it. Read-only commands (`audit`, `inspect`, `report`, `systems`, `find-dupes`, `find-global`, `verify`, `check-discs`, `check-archive-ext`, `stats`, `mainmenu show`, `theme-scan`, `tools-audit`, `lightgun audit`) need no flag and never modify anything. Four more are diagnostic-by-default and only write when you opt in: `doctor` (safe repairs with `--apply`), `find-misplaced` (moves with `--apply`), `lightgun detect` (seeds config with `--apply`), and `self-doctor` (deletes stale temp files with `--fix`).
 
 Most destructive commands write a manifest under `~/.spindoctor/<category>/` and accept `--undo` to roll back. See [Workflows → Recovery](workflows.md#recovery-from-mistakes) for the full manifest map. The GUI's `File → View logs & manifests` window has a one-click **Undo this run** button that runs the right `--undo` command for any selected manifest, so you don't have to remember which CLI invocation owns each category.
 
-**Interrupting a long run is safe.** Hitting `Ctrl+C` (or the GUI's Stop button) mid-`backup`, mid-`migrate`, or mid-`curate` cleans up the in-flight component and writes a *partial manifest* for whatever finished. The backup still appears in the Restore picker; an interrupted move-mode migrate is reversible via `migrate --undo`; an interrupted curate-archive is reversible via `curate --undo`. The completed work is committed by design — the manifest exists so *you* can decide whether to roll it back.
+**Handled interrupts preserve recovery information where supported.** A normal terminal `Ctrl+C` during backup, move-mode migration or curate-archive triggers partial-progress handling. Completed work can remain committed. The GUI's Stop button can terminate the process without running those handlers, especially on Windows. Neither path guarantees recovery after crashes, power loss or failed manifest writes. Keep an independent backup and follow [Recovery from mistakes](workflows.md#recovery-from-mistakes).
 
 ## Contents
 
@@ -454,7 +454,7 @@ spindoctor generate-config --overwrite-global --apply     :: replace an existing
 
 **What changes for existing systems:** only `Rom_Path=` is updated in-place. `Default_Emulator`, `Emu_Path`, `Module`, `Pause_Save_State_Keys`, and every other key are preserved exactly as set by HyperHQ / RLUI. This means cabinets with non-standard emulators (SSF for Sega Saturn, Mednafen for TurboGrafx-16, NullDC/Demul for Dreamcast, ZiNc, etc.) are unaffected — only the ROM path changes.
 
-**Systems that share a ROM folder** are handled by a cascade of guards.  Two known families on this cabinet:
+**Systems that share a ROM folder** are handled by a cascade of guards.  Two known families on the example cabinet:
 
 | Family | Shared folder | Example systems |
 |--------|--------------|-----------------|
@@ -1511,7 +1511,7 @@ spindoctor ledblinky lwax fade --color FF0000 --color 00FF00 --labels P1B1,P1B2 
 
 ### `ledblinky lwax fade`
 
-Builds a raw `.lwax` animation file that fades every wired control (or a `--labels` subset) uniformly through a list of colors, looping back to the first. Reads the board/port layout straight from `<ledblinky_dir>\LEDBlinkyInputMap.xml` — works for any number of controllers/boards, not just this cabinet's two-PACLED64 layout.
+Builds a raw `.lwax` animation file that fades every wired control (or a `--labels` subset) uniformly through a list of colors, looping back to the first. Reads the board/port layout straight from `<ledblinky_dir>\LEDBlinkyInputMap.xml` — works for any number of controllers/boards, not just the example cabinet's two-PACLED64 layout.
 
 **The output is not signed and will not load in LedBlinky as-is.** LedBlinky Config validates a per-file signature that cannot be reproduced outside its own tooling (see the "LEDBlinky Animation Files (.lwax)" section of `cabinet-architecture-reference.md` for the full investigation). To finish:
 
@@ -2054,7 +2054,7 @@ Turning a button `off` (or `remove`-ing it) is how you make "only the usable but
 
 ##### Blanking Search / Left Mouse / Right Mouse (`--search-off`, `--lmouse-off`, `--rmouse-off`)
 
-Exit, Pause, and Select each have their own LED control (`UI_CANCEL`/`UI_PAUSE`/`UI_SELECT`), so `--exit`/`--pause`/`--select` can color them or turn them off. **Search and the two mouse buttons don't** — they're lit only because their key is listed in another always-active control's `inputCodes`. On this cabinet, for example, the Search "/" key rides on `UI_PAUSE` (`inputCodes="KEYCODE_SLASH|KEYCODE_P"`), so the physical Search button lights whenever Pause does, in the same color — which is why you can't color Search independently and why there's no `--search` color flag.
+Exit, Pause, and Select each have their own LED control (`UI_CANCEL`/`UI_PAUSE`/`UI_SELECT`), so `--exit`/`--pause`/`--select` can color them or turn them off. **Search and the two mouse buttons don't** — they're lit only because their key is listed in another always-active control's `inputCodes`. On the example cabinet, for example, the Search "/" key rides on `UI_PAUSE` (`inputCodes="KEYCODE_SLASH|KEYCODE_P"`), so the physical Search button lights whenever Pause does, in the same color — which is why you can't color Search independently and why there's no `--search` color flag.
 
 `--search-off` removes just the Search key from any always-active control that carries it, so **Search goes dark in-game while Pause stays lit** (its `KEYCODE_P` is untouched). `--lmouse-off` / `--rmouse-off` do the same for the mouse-click keys. If a button's key isn't found on any lit control, it's already dark in-game and the command reports it (no change).
 

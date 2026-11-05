@@ -115,7 +115,7 @@ Every ScreenScraper and TheGamesDB HTTP call SpinDoctor makes is logged to:
 
 (On macOS/Linux: `~/.spindoctor/scraper.log`. See [SpinDoctor Files](spindoctor-files.md) for the full list of files and their locations.)
 
-The log rotates at 512 KB with two backups (`scraper.log.1`, `scraper.log.2`). Passwords and API keys are always redacted (`***`) — the file is safe to share with maintainers.
+The log rotates at 512 KB with two backups (`scraper.log.1`, `scraper.log.2`). Scraper passwords and API keys are redacted (`***`), but account identifiers and other context can remain. Share only a reviewed, relevant excerpt; see [Privacy and sharing diagnostics](privacy.md#sharing-logs-and-reports).
 
 Each line is one HTTP call:
 
@@ -1057,7 +1057,7 @@ before giving up, instead of failing right when the fade animation ends.
 
 **Cause:** Dolphin's window class name changed because the emulator build was upgraded, but
 `Dolphin.ahk` still looks for the previous build generation's class string. This has happened
-across at least three Dolphin generations on this cabinet:
+across at least three Dolphin generations on the example cabinet:
 
 | Generation | UI framework | Window class |
 |---|---|---|
@@ -1197,16 +1197,13 @@ xpadderFullPath  := "D:\Arcade\Utilities\Xpadder\Xpadder.exe"
 ```
 
 Because the keymapper runs per game launch/exit, the tell-tale is that the error fires
-**when you launch or quit a game** (a PCLauncher/PC-game exit on this cabinet), *not* at
+**when you launch or quit a game** (a PCLauncher/PC-game exit on the example cabinet), *not* at
 Windows boot. DS4Windows Auto Profiles already maps the pad, so RL keymapping is
 redundant and only creates the second-mapper fight.
 
-> **Confirmed on this cabinet.** Every Windows autostart (HKCU/HKLM/WOW6432 `Run`,
-> `RunOnce`, both Startup folders) and every scheduled task were clean of Xpadder, and
-> the HyperSpin Startup Script `[Startup]`/`[Exit]` referenced only `HyperSearch.exe` /
-> `AutoHotkey.exe`. `Xpadder.exe` existed only in retired `…\Utilities\Xpadder … - not
-> in use\` folders. The single error reproduced on **exiting a PCLauncher game** —
-> RocketLauncher's Keymapper (`keymapper := "xpadder"`) was the only remaining invoker.
+> A clean Windows Startup list does not rule this out. A renamed or retired
+> Xpadder folder can still contain a runnable executable referenced by
+> RocketLauncher. Identify the parent process before changing unrelated settings.
 
 **Fix:**
 
