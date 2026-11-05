@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote, quote_plus
 
 import requests
 
@@ -43,6 +44,9 @@ scraper_logger = logging.getLogger("spindoctor.scraper")
 scraper_logger.setLevel(logging.DEBUG)
 _LOG_HANDLER_INSTALLED = False
 _REDACT_KEYS = frozenset({"sspassword", "devpassword", "apikey"})
+_SECRET_QUERY_RE = re.compile(
+    r"(?i)\b(" + "|".join(sorted(_REDACT_KEYS)) + r")=[^&\s'\"#)]*"
+)
 
 # Historical placeholder devid values shipped by SpinDoctor that were
 # never registered with ScreenScraper. ``verify_screenscraper`` uses
@@ -126,14 +130,19 @@ def _raise_if_tgdb_error(data: dict) -> None:
         raise MetadataError(f"TheGamesDB API error (code {code}): {status}")
 
 
-def _redact_text(text: str, params: Optional[dict]) -> str:
-    """Replace every known-secret literal from *params* with ``***``."""
-    if not params:
-        return text
+def _redact_text(text: str, params: Optional[dict] = None) -> str:
+    """Mask secrets in *text*: query-string values, plus *params* values.
+
+    Request URLs carry secrets percent-encoded, so a password such as
+    ``a+b&c`` appears as ``a%2Bb%26c``; both forms are replaced.
+    """
+    text = _SECRET_QUERY_RE.sub(lambda m: f"{m.group(1)}=***", text)
     for key in _REDACT_KEYS:
-        val = params.get(key)
-        if val and val not in ("", None):
-            text = text.replace(str(val), "***")
+        val = (params or {}).get(key)
+        if val:
+            val = str(val)
+            for form in {val, quote(val, safe=""), quote_plus(val)}:
+                text = text.replace(form, "***")
     return text
 
 
@@ -186,7 +195,8 @@ def _log_http(
     scraper_logger.info("%s %s %s params=%s → HTTP %s (%d bytes)",
                         label, method, url, redacted, status, size)
     if status is not None and (status >= 400 or status == 0):
-        scraper_logger.debug("%s body: %s", label, _body_snippet(body))
+        scraper_logger.debug("%s body: %s", label,
+                             _body_snippet(_redact_text(body or "", params)))
 
 
 def _failure_with_body(message: str, body: str) -> str:
@@ -860,7 +870,10 @@ class GameMetadata:
 
 
 class MetadataError(Exception):
-    pass
+    def __init__(self, *args):
+        # Callers interpolate request exceptions, whose text includes the
+        # full request URL with its credential query parameters.
+        super().__init__(*(_redact_text(a) if isinstance(a, str) else a for a in args))
 
 
 @contextmanager
@@ -1573,9 +1586,9 @@ def verify_screenscraper(
         resp = request_get(url, params=params, timeout=timeout)
     except requests.RequestException as e:
         _log_http("screenscraper.verify", "GET", url, params, None, "", error=e)
-        return False, f"Network error: {e} ({sent_summary})"
+        return False, f"Network error: {_redact_error_str(e, params)} ({sent_summary})"
 
-    body = resp.text or ""
+    body = _redact_text(resp.text or "", params)
     _log_http("screenscraper.verify", "GET", url, params, resp.status_code, body)
 
     if resp.status_code in (401, 403):
@@ -1661,9 +1674,9 @@ def verify_thegamesdb(api_key: str, timeout: float = 8.0) -> tuple[bool, str]:
         resp = request_get(url, params=params, timeout=timeout)
     except requests.RequestException as e:
         _log_http("thegamesdb.verify", "GET", url, params, None, "", error=e)
-        return False, f"Network error: {e}"
+        return False, f"Network error: {_redact_error_str(e, params)}"
 
-    body = resp.text or ""
+    body = _redact_text(resp.text or "", params)
     _log_http("thegamesdb.verify", "GET", url, params, resp.status_code, body)
 
     if resp.status_code in (401, 403):
