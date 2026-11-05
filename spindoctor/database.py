@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterator, Optional
 
 from ._compat import et_indent
+from ._utils import atomic_write_bytes as _atomic_write_bytes, resolve_atomic_tmp_dir, unique_path
 
 # lxml is imported lazily so PyInstaller can exclude it from the lightweight
 # standalone EXEs (spindoctor-fav, spindoctor-recent, spindoctor-stats) via
@@ -49,67 +50,6 @@ _FIELD_ORDER = (
 _LXML_WARNED = False
 
 
-def resolve_atomic_tmp_dir(target: Path, configured: Optional[Path]) -> Path:
-    """Return the directory to use for the atomic temp file.
-
-    *configured* is the user's ``atomic_tmp_dir`` setting (or ``None`` when
-    unset).  When set we try to use it — but ``os.replace()`` only works
-    within the same filesystem/volume, so we verify that *configured* and
-    *target.parent* are on the same device before committing to it.  If
-    they're on different drives, or the directory can't be created, we fall
-    back silently to *target.parent* (the original behaviour).
-
-    This function is public so ``favorites.py`` (and any future write path)
-    can use the same resolution logic without duplicating it.
-    """
-    if configured is None:
-        return target.parent
-    try:
-        configured.mkdir(parents=True, exist_ok=True)
-        if os.stat(configured).st_dev == os.stat(target.parent).st_dev:
-            return configured
-    except OSError:
-        pass
-    return target.parent
-
-
-def _atomic_write_bytes(target: Path, data: bytes,
-                        tmp_dir: Optional[Path] = None) -> None:
-    """Write *data* to *target* via a temp file + atomic rename.
-
-    Direct writes leave a window where an interrupted save (power cut,
-    forced shutdown) produces a truncated, unparseable XML — HyperSpin
-    can't open the wheel until the file is manually restored from the
-    ``.bak``.  Writing to a sibling temp file and then calling
-    ``os.replace`` guarantees the live path is always either the previous
-    complete version or the new complete version — never a partial write.
-
-    *tmp_dir* is the directory for the temp file (from ``config.atomic_tmp_dir``).
-    Pass ``None`` to fall back to ``target.parent`` (the previous default).
-    :func:`resolve_atomic_tmp_dir` handles the same-filesystem check.
-    """
-    write_dir = resolve_atomic_tmp_dir(target, tmp_dir)
-    fd, tmp = tempfile.mkstemp(dir=write_dir, suffix=".tmp")
-    try:
-        os.write(fd, data)
-        os.close(fd)
-        fd = -1
-        os.replace(tmp, target)
-        tmp = None
-    except Exception:
-        if fd >= 0:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-        if tmp is not None:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-        raise
-
-
 def _atomic_write_via_tree(target: Path, tree_write_fn,
                            tmp_dir: Optional[Path] = None) -> None:
     """Call *tree_write_fn(file_obj)* into a temp file, then rename atomically.
@@ -122,7 +62,7 @@ def _atomic_write_via_tree(target: Path, tree_write_fn,
         with os.fdopen(fd, "wb") as f:
             tree_write_fn(f)
         os.replace(tmp, target)
-    except Exception:
+    except BaseException:
         try:
             os.unlink(tmp)
         except OSError:
@@ -399,7 +339,7 @@ class HyperspinDatabase:
             else:
                 bak_path = target.with_suffix(f".{stamp}.bak")
             try:
-                shutil.copy2(target, bak_path)
+                shutil.copy2(target, unique_path(bak_path))
             except OSError as exc:
                 raise OSError(
                     f"Cannot write backup '{bak_path}': {exc}"

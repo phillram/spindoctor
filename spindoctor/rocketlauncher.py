@@ -11,6 +11,7 @@ from typing import Optional
 from ._compat import et_indent
 from .config import Config, get_rom_extensions, get_system_overrides
 from .mainmenu import _main_menu_path
+from ._utils import atomic_write_bytes
 
 
 # System names that generate-config must never overwrite.
@@ -427,17 +428,17 @@ def _update_rom_path_in_ini(ini_path: Path, new_rom_path: str) -> bool:
     ``Rom_Path=`` line was found.  The caller should fall back to writing a
     fresh template when ``False`` is returned.
     """
-    content = ini_path.read_text(encoding="utf-8", errors="replace")
+    content, encoding = _read_windows_text_with_encoding(ini_path)
     # Use a callable replacement to avoid re.subn interpreting backslashes in
     # Windows paths (e.g. C:\Users\...) as regex backreferences (\U, \N, etc.).
     replacement = f"Rom_Path={new_rom_path}"
     new_content, count = re.subn(
-        r"(?im)^rom_path=.*$",
+        r"(?im)^rom_path=[^\r\n]*",
         lambda m: replacement,
         content,
     )
     if count:
-        ini_path.write_text(new_content, encoding="utf-8")
+        atomic_write_bytes(ini_path, new_content.encode(encoding, errors="surrogateescape"))
     return count > 0
 
 
@@ -1499,15 +1500,7 @@ def generate_system_db_stubs(
 # ─── PCLauncher per-game INIs ─────────────────────────────────────────────────
 
 # Characters Windows forbids in filenames.
-_WIN_FILENAME_FORBIDDEN = ("\\", "/", ":", "*", "?", '"', "<", ">", "|")
-
-# Windows device names that cannot be used as filenames regardless of extension.
-# "NUL.png" writes to the null device; "CON.mp4" maps to the console, etc.
-_WIN_RESERVED_NAMES: frozenset = frozenset({
-    "CON", "PRN", "AUX", "NUL",
-    "COM0", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT0", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
-})
+from ._utils import win_safe_stem as _win_safe_stem
 
 # Lowercase stem-prefixes that identify non-game executables (uninstallers,
 # setup helpers, redistributables, etc.).  Used by list_exe_candidates and
@@ -1520,24 +1513,6 @@ _EXE_EXCLUSION_PREFIXES: tuple[str, ...] = (
     # NW.js / Electron runtimes bundle chromedriver alongside the real launcher
     "chromedriver", "nwjc", "nacl_irt",
 )
-
-
-def _win_safe_stem(title: str) -> str:
-    """Strip Windows-invalid characters from *title* to produce a safe INI stem.
-
-    The result is used as the INI **filename** only.  The INI **section
-    header** (``[<name>]``) must still use the original HyperSpin dbName
-    (which may contain colons) so PCLauncher.ahk can find it.
-    """
-    out = title
-    for ch in _WIN_FILENAME_FORBIDDEN:
-        out = out.replace(ch, "")
-    out = out.strip().rstrip(".")
-    # Guard against Windows reserved device names — these map to system devices
-    # rather than files (e.g. "NUL.png" writes to the null device, not a file).
-    if out.upper() in _WIN_RESERVED_NAMES:
-        out = out + "_"
-    return out
 
 
 def _pclauncher_ini_text(game_name: str, executable) -> str:
@@ -1672,9 +1647,8 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
     """
     if not ini_path.exists():
         return False
-    lines = ini_path.read_text(encoding="utf-8", errors="replace").splitlines(
-        keepends=True
-    )
+    text, encoding = _read_windows_text_with_encoding(ini_path)
+    lines = text.splitlines(keepends=True)
     in_section = False
     section_found = False
     new_lines: list = []
@@ -1682,8 +1656,9 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
     for line in lines:
         stripped = line.rstrip("\r\n")
         eol = line[len(stripped):]
-        if stripped.startswith("[") and stripped.endswith("]"):
-            in_section = stripped[1:-1].lower() == section.lower()
+        header = stripped.lstrip("\ufeff")
+        if header.startswith("[") and header.endswith("]"):
+            in_section = header[1:-1].lower() == section.lower()
             if in_section:
                 section_found = True
         if in_section and re.match(r"(?i)^Application\s*=", stripped):
@@ -1706,7 +1681,7 @@ def rewrite_pclauncher_application(ini_path: Path, section: str, new_exe: Path) 
         new_lines.append("\n" + _pclauncher_ini_text(section, new_exe))
         changed = True
     if changed:
-        ini_path.write_text("".join(new_lines), encoding="utf-8")
+        atomic_write_bytes(ini_path, "".join(new_lines).encode(encoding, errors="surrogateescape"))
     return changed
 
 
@@ -1740,9 +1715,8 @@ def repath_pclauncher_system_ini(
     if not system_ini.exists():
         return [], []
 
-    lines = system_ini.read_text(encoding="utf-8", errors="replace").splitlines(
-        keepends=True
-    )
+    text, encoding = _read_windows_text_with_encoding(system_ini)
+    lines = text.splitlines(keepends=True)
     delimiter = system_name.replace("/", "\\") + "\\"
 
     # First pass — collect which Application= values need changing and which
@@ -1752,8 +1726,9 @@ def repath_pclauncher_system_ini(
     current_section = ""
     for line in lines:
         stripped = line.rstrip("\r\n")
-        if stripped.startswith("[") and stripped.endswith("]"):
-            current_section = stripped[1:-1]
+        header = stripped.lstrip("\ufeff")
+        if header.startswith("[") and header.endswith("]"):
+            current_section = header[1:-1]
             continue
         if current_section and re.match(r"(?i)^Application\s*=", stripped):
             old_path = stripped.split("=", 1)[1]
@@ -1785,8 +1760,9 @@ def repath_pclauncher_system_ini(
     for line in lines:
         stripped = line.rstrip("\r\n")
         eol = line[len(stripped):]
-        if stripped.startswith("[") and stripped.endswith("]"):
-            current_section = stripped[1:-1]
+        header = stripped.lstrip("\ufeff")
+        if header.startswith("[") and header.endswith("]"):
+            current_section = header[1:-1]
         if current_section in section_changes and re.match(
             r"(?i)^Application\s*=", stripped
         ):
@@ -1795,7 +1771,7 @@ def repath_pclauncher_system_ini(
             continue
         new_lines.append(line)
 
-    system_ini.write_text("".join(new_lines), encoding="utf-8")
+    atomic_write_bytes(system_ini, "".join(new_lines).encode(encoding, errors="surrogateescape"))
     return changes, skipped
 
 
@@ -1859,13 +1835,31 @@ def _read_windows_text(path: Path) -> str:
     ``Jeux R\\ufffdtro`` and be reported as a missing folder.  Raises
     ``OSError`` when the file can't be read.
     """
+    try:
+        text, encoding = _read_windows_text_with_encoding(path)
+    except UnicodeDecodeError:
+        # Diagnostics tolerate damaged UTF-16, but lossless editors still
+        # refuse it rather than writing replacement characters back to disk.
+        return path.read_bytes().decode("utf-16", errors="replace").lstrip("\ufeff")
+    if encoding == "cp1252":
+        # Read-only diagnostics must remain printable even for undefined ANSI
+        # bytes. Only read-modify-write callers need surrogateescape.
+        text = text.encode(encoding, errors="surrogateescape").decode(encoding, errors="replace")
+    return text.lstrip("\ufeff")
+
+
+def _read_windows_text_with_encoding(path: Path) -> tuple[str, str]:
+    """Read losslessly so edits preserve the original encoding, BOM and newlines."""
     data = path.read_bytes()
     if data.startswith((b"\xff\xfe", b"\xfe\xff")):
-        return data.decode("utf-16", errors="replace")
+        encoding = "utf-16-le" if data.startswith(b"\xff\xfe") else "utf-16-be"
+        # Keep the BOM in the decoded text, preserving byte order on writes.
+        return data.decode(encoding), encoding
     try:
-        return data.decode("utf-8-sig")
+        encoding = "utf-8-sig" if data.startswith(b"\xef\xbb\xbf") else "utf-8"
+        return data.decode(encoding), encoding
     except UnicodeDecodeError:
-        return data.decode("cp1252", errors="replace")
+        return data.decode("cp1252", errors="surrogateescape"), "cp1252"
 
 
 def _read_rl_ini(path: Path) -> dict[str, dict[str, str]]:

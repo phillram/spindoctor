@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 from .config import CONFIG_DIR, Config
+from ._utils import unique_path
 
 
 # Where every applied swap drops its manifest + originals. Mirrors the
@@ -283,6 +284,12 @@ def plan_apply(
         return []
 
     all_targets = scan_frontend_art(config)
+    # Community packs commonly use Images/Special A, which is not our
+    # scope/bucket layout. Only a matching cabinet scope establishes identity.
+    structured = any(
+        (source_dir / t.scope / t.bucket.replace(" / ", "/")).is_dir()
+        for t in all_targets
+    )
 
     if systems:
         # Multi-system filter: include Frontend + every named system.
@@ -299,7 +306,10 @@ def plan_apply(
 
     plans: list[SwapPlan] = []
     for t in targets:
-        src = sources.get(t.path.name.lower())
+        # A pack exported by create_pack carries scope and bucket identity.
+        # Prefer that exact location over a generic filename-only community pack.
+        scoped = source_dir / t.scope / t.bucket.replace(" / ", "/") / t.path.name
+        src = (scoped if scoped.is_file() else None) if structured else sources.get(t.path.name.lower())
         if src is None:
             continue
         plans.append(SwapPlan(
@@ -334,7 +344,7 @@ def apply_plan(
     base = manifest_dir or THEMES_DIR
     base.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = base / f"theme-apply-{stamp}"
+    run_dir = unique_path(base / f"theme-apply-{stamp}")
     run_dir.mkdir()
     backup_root = run_dir / "backup"
 

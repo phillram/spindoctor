@@ -17,9 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
-import tempfile
 import warnings
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
@@ -29,8 +27,10 @@ from typing import Any, Iterable, Optional
 
 from . import __app_name__, __version__
 from .config import CONFIG_DIR, Config, load_config
-from .database import GameEntry, HyperspinDatabase, load_database, resolve_atomic_tmp_dir
-from .medialink import LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir
+from .database import GameEntry, HyperspinDatabase, load_database
+from ._utils import atomic_write_bytes
+from ._wheels import mark_synthetic, validate_target
+from .medialink import LinkMode, apply_plan, plan_mirror, remove_target, _read_hs_video_dir, prune_mirrored_media
 from .rocketlauncher import (
     ensure_rl_game_exe,
     generate_synthetic_system_ini,
@@ -103,22 +103,7 @@ def save_store(store: FavoriteStore, path: Path = FAVORITES_FILE,
         "entries": [asdict(e) for e in store.entries],
     }
     data = json.dumps(payload, indent=2).encode("utf-8")
-    write_dir = resolve_atomic_tmp_dir(path, tmp_dir)
-    fd, tmp = tempfile.mkstemp(dir=write_dir, suffix=".tmp")
-    try:
-        os.write(fd, data)
-        os.close(fd)
-        os.replace(tmp, path)
-    except Exception:
-        try:
-            os.close(fd)
-        except OSError:
-            pass
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+    atomic_write_bytes(path, data, tmp_dir)
 
 
 # ─── CRUD ────────────────────────────────────────────────────────────────────
@@ -509,6 +494,7 @@ def rebuild(
     When ``dry_run`` is true, returns a populated summary describing what
     would be written without touching disk.
     """
+    validate_target(config, store.target_system, (e.system for e in store.entries))
     summary = RebuildSummary(target_system=store.target_system)
 
     if not config.hyperspin_dir:
@@ -576,6 +562,7 @@ def rebuild(
         )
         db.upsert_game(merged)
     summary.db_path = db.save(backup=False)
+    mark_synthetic(config, store.target_system)
     print(
         f"[{store.target_system}] database done — {n} game(s), "
         f"{summary.pruned} pruned.",
@@ -618,13 +605,7 @@ def rebuild(
         # Drop orphan media AFTER writing so a write failure doesn't
         # permanently delete files that should still exist.
         _target_media = config.media_dir / store.target_system
-        if _target_media.is_dir():
-            for media_path in _target_media.rglob("*"):
-                if media_path.is_file() and media_path.stem not in seen_targets:
-                    try:
-                        media_path.unlink()
-                    except OSError as e:
-                        summary.media_errors.append(f"cleanup {media_path.name}: {e}")
+        summary.media_errors.extend(prune_mirrored_media(_target_media, seen_targets))
 
         print(f"[{store.target_system}] media done.", flush=True)
 
@@ -807,22 +788,7 @@ def clear_native_favorites(
                 new_content = _FAV_ATTR_RE.sub("", content)
                 if new_content != content:
                     data = new_content.encode("utf-8")
-                    _atmp = resolve_atomic_tmp_dir(xml_path, config.effective_atomic_tmp_dir)
-                    fd, tmp = tempfile.mkstemp(dir=_atmp, suffix=".tmp")
-                    try:
-                        os.write(fd, data)
-                        os.close(fd)
-                        os.replace(tmp, xml_path)
-                    except Exception:
-                        try:
-                            os.close(fd)
-                        except OSError:
-                            pass
-                        try:
-                            os.unlink(tmp)
-                        except OSError:
-                            pass
-                        raise
+                    atomic_write_bytes(xml_path, data, config.effective_atomic_tmp_dir)
                     summary.xml_cleared += 1
                     summary.xml_games_cleared += matches
             except OSError as exc:

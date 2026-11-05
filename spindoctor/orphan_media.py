@@ -16,6 +16,7 @@ from typing import Iterable
 from .audit import scan_roms
 from .config import Config
 from .database import load_database
+from ._utils import win_safe_stem
 
 
 # Media-directory layout under Media/<system>/. Mirrors check_media in audit.py
@@ -26,9 +27,11 @@ _MEDIA_SUBDIRS = (
     ("Images/Artwork1",    {".png", ".jpg", ".jpeg"}),
     ("Images/Artwork2",    {".png", ".jpg", ".jpeg"}),
     ("Images/Artwork3",    {".png", ".jpg", ".jpeg"}),
+    ("Images/Artwork4",    {".png", ".jpg", ".jpeg"}),
     ("Video",              {".mp4", ".avi", ".flv", ".mkv"}),
     ("Video/Trailers",     {".mp4", ".avi", ".flv", ".mkv"}),
     ("Sound",              {".mp3", ".wav", ".ogg"}),
+    ("Themes",             {".zip", ".swf"}),
 )
 
 
@@ -64,6 +67,7 @@ def find_orphan_media(system_name: str, config: Config) -> OrphanReport:
     db = load_database(system_name, config.databases_dir)
     known: set[str] = set(db.games().keys())
     known.update(scan_roms(system_name, Path(config.roms_dir)).keys())
+    known = {win_safe_stem(name).casefold() for name in known}
 
     for subdir, exts in _MEDIA_SUBDIRS:
         d = media_root / subdir
@@ -72,7 +76,9 @@ def find_orphan_media(system_name: str, config: Config) -> OrphanReport:
         for f in d.iterdir():
             if not f.is_file() or f.suffix.lower() not in exts:
                 continue
-            if f.stem in known:
+            if (f.stem.casefold() in known
+                    or (subdir == "Themes" and f.stem.casefold() == "default")
+                    or (subdir == "Sound" and f.stem.casefold() == "wheel click")):
                 continue
             media_type = subdir.split("/")[-1]
             report.orphans.append(OrphanMedia(
@@ -84,7 +90,8 @@ def find_orphan_media(system_name: str, config: Config) -> OrphanReport:
     theme_root = media_root / "Themes"
     if theme_root.exists():
         for entry in theme_root.iterdir():
-            if entry.is_dir() and entry.name not in known:
+            if (entry.is_dir() and entry.name.casefold() != "default"
+                    and entry.name.casefold() not in known):
                 report.orphans.append(OrphanMedia(
                     path=entry, system=system_name, media_type="Themes",
                 ))

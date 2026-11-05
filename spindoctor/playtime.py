@@ -562,13 +562,15 @@ def build_most_played_wheel(
     # Restrict to real source systems only — exclude synthetic wheel directories
     # (Databases/Favorites/ etc. exist on disk and would otherwise pass the
     # known-system filter, letting stray stats entries leak into this wheel).
-    known = set(get_systems(config)) - _STATS_EXCLUDE - {target_system}
+    from ._wheels import synthetic_names
+    excluded = _STATS_EXCLUDE | synthetic_names(config) | {target_system}
+    known = set(get_systems(config)) - excluded
     read_warnings: list[str] = []
     read_notes: list[str] = []
     stats = [
         s for s in load_all_playtime(
             config,
-            exclude_systems=_STATS_EXCLUDE | {target_system},
+            exclude_systems=excluded,
             warnings=read_warnings,
             notes=read_notes,
         )
