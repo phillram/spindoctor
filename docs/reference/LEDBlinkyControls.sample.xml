@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <!--
-  Trimmed sample of this cabinet's LEDBlinkyControls.xml (the full file is ~32k
-  lines / 167 emulators). It preserves the real structure that matters for the
+  Illustrative LEDBlinkyControls.xml, not a user's full configuration.
+  It preserves the structure that matters for the
   `ledblinky admin-leds` command:
 
     * per-<controlGroup> player-0 admin block: UI_CANCEL / UI_PAUSE / UI_SELECT,

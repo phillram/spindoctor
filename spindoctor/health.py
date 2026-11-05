@@ -1619,6 +1619,159 @@ def check_user_functions(config: Config) -> Check:
     return parent
 
 
+def check_coin_start(config: Config) -> Check:
+    """Games on the Main Menu's wheels that can't take a coin or start from a key.
+
+    MAME and Supermodel keep one binding per input, and a game's own settings
+    replace the folder-wide ones.  A game set up for a wheel, pad or gun can
+    bind Coin 1 or 1 Player Start to that device's buttons only, so on a
+    keyboard-encoder panel it boots but nothing inserts a coin or starts it.
+    MAME also saves a game's cfg as it exits and writes
+    ``JOYCODE_n_UNKNOWN_*`` for a device that's gone, losing the binding.
+
+    A game is a WARN when its own binding has no key while the folder-wide one
+    has, or names only a device that's gone (see :mod:`spindoctor.coin_start`).
+    A folder-wide binding with no key is INFO (a joystick-encoder panel works
+    that way), or a WARN when it names a lost device.  Hidden wheels and MESS
+    console wheels are skipped.  Diagnosis only.
+    """
+    from .coin_start import LABELS, PORTS, check_game, inputs_for
+    from .ledblinky_profiles import MESS_DRIVERS, MESS_PER_GAME_DRIVER
+    from .rl_rom_paths import _resolve_rom_path
+
+    name = "Coin/Start"
+    if not config.rocketlauncher_dir:
+        return Check(name=name, status=Status.INFO,
+                     detail="rocketlauncher_dir not configured; skipping")
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    hidden = {w.lower() for w in _hidden_main_menu_wheels(mm_path)}
+    wheels = [w for w in _main_menu_wheels(mm_path) if w.lower() not in hidden]
+    rl = _RomLookup(Path(config.rocketlauncher_dir))
+    mess_systems = {s.lower() for s in (*MESS_DRIVERS, *MESS_PER_GAME_DRIVER)}
+
+    defaults: dict[str, str] = {}
+    readers: dict[tuple[Path, str], object] = {}
+
+    def default_emulator(system: str) -> str:
+        if system not in defaults:
+            found = rl.system(system)
+            defaults[system] = found[2][found[1]].get("default_emulator", "") if found else ""
+        return defaults[system]
+
+    def reader_for(emulator: str, system: str):
+        """``(reader, emulator name)`` for games *system* launches with *emulator*."""
+        if not emulator or system.lower() in mess_systems:
+            return None, ""
+        found = rl.system(system)
+        data = found[2] if found else {}
+        # Like RL, use the local emulator section when present, even if empty.
+        section = data.get(emulator.lower(), rl.global_emus.get(emulator.lower(), {}))
+        raw = next((section[k] for k in _EMU_PATH_KEYS if section.get(k)), "")
+        path = _resolve_rom_path(raw, rl.rl_dir) if raw else None
+        if path is None:
+            return None, ""
+        identity = (path.parent, path.name.lower())
+        if identity not in readers:
+            readers[identity] = (inputs_for(path.parent, path.name)
+                                 if path.parent.is_dir() else None)
+        return readers[identity], emulator
+
+    # Reader identity includes the executable: MAME and HBMAME may share a folder.
+    groups: dict[object, dict] = {}
+    for wheel in wheels:
+        overrides = rl.game_overrides(wheel)
+        if reader_for(default_emulator(wheel), wheel)[0] is None and not any(
+                reader_for(emu or default_emulator(other or wheel), other or wheel)[0] is not None
+                for emu, other in overrides.values()):
+            continue  # no game on this wheel launches with MAME or Supermodel
+        games, _ = _wheel_games(wheel, config.databases_dir)
+        for game in games:
+            emu, other = overrides.get(game.lower(), ("", ""))
+            system = other or wheel
+            reader, emulator = reader_for(emu or default_emulator(system), system)
+            if reader is None:
+                continue
+            g = groups.setdefault(reader, {"emulators": [], "wheels": [], "games": {},
+                                          "reader": reader})
+            for key, value in (("emulators", emulator), ("wheels", wheel)):
+                if value not in g[key]:
+                    g[key].append(value)
+            if game.lower() not in g["games"]:
+                g["games"][game.lower()] = (game, check_game(reader, game))
+
+    parent = Check(name=name, status=Status.OK)
+    checked, bad = 0, set()
+    for identity, g in groups.items():
+        reader, games = g["reader"], list(g["games"].values())
+        checked += len(games)
+        node = Check(name=" / ".join(g["emulators"]), status=Status.OK)
+        wheels_text = ", ".join(g["wheels"])
+        findings = [f for _, f in games if f is not None]
+        if findings:
+            bad.update((identity, f.game.lower()) for f in findings)
+            findings.sort(key=lambda f: (not any(b.lost for b in f.bindings.values()),
+                                         f.game.lower()))
+            listed = ", ".join(f.text() for f in findings[:5])
+            more = f", and {len(findings) - 5} more" if len(findings) > 5 else ""
+            node.children.append(Check(
+                name="games", status=Status.WARN,
+                detail=(f"{len(findings)} of {len(games)} games have a Coin or Start binding "
+                        f"of their own that no key can press: {listed}{more}"),
+                fix=reader.fix(),
+            ))
+        for port in PORTS:
+            wide = reader.folder_binding(port)
+            if wide.has_key:
+                continue
+            without = [game for game, _ in games if reader.game_binding(game, port) is None]
+            affected = len(without)
+            if not affected:
+                continue
+            label = LABELS[port]
+            n_games = f"{affected} game{'s' if affected != 1 else ''}"
+            if wide.lost:
+                bad.update((identity, game.lower()) for game in without)
+                verb = "take a coin" if port == "COIN1" else "start"
+                node.children.append(Check(
+                    name=wide.source, status=Status.WARN,
+                    detail=(f"{label} is bound to a device MAME no longer finds ({wide.seq}), "
+                            f"so {n_games} without a binding of their own can't {verb} "
+                            "from any button"),
+                    fix=f"with MAME closed, bind {label} again in {wide.source}, or in "
+                        "MAME's menu (Tab > Input (general))",
+                ))
+            else:
+                node.children.append(Check(
+                    name=wide.source, status=Status.INFO,
+                    detail=(f"{label} has no key ({wide.why()}: {wide.seq}): fine for a "
+                            f"joystick-encoder panel, but a keyboard panel can't use {label} "
+                            f"in {n_games}"),
+                ))
+        if reader.limits:
+            node.children.append(Check(name="coverage", status=Status.INFO,
+                                       detail="; ".join(reader.limits)))
+        if node.children:
+            node.detail = f"{len(games)} game{'s' if len(games) != 1 else ''} on {wheels_text}"
+            node.status = _worst(c.status for c in node.children)
+            parent.children.append(node)
+
+    if not groups:
+        parent.detail = "no MAME or Supermodel games on the Main Menu's wheels"
+    elif not parent.children:
+        parent.detail = (f"{checked} MAME / Supermodel games: each can take a coin "
+                         "and start from a key")
+    elif bad:
+        parent.detail = (f"{len(bad)} of {checked} MAME / Supermodel games can't take a coin "
+                         "or start from a key")
+    elif any(g["reader"].limits for g in groups.values()):
+        parent.detail = f"{checked} MAME / Supermodel games; see per-emulator coverage limits"
+    else:
+        parent.detail = (f"{checked} MAME / Supermodel games; some folder-wide bindings "
+                         "have no key (fine for a joystick-encoder panel)")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 @dataclass(frozen=True)
 class _EmuFolderSetting:
     """One emulator config value that names a ROM or save folder.
@@ -2198,6 +2351,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Lightguns", lambda: check_lightguns(config))
     _safe("Emulator ROM folders", lambda: check_emulator_rom_paths(config))
     _safe("User Functions", lambda: check_user_functions(config))
+    _safe("Coin/Start", lambda: check_coin_start(config))
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))

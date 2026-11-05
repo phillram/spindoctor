@@ -115,7 +115,7 @@ Every ScreenScraper and TheGamesDB HTTP call SpinDoctor makes is logged to:
 
 (On macOS/Linux: `~/.spindoctor/scraper.log`. See [SpinDoctor Files](spindoctor-files.md) for the full list of files and their locations.)
 
-The log rotates at 512 KB with two backups (`scraper.log.1`, `scraper.log.2`). Passwords and API keys are always redacted (`***`) — the file is safe to share with maintainers.
+The log rotates at 512 KB with two backups (`scraper.log.1`, `scraper.log.2`). Scraper passwords and API keys are redacted (`***`), but account identifiers and other context can remain. Share only a reviewed, relevant excerpt; see [Privacy and sharing diagnostics](privacy.md#sharing-logs-and-reports).
 
 Each line is one HTTP call:
 
@@ -626,6 +626,29 @@ Otherwise close it when the game ends, in `PostExit()`:
 `Process, Close, JoyToKey.exe` (or the mapper you use). See
 [Controller input](controller-input.md) for the DS4Windows setup.
 
+### A game boots, but the panel's Coin and Start do nothing (often driving or gun games)
+
+The game's own settings bind Coin and Start to a device's buttons only: a
+steering wheel, pad or gun it was once set up for. MAME and Supermodel keep one
+binding per input, and a game's own cfg or `[ <game> ]` section replaces the
+folder-wide one, so the key your panel sends never reaches it. Other games in
+the same emulator work, because they use the folder-wide keys. If the device
+has been unplugged since, MAME rewrites the game's cfg as it exits, with
+`JOYCODE_1_UNKNOWN_SWITCH` in place of each binding it can't place.
+
+**Find it:** run `spindoctor doctor`. Its **Coin/Start** check lists the games
+per emulator, and why each one can't be pressed from a key ("joystick only", "a
+device MAME no longer finds").
+
+**Fix (MAME):** with MAME closed, add a key to the `COIN1` / `START1` port in
+`cfg\<game>.cfg`, keeping the device for when it's plugged in:
+`KEYCODE_5 OR JOYCODE_1_BUTTON9`. Or delete those `<port>` entries so
+`cfg\default.cfg` applies. Edit only while MAME is closed: it saves the file
+when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
+`InputStart1` in the game's section of `Config\Supermodel.ini`, or delete the
+line so `[ Global ]` applies. Back the files up first; a device that comes
+back later needs its old bindings.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"
@@ -1034,7 +1057,7 @@ before giving up, instead of failing right when the fade animation ends.
 
 **Cause:** Dolphin's window class name changed because the emulator build was upgraded, but
 `Dolphin.ahk` still looks for the previous build generation's class string. This has happened
-across at least three Dolphin generations on this cabinet:
+across at least three Dolphin generations on the example cabinet:
 
 | Generation | UI framework | Window class |
 |---|---|---|
@@ -1174,16 +1197,13 @@ xpadderFullPath  := "D:\Arcade\Utilities\Xpadder\Xpadder.exe"
 ```
 
 Because the keymapper runs per game launch/exit, the tell-tale is that the error fires
-**when you launch or quit a game** (a PCLauncher/PC-game exit on this cabinet), *not* at
+**when you launch or quit a game** (a PCLauncher/PC-game exit on the example cabinet), *not* at
 Windows boot. DS4Windows Auto Profiles already maps the pad, so RL keymapping is
 redundant and only creates the second-mapper fight.
 
-> **Confirmed on this cabinet.** Every Windows autostart (HKCU/HKLM/WOW6432 `Run`,
-> `RunOnce`, both Startup folders) and every scheduled task were clean of Xpadder, and
-> the HyperSpin Startup Script `[Startup]`/`[Exit]` referenced only `HyperSearch.exe` /
-> `AutoHotkey.exe`. `Xpadder.exe` existed only in retired `…\Utilities\Xpadder … - not
-> in use\` folders. The single error reproduced on **exiting a PCLauncher game** —
-> RocketLauncher's Keymapper (`keymapper := "xpadder"`) was the only remaining invoker.
+> A clean Windows Startup list does not rule this out. A renamed or retired
+> Xpadder folder can still contain a runnable executable referenced by
+> RocketLauncher. Identify the parent process before changing unrelated settings.
 
 **Fix:**
 
