@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 import inspect
-import json
 import os
 from pathlib import Path
 import re
@@ -88,7 +87,7 @@ def _capture(output: Path) -> None:
     from tkinter import filedialog, messagebox, scrolledtext, ttk
 
     from PIL import ImageGrab
-    from spindoctor import __version__, gui
+    from spindoctor import gui
 
     def unexpected_dialog(title, message, **kwargs):
         raise RuntimeError("Unexpected GUI dialog: {}: {}".format(title, message))
@@ -134,7 +133,6 @@ def _capture(output: Path) -> None:
             app._logs_tree.selection_set(rows[0])
             app._logs_tree.event_generate("<<TreeviewSelect>>")
             app.root.lift()
-            manifest = {"version": __version__, "ui_scale": 1.25, "tabs": []}
             for index, label in enumerate(app._tab_base_names):
                 app._nb.select(index)
                 show_output = label in ("Diagnostics", "Console")
@@ -157,11 +155,7 @@ def _capture(output: Path) -> None:
                 ):
                     raise RuntimeError("Capture dimensions do not match the application")
                 image.save(output / filename, optimize=True)
-                manifest["tabs"].append({"tab": label, "file": filename})
                 print("{}: {}x{}".format(filename, image.width, image.height))
-            (output / "manifest.json").write_text(
-                json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
-            )
         finally:
             if app._proc is not None and app._proc.poll() is None:
                 app._proc.terminate()
