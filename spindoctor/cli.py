@@ -26,7 +26,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeEl
 from rich.table import Table
 
 from . import __app_name__, __version__
-from .audit import SystemAuditResult, audit_system, build_stub_entry
+from .audit import RomPathIndex, SystemAuditResult, audit_system, build_stub_entry
 from .config import (
     Config, MEDIA_TYPES, get_game_override, get_systems, load_config, save_config,
 )
@@ -150,7 +150,8 @@ def _auto_export_audit(
         paths_to_write.append(export_dir / f"audit_{stamp}.csv")
     if not paths_to_write:
         return
-    results = [audit_system(s, config, check_media_flag=True) for s in systems]
+    rom_index = RomPathIndex(config)
+    results = [audit_system(s, config, check_media_flag=True, rom_index=rom_index) for s in systems]
     if game_filter:
         for result in results:
             result.entries = [
@@ -911,6 +912,7 @@ def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matche
     systems = _resolve_systems(config, system, all_systems)
 
     all_results: list[SystemAuditResult] = []
+    rom_index = RomPathIndex(config)  # one folder listing per run, however many wheels share it
     with _make_progress(SpinnerColumn(), TextColumn("{task.description}"),
                   BarColumn(), TimeElapsedColumn(), console=console) as prog:
         task = prog.add_task("Auditing...", total=len(systems))
@@ -919,7 +921,8 @@ def audit(system, all_systems, no_media, no_fuzzy, detailed, report, show_matche
             all_results.append(
                 audit_system(sys_name, config,
                              check_media_flag=not no_media,
-                             fuzzy=not no_fuzzy)
+                             fuzzy=not no_fuzzy,
+                             rom_index=rom_index)
             )
             prog.advance(task)
 
@@ -944,6 +947,15 @@ def _print_audit_result(result: SystemAuditResult, show_matched: bool) -> None:
     grid.add_row("[cyan]Total DB entries:[/cyan]", str(result.total_db_entries))
     grid.add_row("[green]Exact matches:[/green]", str(result.roms_in_db))
     grid.add_row("[yellow]ROMs not in DB:[/yellow]", str(result.roms_not_in_db))
+    # A Rom_Path folder other wheels use too (e.g. the MAME folder): only this
+    # wheel's games are taken from it, so say why its other ROMs aren't listed.
+    for folder, others in result.shared_rom_folders.items():
+        also = ", ".join(others[:3]) + (f" +{len(others) - 3} more" if len(others) > 3 else "")
+        grid.add_row(
+            "[dim]Shared ROM folder:[/dim]",
+            f"{escape(folder)} [dim](also used by {escape(also)}; "
+            f"ROMs there that aren't in this database aren't listed)[/dim]",
+        )
     grid.add_row("[blue]Fuzzy matches (ROM↔DB variants):[/blue]", str(len(result.fuzzy_matches)))
     grid.add_row("[red]DB entries with no ROM:[/red]", str(result.db_entries_no_rom))
     grid.add_row("[magenta]Incomplete metadata:[/magenta]", str(len(result.missing_metadata_entries)))
@@ -1278,7 +1290,7 @@ def _print_detailed_section(
     config: Config,
 ) -> None:
     """Print per-file detail for all games that need attention."""
-    from .fileinfo import scan_game
+    from .fileinfo import scan_file, scan_game
 
     needs_attention = [
         (result.system_name, entry)
@@ -1309,6 +1321,11 @@ def _print_detailed_section(
                 config.media_dir,
                 db_entry=entry.db_entry,
             )
+            if entry.rom_path is not None:
+                # Use the audited file even if a stale copy exists in the old folder.
+                report.rom = scan_file(entry.rom_path, "rom")
+            else:
+                report.rom = None  # Legacy discovery must not contradict the audit.
             reports.append(report)
             prog.advance(task)
 
@@ -6635,10 +6652,11 @@ def update_db(system, all_systems, add_missing, remove_orphans, apply_changes,
         )
 
     grand_added = grand_removed = grand_in_sync = 0
+    rom_index = RomPathIndex(config)
 
     for sys_name in systems:
         console.print(f"\n[blue bold]{sys_name}[/blue bold]")
-        result = audit_system(sys_name, config, check_media_flag=False)
+        result = audit_system(sys_name, config, check_media_flag=False, rom_index=rom_index)
         db = load_database(sys_name, config.databases_dir)
 
         added = removed = 0
@@ -8104,6 +8122,7 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
     systems = _resolve_systems(config, system, all_systems)
 
     all_results: list[SystemAuditResult] = []
+    rom_index = RomPathIndex(config)
     with _make_progress(SpinnerColumn(), TextColumn("{task.description}"), console=console) as prog:
         task = prog.add_task("Scanning…", total=len(systems))
         for sys_name in systems:
@@ -8111,7 +8130,8 @@ def report(system, all_systems, fmt, output, no_media, no_fuzzy):
             all_results.append(
                 audit_system(sys_name, config,
                              check_media_flag=not no_media,
-                             fuzzy=not no_fuzzy)
+                             fuzzy=not no_fuzzy,
+                             rom_index=rom_index)
             )
             prog.advance(task)
 
@@ -13423,8 +13443,9 @@ def lightgun_group():
 
     \b
     `lightgun detect`    — find Sinden + DemulShooter, seed config from
-                           any RL INIs already wired to DemulShooter.
-    `lightgun audit`     — show DemulShooter wiring status per system.
+                           systems already wired (RL INI DemulShooter hook,
+                           or User Functions that start the gun software).
+    `lightgun audit`     — show gun wiring status per system.
     `lightgun configure` — wire one system's RL INI (dry-run by default).
     """
 
@@ -13461,19 +13482,20 @@ def lightgun_detect(apply_changes, verbose):
         for exe in install.demulshooter_candidates:
             console.print(f"  · {exe}")
 
-    pre_wired = lg.detect_lightgun_systems(config)
+    wiring = lg.detect_lightgun_wiring(config)
+    pre_wired = list(wiring)
     already_marked = set(config.lightgun_systems())
     new_systems = [s for s in pre_wired if s not in already_marked]
 
     if pre_wired:
-        console.print(f"\n[bold]Systems already wired to DemulShooter[/bold] "
+        console.print(f"\n[bold]Systems already wired for light guns[/bold] "
                       f"({len(pre_wired)}):")
         for s in pre_wired:
             mark = " [dim](already in config)[/dim]" if s in already_marked else ""
-            console.print(f"  · {s}{mark}")
+            console.print(f"  · {escape(s)} [dim]({escape(wiring[s])})[/dim]{mark}")
     else:
         console.print("\n[dim]No systems found with DemulShooter Pre_Launch_App "
-                      "wiring.[/dim]")
+                      "or User Functions gun wiring.[/dim]")
 
     if new_systems and not apply_changes:
         console.print(f"\n[yellow]DRY RUN[/yellow] — would mark "
@@ -13496,7 +13518,7 @@ def lightgun_detect(apply_changes, verbose):
 
 @lightgun_group.command("audit")
 def lightgun_audit():
-    """Show DemulShooter wiring status for every lightgun system in config."""
+    """Show gun wiring (INI hooks, User Functions) for every lightgun system in config."""
     from . import lightgun as lg
 
     config = _cfg()
@@ -13519,15 +13541,26 @@ def lightgun_audit():
     tbl.add_column("Pre_Launch_App")
     tbl.add_column("Target")
     tbl.add_column("Post_Launch_App")
+    tbl.add_column("User Functions")
+    user_functions = (lg.index_user_functions(Path(config.rocketlauncher_dir))
+                      if config.rocketlauncher_dir else None)
     for s in systems:
-        status = lg.audit_system_wiring(s, config)
+        status = lg.audit_system_wiring(s, config, user_functions=user_functions)
         if not status:
-            tbl.add_row(s, "[red]missing[/red]", "—", "—", "—")
+            tbl.add_row(s, "[red]missing[/red]", "—", "—", "—", "—")
             continue
-        pre = "[green]wired[/green]" if status.pre_launch else "[red]none[/red]"
-        post = "[green]wired[/green]" if status.post_launch else "[yellow]none[/yellow]"
+        # No hooks are needed when User Functions cover every launch choice.
+        uf_only = status.user_functions_system_wide and not status.is_wired
+        pre = ("[green]wired[/green]" if status.pre_launch
+               else "[dim]none[/dim]" if uf_only else "[red]none[/red]")
+        post = ("[green]wired[/green]" if status.post_launch
+                else "[dim]none[/dim]" if uf_only else "[yellow]none[/yellow]")
+        uf_label = ("[green]wired[/green]" if status.user_functions_system_wide
+                    else "[yellow]partial[/yellow]")
+        uf = (f"{uf_label} ({escape(status.user_functions_where())})"
+              if status.wired_via_user_functions else "—")
         tbl.add_row(
-            s, status.ini_path.name, pre, status.target or "—", post,
+            s, status.ini_path.name, pre, status.target or "—", post, uf,
         )
     console.print(tbl)
 
@@ -13572,6 +13605,8 @@ def lightgun_configure(system, target, extra_args, apply_changes, verbose):
     console.print(grid)
     for note in plan.notes:
         console.print(f"  [yellow]·[/yellow] {note}")
+    for warning in plan.warnings:
+        console.print(f"\n[bold yellow]Warning:[/bold yellow] {escape(warning)}")
 
     if not apply_changes:
         console.print("\n[yellow]DRY RUN[/yellow] — re-run with --apply "

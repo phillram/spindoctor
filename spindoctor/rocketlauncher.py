@@ -1850,30 +1850,62 @@ def pclauncher_settings_text(executable, parameters: str = "") -> str:
     )
 
 
-def _rl_ini_value(path: Path, section: str, key: str) -> str:
-    """One value from a RocketLauncher INI, read the way RocketLauncher reads it.
+def _read_windows_text(path: Path) -> str:
+    """Read a Windows config file the way the Windows profile API does.
 
-    RocketLauncher goes through the Windows profile API, so section and key
-    names match case-insensitively (``[Roms]`` is ``[ROMS]``) and the first
-    occurrence of a key wins.  configparser gets both wrong, and raises on
-    the duplicate keys RocketLauncher tolerates.  A missing or unreadable
-    file, section or key reads as ``""``.
+    A ``FF FE`` / ``FE FF`` BOM means UTF-16; otherwise the file is ANSI
+    (cp1252) unless it decodes as UTF-8, which is what most tools write
+    today.  Without this a cp1252 ``Jeux Rétro`` path would come back as
+    ``Jeux R\\ufffdtro`` and be reported as a missing folder.  Raises
+    ``OSError`` when the file can't be read.
     """
+    data = path.read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16", errors="replace")
     try:
-        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def _read_rl_ini(path: Path) -> dict[str, dict[str, str]]:
+    """Parse a RocketLauncher INI the way RocketLauncher reads it.
+
+    Returns ``{section: {key: value}}`` with section and key names lower-cased:
+    RL goes through the Windows profile API, so ``[ROMS]`` == ``[Roms]`` and
+    ``Rom_Path`` == ``rom_path``; a repeated section adds to the first one and
+    the first occurrence of a key wins.  A section name runs to the last
+    ``]`` on its line, so ``[Name [!]]`` and ``[ROMS] ; note`` both read as
+    expected.  Unlike ``configparser`` this tolerates a BOM, UTF-16 and ANSI
+    files (see :func:`_read_windows_text`), duplicate keys and sections, and
+    the ``<!--Paste ... Output Below Here-->`` lines RL tools leave in
+    ``Games.ini`` and module INIs.  A missing or unreadable file reads as ``{}``.
+    """
+    out: dict[str, dict[str, str]] = {}
+    try:
+        text = _read_windows_text(path)
     except OSError:
-        return ""
-    section, key = section.lower(), key.lower()
-    current = None
+        return out
+    cur: Optional[dict[str, str]] = None
     for line in text.splitlines():
         s = line.strip()
         if s.startswith("[") and "]" in s:
-            current = s[1:s.index("]")].strip().lower()
-        elif current == section and "=" in s and not s.startswith((";", "#")):
-            k, v = s.split("=", 1)
-            if k.strip().lower() == key:
-                return v.strip()
-    return ""
+            cur = out.setdefault(s[1:s.rindex("]")].strip().lower(), {})
+        elif cur is not None and "=" in s and not s.startswith((";", "#", "<")):
+            key, value = s.split("=", 1)
+            cur.setdefault(key.strip().lower(), value.strip())
+    return out
+
+
+def _rl_ini_value(path: Path, section: str, key: str) -> str:
+    """One value from a RocketLauncher INI, read the way RocketLauncher reads it
+    (:func:`_read_rl_ini`): section and key names match case-insensitively
+    (``[Roms]`` is ``[ROMS]``) and the first occurrence of a key wins.
+    configparser gets both wrong, and raises on the duplicate keys
+    RocketLauncher tolerates.  A missing or unreadable file, section or key
+    reads as ``""``.
+    """
+    return _read_rl_ini(path).get(section.lower(), {}).get(key.lower(), "")
 
 
 def _read_system_default_emulator(source_system: str, rocketlauncher_dir: Path) -> str:
