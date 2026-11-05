@@ -6,13 +6,13 @@ and are **not shipped** in the pip package (`pyproject.toml` package-data globs 
 
 ## Emulator modules (reference copies)
 
-These AHK files are the **canonical installed versions** of customised RocketLauncher
-modules. The live files are on the cabinet; these copies exist so the changes are
-documented in version control alongside the architecture notes.
+These AHK files are historical reference copies of customised RocketLauncher modules,
+not evidence of any user's current installation. Example paths correspond to the
+[cabinet reference](../../../docs/cabinet-architecture-reference.md).
 
 | File | Cabinet path | Status |
 |------|-------------|--------|
-| `Phoenix.ahk` | `D:\Arcade\RocketLauncher\Modules\Phoenix\Phoenix.ahk` | Active — Atari Jaguar launch fix (D:→J: Dump path rewrite). See arch doc for details. |
+| `Phoenix.ahk` | `<rocketlauncher_dir>\Modules\Phoenix\Phoenix.ahk` | Reference for the Atari Jaguar Dump-path rewrite described in the cabinet guide. |
 
 ## Superseded media assets
 
@@ -24,16 +24,16 @@ or removed. They are kept in case the originals are ever needed again.
 | `bg_Favorites.png` | 2752×1536 PNG | HyperSpin renders backgrounds at 1:1 px; only the top-left corner was visible. Active assets are 1920×1080. |
 | `bg_Most_Played.png` | 2752×1536 PNG | Same reason. |
 | `bg_Recently_Played.png` | 2752×1536 PNG | Same reason. |
-| `music_Favorites.mp3` | 192 kbps MP3, ~57.7 s | Active-browsing music slot no longer bundled — attract-mode audio comes from the MP4 video track. |
+| `music_Favorites.mp3` | 192 kbps MP3, ~57.7 s | Archived copy; active-browsing music is also bundled in the current package. |
 | `music_Most_Played.mp3` | 192 kbps MP3, ~57.9 s | Same reason. |
 | `music_Recently_Played.mp3` | 192 kbps MP3, ~61.5 s | Same reason. |
 
-## Restoring a superseded MP3
+## Active-browsing music
 
-To re-enable active-browsing music for a wheel:
-1. Copy the `.mp3` here to `spindoctor/assets/`
-2. Add an entry to `_MUSIC_ASSETS` in `spindoctor/rocketlauncher.py`
-3. Add `"assets/*.mp3"` back to `pyproject.toml` package-data
+Current releases already include MP3 assets and `_MUSIC_ASSETS` entries for the
+synthetic wheels. No packaging or code changes are needed. Rebuild installs missing
+assets without replacing existing custom files. See
+[Synthetic wheel media](../../../docs/synthetic-wheel-media.md#what-spindoctor-installs-automatically).
 
 ## Restoring an original background
 

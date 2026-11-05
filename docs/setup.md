@@ -1,6 +1,6 @@
 # First-time setup
 
-A complete walkthrough for standing up a cabinet on a blank Windows PC. Steps 1–7 are prerequisites SpinDoctor itself never touches; 8–11 are SpinDoctor.
+A complete walkthrough for standing up a cabinet on a blank Windows PC. Steps 1–7c cover software and folders to prepare yourself; steps 8–13 cover SpinDoctor installation, configuration and checks.
 
 > **Two install routes for SpinDoctor itself.** Step 8 below uses `pip install` because the rest of this walkthrough assumes Python is already on the box (`add-system`, `fetch-meta`, etc. all run from `cmd.exe`). If you're locking the cabinet down so end-users never see Python, install the [prebuilt Windows binaries](windows-binaries.md) instead — they include a GUI launcher (`spindoctor-gui.exe`) that wraps the same Setup wizard described in step 9 in a windowed form. Everything from step 9 onward works identically; the binary names are just `spindoctor.exe` instead of the `pip` console scripts.
 

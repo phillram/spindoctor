@@ -1,8 +1,49 @@
 # Cabinet Architecture Reference
 
-> **Note:** This documents one specific cabinet's layout. Your setup may be different.
-> SpinDoctor reads paths from your existing configuration files rather than assuming
-> fixed locations — always check your own `Emulators.ini` files if something doesn't work.
+This is an **example cabinet integration reference**, not SpinDoctor's software
+architecture or an inventory of a reader's current machine. Paths such as
+`D:\Arcade` and `J:\Games`, hardware mappings and emulator versions illustrate one
+layout; substitute your own configuration. Do not add account details, personal
+user paths, private hosts or unreviewed logs to these examples.
+
+- For package boundaries and data flow, read [Software architecture](architecture.md).
+- For installing and using SpinDoctor, start at the [documentation index](index.md).
+- For storage destinations and write limits, use [Storage locations](spindoctor-files.md).
+- For an error symptom, start with [Troubleshooting](troubleshooting.md).
+- Before sharing diagnostics, follow [Privacy and sharing diagnostics](privacy.md).
+
+The sections below retain historical compatibility notes where they explain a
+failure mode. They are not a requirement to use that hardware or an instruction
+to apply every workaround. SpinDoctor reads your configured paths and
+RocketLauncher settings rather than assuming these example drive letters.
+
+---
+
+## Contents
+
+- [Platform](#platform)
+- [Directory Layout](#directory-layout)
+- [SpinDoctor Configuration and Storage](#spindoctor-configuration-and-storage)
+- [HyperSpin Settings INIs and the Video Redirect](#hyperspin-settings-inis-and-the-video-redirect)
+- [Intro Video Randomizer](#intro-video-randomizer)
+- [RocketLauncher Play Statistics](#rocketlauncher-play-statistics)
+- [Settings Layout: Folder vs Flat](#settings-layout-folder-vs-flat)
+- [Global Emulators.ini — Structure and Emulator Lookup Chain](#global-emulatorsini--structure-and-emulator-lookup-chain)
+- [Daphne (LaserDisc Games) — File Layout and Configuration](#daphne-laserdisc-games--file-layout-and-configuration)
+- [Daphne Singe (WoW Action Max) — File Layout and Configuration](#daphne-singe-wow-action-max--file-layout-and-configuration)
+- [Daphne Singe (American Laser Games) — File Layout and Path Rewrite](#daphne-singe-american-laser-games--file-layout-and-path-rewrite)
+- [Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes](#dolphin-nintendo-gamecube--wii--version-and-rom-format-notes)
+- [Phoenix (Atari Jaguar) — Emulator Configuration and ROM Path Fix](#phoenix-atari-jaguar--emulator-configuration-and-rom-path-fix)
+- [PCLauncher Architecture — Two-File System](#pclauncher-architecture--two-file-system)
+- [PCLauncher Architecture — PC Game Wheels (non-synthetic)](#pclauncher-architecture--pc-game-wheels-non-synthetic)
+- [Recursive RocketLauncher Launch — Why and How](#recursive-rocketlauncher-launch--why-and-how)
+- [Synthetic Wheel Statistics — What Is and Isn't Counted](#synthetic-wheel-statistics--what-is-and-isnt-counted)
+- [Toolkit System](#toolkit-system)
+- [Media Layout](#media-layout)
+- [RetroArch Input Architecture](#retroarch-input-architecture)
+- [LEDBlinky](#ledblinky)
+- [LEDBlinky Animation Files (.lwax)](#ledblinky-animation-files-lwax)
+- [HyperSpin Startup/Exit Orchestration](#hyperspin-startupexit-orchestration)
 
 ---
 
@@ -10,7 +51,7 @@
 
 | Property | Value |
 |----------|-------|
-| OS | **Windows 10** (upgraded from Windows 7 in July 2026 — see the Dolphin section for what this unlocked) |
+| OS | **Windows 10** example, with Windows 7 compatibility notes for older cabinets |
 | HyperSpin runtime | Adobe AIR (H.264 Main Profile ≤ Level 4.0 only — see video section) |
 | Python target | Must work on Windows 7; use `pathlib.Path` for all path construction |
 | Regex replacements | Always use `lambda m: replacement` in `re.sub`/`re.subn` when the replacement string may contain a Windows path — backslash sequences like `\U`, `\N`, `\A` are misread as regex backreferences and raise `re.error` |
@@ -23,7 +64,7 @@ macOS development but break the cabinet.
 
 ## Directory Layout
 
-> **Important:** HyperSpin is installed directly at `D:\Arcade\` — there is **no** `D:\Arcade\HyperSpin\` subfolder. `hyperspin_dir` in `config.json` is `D:\Arcade`. `Databases\`, `Media\`, and `Settings\` are all direct children of `D:\Arcade\`.
+> **Example root:** This layout places HyperSpin directly at `D:\Arcade\`, with no `HyperSpin\` subfolder. Set `hyperspin_dir` to your own directory containing `Databases\`, `Media\` and `Settings\`; do not add or remove a path component merely to match this example.
 
 ```
 D:\Arcade\                            ← HyperSpin root (= hyperspin_dir in config)
@@ -111,7 +152,7 @@ D:\Arcade\                            ← HyperSpin root (= hyperspin_dir in con
 
 ### ROM storage
 
-ROMs live on a separate drive: `J:\Games\` (= `roms_dir` in `config.json`). This drive was moved from `D:` at some point; `generate-config` detects this and updates `Rom_Path=` entries accordingly.
+The example keeps ROMs on a separate drive, `J:\Games\` (`roms_dir` in `config.json`). After relocating ROMs, preview `generate-config` to review proposed `Rom_Path=` updates before applying them.
 
 ```
 J:\Games\
@@ -149,7 +190,7 @@ C:\Users\<username>\.spindoctor\config.json
 
 (equivalently `%USERPROFILE%\.spindoctor\config.json`)
 
-All paths are absolute. This cabinet's `config.json`:
+All paths are absolute. The example cabinet's `config.json`:
 
 ```json
 {
@@ -173,7 +214,7 @@ All paths are absolute. This cabinet's `config.json`:
 
 ### Output directories
 
-SpinDoctor writes all its output files to `output_dir`, never into the HyperSpin or RocketLauncher source trees. Backups go to `backup_dir`. Atomic writes use `atomic_tmp_dir` as a staging area (same drive as the destination to allow atomic rename).
+SpinDoctor edits live HyperSpin/RocketLauncher files when the owning command is applied. `output_dir` is a destination used by selected commands and saved GUI logs, not a universal staging area. Backup locations depend on the command and `backup_dir`; the shared atomic writer uses `atomic_tmp_dir` only when it shares the destination's filesystem. See [Storage locations](spindoctor-files.md#output-directories-configured-in-configjson) for the authoritative destination rules.
 
 ```
 J:\spindoctor\
@@ -182,10 +223,10 @@ J:\spindoctor\
 │   ├── HyperSpin\
 │   ├── LEDBlinky\
 │   └── RocketLauncher\
-└── temps\      ← staging area for atomic writes (same drive as output)
+└── temps\      ← optional staging for targets on the same filesystem
 ```
 
-The GUI's status-bar **Save Log** checkbox (off by default) writes a `.txt` backup of each finished command's exact output straight into `output_dir` — same rule as everything else on this page, no separate config key.
+The GUI's status-bar **Save Log** checkbox (off by default) writes a `.txt` backup of each finished command's exact output straight into `output_dir` — a saved diagnostic log, not a guarantee that other commands write there. Review it before sharing.
 
 MAME `listxml` cache (used by `ledblinky generate`) is stored at:
 ```
@@ -278,9 +319,9 @@ Registers a Windows Task Scheduler **`ONLOGON`** task (task name `SpinDoctor Int
 
 **Deliberately out of scope: HyperHQ / RocketLauncher integration.** The swap is a plain file copy and Task Scheduler is a plain Windows mechanism — this has zero dependency on HyperSpin, RocketLauncher, or HyperHQ, and SpinDoctor does not edit HyperHQ's own config to wire anything in (there's no HyperHQ config file in this repo to safely, surgically edit, unlike `Random.ini` used to be).
 
-**No ordering guarantee between the logon task and HyperSpin's own launch — confirmed on a real cabinet, root-caused precisely, mitigated, not eliminated.** The logon task and however HyperSpin itself currently auto-launches (this cabinet: the exe dropped directly in `shell:startup`) both fire around login with no strict OS-level ordering guarantee between the two. Initially disclosed as a theoretical low-risk tradeoff; real-world testing proved it out fully: `introvideo swap --apply` run *while* an intro clip is actively playing reproduces `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process` on demand, every time — HyperSpin holds `intro_video_target` open for the clip's **entire playback**, not just an instant — and the same command run immediately after the clip finishes succeeds instantly, no retry even needed. On this cabinet, the intro clips observed then ran **~10 seconds to ~2 minutes**, which is what actually broke the first version of this fix: a 10-attempt/1s (10s total) retry window and a 1-minute `--delay-minutes` both undershot the longest clip, so the swap kept losing the race on every single reboot. The pool has since grown to **104 clips of 2 seconds to 4.5 minutes** (median 36 s; six over 2.5 minutes, four over 3), read from each MP4's header.
+**No ordering guarantee between the logon task and HyperSpin's own launch — confirmed on a real cabinet, root-caused precisely, mitigated, not eliminated.** The logon task and however HyperSpin itself currently auto-launches (the example cabinet: the exe dropped directly in `shell:startup`) both fire around login with no strict OS-level ordering guarantee between the two. Initially disclosed as a theoretical low-risk tradeoff; real-world testing proved it out fully: `introvideo swap --apply` run *while* an intro clip is actively playing reproduces `PermissionError: [WinError 32] The process cannot access the file because it is being used by another process` on demand, every time — HyperSpin holds `intro_video_target` open for the clip's **entire playback**, not just an instant — and the same command run immediately after the clip finishes succeeds instantly, no retry even needed. On the example cabinet, the intro clips observed then ran **~10 seconds to ~2 minutes**, which is what actually broke the first version of this fix: a 10-attempt/1s (10s total) retry window and a 1-minute `--delay-minutes` both undershot the longest clip, so the swap kept losing the race on every single reboot. The pool has since grown to **104 clips of 2 seconds to 4.5 minutes** (median 36 s; six over 2.5 minutes, four over 3), read from each MP4's header.
 
-Fixed by sizing the retry window off the clip itself. `swap_video` first retried for a fixed `SWAP_RETRY_ATTEMPTS` (90) × `SWAP_RETRY_DELAY_SECONDS` (2s) = **3 minutes**, sized off the clips observed then. That stopped being enough once 3–4.5-minute clips joined the pool. A clip that outlasted the logon delay plus 3 minutes made the swap fail; the failed swap left that same clip in place, so it played again at the next boot and the swap failed again, until someone skipped the intro. `swap_video` now reads the playing clip's length from its MP4 movie header (`mvhd`, pure Python) and retries for that plus a minute (`SWAP_RETRY_MARGIN_SECONDS`), at least 3 minutes and at most 30 (`SWAP_RETRY_MAX_SECONDS`). When the target can't be read, the longest clip in the pool stands in for it, and with no readable length it's the old 3 minutes. On this cabinet the longest clip (4:29) gets 5:29. This alone is sufficient even with no delay configured at all, and `doctor`'s **Intro video** check shows the longest clip and warns about any too long to wait out. `install-autorun --delay-minutes N` (`schtasks /DELAY`, GUI: **Delay after login (minutes)**, default `1`) is still worth setting as a head start — it avoids wasting the first chunk of retry attempts on a near-certain-to-be-locked window for typical (short) clips — but it's now an optimization layered on top of a self-sufficient retry, not the primary defense the way it was in the first pass at this fix. SpinDoctor still intentionally does **not** eliminate the race at its source by scanning/moving the user's existing Startup-folder entry or chain-launching HyperSpin itself from the swap task: guessing wrong about an unfamiliar Startup-folder shortcut, or replacing however HyperSpin currently launches, risks breaking whether the cabinet boots at all — a far worse failure mode than a few minutes of retrying a file copy. `introvideo swap --apply` (CLI or the GUI's **Swap now** button) lets you verify the mechanism works by hand at any time without waiting for a reboot — including deliberately reproducing the lock by running it while an intro is playing, which is exactly how this was diagnosed.
+Fixed by sizing the retry window off the clip itself. `swap_video` first retried for a fixed `SWAP_RETRY_ATTEMPTS` (90) × `SWAP_RETRY_DELAY_SECONDS` (2s) = **3 minutes**, sized off the clips observed then. That stopped being enough once 3–4.5-minute clips joined the pool. A clip that outlasted the logon delay plus 3 minutes made the swap fail; the failed swap left that same clip in place, so it played again at the next boot and the swap failed again, until someone skipped the intro. `swap_video` now reads the playing clip's length from its MP4 movie header (`mvhd`, pure Python) and retries for that plus a minute (`SWAP_RETRY_MARGIN_SECONDS`), at least 3 minutes and at most 30 (`SWAP_RETRY_MAX_SECONDS`). When the target can't be read, the longest clip in the pool stands in for it, and with no readable length it's the old 3 minutes. On the example cabinet the longest clip (4:29) gets 5:29. This alone is sufficient even with no delay configured at all, and `doctor`'s **Intro video** check shows the longest clip and warns about any too long to wait out. `install-autorun --delay-minutes N` (`schtasks /DELAY`, GUI: **Delay after login (minutes)**, default `1`) is still worth setting as a head start — it avoids wasting the first chunk of retry attempts on a near-certain-to-be-locked window for typical (short) clips — but it's now an optimization layered on top of a self-sufficient retry, not the primary defense the way it was in the first pass at this fix. SpinDoctor still intentionally does **not** eliminate the race at its source by scanning/moving the user's existing Startup-folder entry or chain-launching HyperSpin itself from the swap task: guessing wrong about an unfamiliar Startup-folder shortcut, or replacing however HyperSpin currently launches, risks breaking whether the cabinet boots at all — a far worse failure mode than a few minutes of retrying a file copy. `introvideo swap --apply` (CLI or the GUI's **Swap now** button) lets you verify the mechanism works by hand at any time without waiting for a reboot — including deliberately reproducing the lock by running it while an intro is playing, which is exactly how this was diagnosed.
 
 **The logon task's "Last Result" was untrustworthy until this same fix — also confirmed on a real cabinet.** The generated `.vbs` shim launched the `.bat` via `ws.Run` but never captured or forwarded its return value, so `wscript.exe` — and therefore Task Scheduler's Last Result — always reported `0` (success) regardless of whether the swap actually ran. Combined with the `.bat` itself having no explicit `exit /b` to propagate `spindoctor.exe`'s own exit code, there was no way to tell from Task Scheduler alone whether a scheduled swap had actually worked. Both fixed: `_write_swap_bat` now ends with `exit /b %errorlevel%`, and `_write_swap_vbs` captures `ws.Run`'s return value and calls `WScript.Quit` with it. **Existing installs must re-run `introvideo install-autorun --apply`** to regenerate the bat/vbs with these fixes — the old files silently keep working exactly as before (still retrying now, since that's a separate code path in `swap_video` itself) but won't report failures accurately until regenerated.
 
@@ -337,7 +378,7 @@ The Toolkit system's stats file (`Data\Statistics\Toolkit.ini`) is explicitly ex
 
 ## Settings Layout: Folder vs Flat
 
-RocketLauncher supports two layouts for per-system routing. This cabinet uses the
+RocketLauncher supports two layouts for per-system routing. The example cabinet uses the
 **folder layout** (produced by HyperHQ):
 
 | Layout  | File location                        | Section | Key read              |
@@ -349,7 +390,7 @@ SpinDoctor writes **both** files for new systems so the cabinet works regardless
 layout RL prefers. For existing systems, SpinDoctor performs an in-place `Rom_Path=` update
 only — all other keys are preserved.
 
-**Some emulator families share a single ROM folder.** This cabinet has two known families:
+**Some emulator families share a single ROM folder.** The example cabinet has two known families:
 
 | Family | Shared folder | Systems | Emulators |
 |--------|--------------|---------|-----------|
@@ -407,7 +448,7 @@ system's `Default_Emulator=` also needs to be set for the first time.
 
 ### Per-system Emulators.ini — real format
 
-This is what a real per-system `Emulators.ini` on this cabinet looks like (minimal — no
+This is what a real per-system `Emulators.ini` on the example cabinet looks like (minimal — no
 `[<Emulator>]` section, no `Emu_Path`):
 
 ```ini
@@ -428,7 +469,7 @@ it to an absolute path: `Rom_Path=J:\Games\MAME`.
 
 **What `Default_Emulator` maps to** — RocketLauncher reads this value and then looks
 up `[<EmulatorName>]` in `Global Emulators.ini` to find `Emu_Path`. The emulator
-names used on this cabinet include: `MAME`, `RetroArch`, `SSF` (Sega Saturn),
+names used on the example cabinet include: `MAME`, `RetroArch`, `SSF` (Sega Saturn),
 `Mednafen`, `NullDC` / `Demul` (Dreamcast), `Project64`, `PCSX2`, `ZiNc`, etc.
 SpinDoctor only knows a subset of these. For systems whose emulator it does not
 recognise, it leaves `Default_Emulator` unchanged (see note below).
@@ -533,7 +574,7 @@ cabinet has a section here. RocketLauncher's lookup chain when launching a game:
 2. Look for `[<EmulatorName>]` in the per-system file — if `Emu_Path=` is found, use it
 3. Fall back to `[<EmulatorName>]` in `Settings\Global Emulators.ini` — read `Emu_Path=` from there
 
-Because the per-system files on this cabinet have NO `[<Emulator>]` section, RL always
+Because the per-system files on the example cabinet have NO `[<Emulator>]` section, RL always
 falls back to step 3 for `Emu_Path`. **This is why adding a bare `[<Emulator>]` section
 without `Emu_Path=` to a per-system file breaks launches** — RL finds the section in step 2,
 reads no `Emu_Path`, stops, and reports *"Could not find an Emu_path"* instead of
@@ -579,7 +620,7 @@ Key points:
   `..\Games\<name>\<exe>` for emulators installed alongside their ROMs (e.g. AAE, Daphne).
 - `Emu_Path=` is the key RocketLauncher reads. SpinDoctor's `generate-config` uses
   `Emu_Path=` when creating a new `Global Emulators.ini` from scratch.
-- This cabinet has 40+ emulator sections including many variant instances
+- The example cabinet has 40+ emulator sections including many variant instances
   (`MAME (Gun Games)`, `RetroArch (MultiPlayer)`, `Demul58`, etc.).
 
 ### `[PCLauncher]` — Rom_Extension requirement
@@ -647,7 +688,7 @@ Daphne looks for chip ROMs at `<homedir>\roms\<game>.zip`. The `homedir` value i
 D:\Arcade\RocketLauncher\Modules\Daphne\Daphne.ini
 ```
 
-Every game section has a `homedir` key. On this cabinet it is set to `J:\Games\Daphne` for all games:
+Every game section has a `homedir` key. On the example cabinet it is set to `J:\Games\Daphne` for all games:
 
 ```ini
 [lair]
@@ -938,7 +979,7 @@ This is done once per game. After completion, both keys stay `false` permanently
 
 ## Dolphin (Nintendo Gamecube / Wii) — Version and ROM Format Notes
 
-### Emulator version on this cabinet
+### Emulator version on the example cabinet
 
 | Slot | Version | Path | UI Framework | Window Class |
 |------|---------|------|--------------|--------------|
@@ -961,7 +1002,7 @@ Dolphin.ini settings automatically.
 ### Dolphin portable mode
 
 Dolphin stores its settings under `User\Config\Dolphin.ini` relative to the emulator
-folder when a `portable.txt` file is present. This cabinet uses portable mode:
+folder when a `portable.txt` file is present. The example cabinet uses portable mode:
 
 ```
 D:\Arcade\Emulators\Dolphin Ishiiruka\
@@ -1011,7 +1052,7 @@ To replace the Dolphin executable while keeping all settings and controller prof
 
 Old Dolphin builds used the **wxWidgets** UI framework (window class `wxWindowNR`).
 Dolphin 5.0-12188+ switched to **Qt 5** (window class `Qt5150QWindowIcon`, encoding Qt
-5.15.0). Dolphin's later CalVer builds (e.g. `2606`) moved to **Qt 6** — this cabinet's
+5.15.0). Dolphin's later CalVer builds (e.g. `2606`) moved to **Qt 6** — the example cabinet's
 current build registers as `Qt651QWindowIcon` (Qt 6.5.1). Each Qt *minor* version bump can
 change this string again, because Qt bakes its own version into the class name.
 RocketLauncher's `Dolphin.ahk` module detects game windows by class name, so upgrading
@@ -1035,7 +1076,7 @@ MD | ERROR | ... | ScriptError - There was an error waiting for the window "FPS 
 
 The `GetActiveWindowStatus` line shows what the window *actually* is; the `ScriptError` line
 shows what the module *expected*. This is useful for diagnosing *any* window-matching failure
-on this cabinet, not just Dolphin — but for Dolphin specifically, the recommended fix below
+on the example cabinet, not just Dolphin — but for Dolphin specifically, the recommended fix below
 avoids needing this diagnostic on every future Dolphin upgrade in the first place.
 
 **Recommended fix — match by process name instead of window class (survives all future
@@ -1155,7 +1196,7 @@ launch a game and gets the cryptic *"No valid roms found in the archive"* error.
 
 ### Controller input — DS4Windows and XInput
 
-This cabinet uses a PS4 DualShock 4 controller. Windows does not natively expose PS4
+The example cabinet uses a PS4 DualShock 4 controller. Windows does not natively expose PS4
 controllers as XInput devices; DS4Windows provides that translation layer.
 
 #### How DS4Windows works
@@ -1175,7 +1216,7 @@ will not register correctly.
 
 #### DS4Windows must run independently of HyperSpin
 
-> **Resolved on this cabinet** — DS4Windows now starts at Windows login and is no
+> **Resolved on the example cabinet** — DS4Windows now starts at Windows login and is no
 > longer tied to HyperSpin's process lifetime, and menu navigation is handled by
 > a DS4Windows **Auto Profiles** keyboard mapping instead of a separate
 > mapper/joystick-nav layer. See
@@ -1649,7 +1690,7 @@ Most Played, and Favorites), before `_resolve_target_names` or any file write.
 ## Toolkit System
 
 SpinDoctor installs maintenance tools into the Toolkit wheel. The `Settings\Toolkit\Emulators.ini`
-on this cabinet has a non-default `Rom_Path`:
+on the example cabinet has a non-default `Rom_Path`:
 
 ```ini
 [ROMS]
@@ -1723,7 +1764,7 @@ HyperSpin resolves a system's wheel graphic in `Media\Main Menu\Images\Wheel\` b
 
 **Fix:** rename the wheel image file to match the XML entry name exactly, character for character.
 
-Common examples seen on this cabinet:
+Common examples seen on the example cabinet:
 
 | XML entry | Mismatched filename | Correct filename |
 |---|---|---|
@@ -1749,7 +1790,7 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 |---|---|---|
 | Metadata (name, year, genre, players) | ✅ | ✅ (genre/developer require `include=genres,developers`) |
 | Wheel art | ✅ (multiple regions, US-first) | ✅ clearlogo via `Games/Images` endpoint → wheel slot |
-| Background image | ✅ | ✗ |
+| Background image | ✅ | ✅ banner via `Games/Images` → background slot |
 | Title screenshot | ✅ | ✗ |
 | Snap / in-game screenshot | ✅ | ✅ screenshot via `Games/Images` → snap slot |
 | Fade image | ✅ | ✗ |
@@ -1765,31 +1806,22 @@ SpinDoctor queries ScreenScraper and TheGamesDB for metadata and media. They hav
 
 **Steam Store is a supplemental per-game source** (not part of the main `fetch-meta`/`fetch-media` pipeline). `SteamClient.fetch_by_app_id(app_id)` hits `store.steampowered.com/api/appdetails?appids=<id>&filters=basic,screenshots,movies` (no auth required) and returns a `GameMetadata` with `video`, `snap`, `background`, `artwork`, and `wheel` candidates populated. The `background` slot uses the same screenshot list as `snap` — the first screenshot is written to `Images\Backgrounds\` as the per-game background; a different screenshot can be selected via `--background-index`. Invoked explicitly via `spindoctor fetch-steam-media` or the GUI's Steam media panel — never as an automatic fallback inside `CombinedMetadataClient`. This keeps the main bulk-fetch path clean: Steam is for the long tail of PC games that SS/TGDB simply don't have, targeted one game at a time. Steam provides no transparent-logo equivalent, so the header capsule image doubles as the `wheel` slot (rectangular banner, not a transparent logo). The `steam_app_id` key in `config.game_overrides` stores the App ID for a game so `fetch-steam-media` can find it without the user re-pasting the URL.
 
-**Windows-invalid filename characters — full list:** `_win_safe_stem()` strips the nine characters Windows forbids in filenames (`\ / : * ? " < > |`), trims leading/trailing spaces, and strips trailing dots. It also guards against Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0–9`, `LPT0–9`): any of these as a game or system name would silently write to the corresponding device handle instead of creating a file. The function appends `_` when the sanitised stem matches a reserved name (e.g. a hypothetical game "NUL" → `NUL_`). The function is defined in `rocketlauncher.py` (for PCLauncher INI filenames) and copied verbatim into `media.py` (for media paths) to avoid a circular import.
+**Windows-invalid filename characters — full list:** `_win_safe_stem()` strips the nine characters Windows forbids in filenames (`\ / : * ? " < > |`), trims leading/trailing spaces, and strips trailing dots. It also guards against Windows reserved device names (`CON`, `PRN`, `AUX`, `NUL`, `COM0–9`, `LPT0–9`): any of these as a game or system name would silently write to the corresponding device handle instead of creating a file. The function appends `_` when the sanitised stem matches a reserved name (e.g. a hypothetical game "NUL" → `NUL_`). The implementation is shared as `_utils.win_safe_stem`; `rocketlauncher.py` and `media.py` retain private aliases for compatibility. New shared consumers should import the helper rather than copy its rules.
 
 **Steam image format — always PNG:** Steam's `header_image` (used for both `artwork` and `wheel`) and all `screenshots[].path_full` URLs are JPEG. HyperSpin's `Images/Wheel/`, `Images/Artwork1/`, and `Images/Artwork3/` (Snap) folders only load files by their `.png` name — a `.jpg` file in `Wheel/` is simply not found. `MediaDownloader._download_to` therefore never overrides a `.png` destination with a JPEG URL extension. After the download, `_convert_to_png_inplace()` converts the JPEG bytes to real PNG when Pillow (`spindoctor[preview]`) is installed; without Pillow the JPEG content lives under the `.png` name, which Windows GDI+ loads correctly via magic-byte detection.
 
-**Steam video URL format — two assets per trailer:** Steam's `appdetails` API includes both `movies[].mp4.max` and `movies[].hls_h264` for most games. These are **not** the same content at different quality levels: `mp4.max` is a short highlight/autoplay clip (~10–15 s) that autoplays on Steam store browse pages; `hls_h264` is the full-length trailer (the video you see when you click Play on the store page). `_parse_steam` adds **both** as separate `MediaCandidate` entries for each movie entry. After `_parse_steam` returns, `SteamClient.fetch_by_app_id()` fetches the HLS M3U8 master playlist and its first variant stream playlist for each HLS candidate, sums `#EXTINF` segment durations, and stores the result in `MediaCandidate.duration_secs`. The GUI dropdown and CLI picker display this as `M:SS` so the user can distinguish the 11-second highlight from the 1:14 full trailer at a glance. MP4 candidates carry no duration (probing an MP4 requires downloading at least its header). `MediaDownloader._download_to` detects `.m3u8` URLs and delegates to `_download_hls`, which runs:
+**Steam video candidates and HLS:** MP4 candidates may be short highlight clips;
+HLS candidates can carry the full trailer and need ffmpeg. The downloader selects
+a concrete quality variant, handles separate audio renditions, stream-copies the
+tracks and reports possible truncation using size and optional ffprobe duration.
+These checks are warnings, not proof of a complete download.
 
-When the audio rendition is present (the common case for 2024+ Steam titles):
-
-```
-ffmpeg -protocol_whitelist file,http,https,tcp,tls,crypto -i <video_variant_url> -i <local_audio_tmp.mp4> -map 0:v:0 -map 1:a:0 -c copy -movflags +faststart <dest>.mp4
-```
-
-When no separate audio rendition exists (older muxed-track variants):
-
-```
-ffmpeg -protocol_whitelist file,http,https,tcp,tls,crypto -i <video_variant_url> -c copy -movflags +faststart <dest>.mp4
-```
-
-`-protocol_whitelist` enables HTTPS segment fetching from Steam's Akamai CDN. `-c copy` stream-copies video and audio tracks without re-encoding — this is critical for CMAF/fMP4 segments: re-encoding audio with `-c:a aac` introduces timestamp discontinuities that cause ffmpeg to silently abort the mux after 2–3 seconds while still exiting 0. `-movflags +faststart` places the moov atom at the start for Windows Media Player seek compatibility. Without ffmpeg a clear error is returned rather than a silent failure.
-
-When an audio rendition is present, `_download_hls` **pre-downloads** the audio segments via the Python `requests` session rather than passing the audio HLS URL directly to ffmpeg. Steam's audio renditions use CMAF/fMP4 segments (`EXT-X-MAP` init segment + `.m4s` chunks); older Windows 7 ffmpeg versions silently truncate CMAF audio HLS after ~5 seconds when given the playlist URL as a second `-i` input — the same family of bug that caused video truncation (fixed by explicit variant selection). Since there is no lower-quality audio fallback, `_download_hls` fetches each segment over HTTPS, concatenates init + chunks into a temporary fMP4 file in the system temp directory, and passes the local path to ffmpeg as the second `-i`. The temp file is removed after the ffmpeg call regardless of success. If any segment download fails the fallback is to pass the rendition URL directly to ffmpeg (the pre-v2.8.1 behaviour).
-
-**HLS quality variants and size:** Steam's HLS master playlist (`hls_h264` URL ending in `_master.m3u8`) contains `EXT-X-STREAM-INF` entries for multiple resolutions and `EXT-X-MEDIA TYPE=AUDIO` entries carrying the audio rendition URI. `_pick_hls_variant(master_url, max_height, session)` parses both, selects the highest-resolution video variant that fits within `max_height`, and returns `(video_variant_url, audio_rendition_url_or_None)`. SpinDoctor always performs explicit variant selection — even when `--hls-quality best` is requested (sentinel `max_height=9999` selects the highest available), the master URL is never passed directly to ffmpeg. Passing the master URL causes ffmpeg to select a CMAF/fMP4 stream (`dash_h264/chunk-stream0-XXXXX.m4s`), which older Windows 7 ffmpeg versions silently abort after ~9 seconds while still exiting 0. The CLI flag `--hls-quality best|1080p|720p|480p|360p` (default `best`) controls the cap. At 1080p a long trailer (e.g. Submachine Legacy at 11:13) can reach 400+ MB; 480p brings the same trailer to ~25 MB. The GUI exposes this as a Quality dropdown (`Best (1080p)` / `720p` / `480p` / `360p`) next to the Overwrite checkbox in the Steam apply row.
-
-**Truncation detection:** After a successful ffmpeg run, `_probe_hls_duration(path, ffprobe)` runs `ffprobe -v quiet -show_entries format=duration -of csv=p=0` on the output file and parses the result as seconds. `_hls_truncation_warning(label, size, duration, stderr_text)` returns a non-empty warning string when the file is below `_HLS_MIN_BYTES` (5 MB) or the duration is below `_HLS_MIN_DURATION_SECS` (30 s). The warning is surfaced in both CLI output and `DownloadResult.warning`. `DownloadResult` carries two additional fields added for this feature: `file_size_bytes: Optional[int]` (output file size after download) and `duration_secs: Optional[float]` (ffprobe result). The CLI prints both alongside the success message as `(XX.X MB, M:SS)`.
+Keep the user-facing options in the [Steam command reference](commands.md#fetch-steam-media).
+For the historical ffmpeg failure modes and recovery steps, see
+[Troubleshooting: Steam HLS truncation](troubleshooting.md#steam-hls-video-downloads-as-a-23-second-clip-full-trailer-never-completes)
+and the following audio/quality entries. Implementation lives in `media.py`:
+`_pick_hls_variant`, `_download_hls` and the duration/warning helpers. Avoid copying
+their changing ffmpeg invocation into multiple guides.
 
 **Network error propagation** — `CombinedMetadataClient` raises `MetadataError` when both sources fail (DNS down, timeouts, connection refused). Before v2.7.1 both failures were silently swallowed and every game was counted as "no match", producing `Failed: 500` with no diagnostic output. The error is now printed per-game, and `fetch-media` aborts the metadata phase after 3 consecutive network failures rather than grinding through all games. All details are also written to `%USERPROFILE%\.spindoctor\scraper.log`.
 
@@ -1930,7 +1962,7 @@ The cabinet uses two Ultimarc boards over USB:
 | **Mini-PAC** | Keyboard encoder — translates button presses, joystick directions, and trackball clicks into USB HID keyboard/mouse events |
 | **PAC-LED64** | LED controller — drives the LEDs inside the buttons; entirely separate from input mapping |
 
-> **This cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
+> **The example cabinet has two PAC-LED64 boards**, enumerated as `Id="1"` and `Id="2"` (see `LEDBlinkyInputMap.xml`). Full per-control board/port mapping: [Master control reference](#master-control-reference) below.
 
 The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). It reads and writes the board's EEPROM directly over USB — the mapping persists on the board with no software running. Config can be exported/imported as XML. Note: button nicknames (display labels) are stored in the XML file on disk, not in the EEPROM — they are lost if WinIPAC is closed without File → Save.
 
@@ -1938,7 +1970,7 @@ The Mini-PAC is configured with **WinIPAC** (Ultimarc's free Windows utility). I
 
 > **Confirmed against an actual photo of the panel** — a hand-drawn ASCII diagram was the original source here and got the Coin/Start order and Player 2's Coin/Start position wrong; box-drawing characters are also just hard to keep precisely column-aligned by hand. A table is the more reliable format for something this position-sensitive, so it replaced the diagram. See [LEDBlinky Animation Files (.lwax) → Physical control panel layout](#ledblinky-animation-files-lwax) for the story of how that got sorted out (short version: ask for a photo before trusting any text description of hardware layout, even one already confirmed once against a rendered diagram).
 
-**This is one of the two source-of-truth tables for this cabinet's controls.** It owns *physical position*, and, for convenience, repeats each control's key underneath its name. Every other per-control fact (Mini-PAC pin, PAC-LED64 board/port, RetroArch action) lives in exactly one place, the [Master control reference](#master-control-reference) directly below — **and if the key shown here ever disagrees with the key in that table, the Master control reference wins**; this table's key is a convenience copy, not a second source of truth for it.
+**This is one of the two source-of-truth tables for the example cabinet's controls.** It owns *physical position*, and, for convenience, repeats each control's key underneath its name. Every other per-control fact (Mini-PAC pin, PAC-LED64 board/port, RetroArch action) lives in exactly one place, the [Master control reference](#master-control-reference) directly below — **and if the key shown here ever disagrees with the key in that table, the Master control reference wins**; this table's key is a convenience copy, not a second source of truth for it.
 
 Left to right, by column. A cell spanning two rows in the same column means those controls are physically stacked at that position (e.g. Player 1 Start sits directly above Player 1's joystick). Cells use each control's name as it appears in the Master control reference below, with the key it sends in parentheses — look a control up there for its pin, LED port, and RetroArch action.
 
@@ -2067,7 +2099,7 @@ button all launch a game regardless of which physical player pressed it.
 > Fix it at the RocketLauncher layer only, per-system: for the `PC Games` (and
 > DOSBox) systems, change the exit key from a bare `Esc` to a **hold-to-exit** using
 > RocketLauncher's XHotkey `H<ms>:` prefix, so a quick `Esc` tap reaches the game and
-> only a deliberate hold quits. Recommended on this cabinet (confirmed working):
+> only a deliberate hold quits. Recommended on the example cabinet (confirmed working):
 > **`H2000:~Esc`** — hold the Exit button ~2 seconds to quit; the `~` passes a normal
 > `Esc` tap through to the game's own menu. Single button, nothing for the game to
 > "eat", and no panel key consumed (the "only `Z` is free"
@@ -2123,7 +2155,7 @@ input_player1_up = "up"       # keyboard encoder → Up arrow
 input_player1_up_btn = "h0up" # Xbox 360 d-pad up
 ```
 
-This is the correct approach for this cabinet: do not maintain two separate profiles. Put both in one `.cfg` file.
+This is the correct approach for the example cabinet: do not maintain two separate profiles. Put both in one `.cfg` file.
 
 ### Critical: explicit `"nul"` bindings override autodetect
 
@@ -2152,7 +2184,7 @@ The Quick Menu hotkey is system-cfg-controlled. The global `retroarch.cfg` defau
 input_menu_toggle = "tab"   # Quick Menu opens with Tab, not F1
 ```
 
-The `Nintendo Game & Watch.cfg` on this cabinet uses `Tab`. The Xpadder profile for this system sends no `Tab` key, so Quick Menu requires a physical keyboard — it cannot be opened from the arcade controls alone.
+The `Nintendo Game & Watch.cfg` on the example cabinet uses `Tab`. The Xpadder profile for this system sends no `Tab` key, so Quick Menu requires a physical keyboard — it cannot be opened from the arcade controls alone.
 
 ### Nintendo Game & Watch — system notes
 
@@ -2257,7 +2289,7 @@ spindoctor ledblinky admin-buttons set --player 3 --colors "Red,Blue,Green,White
 
 This complements `fill-defaults --admin-buttons` (which adds the admin block to new ROM entries) by ensuring every *existing* entry also has the correct admin colors. Run both: `fill-defaults` first to cover gaps, then `admin-buttons set` to normalize all sections to the desired override colors.
 
-> **Which admin mechanism does *your* cabinet use? (`Colors.ini P3_*` vs `LEDBlinkyControls.xml` UI controls).** The `admin-buttons set` / `fill-defaults --admin-buttons` commands above write `P{n}_BUTTON` keys into `Colors.ini`. That only lights an admin button in-game if your `LEDBlinkyControls.xml` actually maps that player slot's buttons to the physical admin controls *and* marks them active. **This cabinet does not work that way.** Its in-game admin lights are three MAME UI controls that are `alwaysActive="1"` in the `player number="0"` block of every `<controlGroup>` in `LEDBlinkyControls.xml`:
+> **Which admin mechanism does *your* cabinet use? (`Colors.ini P3_*` vs `LEDBlinkyControls.xml` UI controls).** The `admin-buttons set` / `fill-defaults --admin-buttons` commands above write `P{n}_BUTTON` keys into `Colors.ini`. That only lights an admin button in-game if your `LEDBlinkyControls.xml` actually maps that player slot's buttons to the physical admin controls *and* marks them active. **The example cabinet does not work that way.** Its in-game admin lights are three MAME UI controls that are `alwaysActive="1"` in the `player number="0"` block of every `<controlGroup>` in `LEDBlinkyControls.xml`:
 >
 > | Physical button | XML control | Key | Default colour |
 > |---|---|---|---|
@@ -2265,7 +2297,7 @@ This complements `fill-defaults --admin-buttons` (which adds the admin block to 
 > | Pause | `UI_PAUSE` | `P` | Yellow |
 > | Select | `UI_SELECT` | `Enter` | Green |
 >
-> These are the *only* `alwaysActive="1"` entries in the file, repeated across all ~200 control groups — which is why Exit/Pause/Select light with the same colours in nearly every game, while `Colors.ini` `P3_*` keys have no visible effect. `LMOUSE`/`RMOUSE`/`SEARCH` have no LED control entries at all, so they stay dark in-game regardless. Manage these with **`spindoctor ledblinky admin-leds`** (see [commands.md](commands.md#ledblinky-admin-leds--in-game-admin-led-buttons)): `show` the current state, `set` uniform colours (or `off`), `randomize` per-group colours, or `add`/`remove` the controls for a console. Turning `UI_SELECT` off (`admin-leds set --select off`) is how you get the "only usable buttons lit" arcade default — Exit and Pause stay lit (both do something mid-game: quit and pause), Select goes dark (it only launches games from the HyperSpin menu, nothing in-game). **Note (confirmed on the real cabinet):** `alwaysActive="0"` on its own does *not* darken a button — LedBlinky keeps lighting a control's colour while its key is still in `inputCodes`. So `--select off` also strips the control's own keycode (`KEYCODE_ENTER`), which is what actually turns the LED off; re-lighting it restores the key. A trimmed sample of this cabinet's file is committed at `docs/reference/LEDBlinkyControls.sample.xml`.
+> These are the *only* `alwaysActive="1"` entries in the file, repeated across all ~200 control groups — which is why Exit/Pause/Select light with the same colours in nearly every game, while `Colors.ini` `P3_*` keys have no visible effect. `LMOUSE`/`RMOUSE`/`SEARCH` have no LED control entries at all, so they stay dark in-game regardless. Manage these with **`spindoctor ledblinky admin-leds`** (see [commands.md](commands.md#ledblinky-admin-leds--in-game-admin-led-buttons)): `show` the current state, `set` uniform colours (or `off`), `randomize` per-group colours, or `add`/`remove` the controls for a console. Turning `UI_SELECT` off (`admin-leds set --select off`) is how you get the "only usable buttons lit" arcade default — Exit and Pause stay lit (both do something mid-game: quit and pause), Select goes dark (it only launches games from the HyperSpin menu, nothing in-game). **Note (confirmed on the real cabinet):** `alwaysActive="0"` on its own does *not* darken a button — LedBlinky keeps lighting a control's colour while its key is still in `inputCodes`. So `--select off` also strips the control's own keycode (`KEYCODE_ENTER`), which is what actually turns the LED off; re-lighting it restores the key. A trimmed sample of the example cabinet's file is committed at `docs/reference/LEDBlinkyControls.sample.xml`.
 
 **Updating existing uniform entries** — `fill-defaults --override-uniform` extends the fill pass to also update existing sections where every `P*_BUTTON/JOYSTICK/START/COIN` key has the same value (e.g. all White). Sections with intentionally mixed colors are never touched. Use `--no-add-keys` alongside `--override-uniform` to restrict the update to only the keys already present — no new button keys are inserted — which is useful when an entry deliberately has fewer buttons than the `--buttons` count:
 
@@ -2428,7 +2460,7 @@ Controls the animation played during the HyperSpin screen saver. Uses the same f
 
 SpinDoctor patches all three keys with `spindoctor ledblinky patch-settings`. A timestamped `.bak` copy of `Settings.ini` is written before any change. In the GUI's LedBlinky tab, `<Random>` is a real, selectable choice for all three dropdowns and is written to `Settings.ini` literally; it's distinct from the FE/screen-saver dropdowns' separate `(leave unchanged)` sentinel, which omits the flag from the `patch-settings` call entirely rather than writing anything.
 
-**Other literal values LedBlinky recognizes beyond `<Random>`** (per LedBlinky's own readme/changelog — not independently confirmed on this cabinet, but they're plain strings SpinDoctor's patcher never validates, so they already work if passed to `--fe-lwa`/`--ss-lwa`/`--game-lwa` or typed into the GUI's editable comboboxes):
+**Other literal values LedBlinky recognizes beyond `<Random>`** (per LedBlinky's own readme/changelog — not independently confirmed on the example cabinet, but they're plain strings SpinDoctor's patcher never validates, so they already work if passed to `--fe-lwa`/`--ss-lwa`/`--game-lwa` or typed into the GUI's editable comboboxes):
 
 - **`<Random Montage>`** — strings multiple animations together in random order (one full loop of each before moving to the next), rather than picking one animation to loop. Documented for `FEScreenSaverLWAFile` (screen saver) and `PauseLWAFile` (game pause — a key SpinDoctor doesn't currently manage at all). Not documented for `FELWAFile` or `GamePlayLWAFile`.
 - **`<Audio Animation>`** — syncs LED timing to audio playback instead of looping a fixed animation. Documented for `FELWAFile` (FE start-up / FE active) and `GameStartLWAFile` (also unmanaged by SpinDoctor).
@@ -2550,17 +2582,17 @@ Set-Content -Path $log -Value $lines -Encoding UTF8
 
 ## LEDBlinky Animation Files (.lwax)
 
-> **Status: signing blocker resolved; format details confirmed against a real signed file.** Built and successfully ran a custom animation on this cabinet. Everything below is now cross-checked against an actual `LEDBlinkyAnimationEditor.exe`-signed `.lwax` file, this cabinet's `LEDBlinkyInputMap.xml`, and the official Animation Editor help document (`Animation Editor.pdf`, v8.3) — not just inference from third-party sample files anymore.
+> **Status: signing blocker resolved; format details confirmed against a real signed file.** Built and successfully ran a custom animation on the example cabinet. Everything below is now cross-checked against an actual `LEDBlinkyAnimationEditor.exe`-signed `.lwax` file, the example cabinet's `LEDBlinkyInputMap.xml`, and the official Animation Editor help document (`Animation Editor.pdf`, v8.3) — not just inference from third-party sample files anymore.
 
 ### Hardware: two PAC-LED64 boards, RGB per control
 
-Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" id="…" name="PACLED64">`). Two boards, `Id="1"` and `Id="2"`. A reference copy of this cabinet's map (the corrected version, matching the [Master control reference](#master-control-reference)) is committed at `docs/reference/LEDBlinkyInputMap.xml` so generators can run without re-exporting it from the cabinet. Each physical control uses **3 consecutive output ports** (R, G, B in that order) — these are full RGB button LEDs, not single-color. So a control's `board:ports` entry of `1 : 4-6` means board `Id="1"`, port 4 = red, 5 = green, 6 = blue.
+Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" id="…" name="PACLED64">`). Two boards, `Id="1"` and `Id="2"`. A reference copy of the example cabinet's map (the corrected version, matching the [Master control reference](#master-control-reference)) is committed at `docs/reference/LEDBlinkyInputMap.xml` so generators can run without re-exporting it from the cabinet. Each physical control uses **3 consecutive output ports** (R, G, B in that order) — these are full RGB button LEDs, not single-color. So a control's `board:ports` entry of `1 : 4-6` means board `Id="1"`, port 4 = red, 5 = green, 6 = blue.
 
 **The full control → board:port mapping lives in exactly one place: the [Master control reference](#master-control-reference)** (its "PAC-LED64 board:ports" column). It's not repeated here — a per-board copy is what let earlier bugs hide. Board `Id="1"` uses ports 1-42 (43-64 unwired); board `Id="2"` uses ports 1-39 (40-64 unwired). Note the two boards split the panel by player-ish grouping but not cleanly — board 1 carries the trackball, the P1 buttons, and the Select/mouse-click admin cluster; board 2 carries Exit/Search/Pause and all P2 buttons — so always read the actual board from the Master control reference rather than assuming "board 1 = Player 1."
 
 > **Buttons 4-7 on both players had a real port-label bug — found, fixed, and confirmed resolved on the actual cabinet.** `LEDBlinkyInputMap.xml`'s port `label` attribute for `P1B4`/`P1B5`/`P1B6`/`P1B7` and `P2B4`/`P2B5`/`P2B6`/`P2B7` was wrong on both boards — see the Master control reference's provenance note below for the full story (a 4-way rotation per board, found by decoding a real generated `.lwax` against what a one-at-a-time calibration animation actually lit on the cabinet). Fixed in the table and in the map used for generation; every animation was regenerated against the corrected data, and the corrected `LEDBlinkyInputMap.xml` has since been installed on the real cabinet in place of the original — confirmed working, all 27 controls light in their correct position.
 
-> **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** This cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
+> **Sample `.lwax` files found online/in packs universally target `PACLED64 Id="0"`.** The example cabinet has no board at `Id="0"` — it's `Id="1"` and `Id="2"`. Any downloaded pattern using `Id="0"` needs its Device/Id rewritten to match, in addition to the signing problem below.
 
 ### File format
 
@@ -2587,15 +2619,15 @@ Read from `D:\Arcade\LEDBlinky\LEDBlinkyInputMap.xml` (`<ledController type="3" 
 - `Frame Duration` is milliseconds the frame holds.
 - `Intensity` = per-port brightness, 0-48 (not 0-255).
 - `State` = per-port on/off, 0/1. Present for every device type observed (`LEDWiz`, `PACDrive`, `PACLED64`) — an earlier version of this doc incorrectly said State was LEDWiz-only; that was a mix-up with `GlobalPulse`, which genuinely is LEDWiz-only (a hardware pulse-profile selector with no PACLED64/PACDrive equivalent in the `.lwax` format). The PAC-LED64 does flash in hardware, but only through Ultimarc's SDK, one port at a time, never from a `.lwax` file. A stuck flash looks like an animation bug: see [Diagnosing buttons that flash on one board](#diagnosing-buttons-that-flash-on-one-board-pac-led64-on-board-flash-mode).
-- **Real Animation-Editor-signed files use `LedHwType="<numeric-type-code>"` instead of `Device="<Name>"`.** The numeric code matches the `type=` attribute in `LEDBlinkyInputMap.xml`'s `<ledController type="3" ...>` tag (`3` = PACLED64 on this cabinet). Third-party/community sample `.lwax` packs found online use the older `Device="PACLED64"` string form instead — the Animation Editor transparently reads and auto-upgrades either form on Save As, so a file built with `Device=`/`Id="0"` attributes imports fine and re-saves in the current `LedHwType=` form with the real board IDs.
-- **Values persist frame-to-frame unless redeclared** — confirmed both by inspecting `slowfadeupdown.lwax` (this cabinet's shipped, working `FELWAFile`/`FEScreenSaverLWAFile`) and by the Animation Editor's own help document: *"When displaying the xml for an individual frame, both the Intensity and State values are listed... When the animation is saved to a .LWAX file, the Intensity values are optimized – they are only included for a frame if the values differ from the prior frame."* This is how a smooth fade (redeclare Intensity every frame) is distinguished from a hard on/off chase (redeclare State, leave Intensity alone) in the same format.
-- Other devices seen in third-party example files (not present on this cabinet): `LEDWiz` (32 ports, variable intensity), `PACDrive` (16 ports, on/off only, no `Intensity`).
+- **Real Animation-Editor-signed files use `LedHwType="<numeric-type-code>"` instead of `Device="<Name>"`.** The numeric code matches the `type=` attribute in `LEDBlinkyInputMap.xml`'s `<ledController type="3" ...>` tag (`3` = PACLED64 on the example cabinet). Third-party/community sample `.lwax` packs found online use the older `Device="PACLED64"` string form instead — the Animation Editor transparently reads and auto-upgrades either form on Save As, so a file built with `Device=`/`Id="0"` attributes imports fine and re-saves in the current `LedHwType=` form with the real board IDs.
+- **Values persist frame-to-frame unless redeclared** — confirmed both by inspecting `slowfadeupdown.lwax` (the example cabinet's shipped, working `FELWAFile`/`FEScreenSaverLWAFile`) and by the Animation Editor's own help document: *"When displaying the xml for an individual frame, both the Intensity and State values are listed... When the animation is saved to a .LWAX file, the Intensity values are optimized – they are only included for a frame if the values differ from the prior frame."* This is how a smooth fade (redeclare Intensity every frame) is distinguished from a hard on/off chase (redeclare State, leave Intensity alone) in the same format.
+- Other devices seen in third-party example files (not present on the example cabinet): `LEDWiz` (32 ports, variable intensity), `PACDrive` (16 ports, on/off only, no `Intensity`).
 
 ### Signature: resolved — must be built with LedBlinky's own Animation Editor
 
 A hand-built `.lwax` (well-formed XML, correct channel map, no other errors, no signature comment) fails to load in LedBlinky Config with *"Animation File has a missing or invalid signature..."* / `Missing Signature [<filename>]` in `LBC_Errors.log`. This is a real, portable, content-derived check — not machine-specific (an unmodified third-party pack file loads fine here; a different third-party file previously hit the identical error) — but the exact algorithm behind the 40-hex-char signature comment could not be reproduced against a known-good file under SHA-1/MD5/SHA-224/256/384/512/RIPEMD-160 across a dozen canonicalizations. Most likely a keyed signature (HMAC or similar) baked into LedBlinky's binary.
 
-**Resolution:** this doesn't matter in practice. `LEDBlinkyAnimationEditor.exe` ships bundled with every LedBlinky install (`<ledblinky_dir>\Plugins\LEDBlinky\LEDBlinkyAnimationEditor.exe` — no separate download or version upgrade needed) and signs whatever it saves. Workflow that worked on this cabinet:
+**Resolution:** this doesn't matter in practice. `LEDBlinkyAnimationEditor.exe` ships bundled with every LedBlinky install (`<ledblinky_dir>\Plugins\LEDBlinky\LEDBlinkyAnimationEditor.exe` — no separate download or version upgrade needed) and signs whatever it saves. Workflow that worked on the example cabinet:
 
 1. Generate a `.lwax` with any tooling, using placeholder `Device="PACLED64" Id="0"` attributes (board ID doesn't need to be correct yet).
 2. **Animation → Open** in the Animation Editor, select the file.
@@ -2604,9 +2636,9 @@ A hand-built `.lwax` (well-formed XML, correct channel map, no other errors, no 
 
 **Confirmed: the signature check only gates LedBlinky Config's own UI, not runtime playback.** Assigning a raw, unsigned `.lwax` directly to `FELWAFile`/`FEScreenSaverLWAFile`/`GamePlayLWAFile` in `Settings.ini` and launching HyperSpin plays the animation correctly — the "missing or invalid signature" error only surfaces when LedBlinky Config itself tries to load/browse/select the file within its own animation-management UI. The Open → Save As round-trip above is therefore only necessary if you want to manage the file *through LedBlinky Config* without it erroring — it is not a prerequisite for the animation to actually run.
 
-**`spindoctor ledblinky lwax fade`** automates step 1 generically — it parses the real `LEDBlinkyInputMap.xml` (any board/controller layout, not hardcoded to this cabinet's two PACLED64 boards) and emits a raw, correctly-addressed, unsigned `.lwax` fading through a list of colors. Steps 2-4 (Open → Save As → copy → assign) are still manual; the signing step can't be automated without either the real signature algorithm or fragile GUI automation, neither of which was worth the complexity given how quick the manual round-trip is. See `docs/commands.md` → `ledblinky lwax fade` for usage. The exact fade this section documents (`rgbfade.lwax`, confirmed working after signing) round-trips byte-for-byte identical through this command.
+**`spindoctor ledblinky lwax fade`** automates step 1 generically — it parses the real `LEDBlinkyInputMap.xml` (any board/controller layout, not hardcoded to the example cabinet's two PACLED64 boards) and emits a raw, correctly-addressed, unsigned `.lwax` fading through a list of colors. Steps 2-4 (Open → Save As → copy → assign) are still manual; the signing step can't be automated without either the real signature algorithm or fragile GUI automation, neither of which was worth the complexity given how quick the manual round-trip is. See `docs/commands.md` → `ledblinky lwax fade` for usage. The exact fade this section documents (`rgbfade.lwax`, confirmed working after signing) round-trips byte-for-byte identical through this command.
 
-For a whole **library** of ready-made spatial/animated effects (sweeps, radial pulses, rain, cyclones, heartbeats, ripples, plasma, twinkles, a solid-colour breathe library, etc.), run **`spindoctor ledblinky lwax batch --apply`** (or, from a source checkout without install, `python scripts/generate_lwax_patterns.py`) — a deterministic, no-AI batch generator that writes ~170 named `.lwax` files plus a `README.md` into `~/Downloads/spindoctor-lwax-patterns/`. Its logic lives in `spindoctor/lwax_patterns.py`, built on this cabinet's layout groups and the generic builders in `spindoctor/lwax.py`; the same manual signing step applies to each file. See `docs/commands.md` → "`ledblinky lwax batch`" for the full walkthrough, and `.claude/skills/lwax-animation/SKILL.md` for the effect-authoring internals.
+For a whole **library** of ready-made spatial/animated effects (sweeps, radial pulses, rain, cyclones, heartbeats, ripples, plasma, twinkles, a solid-colour breathe library, etc.), run **`spindoctor ledblinky lwax batch --apply`** (or, from a source checkout without install, `python scripts/generate_lwax_patterns.py`) — a deterministic, no-AI batch generator that writes ~170 named `.lwax` files plus a `README.md` into `~/Downloads/spindoctor-lwax-patterns/`. Its logic lives in `spindoctor/lwax_patterns.py`, built on the example cabinet's layout groups and the generic builders in `spindoctor/lwax.py`; the same manual signing step applies to each file. See `docs/commands.md` → "`ledblinky lwax batch`" for the full walkthrough, and `.claude/skills/lwax-animation/SKILL.md` for the effect-authoring internals.
 
 ### Gotcha: `LightFEControls=1` overrides some buttons during FE-active animations — confirmed
 
@@ -2616,11 +2648,11 @@ The stuck buttons were exactly HyperSpin's front-end navigation set (Select, Exi
 
 **Why it happens:** the Animation Editor help doc describes the identical override mechanism for the Game Play equivalent of this setting — *"the active buttons will take precedence over the animated buttons... the single frame animation would only be used to light the inactive buttons"* — and `LightFEControls` applies the same logic to whatever controls the current HyperSpin menu considers active, overriding the `FELWAFile`/`FEScreenSaverLWAFile` animation on exactly those buttons for as long as that menu context is showing.
 
-**The overridden color is not hardcoded to white and is independently configurable.** LedBlinky Config's Controls Editor has a dedicated **"FE" edit mode** (separate from the ROM/Game and Emulator edit modes) — select your front-end from the Controls Editor's FE menu, then edit each control under the "Common" tab exactly like a game control (color, intensity, Always Active, Voice Action, etc.), per `Install and Config.pdf` p.71-74, "Edit Front-end (FE) and Controls." This is stored in `LEDBlinkyControls.xml` but as its own FE-designated section, not as a `<emulator emuname="Main Menu">` entry — the exact tag name wasn't confirmed against this cabinet's actual XML as of this writing.
+**The overridden color is not hardcoded to white and is independently configurable.** LedBlinky Config's Controls Editor has a dedicated **"FE" edit mode** (separate from the ROM/Game and Emulator edit modes) — select your front-end from the Controls Editor's FE menu, then edit each control under the "Common" tab exactly like a game control (color, intensity, Always Active, Voice Action, etc.), per `Install and Config.pdf` p.71-74, "Edit Front-end (FE) and Controls." This is stored in `LEDBlinkyControls.xml` but as its own FE-designated section, not as a `<emulator emuname="Main Menu">` entry — the exact tag name wasn't confirmed against the example cabinet's actual XML as of this writing.
 
-**Trade-off is real and inherent, not a limitation of this cabinet's config:** with `LightFEControls=1`, the overridden buttons always show a *static* color (whatever the FE Controls Editor defines, default white if undefined) — never the running animation. There is no combination of settings that lets a button both show a custom "this button is usable" color *and* participate in the synced animation loop; it's Fixed-color to indicate usability (`LightFEControls=1`) or full-panel synced animation (`LightFEControls=0`), not both at once. SpinDoctor does not currently manage the FE Controls Editor's `LEDBlinkyControls.xml` section — only the per-game/per-emulator sections via `ledblinky generate`/`fill-defaults`/`colors sync-players`.
+**Trade-off is real and inherent, not a limitation of the example cabinet's config:** with `LightFEControls=1`, the overridden buttons always show a *static* color (whatever the FE Controls Editor defines, default white if undefined) — never the running animation. There is no combination of settings that lets a button both show a custom "this button is usable" color *and* participate in the synced animation loop; it's Fixed-color to indicate usability (`LightFEControls=1`) or full-panel synced animation (`LightFEControls=0`), not both at once. SpinDoctor does not currently manage the FE Controls Editor's `LEDBlinkyControls.xml` section — only the per-game/per-emulator sections via `ledblinky generate`/`fill-defaults`/`colors sync-players`.
 
-Separately, the Animation Editor's own **Run LED Animation** live-preview button flashed/didn't fade cleanly on this cabinet, while playback through the real HyperSpin/LedBlinky.exe path was smooth. Treat the editor's live-hardware preview as unreliable for judging timing — verify by assigning the file and watching it play through the actual frontend instead.
+Separately, the Animation Editor's own **Run LED Animation** live-preview button flashed/didn't fade cleanly on the example cabinet, while playback through the real HyperSpin/LedBlinky.exe path was smooth. Treat the editor's live-hardware preview as unreliable for judging timing — verify by assigning the file and watching it play through the actual frontend instead.
 
 ### Physical control panel layout (for sweeps, rain, radial pulses, and other spatial animations)
 
@@ -2688,7 +2720,7 @@ Arcade panel (Mini-PAC) ──────────────────�
   its INI). A controller therefore needs something to translate button presses
   into the keystrokes HyperSpin expects: a separate mapper (Xpadder,
   antimicro), the script's own joystick nav, or — the setup that ended up
-  working reliably on this cabinet — **DS4Windows Auto Profiles**, which binds
+  working reliably on the example cabinet — **DS4Windows Auto Profiles**, which binds
   the pad's buttons directly to keyboard output while HyperSpin has focus and
   switches to a normal XInput mapping the moment a game launches, with no
   separate mapper process at all. See
@@ -2710,7 +2742,7 @@ Arcade panel (Mini-PAC) ──────────────────�
 | Tool | Purpose | Needed? |
 |---|---|---|
 | **DS4Windows** | Maps a PS4 pad to XInput, and (via Auto Profiles) keystrokes in HyperSpin's menus | Only if using a PS4 controller. Recommended: start at Windows login, **not** from this script — see [Controller input](controller-input.md). Don't run it from both places, or it won't stay minimized. |
-| **Xpadder** | Controller → keyboard mapper (paid) | Only needed if not using DS4Windows Auto Profiles for menu navigation. Redundant with, and superseded on this cabinet by, Auto Profiles — see [Controller input §1](controller-input.md#1-why-not-the-two-obvious-alternatives). |
+| **Xpadder** | Controller → keyboard mapper (paid) | Only needed if not using DS4Windows Auto Profiles for menu navigation. Redundant with, and superseded on the example cabinet by, Auto Profiles — see [Controller input §1](controller-input.md#1-why-not-the-two-obvious-alternatives). |
 | **antimicro / antimicroX** | Controller → keyboard mapper (free) | Same as Xpadder — redundant with Auto Profiles, keep at most one mapper active regardless of which tool. |
 | **CabVol** | On-screen cabinet volume bar | Optional — skip if a Windows-volume keybind is enough. |
 | **HyperSearch** | Search-the-wheel add-on for HyperSpin | Keep if wheel search is used. |
