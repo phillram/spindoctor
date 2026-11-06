@@ -110,7 +110,7 @@ spindoctor-cli.exe --version
 spindoctor-cli.exe config init
 ```
 
-`config init` is the same wizard the GUI's Setup tab wraps. It asks for every path with sensible Windows defaults pre-filled — press Enter to accept, type `-` to leave an optional path blank.
+`config init` is the same wizard the GUI's Setup tab wraps. It asks for every path with no default paths filled in: type each required path, and press Enter (or type `-`) to leave an optional one blank.
 
 After the wizard (either route), a safe first command is `spindoctor tools-audit` — it never touches files and reports every third-party arcade utility installed alongside SpinDoctor (Tur-RemoveDupes, FatMatch, Sinden, DemulShooter, …) with the SpinDoctor command that supersedes each one. It's also one click away in the GUI's **Diagnostics** tab.
 

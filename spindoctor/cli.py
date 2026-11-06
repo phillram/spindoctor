@@ -257,7 +257,7 @@ def config_set(key: str, value: str):
       intro_randomizer_dir      Folder holding the pool of intro videos
                                 `spindoctor introvideo swap` picks from.
       intro_video_target        Full path to the file HyperSpin plays on boot
-                                (e.g. D:/Arcade/Media/Frontend/Video/Intro.mp4).
+                                (e.g. <hyperspin_dir>/Media/Frontend/Video/Intro.mp4).
                                 Overwritten by `spindoctor introvideo swap`.
       screenscraper_user        ScreenScraper username
       screenscraper_pass        ScreenScraper password
@@ -344,15 +344,18 @@ def config_set(key: str, value: str):
 
 # Wizard fields: (key, prompt label, hardcoded Windows default, allow_blank).
 # allow_blank=True keys accept "-" as a sentinel to clear the value.
-_INIT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
-    ("roms_dir",              "ROMs directory (one sub-folder per system)",        r"D:\ROMs",                       False),
-    ("hyperspin_dir",         "HyperSpin directory (has Databases/ and Media/)",   r"D:\HyperSpin",                  False),
-    ("emulators_dir",         "Emulators directory",                               r"D:\Emulators",                  False),
-    ("rocketlauncher_dir",    "RocketLauncher directory",                          r"D:\RocketLauncher",             False),
-    ("ledblinky_dir",         "LEDBlinky install directory ('-' to skip)",         r"C:\LEDBlinky",                  True),
-    ("mame_executable",       "MAME executable ('-' to skip)",                     r"D:\Emulators\MAME\mame.exe",    True),
-    ("output_dir",            "Staging directory for generated files (unused by most commands — prefer --output-dir flag)", r"D:\SpinDoctorOutput", True),
-    ("auto_audit_export_dir", "Auto-audit export directory ('-' to skip)",         r"D:\SpinDoctorAudits",           True),
+# (key, prompt, allow_blank). No default paths: a key that isn't set yet
+# must be typed (required) or defaults to "-" (optional, left blank), so the
+# wizard never saves a path the user didn't choose.
+_INIT_FIELDS: tuple[tuple[str, str, bool], ...] = (
+    ("roms_dir",              "ROMs directory (one sub-folder per system)",        False),
+    ("hyperspin_dir",         "HyperSpin directory (has Databases/ and Media/)",   False),
+    ("emulators_dir",         "Emulators directory",                               False),
+    ("rocketlauncher_dir",    "RocketLauncher directory",                          False),
+    ("ledblinky_dir",         "LEDBlinky install directory ('-' to skip)",         True),
+    ("mame_executable",       "MAME executable ('-' to skip)",                     True),
+    ("output_dir",            "Staging directory for generated files (unused by most commands — prefer --output-dir flag) ('-' to skip)", True),
+    ("auto_audit_export_dir", "Auto-audit export directory ('-' to skip)",         True),
 )
 
 
@@ -360,22 +363,23 @@ _INIT_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
 def config_init():
     """First-run setup wizard — prompt for every path-based config key in order.
 
-    Press Enter to accept the shown default. For optional keys, type '-' to
-    leave the value blank. Existing values (from a previous run) are used as
-    the defaults so re-running the wizard refines rather than overwrites.
+    Required paths have no default the first time; type them. For optional
+    keys, press Enter (or type '-') to leave the value blank. Existing values
+    (from a previous run) are offered as the defaults, so re-running the
+    wizard refines rather than overwrites.
     """
     config = _cfg()
     console.print(Panel.fit(
         "[bold]SpinDoctor first-run setup[/bold]\n"
-        "Press [cyan]Enter[/cyan] to accept each default. "
-        "Type [cyan]-[/cyan] to clear an optional path.",
+        "Press [cyan]Enter[/cyan] to keep a value already set. "
+        "Type [cyan]-[/cyan] to leave an optional path blank.",
         box=box.ROUNDED,
     ))
 
     pending: dict[str, str] = {}
-    for key, label, win_default, allow_blank in _INIT_FIELDS:
+    for key, label, allow_blank in _INIT_FIELDS:
         existing = getattr(config, key, "") or ""
-        default = existing if existing else win_default
+        default = existing or ("-" if allow_blank else None)
         answer = click.prompt(label, default=default, show_default=True).strip()
         pending[key] = "" if (allow_blank and answer == "-") else answer
 

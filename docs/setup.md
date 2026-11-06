@@ -122,7 +122,7 @@ On first launch (no `config.json` yet) the GUI auto-focuses the Setup tab. From 
 spindoctor config init    :: CLI wizard equivalent of the Setup tab
 ```
 
-`spindoctor config init` prompts for the 8 core paths (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with sensible Windows defaults pre-filled — press Enter to accept, type `-` to leave an optional one blank. The **GUI Setup tab has four more fields** the CLI wizard doesn't prompt for: **Backup root directory** (`backup_dir`), **Atomic write temp directory** (`atomic_tmp_dir`), and **Intro video pool directory** / **Intro video target file** (`intro_randomizer_dir` / `intro_video_target`, step 7c above) — all optional, all skippable, all settable later from either route via `spindoctor config set <key> <value>`.
+`spindoctor config init` prompts for the 8 core paths (ROMs, HyperSpin, Emulators, RocketLauncher, LEDBlinky, MAME, default output, audit export) with no default paths: type each required path, and press Enter (or type `-`) to leave an optional one blank. The **GUI Setup tab has four more fields** the CLI wizard doesn't prompt for: **Backup root directory** (`backup_dir`), **Atomic write temp directory** (`atomic_tmp_dir`), and **Intro video pool directory** / **Intro video target file** (`intro_randomizer_dir` / `intro_video_target`, step 7c above) — all optional, all skippable, all settable later from either route via `spindoctor config set <key> <value>`.
 
 **All paths must already exist** — that's why steps 2–7c come first. If a path is rejected, create the folder and re-run.
 

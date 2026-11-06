@@ -577,23 +577,31 @@ def _walk_attach_combobox_typeahead(root_widget) -> None:
 
 # ─── Tk GUI (lazy imports so the helpers above stay test-importable) ──────────
 
-# Wizard fields used by the Setup tab. Mirrors `_INIT_FIELDS` in cli.py so
-# the windowed setup matches what `spindoctor config init` asks for.
-# (key, label, hardcoded Windows default, allow_blank)
+# Path fields on the Setup tab and in the first-run wizard. Mirrors
+# `_INIT_FIELDS` in cli.py so the windowed setup matches what
+# `spindoctor config init` asks for. No field has a default path: an unset
+# field stays blank and shows its hint instead, so nothing is saved that
+# the user didn't choose.
+# (key, label, hint shown while blank, allow_blank)
 _SETUP_FIELDS: tuple[tuple[str, str, str, bool], ...] = (
-    ("roms_dir",              "ROMs directory",                       r"D:\ROMs",                    False),
-    ("hyperspin_dir",         "HyperSpin directory",                  r"D:\HyperSpin",               False),
-    ("emulators_dir",         "Emulators directory",                  r"D:\Emulators",               False),
-    ("rocketlauncher_dir",    "RocketLauncher directory",             r"D:\RocketLauncher",          False),
-    ("ledblinky_dir",         "LEDBlinky install directory",          r"C:\LEDBlinky",               True),
-    ("mame_executable",       "MAME executable",                      r"D:\Emulators\MAME\mame.exe", True),
-    ("output_dir",            "Default output directory",             r"D:\SpinDoctorOutput",        True),
-    ("auto_audit_export_dir", "Auto-audit export directory",          r"D:\SpinDoctorAudits",        True),
-    ("backup_dir",            "Backup root directory",                r"D:\Backups",                 True),
-    ("atomic_tmp_dir",        "Atomic write temp directory",          r"D:\SpinDoctorTemp",          True),
-    ("intro_randomizer_dir",  "Intro video pool directory",           r"D:\Arcade\Media\Frontend\Video\Intro Video Randomizer", True),
-    ("intro_video_target",    "Intro video target file",              r"D:\Arcade\Media\Frontend\Video\Intro.mp4", True),
+    ("roms_dir",              "ROMs directory",              "The folder with one sub-folder of ROMs per system.", False),
+    ("hyperspin_dir",         "HyperSpin directory",         "Your HyperSpin folder, the one holding Databases and Media.", False),
+    ("emulators_dir",         "Emulators directory",         "The folder your emulators are installed in.", False),
+    ("rocketlauncher_dir",    "RocketLauncher directory",    "Your RocketLauncher folder.", False),
+    ("ledblinky_dir",         "LEDBlinky install directory", "Your LEDBlinky folder. Needed for the LEDBlinky page.", True),
+    ("mame_executable",       "MAME executable",             "Your mame.exe. Needed for the LEDBlinky page's MAME setup.", True),
+    ("output_dir",            "Default output directory",    "Where saved logs and generated files go.", True),
+    ("auto_audit_export_dir", "Auto-audit export directory", "Where automatic audit reports are saved.", True),
+    ("backup_dir",            "Backup root directory",       "Where backups go. Blank keeps each backup next to the file it backs up.", True),
+    ("atomic_tmp_dir",        "Atomic write temp directory", "Blank writes temporary files next to the file being saved.", True),
+    ("intro_randomizer_dir",  "Intro video pool directory",  "The folder of intro videos to pick from. Needed for the Intro Video page.", True),
+    ("intro_video_target",    "Intro video target file",     "The intro video HyperSpin plays at startup. Needed for the Intro Video page.", True),
 )
+
+
+def _setup_hint_text(hint: str, allow_blank: bool) -> str:
+    """Helper text shown under an empty Setup path field."""
+    return ("Not set. " if allow_blank else "Required, not set yet. ") + hint
 
 # Scraper credential fields shown below the path fields in the Setup tab.
 # Tuples: (config_key, label, is_password)
@@ -2084,14 +2092,14 @@ class _SpinDoctorGUI:
             wraplength=560, justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 8))
 
-        for key, label, win_default, _allow_blank in _SETUP_FIELDS:
+        for key, label, hint, _allow_blank in _SETUP_FIELDS:
             if key not in ("roms_dir", "hyperspin_dir"):
                 continue
-            initial = (getattr(cfg, key, "") if cfg else "") or win_default
+            initial = (getattr(cfg, key, "") if cfg else "") or ""
             var = self.tk.StringVar(value=initial)
             state["path_vars"][key] = var
             row = self.ttk.Frame(paths)
-            row.pack(fill="x", pady=4)
+            row.pack(fill="x", pady=(4, 0))
             self.ttk.Label(row, text=label, width=18).pack(side="left")
             self.ttk.Entry(row, textvariable=var, width=40).pack(
                 side="left", padx=6, fill="x", expand=True,
@@ -2100,6 +2108,9 @@ class _SpinDoctorGUI:
                 row, text="Browse",
                 command=lambda v=var, k=key: self._browse_dir(v, k),
             ).pack(side="left")
+            self.ttk.Label(
+                paths, text=hint, foreground=_FG_DIM,
+            ).pack(anchor="w", padx=(150, 0), pady=(0, 4))
 
         # ── step 2: doctor output ────────────────────────────────────────────
         doctor = self.ttk.Frame(step_holder)
@@ -4785,11 +4796,10 @@ class _SpinDoctorGUI:
         # group headers can be interleaved without grid arithmetic.
         row = 2
 
-        def _add_path_row(key, label, win_default):
+        def _add_path_row(key, label, hint, allow_blank):
             nonlocal row
             existing = getattr(cfg, key, "") or ""
-            initial = existing or win_default
-            var = self.tk.StringVar(value=initial)
+            var = self.tk.StringVar(value=existing)
             self._setup_vars[key] = var
             var.trace_add("write", lambda *_a, k=key: self._setup_mark_dirty())
             self.ttk.Label(frame, text=label).grid(row=row, column=0, sticky="w", pady=2)
@@ -4817,7 +4827,31 @@ class _SpinDoctorGUI:
                 btn_cell, text="Open",
                 command=lambda v=var, k=key: self._open_setup_path(v, k),
             ).pack(side="left", padx=(4, 0))
-            row += 1
+            # Helper text under the entry while it's blank, so an unset
+            # path reads as unset instead of showing a made-up example.
+            # Spans the entry and button columns and wraps, so a long hint
+            # is never cut off on a narrow window.
+            hint_label = self._responsive_label(
+                frame, text=_setup_hint_text(hint, allow_blank),
+            )
+            hint_label.configure(
+                style="Help.TLabel" if allow_blank else "Warn.TLabel",
+            )
+            hint_label.grid(
+                row=row + 1, column=1, columnspan=2, sticky="ew",
+                padx=6, pady=(0, 2),
+            )
+            self._setup_hint_labels[key] = hint_label
+
+            def _sync_hint(*_a, v=var, lbl=hint_label):
+                if v.get().strip():
+                    lbl.grid_remove()
+                else:
+                    lbl.grid()
+
+            var.trace_add("write", _sync_hint)
+            _sync_hint()
+            row += 2
 
         def _add_group_header(text, subtitle=None, separator=False):
             nonlocal row
@@ -4843,9 +4877,10 @@ class _SpinDoctorGUI:
         core_fields = [f for f in _SETUP_FIELDS if not f[3]]
         optional_fields = [f for f in _SETUP_FIELDS if f[3]]
 
+        self._setup_hint_labels: dict = {}
         _add_group_header("Core paths")
-        for key, label, win_default, _allow_blank in core_fields:
-            _add_path_row(key, label, win_default)
+        for key, label, hint, allow_blank in core_fields:
+            _add_path_row(key, label, hint, allow_blank)
 
         _add_group_header(
             "Optional paths",
@@ -4853,8 +4888,8 @@ class _SpinDoctorGUI:
                      "audit exports). Fine to leave blank until you need them.",
             separator=True,
         )
-        for key, label, win_default, _allow_blank in optional_fields:
-            _add_path_row(key, label, win_default)
+        for key, label, hint, allow_blank in optional_fields:
+            _add_path_row(key, label, hint, allow_blank)
 
         # ── Scraper credentials ───────────────────────────────────────────────
         cred_sep_row = row
@@ -5312,7 +5347,7 @@ class _SpinDoctorGUI:
 
     def _save_setup(self) -> None:
         cfg = load_config()
-        for key, _label, _default, _allow_blank in _SETUP_FIELDS:
+        for key, _label, _hint, _allow_blank in _SETUP_FIELDS:
             setattr(cfg, key, self._setup_vars[key].get().strip())
         for key, _label, _is_password in _CRED_FIELDS:
             setattr(cfg, key, self._setup_vars[key].get().strip())
