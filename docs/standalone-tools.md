@@ -17,9 +17,9 @@ After `pip install -e .` the entry-point console scripts (`spindoctor-fav` / `sp
 
 ## Do I need `pip install`?
 
-The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` by bare name. `cmd.exe` resolves that via `PATHEXT`, so anything called `spindoctor-fav.exe` (or `.bat`, `.cmd`, …) on `PATH` — or sitting next to the `.bat` in the same folder — satisfies it. Three working setups:
+Generated `.bat` files from `install-tools` and GUI auto-refresh work without Python. On frozen Windows installs they embed the running EXE's full path plus `--run-tool <tool>`, so even a GUI-only install works without `PATH`. The convenience files in `scripts/` instead call the pip console-script names. Three working setups:
 
-1. **Standalone Windows binaries (no Python needed).** Download the appropriate zip from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page (`spindoctor-win10-vX.Y.Z.zip` for Windows 10/11; `spindoctor-win7-vX.Y.Z.zip` for Windows 7 SP1 and newer). Extract and keep the EXEs together in one folder, then either drop the `.bat` files into the same folder or add the folder to `PATH`. The `.bat` files work as-is. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
+1. **Standalone Windows binaries (no Python needed).** Download the appropriate zip from the [GitHub Releases](https://github.com/phillram/spindoctor/releases) page (`spindoctor-win10-vX.Y.Z.zip` for Windows 10/11; `spindoctor-win7-vX.Y.Z.zip` for Windows 7 SP1 and newer). Copy either EXE anywhere, then use the GUI's Tools-menu installer or `spindoctor.exe install-tools` to generate the bats. Both EXEs embed all three builders; for a hand-written bat use, for example, `start "" /B /WAIT "C:\spindoctor\spindoctor-gui.exe" --run-tool spindoctor-fav rebuild --apply`. See [`docs/windows-binaries.md`](windows-binaries.md) for the full walkthrough.
 2. **Full Python install.** `pip install -e .` from a checkout. Console scripts (`spindoctor-fav` / `spindoctor-recent` / `spindoctor-stats` / `spindoctor-gui`) land on `PATH`, the `.bat` files work as-is.
 3. **Source on disk, no install.** Copy the whole repo to the cabinet, install Python + dependencies (`pip install click rich requests lxml`), and rewrite each `.bat` to call the `.py` wrappers directly:
    ```bat
@@ -28,6 +28,8 @@ The three `.bat` files call `spindoctor-fav` / `spindoctor-recent` / `spindoctor
    The wrappers `sys.path.insert(0, repo_root)` so `import spindoctor` resolves without an editable install. The GUI is also available as `python -m spindoctor.gui`.
 
 The `.py` wrappers in `scripts/` themselves require a Python install — they're for setup (3) only.
+
+The command examples below use pip console-script names. For v3 Windows binaries, replace the command name with `spindoctor.exe --run-tool <tool>` (or the GUI EXE via `start "" /B /WAIT`). Separate builder EXEs are no longer shipped; `build_windows.py --legacy-tools` can build them for old external scripts.
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
@@ -116,7 +118,7 @@ Three integration patterns, in roughly increasing order of "how much you want it
 
    > **Why this fixes "PCLauncher does not know what exe / FadeTitle to watch for":** the helpers are `.bat` files that run and exit — there's no persistent process for PCLauncher to monitor. `install-tools` writes `[Settings]`-format INIs (`ApplicationPath` / `StartIn`) instead of the `[exe info]` format, which doesn't require a `fadetitle` or monitored executable at all. If you previously created your own INIs using `[exe info]` and left those fields blank, re-running this command overwrites them with the correct format. See [Troubleshooting → PCLauncher error](troubleshooting.md#pclauncher-does-not-know-what-exe-fadetitle-andor-steamid-to-watch-for-when-launching-a-toolkit-helper) for the full diagnosis.
 
-3. **Manual** — copy the `.bat` files from `scripts/` into wherever you want and register them yourself.
+3. **Manual** — copy the generated `.bat` files (or the `scripts/` convenience files for pip installs) wherever you want and register them yourself.
 
 ## Wiring into Windows startup
 
@@ -126,12 +128,14 @@ The GUI's **Custom Wheels** tab has a Windows-only "Auto-refresh on cabinet star
 
 | File | Purpose |
 |---|---|
-| `spindoctor-refresh-wheels.bat` | Runs the three rebuild commands; each wrapped with `START /LOW /B /WAIT` so the spindoctor processes run at Windows **IDLE priority** — only consuming CPU that HyperSpin and RocketLauncher aren't using. |
+| `spindoctor-refresh-wheels.bat` | Runs the three rebuild commands; each wrapped with `START /LOW /B /WAIT ""` so the spindoctor processes run at Windows **IDLE priority** — only consuming CPU that HyperSpin and RocketLauncher aren't using. Frozen installs call the running EXE's embedded workers with `--run-tool`. |
 | `spindoctor-refresh-wheels.vbs` | Calls the bat with `WshShell.Run(bat, 0, True)` — window style `0` = hidden — so **no `cmd.exe` window** ever appears on the cabinet screen. |
 
 The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refresh-wheels.vbs`.
 
 > **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
+
+> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks.
 
 ### Manual registration
 
@@ -149,14 +153,14 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
   /tr "wscript.exe //B \"D:\SpinDoctor\spindoctor-refresh-wheels.vbs\""
 ```
 
-> **Where is the VBS?** For a frozen-binary install (the `.exe` download) the files are written to the
-> **same folder as `spindoctor.exe`**, because the `.bat` embeds full paths to the sibling executables and
-> must sit adjacent to them. For a source/`pip install` setup they go to `%USERPROFILE%\.spindoctor\`.
+> **Where is the VBS?** The generated auto-refresh files live in `%USERPROFILE%\.spindoctor\`
+> for both frozen and source/`pip install` setups. On frozen installs the `.bat` embeds the running
+> EXE's full path plus `--run-tool`; it need not sit next to the EXE and works with only the GUI installed.
 > The GUI output panel always prints the exact path used — check there rather than guessing.
 
 > **Do not** register `cmd.exe /c bat.bat` directly — that runs at normal process priority and opens a console window, both of which can stall the cabinet frontend.
 
-Or drop the `.bat` files (from `scripts/`, or those written by `spindoctor install-tools`) into the Windows Startup folder (`shell:startup`) for a lower-ceremony alternative — they run at normal priority but are fine for Tools-menu or manual invocations.
+Or drop the `.bat` files written by `install-tools` (or from `scripts/` for pip installs) into the Windows Startup folder (`shell:startup`) for a lower-ceremony alternative — these use normal priority and are also fine for Tools-menu or manual invocations.
 
 For macOS, schedule via `crontab -e` with an `@reboot` line, or write a launchd plist under `~/Library/LaunchAgents/`. For Linux, `crontab -e` or a `systemd --user` unit.
 

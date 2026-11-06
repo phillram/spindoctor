@@ -96,10 +96,8 @@ def test_resolve_dev_install_prefers_path_binary(monkeypatch, tmp_path):
     assert argv == [str(fake)]
 
 
-def test_resolve_frozen_finds_sibling_binary(monkeypatch, tmp_path):
-    """The frozen GUI exe locates its peer CLI exes by looking next to
-    sys.executable — that's how the release zip ships them, and avoids
-    forcing users to put the install folder on PATH."""
+def test_resolve_frozen_ignores_stale_sibling(monkeypatch, tmp_path):
+    """Always invoke the embedded worker, never an obsolete sibling."""
     fake_gui_exe = tmp_path / "spindoctor-gui"
     fake_gui_exe.write_bytes(b"")
     sibling = tmp_path / ("spindoctor.exe" if sys.platform == "win32" else "spindoctor")
@@ -109,23 +107,20 @@ def test_resolve_frozen_finds_sibling_binary(monkeypatch, tmp_path):
     monkeypatch.setattr(sys, "executable", str(fake_gui_exe))
 
     argv = gui.resolve_cli_command("spindoctor")
-    assert argv == [str(sibling)]
+    assert argv == [str(fake_gui_exe), "--run-tool", "spindoctor"]
 
 
-def test_resolve_frozen_missing_sibling_raises(monkeypatch, tmp_path):
-    """If the user accidentally separates the GUI from the CLI exes,
-    we should give a clear error rather than silently falling back to
-    a `python -m` invocation that won't work in a frozen build."""
+def test_resolve_frozen_needs_no_sibling_or_path(monkeypatch, tmp_path):
+    """A frozen GUI is independently portable."""
     fake_gui_exe = tmp_path / "spindoctor-gui"
     fake_gui_exe.write_bytes(b"")
 
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(fake_gui_exe))
-    monkeypatch.setattr(gui.shutil, "which", lambda _name: None)
-
-    with pytest.raises(gui.CliNotFoundError) as exc:
-        gui.resolve_cli_command("spindoctor-fav")
-    assert "spindoctor-fav" in str(exc.value)
+    monkeypatch.setattr(gui.shutil, "which", lambda _: pytest.fail("must not consult PATH"))
+    assert gui.resolve_cli_command("spindoctor-fav") == [
+        str(fake_gui_exe), "--run-tool", "spindoctor-fav",
+    ]
 
 
 # ─── probe_cli_version / stale wheel-builder detection ────────────────────────

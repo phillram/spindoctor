@@ -186,25 +186,14 @@ jobs:
         shell: bash
         run: python build/build_windows.py
 
-      - name: Smoke-test binaries
-        # --onefile build: each binary is a self-contained exe in dist\.
-        # spindoctor-gui.exe is --windowed so cmd can't observe its exit —
-        # verify the file exists via bash instead.
-        shell: cmd
-        run: |
-          dist\spindoctor.exe --version || exit /b 1
-          dist\spindoctor-fav.exe --help || exit /b 1
-          dist\spindoctor-recent.exe --help || exit /b 1
-          dist\spindoctor-stats.exe --help || exit /b 1
-
-      - name: Smoke-test GUI binary exists
-        shell: bash
-        run: test -f dist/spindoctor-gui.exe
+      - name: Smoke-test standalone binaries
+        # Copies each EXE alone into an empty folder (no siblings, no PATH)
+        # and runs the CLI plus every embedded worker, including media installs.
+        run: python build/smoke_standalone.py dist
 
   build-smoke-modern:
     name: PyInstaller build smoke test (modern, Win10/11)
-    # Verifies the --modern COLLECT build (Python 3.12 + PyInstaller 6.x)
-    # produces working binaries from the shared-runtime --onedir layout.
+    # Verifies the Python 3.12 + PyInstaller 6.x one-file build.
     # The main test matrix (windows-2022 × 3.12) already covers Python 3.12
     # Tk/library behaviour; this job focuses on the build path itself.
     runs-on: windows-2022
@@ -226,24 +215,13 @@ jobs:
           pip install -e .[all]
           pip install -r build/requirements-build-modern.txt
 
-      - name: Build (modern --onedir)
+      - name: Build (modern)
         shell: bash
         run: python build/build_windows.py --modern
 
-      - name: Smoke-test binaries (from shared-runtime folder)
-        # --onedir build: EXEs live in dist\spindoctor-win10\ alongside _internal\.
-        # spindoctor-gui.exe is --windowed; verify the file exists via bash.
-        shell: cmd
-        run: |
-          dist\spindoctor-win10\spindoctor.exe --version || exit /b 1
-          dist\spindoctor-win10\spindoctor-fav.exe --help || exit /b 1
-          dist\spindoctor-win10\spindoctor-recent.exe --help || exit /b 1
-          dist\spindoctor-win10\spindoctor-stats.exe --help || exit /b 1
+      - name: Smoke-test standalone binaries
+        run: python build/smoke_standalone.py dist/spindoctor-win10
 
-      - name: Smoke-test GUI binary exists
+      - name: Verify no shared runtime folder
         shell: bash
-        run: test -f dist/spindoctor-win10/spindoctor-gui.exe
-
-      - name: Verify _internal shared runtime present
-        shell: bash
-        run: test -d dist/spindoctor-win10/_internal
+        run: test ! -e dist/spindoctor-win10/_internal

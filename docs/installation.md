@@ -96,8 +96,8 @@ pip install click rich requests lxml
 
 No Python installation is needed for the release bundles. Use the
 [Windows binary guide](windows-binaries.md) for the current compatibility table,
-download names, extraction layout, updates and self-build instructions. Keep a
-modern bundle's `_internal/` directory with its executables.
+download names, extraction layout, updates and self-build instructions. Both
+bundles ship two independent single-file EXEs; either can be copied anywhere alone.
 
 After extraction, double-click `spindoctor-gui.exe` or open a terminal for
 `spindoctor.exe`. The [GUI walkthrough](gui.md) is shared by binary and source

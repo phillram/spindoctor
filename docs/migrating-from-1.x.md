@@ -87,7 +87,7 @@ Neither change affects anything that wasn't internal-only.
 - **Settings and favorites** stay under `~/.spindoctor/`. Review [Configuration](configuration.md) for current defaults and automatic migrations, including metadata-source selection.
 - **Recovery records** retain their established locations. See [Recovery from mistakes](workflows.md#recovery-from-mistakes) for command-specific undo support and limitations.
 - **Tools-menu and Task Scheduler integration** remains supported. Update configured executable paths if the installation folder changes.
-- **The five Windows executables** remain available. Modern bundles also require their accompanying `_internal` directory; keep the entire release bundle together.
+- **Windows binaries** remain available. v3 ships two independent single-file EXEs (`spindoctor-gui.exe` and `spindoctor.exe`), each embedding all workers and bundled deployment media. Either works alone; use `--run-tool` for the wheel builders (see [Windows binaries](windows-binaries.md#upgrading-from-v2)).
 
 ## Rollback
 

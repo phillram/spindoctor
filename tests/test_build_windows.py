@@ -3,12 +3,8 @@
 build/ has no __init__.py (it's a standalone build script, not part of the
 installed package), so the module is loaded directly from its file path.
 
-Covers the bug fixed in this PR: the modern (--onedir / Windows 10) spec
-generator dropped the `.is_file()` guard that the Win7 (--onefile) path
-kept, so the ~129 MB `spindoctor/assets/archive/` directory (deprecated
-originals, deliberately excluded from every build) got recursively bundled
-into the Win10 EXE only. `iter_bundle_assets()` is now the single filter
-both build paths share, so this can't drift apart again.
+The ~129 MB `spindoctor/assets/archive/` directory (deprecated originals)
+must never be bundled. Both default targets are independent one-file EXEs.
 """
 
 from __future__ import annotations
@@ -91,19 +87,45 @@ class TestIterBundleAssets:
             "navigate_sound.mp3", "theme_blank.zip",
         }
 
-    def test_gui_and_stats_get_no_deployment_media(self, bw):
-        for name in ("spindoctor-gui", "spindoctor-stats"):
-            names = {p.name for p in bw.iter_bundle_assets(name)}
-            assert names == {"icon.ico"}, f"{name}: expected only icon.ico, got {names}"
+    def test_stats_gets_only_most_played_and_shared_media(self, bw):
+        names = {p.name for p in bw.iter_bundle_assets("spindoctor-stats")}
+        assert names == {"icon.ico", "navigate_sound.mp3", "theme_blank.zip"}
+
+    def test_standalone_gui_embeds_all_media(self, bw):
+        assert bw.iter_bundle_assets("spindoctor-gui") == bw.iter_bundle_assets("spindoctor")
 
 
-class TestGenerateOnedirSpecExcludesArchive:
-    """Exercise the actual --onedir spec-writing path, not just the helper."""
+class TestRunPyinstaller:
+    """Every target is one independent file with no external runtime folder."""
 
-    def test_spec_text_never_references_the_archive_directory(self, bw, tmp_path):
-        shims = {name: tmp_path / f"shim_{name}.py" for _, name, _ in bw.TARGETS}
-        spec_path = bw.generate_onedir_spec(shims)
-        text = spec_path.read_text()
-        archive_path = (bw.ASSETS_DIR / "archive").as_posix()
-        assert archive_path not in text, \
-            "generate_onedir_spec() bundled the archive/ directory into a Win10 EXE"
+    def _command(self, bw, monkeypatch, tmp_path, name, windowed):
+        captured = []
+        monkeypatch.setattr(bw.subprocess, "check_call", captured.append)
+        bw.run_pyinstaller(tmp_path / "shim.py", name, windowed, out_dir=tmp_path / "dist")
+        return captured[0]
+
+    @pytest.mark.parametrize("_entry,name,windowed", [
+        ("spindoctor._runtime:cli_main", "spindoctor", False),
+        ("spindoctor.gui:main", "spindoctor-gui", True),
+    ])
+    def test_targets_are_independent_onefile_builds(
+        self, bw, monkeypatch, tmp_path, _entry, name, windowed,
+    ):
+        cmd = self._command(bw, monkeypatch, tmp_path, name, windowed)
+        text = " ".join(cmd)
+        assert "--onefile" in cmd and "--onedir" not in cmd
+        assert ("--windowed" if windowed else "--console") in cmd
+        assert (bw.ASSETS_DIR / "archive").as_posix() not in text.replace("\\", "/")
+        added = [cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--add-data"]
+        assert len(added) == len(bw.iter_bundle_assets(name))
+
+    def test_gui_bundles_embedded_workers(self, bw, monkeypatch, tmp_path):
+        cmd = self._command(bw, monkeypatch, tmp_path, "spindoctor-gui", True)
+        hidden = {cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--hidden-import"}
+        assert {
+            "spindoctor._runtime", "spindoctor.cli", "spindoctor.favorites",
+            "spindoctor.recent", "spindoctor.playtime", "spindoctor.gui",
+        } <= hidden
+
+    def test_default_targets_are_only_gui_and_cli(self, bw):
+        assert [name for _, name, _ in bw.TARGETS] == ["spindoctor", "spindoctor-gui"]

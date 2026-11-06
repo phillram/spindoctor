@@ -459,16 +459,10 @@ def swap_video(
 # ── Windows logon auto-run ───────────────────────────────────────────────────
 
 def _sibling_spindoctor_exe() -> str:
-    """Resolve the `spindoctor` executable, frozen or dev install.
+    """Resolve the current executable's CLI worker, or the installed CLI."""
+    from ._runtime import tool_command_text
 
-    Mirrors gui.py's `_write_refresh_bat` branching so both auto-run
-    features resolve executables the same way.
-    """
-    if getattr(sys, "frozen", False):
-        sibling = Path(sys.executable).parent / "spindoctor.exe"
-        if sibling.exists():
-            return f'"{sibling}"'
-    return "spindoctor"
+    return tool_command_text("spindoctor")
 
 
 def _swap_bat_dir() -> Path:
@@ -481,8 +475,8 @@ def _swap_bat_dir() -> Path:
     a new folder — the registered Task Scheduler entry would keep
     pointing at a script that may no longer exist. Writing here instead
     means the Task Scheduler task's target path never needs to change
-    across upgrades; only its *contents* (which reference the
-    per-version ``spindoctor.exe`` on a frozen install, via
+    across upgrades; only its *contents* (which reference the running
+    executable's embedded CLI worker on a frozen install, via
     :func:`_sibling_spindoctor_exe`) need a refresh — re-run
     ``introvideo install-autorun --apply`` once after upgrading. Does NOT
     create the directory; only :func:`_write_swap_bat` does that, so
@@ -617,8 +611,8 @@ def autorun_status() -> AutorunStatus:
 
     "Stale" means the task is registered but the generated `.bat` no
     longer reflects the currently-running install: either the file is
-    missing outright, or (frozen installs only) it doesn't reference the
-    `spindoctor.exe` this process is actually running from — the
+    missing outright, or (frozen installs only) it doesn't reference this
+    executable's embedded CLI worker — the
     situation after upgrading to a new version extracted into a new
     folder without re-running `install_autorun`. Re-running it fixes a
     stale task in place (same task name, `/F` overwrite — no need to
