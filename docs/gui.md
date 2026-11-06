@@ -55,12 +55,13 @@ The status bar text is automatically truncated when a command string is too long
 
 ### Apply changes, Verbose output, and Save log file
 
-The top of the sidebar holds three settings that apply to **every command on every page**:
+The top of the sidebar holds four settings that apply to **every command on every page**:
 
 | Setting | Effect |
 |---|---|
 | **Apply changes** | A large switch. **OFF** (default, green text): commands run in dry-run mode, the output shows what *would* happen, and nothing is written. **ON** (orange): commands run with `--apply` and write changes to disk. |
 | **Verbose output** | When checked, commands run with `--verbose` and print additional detail: file paths being written, per-item counts (added / overridden / skipped), old→new values. When unchecked (default), only the summary line is shown. |
+| **Show help text** | Shows or hides the longer explanations on every page at once. Off by default; safety warnings (deletes, overwrites) are always shown. |
 | **Save log file** | When checked, every finished command's exact Output panel text (command line, full stdout/stderr, exit code) is written as a `.txt` backup file into your configured **Default output directory** (Setup tab). Unchecked by default. If `output_dir` isn't set, the Output panel notes the run wasn't saved instead of writing anywhere unexpected. |
 
 The Apply switch is always visible and changes color when it's on, so you can't miss which mode you're in before clicking a button. Save log file is a convenience copy of what the History page already keeps in memory for the session; use it when you want a durable record after the GUI closes (e.g. to attach to a bug report).
