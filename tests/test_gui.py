@@ -3231,3 +3231,77 @@ def test_gwm_remove_dry_run_shows_pclauncher_note(monkeypatch):
         assert any("remove-pclauncher" in o for o in outputs), outputs
     finally:
         app.root.destroy()
+
+
+def test_help_is_collapsed_independent_and_wraps_to_available_width():
+    import tkinter as tk
+    from tkinter import ttk
+
+    try:
+        root = tk.Tk()
+    except tk.TclError:
+        pytest.skip("Tk display unavailable")
+    app = object.__new__(gui._SpinDoctorGUI)
+    app.ttk = ttk
+    try:
+        root.geometry("1000x400")
+        first = app._help_text(root, text="Optional guidance for this action. " * 30)
+        second = app._help_text(root, text="Other guidance.")
+        first.pack(fill="x")
+        second.pack(fill="x")
+        root.update()
+        body, button = first.winfo_children()
+        other_body, _ = second.winfo_children()
+        assert body.winfo_manager() == ""
+        assert other_body.winfo_manager() == ""
+        collapsed_height = first.winfo_height()
+        button.invoke()
+        root.update_idletasks()
+        assert body.winfo_ismapped()
+        assert button.cget("text") == "Hide help"
+        assert other_body.winfo_manager() == ""
+        assert body.winfo_width() > 900
+        assert int(body.cget("wraplength")) == body.winfo_width() - 4
+        wide_height = body.winfo_height()
+        root.geometry("480x400")
+        root.update()
+        root.update_idletasks()
+        assert int(body.cget("wraplength")) == body.winfo_width() - 4
+        assert body.winfo_width() <= 480
+        assert body.winfo_height() > wide_height
+        button.invoke()
+        root.update()
+        assert body.winfo_manager() == ""
+        assert first.winfo_height() == collapsed_height
+        assert button.cget("text") == "Show help"
+    finally:
+        root.destroy()
+
+
+def test_all_tabs_hide_guidance_but_keep_safety_warnings(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+
+        widgets = list(descendants(app._nb))
+        help_buttons = [
+            w for w in widgets
+            if w.winfo_class() == "TButton" and w.cget("text") == "Show help"
+        ]
+        assert len(help_buttons) >= 50
+        for button in help_buttons:
+            body = button.master.winfo_children()[0]
+            assert body.winfo_manager() == ""
+        labels = [
+            w for w in widgets
+            if w.winfo_class() in ("TLabel", "TLabelframe")
+        ]
+        for warning in ("Permanently deletes", "Always writes", "Overwrite replaces"):
+            matches = [w for w in labels if warning in str(w.cget("text"))]
+            assert matches, warning
+            assert all(w.winfo_manager() for w in matches)
+    finally:
+        app.root.destroy()

@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Compact GUI help.** Longer explanations on every tab are collapsed behind **Show help** buttons and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
+
 ## [3.0.0] - 2026-11-05
 
 ### Changed

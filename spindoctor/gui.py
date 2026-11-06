@@ -2193,6 +2193,35 @@ class _SpinDoctorGUI:
 
     # ── layout ────────────────────────────────────────────────────────────────
 
+    def _responsive_label(self, parent, *, text):
+        """Wrap to the allocated width without setting the form's minimum width."""
+        label = self.ttk.Label(parent, text=text, justify="left", anchor="w", width=1)
+        label.bind(
+            "<Configure>",
+            lambda event: label.configure(wraplength=max(1, event.width - 4)),
+            add="+",
+        )
+        return label
+
+    def _help_text(self, parent, *, text):
+        """Optional, keyboard-accessible guidance, collapsed on every launch."""
+        frame = self.ttk.Frame(parent)
+        body = self._responsive_label(frame, text=text)
+        expanded = False
+
+        def toggle():
+            nonlocal expanded
+            expanded = not expanded
+            button.configure(text="Hide help" if expanded else "Show help")
+            if expanded:
+                body.pack(fill="x", pady=(2, 4))
+            else:
+                body.pack_forget()
+
+        button = self.ttk.Button(frame, text="Show help", command=toggle)
+        button.pack(anchor="w")
+        return frame
+
     def _build_layout(self) -> None:
         self._build_menubar()
 
@@ -4372,20 +4401,11 @@ class _SpinDoctorGUI:
 
     def _build_setup_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        intro_text = (
-            "Point SpinDoctor at your library — fill in the paths below "
-            "and click Save. Settings are stored automatically and you "
-            "can come back to change them any time."
-        )
+        intro_text = "Set your library paths and click Save. You can change them at any time."
         if getattr(self, "_dnd_available", False):
-            intro_text += (
-                "  💡 Drag a folder from Explorer / Finder onto any "
-                "path field to fill it in."
-            )
-        intro = self.ttk.Label(
-            frame, text=intro_text, wraplength=860, justify="left",
-        )
-        intro.grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 6))
+            intro_text += " Drag a folder onto a path field to fill it in."
+        intro = self._help_text(frame, text=intro_text)
+        intro.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 6))
 
         # First-run wizard CTA — the friendliest entry point for a brand-
         # new cabinet owner, so it sits at the very top of the very first
@@ -4394,12 +4414,6 @@ class _SpinDoctorGUI:
         # Help → First-run setup.
         wizard_row = self.ttk.Frame(frame)
         wizard_row.grid(row=1, column=0, columnspan=3, sticky="w", pady=(0, 10))
-        self.ttk.Label(
-            wizard_row,
-            text="New here? The wizard walks you through the two required "
-                 "paths and runs a health check:",
-            foreground=_FG_DIM,
-        ).pack(side="left")
         self.ttk.Button(
             wizard_row, text="Run first-run wizard",
             command=self._show_first_run_wizard,
@@ -4463,10 +4477,9 @@ class _SpinDoctorGUI:
             ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 2))
             row += 1
             if subtitle:
-                self.ttk.Label(
-                    frame, text=subtitle, foreground=_FG_DIM,
-                    wraplength=780, justify="left",
-                ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(0, 4))
+                self._help_text(
+                    frame, text=subtitle,
+                ).grid(row=row, column=0, columnspan=3, sticky="ew", pady=(0, 4))
                 row += 1
 
         # The _allow_blank flag in _SETUP_FIELDS doubles as the
@@ -4498,18 +4511,10 @@ class _SpinDoctorGUI:
             frame, text="Scraper credentials (optional)",
             font=("TkDefaultFont", 9, "bold"),
         ).grid(row=cred_sep_row + 1, column=0, columnspan=3, sticky="w", pady=(0, 4))
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=(
-                "Used by the Metadata & Media tab to fetch artwork, videos, "
-                "and metadata. Leave blank if you don't need them.\n"
-                "ScreenScraper also requires a developer-account devid + "
-                "devpassword issued at "
-                "https://www.screenscraper.fr/membreinscription.php — the "
-                "bundled \"SpinDoctor\" placeholders will not authenticate."
-            ),
-            wraplength=780, justify="left",
-        ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="w", pady=(0, 6))
+            text="Optional credentials for metadata and media downloads. ScreenScraper also needs your developer ID and password from https://www.screenscraper.fr/membreinscription.php; bundled placeholders do not authenticate.",
+        ).grid(row=cred_sep_row + 2, column=0, columnspan=3, sticky="ew", pady=(0, 6))
 
         # Track credential entries so the eyeball toggle and the Test
         # credentials button can address them by key. Built lazily so a
@@ -5245,15 +5250,10 @@ class _SpinDoctorGUI:
             frame, text="Step 1 — Cabinet health check (no inputs needed)",
         )
         health_lf.pack(fill="x", pady=(0, 8))
-        self.ttk.Label(
+        self._help_text(
             health_lf,
-            text=("Doctor validates config paths and installs; Tools audit "
-                  "inventories third-party cabinet utilities; Preflight "
-                  "chains doctor → tools-audit → audit --all with a "
-                  "verdict at the end — the \"taking the cab to a LAN "
-                  "event tomorrow\" button."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 4))
+            text="Health Check validates paths and installs. Installed Tools inventories cabinet utilities. Preflight runs both plus a full library audit.",
+        ).pack(fill="x", padx=6, pady=(4, 4))
         health_row = self.ttk.Frame(health_lf)
         health_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
@@ -5335,14 +5335,6 @@ class _SpinDoctorGUI:
         scans_lf = self.ttk.LabelFrame(frame, text="Step 3 — Library-wide scans")
         scans_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
-            scans_lf,
-            text=("Read-only inspectors that don't change anything on "
-                  "disk. Each click runs the corresponding command and "
-                  "streams output below — handy when something looks "
-                  "off but you don't know which command will surface it."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 6))
 
         rows_scan: list[tuple[str, list[str]]] = [
             ("Find duplicate ROMs",        ["find-dupes", "--all"]),
@@ -5437,12 +5429,10 @@ class _SpinDoctorGUI:
             sv_lf, text="Inspect a single game (or whole system)",
             font=("TkDefaultFont", 10, "bold"),
         ).pack(anchor="w", padx=6, pady=(0, 4))
-        self.ttk.Label(
+        self._help_text(
             sv_lf,
-            text=("Pick a system; leave ROM blank for `inspect --all`. "
-                  "Read-only — never modifies disk."),
-            foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="Pick a system. Leave ROM blank to inspect all its games.",
+        ).pack(fill="x", padx=6, pady=(0, 4))
         inspect_row = self.ttk.Frame(sv_lf)
         inspect_row.pack(fill="x", padx=6, pady=(2, 8))
         self.ttk.Label(inspect_row, text="System").pack(side="left")
@@ -5685,14 +5675,10 @@ class _SpinDoctorGUI:
 
     def _build_backup_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Snapshot the library to a target folder, list previous "
-                  "backups, or restore from one. Pick the components to "
-                  "include — the default is everything. Every action is a "
-                  "dry-run unless you tick Apply, mirroring the CLI."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+            text="Choose components and a destination to back up, or select a backup to restore. All components are selected by default. Tick Apply to write changes.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Target folder & components ─────────────────────────────
         cfg_frame = self.ttk.LabelFrame(
@@ -6139,15 +6125,10 @@ class _SpinDoctorGUI:
 
     def _build_migrate_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Move (or copy) the library to a new drive in one shot. "
-                  "Per-component checkboxes default to all five — uncheck "
-                  "to migrate a subset. Dry-run by default; tick Apply to "
-                  "execute. Every applied migration writes a manifest you "
-                  "can undo from the panel below."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+            text="Move or copy selected library components to a new drive. Tick Apply to execute. Applied migrations create an undo manifest.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Current configuration ───────────────────────────────────
         cur_cfg_frame = self.ttk.LabelFrame(frame, text="Step 1 — Current configuration")
@@ -6172,14 +6153,10 @@ class _SpinDoctorGUI:
         pre_bkp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Backup before migrating")
         pre_bkp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
         pre_bkp_frame.columnconfigure(1, weight=1)
-        self.ttk.Label(
+        self._responsive_label(
             pre_bkp_frame,
-            text=(
-                "Create a snapshot of your current setup before migrating. "
-                "You can restore from it if anything goes wrong."
-            ),
-            wraplength=800, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
+            text="Back up your setup before migrating so you can restore it if needed.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 2))
         self.ttk.Label(pre_bkp_frame, text="Backup folder").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
         )
@@ -6342,11 +6319,10 @@ class _SpinDoctorGUI:
             undo_frame, text="Refresh",
             command=self._refresh_migrate_manifests,
         ).grid(row=0, column=2, sticky="w", padx=(0, 6), pady=2)
-        self.ttk.Label(
+        self._help_text(
             undo_frame,
-            text="Select a manifest or leave as 'latest'. Click Refresh to load available manifests.",
-            foreground=_FG_DIM,
-        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=6)
+            text="Select a manifest, or use latest. Refresh reloads the list.",
+        ).grid(row=1, column=0, columnspan=3, sticky="ew", padx=6)
 
         btn_row = self.ttk.Frame(undo_frame)
         btn_row.grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 6))
@@ -6365,16 +6341,10 @@ class _SpinDoctorGUI:
             frame, text="Step 5 — Update RocketLauncher after migration",
         )
         post_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(8, 4))
-        self.ttk.Label(
+        self._help_text(
             post_frame,
-            text=(
-                "After migrating your ROM drive, run generate-config to update "
-                "RocketLauncher's per-system INIs with the new Rom_Path. "
-                "Only Rom_Path= is changed — your emulator assignments "
-                "(Default_Emulator, Emu_Path, Module, etc.) are preserved."
-            ),
-            wraplength=800, justify="left",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 4))
+            text="Update RocketLauncher Rom_Path values after moving your ROMs. Emulator assignments are preserved.",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=(4, 4))
         self.ttk.Button(
             post_frame, text="Update RocketLauncher INIs",
             command=self._run_generate_config,
@@ -6391,18 +6361,10 @@ class _SpinDoctorGUI:
         )
         repath_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         repath_frame.columnconfigure(1, weight=1)
-        self.ttk.Label(
+        self._help_text(
             repath_frame,
-            text=(
-                "For systems like Taito Type X whose games moved to a new drive "
-                "without a full SpinDoctor migration. Rewrites Application= in the "
-                "system's PCLauncher INI and Rom_Path= in its Emulators.ini. "
-                "Only those two values change — FadeTitle=, AppWaitExe=, ExitMethod=, "
-                "and all other per-game keys are left exactly as configured. "
-                "CLI: spindoctor repath-system <System> --rom-path <NewPath> --apply"
-            ),
-            wraplength=800, justify="left", foreground=_FG_DIM,
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 4))
+            text="Repair paths after moving a system outside SpinDoctor. Updates PCLauncher Application and RocketLauncher Rom_Path only; other settings stay unchanged.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 4))
 
         self.ttk.Label(repath_frame, text="System").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -6580,17 +6542,10 @@ class _SpinDoctorGUI:
 
     def _build_games_tab(self, parent):  # noqa: PLR0915
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Manage games within any HyperSpin system. Pick a system "
-                  "from the dropdown below and all four steps operate on that "
-                  "selection — no need to re-pick the system in each section. "
-                  "Step 1 loads the game list and lets you reorder or remove "
-                  "entries. Step 2 renames or clones a game. Step 3 adds "
-                  "newly-installed PC games. Step 4 fixes a game that launches "
-                  "the wrong executable."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 6))
+            text="Pick a system once for all sections below.",
+        ).pack(fill="x", pady=(0, 6))
 
         # ── Shared system picker ──────────────────────────────────────────────
         picker_lf = self.ttk.LabelFrame(frame, text="System")
@@ -6616,11 +6571,6 @@ class _SpinDoctorGUI:
         self._games_system_combo.bind(
             "<<ComboboxSelected>>", lambda _e: self._on_games_system_change(),
         )
-        self.ttk.Label(
-            picker_row,
-            text="Select a system here — Steps 1–4 below all operate on this system.",
-            foreground=_FG_DIM,
-        ).pack(side="left", padx=(4, 0))
 
         # ── Step 1 — Manage the game wheel ───────────────────────────────────
         self._gwm_data: list[dict] = []
@@ -6631,21 +6581,10 @@ class _SpinDoctorGUI:
         )
         gwm_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             gwm_lf,
-            text=("Load the game list for the selected system, then reorder "
-                  "or remove entries. All changes are held in memory — you can "
-                  "reorder freely and only write to disk when you click Save "
-                  "Order. Removing a game only removes it from the wheel "
-                  "database (XML); ROM and media files are not deleted unless "
-                  "you tick 'Also remove PCLauncher INI' (PC systems)."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
-        self.ttk.Label(
-            gwm_lf,
-            text="Tip: select a row and use Alt+Up / Alt+Down to nudge without leaving the keyboard.",
-            foreground=_FG_DIMMER,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="Load games, reorder with the buttons or Alt+Up/Down, then Save Order. Remove Game removes the database entry, not ROMs or media. The optional PCLauncher checkbox also removes its launcher INI.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
         gwm_load_row = self.ttk.Frame(gwm_lf)
         gwm_load_row.pack(fill="x", padx=6, pady=(0, 4))
@@ -6727,30 +6666,15 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             gwm_action_row, text="Save Order", command=self._gwm_save_order,
         ).pack(side="left")
-        self.ttk.Label(
-            gwm_action_row,
-            text=" — commits the current table order to the wheel XML",
-            foreground=_FG_DIM,
-        ).pack(side="left", padx=(2, 0))
 
         # ── Step 2 — Rename or clone a game ──────────────────────────────────
         rc_lf = self.ttk.LabelFrame(frame, text="Step 2 — Rename or clone a game")
         rc_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             rc_lf,
-            text=("Rename moves the ROM file, database entry, and every media "
-                  "file in one operation and writes an undo manifest so the "
-                  "change is reversible. Clone duplicates everything under a "
-                  "new name — useful for keeping a speed-hack alongside the "
-                  "clean dump, or creating a multi-language variant."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
-        self.ttk.Label(
-            rc_lf,
-            text="Tip: both operations are dry-run until you tick Apply at the top of the window.",
-            foreground=_FG_DIMMER,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="Rename moves the ROM, database entry and media, with an undo manifest. Clone copies them under a new name.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
         rc_row = self.ttk.Frame(rc_lf)
         rc_row.pack(fill="x", padx=6, pady=2)
@@ -6790,32 +6714,15 @@ class _SpinDoctorGUI:
         )
         pc_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             pc_lf,
-            text=("For PC / Windows / Steam systems only. Scans every install "
-                  "folder inside <roms_dir>/<system>/ and adds any new games "
-                  "to the HyperSpin wheel database — one entry per folder, "
-                  "junk shortcuts silently ignored. Also writes PCLauncher INIs "
-                  "for new entries so RocketLauncher can launch them. Run this "
-                  "after installing a game to the PC Games folder."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
-        self.ttk.Label(
-            pc_lf,
-            text=("Not needed for MAME, SNES, or other ROM-based systems — "
-                  "use Diagnostics → Audit or Metadata & Media → "
-                  "Sync DB to ROMs for those."),
-            wraplength=860, justify="left", foreground=_FG_DIMMER,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="For PC systems only: scan install folders and add missing games and PCLauncher INIs. For ROM-based systems, use Metadata & Media > Sync DB to ROMs.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
-        self.ttk.Label(
+        self._responsive_label(
             pc_lf,
-            text=("Overwrite mode rewrites every existing INI, including ones with a "
-                  "stale executable path (wrong drive, renamed file). Use after a drive "
-                  "migration or when a game launches the wrong executable. Leave unticked "
-                  "for a normal scan that only adds missing entries."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 0))
+            text="Overwrite replaces all existing PCLauncher INIs. Leave it off to add missing entries only.",
+        ).pack(fill="x", padx=6, pady=(4, 0))
         self._pc_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             pc_lf,
@@ -6829,11 +6736,6 @@ class _SpinDoctorGUI:
             pc_btns, text="Scan & add new games",
             command=self._run_pc_rename,
         ).pack(side="left")
-        self.ttk.Label(
-            pc_btns,
-            text="Run dry-run first (Apply unticked) to preview what will be added.",
-            foreground=_FG_DIM,
-        ).pack(side="left", padx=10)
 
         # ── Step 4 — Fix a game's executable ─────────────────────────────────
         fixexe_lf = self.ttk.LabelFrame(
@@ -6841,24 +6743,10 @@ class _SpinDoctorGUI:
         )
         fixexe_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             fixexe_lf,
-            text=("Fix a PC game that launches the wrong file — uninstaller, "
-                  "GOG/Steam cache file, NW.js runtime, etc. SpinDoctor scans "
-                  "the game folder and ranks candidates: real executables first "
-                  "(shallower paths ranked above deeper ones), then .ahk scripts, "
-                  "then .bat files, then known junk at the bottom. Pick the correct "
-                  "one and click Apply to update the PCLauncher INI. Other keys in "
-                  "the INI (FadeTitle, AppWaitExe, etc.) are left untouched."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
-        self.ttk.Label(
-            fixexe_lf,
-            text=("Works for any PCLauncher-backed system — not just PC Games. "
-                  "Change the system picker above to target Taito Type X or any "
-                  "other arcade-PC system."),
-            wraplength=860, justify="left", foreground=_FG_DIMMER,
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="Select a game and scan its folder for launchers, ranked with executables first, then AHK scripts and batch files. Pick the correct file and apply the fix. Other PCLauncher settings are preserved. Works with any PCLauncher-backed system.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
         fixexe_game_row = self.ttk.Frame(fixexe_lf)
         fixexe_game_row.pack(fill="x", padx=6, pady=(0, 4))
@@ -7408,15 +7296,10 @@ class _SpinDoctorGUI:
 
     def _build_metadata_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Fetch metadata + media from ScreenScraper / TheGamesDB, "
-                  "scan local media folders into the right HyperSpin "
-                  "slots, and sync database XML to your ROM directories. "
-                  "Each section is dry-run by default; tick Apply to "
-                  "commit."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+            text="Fetch metadata and artwork, organize local media, and sync database entries to ROMs.",
+        ).pack(fill="x", pady=(0, 10))
 
         # Shared system field — every command on this tab takes one.
         sys_row = self.ttk.Frame(frame)
@@ -7474,19 +7357,10 @@ class _SpinDoctorGUI:
             frame, text="Per-game & override (Optional)",
         )
         gameovr_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             gameovr_frame,
-            text=("Select a specific game to target, or leave blank to "
-                  "process all games in the selected system. Optionally "
-                  "force the exact scraper game ID for titles that don't "
-                  "match well by name (language barrier, alternate "
-                  "punctuation, remaster subtitle). Find the ID at "
-                  "screenscraper.fr/gameinfos.php?gameid=XXXX or "
-                  "thegamesdb.net/game.php?id=XXXX. "
-                  "Tip: all ID fields accept the full URL — paste it "
-                  "directly and the ID is extracted automatically."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 2))
+            text="Leave Game blank for all games. To force a match, paste a game ID or full URL from ScreenScraper or TheGamesDB.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
         # Game row — populated automatically when a system is selected.
         game_row = self.ttk.Frame(gameovr_frame)
@@ -7503,11 +7377,6 @@ class _SpinDoctorGUI:
             command=lambda: self._meta_game_var.set(""),
             width=2,
         ).pack(side="left")
-        self.ttk.Label(
-            game_row,
-            text="← clear to process all games",
-            foreground=_FG_DIMMER,
-        ).pack(side="left", padx=4)
         # Populate game list when the system selection changes.
         self._meta_system_var.trace_add(
             "write", lambda *_: self._populate_meta_game_list()
@@ -7679,14 +7548,10 @@ class _SpinDoctorGUI:
             frame, text="Step 1 — Full metadata refresh",
         )
         full_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             full_frame,
-            text=("Downloads metadata, artwork, and syncs the database for the "
-                  "selected system in one pass. Stops on first error. "
-                  "Use the individual steps below to run or troubleshoot each "
-                  "phase separately."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 2))
+            text="Run metadata, media and database sync in sequence. Stops on the first error; use individual sections to retry a phase.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
         full_chain_row = self.ttk.Frame(full_frame)
         full_chain_row.pack(anchor="w", padx=6, pady=(2, 6))
         self.ttk.Button(
@@ -7930,13 +7795,10 @@ class _SpinDoctorGUI:
         # multiple filters / sets can still drop into Custom Command.
         be_frame = self.ttk.LabelFrame(frame, text="Batch edit metadata")
         be_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             be_frame,
-            text=("Bulk-edit DB fields across many games (uses the System "
-                  "selector above). Examples: filter=year=1980-1989 + "
-                  "set=genre=Action ; filter=missing=rating + set=rating=3."),
-            wraplength=820, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 2))
+            text="Bulk-edit fields for the selected system. Examples: filter year=1980-1989 and set genre=Action; filter missing=rating and set rating=3.",
+        ).pack(fill="x", padx=6, pady=(4, 2))
 
         be_grid = self.ttk.Frame(be_frame)
         be_grid.pack(fill="x", padx=6, pady=(0, 4))
@@ -7978,14 +7840,10 @@ class _SpinDoctorGUI:
         # terminal for a one-shot media file.
         madd_frame = self.ttk.LabelFrame(frame, text="Add one local media file")
         madd_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._responsive_label(
             madd_frame,
-            text=("Copy a single file into HyperSpin's Media folder for "
-                  "one game. Tick 'Move' to remove the source after "
-                  "copy. Doesn't honour the Apply checkbox — it always "
-                  "writes (the chosen file is the user's explicit input)."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Copies one file into HyperSpin media. Always writes, even with Apply off. Move also removes the source.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         madd_row1 = self.ttk.Frame(madd_frame)
         madd_row1.pack(fill="x", padx=6, pady=2)
@@ -8054,19 +7912,10 @@ class _SpinDoctorGUI:
         # ── Fill theme zips ────────────────────────────────────────────────────
         fill_frame = self.ttk.LabelFrame(frame, text="Fill theme zips")
         fill_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             fill_frame,
-            text=("Install blank full-screen themes so HyperSpin plays videos "
-                  "as-is, using the System selected above and the Apply/Verbose "
-                  "checkboxes in the status bar — dry-run by default, writes "
-                  "only when Apply is ticked. \"Fill missing game themes\" adds "
-                  "one per video in Media\\<System>\\Video\\ that has no "
-                  "matching theme zip. \"Fill console default theme\" installs "
-                  "a single Media\\<System>\\Themes\\default.zip that HyperSpin "
-                  "falls back to for any game in the system without its own "
-                  "theme. Existing theme zips are never overwritten."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(4, 4))
+            text="Install blank themes to play videos full-screen. Fill missing game themes adds one per video; Fill console default theme provides the fallback. Existing themes are preserved. Tick Apply to write.",
+        ).pack(fill="x", padx=6, pady=(4, 4))
         fill_btns = self.ttk.Frame(fill_frame)
         fill_btns.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
@@ -9016,15 +8865,10 @@ class _SpinDoctorGUI:
 
     def _build_maintenance_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Curate region/revision duplicates, prune library caches, "
-                  "and manage the ignore and match-cache lists. Curate keeps "
-                  "one canonical variant per title and archives the rest "
-                  "(reversible). Cleanup trims SpinDoctor's caches. Ignore "
-                  "lists silence games from audits."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+            text="Curate archives duplicate variants with undo support. Cleanup trims caches; ignore lists exclude games from audits.",
+        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Curate region/revision variants ─────────────────────────
         cur_frame = self.ttk.LabelFrame(frame, text="Step 1 — Curate region/revision variants")
@@ -9117,12 +8961,10 @@ class _SpinDoctorGUI:
             "the system once and confirmed the archive is correct.",
             self.tk,
         )
-        self.ttk.Label(
+        self._responsive_label(
             cur_frame,
-            text="archive = moves duplicates to a zip archive (reversible via Undo)."
-                 "  delete = permanently removes ROMs from disk.",
-            foreground=_FG_DIMMER,
-        ).pack(anchor="w", padx=6, pady=(0, 2))
+            text="Archive moves duplicates into a restorable zip. Delete permanently removes ROMs.",
+        ).pack(fill="x", padx=6, pady=(0, 2))
 
         cur_btns = self.ttk.Frame(cur_frame)
         cur_btns.pack(anchor="w", padx=6, pady=(4, 6))
@@ -9265,14 +9107,10 @@ class _SpinDoctorGUI:
         # this surface is for deliberate full resets.
         match_frame = self.ttk.LabelFrame(frame, text="Metadata-match cache")
         match_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             match_frame,
-            text=("Each fetch-meta run remembers which scraper result you "
-                  "picked per game. Clear the cache (for one system or "
-                  "all) when scraper data improves and you want fresh "
-                  "matches. Doctor --fix already drops stale entries."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Clear saved scraper matches for one system or all systems to choose fresh results. Health Check repair already removes stale entries.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         match_row = self.ttk.Frame(match_frame)
         match_row.pack(fill="x", padx=6, pady=2)
@@ -10052,15 +9890,10 @@ class _SpinDoctorGUI:
 
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Manage HyperSpin's game systems — reorder the main menu "
-                  "wheel, add new systems, and organize sort order. To add, "
-                  "remove, or rename individual games, use the Games tab. "
-                  "Follow the numbered Steps in sequence when setting up a "
-                  "new system for the first time, or jump to the step you need."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+            text="Manage systems here; manage individual games on the Games tab. Follow the numbered sections for a new system, or jump to the action you need.",
+        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Main menu carousel (formerly Main Menu tab) ────────────
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
@@ -10072,17 +9905,10 @@ class _SpinDoctorGUI:
         mm_lf = self.ttk.LabelFrame(frame, text="Step 1 — Main menu carousel")
         mm_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             mm_lf,
-            text=("Edit the order and visibility of systems on HyperSpin's "
-                  "top-level wheel (Main Menu.xml). Click Refresh to load "
-                  "the current order, drag-select a row then use Move Up / "
-                  "Move Down (or Alt+Up / Alt+Down) to reposition it one "
-                  "step at a time, or type a position number and press Go to "
-                  "jump directly. Toggle Visible to hide/unhide, then Save "
-                  "Order to write all changes at once."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=2, sticky="w", padx=6, pady=(6, 8))
+            text="Refresh to load Main Menu.xml. Reorder with buttons, Alt+Up/Down or a position number. Toggle Visible hides or shows a system. Save Order writes the changes.",
+        ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=(6, 8))
 
         # Treeview
         tree_frame = self.ttk.Frame(mm_lf)
@@ -10233,11 +10059,9 @@ class _SpinDoctorGUI:
             add_btns, text="Add PC System",
             command=lambda: self._run_add_system(True),
         ).pack(side="left", padx=6)
-        self.ttk.Label(
+        self._help_text(
             add_btns,
-            text=("PC System auto-accepts the best title for each game. "
-                  "Use 'Add / Refresh Games' below to pick up new installs after initial setup."),
-            foreground=_FG_DIM,
+            text="PC System accepts the best game title automatically. To find new installs later, use Games > Add new PC games.",
         ).pack(side="left", padx=10)
 
         # ── Organize a system ────────────────────────────────────────────────
@@ -10251,15 +10075,10 @@ class _SpinDoctorGUI:
             frame, text="Step 3 — Organize a system (sort wheels + optional restructure)",
         )
         org_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             org_frame,
-            text=("Sort wheels add 'Sort by Genre / Year / Letter / "
-                  "Manufacturer' sub-wheels to HyperSpin without touching "
-                  "ROMs. Restructure (opt-in) plans per-game folders for "
-                  "PS3 / multi-disc systems; honours Apply above for "
-                  "real file moves and writes an undo manifest."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Sort wheels group games by genre, year, letter or manufacturer without moving ROMs. Optional Restructure moves games into folders and creates an undo manifest; tick Apply to execute.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         org_row = self.ttk.Frame(org_frame)
         org_row.pack(fill="x", padx=6, pady=2)
@@ -10306,14 +10125,10 @@ class _SpinDoctorGUI:
         # who do, this was previously CLI-only territory.
         ovr_frame = self.ttk.LabelFrame(frame, text="Per-system overrides")
         ovr_frame.pack(fill="x", pady=(4, 4))
-        self.ttk.Label(
+        self._help_text(
             ovr_frame,
-            text=("Customise scraper IDs, ROM extensions, layout, "
-                  "and emulator for one system. Leave any field blank "
-                  "to inherit SpinDoctor's defaults. Run 'Show config "
-                  "— system list' above to see what's currently set."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Override scraper IDs, extensions, layout, emulator or ROM path for one system. Blank fields inherit defaults. Show config lists saved values.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         ovr_top = self.ttk.Frame(ovr_frame)
         ovr_top.pack(fill="x", padx=6, pady=2)
@@ -10887,16 +10702,10 @@ class _SpinDoctorGUI:
 
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Configure LED button colors for every system in your "
-                  "cabinet via LEDBlinky. Steps 1 and 2 are one-time setup "
-                  "(overlay-hook fix and Settings.ini); Steps 3–10 cover the "
-                  "ongoing workflow: MAME LED data, fill defaults, randomize "
-                  "colors, admin button colors, brightness, color definitions, "
-                  "backup/restore, and LED animations."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 10))
+            text="Steps 1–2 configure LEDBlinky once. Use the remaining sections to manage game colors, brightness, the palette, backups and animations.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 10))
 
         # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
@@ -10905,20 +10714,10 @@ class _SpinDoctorGUI:
         gen_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         gen_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             gen_frame,
-            text=("These three steps build MAME-sourced LED data using mame -listxml. "
-                  "Click Run Full MAME Setup to run 3a + 3c in one go, or use the "
-                  "individual buttons below. "
-                  "3b (Normalize) is only needed for a legacy Colors.ini in hex format "
-                  "(ledcolor1=FF0000) — skip it after a fresh Generate. "
-                  "Generate adds entries only for games in your MAME wheels that have "
-                  "none (existing entries are preserved unless Overwrite is ticked), so "
-                  "re-run Full Setup after adding games to a wheel. LEDBlinky loads every "
-                  "entry when it starts: Prune removes the ones for games in no wheel, "
-                  "saving them to SpinDoctor's library."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+            text="Full MAME Setup generates missing wheel-game entries and syncs player colors. Existing entries stay unless Overwrite is checked. Normalize (3b) is only for legacy hex Colors.ini files. Re-run setup after adding games; Prune archives entries absent from every wheel. Writes are backed up automatically. Audit shows missing control data.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(6, 4))
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -10938,11 +10737,6 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             gen_chain_row, text="▶  Run Full MAME Setup (3a + 3c)",
             command=self._run_led_setup,
-        ).pack(side="left")
-        self.ttk.Label(
-            gen_chain_row,
-            text="  — generate + sync player colors in one click",
-            foreground=_FG_DIM,
         ).pack(side="left")
 
         # Individual step buttons
@@ -10983,20 +10777,7 @@ class _SpinDoctorGUI:
             gen_inspect_row, text="Inspect",
             command=self._run_led_inspect_rom,
         ).pack(side="left", padx=(6, 0))
-        self.ttk.Label(
-            gen_inspect_row,
-            text="  — diagnose why a specific ROM's LEDs may not be working",
-            foreground=_FG_DIM,
-        ).pack(side="left")
 
-        self.ttk.Label(
-            gen_frame,
-            text=("All writes auto-backup before modifying files. "
-                  "3b (Normalize) is for legacy files only — skip if you started "
-                  "fresh with SpinDoctor 2.4.21+. "
-                  "Audit MAME coverage shows which ROMs have / lack control data."),
-            wraplength=820, justify="left", foreground=_FG_DIM,
-        ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(0, 6))
 
         # ── Fill Defaults ────────────────────────────────────────────────────
         fd_frame = self.ttk.LabelFrame(
@@ -11005,16 +10786,10 @@ class _SpinDoctorGUI:
         fd_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             fd_frame,
-            text=("Add a default Colors.ini entry for every ROM that has no LED "
-                  "mapping yet — works for MAME, SNES, NES, or any other console. "
-                  "Without an entry LedBlinky treats all buttons as inactive (off). "
-                  "After running fill-defaults, unmapped games will glow a steady "
-                  "color instead of going dark. Leave console blank to cover all "
-                  "systems at once, including Favorites and Recently Played."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+            text="Add default colors for games without LED mappings so their buttons stay lit. Leave Console blank for all systems, including custom wheels.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         self.ttk.Label(fd_frame, text="Console").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -11133,17 +10908,10 @@ class _SpinDoctorGUI:
         rz_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             rz_frame,
-            text=("Give each game its own random button color drawn from the Color-RGB.ini "
-                  "palette. Every ROM section receives an independent random color for all "
-                  "P*_BUTTON* / P*_JOYSTICK keys, and a second independent random color for "
-                  "P*_COIN / P*_START keys. Only existing keys are updated — buttons "
-                  "intentionally left dark stay dark.\n"
-                  "Requires normalized format (Step 1b). If most sections are skipped, "
-                  "run Normalize Colors.ini first."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+            text="Randomize existing button/joystick colors per game, with separate coin/start colors. Unmapped buttons stay dark. If entries are skipped, run Normalize Colors.ini (3b). Leave Seed blank for a new shuffle, or use an integer to repeat it.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         self.ttk.Label(rz_frame, text="Seed (optional)").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -11152,12 +10920,6 @@ class _SpinDoctorGUI:
         self.ttk.Entry(
             rz_frame, textvariable=self._rz_seed_var, width=12,
         ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
-        self.ttk.Label(
-            rz_frame,
-            text="(leave blank for a fresh random shuffle each run; "
-                 "enter an integer for reproducible output)",
-            foreground=_FG_DIM,
-        ).grid(row=1, column=2, sticky="w", padx=(0, 6))
 
         self.ttk.Button(
             rz_frame, text="Randomize Entry Colors",
@@ -11176,16 +10938,10 @@ class _SpinDoctorGUI:
         )
         ab_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
-        self.ttk.Label(
+        self._help_text(
             ab_frame,
-            text=("Set the admin buttons that stay lit while a game is running — "
-                  "Exit, Pause, and Select. Pick a color for each, or “off (dark)” "
-                  "to hide it during play (e.g. Select off for a clean arcade look, "
-                  "leaving just Exit and Pause). Choose a Console to color one "
-                  "system, or “(all consoles)” for every game at once. "
-                  "Restart LEDBlinky afterward so it reloads."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=9, sticky="w", padx=6, pady=(6, 6))
+            text="Choose in-game Exit, Pause and Select colors, or off (dark). Select one console or all consoles. Restart LEDBlinky to reload.",
+        ).grid(row=0, column=0, columnspan=9, sticky="ew", padx=6, pady=(6, 6))
 
         self._led_ingame_vars = {}
         self._led_ingame_combos = {}
@@ -11249,15 +11005,10 @@ class _SpinDoctorGUI:
         br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br2_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             br2_frame,
-            text=("Set all Color-RGB.ini colors to a uniform brightness level. "
-                  "100% = every color at maximum brightness (dominant channel = 48, "
-                  "any dim colors are boosted up). "
-                  "50% = half brightness. 10% = night mode. 0% = all off. "
-                  "All buttons (P1, P2, admin) are normalized to the same level."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+            text="Set palette brightness uniformly: 100% boosts each color to maximum, 50% halves it, 10% dims it, and 0% turns it off.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(6, 4))
 
         self.ttk.Label(br2_frame, text="Brightness %").grid(
             row=1, column=0, sticky="w", padx=6, pady=4,
@@ -11285,13 +11036,10 @@ class _SpinDoctorGUI:
         sp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             sp_frame,
-            text=("Configure LEDBlinky's animation behavior. "
-                  "FE idle animation plays while browsing HyperSpin; "
-                  "In-game unused buttons controls what happens to unassigned buttons during gameplay."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+            text="Set animations for frontend browsing and unused in-game buttons.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         self.ttk.Label(sp_frame, text="FE active animation").grid(
             row=1, column=0, sticky="w", padx=6, pady=2,
@@ -11306,15 +11054,10 @@ class _SpinDoctorGUI:
             command=self._refresh_led_lwa_list,
         ).grid(row=1, column=2, sticky="w", padx=(0, 6), pady=2)
 
-        self.ttk.Label(
+        self._help_text(
             sp_frame,
-            text="Animation while actively browsing HyperSpin (FELWAFile). "
-                 "Leave blank for static colors, pick <Random> to have LedBlinky "
-                 "choose a different animation each time, <Audio Animation> to sync "
-                 "LEDs to audio instead, or pick a specific file. "
-                 "Use Refresh list to populate from your LEDBlinky folder.",
-            wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+            text="Frontend animation: blank uses static colors; Random picks an animation; Audio Animation follows audio. Refresh list loads files from your LEDBlinky folder.",
+        ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4))
 
         self.ttk.Label(sp_frame, text="Screen saver animation").grid(
             row=3, column=0, sticky="w", padx=6, pady=2,
@@ -11325,15 +11068,12 @@ class _SpinDoctorGUI:
         )
         self._led_ss_lwa_combo.grid(row=3, column=1, sticky="ew", padx=6, pady=2)
 
-        self.ttk.Label(
+        self._help_text(
             sp_frame,
-            text="Animation during the HyperSpin screen saver (FEScreenSaverLWAFile). "
-                 "Leave blank to silence, pick <Random> to have LedBlinky choose a "
-                 "different animation each time, <Random Montage> to string several "
-                 "animations together in random order, or pick a specific file. Leave as "
-                 f"\"{_LWA_LEAVE_UNCHANGED}\" to not touch this key at all.",
-            wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+            text="Screen saver: blank disables animation; Random picks a file; "
+                 "Random Montage combines files. Choose a file for a fixed animation, "
+                 f"or {_LWA_LEAVE_UNCHANGED} to keep the saved setting.",
+        ).grid(row=4, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4))
 
         self.ttk.Label(sp_frame, text="In-game unused buttons").grid(
             row=5, column=0, sticky="w", padx=6, pady=2,
@@ -11344,13 +11084,10 @@ class _SpinDoctorGUI:
         )
         self._led_game_lwa_combo.grid(row=5, column=1, sticky="ew", padx=6, pady=2)
 
-        self.ttk.Label(
+        self._help_text(
             sp_frame,
-            text=("Leave blank to turn unused buttons off during gameplay (recommended). "
-                  "Pick <Random> for a random animation on unmapped buttons, or select a "
-                  "specific animation instead — applies globally to every game on every system."),
-            wraplength=700, justify="left", foreground=_FG_DIM,
-        ).grid(row=6, column=0, columnspan=3, sticky="w", padx=6, pady=(0, 4))
+            text="Unused in-game buttons: blank turns them off; Random or a file animates them. Applies to all games.",
+        ).grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=(0, 4))
 
         self.ttk.Button(
             sp_frame, text="Patch Settings.ini",
@@ -11367,17 +11104,10 @@ class _SpinDoctorGUI:
         oh_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 0))
         oh_frame.columnconfigure(0, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             oh_frame,
-            text=("Fixes HyperSpin Search / Genre / Favorites overlay crashes caused "
-                  "by LEDBlinky process hooks. Two patches: (1) adds a stub entry to "
-                  "LEDBlinkyControls.xml for each overlay menu so LEDBlinky's lookup "
-                  "succeeds; (2) comments out Start_Hyperspin_Process / "
-                  "Exit_Hyperspin_Process lines in the per-menu Settings.ini files. "
-                  "Always writes in-place to ledblinky_dir / hyperspin_dir — "
-                  "not affected by the output_dir setting."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+            text="Repair HyperSpin Search, Genre and Favorites overlay crashes by adding LEDBlinky control stubs and disabling per-menu process hooks. Writes to the configured LEDBlinky and HyperSpin folders, not the output folder.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         oh_btn_row = self.ttk.Frame(oh_frame)
         oh_btn_row.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 8))
@@ -11399,16 +11129,10 @@ class _SpinDoctorGUI:
         cd_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             cd_frame,
-            text=("View, add, and edit the named color palette used by all other "
-                  "sections. To add a new color, type a New name + New color and "
-                  "click Add new color. To change an existing one, select its row "
-                  "first, edit the fields, and click Update & Rename — a rename "
-                  "propagates through Color-RGB.ini, Colors.ini, and "
-                  "LEDBlinkyControls.xml in one operation."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 4))
+            text="Select a palette color to edit and rename it, or enter a new name and color to add one. Renames update Color-RGB.ini, Colors.ini and LEDBlinkyControls.xml together.",
+        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         # Treeview + vertical scrollbar
         tree_outer = self.ttk.Frame(cd_frame)
@@ -11544,15 +11268,10 @@ class _SpinDoctorGUI:
         anim_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         anim_frame.columnconfigure(1, weight=1)
 
-        self.ttk.Label(
+        self._help_text(
             anim_frame,
-            text=("Build moving LED animations (the FE/screen-saver files picked "
-                  "in Step 2), separate from the per-game colors above. Generate "
-                  "the whole pattern library (~170 effects: sweeps, pulses, rain, "
-                  "breathe, rainbow, and more) or a single custom colour fade. "
-                  "Files land in ~/Downloads/spindoctor-lwax-patterns/."),
-            wraplength=820, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 4))
+            text="Generate the animation library or a custom fade into ~/Downloads/spindoctor-lwax-patterns/. Use these files in Step 2 after signing them.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(6, 4))
 
         anim_btn_row = self.ttk.Frame(anim_frame)
         anim_btn_row.grid(row=1, column=0, columnspan=4, sticky="w",
@@ -11580,14 +11299,10 @@ class _SpinDoctorGUI:
             command=self._run_led_lwax_fade,
         ).pack(side="left", padx=(6, 0))
 
-        self.ttk.Label(
+        self._responsive_label(
             anim_frame,
-            text=("Heads-up: generated .lwax files are UNSIGNED. Before LedBlinky "
-                  "will load one, open it in LEDBlinkyAnimationEditor.exe and do "
-                  "Animation → Save As (no edits) to sign it, then it'll appear in "
-                  "the Step 2 dropdowns. This step honours the global Apply checkbox."),
-            wraplength=820, justify="left", foreground=_FG_DIM,
-        ).grid(row=3, column=0, columnspan=4, sticky="w", padx=6, pady=(2, 6))
+            text="Generated animations must be signed: open each in LEDBlinkyAnimationEditor and use Animation > Save As. Generation requires Apply.",
+        ).grid(row=3, column=0, columnspan=4, sticky="ew", padx=6, pady=(2, 6))
 
         frame.columnconfigure(1, weight=1)
         return frame
@@ -12043,16 +11758,10 @@ class _SpinDoctorGUI:
 
     def _build_lightgun_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Wire Sinden / DemulShooter into RocketLauncher INIs "
-                  "for lightgun systems. Detect inventories your install "
-                  "and seeds spindoctor config from any RL INIs already "
-                  "wired to DemulShooter; Audit shows the wiring status; "
-                  "Configure adds (or repairs) the Pre/Post launch hooks "
-                  "for one system."),
-            wraplength=860, justify="left",
-        ).grid(row=0, column=0, columnspan=4, sticky="w", pady=(0, 12))
+            text="Detect finds Sinden/DemulShooter and imports existing RocketLauncher wiring. Audit checks it; Configure adds or repairs launch hooks for a system.",
+        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Detect & audit ──────────────────────────────────────────
         det_frame = self.ttk.LabelFrame(frame, text="Step 1 — Detect & audit")
@@ -12101,11 +11810,10 @@ class _SpinDoctorGUI:
             cfg_frame, textvariable=self._lg_target_var,
             values=_DEMUL_TARGETS, width=28,
         ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
-        self.ttk.Label(
+        self._help_text(
             cfg_frame,
-            text="DemulShooter -target value. Leave blank to auto-detect from system name.",
-            foreground=_FG_DIM,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6)
+            text="DemulShooter target value. Leave blank to detect it from the system name.",
+        ).grid(row=2, column=0, columnspan=2, sticky="ew", padx=6)
 
         self.ttk.Label(cfg_frame, text="Extra args (optional)").grid(
             row=3, column=0, sticky="w", padx=6, pady=2,
@@ -12154,15 +11862,10 @@ class _SpinDoctorGUI:
 
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Build and maintain SpinDoctor's custom wheels: Favorites, "
-                  "Recently Played, and Most Played. Import F-key favorites "
-                  "from HyperSpin, rebuild the wheels, and register them on "
-                  "the main menu. Also installs refresh helpers as HyperSpin "
-                  "Tools-menu entries and schedules auto-refresh on startup."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+            text="Build Favorites, Recently Played and Most Played wheels. Use the controls below to import favorites, rebuild, register wheels and enable automatic refresh.",
+        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Import HyperSpin favorites (optional) ───────────────────
         # fav sync must run BEFORE the wheel rebuild reads the store, so
@@ -12173,14 +11876,10 @@ class _SpinDoctorGUI:
             frame, text="Step 1 — Import HyperSpin favorites (optional)",
         )
         sync_lf.pack(fill="x", pady=(0, 8))
-        self.ttk.Label(
+        self._help_text(
             sync_lf,
-            text=("Only needed if you mark favorites with HyperSpin's F-key. "
-                  "Imports those per-system favorites into SpinDoctor's "
-                  "store so the Step 2 rebuild includes them. Skip this if "
-                  "you only manage favorites from this tab."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 4))
+            text="Import HyperSpin F-key favorites before refreshing. Skip this if you manage favorites only in SpinDoctor.",
+        ).pack(fill="x", padx=6, pady=(4, 4))
         sync_btn = self.ttk.Button(
             sync_lf, text="Sync favorites from HyperSpin", width=28,
             command=lambda: self._run_cli("spindoctor", ["fav", "sync"]),
@@ -12200,15 +11899,10 @@ class _SpinDoctorGUI:
         )
         rebuild_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             rebuild_lf,
-            text=("Build (or rebuild) the game databases and PCLauncher INIs "
-                  "for each cross-system wheel. Run this after adding new "
-                  "ROMs or changing your favorites. None of the wheels "
-                  "auto-update on cabinet startup — see 'Install .bat helpers' "
-                  "below to set that up."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 6))
+            text="Rebuild selected wheels after changing games or favorites. To refresh at login, enable auto-run below.",
+        ).pack(fill="x", padx=6, pady=(4, 6))
 
         wheels_checks = self.ttk.Frame(rebuild_lf)
         wheels_checks.pack(anchor="w", padx=6, pady=(0, 4))
@@ -12235,15 +11929,10 @@ class _SpinDoctorGUI:
         )
         register_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             register_lf,
-            text=("Add the wheel systems to HyperSpin's main carousel. "
-                  "Favorites and Recently Played are not auto-registered; "
-                  "Most Played is. Also a one-click repair: it regenerates "
-                  "the RocketLauncher settings and bundled media for a "
-                  "synthetic wheel that has gone missing."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 6))
+            text="Add wheels to the main menu, or repair their RocketLauncher settings and bundled media. Most Played registers automatically; Favorites and Recently Played do not.",
+        ).pack(fill="x", padx=6, pady=(4, 6))
 
         reg_btn_row = self.ttk.Frame(register_lf)
         reg_btn_row.pack(anchor="w", padx=6, pady=(0, 6))
@@ -12258,13 +11947,10 @@ class _SpinDoctorGUI:
         )
         fav_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             fav_lf,
-            text=("Add or remove single games in the cross-system Favorites "
-                  "wheel. Run Step 2 (with Favorites checked) afterwards to "
-                  "push the change into HyperSpin."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 4))
+            text="Add or remove favorites, then refresh the Favorites wheel above to update HyperSpin.",
+        ).pack(fill="x", padx=6, pady=(4, 4))
 
         fav_row = self.ttk.Frame(fav_lf)
         fav_row.pack(fill="x", padx=6, pady=(2, 6))
@@ -12304,43 +11990,21 @@ class _SpinDoctorGUI:
         helpers_lf = self.ttk.LabelFrame(frame, text="Install .bat helpers (optional)")
         helpers_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._help_text(
             helpers_lf,
-            text=("Install .bat helpers so Favorites / Recently Played / "
-                  "Most Played can be refreshed from inside HyperSpin "
-                  "without dropping to a console — either via HyperHQ → "
-                  "Tools (the default), or as 'games' inside an existing "
-                  "wheel system like 'Toolkit' (the second section)."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 6))
+            text="Create Refresh Favorites, Refresh Recently Played, Refresh Most Played and Refresh All batch shortcuts. Use them from HyperHQ Tools or an existing maintenance wheel.",
+        ).pack(fill="x", padx=6, pady=(4, 6))
 
-        self.ttk.Label(
-            helpers_lf,
-            text=(
-                "Helpers written:\n"
-                "  • Refresh Favorites.bat        → spindoctor-fav rebuild --apply\n"
-                "  • Refresh Recently Played.bat  → spindoctor-recent rebuild --apply\n"
-                "  • Refresh Most Played.bat      → spindoctor-stats build-wheel --apply\n"
-                "  • Refresh All.bat              → all three in sequence"
-            ),
-            justify="left", foreground=_FG_DIM,
-            font="TkFixedFont",
-        ).pack(anchor="w", padx=6, pady=(0, 8))
 
         # HyperHQ → Tools install (default)
         hhq_frame = self.ttk.LabelFrame(
             helpers_lf, text="Install for HyperHQ → Tools menu",
         )
         hhq_frame.pack(fill="x", padx=6, pady=(2, 8))
-        self.ttk.Label(
+        self._help_text(
             hhq_frame,
-            text=("Output directory (optional). Defaults to "
-                  "<rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor "
-                  "if blank. After installing, register the .bat files in "
-                  "HyperHQ → Tools tab so they show up in the in-cabinet "
-                  "Tools menu."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Blank output directory uses <rocketlauncher_dir>/Modules/HyperLaunch/Tools/spindoctor. To use HyperSpin's Tools menu, register the generated shortcuts in HyperHQ > Tools.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         out_row = self.ttk.Frame(hhq_frame)
         out_row.pack(fill="x", padx=6, pady=2)
@@ -12364,17 +12028,10 @@ class _SpinDoctorGUI:
             helpers_lf, text="Install into an existing wheel system",
         )
         wheel_frame.pack(fill="x", padx=6, pady=(2, 8))
-        self.ttk.Label(
+        self._help_text(
             wheel_frame,
-            text=("Adds matching <game> entries to the named system's "
-                  "database XML and writes per-game PCLauncher INIs "
-                  "alongside the bats. Use this if you have a 'Toolkit' "
-                  "or 'Tools' wheel (a HyperSpin system whose 'games' "
-                  "are maintenance tasks). The system must already exist "
-                  "under <hyperspin_dir>/Databases/<NAME>/<NAME>.xml and "
-                  "use PCLauncher as its emulator."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        ).pack(anchor="w", padx=6, pady=(2, 4))
+            text="Add refresh entries and PCLauncher INIs to an existing maintenance wheel, such as Toolkit. The target system must already exist and use PCLauncher.",
+        ).pack(fill="x", padx=6, pady=(2, 4))
 
         sys_row = self.ttk.Frame(wheel_frame)
         sys_row.pack(fill="x", padx=6, pady=2)
@@ -12400,16 +12057,10 @@ class _SpinDoctorGUI:
         )
         sched_frame.pack(fill="x", padx=6, pady=(2, 8))
         if sys.platform == "win32":
-            self.ttk.Label(
+            self._help_text(
                 sched_frame,
-                text=("Schedule a Windows Task Scheduler 'At log on' task "
-                      "that runs Refresh All at every cabinet startup. "
-                      "The task runs as the current user with limited "
-                      "privileges (no UAC prompt). Optional delay lets "
-                      "HyperSpin / RocketLauncher settle before the "
-                      "rebuild kicks in."),
-                wraplength=860, justify="left", foreground=_FG_DIM,
-            ).pack(anchor="w", padx=6, pady=(2, 4))
+                text="Refresh all wheels at Windows login as the current user, without a console or UAC prompt. Set a delay to let HyperSpin and RocketLauncher start first.",
+            ).pack(fill="x", padx=6, pady=(2, 4))
 
             delay_row = self.ttk.Frame(sched_frame)
             delay_row.pack(fill="x", padx=6, pady=2)
@@ -12440,18 +12091,10 @@ class _SpinDoctorGUI:
                 command=self._remove_autorefresh,
             ).pack(side="left", padx=6)
         else:
-            self.ttk.Label(
+            self._responsive_label(
                 sched_frame,
-                text=("Windows-only — Task Scheduler doesn't exist on "
-                      "this OS. macOS equivalent: launchd plist (~/Library/"
-                      "LaunchAgents/com.spindoctor.refresh.plist with a "
-                      "RunAtLoad key). Linux equivalent: a "
-                      "`@reboot spindoctor-fav rebuild --apply && "
-                      "spindoctor-recent rebuild --apply && "
-                      "spindoctor-stats build-wheel --apply` line in "
-                      "`crontab -e`, or a systemd-user unit."),
-                wraplength=860, justify="left", foreground=_FG_DIM,
-            ).pack(anchor="w", padx=6, pady=(2, 6))
+                text="Automatic startup refresh is available on Windows only.",
+            ).pack(fill="x", padx=6, pady=(2, 6))
 
         # Manual fallback instructions
         manual_frame = self.ttk.LabelFrame(
@@ -12492,16 +12135,10 @@ class _SpinDoctorGUI:
         scrub_lf = self.ttk.LabelFrame(frame, text="Reset wheel data (scrub)")
         scrub_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(
+        self._responsive_label(
             scrub_lf,
-            text=(
-                "Permanently delete favorites and/or play statistics so you can start "
-                "fresh. Use 'Backup to' to create a restorable snapshot — "
-                "Statistics.ini files are written by RocketLauncher and cannot be "
-                "regenerated by SpinDoctor. The backup runs in both dry-run and apply modes."
-            ),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 6))
+            text="Permanently deletes selected favorites or play statistics. Statistics cannot be regenerated. Choose a backup first; backups run even in dry-run mode.",
+        ).pack(fill="x", padx=6, pady=(4, 6))
 
         # What to scrub
         scrub_what_row = self.ttk.Frame(scrub_lf)
@@ -12583,14 +12220,10 @@ class _SpinDoctorGUI:
             ),
         ).pack(side="left")
 
-        self.ttk.Label(
+        self._responsive_label(
             scrub_lf,
-            text=(
-                "Backup runs on both dry-run and apply. "
-                "Leave blank to skip — not recommended for play statistics."
-            ),
-            foreground="#888888",
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            text="Leave Backup blank to skip it, which is not recommended for statistics.",
+        ).pack(fill="x", padx=6, pady=(0, 4))
 
         # Scrub button
         scrub_btn_row = self.ttk.Frame(scrub_lf)
@@ -12965,22 +12598,10 @@ class _SpinDoctorGUI:
 
     def _build_introvideo_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Manage the pool of videos HyperSpin plays on boot. The "
-                  "pool folder (set on the Setup tab) IS the list — every "
-                  "video file directly inside it is enabled (in rotation). "
-                  "'Add video(s)' opens a file picker to copy new video(s) "
-                  "in from elsewhere. 'Remove selected' moves a video into "
-                  "a Disabled\\ subfolder instead of deleting it "
-                  "(Ctrl/Shift-click to select several); 'Restore selected' "
-                  "moves it back into rotation. 'Swap now' runs one swap "
-                  "immediately — picks a random enabled video and copies it "
-                  "over the intro video target file — the fastest way to "
-                  "confirm everything's wired up correctly without waiting "
-                  "for a reboot."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 10))
+            text="The pool folder on Setup contains enabled intro videos. Add copies videos in; Remove moves them to Disabled; Restore enables them again. Use Ctrl/Shift to select several. Swap now replaces the intro target with a random enabled video.",
+        ).pack(fill="x", pady=(0, 10))
 
         cfg = load_config()
         missing = []
@@ -13045,19 +12666,10 @@ class _SpinDoctorGUI:
         # ── Auto-run on Windows login ─────────────────────────────────────
         autorun_lf = self.ttk.LabelFrame(frame, text="Auto-run on Windows login")
         autorun_lf.pack(fill="x", pady=(0, 8))
-        self.ttk.Label(
+        self._help_text(
             autorun_lf,
-            text=("Registers a Windows Task Scheduler task (Windows-only) "
-                  "that runs a swap automatically every time you log in — "
-                  "no HyperSpin, RocketLauncher, or HyperHQ configuration "
-                  "needed, it's a plain login task that copies a file. "
-                  "Note: this task and however HyperSpin itself currently "
-                  "auto-launches (e.g. a shortcut in shell:startup) both "
-                  "fire around login with no strict ordering guarantee "
-                  "between the two — in practice the swap finishes first, "
-                  "but it isn't a hard guarantee."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", padx=6, pady=(6, 6))
+            text="Swap the intro video at Windows login. Startup order with HyperSpin is not guaranteed. Set a delay to avoid interrupting playback (0 = no delay); changes take effect when you click Enable auto-run.",
+        ).pack(fill="x", padx=6, pady=(6, 6))
         delay_row = self.ttk.Frame(autorun_lf)
         delay_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Label(delay_row, text="Delay after login (minutes):").pack(side="left")
@@ -13065,13 +12677,6 @@ class _SpinDoctorGUI:
         self.ttk.Spinbox(
             delay_row, from_=0, to=60,
             textvariable=self._introvideo_autorun_delay_var, width=6,
-        ).pack(side="left", padx=(6, 0))
-        self.ttk.Label(
-            delay_row,
-            text=("— applied next time you click Enable auto-run. Gives "
-                  "HyperSpin's own intro playback time to finish first, "
-                  "so the swap doesn't collide with it. 0 = no delay."),
-            foreground=_FG_DIM,
         ).pack(side="left", padx=(6, 0))
         status_row = self.ttk.Frame(autorun_lf)
         status_row.pack(anchor="w", padx=6, pady=(0, 8))
@@ -13261,14 +12866,10 @@ class _SpinDoctorGUI:
 
     def _build_custom_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
+        self._help_text(
             frame,
-            text=("Run any spindoctor sub-command. Pick a preset from the "
-                  "dropdown to start, then edit placeholders like <SYSTEM> "
-                  "or <PATH> before hitting Run. You can also type any "
-                  "arguments by hand — the field is fully editable."),
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 8))
+            text="Choose a preset or type command arguments. Replace <SYSTEM>, <PATH> and other placeholders before running. Append --help to see options in Output.",
+        ).pack(fill="x", pady=(0, 8))
 
         row = self.ttk.Frame(frame)
         row.pack(fill="x", pady=4)
@@ -13290,15 +12891,6 @@ class _SpinDoctorGUI:
             "<<ComboboxSelected>>", self._on_custom_preset_selected
         )
         self.ttk.Button(row, text="Run", command=self._run_custom).pack(side="left")
-
-        hint = self.ttk.Label(
-            frame,
-            text=("Tip: anything in <ANGLE_BRACKETS> is a placeholder you "
-                  "need to replace before running. Append --help to any "
-                  "command to see its full option list in the Output panel."),
-            wraplength=860, justify="left", foreground=_FG_DIM,
-        )
-        hint.pack(anchor="w", pady=(8, 0))
 
         return frame
 
