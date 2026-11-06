@@ -395,7 +395,7 @@ def test_full_metadata_refresh_propagates_game_to_fetch_media():
 
         _meta_system_args = staticmethod(lambda: ["--system", "Nintendo Gamecube"])
         _meta_game_args   = staticmethod(lambda: ["--game", "Animal Crossing (USA)"])
-        _chain_start      = staticmethod(lambda total: None)
+        _chain_start      = staticmethod(lambda total: True)
         _chain_end        = staticmethod(lambda: None)
         _chain_advance    = staticmethod(lambda n: None)
         _set_status       = staticmethod(lambda msg: None)
@@ -3787,5 +3787,264 @@ def test_saved_geometry_records_its_dpi_scale(monkeypatch):
     try:
         app._save_gui_state()
         assert load_config().gui_window_dpi_scale == round(app._dpi_scale, 3)
+    finally:
+        app.root.destroy()
+
+
+# ── Bugs found in the GUI review ─────────────────────────────────────────
+
+
+class _FakeProc:
+    stdout = None
+
+    def poll(self):
+        return 0
+
+    def wait(self):
+        return 0
+
+
+def test_undo_runs_are_recorded_as_writes_not_dry_runs(monkeypatch):
+    # Every CLI --undo restores files immediately, without --apply.
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
+        app._run_cli("spindoctor", ["curate", "--undo"])
+        assert app._run_history[-1].dry_run is False
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_sidecar_restore_with_apply_off_is_a_preview(monkeypatch, tmp_path):
+    import json as _json
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        target = tmp_path / "Main Menu.xml"
+        target.write_text("<menu/>", encoding="utf-8")
+        listing = _json.dumps([{"path": str(tmp_path / "x.bak")}])
+        monkeypatch.setattr(
+            gui.subprocess, "run",
+            lambda *_a, **_k: type("R", (), {"stdout": listing})(),
+        )
+        monkeypatch.setattr(app, "_ask_pick_sidecar", lambda *_a: str(tmp_path / "x.bak"))
+        titles, runs, flashes, page_done = [], [], [], []
+        monkeypatch.setattr(app.messagebox, "askyesno",
+                            lambda title, *_a, **_k: titles.append(title) or True)
+        monkeypatch.setattr(app, "_run_cli",
+                            lambda _b, args, on_complete=None: runs.append((args, on_complete)))
+        monkeypatch.setattr(app, "_flash_status", lambda text, **_k: flashes.append(text))
+        app._global_apply_var.set(False)
+        app._restore_sidecar(target, on_complete=page_done.append)
+        args, done = runs[-1]
+        assert "--apply" not in args
+        assert titles[-1] == "Preview restore"
+        done(0)
+        assert page_done == []  # the page's "restored" follow-up didn't run
+        assert flashes and flashes[-1].startswith("Preview only")
+
+        app._global_apply_var.set(True)
+        app._restore_sidecar(target, on_complete=page_done.append)
+        args, done = runs[-1]
+        assert "--apply" in args and titles[-1] == "Confirm restore"
+        done(0)
+        assert page_done == [0]
+    finally:
+        app.root.destroy()
+
+
+def test_wizard_save_updates_the_setup_form(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._setup_mark_clean()
+        app._sync_setup_form({"roms_dir": r"X:\ROMs", "hyperspin_dir": r"X:\HyperSpin"})
+        assert app._setup_vars["roms_dir"].get() == r"X:\ROMs"
+        assert app._setup_vars["hyperspin_dir"].get() == r"X:\HyperSpin"
+        assert app._setup_dirty is False
+    finally:
+        app.root.destroy()
+
+
+def _fake_systems(monkeypatch, systems, wheel=None):
+    from spindoctor import mainmenu
+
+    monkeypatch.setattr(gui, "get_systems", lambda _cfg: list(systems))
+
+    def _no_menu(_cfg):
+        raise OSError("no Main Menu.xml")
+
+    if wheel is None:
+        monkeypatch.setattr(mainmenu, "load_main_menu", _no_menu)
+    else:
+        entries = [type("E", (), {"system": s})() for s in wheel]
+        monkeypatch.setattr(mainmenu, "load_main_menu",
+                            lambda _cfg: type("M", (), {"entries": entries})())
+
+
+def test_system_filter_narrows_the_dropdowns(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _fake_systems(monkeypatch, ["MAME", "Nintendo 64", "Sega Genesis"])
+        app._system_filter_var.set("mame")
+        app._refresh_systems()
+        assert list(app._current_system_combo["values"]) == ["MAME"]
+        app._system_filter_var.set("")
+        app._refresh_systems()
+        assert len(app._current_system_combo["values"]) == 3
+    finally:
+        app.root.destroy()
+
+
+def test_main_menu_folder_is_not_badged_as_missing_from_the_wheel(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _fake_systems(monkeypatch, ["MAME", "Main Menu", "Orphan"], wheel=["MAME"])
+        app._refresh_systems()
+        assert list(app._current_system_combo["values"]) == [
+            "MAME", "Main Menu", "Orphan" + gui._NOT_IN_WHEEL_SUFFIX,
+        ]
+    finally:
+        app.root.destroy()
+
+
+def test_startup_fills_section_game_lists(monkeypatch):
+    # Section vars were set straight to systems[0], so the sidebar push
+    # skipped them and their game lists stayed empty.
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        _fake_systems(monkeypatch, ["MAME", "Nintendo 64"], wheel=["MAME", "Nintendo 64"])
+        calls = []
+        for name in ("_refresh_fav_games", "_refresh_madd_games", "_refresh_ignore_games"):
+            monkeypatch.setattr(app, name, lambda n=name: calls.append(n))
+        for var_attr, _r in gui._SYSTEM_FOLLOWERS:
+            getattr(app, var_attr).set("")
+        app._current_system_var.set("")
+        app._refresh_systems()
+        assert app._fav_system_var.get() == "MAME"
+        assert sorted(calls) == [
+            "_refresh_fav_games", "_refresh_ignore_games", "_refresh_madd_games",
+        ]
+    finally:
+        app.root.destroy()
+
+
+def test_game_lists_load_for_a_not_in_wheel_system(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        seen = []
+
+        class _Db:
+            def games(self):
+                return {}
+
+        def _load(name, _dir):
+            seen.append(name)
+            return _Db()
+
+        monkeypatch.setattr(gui, "load_database", _load)
+        app._load_games_for_system("Orphan" + gui._NOT_IN_WHEEL_SUFFIX)
+        assert seen == ["Orphan"]
+    finally:
+        app.root.destroy()
+
+
+def test_fill_defaults_badge_binding_is_added_once(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        combo = getattr(app, "_fd_system_combo", None)
+        if combo is None:
+            pytest.skip("Fill Defaults combo not built")
+        _fake_systems(monkeypatch, ["MAME"])
+        app._refresh_systems()
+        before = combo.bind("<<ComboboxSelected>>")
+        for _ in range(3):
+            app._refresh_systems()
+        assert combo.bind("<<ComboboxSelected>>") == before
+    finally:
+        app.root.destroy()
+
+
+def test_stale_done_marker_is_ignored(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        current, old = _FakeProc(), _FakeProc()
+        app._proc = current
+        called = []
+        app._on_proc_done(gui._DoneMarker(0, called.append, old))
+        assert called == [] and app._proc is current
+        app._on_proc_done(gui._DoneMarker(0, called.append, current))
+        assert called == [0] and app._proc is None
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_run_is_busy_until_its_done_marker_is_processed(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        busy, launched = [], []
+        monkeypatch.setattr(app.messagebox, "showinfo",
+                            lambda title, *_a, **_k: busy.append(title))
+        monkeypatch.setattr(gui.subprocess, "Popen",
+                            lambda *_a, **_k: launched.append(1) or _FakeProc())
+        app._proc = _FakeProc()  # exited (poll() == 0) but not finalised yet
+        app._run_cli("spindoctor", ["doctor"])
+        assert busy == ["Busy"] and launched == []
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_chain_does_not_start_while_busy(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        monkeypatch.setattr(app.messagebox, "showinfo", lambda *_a, **_k: None)
+        app._proc = _FakeProc()
+        assert app._chain_start(3) is False
+        assert getattr(app, "_chain_progress", None) is None
+        app._proc = None
+        assert app._chain_start(3) is True
+        app._chain_end()
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_stop_ends_a_chained_workflow(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        launched = []
+        monkeypatch.setattr(gui.subprocess, "Popen",
+                            lambda *_a, **_k: launched.append(1) or _FakeProc())
+        proc = _FakeProc()
+        app._proc = proc
+        app._chain_progress = (1, 3)
+        app._stop_requested = True  # what _stop_running sets
+        app._on_proc_done(gui._DoneMarker(
+            1, lambda _rc: app._run_cli("spindoctor", ["tools-audit"]), proc,
+        ))
+        assert launched == []
+        assert app._chain_progress is None
+        assert app._proc is None and app._stop_requested is False
+        # The next command the user starts runs normally.
+        app._run_cli("spindoctor", ["doctor"])
+        assert launched == [1]
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_find_keeps_the_output_divider_and_sits_above_the_text(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app._output_visible
+        toggles = []
+        monkeypatch.setattr(app, "_toggle_output", lambda **k: toggles.append(k))
+        app._find_open()
+        app.root.update_idletasks()
+        assert toggles == []
+        assert str(app._find_bar.pack_info()["in"]) == str(app._out_frame)
+        app._find_close()
     finally:
         app.root.destroy()
