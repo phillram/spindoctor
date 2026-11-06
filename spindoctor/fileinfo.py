@@ -28,7 +28,7 @@ from .database import GameEntry
 # so the flag is a no-op on macOS / Linux.
 _CREATE_NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0
 from .media import MEDIA_DIR_MAP
-from ._utils import win_safe_stem
+from ._utils import dir_size as _dir_size, win_safe_stem
 
 
 def human_size(n: int) -> str:
@@ -497,28 +497,3 @@ def _video_duration(path: Path) -> Optional[float]:
     if path.suffix.lower() in (".mp4", ".m4v", ".mov"):
         return _duration_mp4_native(path)
     return None
-
-
-# ─── utility ──────────────────────────────────────────────────────────────────
-
-def _dir_size(path: Path) -> int:
-    # Single source of truth — backup.py and migrate.py import this rather
-    # than carrying their own copies. Tolerates a missing path and skips
-    # files the OS refuses to stat (permission errors on Windows cabinets
-    # with leftover read-only attributes are common enough to be worth
-    # swallowing rather than aborting a 50 GB backup pre-flight).
-    if not path.exists():
-        return 0
-    if path.is_file():
-        try:
-            return path.stat().st_size
-        except OSError:
-            return 0
-    total = 0
-    for p in path.rglob("*"):
-        try:
-            if p.is_file():
-                total += p.stat().st_size
-        except OSError:
-            pass
-    return total

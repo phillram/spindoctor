@@ -501,11 +501,11 @@ def rebuild(
         return summary
 
     sorted_entries = _sorted_entries(store.entries)
-    target_names = _resolve_target_names(sorted_entries)
-    summary.entries = len(target_names)
 
     if dry_run:
         # Preview-only: report counts without touching disk.
+        target_names = _resolve_target_names(sorted_entries)
+        summary.entries = len(target_names)
         summary.inis_written = 0 if skip_launchers else len(target_names)
         if not skip_media:
             summary.media_linked = len(target_names)
@@ -520,17 +520,46 @@ def rebuild(
         )
         return summary
 
+    return _write_synthetic_wheel(
+        config, store.target_system, sorted_entries, summary,
+        media_mode=media_mode, skip_media=skip_media,
+        skip_launchers=skip_launchers, verbose=verbose,
+    )
+
+
+def _write_synthetic_wheel(
+    config: Config,
+    target_system: str,
+    entries: list[FavoriteEntry],
+    summary: Any,
+    *,
+    media_mode: LinkMode,
+    skip_media: bool,
+    skip_launchers: bool,
+    verbose: bool,
+    preserve_order: bool = False,
+    src_cache: Optional[dict[str, Optional[HyperspinDatabase]]] = None,
+) -> Any:
+    """Write a validated wheel, preserving each caller's ordering policy.
+
+    Source databases and video redirects are cached per build. New media and
+    launcher files are written before orphan cleanup so failures do not remove
+    files before their replacements are ready. Dry-run and source filtering
+    remain with the public builders.
+    """
+    target_names = _resolve_target_names(entries)
+    summary.entries = len(target_names)
     n = len(target_names)
     print(
-        f"[{store.target_system}] building wheel — "
+        f"[{target_system}] building wheel — "
         f"{n} entr{'y' if n == 1 else 'ies'}…",
         flush=True,
     )
 
     # ── 1. Database XML ──────────────────────────────────────────────────────
-    print(f"[{store.target_system}] writing database…", flush=True)
-    db_path = config.databases_dir / store.target_system / f"{store.target_system}.xml"
-    db = HyperspinDatabase(store.target_system, db_path)
+    print(f"[{target_system}] writing database…", flush=True)
+    db_path = config.databases_dir / target_system / f"{target_system}.xml"
+    db = HyperspinDatabase(target_system, db_path, preserve_order=preserve_order)
     db.load()
     existing_targets = set(target_names.values())
     summary.pruned = sum(
@@ -538,13 +567,14 @@ def rebuild(
     )
     # Drop every existing entry so the upserts below dictate XML order —
     # otherwise `_merge_into_tree` would keep surviving games at their
-    # prior positions, defeating the alphabetical sort.
+    # prior positions, defeating the requested alphabetical or ranked order.
     db.reset_games()
 
     # Memoise source DBs so each source system is parsed once, not once
-    # per favorite drawn from it.
-    src_cache: dict[str, Optional[HyperspinDatabase]] = {}
-    for entry in sorted_entries:
+    # per entry drawn from it. Ranked builders pass their pre-validation cache.
+    if src_cache is None:
+        src_cache = {}
+    for entry in entries:
         target_name = target_names[f"{entry.system}::{entry.rom_name}"]
         source_db = _safe_load(entry.system, config, src_cache)
         source_game = _source_game(source_db, entry.system, entry.rom_name)
@@ -565,9 +595,9 @@ def rebuild(
         )
         db.upsert_game(merged)
     summary.db_path = db.save(backup=False)
-    mark_synthetic(config, store.target_system)
+    mark_synthetic(config, target_system)
     print(
-        f"[{store.target_system}] database done — {n} game(s), "
+        f"[{target_system}] database done — {n} game(s), "
         f"{summary.pruned} pruned.",
         flush=True,
     )
@@ -575,7 +605,7 @@ def rebuild(
     # ── 2. Media mirror ──────────────────────────────────────────────────────
     if not skip_media:
         from .media import _win_safe_stem
-        print(f"[{store.target_system}] mirroring media for {n} game(s)…", flush=True)
+        print(f"[{target_system}] mirroring media for {n} game(s)…", flush=True)
         # Mirrored media files are written with sanitized stems, so the
         # orphan-cleanup allowlist must be sanitized too — otherwise it would
         # delete the freshly-written files for any name with a forbidden char.
@@ -588,13 +618,13 @@ def rebuild(
         _hs_settings = Path(config.hyperspin_dir) / "Settings" if config.hyperspin_dir else None
         _video_cache: dict[str, Optional[Path]] = {}
 
-        for entry in sorted_entries:
+        for idx, entry in enumerate(entries, 1):
             if _hs_settings and entry.system not in _video_cache:
                 _video_cache[entry.system] = _read_hs_video_dir(_hs_settings, entry.system)
             video_override = _video_cache.get(entry.system) if _hs_settings else None
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             plan = plan_mirror(
-                config.media_dir, entry.system, store.target_system,
+                config.media_dir, entry.system, target_system,
                 entry.rom_name, target_name,
                 video_dir_override=video_override,
                 refresh=True,
@@ -605,23 +635,30 @@ def rebuild(
             summary.media_copied += result["copied"]
             summary.media_skipped += result["skipped"]
             summary.media_errors.extend(result["errors"])
+            if idx % 10 == 0 or idx == n:
+                print(
+                    f"[{target_system}] media {idx}/{n} — "
+                    f"linked {summary.media_linked} copied {summary.media_copied} "
+                    f"skipped {summary.media_skipped}",
+                    flush=True,
+                )
 
         # Drop orphan media AFTER writing so a write failure doesn't
         # permanently delete files that should still exist.
-        _target_media = config.media_dir / store.target_system
+        _target_media = config.media_dir / target_system
         summary.media_errors.extend(prune_mirrored_media(_target_media, seen_targets))
 
-        print(f"[{store.target_system}] media done.", flush=True)
+        print(f"[{target_system}] media done.", flush=True)
 
     # ── 3. Per-game PCLauncher INIs ──────────────────────────────────────────
     if not skip_launchers and config.rocketlauncher_dir:
         rl_dir = Path(config.rocketlauncher_dir)
-        print(f"[{store.target_system}] writing {n} PCLauncher INI(s)…", flush=True)
+        print(f"[{target_system}] writing {n} PCLauncher INI(s)…", flush=True)
         # Write new INIs FIRST (same write-before-delete ordering as media above).
-        for entry in sorted_entries:
+        for entry in entries:
             target_name = target_names[f"{entry.system}::{entry.rom_name}"]
             _generate_pclauncher_ini(
-                rl_dir, store.target_system, target_name,
+                rl_dir, target_system, target_name,
                 entry.system, entry.rom_name,
             )
             summary.inis_written += 1
@@ -631,17 +668,17 @@ def rebuild(
         # files in the subdirectory (those are only for RL game discovery).
         pclauncher_entries = [
             (target_names[f"{e.system}::{e.rom_name}"], e.system, e.rom_name)
-            for e in sorted_entries
+            for e in entries
         ]
         game_exe = ensure_rl_game_exe(rl_dir)
         write_pclauncher_system_ini(
-            store.target_system, pclauncher_entries, rl_dir,
+            target_system, pclauncher_entries, rl_dir,
             rl_exe=game_exe,
             extra_window_titles=config.emulator_window_titles or None,
         )
-        summary.system_ini_path = generate_synthetic_system_ini(store.target_system, rl_dir)
+        summary.system_ini_path = generate_synthetic_system_ini(target_system, rl_dir)
         # Remove stale per-game INIs AFTER writing new ones.
-        existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / store.target_system
+        existing_ini_dir = rl_dir / "Modules" / "PCLauncher" / target_system
         if existing_ini_dir.exists():
             from .media import _win_safe_stem
             # INI filenames are sanitized (see _generate_pclauncher_ini), so the
@@ -653,20 +690,20 @@ def rebuild(
                         ini.unlink()
                     except OSError as e:
                         summary.media_errors.append(f"cleanup {ini.name}: {e}")
-        print(f"[{store.target_system}] PCLauncher INIs done.", flush=True)
+        print(f"[{target_system}] PCLauncher INIs done.", flush=True)
 
     # ── 4. HyperSpin system settings INI ────────────────────────────────────
     # HyperSpin requires Settings/<system>.ini to open a sub-wheel.  Without
     # it the wheel reports "Cannot find <system>.ini" on selection.  We only
     # write when the file is absent so user customisations are never clobbered.
     hs_dir = Path(config.hyperspin_dir)
-    write_hyperspin_system_ini(store.target_system, hs_dir)
+    write_hyperspin_system_ini(target_system, hs_dir)
 
     # ── 5. Bundled system media (wheel art, background, music) ──────────────
     # Install all package-bundled assets for this synthetic system.
     # Each asset is only written when absent — user files are never clobbered.
-    summary.bundled_assets = install_bundled_system_assets(hs_dir, store.target_system)
-    print(f"[{store.target_system}] wheel build complete.", flush=True)
+    summary.bundled_assets = install_bundled_system_assets(hs_dir, target_system)
+    print(f"[{target_system}] wheel build complete.", flush=True)
 
     return summary
 
