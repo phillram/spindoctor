@@ -2940,6 +2940,35 @@ def test_games_list_loads_when_games_page_is_open(monkeypatch):
         app.root.destroy()
 
 
+def test_failed_games_autoload_is_not_retried_on_every_visit(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        loads = []
+        # A load that fails leaves _gwm_loaded_system blank.
+        monkeypatch.setattr(app, "_gwm_load", lambda: loads.append(1))
+        for name in ("_refresh_rename_games", "_refresh_fixexe_games"):
+            monkeypatch.setattr(app, name, lambda: None)
+        app._current_system_combo["values"] = ["MAME", "Nintendo 64"]
+        games = app._tab_base_names.index("Games")
+        setup = app._tab_base_names.index("Setup")
+        app._nb.select(games)
+        app.root.update()
+        app._current_system_var.set("MAME")
+        app._push_current_system()
+        for _ in range(3):
+            app._nb.select(setup)
+            app.root.update()
+            app._nb.select(games)
+            app.root.update()
+        assert len(loads) == 1
+        # A new system gets a fresh attempt.
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system()
+        assert len(loads) == 2
+    finally:
+        app.root.destroy()
+
+
 def test_reorder_tables_share_toolbar_layout(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:

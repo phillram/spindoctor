@@ -2350,7 +2350,7 @@ class _SpinDoctorGUI:
         return row
 
     def _help_text(self, parent, *, text):
-        """Optional guidance, shown or hidden together by the sidebar's Show help."""
+        """Optional guidance, shown or hidden together by View → Show help text."""
         frame = self.ttk.Frame(parent)
         body = self._responsive_label(frame, text=text)
         body.configure(style="Help.TLabel")
@@ -6837,8 +6837,12 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 - notebook not realized yet
             return
         system = self._gwm_system_var.get().strip()
-        if system and system != self._gwm_loaded_system:
-            self._gwm_load()
+        if not system or system in (
+            self._gwm_loaded_system, self._gwm_autoload_system,
+        ):
+            return
+        self._gwm_autoload_system = system
+        self._gwm_load()
 
     def _build_games_tab(self, parent):  # noqa: PLR0915
         frame = self.ttk.Frame(parent, padding=12)
@@ -6859,6 +6863,9 @@ class _SpinDoctorGUI:
         # ── Step 1 — Manage the game wheel ───────────────────────────────────
         self._gwm_data: list[dict] = []
         self._gwm_loaded_system: str = ""
+        # System the automatic load last tried, so a failing database is
+        # reported once rather than on every visit to the page.
+        self._gwm_autoload_system: str = ""
 
         gwm_lf = self.ttk.LabelFrame(
             frame, text="Manage the game wheel",
@@ -10612,9 +10619,10 @@ class _SpinDoctorGUI:
     # ── Game Wheel Manager handlers ──────────────────────────────────────────
 
     def _gwm_on_system_change(self) -> None:
-        """Clear loaded game data when the system dropdown is changed."""
+        """Clear loaded game data when the sidebar system changes."""
         self._gwm_data = []
         self._gwm_loaded_system = ""
+        self._gwm_autoload_system = ""
         self._gwm_repopulate_tree()
         self._gwm_count_label.configure(text="")
 
