@@ -416,7 +416,7 @@ Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are i
 `--by description` (default) — sort by display title (`<description>` field).  
 `--by name` — sort by ROM filename instead.
 
-> **GUI alternative:** the **Games** tab → **Manage the game wheel** provides an equivalent table: pick the system in the sidebar and the table loads, then reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save order** shells out to `game save-order --apply` (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Manage the game wheel** provides an equivalent table: pick the system in the sidebar and the table loads, then reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Move to #**. **Remove game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save order** shells out to `game save-order --apply` (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 #### `game save-order`
 
