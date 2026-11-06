@@ -4048,3 +4048,47 @@ def test_find_keeps_the_output_divider_and_sits_above_the_text(monkeypatch):
         app._find_close()
     finally:
         app.root.destroy()
+
+
+def test_dialogs_scale_with_the_display(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._dpi_scale = 1.5
+        win = _tk.Toplevel(app.root)
+        monkeypatch.setattr(app.root, "winfo_screenwidth", lambda: 3840)
+        monkeypatch.setattr(app.root, "winfo_screenheight", lambda: 2160)
+        seen = []
+        monkeypatch.setattr(win, "geometry", lambda g=None: seen.append(g))
+        app._fit_geometry(win, 640, 480)
+        assert seen == ["960x720"]
+        win.destroy()
+    finally:
+        app.root.destroy()
+
+
+def test_run_cli_reports_whether_it_started(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        monkeypatch.setattr(app.messagebox, "showinfo", lambda *_a, **_k: None)
+        monkeypatch.setattr(gui.subprocess, "Popen", lambda *_a, **_k: _FakeProc())
+        assert app._run_cli("spindoctor", ["doctor"]) is True
+        assert app._run_cli("spindoctor", ["doctor"]) is False  # busy
+    finally:
+        app._proc = None
+        app.root.destroy()
+
+
+def test_migration_list_ignores_the_system_filter(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        lb = getattr(app, "_migrate_systems_lb", None)
+        if lb is None:
+            pytest.skip("Migration list not built")
+        _fake_systems(monkeypatch, ["MAME", "Nintendo 64", "Sega Genesis"])
+        app._system_filter_var.set("mame")
+        app._refresh_systems()
+        assert list(app._current_system_combo["values"]) == ["MAME"]
+        assert lb.size() == 3
+    finally:
+        app._system_filter_var.set("")
+        app.root.destroy()
