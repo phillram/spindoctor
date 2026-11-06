@@ -178,6 +178,24 @@ _APPLY_ON_BG_ACTIVE = "#cc5a10"
 _APPLY_ON_HINT_FG   = "#ffb070"
 _PREVIEW_FG         = "#8fd18f"  # Apply switch while in safe preview mode
 
+# Per-section system variables that follow the sidebar's System picker,
+# with the refresher a manual pick in that section's dropdown would fire.
+_SYSTEM_FOLLOWERS: tuple[tuple[str, str], ...] = (
+    ("_system_var", ""),
+    ("_meta_system_var", ""),
+    ("_verify_system_var", ""),
+    ("_inspect_system_var", "_refresh_inspect_games"),
+    ("_fav_system_var", "_refresh_fav_games"),
+    ("_match_system_var", ""),
+    ("_games_system_var", "_on_games_system_change"),
+    ("_organize_system_var", ""),
+    ("_madd_system_var", "_refresh_madd_games"),
+    ("_ovr_system_var", ""),
+    ("_curate_system_var", ""),
+    ("_ignore_system_var", "_refresh_ignore_games"),
+    ("_repath_system_var", ""),
+    ("_lg_system_var", ""),
+)
 # Sidebar pages follow notebook order, so Ctrl+1..9 and the saved
 # gui_last_active_tab index keep pointing at the same pages.
 _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -2641,6 +2659,24 @@ class _SpinDoctorGUI:
             self.ttk.Checkbutton(
                 side, text=label, variable=var, style="Sidebar.TCheckbutton",
             ).pack(anchor="w")
+        self.ttk.Label(
+            side, text="SYSTEM", style="SidebarGroup.TLabel",
+        ).pack(anchor="w", pady=(10, 1))
+        self._current_system_var = self.tk.StringVar(master=self.root, value="")
+        self._current_system_combo = self.ttk.Combobox(
+            side, textvariable=self._current_system_var,
+            state="readonly", width=20,
+        )
+        self._current_system_combo.pack(fill="x")
+        self._current_system_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._push_current_system(),
+        )
+        _attach_tooltip(
+            self._current_system_combo,
+            "Selects this system in every section. A section's own "
+            "System dropdown can still pick a different one.",
+            self.tk,
+        )
         self.ttk.Separator(side).pack(fill="x", pady=(8, 2))
 
         index_of = {name: i for i, name in enumerate(self._tab_base_names)}
@@ -2675,6 +2711,29 @@ class _SpinDoctorGUI:
             "write", lambda *_a: self._refresh_apply_toggle(),
         )
         self._refresh_apply_toggle()
+
+    def _push_current_system(self, *, only_blank: bool = False) -> None:
+        var = getattr(self, "_current_system_var", None)
+        if var is None:
+            return
+        system = var.get()
+        if system.endswith(_NOT_IN_WHEEL_SUFFIX):
+            system = system[:-len(_NOT_IN_WHEEL_SUFFIX)]
+            var.set(system)
+        if not system:
+            return
+        for var_attr, refresh_attr in _SYSTEM_FOLLOWERS:
+            follower = getattr(self, var_attr, None)
+            if follower is None or follower.get() == system:
+                continue
+            if only_blank and follower.get():
+                continue
+            follower.set(system)
+            if refresh_attr:
+                try:
+                    getattr(self, refresh_attr)()
+                except Exception:  # noqa: BLE001 - a stale section must not block the rest
+                    pass
 
     def _sync_nav_to_tab(self, _event=None) -> None:
         try:
@@ -2720,6 +2779,10 @@ class _SpinDoctorGUI:
             return True
         except self.tk.TclError:
             return False
+
+    def _select_page(self, name: str) -> None:
+        if name in self._tab_base_names:
+            self._nb.select(self._tab_base_names.index(name))
 
     def _select_tab(self, idx: int) -> None:
         """Switch to tab at zero-based index, ignoring out-of-range."""
@@ -4747,9 +4810,6 @@ class _SpinDoctorGUI:
             btn_row, text="Test credentials", command=self._test_credentials,
         )
         self._cred_test_btn.pack(side="left", padx=6)
-        self.ttk.Button(btn_row, text="Run Health Check", command=lambda: self._run_cli(
-            "spindoctor", ["doctor"]
-        )).pack(side="left", padx=6)
         # (The first-run wizard button lives at the top of this tab —
         # it's the new-user entry point, so it leads rather than trails.)
         # Folder shortcuts — same actions are also under File menu, but
@@ -5675,10 +5735,8 @@ class _SpinDoctorGUI:
 
         # Every tab that has a system picker. Attributes may not exist yet
         # on the first call (tabs build lazily), so we guard with getattr.
-        # The fix-exe tab is PC-specific, so pre-select the "PC Games" system
-        # (case-insensitive) when one exists.
-        pc_system = next((s for s in systems if s.lower() == "pc games"), None)
         combos_and_vars = [
+            ("_current_system_combo",  "_current_system_var",  None),
             ("_system_combo",          "_system_var",          None),
             ("_mainmenu_system_combo", "_mainmenu_system_var", None),
             ("_meta_system_combo",     "_meta_system_var",     None),
@@ -5686,7 +5744,6 @@ class _SpinDoctorGUI:
             ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
             ("_match_system_combo",    "_match_system_var",    None),
-            ("_games_system_combo",    "_games_system_var",    pc_system),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
             ("_ovr_system_combo",      "_ovr_system_var",      None),
@@ -5728,6 +5785,8 @@ class _SpinDoctorGUI:
                     if val.endswith(_NOT_IN_WHEEL_SUFFIX):
                         _v.set(val[:-len(_NOT_IN_WHEEL_SUFFIX)])
                 combo.bind("<<ComboboxSelected>>", _strip_badge, add=True)
+
+        self._push_current_system(only_blank=True)
 
         # Auto-populate the fixexe game list when the section is first built
         # with a pre-selected system.  Setting a var via .set() does NOT fire
@@ -6274,39 +6333,19 @@ class _SpinDoctorGUI:
             cur_cfg_btn_row, text="Show current paths",
             command=lambda: self._run_cli("spindoctor", ["config", "show"]),
         ).pack(side="left")
-        self.ttk.Button(
-            cur_cfg_btn_row, text="Run Health Check",
-            command=lambda: self._run_cli("spindoctor", ["doctor"]),
-        ).pack(side="left", padx=6)
 
         # ── Step 2 — Backup before migrating ─────────────────────────────────
         pre_bkp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Backup before migrating")
         pre_bkp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(0, 8))
-        pre_bkp_frame.columnconfigure(1, weight=1)
+        pre_bkp_frame.columnconfigure(0, weight=1)
         self._responsive_label(
             pre_bkp_frame,
-            text="Back up your setup before migrating so you can restore it if needed.",
-        ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(4, 2))
-        self.ttk.Label(pre_bkp_frame, text="Backup folder").grid(
-            row=1, column=0, sticky="w", padx=6, pady=2,
-        )
-        _migrate_cfg = load_config()
-        self._pre_migrate_backup_var = self.tk.StringVar(
-            value=getattr(_migrate_cfg, "backup_dir", "") or ""
-        )
-        self.ttk.Entry(
-            pre_bkp_frame, textvariable=self._pre_migrate_backup_var, width=50,
-        ).grid(row=1, column=1, sticky="ew", padx=6, pady=2)
+            text="Back up your setup first so you can restore it if needed.",
+        ).grid(row=0, column=0, sticky="ew", padx=6, pady=(4, 2))
         self.ttk.Button(
-            pre_bkp_frame, text="Browse",
-            command=lambda: self._browse_backup_dir(
-                self._pre_migrate_backup_var, "Pick backup target folder",
-            ),
-        ).grid(row=1, column=2, sticky="w", pady=2)
-        self.ttk.Button(
-            pre_bkp_frame, text="Create backup now",
-            command=self._run_pre_migrate_backup,
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=6, pady=(2, 4))
+            pre_bkp_frame, text="Open Backup & Restore",
+            command=lambda: self._select_page("Backup & Restore"),
+        ).grid(row=1, column=0, sticky="w", padx=6, pady=(2, 6))
 
         # ── Step 3 — Migration settings (target, components, options) ────────
         mig_frame = self.ttk.LabelFrame(
@@ -6615,17 +6654,6 @@ class _SpinDoctorGUI:
             args.append("--verbose")
         self._run_cli("spindoctor", args)
 
-    def _run_pre_migrate_backup(self) -> None:
-        target = self._pre_migrate_backup_var.get().strip()
-        if not target:
-            self._flash_validation(
-                "Enter or browse to a backup target folder before creating a backup."
-            )
-            return
-        args = ["backup", "create", "--target", target]
-        if self._global_apply_var.get():
-            args.append("--apply")
-        self._run_cli("spindoctor", args)
 
     def _run_repath_system(self, apply: bool = False) -> None:
         system = self._repath_system_var.get().strip()
@@ -6672,17 +6700,10 @@ class _SpinDoctorGUI:
 
     def _build_games_tab(self, parent):  # noqa: PLR0915
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Pick a system once for all sections below.",
-        ).pack(fill="x", pady=(0, 6))
 
-        # ── Shared system picker ──────────────────────────────────────────────
-        picker_lf = self.ttk.LabelFrame(frame, text="System")
-        picker_lf.pack(fill="x", pady=(0, 10))
-
-        picker_row = self.ttk.Frame(picker_lf)
-        picker_row.pack(fill="x", padx=6, pady=6)
+        # Every section on this page uses the sidebar's System picker.
+        picker_row = self.ttk.Frame(frame)
+        picker_row.pack(fill="x", pady=(0, 10))
         self.ttk.Label(picker_row, text="System:").pack(side="left")
 
         self._games_system_var = self.tk.StringVar()
@@ -6693,14 +6714,13 @@ class _SpinDoctorGUI:
         self._fixexe_system_var = self._games_system_var
         self._systems_old_var = self._games_system_var
 
-        self._games_system_combo = self.ttk.Combobox(
+        self.ttk.Label(
             picker_row, textvariable=self._games_system_var,
-            state="readonly", width=34,
-        )
-        self._games_system_combo.pack(side="left", padx=8)
-        self._games_system_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._on_games_system_change(),
-        )
+            font="TkHeadingFont",
+        ).pack(side="left", padx=(6, 0))
+        self.ttk.Label(
+            picker_row, text="(change it in the sidebar)", foreground=_FG_DIM,
+        ).pack(side="left", padx=(8, 0))
 
         # ── Step 1 — Manage the game wheel ───────────────────────────────────
         self._gwm_data: list[dict] = []
@@ -7800,10 +7820,6 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             meta_run_row, text="Download for Selected Systems",
             command=self._run_fetch_meta_subset,
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            meta_run_row, text="Restore DB backup",
-            command=self._meta_restore_db_from_backup,
         ).pack(side="left", padx=6)
 
         # ── fetch-media ──────────────────────────────────────────────────────
@@ -11332,11 +11348,6 @@ class _SpinDoctorGUI:
         self.ttk.Button(
             cd_btn_row, text="Update & Rename",
             command=self._run_color_edit,
-        ).pack(side="left", padx=(0, 8))
-
-        self.ttk.Button(
-            cd_btn_row, text="Normalize Colors.ini",
-            command=self._run_color_normalize,
         ).pack(side="left")
 
         # Populate immediately if ledblinky_dir is already configured

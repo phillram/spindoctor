@@ -350,7 +350,7 @@ spindoctor clone --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 Undo deletes only the copies — the original is untouched.
 
-> **GUI alternative:** the **Games** tab → **Step 2** wraps clone with the same game dropdown populated from the system's database via the shared system picker. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Step 2** wraps clone with the same game dropdown populated from the system's database via the sidebar's System picker. See [GUI walkthrough](gui.md).
 
 ### `game`
 
@@ -632,7 +632,7 @@ Without `--apply` the command shows the current `Application=` and the proposed 
 
 If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. A warning is printed at the end of output when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script — the warning is duplicated so it isn't buried under candidate output.
 
-**GUI alternative:** the **Games** tab → **Step 4 — Fix a game that launches the wrong executable** has a game picker (auto-populated from the shared system picker at the top of the tab) and a ranked candidate list. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.). CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+**GUI alternative:** the **Games** tab → **Step 4 — Fix a game that launches the wrong executable** has a game picker (auto-populated from the sidebar's System picker) and a ranked candidate list. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.). CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
 
 ### `repath-system`
 

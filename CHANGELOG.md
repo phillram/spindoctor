@@ -12,7 +12,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-
 ### Removed
 
 - **Custom Wheels "Manual setup" panel.** The GUI already installs the Tools-menu helpers and the startup task; hand-registration steps remain in `docs/standalone-tools.md`.
