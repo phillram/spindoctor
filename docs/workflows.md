@@ -271,7 +271,7 @@ spindoctor generate-config --apply
 spindoctor doctor
 ```
 
-GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, turn on **Apply changes** in the sidebar, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, turn on **Apply changes** in the sidebar, click **Start migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
@@ -427,7 +427,7 @@ End-to-end recipes for the two most common PC game tasks: adding newly installed
 
 You've installed a new game or uninstalled one and want the HyperSpin wheel to reflect the current state of the disk.
 
-> **GUI alternative:** Games tab → pick the system from the shared dropdown at the top → Step 3 **Add new PC games / refresh the wheel** → tick **Apply** → click **Scan & add new games**.
+> **GUI alternative:** Games tab → pick the system from the shared dropdown at the top → Step 3 **Add new PC games / refresh the wheel** → tick **Apply** → click **Scan and add new games**.
 
 ```bat
 :: Dry-run first — shows "would add:" for new games and "would remove (stale):" for uninstalled ones
@@ -451,7 +451,7 @@ spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media 
 
 Removing a PC game requires two steps: delete the XML entry (so the game disappears from the wheel) and delete the PCLauncher INI (so RocketLauncher stops finding it). `game remove --remove-pclauncher` does both in one command.
 
-> **GUI alternative:** Games tab → pick **PC Games** from the shared dropdown at the top → Step 1 **Manage the game wheel** → **Load Games** → select the game row → tick **Also remove PCLauncher INI (PC systems only)** → tick **Apply** → click **Remove Game**.
+> **GUI alternative:** Games tab → pick **PC Games** from the shared dropdown at the top → Step 1 **Manage the game wheel** → **Load games** → select the game row → tick **Also remove PCLauncher INI (PC systems only)** → tick **Apply** → click **Remove game**.
 
 ```bat
 :: Dry-run first

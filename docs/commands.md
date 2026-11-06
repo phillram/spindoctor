@@ -335,7 +335,7 @@ spindoctor rename --undo ~/.spindoctor/renames/rename-20260428_120000.json
 
 The plan refuses to overwrite anything already at the target name. Each apply writes a manifest with each move recorded so undo can reverse it back to the source paths.
 
-> **GUI alternative:** the **Games** tab → **Step 2 — Rename or clone a game** wraps both commands. Set the system with the shared picker at the top of the tab; the game dropdown auto-populates from that system's database. Click **↻** to refresh the list. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Rename or clone a game** wraps both commands. Set the system with the shared picker at the top of the tab; the game dropdown auto-populates from that system's database. Click **↻** to refresh the list. See [GUI walkthrough](gui.md).
 
 ### `clone`
 
@@ -416,7 +416,7 @@ Sorts all games in the wheel alphabetically. Leading articles (The, A, An) are i
 `--by description` (default) — sort by display title (`<description>` field).  
 `--by name` — sort by ROM filename instead.
 
-> **GUI alternative:** the **Games** tab → **Step 1 — Manage the game wheel** provides an equivalent table: set the system with the shared picker at the top, click **Load Games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove Game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save Order** shells out to `game save-order --apply` (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Games** tab → **Manage the game wheel** provides an equivalent table: set the system with the shared picker at the top, click **Load games**, reorder rows with **Move Up / Move Down** (or Alt+↑ / Alt+↓), or jump directly with **Jump to #**. **Remove game** prompts for confirmation and shells out to `game remove --apply`; tick **Also remove PCLauncher INI (PC systems only)** to include `--remove-pclauncher`. **Save order** shells out to `game save-order --apply` (dry-run unless Apply is ticked). See [GUI walkthrough](gui.md).
 
 #### `game save-order`
 
@@ -429,7 +429,7 @@ Saves a custom game order to the system's wheel database. The order file must co
 
 `--order-file` is required because large systems (1 000+ ROMs) exceed Windows 7's ~32 KB command-line limit when all names are passed as arguments.
 
-> **GUI:** the **Games** tab → **Save Order** button writes the current table order to a temp file and calls this command automatically.
+> **GUI:** the **Games** tab → **Save order** button writes the current table order to a temp file and calls this command automatically.
 
 ---
 
@@ -632,7 +632,7 @@ Without `--apply` the command shows the current `Application=` and the proposed 
 
 If the game folder doesn't exist under `roms_dir` (e.g. the INI was set up manually via RocketLauncherUI and the game lives elsewhere), use `--exe` to specify the full path directly. A warning is printed at the end of output when auto-detect picks a `.exe` but the existing `Application=` is already a `.ahk` or `.bat` script — the warning is duplicated so it isn't buried under candidate output.
 
-**GUI alternative:** the **Games** tab → **Step 4 — Fix a game that launches the wrong executable** has a game picker (auto-populated from the sidebar's System picker) and a ranked candidate list. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.). CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
+**GUI alternative:** the **Games** tab → **Fix a game that launches the wrong program** has a game picker (auto-populated from the sidebar's System picker) and a ranked candidate list. The system picker accepts any PCLauncher-backed system (PC Games, Taito Type X, etc.). CLI: `spindoctor pc-fix-exe <system> <game> [--exe <path>] --apply`.
 
 ### `repath-system`
 
@@ -937,7 +937,7 @@ spindoctor fav clear --apply      :: remove the Favorites wheel and empty the st
 
 `--media-mode` accepts `auto` (default — hardlink, fall back to copy), `link`, `symlink`, `copy`, or `none` (skip media mirroring).
 
-> **GUI alternative:** the **Tools** tab → **Step 4 — Manage favorites** wraps `fav add / remove / list`. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin. See [GUI walkthrough](gui.md).
+> **GUI alternative:** the **Tools** tab → **Manage favorites** wraps `fav add / remove / list`. Select a system to auto-populate the game dropdown from that system's database; click **↻** to refresh. Run Step 2 (Favorites checked) afterwards to push changes into HyperSpin. See [GUI walkthrough](gui.md).
 
 **Sync sources & speed** — `fav sync` (run automatically at the start of every `fav rebuild`) imports favorites from three places per console, in order: a `favorite="1"` attribute in the system's database XML, a `<System>_Favorites.ini` (HyperSpin F-key format), and a `favorites.txt` (RocketLauncher format). It does a fast text pre-scan and only parses a console's database when one of those sources is present, so consoles with no favorites add almost nothing to the runtime. While crawling it shows a live `Scanning <System> (i/N)…` counter; `--verbose`/`-v` prints per-console detail and (during rebuild) each media file mirrored.
 
