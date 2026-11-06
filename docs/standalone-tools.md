@@ -135,7 +135,7 @@ The scheduled task points at the VBS shim via `wscript.exe //B spindoctor-refres
 
 > **If you have an existing task registered before v2.4.11**, click *Disable auto-run* then *Enable auto-run* again. The old task used `cmd /c bat` (normal priority, visible window). Re-registering generates the new shim pair and points the task at the VBS instead.
 
-> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks.
+> **Upgrading to v3 or moving the EXE?** Re-run `install-tools` and click *Enable auto-run* again once to rewrite embedded paths. For intro-video rotation, also re-run `introvideo install-autorun --apply` (or enable it again in the GUI). Status checks flag stale tasks, and `spindoctor doctor`'s **Refresh helpers** check flags `install-tools` `.bat` files that still name the old EXE.
 
 ### Manual registration
 
