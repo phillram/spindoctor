@@ -4530,11 +4530,10 @@ def install_tools(output_dir, add_to_system, apply_changes):
             "HyperHQ → Tools.[/dim]"
         )
         console.print(
-            "[dim]Run on boot:[/dim] schedule "
-            "[cyan]spindoctor-fav rebuild --apply[/cyan] and "
-            "[cyan]spindoctor-recent rebuild --apply[/cyan] via Windows "
-            "Task Scheduler (trigger: 'At log on'), or use the GUI's "
-            "Tools tab → Auto-refresh on startup."
+            "[dim]Run on boot:[/dim] use the GUI's Custom Wheels tab → "
+            "Auto-refresh on cabinet startup → Enable auto-run, or schedule "
+            "the generated [cyan]Refresh All.bat[/cyan] via Windows Task "
+            "Scheduler (trigger: 'At log on')."
         )
         return
 

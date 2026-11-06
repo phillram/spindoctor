@@ -44,7 +44,10 @@ from .config import (
 from .database import load_database
 from .rocketlauncher import list_exe_candidates
 from ._utils import format_bytes as _format_bytes_util
-from ._runtime import TOOL_MODULES, WORKER_FLAG, dispatch_worker, ensure_worker_stdio, frozen_tool_command
+from ._runtime import (
+    TOOL_MODULES, WORKER_FLAG, dispatch_worker, ensure_worker_stdio,
+    frozen_tool_command, stop_worker,
+)
 
 
 # ─── Subprocess plumbing (importable without Tk) ──────────────────────────────
@@ -13673,14 +13676,13 @@ class _SpinDoctorGUI:
                 self._drain_after_id = None
         except Exception:  # noqa: BLE001 - after_cancel can race on destroy
             pass
-        # Terminate the child if one is still running. SIGTERM-equivalent
-        # on POSIX, TerminateProcess on Windows — either way the child
-        # gets a chance to flush stdout (the reader thread is daemonic
-        # and we don't wait, so a slow flush just drops on the floor).
+        # Stop a still-running worker so it can't keep changing files after
+        # the window is gone. The reader thread is daemonic, so any output
+        # still in flight is dropped.
         proc = getattr(self, "_proc", None)
         if proc is not None and proc.poll() is None:
             try:
-                proc.terminate()
+                stop_worker(proc, timeout=3.0)
             except (OSError, AttributeError):
                 pass
         try:
@@ -13866,10 +13868,9 @@ class _SpinDoctorGUI:
     def _stop_running(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
             return
-        try:
-            self._proc.terminate()
-        except OSError:
-            pass
+        # Off the Tk thread: stop_worker waits briefly for a one-file
+        # launcher to clean up after its worker is ended.
+        threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
         self._set_status("Stopping")
         # Disable Stop immediately so a frantic double-click doesn't
         # land on the next process before it's even spawned. The
