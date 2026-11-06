@@ -69,6 +69,16 @@ Settings that hold a mapping (`system_overrides`, `game_overrides`, `ignore_list
 | `gui_meta_auto_best` | Persisted state of the "Auto-pick best match for ambiguous results" checkbox on the Metadata & Media tab (bool, default `true`). Off makes the GUI pass `--skip-ambiguous` so ambiguous matches are logged for the next audit pass instead of auto-picking. |
 | `gui_meta_all_games` | Persisted state of the "Refresh complete entries too" checkbox (bool, default `false`). |
 | `gui_meta_no_cache` | Persisted state of the "Skip cache, hit the API every game" checkbox (bool, default `false`). |
+| `test_skip_systems` | Wheels `spindoctor test` never launches unless you name them with `--system` (list, default `[]`). Typical entries: tool wheels whose entries change system settings, light-gun wheels you test by hand. See [Command reference → test](commands.md#test). |
+| `test_skip_pclauncher` | Skip games that use PCLauncher (bool, default `true`); PC games often need a manual exit. |
+| `test_skip_custom_wheels` | Skip SpinDoctor's own Favorites / Recently Played / Most Played wheels (bool, default `true`); their games are copies from other wheels. |
+| `test_helper_processes` | Programs RocketLauncher starts that aren't the game, added to the built-in list (AutoHotkey, 7-Zip, DAEMON Tools, Xpadder, JoyToKey, DemulShooter, LEDBlinky, Steam…). `!name.exe` removes a built-in one (list, default `[]`). |
+| `test_ignore_log_errors` | Harmless RocketLauncher log `ERROR` lines, as case-insensitive substrings (list, default `["No CRC defined"]`). |
+| `test_error_window_words` | Regular expression for pop-up titles that mean something went wrong (string; blank = the built-in list: error, fail, missing, not found, exception, crash, BIOS, …). |
+| `test_game_seconds` / `test_launch_timeout` / `test_close_timeout` / `test_cooldown` | How long a game runs before it is judged (20), how long to wait for its window (90), how long to wait after the exit key (25), and the pause between games (3), in seconds. |
+| `test_per_system` | How many random games per wheel when no `--all`, `--count` or `--game` is given (default `3`). |
+| `test_screenshot_width` | Width of the screenshot saved per game, in pixels (default `480`). |
+| `test_results_dir` | Where test run folders go (blank = `%USERPROFILE%\.spindoctor\tests`). |
 
 Apply / dry-run toggles for destructive operations (backup restore, migrate, curate apply, etc.) are deliberately NOT persisted across launches — those re-arm to OFF on every GUI startup so cabinet owners always make an explicit per-run opt-in.
 

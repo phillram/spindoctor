@@ -186,6 +186,16 @@ def build_filter(system: str, clauses: Iterable[str]) -> EditFilter:
     return f
 
 
+def genre_matches(genre: Optional[str], wanted: str) -> bool:
+    """The whole genre, ignoring case; ``*`` and ``?`` wildcards are allowed
+    (``Shoot*`` matches "Shooter" and "Shooter / Flying")."""
+    have = (genre or "").strip().lower()
+    want = wanted.strip().lower()
+    if "*" in want or "?" in want:
+        return fnmatch.fnmatchcase(have, want)
+    return have == want
+
+
 def _matches(filters: EditFilter, game: GameEntry) -> bool:
     if filters.name_pattern:
         pat = filters.name_pattern
@@ -197,7 +207,7 @@ def _matches(filters: EditFilter, game: GameEntry) -> bool:
             or fnmatch.fnmatchcase(target.lower(), pat.lower())
         ):
             return False
-    if filters.genre and (game.genre or "").strip().lower() != filters.genre.lower():
+    if filters.genre and not genre_matches(game.genre, filters.genre):
         return False
     if filters.manufacturer and (
         filters.manufacturer.lower() not in (game.manufacturer or "").lower()
