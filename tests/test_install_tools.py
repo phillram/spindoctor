@@ -49,6 +49,9 @@ def test_install_tools_default_writes_bats_under_hyperlaunch_tools(cabinet):
     runner = CliRunner()
     result = runner.invoke(cli, ["install-tools"], catch_exceptions=False)
     assert result.exit_code == 0, result.output
+    assert "Custom Wheels" in result.output
+    assert "Refresh All.bat" in result.output
+    assert "Tools tab" not in result.output
 
     out_dir = (cabinet["rl"] / "Modules" / "HyperLaunch" / "Tools"
                / "spindoctor")

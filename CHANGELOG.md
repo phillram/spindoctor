@@ -14,6 +14,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Custom Wheels "Manual setup" panel.** The GUI already installs the Tools-menu helpers and the startup task; hand-registration steps remain in `docs/standalone-tools.md`.
 
+### Fixed
+
+- **Stopping or closing the standalone GUI ends its worker, not just the one-file launcher.** End the same-named worker child first so it cannot keep changing files after Stop or window close, and let the launcher clean up its temporary extraction folder. Added Windows process regression coverage and standalone smoke checks. The helper-installation message now points to the current Custom Wheels startup controls and generated refresh batch file.
+
 ## [3.0.0] - 2026-11-05
 
 ### Changed
