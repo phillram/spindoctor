@@ -2681,6 +2681,57 @@ def test_sidebar_apply_switch_is_loud_and_drives_global_apply(monkeypatch):
         app.root.destroy()
 
 
+def test_sidebar_system_picker_drives_every_section(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        calls = []
+        monkeypatch.setattr(app, "_on_games_system_change", lambda: calls.append("games"))
+        app._current_system_combo["values"] = ["MAME", "Nintendo 64"]
+        app._current_system_var.set("Nintendo 64" + gui._NOT_IN_WHEEL_SUFFIX)
+        app._push_current_system()
+        assert app._current_system_var.get() == "Nintendo 64"
+        for var_attr, _refresh in gui._SYSTEM_FOLLOWERS:
+            assert getattr(app, var_attr).get() == "Nintendo 64", var_attr
+        assert calls == ["games"]
+
+        app._curate_system_var.set("MAME")
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system(only_blank=True)
+        assert app._curate_system_var.get() == "MAME"
+    finally:
+        app.root.destroy()
+
+
+def test_repeated_controls_appear_once(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+
+        def page_buttons(name):
+            page = app._nb.nametowidget(app._nb.tabs()[app._tab_base_names.index(name)])
+            return [
+                w.cget("text") for w in descendants(page)
+                if w.winfo_class() == "TButton"
+            ]
+
+        health = [
+            name for name in app._tab_base_names
+            if "Run Health Check" in page_buttons(name)
+        ]
+        assert health == ["Diagnostics"]
+        assert page_buttons("Metadata & Media").count("Restore DB backup") == 1
+        led = page_buttons("LEDBlinky")
+        assert not any(t.endswith("Normalize Colors.ini") and not t.startswith("3b") for t in led)
+        assert "Create backup now" not in page_buttons("Migration")
+        assert "Open Backup & Restore" in page_buttons("Migration")
+        assert not hasattr(app, "_games_system_combo")
+    finally:
+        app.root.destroy()
+
+
 # ─── audit 2026-06-11: preset validity + dry-run classification ───────────────
 
 

@@ -65,6 +65,10 @@ The top of the sidebar holds three settings that apply to **every command on eve
 
 The Apply switch is always visible and changes color when it's on, so you can't miss which mode you're in before clicking a button. Save log file is a convenience copy of what the History page already keeps in memory for the session; use it when you want a durable record after the GUI closes (e.g. to attach to a bug report).
 
+### System picker
+
+The **System** dropdown in the sidebar selects a system in every section at once: Diagnostics, Systems, Games, Metadata & Media, Maintenance, Custom Wheels favorites and Lightgun. Sections with their own **System** dropdown can still pick a different system for a one-off run; the next sidebar pick resets them. The Games page has no dropdown of its own and always uses the sidebar system.
+
 ## Tab tour
 
 Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
@@ -131,9 +135,9 @@ If `Main Menu.xml` can't be parsed (file open in HyperHQ, malformed XML, truncat
 
 ![Games tab, shown with a sample cabinet](screenshots/04-games.png)
 
-Manage individual games across any system. A single **System** picker at the top of the tab drives all four steps — pick the system once and every step below operates on that selection. The tab is the central place for day-to-day game management: reordering the wheel, removing stale entries, renaming or cloning, adding freshly installed PC games, and fixing a bad executable path.
+Manage individual games across any system. The sidebar's **System** picker drives all four steps, and the page shows the selected system at the top. The tab is the central place for day-to-day game management: reordering the wheel, removing stale entries, renaming or cloning, adding freshly installed PC games, and fixing a bad executable path.
 
-**System picker:** Select any system from the dropdown. When a system named “PC Games” exists it is pre-selected (this tab is used almost exclusively for PC-game repairs); otherwise the first system alphabetically is. Changing the selection automatically clears the game-wheel table (Step 1), reloads the rename/clone game list (Step 2), and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
+**System picker:** Pick the system in the sidebar. Changing the selection automatically clears the game-wheel table (Step 1), reloads the rename/clone game list (Step 2), and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
 
 **Step 1 — Manage the game wheel:** Click **Load Games** to populate a scrollable table showing every game in that system's XML database in wheel order — position number, ROM name, and display title.
 
@@ -309,7 +313,6 @@ Treeview of all named colors (Name, R/G/B 0-48, hex).
 
 - **Add new color** — type a **New name** and a **New color** (`#RRGGBB`), then click it to append a brand-new color to `Color-RGB.ini`. It becomes available everywhere colors are picked by name (admin buttons, fill-defaults, animations). No row selection needed. CLI: `spindoctor ledblinky colors add`.
 - **Update & Rename** — select an existing row first, then edit its name and/or hex; the rename propagates through `Color-RGB.ini`, `Colors.ini`, and `LEDBlinkyControls.xml`. CLI: `spindoctor ledblinky colors edit`.
-- **Normalize Colors.ini** — shortcut for `spindoctor ledblinky colors normalize`.
 
 **Step 9 — Backup / Restore**
 
@@ -352,9 +355,9 @@ Three numbered steps walk through the full backup / restore workflow.
 
 Six numbered steps walk through the full migration workflow.
 
-**Step 1 — Current configuration:** **Show current paths** and **Run Health Check** let you verify what's configured before moving anything.
+**Step 1 — Current configuration:** **Show current paths** lets you verify what's configured before moving anything. Run the health check from Diagnostics.
 
-**Step 2 — Backup before migrating:** Create a snapshot of your current setup. Strongly recommended — if anything goes wrong you can restore from it.
+**Step 2 — Backup before migrating:** **Open Backup & Restore** jumps to the Backup & Restore page so you can snapshot your setup first. Strongly recommended — if anything goes wrong you can restore from it.
 
 **Step 3 — Migration settings:** Target root picker, component checkboxes (default: all of them — roms, hyperspin, emulators, rocketlauncher, ledblinky), an optional systems-filter Listbox for partial-roms migrations (nothing selected = migrate all), and option toggles: `--keep-source` / `--verify` / `--no-update-config` / `--preserve-names`. Click **Start Migration** to execute. Dry-run by default. CLI: `spindoctor migrate`.
 
