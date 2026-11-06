@@ -220,8 +220,8 @@ _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("Get started", ("Setup", "Diagnostics")),
     ("Library", ("Systems", "Games", "Metadata & Media", "Maintenance")),
     ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun")),
-    ("Safety", ("Backup & Restore", "Migration")),
-    ("Advanced", ("Console", "History")),
+    ("Backup & move", ("Backup & Restore", "Migration")),
+    ("Advanced", ("History", "Console")),
 )
 
 
@@ -2343,6 +2343,13 @@ class _SpinDoctorGUI:
         return header
 
     def _build_layout(self) -> None:
+        # Shared run settings. Created before the menubar, whose View menu
+        # binds Verbose / Save log / Show help text to them, and before
+        # the page builders, which register their help text.
+        self._global_apply_var = self.tk.BooleanVar(master=self.root, value=False)
+        self._global_verbose_var = self.tk.BooleanVar(master=self.root, value=False)
+        self._global_savelog_var = self.tk.BooleanVar(master=self.root, value=False)
+        self._show_help_var = self.tk.BooleanVar(master=self.root, value=False)
         self._build_menubar()
 
         # Use grid on the root so the status bar (row 1, weight=0) is
@@ -2403,8 +2410,6 @@ class _SpinDoctorGUI:
         )
 
         nb = self.ttk.Notebook(main_paned, style="Sidebar.TNotebook")
-        # Created before the page builders, which register their help text.
-        self._show_help_var = self.tk.BooleanVar(master=self.root, value=False)
         self._help_bodies: list[tuple[object, object]] = []
         self._nb = nb
 
@@ -2509,8 +2514,8 @@ class _SpinDoctorGUI:
         # (Metadata & Media), curate (Maintenance), manage cross-system
         # wheels (Custom Wheels), then peripheral hardware (LEDBlinky /
         # Lightgun), then infrastructure (Backup → Migration), and finally
-        # power-user escapes (Console) and the session log (History)
-        # at the very end.
+        # the session log (History), checked after every run, then the
+        # power-user escape hatch (Console) at the very end.
         self._add_scrollable_tab(nb, self._build_setup_tab,        "Setup")
         self._add_scrollable_tab(nb, self._build_diagnostics_tab,  "Diagnostics")
         self._add_scrollable_tab(nb, self._build_systems_tab,      "Systems")
@@ -2523,7 +2528,6 @@ class _SpinDoctorGUI:
         self._add_scrollable_tab(nb, self._build_lightgun_tab,     "Lightgun")
         self._add_scrollable_tab(nb, self._build_backup_tab,       "Backup & Restore")
         self._add_scrollable_tab(nb, self._build_migrate_tab,      "Migration")
-        self._add_scrollable_tab(nb, self._build_custom_tab,       "Console")
         # History tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
@@ -2532,6 +2536,7 @@ class _SpinDoctorGUI:
         self._build_logs_tab(history).pack(fill="both", expand=True)
         nb.add(history, text="History")
         self._tab_base_names.append("History")
+        self._add_scrollable_tab(nb, self._build_custom_tab,       "Console")
         main_paned.add(nb, weight=4)
         main_paned.add(out_frame, weight=1)
 
@@ -2590,11 +2595,6 @@ class _SpinDoctorGUI:
         if not self._output_visible:
             self._output_toggle_btn.grid(row=0, column=3, padx=(6, 0))
 
-        # Apply / Verbose / Save Log are shared by every page and live at
-        # the top of the sidebar.
-        self._global_apply_var = self.tk.BooleanVar(value=False)
-        self._global_verbose_var = self.tk.BooleanVar(value=False)
-        self._global_savelog_var = self.tk.BooleanVar(value=False)
         self._build_sidebar(nb)
 
         # Ctrl+1..9 jump to notebook tabs by 1-based index. Cabinet
@@ -2715,18 +2715,16 @@ class _SpinDoctorGUI:
             self.tk,
         )
         self._apply_hint = self._responsive_label(side, text="")
-        self._apply_hint.pack(fill="x", pady=(4, 6))
-        for label, var in (
-            ("Verbose output", self._global_verbose_var),
-            ("Save log file", self._global_savelog_var),
-            ("Show help text", self._show_help_var),
-        ):
-            self.ttk.Checkbutton(
-                side, text=label, variable=var, style="Sidebar.TCheckbutton",
-            ).pack(anchor="w")
-        self.ttk.Label(
+        self._apply_hint.pack(fill="x", pady=(4, 0))
+        # Verbose / Save log / Show help text live in the View menu. While
+        # Verbose or Save log is on, this reminder shows so it isn't
+        # forgotten; packed only while it has something to say.
+        self._run_settings_cue = self._responsive_label(side, text="")
+        self._run_settings_cue.configure(style="SidebarHintOn.TLabel")
+        self._system_heading = self.ttk.Label(
             side, text="SYSTEM", style="SidebarGroup.TLabel",
-        ).pack(anchor="w", pady=(10, 1))
+        )
+        self._system_heading.pack(anchor="w", pady=(10, 1))
         self._current_system_var = self.tk.StringVar(master=self.root, value="")
         self._current_system_combo = self.ttk.Combobox(
             side, textvariable=self._current_system_var,
@@ -2778,7 +2776,26 @@ class _SpinDoctorGUI:
         self._show_help_var.trace_add(
             "write", lambda *_a: self._apply_help_visibility(),
         )
+        for var in (self._global_verbose_var, self._global_savelog_var):
+            var.trace_add("write", lambda *_a: self._refresh_run_settings_cue())
         self._refresh_apply_toggle()
+        self._refresh_run_settings_cue()
+
+    def _refresh_run_settings_cue(self) -> None:
+        on = [
+            label for label, var in (
+                ("Verbose output", self._global_verbose_var),
+                ("Save log file", self._global_savelog_var),
+            ) if var.get()
+        ]
+        cue = self._run_settings_cue
+        if on:
+            cue.configure(text="On: " + ", ".join(on) + " (View menu)")
+            if not cue.winfo_manager():
+                cue.pack(fill="x", pady=(4, 0), before=self._system_heading)
+        else:
+            cue.configure(text="")
+            cue.pack_forget()
 
     def _push_current_system(self, *, only_blank: bool = False) -> None:
         var = getattr(self, "_current_system_var", None)
@@ -3231,6 +3248,16 @@ class _SpinDoctorGUI:
             ),
             accelerator="Ctrl+`",
         )
+        view_menu.add_separator()
+        # Shared run settings, rarely changed, so they live here rather
+        # than crowding the sidebar (which shows a reminder while Verbose
+        # or Save log is on).
+        for label, var in (
+            ("Verbose output", self._global_verbose_var),
+            ("Save log file", self._global_savelog_var),
+            ("Show help text", self._show_help_var),
+        ):
+            view_menu.add_checkbutton(label=label, variable=var)
         view_menu.add_separator()
 
         # UI-scale presets (radio group). The radio var stores the scale

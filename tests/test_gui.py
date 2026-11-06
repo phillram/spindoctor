@@ -1008,8 +1008,8 @@ def test_gui_constructs_against_real_tk():
             "Lightgun",
             "Backup & Restore",
             "Migration",
-            "Console",
             "History",
+            "Console",
         ]
         # The hoisted widgets that have crashed in past releases:
         assert app._output is not None
@@ -1304,8 +1304,8 @@ def test_gui_survives_missing_keysym_in_bind_all():
                 "Lightgun",
                 "Backup & Restore",
                 "Migration",
-                "Console",
                 "History",
+                "Console",
             ]
         finally:
             app.root.destroy()
@@ -2695,6 +2695,54 @@ def test_sidebar_apply_switch_is_loud_and_drives_global_apply(monkeypatch):
         assert bar_texts == set()
     finally:
         app.root.destroy()
+
+
+def _view_menu(app):
+    menubar = app.root.nametowidget(app.root.cget("menu"))
+    for i in range(menubar.index("end") + 1):
+        if menubar.type(i) == "cascade" and menubar.entrycget(i, "label") == "View":
+            return app.root.nametowidget(menubar.entrycget(i, "menu"))
+    raise AssertionError("no View menu")
+
+
+def test_run_settings_live_in_view_menu_with_sidebar_cue(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        # No checkbuttons left in the sidebar.
+        assert not [
+            w for w in app._sidebar.winfo_children()
+            if w.winfo_class() == "TCheckbutton"
+        ]
+        menu = _view_menu(app)
+        entries = {
+            menu.entrycget(i, "label"): str(menu.entrycget(i, "variable"))
+            for i in range(menu.index("end") + 1)
+            if menu.type(i) == "checkbutton"
+        }
+        # Same BooleanVars every command reads.
+        assert entries["Verbose output"] == str(app._global_verbose_var)
+        assert entries["Save log file"] == str(app._global_savelog_var)
+        assert entries["Show help text"] == str(app._show_help_var)
+
+        cue = app._run_settings_cue
+        assert cue.winfo_manager() == ""
+        app._global_verbose_var.set(True)
+        assert cue.winfo_manager() == "pack"
+        assert cue.cget("text") == "On: Verbose output (View menu)"
+        app._global_savelog_var.set(True)
+        assert cue.cget("text") == "On: Verbose output, Save log file (View menu)"
+        app._global_verbose_var.set(False)
+        app._global_savelog_var.set(False)
+        assert cue.winfo_manager() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_sidebar_groups_and_advanced_order():
+    titles = [title for title, _names in gui._SIDEBAR_GROUPS]
+    assert "Safety" not in titles
+    assert ("Backup & move", ("Backup & Restore", "Migration")) in gui._SIDEBAR_GROUPS
+    assert gui._SIDEBAR_GROUPS[-1] == ("Advanced", ("History", "Console"))
 
 
 def test_output_header_holds_panel_buttons(monkeypatch):
