@@ -12,6 +12,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- **Separate GUI and CLI downloads.** Each release now ships four zips: `spindoctor-gui-win10`, `spindoctor-gui-win7`, `spindoctor-cli-win10` and `spindoctor-cli-win7`, each containing one standalone EXE. The GUI is now `spindoctor.exe` and the CLI is `spindoctor-cli.exe`; neither needs the other. After upgrading, reinstall refresh helpers and re-enable auto-run tasks so saved paths point at the renamed EXE.
+- **GUI pages move to a grouped sidebar.** The 14 tabs across the top are replaced by a page list on the left, grouped as Get started, Library, Wheels & cabinet, Safety and Advanced. Page order, Ctrl+1 to Ctrl+9 and the remembered last page are unchanged. **Apply**, **Verbose** and **Save Log** move from the bottom status bar to the top of the sidebar; Apply is now a large **Apply changes: OFF / ON** switch that turns orange while changes will be written.
+- **Plainer GUI labels.** Section titles no longer carry "Step N" numbers except in Migration and the first-run wizard, where the order matters. Buttons use sentence case, symbol prefixes (▶, ✈) and CLI flags (`--all-roms`, `--overwrite-pclauncher`, `--include-proto`) are gone from labels, and LEDBlinky's MAME buttons drop their 3a/3b/3c prefixes.
+- **One System picker for the whole GUI, and fewer repeated buttons.** A **System** dropdown in the sidebar selects that system in every section; section dropdowns can still pick a different one. The Games page uses it instead of its own picker. **Run Health Check** now lives only on Diagnostics (removed from Setup and Migration), Metadata & Media has one **Restore DB backup** button, LEDBlinky has one **Normalize Colors.ini** button (in the MAME section), and Migration's backup step links to the Backup & Restore page instead of repeating its controls.
+- **Compact GUI help.** Every page starts with its title and a one-line summary. Longer explanations are hidden until you tick **Show help text** in the sidebar, which shows or hides all of them at once, and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
+
 ### Removed
 
 - **Custom Wheels "Manual setup" panel.** The GUI already installs the Tools-menu helpers and the startup task; hand-registration steps remain in `docs/standalone-tools.md`.
