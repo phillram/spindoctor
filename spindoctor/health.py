@@ -2620,6 +2620,181 @@ def check_intro_video(config: Config) -> Check:
     return parent
 
 
+@dataclass
+class _HelperFolder:
+    """A folder `install-tools` may have written its Refresh .bat helpers to."""
+
+    folder: Path
+    system: Optional[str] = None   # the --add-to-system wheel, None for the Tools menu
+    wired: bool = False            # a PCLauncher module INI section runs a .bat here
+    system_default: bool = False   # where --add-to-system writes without --output-dir
+
+
+def _rl_local_path(value: str, rl_dir: Path) -> Optional[Path]:
+    """A path from a RocketLauncher INI as a local path (a relative one from the
+    RocketLauncher folder); None for an absolute Windows path checked off Windows."""
+    from pathlib import PureWindowsPath
+
+    pw = PureWindowsPath(value)
+    if pw.drive:
+        return Path(os.path.normpath(value)) if os.name == "nt" else None
+    if os.path.isabs(value):
+        return Path(os.path.normpath(value))
+    return Path(os.path.normpath(os.path.join(str(rl_dir), *pw.parts)))
+
+
+def _install_tools_folders(rl_dir: Path) -> list[_HelperFolder]:
+    """Every folder `install-tools` writes its helpers to that can be found.
+
+    The Tools-menu default first, then for each PCLauncher system (a
+    ``Modules\\PCLauncher\\<System>.ini`` module INI or ``<System>\\`` folder)
+    the folders ``--add-to-system`` uses: those of the ``.bat`` files its
+    module INI's ``[Refresh …]`` sections run, the first ``Rom_Path`` entry of
+    ``Settings\\<System>\\Emulators.ini`` (where a run without ``--apply``
+    leaves the ``.bat`` files too) and ``Modules\\PCLauncher\\<System>\\``.
+    """
+    from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+
+    tool_sections = {n.lower() for n in _TOOLKIT_TOOL_NAMES}
+    out = [_HelperFolder(rl_dir / "Modules" / "HyperLaunch" / "Tools" / "spindoctor")]
+    pcl = rl_dir / "Modules" / "PCLauncher"
+    try:
+        with os.scandir(pcl) as it:
+            entries = sorted(it, key=lambda e: e.name.lower())
+    except OSError:
+        entries = []
+    systems: dict[str, str] = {}
+    for entry in entries:
+        if entry.is_dir():
+            systems.setdefault(entry.name.lower(), entry.name)
+        elif entry.name.lower().endswith(".ini"):
+            systems.setdefault(entry.name[:-4].lower(), entry.name[:-4])
+    for system in systems.values():
+        for name, values in _read_rl_ini(pcl / f"{system}.ini").items():
+            app = values.get("application", "")
+            if name in tool_sections and app.lower().endswith(".bat"):
+                bat = _rl_local_path(app, rl_dir)
+                if bat is not None:
+                    out.append(_HelperFolder(bat.parent, system, wired=True))
+        rom_path = next((v["rom_path"] for v in _read_rl_ini(
+            rl_dir / "Settings" / system / "Emulators.ini").values() if v.get("rom_path")), "")
+        first = rom_path.split("|")[0].strip()
+        default = _rl_local_path(first, rl_dir) if first else pcl / system
+        if default is not None:
+            out.append(_HelperFolder(default, system, system_default=True))
+        if first:
+            out.append(_HelperFolder(pcl / system, system))
+    return out
+
+
+def _bat_programs(bat: Path) -> list[str]:
+    """The quoted ``.exe`` paths a ``.bat`` file runs, in order, comments skipped.
+
+    Matches every format `install-tools` has written: v3's ``start "" /B /WAIT
+    "<exe>" --run-tool spindoctor-fav …``, the per-tool ``"<install
+    folder>\\spindoctor-fav.exe"`` of v2, with or without ``start``.  A source
+    install's helpers call bare names from PATH and have none.
+    """
+    import re
+
+    try:
+        text = _read_windows_text(bat)
+    except OSError:
+        return []
+    out: list[str] = []
+    for line in text.splitlines():
+        s = line.strip().lstrip("@").strip()
+        low = s.lower()
+        if low.startswith("::") or low == "rem" or low.startswith(("rem ", "rem\t")):
+            continue
+        for exe in re.findall(r'"([^"]+?\.exe)"', s, flags=re.IGNORECASE):
+            if exe not in out:
+                out.append(exe)
+    return out
+
+
+def check_refresh_helpers(config: Config) -> Check:
+    """Do the Refresh .bat helpers `install-tools` wrote still find SpinDoctor?
+
+    They run SpinDoctor by full path: v3 ``"<the EXE that ran install-tools>"
+    --run-tool spindoctor-fav …``, v2 ``"<install folder>\\spindoctor-fav.exe"``.
+    Portable installs unzip each release into a new folder, so once the old
+    one is gone every helper fails, from the Tools menu, a Toolkit wheel or a
+    scheduled task, and the wheels stop refreshing while nothing else looks
+    wrong.  Re-running `install-tools` the same way rewrites them.  Reads only
+    the ``.bat`` files and RocketLauncher INIs; diagnosis only.
+    """
+    if not config.rocketlauncher_dir:
+        return Check(name="Refresh helpers", status=Status.INFO,
+                     detail="rocketlauncher_dir not set; skipping")
+    from pathlib import PureWindowsPath
+
+    from .rocketlauncher import _TOOLKIT_TOOL_NAMES
+
+    # One row per folder; what two finds of the same wheel's folder say is merged.
+    merged: dict[str, _HelperFolder] = {}
+    for hf in _install_tools_folders(Path(config.rocketlauncher_dir)):
+        key = os.path.normcase(os.path.normpath(str(hf.folder)))
+        first = merged.setdefault(key, hf)
+        if first is not hf and first.system is not None and first.system.lower() == (hf.system or "").lower():
+            first.wired |= hf.wired
+            first.system_default |= hf.system_default
+    parent = Check(name="Refresh helpers", status=Status.OK)
+    for hf in merged.values():
+        bats = [hf.folder / f"{stem}.bat" for stem in sorted(_TOOLKIT_TOOL_NAMES)
+                if (hf.folder / f"{stem}.bat").is_file()]
+        if not bats:
+            continue
+        missing: list[str] = []
+        present: list[str] = []
+        broken = 0
+        for bat in bats:
+            bad = False
+            for exe in _bat_programs(bat):
+                if "%" in exe:
+                    continue  # an environment variable: can't be checked here
+                if not PureWindowsPath(exe).drive and not os.path.isabs(exe):
+                    exe = os.path.normpath(os.path.join(str(bat.parent), exe))
+                exists = _pc_app_exists(exe)
+                if exists is False:
+                    bad = True
+                    if exe not in missing:
+                        missing.append(exe)
+                elif exists and exe not in present:
+                    present.append(exe)
+            broken += bad
+        name = hf.system or "Tools menu"
+        where = f"{len(bats)} helper(s) in {hf.folder}"
+        if missing:
+            # Re-run install-tools the way it was run: same folder, same wheel.
+            fix = "spindoctor install-tools"
+            if hf.system is not None:
+                if not hf.system_default:
+                    fix += f' --output-dir "{hf.folder}"'
+                fix += f' --add-to-system "{hf.system}"' + (" --apply" if hf.wired else "")
+            if len(missing) == 1:
+                detail = f"{broken} of {where} run {missing[0]}, which no longer exists"
+            else:
+                detail = (f"{broken} of {where} run programs that no longer exist "
+                          f"({missing[0]} and {len(missing) - 1} more)")
+            parent.children.append(Check(name=name, status=Status.WARN, detail=detail, fix=fix))
+        elif present:
+            more = f" and {len(present) - 1} more" if len(present) > 1 else ""
+            parent.children.append(Check(
+                name=name, status=Status.OK, detail=f"{where} run {present[0]}{more}",
+            ))
+        else:
+            parent.children.append(Check(
+                name=name, status=Status.INFO,
+                detail=f"{where} run no program that can be checked here (commands from PATH)",
+            ))
+    if not parent.children:
+        return Check(name="Refresh helpers", status=Status.INFO,
+                     detail="no install-tools helpers found (optional)")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_orphan_media(config: Config) -> Check:
     """Report leftover media files with no matching game (disk bloat).
 
@@ -2697,6 +2872,7 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("LEDBlinky", lambda: check_ledblinky(config))
     _safe("LED coverage", lambda: check_led_coverage(config))
     _safe("Intro video", lambda: check_intro_video(config))
+    _safe("Refresh helpers", lambda: check_refresh_helpers(config))
     _safe("Orphan media", lambda: check_orphan_media(config))
     _safe("Metadata APIs", lambda: check_api_creds(config))
     _safe("Media folders", lambda: check_media_skeletons(config, fix, report.fixes_applied))

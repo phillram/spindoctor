@@ -698,6 +698,29 @@ name.
 to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
 the old name. Back up the XML first.
 
+### Refresh All (or Refresh Favorites) does nothing after upgrading SpinDoctor
+
+Running a Refresh helper from HyperSpin's Tools menu or a Toolkit wheel no
+longer rebuilds Favorites, Recently Played or Most Played, and a scheduled task
+that runs `Refresh All.bat` fails silently. Every other `doctor` check passes.
+
+**Cause:** `install-tools` writes the helpers with the full path of the
+SpinDoctor EXE that ran it, for example `start "" /B /WAIT
+"D:\Tools\spindoctor-win10-v3.0.0\spindoctor.exe" --run-tool spindoctor-fav
+rebuild --apply` (v2 named `spindoctor-fav.exe` in its install folder).
+Portable releases unzip into a folder of their own, so once the old folder is
+removed the helpers run a program that isn't there.
+
+**Find it:** run `spindoctor doctor`. Its **Refresh helpers** check lists each
+folder whose helpers run a program that no longer exists, with the
+`install-tools` command that rewrites them on its `fix:` line.
+
+**Fix:** re-run `install-tools` from the new install, the way it was first
+run: `spindoctor install-tools` for the Tools menu, or
+`spindoctor install-tools --add-to-system Toolkit --apply` for a Toolkit wheel
+(with `--output-dir <folder>` if one was used). Keeping SpinDoctor in a folder
+whose name has no version number avoids this on later upgrades.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"

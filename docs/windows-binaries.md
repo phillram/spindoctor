@@ -167,7 +167,7 @@ Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, 
 
 v3 ships only `spindoctor.exe` and `spindoctor-cli.exe`; each works alone. Separate wheel-builder EXEs are no longer shipped. Update external scripts to use `--run-tool` (pip console-script names are unchanged); custom builds can use `build_windows.py --legacy-tools` for old scripts.
 
-After upgrading to a new folder or EXE path, re-run `install-tools`, click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks.
+After upgrading to a new folder or EXE path, re-run `install-tools`, click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks, and `spindoctor doctor`'s **Refresh helpers** check flags `install-tools` `.bat` files that still name the old EXE.
 
 ## Troubleshooting
 
