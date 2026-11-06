@@ -80,7 +80,7 @@ The smoke test copies each EXE alone into an empty folder with a stripped `PATH`
 2. Installs runtime extras + PyInstaller 5.x (`requirements-build.txt`).
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each binary.
-5. Packages `spindoctor-gui-win7-<tag>.zip` and `spindoctor-cli-win7-<tag>.zip` via `build/package_windows.py` (one EXE per zip).
+5. Packages `spindoctor-gui-win7.zip` and `spindoctor-cli-win7.zip` via `build/package_windows.py` (one EXE per zip).
 6. Uploads as a workflow artifact.
 
 **`build-modern`** — Python 3.12 + PyInstaller 6.x:
@@ -88,7 +88,7 @@ The smoke test copies each EXE alone into an empty folder with a stripped `PATH`
 2. Installs runtime extras + PyInstaller 6.x (`requirements-build-modern.txt`).
 3. Runs `python build/build_windows.py --modern`.
 4. Smoke-tests each binary from `dist\spindoctor-win10\`.
-5. Packages `spindoctor-gui-win10-<tag>.zip` and `spindoctor-cli-win10-<tag>.zip` (one EXE per zip).
+5. Packages `spindoctor-gui-win10.zip` and `spindoctor-cli-win10.zip` (one EXE per zip).
 6. Uploads as a workflow artifact.
 
 **`publish`** — runs after both builds succeed (tag push only):

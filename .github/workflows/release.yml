@@ -7,10 +7,6 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      tag:
-        description: 'Tag to build (no release published)'
-        required: false
 
 permissions:
   contents: write       # create the GitHub Release and upload assets
@@ -50,20 +46,8 @@ jobs:
       - name: Smoke-test standalone binaries
         run: python build/smoke_standalone.py dist
 
-      - name: Resolve release tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ github.event.inputs.tag || 'manual' }}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Package separate Win7 downloads
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: python build/package_windows.py dist --platform win7 --tag "$env:RELEASE_TAG"
+        run: python build/package_windows.py dist --platform win7
 
       - name: Generate SHA256 checksums (Win7)
         shell: bash
@@ -76,14 +60,14 @@ jobs:
         continue-on-error: true
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
-          subject-path: 'artifacts/spindoctor-*-win7-${{ steps.tag.outputs.tag }}.zip'
+          subject-path: 'artifacts/spindoctor-*-win7.zip'
 
       - name: Upload Win7 artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: win7-bundle
           path: |
-            artifacts/spindoctor-*-win7-${{ steps.tag.outputs.tag }}.zip
+            artifacts/spindoctor-*-win7.zip
             artifacts/SHA256SUMS-win7.txt
           retention-days: 30
 
@@ -117,20 +101,8 @@ jobs:
       - name: Smoke-test standalone binaries
         run: python build/smoke_standalone.py dist/spindoctor-win10
 
-      - name: Resolve release tag
-        id: tag
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" = "push" ]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag=${{ github.event.inputs.tag || 'manual' }}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Package separate modern downloads
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: python build/package_windows.py dist/spindoctor-win10 --platform win10 --tag "$env:RELEASE_TAG"
+        run: python build/package_windows.py dist/spindoctor-win10 --platform win10
 
       - name: Generate SHA256 checksums (modern)
         shell: bash
@@ -143,14 +115,14 @@ jobs:
         continue-on-error: true
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
         with:
-          subject-path: 'artifacts/spindoctor-*-win10-${{ steps.tag.outputs.tag }}.zip'
+          subject-path: 'artifacts/spindoctor-*-win10.zip'
 
       - name: Upload modern artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: modern-bundle
           path: |
-            artifacts/spindoctor-*-win10-${{ steps.tag.outputs.tag }}.zip
+            artifacts/spindoctor-*-win10.zip
             artifacts/SHA256SUMS-modern.txt
           retention-days: 30
 
@@ -199,8 +171,8 @@ jobs:
             echo
             echo "| Edition | Windows 10/11 | Windows 7 SP1+ |"
             echo "|---|---|---|"
-            echo "| **GUI** (double-click) | \`spindoctor-gui-win10-${{ github.ref_name }}.zip\` | \`spindoctor-gui-win7-${{ github.ref_name }}.zip\` |"
-            echo "| **CLI** (terminal) | \`spindoctor-cli-win10-${{ github.ref_name }}.zip\` | \`spindoctor-cli-win7-${{ github.ref_name }}.zip\` |"
+            echo "| **GUI** (double-click) | \`spindoctor-gui-win10.zip\` | \`spindoctor-gui-win7.zip\` |"
+            echo "| **CLI** (terminal) | \`spindoctor-cli-win10.zip\` | \`spindoctor-cli-win7.zip\` |"
             echo
             echo "The GUI download contains \`spindoctor.exe\`; the CLI contains \`spindoctor-cli.exe\`. Neither needs the other, Python, helper EXEs or a media folder."
             echo
@@ -240,8 +212,8 @@ jobs:
           generate_release_notes: true
           body_path: release-notes.md
           files: |
-            artifacts/spindoctor-gui-win7-${{ github.ref_name }}.zip
-            artifacts/spindoctor-cli-win7-${{ github.ref_name }}.zip
-            artifacts/spindoctor-gui-win10-${{ github.ref_name }}.zip
-            artifacts/spindoctor-cli-win10-${{ github.ref_name }}.zip
+            artifacts/spindoctor-gui-win7.zip
+            artifacts/spindoctor-cli-win7.zip
+            artifacts/spindoctor-gui-win10.zip
+            artifacts/spindoctor-cli-win10.zip
             artifacts/SHA256SUMS.txt
