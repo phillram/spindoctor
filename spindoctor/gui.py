@@ -17,7 +17,7 @@ Run via:
 
     spindoctor-gui                 # console-script entry point
     python -m spindoctor.gui       # module form
-    spindoctor-gui.exe             # frozen Windows binary
+    spindoctor.exe                 # frozen Windows GUI binary
 """
 from __future__ import annotations
 
@@ -44,7 +44,10 @@ from .config import (
 from .database import load_database
 from .rocketlauncher import list_exe_candidates
 from ._utils import format_bytes as _format_bytes_util
-from ._runtime import TOOL_MODULES, WORKER_FLAG, dispatch_worker, ensure_worker_stdio, frozen_tool_command
+from ._runtime import (
+    TOOL_MODULES, WORKER_FLAG, dispatch_worker, ensure_worker_stdio,
+    frozen_tool_command, stop_worker,
+)
 
 
 # ─── Subprocess plumbing (importable without Tk) ──────────────────────────────
@@ -12234,41 +12237,6 @@ class _SpinDoctorGUI:
                 text="Automatic startup refresh is available on Windows only.",
             ).pack(fill="x", padx=6, pady=(2, 6))
 
-        # Manual fallback instructions
-        manual_frame = self.ttk.LabelFrame(
-            helpers_lf, text="Manual setup (if you'd rather do it yourself)",
-        )
-        manual_frame.pack(fill="x", padx=6, pady=(2, 8))
-        self.ttk.Label(
-            manual_frame,
-            text=(
-                "HyperHQ → Tools menu:\n"
-                "  1. Open HyperHQ.exe (sits next to HyperSpin.exe).\n"
-                "  2. Go to the Tools tab.\n"
-                "  3. Click Add and point each entry at the matching .bat\n"
-                "     under <rocketlauncher>/Modules/HyperLaunch/Tools/spindoctor.\n"
-                "  4. Save. The helpers appear in HyperSpin's in-cabinet Tools menu.\n"
-                "\n"
-                "Windows Task Scheduler (manual):\n"
-                "  Use the 'Enable auto-run' button above — it writes\n"
-                "  both a launcher .bat (with IDLE process priority so HyperSpin\n"
-                "  is never starved) and a hidden-run .vbs shim so no cmd.exe\n"
-                "  window surfaces on the cabinet screen.\n"
-                "\n"
-                "  If you need to register the task by hand instead:\n"
-                "  1. Win+R → 'taskschd.msc'.\n"
-                "  2. Action → Create Task → name: 'SpinDoctor Refresh Wheels'.\n"
-                "  3. Triggers → New → Begin: 'At log on' → Delay: 2 minutes.\n"
-                "  4. Actions → New → Program: wscript.exe\n"
-                "     Arguments: //B \"<path>\\spindoctor-refresh-wheels.vbs\"\n"
-                "     (generate the .bat/.vbs pair first with 'Enable auto-run',\n"
-                "      then remove and re-register by hand if needed)\n"
-                "  5. Settings → uncheck 'Stop the task if it runs longer than'."
-            ),
-            justify="left", foreground=_FG_DIM,
-            font="TkFixedFont",
-        ).pack(anchor="w", padx=6, pady=(2, 6))
-
         # ── Scrub wheel data ───────────────────────────────────────────────────
         scrub_lf = self.ttk.LabelFrame(frame, text="Reset wheel data (scrub)")
         scrub_lf.pack(fill="x", pady=(0, 8))
@@ -13403,14 +13371,13 @@ class _SpinDoctorGUI:
                 self._drain_after_id = None
         except Exception:  # noqa: BLE001 - after_cancel can race on destroy
             pass
-        # Terminate the child if one is still running. SIGTERM-equivalent
-        # on POSIX, TerminateProcess on Windows — either way the child
-        # gets a chance to flush stdout (the reader thread is daemonic
-        # and we don't wait, so a slow flush just drops on the floor).
+        # Stop a still-running worker so it can't keep changing files after
+        # the window is gone. The reader thread is daemonic, so any output
+        # still in flight is dropped.
         proc = getattr(self, "_proc", None)
         if proc is not None and proc.poll() is None:
             try:
-                proc.terminate()
+                stop_worker(proc, timeout=3.0)
             except (OSError, AttributeError):
                 pass
         try:
@@ -13596,10 +13563,9 @@ class _SpinDoctorGUI:
     def _stop_running(self) -> None:
         if self._proc is None or self._proc.poll() is not None:
             return
-        try:
-            self._proc.terminate()
-        except OSError:
-            pass
+        # Off the Tk thread: stop_worker waits briefly for a one-file
+        # launcher to clean up after its worker is ended.
+        threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
         self._set_status("Stopping")
         # Disable Stop immediately so a frantic double-click doesn't
         # land on the next process before it's even spawned. The

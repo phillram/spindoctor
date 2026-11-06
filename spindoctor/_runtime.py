@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import traceback
 from typing import Optional, Sequence
@@ -73,6 +74,94 @@ def _windows_stream(handle_id: int, mode: str):
     except (OSError, ValueError):
         os.close(fd)
         raise
+
+
+def _child_pids(pid: int, exe_name: str) -> list[int]:
+    """Direct children of *pid* whose executable file name is *exe_name*."""
+    import ctypes
+    from ctypes import wintypes
+
+    class PROCESSENTRY32W(ctypes.Structure):
+        _fields_ = [
+            ("dwSize", wintypes.DWORD), ("cntUsage", wintypes.DWORD),
+            ("th32ProcessID", wintypes.DWORD), ("th32DefaultHeapID", ctypes.c_size_t),
+            ("th32ModuleID", wintypes.DWORD), ("cntThreads", wintypes.DWORD),
+            ("th32ParentProcessID", wintypes.DWORD), ("pcPriClassBase", ctypes.c_long),
+            ("dwFlags", wintypes.DWORD), ("szExeFile", ctypes.c_wchar * 260),
+        ]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32W)]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    snapshot = kernel.CreateToolhelp32Snapshot(2, 0)  # TH32CS_SNAPPROCESS
+    if snapshot in (None, ctypes.c_void_p(-1).value):
+        return []
+    try:
+        entry = PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(entry)
+        found = []
+        ok = kernel.Process32FirstW(snapshot, ctypes.byref(entry))
+        while ok:
+            if (entry.th32ParentProcessID == pid and entry.th32ProcessID != pid
+                    and entry.szExeFile.lower() == exe_name.lower()):
+                found.append(entry.th32ProcessID)
+            ok = kernel.Process32NextW(snapshot, ctypes.byref(entry))
+        return found
+    finally:
+        kernel.CloseHandle(snapshot)
+
+
+def _terminate_pid(pid: int) -> None:
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.TerminateProcess.argtypes = [wintypes.HANDLE, wintypes.UINT]
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel.OpenProcess(1, False, pid)  # PROCESS_TERMINATE
+    if handle:
+        try:
+            kernel.TerminateProcess(handle, 1)
+        finally:
+            kernel.CloseHandle(handle)
+
+
+def stop_worker(proc, timeout: float = 5.0) -> None:
+    """Stop *proc*, including the real process behind a one-file launcher.
+
+    A PyInstaller one-file EXE is a launcher that runs the program in a child
+    process with the same file name. Terminating only the launcher leaves that
+    child running, still changing files. Ending the child first lets the
+    launcher exit by itself and delete its temporary extraction folder.
+    """
+    if proc.poll() is not None:
+        return
+    if sys.platform == "win32":
+        exe_name = os.path.basename(str(getattr(proc, "args", [""])[0]))
+        try:
+            children = _child_pids(proc.pid, exe_name) if exe_name else []
+        except OSError:
+            children = []
+        for pid in children:
+            try:
+                _terminate_pid(pid)
+            except OSError:
+                pass
+        if children:
+            try:
+                proc.wait(timeout)
+                return
+            except subprocess.TimeoutExpired:
+                pass
+    try:
+        proc.terminate()
+    except OSError:
+        pass
 
 
 def ensure_worker_stdio() -> None:

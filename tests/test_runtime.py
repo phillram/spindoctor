@@ -128,3 +128,64 @@ def test_worker_restores_output_when_python_streams_are_none():
     assert result.returncode == 0
     if sys.platform == "win32":
         assert "version" in result.stdout
+
+
+class _FakeProc:
+    def __init__(self, args, running=True):
+        self.args, self.pid, self._running = args, 4321, running
+        self.terminated = self.waited = False
+
+    def poll(self):
+        return None if self._running else 0
+
+    def wait(self, timeout=None):
+        self.waited = True
+        self._running = False
+        return 1
+
+    def terminate(self):
+        self.terminated = True
+
+
+def test_stop_worker_ends_one_file_child_before_launcher(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    seen = {}
+    monkeypatch.setattr(_runtime, "_child_pids", lambda pid, name: seen.update(pid=pid, name=name) or [99])
+    killed = []
+    monkeypatch.setattr(_runtime, "_terminate_pid", killed.append)
+    proc = _FakeProc(["C:/Apps/spindoctor-gui.exe", "--run-tool", "spindoctor"])
+    _runtime.stop_worker(proc)
+    assert seen == {"pid": 4321, "name": "spindoctor-gui.exe"}
+    assert killed == [99] and proc.waited and not proc.terminated
+
+
+def test_stop_worker_without_child_terminates_directly(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(_runtime, "_child_pids", lambda pid, name: [])
+    proc = _FakeProc(["spindoctor.exe", "doctor"])
+    _runtime.stop_worker(proc)
+    assert proc.terminated
+
+
+def test_stop_worker_ignores_finished_process():
+    proc = _FakeProc(["x"], running=False)
+    _runtime.stop_worker(proc)
+    assert not proc.terminated
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows process snapshot")
+def test_stop_worker_leaves_no_same_named_child():
+    """Real process: a venv python.exe is itself a launcher with a python.exe child."""
+    import os
+    import time
+
+    proc = subprocess.Popen(
+        [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(120)"],
+        stdout=subprocess.PIPE, text=True,
+    )
+    assert proc.stdout.readline().strip() == "ready"
+    _runtime.stop_worker(proc, timeout=20)
+    proc.wait(timeout=20)
+    assert proc.poll() is not None
+    time.sleep(0.5)
+    assert _runtime._child_pids(proc.pid, os.path.basename(sys.executable)) == []

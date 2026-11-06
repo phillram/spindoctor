@@ -21,8 +21,8 @@ ASSETS_DIR = ROOT / "spindoctor" / "assets"
 
 # (entry point, executable name, windowed?)
 TARGETS = [
-    ("spindoctor._runtime:cli_main", "spindoctor", False),
-    ("spindoctor.gui:main", "spindoctor-gui", True),
+    ("spindoctor._runtime:cli_main", "spindoctor-cli", False),
+    ("spindoctor.gui:main", "spindoctor", True),
 ]
 # Optional compatibility outputs for existing external scripts. Neither the
 # GUI nor CLI requires these. New generated tasks invoke embedded workers.
@@ -39,8 +39,8 @@ _CORE_CLI = _CORE_BASE + [
     "lxml._elementpath", "lxml.etree", "PIL.Image", "py7zr", "rarfile",
 ]
 HIDDEN_IMPORTS = {
-    "spindoctor": _CORE_CLI,
-    "spindoctor-gui": _CORE_CLI + ["spindoctor.gui", "tkinterdnd2"],
+    "spindoctor-cli": _CORE_CLI,
+    "spindoctor": _CORE_CLI + ["spindoctor.gui", "tkinterdnd2"],
     "spindoctor-fav": _CORE_BASE + ["spindoctor.favorites"],
     "spindoctor-recent": _CORE_BASE + ["spindoctor.recent"],
     "spindoctor-stats": _CORE_BASE + ["spindoctor.playtime"],
@@ -49,8 +49,8 @@ _STANDALONE_NAMES = {name for _, name, _ in LEGACY_TARGETS}
 _STANDALONE_EXCLUDES = ["lxml", "click", "rich", "tkinter", "_tkinter", "PIL", "tkinterdnd2"]
 
 _MEDIA_WHEEL = {
+    "spindoctor-cli": None,
     "spindoctor": None,
-    "spindoctor-gui": None,
     "spindoctor-fav": "Favorites",
     "spindoctor-recent": "Recently_Played",
     "spindoctor-stats": "Most_Played",
