@@ -56,7 +56,7 @@ def bw(tmp_path, monkeypatch):
 class TestIterBundleAssets:
 
     @pytest.mark.parametrize(
-        "name", ["spindoctor", "spindoctor-gui", "spindoctor-fav",
+        "name", ["spindoctor-cli", "spindoctor", "spindoctor-fav",
                  "spindoctor-recent", "spindoctor-stats"]
     )
     def test_never_bundles_the_archive_directory(self, bw, name):
@@ -67,7 +67,7 @@ class TestIterBundleAssets:
             f"{name}: archive/ directory must never be bundled"
 
     def test_full_cli_gets_all_media(self, bw):
-        names = {p.name for p in bw.iter_bundle_assets("spindoctor")}
+        names = {p.name for p in bw.iter_bundle_assets("spindoctor-cli")}
         assert names == {
             "icon.ico", "bg_Favorites.png", "bg_Recently_Played.png",
             "music_Favorites.mp3", "navigate_sound.mp3", "theme_blank.zip",
@@ -92,7 +92,7 @@ class TestIterBundleAssets:
         assert names == {"icon.ico", "navigate_sound.mp3", "theme_blank.zip"}
 
     def test_standalone_gui_embeds_all_media(self, bw):
-        assert bw.iter_bundle_assets("spindoctor-gui") == bw.iter_bundle_assets("spindoctor")
+        assert bw.iter_bundle_assets("spindoctor") == bw.iter_bundle_assets("spindoctor-cli")
 
 
 class TestRunPyinstaller:
@@ -105,8 +105,8 @@ class TestRunPyinstaller:
         return captured[0]
 
     @pytest.mark.parametrize("_entry,name,windowed", [
-        ("spindoctor._runtime:cli_main", "spindoctor", False),
-        ("spindoctor.gui:main", "spindoctor-gui", True),
+        ("spindoctor._runtime:cli_main", "spindoctor-cli", False),
+        ("spindoctor.gui:main", "spindoctor", True),
     ])
     def test_targets_are_independent_onefile_builds(
         self, bw, monkeypatch, tmp_path, _entry, name, windowed,
@@ -120,7 +120,7 @@ class TestRunPyinstaller:
         assert len(added) == len(bw.iter_bundle_assets(name))
 
     def test_gui_bundles_embedded_workers(self, bw, monkeypatch, tmp_path):
-        cmd = self._command(bw, monkeypatch, tmp_path, "spindoctor-gui", True)
+        cmd = self._command(bw, monkeypatch, tmp_path, "spindoctor", True)
         hidden = {cmd[i + 1] for i, arg in enumerate(cmd) if arg == "--hidden-import"}
         assert {
             "spindoctor._runtime", "spindoctor.cli", "spindoctor.favorites",
@@ -128,4 +128,46 @@ class TestRunPyinstaller:
         } <= hidden
 
     def test_default_targets_are_only_gui_and_cli(self, bw):
-        assert [name for _, name, _ in bw.TARGETS] == ["spindoctor", "spindoctor-gui"]
+        assert [name for _, name, _ in bw.TARGETS] == ["spindoctor-cli", "spindoctor"]
+
+
+@pytest.mark.parametrize("platform", ["win7", "win10"])
+def test_release_archives_contain_only_the_selected_executable(tmp_path, platform):
+    from zipfile import ZipFile
+
+    spec = importlib.util.spec_from_file_location(
+        "package_windows", _MODULE_PATH.with_name("package_windows.py"),
+    )
+    packaging = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(packaging)
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    for name in ("spindoctor.exe", "spindoctor-cli.exe", "spindoctor-gui.exe", "stale-helper.exe"):
+        (dist / name).write_bytes(name.encode())
+    (dist / "_internal").mkdir()
+    archives = packaging.package_windows(dist, tmp_path / "artifacts", platform, "v3.0.1")
+    assert [p.name for p in archives] == [
+        f"spindoctor-gui-{platform}-v3.0.1.zip",
+        f"spindoctor-cli-{platform}-v3.0.1.zip",
+    ]
+    for archive, executable in zip(archives, ("spindoctor.exe", "spindoctor-cli.exe")):
+        with ZipFile(archive) as bundle:
+            assert bundle.namelist() == [executable]
+            assert bundle.read(executable) == executable.encode()
+
+
+def test_release_packaging_requires_both_executables_before_writing(tmp_path):
+    spec = importlib.util.spec_from_file_location(
+        "package_windows", _MODULE_PATH.with_name("package_windows.py"),
+    )
+    packaging = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(packaging)
+    (tmp_path / "spindoctor.exe").write_bytes(b"gui")
+    output = tmp_path / "artifacts"
+    with pytest.raises(FileNotFoundError):
+        packaging.package_windows(tmp_path, output, "win7", "v3.0.1")
+    assert not output.exists()
+    with pytest.raises(ValueError):
+        packaging.package_windows(tmp_path, output, "win7", "../bad")
+    with pytest.raises(ValueError):
+        packaging.package_windows(tmp_path, output, "other", "v3.0.1")
