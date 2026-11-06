@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-11-05
+
 ### Changed
 
 - **Breaking (v3): the Windows GUI and CLI are each one standalone EXE.** Both the Win7 and the Windows 10/11 bundles now contain only `spindoctor-gui.exe` and `spindoctor.exe`, single-file builds that each include every command (the CLI and the Favorites, Recently Played and Most Played builders) and all bundled wheel media. Either one can be copied anywhere on its own: no sibling EXEs, no `_internal/` runtime folder and no media folder. The GUI runs commands by starting itself in worker mode (`spindoctor-gui.exe --run-tool spindoctor ...`), so it can never pick up a stale helper EXE from an older release; output, progress and exit codes reach the GUI as before. `spindoctor-fav.exe`, `spindoctor-recent.exe` and `spindoctor-stats.exe` are no longer shipped; use `spindoctor.exe --run-tool spindoctor-fav ...` (or `build_windows.py --legacy-tools` to build them). The `install-tools` refresh `.bat` files, the GUI's scheduled wheel refresh and the intro-video logon task call the running EXE with `--run-tool` and wait for it, so they work when only the GUI is installed. After upgrading, re-run `install-tools`, re-click **Enable auto-run** and re-run `introvideo install-autorun --apply` once; the GUI and `introvideo` status already report the old tasks as stale. pip installs are unchanged. Bundled PNG art is losslessly recompressed (710 KB smaller, identical pixels). Covered by `tests/test_runtime.py`, `tests/test_build_windows.py` and `build/smoke_standalone.py`, which CI and the release workflow run against each EXE alone in an empty folder.
@@ -2361,7 +2363,8 @@ First public release. SpinDoctor is a command-line librarian for [HyperSpin](htt
 - `fetch-media` theme / fade / sound coverage is sparse — these come from ScreenScraper only. For EmuMovies-style theme packs, drop the files into a folder and use `media-scan --apply`.
 - ScreenScraper free tier is rate-limited to 500 requests/day.
 
-[Unreleased]: https://github.com/phillram/spindoctor/compare/v2.15.0...HEAD
+[Unreleased]: https://github.com/phillram/spindoctor/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/phillram/spindoctor/compare/v2.15.0...v3.0.0
 [2.15.0]: https://github.com/phillram/spindoctor/compare/v2.14.0...v2.15.0
 [2.14.0]: https://github.com/phillram/spindoctor/compare/v2.13.0...v2.14.0
 [2.13.0]: https://github.com/phillram/spindoctor/compare/v2.12.0...v2.13.0
