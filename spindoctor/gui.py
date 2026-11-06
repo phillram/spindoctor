@@ -193,6 +193,24 @@ _SYSTEM_FOLLOWERS: tuple[tuple[str, str], ...] = (
     ("_repath_system_var", ""),
     ("_lg_system_var", ""),
 )
+# One-line description shown under each page's title.
+_PAGE_SUMMARIES = {
+    "Setup": "Tell SpinDoctor where your HyperSpin, ROM and emulator folders are.",
+    "Diagnostics": "Check your cabinet and library for problems. Nothing on this page changes files.",
+    "Systems": "Add, sort and organize the systems on the HyperSpin main menu.",
+    "Games": "Reorder, rename, clone and fix the games in one system.",
+    "Metadata & Media": "Download game info and artwork, import local media, and keep databases in sync with your ROMs.",
+    "Maintenance": "Remove duplicate games, clear caches and manage the ignore list.",
+    "Custom Wheels": "Build and refresh the Favorites, Recently Played and Most Played wheels.",
+    "Intro Video": "Choose which intro videos HyperSpin plays at startup.",
+    "LEDBlinky": "Set up LEDBlinky and manage button colors, brightness and animations.",
+    "Lightgun": "Find your lightgun software and set up systems to use it.",
+    "Backup & Restore": "Back up your setup, or restore it from an earlier backup.",
+    "Migration": "Move your library to a new drive. Work through the steps in order.",
+    "Console": "Run any SpinDoctor command by typing it.",
+    "History": "Every command run this session, with its full output.",
+}
+
 # Sidebar pages follow notebook order, so Ctrl+1..9 and the saved
 # gui_last_active_tab index keep pointing at the same pages.
 _SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
@@ -1387,6 +1405,8 @@ class _SpinDoctorGUI:
     def _configure_sidebar_styles(self) -> None:
         s = self._ttk_style
         s.configure("Sidebar.TFrame", background=_DARK_BG_RAISE)
+        s.configure("PageTitle.TLabel", font=("TkHeadingFont", 14, "bold"))
+        s.configure("Help.TLabel", foreground=_FG_DIM)
         s.configure("SidebarGroup.TLabel", background=_DARK_BG_RAISE,
                     foreground=_FG_DIMMER, font="TkSmallCaptionFont")
         s.configure("SidebarHint.TLabel", background=_DARK_BG_RAISE,
@@ -2275,23 +2295,45 @@ class _SpinDoctorGUI:
         return label
 
     def _help_text(self, parent, *, text):
-        """Optional, keyboard-accessible guidance, collapsed on every launch."""
+        """Optional guidance, shown or hidden together by the sidebar's Show help."""
         frame = self.ttk.Frame(parent)
         body = self._responsive_label(frame, text=text)
-        expanded = False
-
-        def toggle():
-            nonlocal expanded
-            expanded = not expanded
-            button.configure(text="Hide help" if expanded else "Show help")
-            if expanded:
-                body.pack(fill="x", pady=(2, 4))
-            else:
-                body.pack_forget()
-
-        button = self.ttk.Button(frame, text="Show help", command=toggle)
-        button.pack(anchor="w")
+        body.configure(style="Help.TLabel")
+        self._help_bodies.append((frame, body))
+        self._set_help_body_visible(frame, body, self._show_help_var.get())
         return frame
+
+    @staticmethod
+    def _set_help_body_visible(frame, body, visible: bool) -> None:
+        if visible:
+            body.pack(fill="x", pady=(0, 4))
+        else:
+            body.pack_forget()
+            # pack keeps a master's last size once its only slave is
+            # forgotten; an explicit height lets the empty frame collapse.
+            frame.configure(height=1)
+
+    def _apply_help_visibility(self) -> None:
+        visible = bool(self._show_help_var.get())
+        alive = []
+        for frame, body in self._help_bodies:
+            try:
+                if not frame.winfo_exists():
+                    continue
+            except self.tk.TclError:
+                continue
+            self._set_help_body_visible(frame, body, visible)
+            alive.append((frame, body))
+        self._help_bodies = alive
+
+    def _page_header(self, parent, name: str):
+        header = self.ttk.Frame(parent, padding=(12, 12, 12, 0))
+        self.ttk.Label(header, text=name, style="PageTitle.TLabel").pack(anchor="w")
+        summary = _PAGE_SUMMARIES.get(name, "")
+        if summary:
+            self._responsive_label(header, text=summary).pack(fill="x", pady=(2, 0))
+        self.ttk.Separator(header).pack(fill="x", pady=(8, 0))
+        return header
 
     def _build_layout(self) -> None:
         self._build_menubar()
@@ -2354,6 +2396,9 @@ class _SpinDoctorGUI:
         )
 
         nb = self.ttk.Notebook(main_paned, style="Sidebar.TNotebook")
+        # Created before the page builders, which register their help text.
+        self._show_help_var = self.tk.BooleanVar(master=self.root, value=False)
+        self._help_bodies: list[tuple[object, object]] = []
         self._nb = nb
 
         # StringVar backing the status bar label — created early so
@@ -2457,7 +2502,10 @@ class _SpinDoctorGUI:
         # History tab is the only one that intentionally fills its own
         # vertical space (tree + viewer panes), so it doesn't need
         # the wrapping scrollbar.
-        nb.add(self._build_logs_tab(nb), text="History")
+        history = self.ttk.Frame(nb)
+        self._page_header(history, "History").pack(fill="x")
+        self._build_logs_tab(history).pack(fill="both", expand=True)
+        nb.add(history, text="History")
         self._tab_base_names.append("History")
         main_paned.add(nb, weight=4)
         main_paned.add(out_frame, weight=1)
@@ -2652,6 +2700,7 @@ class _SpinDoctorGUI:
         for label, var in (
             ("Verbose output", self._global_verbose_var),
             ("Save log file", self._global_savelog_var),
+            ("Show help text", self._show_help_var),
         ):
             self.ttk.Checkbutton(
                 side, text=label, variable=var, style="Sidebar.TCheckbutton",
@@ -2706,6 +2755,9 @@ class _SpinDoctorGUI:
         nb.bind("<<NotebookTabChanged>>", self._sync_nav_to_tab, add="+")
         self._global_apply_var.trace_add(
             "write", lambda *_a: self._refresh_apply_toggle(),
+        )
+        self._show_help_var.trace_add(
+            "write", lambda *_a: self._apply_help_visibility(),
         )
         self._refresh_apply_toggle()
 
@@ -2822,22 +2874,31 @@ class _SpinDoctorGUI:
         # creates its own Frame inside `inner` (existing pattern); we
         # pack that frame edge-to-edge.
         inner = self.ttk.Frame(canvas)
+        self._page_header(inner, label).pack(fill="x")
         builder_frame = builder(inner)
         builder_frame.pack(fill="both", expand=True)
 
         inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
 
+        def _update_scrollregion():
+            # A scrollregion shorter than the canvas lets yview scroll
+            # above the content into blank space, so never make it
+            # shorter than the visible area.
+            bbox = canvas.bbox("all") or (0, 0, 0, 0)
+            height = max(bbox[3], canvas.winfo_height())
+            canvas.configure(scrollregion=(0, 0, bbox[2], height))
+            if bbox[3] <= canvas.winfo_height():
+                canvas.yview_moveto(0)
+
         def _on_inner_configure(_evt):
-            # As widgets get added to the inner frame, expand the
-            # canvas's scrollable region so the scrollbar reflects the
-            # full content height.
-            canvas.configure(scrollregion=canvas.bbox("all"))
+            _update_scrollregion()
 
         def _on_canvas_configure(evt):
             # Stretch the inner frame to match the canvas's width so
             # widgets `pack(fill="x")` actually fill the visible area
             # (without this they collapse to their natural width).
             canvas.itemconfigure(inner_id, width=evt.width)
+            _update_scrollregion()
 
         inner.bind("<Configure>", _on_inner_configure)
         canvas.bind("<Configure>", _on_canvas_configure)
@@ -2856,6 +2917,8 @@ class _SpinDoctorGUI:
             elif getattr(evt, "num", None) == 5:
                 step = 1
             else:
+                return
+            if canvas.yview() == (0.0, 1.0):
                 return
             canvas.yview_scroll(step, "units")
 
@@ -5422,11 +5485,6 @@ class _SpinDoctorGUI:
 
     def _build_diagnostics_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self.ttk.Label(
-            frame,
-            text="Run read-only diagnostics. No changes are made to disk.",
-            wraplength=860, justify="left",
-        ).pack(anchor="w", pady=(0, 8))
 
         # ── Step 1 — Cabinet health check ────────────────────────────────────
         # The one-click "is my cab OK?" surface leads the tab: a brand-new
@@ -5861,10 +5919,6 @@ class _SpinDoctorGUI:
 
     def _build_backup_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Choose components and a destination to back up, or select a backup to restore. All components are selected by default. Turn on Apply changes to write.",
-        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Target folder & components ─────────────────────────────
         cfg_frame = self.ttk.LabelFrame(
@@ -6311,10 +6365,6 @@ class _SpinDoctorGUI:
 
     def _build_migrate_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Move or copy selected library components to a new drive. Turn on Apply changes to run it. Applied migrations create an undo manifest.",
-        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Current configuration ───────────────────────────────────
         cur_cfg_frame = self.ttk.LabelFrame(frame, text="Step 1 — Current configuration")
@@ -7443,10 +7493,6 @@ class _SpinDoctorGUI:
 
     def _build_metadata_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Fetch metadata and artwork, organize local media, and sync database entries to ROMs.",
-        ).pack(fill="x", pady=(0, 10))
 
         # Shared system field — every command on this tab takes one.
         sys_row = self.ttk.Frame(frame)
@@ -9008,10 +9054,6 @@ class _SpinDoctorGUI:
 
     def _build_maintenance_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Curate archives duplicate variants with undo support. Cleanup trims caches; ignore lists exclude games from audits.",
-        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Curate region/revision variants ─────────────────────────
         cur_frame = self.ttk.LabelFrame(frame, text="Remove duplicate region and revision variants")
@@ -10032,10 +10074,6 @@ class _SpinDoctorGUI:
 
     def _build_systems_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Manage systems here; manage individual games on the Games tab. Follow the numbered sections for a new system, or jump to the action you need.",
-        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Main menu carousel (formerly Main Menu tab) ────────────
         # All I/O on Main Menu.xml goes through spindoctor.mainmenu —
@@ -10844,10 +10882,6 @@ class _SpinDoctorGUI:
 
     def _build_ledblinky_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Overlay hook fix and Settings.ini are one-time setup. The other sections manage game colors, brightness, the palette, backups and animations.",
-        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 10))
 
         # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
@@ -11895,10 +11929,6 @@ class _SpinDoctorGUI:
 
     def _build_lightgun_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Detect finds Sinden/DemulShooter and imports existing RocketLauncher wiring. Audit checks it; Configure adds or repairs launch hooks for a system.",
-        ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Detect & audit ──────────────────────────────────────────
         det_frame = self.ttk.LabelFrame(frame, text="Detect and audit")
@@ -11999,10 +12029,6 @@ class _SpinDoctorGUI:
 
     def _build_tools_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
-        self._help_text(
-            frame,
-            text="Build Favorites, Recently Played and Most Played wheels. Use the controls below to import favorites, rebuild, register wheels and enable automatic refresh.",
-        ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Import HyperSpin favorites (optional) ───────────────────
         # fav sync must run BEFORE the wheel rebuild reads the store, so
