@@ -68,7 +68,7 @@ The Apply switch is always visible and changes color when it's on, so you can't 
 
 ### System picker
 
-The **System** dropdown in the sidebar selects a system in every section at once: Diagnostics, Systems, Games, Metadata & Media, Maintenance, Custom Wheels favorites and Lightgun. Sections with their own **System** dropdown can still pick a different system for a one-off run; the next sidebar pick resets them. The Games page has no dropdown of its own and always uses the sidebar system.
+The **System** dropdown in the sidebar selects a system in every section at once: Diagnostics, Systems, Games, Metadata & Media, Maintenance, Custom Wheels favorites and Lightgun. Diagnostics, Games, Metadata & Media and Maintenance → Remove duplicate region and revision variants have no System dropdown of their own: they show `System: MAME  (change it in the sidebar)`. The few sections that still have their own **System** dropdown (for example Systems → Add or remove on main menu, the ignore list and Lightgun) can pick a different system for a one-off run; the next sidebar pick resets them. Click **↻** next to the sidebar dropdown to reload the system list, for example after changing paths in Setup.
 
 ## Tab tour
 
@@ -98,15 +98,15 @@ The cabinet's "is everything OK?" diagnostic surface — nothing on this tab wri
 
 **Cabinet health check:** Three one-click, library-wide checks that need nothing filled in first — the natural next stop straight after Setup. **Preflight check** chains `doctor` → `tools-audit` → `audit --all` end-to-end with a determinate "step N of 3" progress bar, then pops a verdict messagebox at the end (green "Cabinet is ready" / yellow "N issues found"). Continues past failures so a partial cab state is still informative. Designed for the "I'm taking the cab to a LAN event tomorrow" moment when running three commands by hand is error-prone. **Run health check** and **Check installed tools** run the individual checks.
 
-**Audit a system:** Pick a system from the dropdown, then **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
+**Audit a system:** Pick a system in the sidebar, then click **Audit selected system** (or **Audit all systems** for the whole library). Audit options: a **Report CSV (optional)** entry + Browse button feeds `audit --report`; checkboxes for `--no-media` (skip media checks for faster runs) and `--detailed` (richer per-file output).
 
-**Open Media folder for selected system** and **Open ROMs folder for selected system** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
+**Open Media folder** and **Open ROMs folder** buttons jump straight to `<hyperspin>\Media\<system>\` or `<roms_dir>\<system>\` — useful when an audit row reports "missing wheel" and you want to eyeball the offending folder.
 
 **Library-wide scans:** One-click read-only inspectors: **Find duplicate ROMs**, **Find cross-system dupes**, **Find misplaced ROMs**, **Find orphan media**, **Check disc-set consistency**, **Check archive extensions**, **Lint**, **Generate report**, **Preview HyperSpin XML**, **Stats**. Each button writes "Scan complete — see output for results." to the status bar.
 
 **Check archive extensions** peeks inside every `.zip`/`.7z`/`.rar` archive in each configured ROM folder and compares the inner file extensions against the `Rom_Extension=` list in `Global Emulators.ini` (falling back to SpinDoctor's built-in emulator-extension map when the RL config is unavailable). Archives whose inner extension is not in the configured list are flagged — this is the most common reason RocketLauncher reports *"No valid roms found in the archive"* at launch time.
 
-**Search and verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form. Selecting a system in the Inspect form auto-populates the **ROM (optional)** dropdown from that system's database; leave it blank (first item) to run `inspect --all`. Click **↻** to refresh the game list.
+**Search and verify:** A **Global Search** box (`spindoctor find-global`), a **Verify-against-DAT** mini-form (`spindoctor verify --system X --dat …`), and an **Inspect** form. Both use the sidebar system. The Inspect form's **ROM (optional)** dropdown fills from that system's database; leave it blank (first item) to run `inspect --all`. Click **↻** to refresh the game list.
 
 CLI equivalents: `spindoctor audit`, `spindoctor doctor`, `spindoctor tools-audit`, `spindoctor find-dupes`, `spindoctor find-misplaced`, `spindoctor find-orphan-media`, `spindoctor check-discs`, `spindoctor check-archive-ext`, `spindoctor lint`, `spindoctor report`, `spindoctor preview`, `spindoctor stats`.
 
@@ -140,7 +140,7 @@ Manage individual games across any system. The sidebar's **System** picker drive
 
 **System picker:** Pick the system in the sidebar. Changing the selection automatically clears the game-wheel table, reloads the rename/clone game list, and reloads the fix-exe game list (Step 4). All four steps read from the same selection — no need to re-pick in each section.
 
-**Manage the game wheel:** Click **Load games** to populate a scrollable table showing every game in that system's XML database in wheel order — position number, ROM name, and display title.
+**Manage the game wheel:** When you open the page, or pick a system in the sidebar while it's open, a scrollable table loads every game in that system's XML database in wheel order — position number, ROM name, and display title.
 
 Reposition games with one of three methods: click **Move up** / **Move down**, press **Alt+↑** / **Alt+↓** to nudge without leaving the keyboard, or type a target position in the **Jump to #** field and click **Go** to jump directly. **Sort A→Z (by title)** sorts by display name with leading articles stripped (The / A / An), matching HyperSpin's own wheel sort convention; **Sort A→Z (by ROM name)** sorts by filename. **Remove game** shows a dry-run message when Apply is off; with Apply ticked it confirms and shells out to `game remove --apply` (the table row is removed only after the command reports success). Tick **Also remove PCLauncher INI (PC systems only)** to also delete `Modules/PCLauncher/<system>/<game>.ini` — use this for PC systems so RocketLauncher no longer finds the game; the checkbox is a no-op for systems that have no PCLauncher INI. **Save order** writes the full reordered list back to the system XML — dry-run preview when Apply is off, background-thread save when Apply is on. Changing the system picker clears the table so a loaded game list can't accidentally be saved to the wrong database. CLI: `spindoctor game list / remove / move / move-up / move-down / sort`.
 
@@ -154,7 +154,7 @@ Reposition games with one of three methods: click **Move up** / **Move down**, p
 
 ![Metadata & Media tab, shown with a sample cabinet](screenshots/05-metadata-media.png)
 
-Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. Shared system dropdown at the top, plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps. Changing the System dropdown always blanks the Game dropdown — a game from the previous system never carries over.
+Fetch metadata + media from ScreenScraper / TheGamesDB and sync the database XML. The page uses the sidebar system (or **All systems** when that box is checked), plus a **Game** dropdown below it (auto-populated when a system is selected). Leave Game blank to process all games; pick one to target only that game. An Apply toggle governs all steps. Changing the sidebar system always blanks the Game dropdown — a game from the previous system never carries over.
 
 **Full metadata refresh:** One-click chain: `fetch-meta → fetch-media → update-db` in sequence for the selected system (and game, if one is picked). Stops on first error. Use the individual steps below to run or troubleshoot each phase separately.
 

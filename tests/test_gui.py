@@ -1019,7 +1019,7 @@ def test_gui_constructs_against_real_tk():
         # the walker (not a per-call-site attach) — check one so a future
         # tab that forgets to opt in still gets it.
         assert getattr(
-            app._meta_system_combo, "_spindoctor_typeahead_attached", False,
+            app._current_system_combo, "_spindoctor_typeahead_attached", False,
         )
         # Editable Comboboxes (free-text entry, e.g. the Game filter here
         # or the Console tab's command field) must NOT get type-ahead —
@@ -2826,6 +2826,116 @@ def test_sidebar_system_picker_drives_every_section(monkeypatch):
         app._current_system_var.set("Nintendo 64")
         app._push_current_system(only_blank=True)
         assert app._curate_system_var.get() == "MAME"
+    finally:
+        app.root.destroy()
+
+
+def _page_widgets(app, name):
+    page = app._nb.nametowidget(app._nb.tabs()[app._tab_base_names.index(name)])
+
+    def descendants(widget):
+        for child in widget.winfo_children():
+            yield child
+            yield from descendants(child)
+
+    return list(descendants(page))
+
+
+def test_sidebar_following_pages_have_no_system_dropdown(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        for attr in ("_system_combo", "_verify_system_combo",
+                     "_inspect_system_combo", "_meta_system_combo",
+                     "_curate_system_combo"):
+            assert not hasattr(app, attr), attr
+        texts = {
+            w.cget("text") for w in _page_widgets(app, "Diagnostics")
+            if w.winfo_class() in ("TButton", "TLabel")
+        }
+        assert "Reload list" not in texts
+        assert "(change it in the sidebar)" in texts
+        assert {"Open Media folder", "Open ROMs folder"} <= texts
+
+        # Metadata and Curate keep their All systems checkbox; the label
+        # says "All systems" while it's checked.
+        def shown_system(page):
+            heading = [
+                w for w in _page_widgets(app, page)
+                if w.winfo_class() == "TLabel" and str(w.cget("textvariable"))
+            ]
+            shown = set()
+            for w in heading:
+                try:
+                    shown.add(app.root.globalgetvar(str(w.cget("textvariable"))))
+                except _tk.TclError:  # var never written yet
+                    pass
+            return shown
+
+        app._current_system_combo["values"] = ["MAME", "Nintendo 64"]
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system()
+        assert "Nintendo 64" in shown_system("Metadata & Media")
+        app._meta_all_var.set(True)
+        assert "All systems" in shown_system("Metadata & Media")
+        assert "Nintendo 64" in shown_system("Maintenance")
+        app._curate_all_var.set(True)
+        assert "All systems" in shown_system("Maintenance")
+    finally:
+        app.root.destroy()
+
+
+def test_sidebar_change_blanks_metadata_game(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._current_system_combo["values"] = ["MAME", "Nintendo 64"]
+        app._current_system_var.set("MAME")
+        app._push_current_system()
+        app._meta_game_var.set("pacman")
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system()
+        assert app._meta_game_var.get() == ""
+    finally:
+        app.root.destroy()
+
+
+def test_games_list_loads_when_games_page_is_open(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        loads = []
+
+        def fake_load():
+            loads.append(app._gwm_system_var.get())
+            app._gwm_loaded_system = app._gwm_system_var.get()
+
+        monkeypatch.setattr(app, "_gwm_load", fake_load)
+        for name in ("_refresh_rename_games", "_refresh_fixexe_games"):
+            monkeypatch.setattr(app, name, lambda: None)
+        app._current_system_combo["values"] = ["MAME", "Nintendo 64"]
+
+        # Another page open: the pick doesn't load in the background.
+        app._nb.select(app._tab_base_names.index("Setup"))
+        app.root.update()
+        app._current_system_var.set("MAME")
+        app._push_current_system()
+        assert loads == []
+        # Opening Games loads it, once.
+        app._nb.select(app._tab_base_names.index("Games"))
+        app.root.update()
+        assert loads == ["MAME"]
+        app._nb.select(app._tab_base_names.index("Setup"))
+        app.root.update()
+        app._nb.select(app._tab_base_names.index("Games"))
+        app.root.update()
+        assert loads == ["MAME"]
+        # Changing system while on Games loads straight away.
+        app._current_system_var.set("Nintendo 64")
+        app._push_current_system()
+        assert loads == ["MAME", "Nintendo 64"]
+        texts = {
+            w.cget("text") for w in _page_widgets(app, "Games")
+            if w.winfo_class() == "TButton"
+        }
+        assert "Load games" not in texts
     finally:
         app.root.destroy()
 
