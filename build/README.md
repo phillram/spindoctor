@@ -4,7 +4,7 @@ Standalone Windows executables for SpinDoctor — for cabinets that can't (or sh
 
 ## What gets built
 
-Two bundles are produced per release:
+Four downloads are produced per release: GUI and CLI, each for Windows 7 and Windows 10/11. Each zip contains exactly one EXE.
 
 ### Win7 bundle — `--onefile` (Python 3.8.10 + PyInstaller 5.13.2)
 
@@ -12,8 +12,8 @@ Two independent single-file EXEs in `dist/`. Each embeds the runtime, every comm
 
 | Binary | Purpose |
 |---|---|
-| `spindoctor.exe` | Full CLI |
-| `spindoctor-gui.exe` | Tkinter GUI launcher (built `--windowed`, no console) |
+| `spindoctor.exe` | Tkinter GUI (built `--windowed`, no console) |
+| `spindoctor-cli.exe` | Full CLI |
 
 The GUI runs commands by relaunching itself with `--run-tool <tool> ARGS...`, where `<tool>` is `spindoctor`, `spindoctor-fav`, `spindoctor-recent`, or `spindoctor-stats`. The console EXE supports the same dispatch, for example `spindoctor.exe --run-tool spindoctor-fav rebuild --apply`. Worker output and exit codes work through pipes and `.bat` files; generated bats use `start "" /B /WAIT` (scheduled refresh/autorun use `start /LOW /B /WAIT ""`).
 
@@ -41,7 +41,7 @@ The modern build (`requirements-build-modern.txt`) uses **Python 3.12 + PyInstal
 pip install -e .[all]
 pip install -r build/requirements-build.txt
 python build/build_windows.py
-:: Output: dist\spindoctor.exe, dist\spindoctor-gui.exe
+:: Output: dist\spindoctor.exe (GUI), dist\spindoctor-cli.exe (CLI)
 ```
 
 **Modern build:**
@@ -49,14 +49,14 @@ python build/build_windows.py
 pip install -e .[all]
 pip install -r build/requirements-build-modern.txt
 python build/build_windows.py --modern
-:: Output: dist\spindoctor-win10\spindoctor.exe, dist\spindoctor-win10\spindoctor-gui.exe
+:: Output: dist\spindoctor-win10\spindoctor.exe, dist\spindoctor-win10\spindoctor-cli.exe
 ```
 
 Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
 
 ## How the build works
 
-Both builds run PyInstaller with `--onefile` once per target. `TARGETS` defines `spindoctor` (`spindoctor._runtime:cli_main`, console) and `spindoctor-gui` (`spindoctor.gui:main`, windowed). A generated shim calls each entry point; no shared-runtime spec is generated.
+Both builds run PyInstaller with `--onefile` once per target. `TARGETS` defines `spindoctor-cli` (`spindoctor._runtime:cli_main`, console) and `spindoctor` (`spindoctor.gui:main`, windowed). A generated shim calls each entry point; no shared-runtime spec is generated.
 
 `HIDDEN_IMPORTS` ensures both EXEs contain the full CLI and all three wheel builders. Both receive every top-level file in `spindoctor/assets` through `iter_bundle_assets()`; subdirectories, including deprecated originals in `assets/archive/`, are never bundled.
 
@@ -80,7 +80,7 @@ The smoke test copies each EXE alone into an empty folder with a stripped `PATH`
 2. Installs runtime extras + PyInstaller 5.x (`requirements-build.txt`).
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each binary.
-5. Packages as `spindoctor-win7-<tag>.zip` (two flat EXEs).
+5. Packages `spindoctor-gui-win7-<tag>.zip` and `spindoctor-cli-win7-<tag>.zip` via `build/package_windows.py` (one EXE per zip).
 6. Uploads as a workflow artifact.
 
 **`build-modern`** — Python 3.12 + PyInstaller 6.x:
@@ -88,14 +88,14 @@ The smoke test copies each EXE alone into an empty folder with a stripped `PATH`
 2. Installs runtime extras + PyInstaller 6.x (`requirements-build-modern.txt`).
 3. Runs `python build/build_windows.py --modern`.
 4. Smoke-tests each binary from `dist\spindoctor-win10\`.
-5. Packages as `spindoctor-win10-<tag>.zip` (the `spindoctor-win10/` folder containing two independent EXEs).
+5. Packages `spindoctor-gui-win10-<tag>.zip` and `spindoctor-cli-win10-<tag>.zip` (one EXE per zip).
 6. Uploads as a workflow artifact.
 
 **`publish`** — runs after both builds succeed (tag push only):
 1. Downloads both artifacts.
 2. Merges SHA256 checksums into a single `SHA256SUMS.txt`.
 3. Builds the release notes from `CHANGELOG.md`.
-4. Creates the GitHub Release with both zips + `SHA256SUMS.txt`.
+4. Creates the GitHub Release with all four zips + `SHA256SUMS.txt`.
 
 ### Cutting a release
 

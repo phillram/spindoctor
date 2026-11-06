@@ -6,20 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` finds wheels that HyperSpin's ROMs-only filter shows empty, and game names that start or end with a space.** A new **HyperSpin ROMs only** check reads each Main Menu wheel's `<hyperspin_dir>\Settings\<System>.ini`, which RocketLauncher never reads. With `[filters] roms_only=true`, HyperSpin lists only the games it finds as `<rompath>\<name>.<ext>` (`rompath` and the comma-separated `romextension` from `[exe info]`), so after a ROM-drive move a `rompath` still on the old drive (`J:\Games\AAE`) empties the wheel, while RocketLauncher's `Rom_Path` and the **ROM paths** check are fine. A `rompath` that is empty, doesn't exist or holds none of the wheel's games is a WARN. The fix line names the file and key, a folder that holds the games when there is one (the wheel's RocketLauncher `Rom_Path`, the same folder under `roms_dir`, or `<roms_dir>\<System>`), the extensions to add when the games are there with others, and `roms_only=false`. A relative `rompath` is resolved from the HyperSpin folder. A new **Spaces in game names** check lists names such as `<game name="Some Hack V2 ">`. RocketLauncher and HyperSpin both use them as written, so HyperSpin looks for `Some Hack V2 .png` while scrapers and SpinDoctor's media downloads save `Some Hack V2.png`, and the game shows its name as text and plays no video. It's a WARN per wheel listing the names, noting games whose media exists only under the trimmed name, with the database XML to edit and the ROM file to rename. Both checks report wheels switched off on the Main Menu as INFO only, and are diagnosis only. Covered by `tests/test_doctor_hyperspin_wheels.py`.
+
 ### Changed
-
-- **GUI pages move to a grouped sidebar.** The 14 tabs across the top are replaced by a page list on the left, grouped as Get started, Library, Wheels & cabinet, Safety and Advanced. Page order, Ctrl+1 to Ctrl+9 and the remembered last page are unchanged. **Apply**, **Verbose** and **Save Log** move from the bottom status bar to the top of the sidebar; Apply is now a large **Apply changes: OFF / ON** switch that turns orange while changes will be written.
-- **Plainer GUI labels.** Section titles no longer carry "Step N" numbers except in Migration and the first-run wizard, where the order matters. Buttons use sentence case, symbol prefixes (▶, ✈) and CLI flags (`--all-roms`, `--overwrite-pclauncher`, `--include-proto`) are gone from labels, and LEDBlinky's MAME buttons drop their 3a/3b/3c prefixes.
-- **One System picker for the whole GUI, and fewer repeated buttons.** A **System** dropdown in the sidebar selects that system in every section; section dropdowns can still pick a different one. The Games page uses it instead of its own picker. **Run Health Check** now lives only on Diagnostics (removed from Setup and Migration), Metadata & Media has one **Restore DB backup** button, LEDBlinky has one **Normalize Colors.ini** button (in the MAME section), and Migration's backup step links to the Backup & Restore page instead of repeating its controls.
-- **Compact GUI help.** Every page starts with its title and a one-line summary. Longer explanations are hidden until you tick **Show help text** in the sidebar, which shows or hides all of them at once, and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
-
-### Fixed
-
-- **GUI pages shorter than the window no longer scroll up into a blank area.**
 
 ### Removed
 
 - **Custom Wheels "Manual setup" panel.** The GUI already installs the Tools-menu helpers and the startup task; hand-registration steps remain in `docs/standalone-tools.md`.
+
+### Fixed
+
+- **Stopping or closing the standalone GUI ends its worker, not just the one-file launcher.** End the same-named worker child first so it cannot keep changing files after Stop or window close, and let the launcher clean up its temporary extraction folder. Added Windows process regression coverage and standalone smoke checks. The helper-installation message now points to the current Custom Wheels startup controls and generated refresh batch file.
+- **GUI pages shorter than the window no longer scroll up into a blank area.**
 
 ## [3.0.0] - 2026-11-05
 

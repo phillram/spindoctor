@@ -23,43 +23,19 @@ Standalone `.exe` files for cabinets that can't (or shouldn't) install Python. D
 
 ## What you get
 
-Each release ships **two bundles** — pick whichever matches your Windows version:
+Each release ships **four downloads**. Pick the edition (GUI or CLI) and your Windows version. Each zip contains exactly one standalone EXE.
 
-| Bundle | File | Requires | Built with |
+| Edition | Windows 10/11 *(recommended)* | Windows 7 SP1+ | EXE inside |
 |---|---|---|---|
-| **Modern** *(recommended)* | `spindoctor-win10-vX.Y.Z.zip` | Windows 10 / 11 | Python 3.12 + PyInstaller 6.x |
-| **Win7** | `spindoctor-win7-vX.Y.Z.zip` | Windows 7 SP1+ | Python 3.8 + PyInstaller 5.x |
+| **GUI** (double-click) | `spindoctor-gui-win10-vX.Y.Z.zip` | `spindoctor-gui-win7-vX.Y.Z.zip` | `spindoctor.exe` |
+| **CLI** (terminal) | `spindoctor-cli-win10-vX.Y.Z.zip` | `spindoctor-cli-win7-vX.Y.Z.zip` | `spindoctor-cli.exe` |
 
-### Modern bundle (Windows 10/11)
+Both EXEs embed the runtime, every command worker and all bundled media. The GUI does not need the CLI, and the CLI does not need the GUI. Download the CLI only if you want to run commands from `cmd.exe` or scripts.
 
-Two independent `--onefile` EXEs, each embedding the runtime, every command worker, and all bundled deployment media.
-
-```
-spindoctor-win10-vX.Y.Z.zip
-└── spindoctor-win10-vX.Y.Z/
-    ├── spindoctor.exe          ← full CLI (every command)
-    └── spindoctor-gui.exe      ← double-clickable GUI launcher
-```
-
-Either EXE can be copied anywhere alone — no shared runtime directory, helper EXEs, or media folder required.
-
-### Win7 bundle (Windows 7 SP1 and newer)
-
-The same two self-contained `--onefile` EXEs, built for Windows 7. Drop either wherever you like.
-
-```
-spindoctor-win7-vX.Y.Z.zip
-├── spindoctor.exe          ← full CLI (every command)
-└── spindoctor-gui.exe      ← double-clickable GUI launcher
-```
-
-Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar.
-
-Both bundles extract their embedded runtime to a temporary directory when launched; this is normal for PyInstaller one-file builds.
-
+The Windows 10/11 builds use Python 3.12 + PyInstaller 6.x. The Windows 7 builds use Python 3.8 + PyInstaller 5.x. Both extract their runtime to a temporary folder when launched, which is normal for PyInstaller one-file builds.
 ## Compatibility
 
-| Windows version | Modern bundle | Win7 bundle |
+| Windows version | Windows 10/11 build | Windows 7 build |
 |---|---|---|
 | Windows 11 | ✓ Recommended | ✓ Works |
 | Windows 10 | ✓ Recommended | ✓ Works |
@@ -68,34 +44,34 @@ Both bundles extract their embedded runtime to a temporary directory when launch
 | Windows 7 RTM (no SP1) | ✗ Not supported | ✗ Install SP1 first |
 | Windows XP / Vista | ✗ Not supported | ✗ Python 3.8 dropped them |
 
-The Win7 bundle is built with **Python 3.8.10 + PyInstaller 5.13.2** — the only pairing whose bootloader loads on Windows 7 SP1. The modern bundle uses **Python 3.12 + PyInstaller 6.x**, whose bootloader requires Windows 8.1 or newer.
+The Windows 7 build uses **Python 3.8.10 + PyInstaller 5.13.2** — the only pairing whose bootloader loads on Windows 7 SP1. The Windows 10/11 build uses **Python 3.12 + PyInstaller 6.x**, whose bootloader requires Windows 8.1 or newer.
 
 ## Download
 
 1. Open the [latest release](https://github.com/phillram/spindoctor/releases/latest) on GitHub.
-2. Under **Assets**, pick the bundle for your Windows version (see table above).
+2. Under **Assets**, pick the GUI or CLI zip for your Windows version (see table above).
 
 If you'd rather download from the command line:
 
 ```bat
-:: Use whichever URL the release page shows — example for v2.4.1:
-curl -L -o spindoctor-win7-v2.4.1.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v2.4.1/spindoctor-win7-v2.4.1.zip
+:: Use whichever URL the release page shows, for example:
+curl -L -o spindoctor-gui-win10-v3.0.1.zip ^
+    https://github.com/phillram/spindoctor/releases/download/v3.0.1/spindoctor-gui-win10-v3.0.1.zip
 ```
 
 ## Install
 
 There's no installer — just extract and optionally rename.
 
-1. **Either bundle:** Extract the zip and copy either or both EXEs to a location of your choice (e.g. `C:\spindoctor\`):
+1. Extract the EXE to a location of your choice (e.g. `C:\spindoctor\`):
 
    ```
    C:\spindoctor\
-   ├── spindoctor.exe
-   └── spindoctor-gui.exe
+   ├── spindoctor.exe        ← GUI
+   └── spindoctor-cli.exe    ← CLI (optional)
    ```
 
-   A GUI-only install is fully functional, including wheel builders and media installation. The console EXE is optional for terminal use.
+   A GUI-only install is fully functional, including wheel builders and media installation.
 
 2. **Add the folder to `PATH`** (optional, GUI users can skip) so you can run `spindoctor` from anywhere:
 
@@ -109,7 +85,7 @@ There's no installer — just extract and optionally rename.
    Or, skip the PATH step and call by full path:
 
    ```bat
-   C:\spindoctor\spindoctor.exe systems
+   C:\spindoctor\spindoctor-cli.exe systems
    ```
 
 ## First run
@@ -118,20 +94,20 @@ You have two equivalent ways to point SpinDoctor at your library — pick whiche
 
 ### Easy mode — the GUI
 
-**Double-click `spindoctor-gui.exe`**, fill in the Setup tab (ROMs / HyperSpin / Emulators / RocketLauncher paths, plus optional ScreenScraper / TheGamesDB credentials for metadata fetching), click **Save configuration**. Done. See [GUI launcher](#gui-launcher) below for a tour of every tab.
+**Double-click `spindoctor.exe`**, fill in the Setup tab (ROMs / HyperSpin / Emulators / RocketLauncher paths, plus optional ScreenScraper / TheGamesDB credentials for metadata fetching), click **Save configuration**. Done. See [GUI launcher](#gui-launcher) below for a tour of every tab.
 
 ### Power mode — the CLI
 
-> **Don't double-click `spindoctor.exe` from File Explorer.** It's a command-line tool — with no arguments it prints `--help` and exits, so the cmd window opens, dumps text into itself, and closes again before you can read it. That "flash and disappear" is the program working correctly, not a crash.
+> **Don't double-click `spindoctor-cli.exe` from File Explorer.** It's a command-line tool — with no arguments it prints `--help` and exits, so the cmd window opens, dumps text into itself, and closes again before you can read it. That "flash and disappear" is the program working correctly, not a crash.
 >
 > Open `cmd.exe` first (`Win+R` → `cmd` → Enter), then:
 
 ```bat
 cd C:\spindoctor
-spindoctor.exe --version
+spindoctor-cli.exe --version
 :: SpinDoctor, version 3.0.0
 
-spindoctor.exe config init
+spindoctor-cli.exe config init
 ```
 
 `config init` is the same wizard the GUI's Setup tab wraps. It asks for every path with sensible Windows defaults pre-filled — press Enter to accept, type `-` to leave an optional path blank.
@@ -140,13 +116,13 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 ## GUI launcher
 
-`spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
+`spindoctor.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
 The GUI runs embedded workers by relaunching itself with `--run-tool`; it needs neither another EXE nor `PATH`. Both EXEs support `--run-tool <tool> ARGS...`, where `<tool>` is `spindoctor`, `spindoctor-fav`, `spindoctor-recent`, or `spindoctor-stats`. For example:
 
 ```bat
-start "" /B /WAIT "C:\spindoctor\spindoctor-gui.exe" --run-tool spindoctor-fav rebuild --apply
-spindoctor.exe --run-tool spindoctor-stats build-wheel --apply
+start "" /B /WAIT "C:\spindoctor\spindoctor.exe" --run-tool spindoctor-fav rebuild --apply
+spindoctor-cli.exe --run-tool spindoctor-stats build-wheel --apply
 ```
 
 Worker output and exit codes are preserved through pipes and `.bat` files. Frozen installs no longer need helper-version mismatch warnings: the workers are embedded in the running EXE.
@@ -183,21 +159,21 @@ Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCL
 
 1. Download the new zip from [Releases](https://github.com/phillram/spindoctor/releases/latest).
 2. Replace the `.exe` files in your install folder with the newly extracted ones.
-3. Re-run `spindoctor --version` (or relaunch `spindoctor-gui.exe` and check the title bar) to confirm the new build.
+3. Re-run `spindoctor-cli --version` (or relaunch `spindoctor.exe` and check the title bar) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
 
 ### Upgrading from v2
 
-v3 ships only `spindoctor-gui.exe` and `spindoctor.exe`; each works alone. Separate wheel-builder EXEs are no longer shipped. Update external scripts to use `--run-tool` (pip console-script names are unchanged); custom builds can use `build_windows.py --legacy-tools` for old scripts.
+v3 ships only `spindoctor.exe` and `spindoctor-cli.exe`; each works alone. Separate wheel-builder EXEs are no longer shipped. Update external scripts to use `--run-tool` (pip console-script names are unchanged); custom builds can use `build_windows.py --legacy-tools` for old scripts.
 
 After upgrading to a new folder or EXE path, re-run `install-tools`, click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks.
 
 ## Troubleshooting
 
-### Double-clicking `spindoctor.exe` flashes a window that closes instantly
+### Double-clicking `spindoctor-cli.exe` flashes a window that closes instantly
 
-Expected — the CLI binaries print `--help` and exit when run with no arguments. See [Troubleshooting → Double-clicking `spindoctor.exe` flashes a window that closes instantly](troubleshooting.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly) for the three workarounds.
+Expected — the CLI binaries print `--help` and exit when run with no arguments. See [Troubleshooting → Double-clicking `spindoctor-cli.exe` flashes a window that closes instantly](troubleshooting.md#double-clicking-spindoctorexe-flashes-a-window-that-closes-instantly) for the three workarounds.
 
 ### "Windows protected your PC" SmartScreen warning
 
@@ -205,18 +181,18 @@ The published binaries aren't code-signed, so Windows 10 / 11 may flag them as u
 
 If your IT policy blocks unsigned binaries entirely, fall back to a source install (`pip install -e .[all]`) or build the binary yourself with a code-signing certificate — see [Building from source](#building-from-source).
 
-### `spindoctor-gui.exe` opens a window but the buttons do nothing
+### `spindoctor.exe` opens a window but the buttons do nothing
 
-v3 embeds every worker in `spindoctor-gui.exe`; there are no helper EXEs to locate. Check the Output panel for the command's error. If an old install reports "Binary not found", replace the GUI with the current release EXE — copying helper files alongside it is not required.
+v3 embeds every worker in `spindoctor.exe`; there are no helper EXEs to locate. Check the Output panel for the command's error. If an old install reports "Binary not found", replace the GUI with the current release EXE — copying helper files alongside it is not required.
 
-If `spindoctor-gui.exe` itself fails to open at all on Windows 7, you're hitting the same `api-ms-win-core-…` bootloader issue documented below — install Service Pack 1 first.
+If `spindoctor.exe` itself fails to open at all on Windows 7, you're hitting the same `api-ms-win-core-…` bootloader issue documented below — install Service Pack 1 first.
 
 ### `'spindoctor' is not recognized as an internal or external command`
 
 The folder isn't on `PATH`. Either:
 
 - Re-run the `setx PATH …` command from [Install](#install) and open a new `cmd.exe`, or
-- Call by full path: `C:\spindoctor\spindoctor.exe systems`.
+- Call by full path: `C:\spindoctor\spindoctor-cli.exe systems`.
 
 ### "The procedure entry point ... could not be located in api-ms-win-core-..."
 
@@ -224,7 +200,7 @@ Windows 7 SP1 is missing. The bundled bootloader needs SP1's API set. Install Se
 
 If you self-built and hit this on a Win 7 box, your build environment is too modern — see [build/README.md](https://github.com/phillram/spindoctor/blob/main/build/README.md#windows-7-compatibility) for the pinned Python + PyInstaller versions.
 
-### Antivirus quarantines `spindoctor.exe`
+### Antivirus quarantines `spindoctor.exe` or `spindoctor-cli.exe`
 
 PyInstaller binaries occasionally trigger heuristic detections because the bundled-runtime pattern resembles malware packers. The release zip's SHA256 is shown on the GitHub Release page — verify it matches before adding an exclusion. If you can't whitelist it, the source install (`pip install -e .[all]`) bypasses the bundled runtime entirely.
 
