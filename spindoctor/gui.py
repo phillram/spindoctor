@@ -12233,41 +12233,6 @@ class _SpinDoctorGUI:
                 text="Automatic startup refresh is available on Windows only.",
             ).pack(fill="x", padx=6, pady=(2, 6))
 
-        # Manual fallback instructions
-        manual_frame = self.ttk.LabelFrame(
-            helpers_lf, text="Manual setup (if you'd rather do it yourself)",
-        )
-        manual_frame.pack(fill="x", padx=6, pady=(2, 8))
-        self.ttk.Label(
-            manual_frame,
-            text=(
-                "HyperHQ → Tools menu:\n"
-                "  1. Open HyperHQ.exe (sits next to HyperSpin.exe).\n"
-                "  2. Go to the Tools tab.\n"
-                "  3. Click Add and point each entry at the matching .bat\n"
-                "     under <rocketlauncher>/Modules/HyperLaunch/Tools/spindoctor.\n"
-                "  4. Save. The helpers appear in HyperSpin's in-cabinet Tools menu.\n"
-                "\n"
-                "Windows Task Scheduler (manual):\n"
-                "  Use the 'Enable auto-run' button above — it writes\n"
-                "  both a launcher .bat (with IDLE process priority so HyperSpin\n"
-                "  is never starved) and a hidden-run .vbs shim so no cmd.exe\n"
-                "  window surfaces on the cabinet screen.\n"
-                "\n"
-                "  If you need to register the task by hand instead:\n"
-                "  1. Win+R → 'taskschd.msc'.\n"
-                "  2. Action → Create Task → name: 'SpinDoctor Refresh Wheels'.\n"
-                "  3. Triggers → New → Begin: 'At log on' → Delay: 2 minutes.\n"
-                "  4. Actions → New → Program: wscript.exe\n"
-                "     Arguments: //B \"<path>\\spindoctor-refresh-wheels.vbs\"\n"
-                "     (generate the .bat/.vbs pair first with 'Enable auto-run',\n"
-                "      then remove and re-register by hand if needed)\n"
-                "  5. Settings → uncheck 'Stop the task if it runs longer than'."
-            ),
-            justify="left", foreground=_FG_DIM,
-            font="TkFixedFont",
-        ).pack(anchor="w", padx=6, pady=(2, 6))
-
         # ── Scrub wheel data ───────────────────────────────────────────────────
         scrub_lf = self.ttk.LabelFrame(frame, text="Reset wheel data (scrub)")
         scrub_lf.pack(fill="x", pady=(0, 8))
