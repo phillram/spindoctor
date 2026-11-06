@@ -12,8 +12,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **Separate GUI and CLI downloads.** Each release now ships four zips: `spindoctor-gui-win10`, `spindoctor-gui-win7`, `spindoctor-cli-win10` and `spindoctor-cli-win7`, each containing one standalone EXE. The GUI is now `spindoctor.exe` and the CLI is `spindoctor-cli.exe`; neither needs the other. After upgrading, reinstall refresh helpers and re-enable auto-run tasks so saved paths point at the renamed EXE.
-- **Compact GUI help.** Longer explanations on every tab are collapsed behind **Show help** buttons and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
 
 ### Removed
 
