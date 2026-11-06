@@ -20,7 +20,7 @@ permissions:
 jobs:
   # ── Win7 build ──────────────────────────────────────────────────────────────
   # Python 3.8 + PyInstaller 5.x — the only pairing whose bootloader loads on
-  # Windows 7 SP1.  Produces five self-contained --onefile EXEs.
+  # Windows 7 SP1.  Produces two independent --onefile EXEs.
   build-win7:
     name: Build (Windows 7 SP1+)
     runs-on: windows-2022
@@ -47,26 +47,8 @@ jobs:
         shell: bash
         run: python build/build_windows.py
 
-      - name: Smoke-test every binary
-        # --onefile build: each binary is a self-contained exe in dist\.
-        shell: cmd
-        run: |
-          dist\spindoctor.exe --version || exit /b 1
-          dist\spindoctor-fav.exe --help || exit /b 1
-          dist\spindoctor-recent.exe --help || exit /b 1
-          dist\spindoctor-stats.exe --help || exit /b 1
-
-      # spindoctor-gui.exe is a `--windowed` build (Win32 GUI subsystem),
-      # so cmd doesn't wait for it and stdout is detached — `--version`
-      # works in code but the shell can't observe its exit. The check
-      # below confirms PyInstaller produced the file; importing the
-      # module here exercises its argument-handling path the same way
-      # the frozen binary does at startup.
-      - name: Smoke-test GUI module
-        shell: bash
-        run: |
-          test -f dist/spindoctor-gui.exe
-          python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
+      - name: Smoke-test standalone binaries
+        run: python build/smoke_standalone.py dist
 
       - name: Resolve release tag
         id: tag
@@ -79,7 +61,7 @@ jobs:
           fi
 
       - name: Package Win7 zip
-        # Zip just the five flat EXEs from dist/ — each is self-contained.
+        # Zip the two flat EXEs from dist/ — each works on its own.
         shell: bash
         run: |
           mkdir -p artifacts
@@ -109,9 +91,7 @@ jobs:
 
   # ── Modern build ─────────────────────────────────────────────────────────────
   # Python 3.12 + PyInstaller 6.x — Windows 10/11 only.
-  # PyInstaller 6.x produces a clean _internal/ shared-runtime layout so COLLECT
-  # can deduplicate the Python runtime across all five EXEs (the PR #273 goal that
-  # was reverted in PR #275 because PyInstaller 5.x couldn't produce _internal/).
+  # Produces the same two independent --onefile EXEs as the Win7 job.
   build-modern:
     name: Build (Windows 10/11+)
     runs-on: windows-2022
@@ -136,21 +116,8 @@ jobs:
         shell: bash
         run: python build/build_windows.py --modern
 
-      - name: Smoke-test every binary
-        shell: cmd
-        run: |
-          dist\spindoctor-win10\spindoctor.exe --version || exit /b 1
-          dist\spindoctor-win10\spindoctor-fav.exe --help || exit /b 1
-          dist\spindoctor-win10\spindoctor-recent.exe --help || exit /b 1
-          dist\spindoctor-win10\spindoctor-stats.exe --help || exit /b 1
-
-      # GUI in --onedir mode: the EXE sits in spindoctor-win10/ alongside its
-      # siblings, so Path(sys.executable).parent finds them correctly.
-      - name: Smoke-test GUI module
-        shell: bash
-        run: |
-          test -f dist/spindoctor-win10/spindoctor-gui.exe
-          python -c "import sys; from spindoctor.gui import main; sys.exit(main(['--version']))"
+      - name: Smoke-test standalone binaries
+        run: python build/smoke_standalone.py dist/spindoctor-win10
 
       - name: Resolve release tag
         id: tag
@@ -243,37 +210,16 @@ jobs:
             echo "| **Modern** *(recommended)* | \`spindoctor-win10-${{ github.ref_name }}.zip\` | Windows 10/11 | 3.12 | 6.x |"
             echo "| **Win7** | \`spindoctor-win7-${{ github.ref_name }}.zip\` | Windows 7 SP1+ | 3.8 | 5.x |"
             echo
-            echo "**Not sure which to pick?** Windows 10 or 11 → grab the Modern bundle. Windows 7 SP1, 8, or 8.1 → grab the Win7 bundle. The Win7 bundle also works on Windows 10/11 if you prefer the simpler five-EXE layout."
+            echo "**Not sure which to pick?** Windows 10 or 11 → grab the Modern bundle. Windows 7 SP1, 8, or 8.1 → grab the Win7 bundle."
             echo
-            echo "### Modern bundle (Windows 10/11)"
-            echo
-            echo "Shared-runtime \`--onedir\` build — the Python runtime lives once in \`_internal/\` instead of being embedded in each EXE."
+            echo "Each bundle contains two independent, single-file programs. Either one can be copied anywhere on its own:"
             echo
             echo "\`\`\`"
-            echo "spindoctor-win10-${{ github.ref_name }}.zip"
-            echo "└── spindoctor-win10-${{ github.ref_name }}/"
-            echo "    ├── spindoctor.exe          ← full CLI"
-            echo "    ├── spindoctor-gui.exe      ← double-clickable GUI launcher"
-            echo "    ├── spindoctor-fav.exe      ← Favorites wheel manager"
-            echo "    ├── spindoctor-recent.exe   ← Recently Played rebuild"
-            echo "    ├── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
-            echo "    └── _internal/              ← shared Python 3.12 runtime"
+            echo "├── spindoctor-gui.exe   ← double-clickable GUI (includes every command and all bundled media)"
+            echo "└── spindoctor.exe       ← full command-line tool (includes every command and all bundled media)"
             echo "\`\`\`"
             echo
-            echo "Extract the zip, then double-click \`spindoctor-win10-${{ github.ref_name }}\\spindoctor-gui.exe\`. Keep all files in the same folder."
-            echo
-            echo "### Win7 bundle (Windows 7 SP1 and newer)"
-            echo
-            echo "Five self-contained \`--onefile\` EXEs — each is a standalone self-extracting archive. Drop them in a folder of your choice."
-            echo
-            echo "\`\`\`"
-            echo "spindoctor-win7-${{ github.ref_name }}.zip"
-            echo "├── spindoctor.exe          ← full CLI"
-            echo "├── spindoctor-gui.exe      ← double-clickable GUI launcher"
-            echo "├── spindoctor-fav.exe      ← Favorites wheel manager"
-            echo "├── spindoctor-recent.exe   ← Recently Played rebuild"
-            echo "└── spindoctor-stats.exe    ← playtime reports + Most Played wheel"
-            echo "\`\`\`"
+            echo "No sibling EXEs, \`_internal/\` runtime folder, or media folder is needed. The separate fav/recent/stats EXEs from v2 are gone: run them through either EXE, for example \`spindoctor.exe --run-tool spindoctor-fav rebuild --apply\`. After upgrading, re-enable any auto-run tasks once so they point at the new EXE."
             echo
             echo "**Verify your download:**"
             echo

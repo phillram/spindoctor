@@ -6,33 +6,22 @@ Standalone Windows executables for SpinDoctor — for cabinets that can't (or sh
 
 Two bundles are produced per release:
 
-### Win7 bundle — `--onefile` (Python 3.8 + PyInstaller 5.x)
+### Win7 bundle — `--onefile` (Python 3.8.10 + PyInstaller 5.13.2)
 
-Five self-contained EXEs in `dist/`. Each is a standalone self-extracting archive — no shared runtime, no sibling files required. Drop them wherever you like.
+Two independent single-file EXEs in `dist/`. Each embeds the runtime, every command worker, and all bundled deployment media — no shared runtime directory, helper EXEs, or media folder required. Either can be copied anywhere alone.
 
 | Binary | Purpose |
 |---|---|
 | `spindoctor.exe` | Full CLI |
 | `spindoctor-gui.exe` | Tkinter GUI launcher (built `--windowed`, no console) |
-| `spindoctor-fav.exe` | Favorites wheel manager (boot-trigger friendly) |
-| `spindoctor-recent.exe` | Recently Played rebuild |
-| `spindoctor-stats.exe` | Playtime reports + Most Played wheel |
 
-`spindoctor-gui.exe` finds its sibling EXEs via `Path(sys.executable).parent`, so keep all five in the same directory for GUI use.
+The GUI runs commands by relaunching itself with `--run-tool <tool> ARGS...`, where `<tool>` is `spindoctor`, `spindoctor-fav`, `spindoctor-recent`, or `spindoctor-stats`. The console EXE supports the same dispatch, for example `spindoctor.exe --run-tool spindoctor-fav rebuild --apply`. Worker output and exit codes work through pipes and `.bat` files; generated bats use `start "" /B /WAIT` (scheduled refresh/autorun use `start /LOW /B /WAIT ""`).
 
-### Modern bundle — `--onedir` COLLECT (Python 3.12 + PyInstaller 6.x)
+### Modern bundle — `--onefile` (Python 3.12 + PyInstaller 6.x)
 
-One `spindoctor-win10/` folder in `dist/`. The Python 3.12 runtime lives once in `_internal/`; PyInstaller's COLLECT deduplicates it across all five EXEs — significantly smaller than five separate `--onefile` EXEs each embedding their own copy. Windows 10/11 only; PyInstaller 6.x bootloader requires Windows 8.1+.
+The same two independent EXEs in `dist/spindoctor-win10/`. Recommended for Windows 10/11; PyInstaller 6.x's bootloader requires Windows 8.1+. Both bundles extract to a temporary directory at runtime, as normal for PyInstaller one-file builds.
 
-Hidden imports are split per-target so each EXE only bundles what it actually uses:
-
-- `_CORE_BASE` — shared by all five binaries: the spindoctor package itself and `update_check`.
-- `_CORE_CLI` — `click` and `rich`, used only by the full CLI and GUI binaries.
-- `_CORE_LXML` — `lxml` C extensions, used only by the full CLI and GUI binaries. The standalone tools use `database.py`'s stdlib `xml.etree.ElementTree` fallback when lxml is absent — `lxml` is imported lazily via `_lxml_etree()` and `--exclude-module lxml` (in `_STANDALONE_EXCLUDES`) prevents bundling even though the import statement is visible to static analysis.
-
-`_STANDALONE_EXCLUDES` passes `--exclude-module` for `lxml`, `click`, `rich`, `tkinter`, and `PIL` so PyInstaller's stdlib sweep and any `.pyc` files in the build environment can't pull them back in.
-
-The tradeoff for the standalone tools: XML comment round-tripping is not preserved (lxml preserves comments and attribute order; the stdlib fallback does not). HyperSpin XML files written by the standalone tools are valid and HyperSpin reads them correctly — comments are not present in those files in practice.
+Separate `spindoctor-fav.exe`, `spindoctor-recent.exe`, and `spindoctor-stats.exe` are no longer shipped. Add `--legacy-tools` to either build command only for old external scripts that still need them. Pip installs continue to provide the three console scripts unchanged.
 
 ## Windows 7 compatibility
 
@@ -52,7 +41,7 @@ The modern build (`requirements-build-modern.txt`) uses **Python 3.12 + PyInstal
 pip install -e .[all]
 pip install -r build/requirements-build.txt
 python build/build_windows.py
-:: Output: dist\spindoctor.exe, dist\spindoctor-gui.exe, ...
+:: Output: dist\spindoctor.exe, dist\spindoctor-gui.exe
 ```
 
 **Modern build:**
@@ -60,25 +49,27 @@ python build/build_windows.py
 pip install -e .[all]
 pip install -r build/requirements-build-modern.txt
 python build/build_windows.py --modern
-:: Output: dist\spindoctor-win10\spindoctor.exe, ..., dist\spindoctor-win10\_internal\
+:: Output: dist\spindoctor-win10\spindoctor.exe, dist\spindoctor-win10\spindoctor-gui.exe
 ```
 
 Both clean `dist/` and `build/_pyinstaller/` first so each run is reproducible.
 
 ## How the build works
 
-**Win7 (`--onefile`):** `build_windows.py` runs PyInstaller five times — once per target. A tiny shim script per target calls the package entry point; PyInstaller wraps that shim plus all its imports into a single self-extracting EXE.
+Both builds run PyInstaller with `--onefile` once per target. `TARGETS` defines `spindoctor` (`spindoctor._runtime:cli_main`, console) and `spindoctor-gui` (`spindoctor.gui:main`, windowed). A generated shim calls each entry point; no shared-runtime spec is generated.
 
-**Modern (`--onedir` via `--modern`):** `build_windows.py` generates a PyInstaller 6.x spec file with five `Analysis` + `EXE` objects and one `COLLECT`. PyInstaller runs once; the COLLECT deduplicates the shared runtime into `_internal/`.
-
-Hidden imports and asset routing are defined per-target in `HIDDEN_IMPORTS` and `_MEDIA_WHEEL`. Both build paths list assets to bundle through the same `iter_bundle_assets()` — it excludes subdirectories (`spindoctor/assets/archive/` is ~129 MB of deprecated originals that must never be bundled) and then filters deployment media per-EXE via `_bundle_asset()`:
-
-- `spindoctor` — all four wheels' media (full CLI handles every wheel).
-- `spindoctor-fav` — Favorites assets only (`*_Favorites.*`) + shared files (`navigate_sound.mp3`, `theme_blank.zip`).
-- `spindoctor-recent` — Recently Played assets only (`*_Recently_Played.*`) + shared files.
-- `spindoctor-gui` / `spindoctor-stats` — no deployment media. The GUI never reads asset files directly — it delegates every operation to a sibling binary (`spindoctor.exe`, `spindoctor-fav.exe`, `spindoctor-recent.exe`, or `spindoctor-stats.exe`), which carry the media they need. `spindoctor-stats` rebuilds the Most Played wheel XML but never installs synthetic-wheel media.
+`HIDDEN_IMPORTS` ensures both EXEs contain the full CLI and all three wheel builders. Both receive every top-level file in `spindoctor/assets` through `iter_bundle_assets()`; subdirectories, including deprecated originals in `assets/archive/`, are never bundled.
 
 Generating the entry-point shims at build time (rather than committing spec files) keeps `build_windows.py` as the single source of truth for entry-points, hidden imports, and asset paths. Adding a new console script is a one-line edit to `TARGETS`.
+
+Validate isolation after building:
+
+```bat
+python build/smoke_standalone.py dist
+:: Modern: python build/smoke_standalone.py dist\spindoctor-win10
+```
+
+The smoke test copies each EXE alone into an empty folder with a stripped `PATH`, then checks version reporting, every worker, exit codes, media installation, `.bat` waiting/exit propagation, and GUI window launch.
 
 ## Release workflow
 
@@ -89,7 +80,7 @@ Generating the entry-point shims at build time (rather than committing spec file
 2. Installs runtime extras + PyInstaller 5.x (`requirements-build.txt`).
 3. Runs `python build/build_windows.py`.
 4. Smoke-tests each binary.
-5. Packages as `spindoctor-win7-<tag>.zip` (five flat EXEs).
+5. Packages as `spindoctor-win7-<tag>.zip` (two flat EXEs).
 6. Uploads as a workflow artifact.
 
 **`build-modern`** — Python 3.12 + PyInstaller 6.x:
@@ -97,7 +88,7 @@ Generating the entry-point shims at build time (rather than committing spec file
 2. Installs runtime extras + PyInstaller 6.x (`requirements-build-modern.txt`).
 3. Runs `python build/build_windows.py --modern`.
 4. Smoke-tests each binary from `dist\spindoctor-win10\`.
-5. Packages as `spindoctor-win10-<tag>.zip` (the whole `spindoctor-win10/` folder).
+5. Packages as `spindoctor-win10-<tag>.zip` (the `spindoctor-win10/` folder containing two independent EXEs).
 6. Uploads as a workflow artifact.
 
 **`publish`** — runs after both builds succeed (tag push only):

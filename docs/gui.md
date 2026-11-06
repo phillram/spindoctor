@@ -27,7 +27,7 @@ The canonical reference for `spindoctor-gui` — the same window whether you lau
 | **pip install** | Run `spindoctor-gui` from any terminal — the console script ships with the wheel. |
 | **Source checkout, no install** | `python -m spindoctor.gui` from the repo root. |
 
-The GUI is a thin wrapper — it shells out to the `spindoctor` CLI (and the three standalone wheel binaries on Windows) for every command. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
+The GUI is a thin wrapper — it runs CLI and wheel-builder workers for every command. Windows binary installs relaunch `spindoctor-gui.exe` itself with `--run-tool`; all workers and bundled deployment media are embedded, so no other EXE is needed. Pip installs use the installed console scripts. Anything you can do here is also available — and identical — on the command line. The GUI's job is the input form, the progress bar, and the output panel.
 
 **Async startup.** The window paints immediately, then runs the library scan (populating every system combobox across every tab from your HyperSpin Databases directory) and the startup health checks (config validation + CLI-binary probe) in the background. While the scan is in flight the status bar reads "Scanning library"; once it finishes the bar lands on either "Ready." or the first detected problem (e.g. "Setup incomplete — N path(s) need attention"). On a slow NAS-mounted library this avoids the "is it frozen?" beat the older synchronous behaviour had on launch.
 

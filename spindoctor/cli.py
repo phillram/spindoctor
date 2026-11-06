@@ -3770,32 +3770,17 @@ def scrub_restore_cmd(backup_path: Path, apply_changes: bool):
 
 
 def _sibling_exe(name: str) -> str:
-    """Return a quoted full path to a sibling SpinDoctor binary when frozen.
+    """Compatibility name for the current install's embedded-tool command."""
+    from ._runtime import tool_command_text
 
-    When running as a PyInstaller-frozen binary, each .exe is self-contained
-    and all five live in the same install directory.  Embedding the full path in
-    generated ``.bat`` files makes them work even when that folder is not on
-    ``PATH`` — which is always the case when RocketLauncher / HyperSpin
-    launch a bat, or when Windows Task Scheduler fires at log-on.
-
-    Falls back to the bare command name in dev / source-install mode so the
-    existing ``pip install -e .`` workflow is unchanged.
-    """
-    import sys as _sys
-    if getattr(_sys, "frozen", False):
-        sibling = Path(_sys.executable).parent / f"{name}.exe"
-        if sibling.exists():
-            # Quote the path so spaces in the install dir don't break cmd.exe.
-            return f'"{sibling}"'
-    return name
+    return tool_command_text(name)
 
 
 def _make_install_tools_bats() -> "dict[str, str]":
-    """Build the .bat file bodies with full paths to the sibling binaries.
+    """Build .bat files that wait for this executable's embedded workers.
 
     Called at write time (not at module import) so that ``sys.executable``
-    resolves to the frozen ``spindoctor.exe`` that the user actually ran,
-    giving us the correct installation directory to embed.
+    resolves to the frozen GUI or CLI that the user actually ran.
     """
     fav    = _sibling_exe("spindoctor-fav")
     recent = _sibling_exe("spindoctor-recent")
@@ -3804,21 +3789,21 @@ def _make_install_tools_bats() -> "dict[str, str]":
         "Refresh Favorites.bat": (
             "@echo off\r\n"
             "REM Regenerates the cross-system HyperSpin Favorites wheel.\r\n"
-            f"{fav} rebuild --apply\r\n"
+            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
             "if errorlevel 1 pause\r\n"
             "exit\r\n"
         ),
         "Refresh Recently Played.bat": (
             "@echo off\r\n"
             "REM Regenerates the Recently Played wheel from RocketLauncher stats.\r\n"
-            f"{recent} rebuild --apply\r\n"
+            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
             "if errorlevel 1 pause\r\n"
             "exit\r\n"
         ),
         "Refresh Most Played.bat": (
             "@echo off\r\n"
             "REM Regenerates the Most Played wheel from RocketLauncher playtime.\r\n"
-            f"{stats} build-wheel --apply\r\n"
+            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
             "if errorlevel 1 pause\r\n"
             "exit\r\n"
         ),
@@ -3826,11 +3811,11 @@ def _make_install_tools_bats() -> "dict[str, str]":
             "@echo off\r\n"
             "REM Refresh all three wheels. Pause on ANY step's failure so a\r\n"
             "REM silent fail-and-close doesn't hide which wheel didn't rebuild.\r\n"
-            f"{fav} rebuild --apply\r\n"
+            f'start "" /B /WAIT {fav} rebuild --apply\r\n'
             "if errorlevel 1 (echo. & echo Favorites step failed. & pause & exit /b 1)\r\n"
-            f"{recent} rebuild --apply\r\n"
+            f'start "" /B /WAIT {recent} rebuild --apply\r\n'
             "if errorlevel 1 (echo. & echo Recently Played step failed. & pause & exit /b 1)\r\n"
-            f"{stats} build-wheel --apply\r\n"
+            f'start "" /B /WAIT {stats} build-wheel --apply\r\n'
             "if errorlevel 1 (echo. & echo Most Played step failed. & pause & exit /b 1)\r\n"
         ),
     }

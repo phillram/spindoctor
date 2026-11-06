@@ -448,12 +448,6 @@ def test_autorun_status_stale_when_bat_references_old_install(tmp_path, monkeypa
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(new_exe_dir / "spindoctor-gui.exe"))
-    # _sibling_spindoctor_exe() only returns the full quoted path if the
-    # sibling actually exists on disk — must create it for a meaningful
-    # "current install" comparison.
-    new_exe_dir.mkdir(parents=True)
-    (new_exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
-
     # Simulate a bat written by an OLDER version of spindoctor (v2.11.0),
     # sitting in the stable ~/.spindoctor/ location.
     bat_dir = fake_home / ".spindoctor"
@@ -475,13 +469,11 @@ def test_autorun_status_not_stale_when_bat_matches_current_install(tmp_path, mon
     monkeypatch.setattr(Path, "home", lambda: fake_home)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     monkeypatch.setattr(sys, "executable", str(exe_dir / "spindoctor-gui.exe"))
-    exe_dir.mkdir(parents=True)
-    (exe_dir / "spindoctor.exe").write_text("", encoding="utf-8")
 
     bat_dir = fake_home / ".spindoctor"
     bat_dir.mkdir(parents=True)
     (bat_dir / SWAP_BAT_FILENAME).write_text(
-        f'@echo off\r\nstart /LOW /B /WAIT "" "{exe_dir / "spindoctor.exe"}" introvideo swap --apply\r\n'
+        f'@echo off\r\nstart /LOW /B /WAIT "" "{exe_dir / "spindoctor-gui.exe"}" --run-tool spindoctor introvideo swap --apply\r\n'
         "exit /b %errorlevel%\r\n",
         encoding="utf-8",
     )

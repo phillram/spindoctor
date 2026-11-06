@@ -2,15 +2,14 @@
 
 A double-clickable launcher for cabinet owners who don't want to drop into
 ``cmd.exe``. Wraps the most common SpinDoctor operations behind tabs and
-forms, and shells out to the underlying CLI binaries in a background thread
+forms, and runs the CLI in isolated background worker processes
 so output streams into the window without blocking the UI.
 
 The GUI deliberately does not duplicate command logic — it just builds an
-argv and spawns ``spindoctor.exe`` (or one of the standalone wheel binaries)
-sitting next to it. Two side benefits:
+argv and re-launches its own frozen executable in command-worker mode.
+Source installs use the installed CLI or Python modules. Two side benefits:
 
-* Command execution stays in sibling binaries. The GUI needs only the
-  dependencies used directly by its forms and callbacks.
+* The frozen GUI includes its workers, dependencies and media in one file.
 * Behaviour stays identical to the CLI, so a bug fix in either surface
   never has to be ported to the other.
 
@@ -45,6 +44,7 @@ from .config import (
 from .database import load_database
 from .rocketlauncher import list_exe_candidates
 from ._utils import format_bytes as _format_bytes_util
+from ._runtime import TOOL_MODULES, WORKER_FLAG, dispatch_worker, ensure_worker_stdio, frozen_tool_command
 
 
 # ─── Subprocess plumbing (importable without Tk) ──────────────────────────────
@@ -65,16 +65,11 @@ _OUTPUT_TRUNCATED = "[Earlier output truncated]\n"
 
 # Map "console script name" → "module to run with -m" for dev installs where
 # the frozen exes don't exist. Mirrors [project.scripts] in pyproject.toml.
-_DEV_MODULE_MAP = {
-    "spindoctor": "spindoctor.cli",
-    "spindoctor-fav": "spindoctor.favorites",
-    "spindoctor-recent": "spindoctor.recent",
-    "spindoctor-stats": "spindoctor.playtime",
-}
+_DEV_MODULE_MAP = TOOL_MODULES
 
 
 class CliNotFoundError(RuntimeError):
-    """Raised when the GUI can't locate a sibling CLI binary at runtime."""
+    """Compatibility exception for callers that report CLI launch failures."""
 
 
 def resolve_cli_command(name: str) -> list[str]:
@@ -85,9 +80,8 @@ def resolve_cli_command(name: str) -> list[str]:
 
     Resolution order:
 
-    1. **Frozen GUI** — sibling exe in the same directory as ``sys.executable``.
-       This is how the release zip ships them, so the user doesn't need to
-       configure ``PATH`` for the GUI to find its peers.
+    1. **Frozen GUI** — this same executable in embedded-worker mode.
+       No sibling executables, PATH entries or Python install are needed.
     2. **PATH lookup** — for users who installed the binaries via a package
        manager or symlinked them somewhere on ``PATH``.
     3. **Dev install** — fall back to ``sys.executable -m <module>`` so
@@ -96,20 +90,8 @@ def resolve_cli_command(name: str) -> list[str]:
     if name not in _DEV_MODULE_MAP:
         raise ValueError(f"Unknown SpinDoctor binary: {name!r}")
 
-    suffix = ".exe" if sys.platform == "win32" else ""
-
     if getattr(sys, "frozen", False):
-        sibling = Path(sys.executable).resolve().parent / f"{name}{suffix}"
-        if sibling.exists():
-            return [str(sibling)]
-        on_path = shutil.which(name)
-        if on_path:
-            return [on_path]
-        raise CliNotFoundError(
-            f"Could not find {name}{suffix} next to the GUI binary "
-            f"({Path(sys.executable).parent}) or on PATH. "
-            "Make sure all spindoctor*.exe files are kept in the same folder."
-        )
+        return frozen_tool_command(name)
 
     on_path = shutil.which(name)
     if on_path:
@@ -130,12 +112,11 @@ def probe_cli_version(name: str) -> Optional[str]:
     each of which is itself evidence the exe is stale, so callers treat
     ``None`` the same as a mismatch.
 
-    The GUI, the Tools-menu ``.bat`` files, and Task Scheduler all invoke
-    these *sibling* exes rather than the running GUI's own code, so a copy
-    left behind by a partial upgrade silently rebuilds wheels with old logic
-    (e.g. Recently Played / Most Played rendered alphabetically). This probe
-    is how the GUI notices that before kicking off a refresh.
+    Frozen workers are embedded and always match this GUI. Source installs
+    still probe their separately installed commands before refreshing.
     """
+    if getattr(sys, "frozen", False):
+        return __version__ if name in TOOL_MODULES else None
     try:
         argv = resolve_cli_command(name) + ["--version"]
     except (CliNotFoundError, ValueError):
@@ -1119,7 +1100,9 @@ _HELP_TEXT = (
     "  spindoctor-gui --version    Print the version and exit.\n"
     "  spindoctor-gui --help       Print this help and exit.\n"
     "\n"
-    "Use spindoctor.exe for the full CLI; this binary just wraps it in a window.\n"
+    "The frozen GUI includes every command worker and all bundled media.\n"
+    "No sibling EXEs or runtime/media folders are needed.\n"
+    "  spindoctor-gui --run-tool spindoctor COMMAND ...    Run an embedded command.\n"
 )
 
 
@@ -1130,6 +1113,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     the frozen exe loads without spawning a real Tk window on the CI runner.
     """
     args = list(sys.argv[1:] if argv is None else argv)
+    if args[:1] == [WORKER_FLAG]:
+        return dispatch_worker(args[1:])
+    if args:
+        ensure_worker_stdio()
     if args and args[0] in ("-h", "--help"):
         print(_HELP_TEXT)
         return 0
@@ -1878,9 +1865,7 @@ class _SpinDoctorGUI:
           only saw the error when they clicked Run on a tab that needed
           the missing path. Now we run cfg.is_valid() at startup and
           report any errors in the status bar.
-        - The spindoctor CLI binary missing from PATH (frozen builds
-          that got separated from their sibling exes, dev installs
-          without `pip install -e .`). Previously raised CliNotFoundError
+        - An unavailable source CLI installation. Previously raised CliNotFoundError
           on the user's first Run click. Now we probe at startup and
           surface a persistent status message.
 
@@ -5092,10 +5077,8 @@ class _SpinDoctorGUI:
             self._flash_validation("Tick at least one wheel to refresh.")
             return
 
-        # The GUI runs the *sibling* wheel-builder exes, not its own code — a
-        # copy left stale by a partial upgrade rebuilds wheels with old logic
-        # (the classic symptom: Recently Played / Most Played come out
-        # alphabetical). Verify each builder matches this GUI before running.
+        # Source-installed builders may be stale. Embedded frozen workers
+        # always match this GUI.
         if not self._confirm_wheel_binary_versions(binary for _n, binary, _a in steps):
             return
 
@@ -5146,9 +5129,9 @@ class _SpinDoctorGUI:
             + "\n".join(mismatches)
             + "\n\nAn out-of-date builder rebuilds wheels with old logic — for "
             "example rendering Recently Played / Most Played alphabetically "
-            "instead of by recency / play count. Re-extract the full release so "
-            "every spindoctor*.exe in the install folder matches, then refresh "
-            "again.\n\nRefresh anyway?",
+            "instead of by recency / play count. Update your source installation "
+            "with `pip install -U spindoctor`, then refresh again. Standalone "
+            "v3 executables already include matching workers.\n\nRefresh anyway?",
         )
         if not proceed:
             self._append_output(
@@ -12701,18 +12684,15 @@ class _SpinDoctorGUI:
 
     def _refresh_exe_refs(self) -> "tuple[str, str, str]":
         """Command tokens for fav/recent/stats against the *currently
-        running* install — frozen: quoted absolute sibling paths; source:
+        running* install — frozen: this EXE's embedded workers; source:
         bare command names. Shared by :func:`_write_refresh_bat` and the
         staleness check in :func:`_refresh_autorefresh_status` so the two
         can never drift out of sync with each other."""
-        if getattr(sys, "frozen", False):
-            exe_dir = Path(sys.executable).parent
-            return (
-                f'"{exe_dir / "spindoctor-fav.exe"}"',
-                f'"{exe_dir / "spindoctor-recent.exe"}"',
-                f'"{exe_dir / "spindoctor-stats.exe"}"',
-            )
-        return "spindoctor-fav", "spindoctor-recent", "spindoctor-stats"
+        from ._runtime import tool_command_text
+
+        return tuple(tool_command_text(name) for name in (
+            "spindoctor-fav", "spindoctor-recent", "spindoctor-stats",
+        ))
 
     def _write_refresh_bat(self) -> Path:
         """Write spindoctor-refresh-wheels.bat and return its path.
@@ -12727,7 +12707,7 @@ class _SpinDoctorGUI:
         keep pointing at a script that may no longer exist. Writing here
         instead means the Task Scheduler task's target path never needs
         to change across upgrades; only its *contents* (which reference
-        the per-version sibling exes on a frozen install) need a refresh
+        the executable's embedded workers on a frozen install) need a refresh
         — re-click "Enable auto-run" once after upgrading.
 
         Each sub-command is wrapped with ``START /LOW /B /WAIT`` so the
@@ -12815,7 +12795,7 @@ class _SpinDoctorGUI:
         Also detects a stale registration: the task is enabled, but the
         generated .bat no longer reflects the currently-running install
         (missing outright, or — frozen installs only — doesn't reference
-        the sibling exes this process is actually running from, e.g.
+        this executable's embedded workers, e.g.
         after upgrading into a new version folder without re-clicking
         Enable auto-run). Not stale on a source install: the .bat calls
         bare command names there, nothing version-specific to go stale.
@@ -13411,9 +13391,8 @@ class _SpinDoctorGUI:
                 "SpinDoctor CLI not found",
                 f"{exc}\n\n"
                 "Common fixes:\n"
-                "• Frozen / Windows binary install: keep all five .exe files "
-                "in the same folder — the GUI finds its peers by looking "
-                "next to itself.\n"
+                "• Frozen / Windows binary install: re-download the standalone "
+                "GUI EXE if it is damaged.\n"
                 "• Source install: re-run `pip install -e .` from the "
                 "repo root so the console scripts get registered.",
             )

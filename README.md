@@ -21,7 +21,7 @@ SpinDoctor ships in three forms — pick whichever matches your cabinet:
 
 | | Best for | What you get | Walkthrough |
 |---|---|---|---|
-| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Two bundles: **modern** (Windows 10/11, shared runtime) and **Win7** (Windows 7 SP1 and newer, standalone `.exe` files). Both include a windowed GUI launcher and the full CLI. | [docs/windows-binaries.md](docs/windows-binaries.md) |
+| 🪟 **Prebuilt Windows binaries** | Cabinets where you don't want to install Python | Two bundles: **modern** (Windows 10/11) and **Win7** (Windows 7 SP1 and newer). Both ship two independent single-file EXEs: a windowed GUI and the full CLI, each embedding all workers and bundled deployment media. | [docs/windows-binaries.md](docs/windows-binaries.md) |
 | 🐍 **Pip install from source** | Dev machines, custom builds, anyone already running Python 3.8+ | Same CLI plus `spindoctor-gui` console script, importable as a package. Cross-platform (Windows / macOS / Linux). | [docs/installation.md](docs/installation.md) |
 | 📂 **Source-on-disk, no install** | Locked-down boxes where `pip install` isn't an option but Python is | The `.py` wrappers in [`scripts/`](scripts/) run directly from a checkout via `python scripts\spindoctor-fav.py …`. | [docs/installation.md#running-without-pip-install](docs/installation.md#running-without-pip-install) |
 
@@ -35,7 +35,7 @@ Then pick how you want to *use* it:
 ### Five-minute quick start (binaries)
 
 1. Grab the right zip from the [latest release](https://github.com/phillram/spindoctor/releases):
-   - **Windows 10/11** → `spindoctor-win10-vX.Y.Z.zip` (shared runtime, recommended)
+   - **Windows 10/11** → `spindoctor-win10-vX.Y.Z.zip` (standalone `.exe` files, recommended)
    - **Windows 7 SP1 / 8 / 8.1 or 10/11** → `spindoctor-win7-vX.Y.Z.zip` (standalone `.exe` files)
 2. Extract the zip and move the folder (or EXEs) to a location of your choice (e.g. `C:\spindoctor\`). Optionally add that folder to `PATH` for CLI use. See [docs/windows-binaries.md](docs/windows-binaries.md) for the layout of each bundle.
 3. **Double-click `spindoctor-gui.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done. Prefer to be walked through it? Click **Run first-run wizard** at the top of that tab ([details](docs/gui.md#first-run-wizard)).

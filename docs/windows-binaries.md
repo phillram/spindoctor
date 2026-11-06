@@ -32,35 +32,30 @@ Each release ships **two bundles** — pick whichever matches your Windows versi
 
 ### Modern bundle (Windows 10/11)
 
-Shared-runtime `--onedir` build. The Python 3.12 runtime lives once in `_internal/`; all the EXEs share it.
+Two independent `--onefile` EXEs, each embedding the runtime, every command worker, and all bundled deployment media.
 
 ```
 spindoctor-win10-vX.Y.Z.zip
 └── spindoctor-win10-vX.Y.Z/
     ├── spindoctor.exe          ← full CLI (every command)
-    ├── spindoctor-gui.exe      ← double-clickable GUI launcher
-    ├── spindoctor-fav.exe      ← Favorites wheel manager
-    ├── spindoctor-recent.exe   ← Recently Played rebuild
-    ├── spindoctor-stats.exe    ← playtime reports + Most Played wheel
-    └── _internal/              ← shared Python 3.12 runtime (do not delete)
+    └── spindoctor-gui.exe      ← double-clickable GUI launcher
 ```
 
-Extract and keep the whole `spindoctor-win10-vX.Y.Z/` folder together — the `_internal/` directory must stay next to the EXEs. Rename the folder if you like (e.g. to plain `spindoctor\`); only its contents matter.
+Either EXE can be copied anywhere alone — no shared runtime directory, helper EXEs, or media folder required.
 
 ### Win7 bundle (Windows 7 SP1 and newer)
 
-Self-contained `--onefile` EXEs — each is a standalone self-extracting archive. Drop them wherever you like.
+The same two self-contained `--onefile` EXEs, built for Windows 7. Drop either wherever you like.
 
 ```
 spindoctor-win7-vX.Y.Z.zip
 ├── spindoctor.exe          ← full CLI (every command)
-├── spindoctor-gui.exe      ← double-clickable GUI launcher
-├── spindoctor-fav.exe      ← Favorites wheel manager
-├── spindoctor-recent.exe   ← Recently Played rebuild
-└── spindoctor-stats.exe    ← playtime reports + Most Played wheel
+└── spindoctor-gui.exe      ← double-clickable GUI launcher
 ```
 
 Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer, the taskbar, Alt-Tab, and the window title bar.
+
+Both bundles extract their embedded runtime to a temporary directory when launched; this is normal for PyInstaller one-file builds.
 
 ## Compatibility
 
@@ -73,7 +68,7 @@ Each `.exe` ships with SpinDoctor's custom icon embedded — visible in Explorer
 | Windows 7 RTM (no SP1) | ✗ Not supported | ✗ Install SP1 first |
 | Windows XP / Vista | ✗ Not supported | ✗ Python 3.8 dropped them |
 
-The Win7 bundle is built with **Python 3.8.10 + PyInstaller 5.13.2** — the only pairing whose bootloader loads on Windows 7 SP1. The modern bundle uses **Python 3.12 + PyInstaller 6.x**, which raises the minimum to Windows 8.1 but enables the shared-runtime `--onedir` layout that significantly reduces download size.
+The Win7 bundle is built with **Python 3.8.10 + PyInstaller 5.13.2** — the only pairing whose bootloader loads on Windows 7 SP1. The modern bundle uses **Python 3.12 + PyInstaller 6.x**, whose bootloader requires Windows 8.1 or newer.
 
 ## Download
 
@@ -92,32 +87,15 @@ curl -L -o spindoctor-win7-v2.4.1.zip ^
 
 There's no installer — just extract and optionally rename.
 
-**Modern bundle:** Extract the zip. Move the entire `spindoctor-win10-vX.Y.Z/` folder to a location of your choice, renaming it if you like (e.g. `C:\spindoctor\`). You should end up with:
+1. **Either bundle:** Extract the zip and copy either or both EXEs to a location of your choice (e.g. `C:\spindoctor\`):
 
    ```
    C:\spindoctor\
    ├── spindoctor.exe
-   ├── spindoctor-gui.exe
-   ├── spindoctor-fav.exe
-   ├── spindoctor-recent.exe
-   ├── spindoctor-stats.exe
-   └── _internal\        ← keep this next to the EXEs
+   └── spindoctor-gui.exe
    ```
 
-   Do not move individual EXEs out of the folder — `_internal\` must stay alongside them.
-
-**Win7 bundle:** Extract the zip. Move the `.exe` files to a folder of your choice (e.g. `C:\spindoctor\`). Each binary is self-contained — you can place them individually or together as you prefer.
-
-   ```
-   C:\spindoctor\
-   ├── spindoctor.exe
-   ├── spindoctor-gui.exe
-   ├── spindoctor-fav.exe
-   ├── spindoctor-recent.exe
-   └── spindoctor-stats.exe
-   ```
-
-`spindoctor-gui.exe` finds its peer binaries by looking in the same directory as itself, so keeping them in one folder is recommended for GUI use (both bundles).
+   A GUI-only install is fully functional, including wheel builders and media installation. The console EXE is optional for terminal use.
 
 2. **Add the folder to `PATH`** (optional, GUI users can skip) so you can run `spindoctor` from anywhere:
 
@@ -164,7 +142,14 @@ After the wizard (either route), a safe first command is `spindoctor tools-audit
 
 `spindoctor-gui.exe` is a Tkinter front-end for cabinet owners who'd rather not drop into `cmd.exe`. **Double-click it** — that's the supported launch — and a single window opens with workflow-ordered tabs that cover essentially the entire CLI surface, a `File` / `View` / `Help` menubar, and a shared output panel that streams subprocess output as commands run.
 
-The GUI is a thin wrapper — it shells out to `spindoctor.exe` (and the standalone wheel binaries) sitting next to it. Keep all the EXEs in the same folder; the GUI does not require `PATH` to be configured.
+The GUI runs embedded workers by relaunching itself with `--run-tool`; it needs neither another EXE nor `PATH`. Both EXEs support `--run-tool <tool> ARGS...`, where `<tool>` is `spindoctor`, `spindoctor-fav`, `spindoctor-recent`, or `spindoctor-stats`. For example:
+
+```bat
+start "" /B /WAIT "C:\spindoctor\spindoctor-gui.exe" --run-tool spindoctor-fav rebuild --apply
+spindoctor.exe --run-tool spindoctor-stats build-wheel --apply
+```
+
+Worker output and exit codes are preserved through pipes and `.bat` files. Frozen installs no longer need helper-version mismatch warnings: the workers are embedded in the running EXE.
 
 **For the full GUI walkthrough — tab tour, menubar, keyboard shortcuts, dry-run feedback, find bar, quick-filter, dark mode, and first-run wizard — see the platform-neutral [GUI walkthrough](gui.md).** The same window ships on Windows binary, pip, and source installs; the walkthrough applies to all three.
 
@@ -182,7 +167,7 @@ The cabinet end-user shouldn't need to launch the GUI or drop into `cmd.exe` for
 spindoctor install-tools
 ```
 
-Writes four `.bat` shortcuts (Refresh Favorites / Recently Played / Most Played / Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu.
+Writes four `.bat` shortcuts (Refresh Favorites / Recently Played / Most Played / Both) into `<RocketLauncher>\Modules\HyperLaunch\Tools\spindoctor\`. Register them in **HyperHQ → Tools** and they appear inside HyperSpin's in-cabinet Tools menu. On binary installs they embed the running EXE's full path plus `--run-tool`, using `start "" /B /WAIT`, so a GUI-only install works.
 
 **2. Inside an existing wheel system (`install-tools --add-to-system`).** If you have a "Toolkit" or "Tools" wheel (a HyperSpin system whose "games" are maintenance tasks), expose the helpers as wheel entries inside it. From the GUI's **Custom Wheels** tab → "Install into an existing wheel system", or from the CLI:
 
@@ -192,12 +177,7 @@ spindoctor install-tools --add-to-system Toolkit
 
 Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCLauncher\Toolkit\`, and adds matching `<game>` entries to `<HyperSpin>\Databases\Toolkit\Toolkit.xml`. The target system must already exist and use PCLauncher as its emulator.
 
-**3. Automatic refresh on cabinet startup.** From the GUI's **Custom Wheels** tab → "Auto-refresh on cabinet startup", click *Enable auto-run* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. Manual equivalent:
-
-```bat
-schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
-  /tr "cmd.exe /c \"spindoctor-fav rebuild --apply & spindoctor-recent rebuild --apply & spindoctor-stats build-wheel --apply\""
-```
+**3. Automatic refresh on cabinet startup.** From the GUI's **Custom Wheels** tab → "Auto-refresh on cabinet startup", click *Enable auto-run* (Windows-only — wraps `schtasks.exe`). Configurable post-log-on delay so HyperSpin / RocketLauncher settle before the rebuild kicks in. The generated bat calls the running EXE with `--run-tool` via `start /LOW /B /WAIT ""`, with a hidden VBS shim. See [manual registration](standalone-tools.md#manual-registration) if you need to register the task yourself.
 
 ## Updating
 
@@ -206,6 +186,12 @@ schtasks /create /sc onlogon /tn "SpinDoctor Refresh Wheels" /rl LIMITED /f ^
 3. Re-run `spindoctor --version` (or relaunch `spindoctor-gui.exe` and check the title bar) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
+
+### Upgrading from v2
+
+v3 ships only `spindoctor-gui.exe` and `spindoctor.exe`; each works alone. Separate wheel-builder EXEs are no longer shipped. Update external scripts to use `--run-tool` (pip console-script names are unchanged); custom builds can use `build_windows.py --legacy-tools` for old scripts.
+
+After upgrading to a new folder or EXE path, re-run `install-tools`, click **Enable auto-run** again for wheel refresh, and re-run `introvideo install-autorun --apply` (or enable it again in the GUI) once for intro-video rotation. This rewrites saved paths; GUI/autorun status flags stale tasks.
 
 ## Troubleshooting
 
@@ -221,7 +207,7 @@ If your IT policy blocks unsigned binaries entirely, fall back to a source insta
 
 ### `spindoctor-gui.exe` opens a window but the buttons do nothing
 
-The GUI shells out to `spindoctor.exe` and the standalone wheel binaries sitting next to it. If those moved, got renamed, or were quarantined by antivirus, every button click pops a "Binary not found" error pointing at the missing file. Re-download or re-extract the affected EXE from the release zip — each is a self-contained binary.
+v3 embeds every worker in `spindoctor-gui.exe`; there are no helper EXEs to locate. Check the Output panel for the command's error. If an old install reports "Binary not found", replace the GUI with the current release EXE — copying helper files alongside it is not required.
 
 If `spindoctor-gui.exe` itself fails to open at all on Windows 7, you're hitting the same `api-ms-win-core-…` bootloader issue documented below — install Service Pack 1 first.
 
@@ -244,7 +230,7 @@ PyInstaller binaries occasionally trigger heuristic detections because the bundl
 
 ### A specific command crashes only in the `.exe` (works fine via `pip install`)
 
-Likely a missing hidden import in the PyInstaller spec — open an issue with the full traceback. The fix is usually a one-line addition to the `HIDDEN_IMPORTS` list in [`build/build_windows.py`](https://github.com/phillram/spindoctor/blob/main/build/build_windows.py).
+Likely a missing PyInstaller hidden import — open an issue with the full traceback. The fix is usually a one-line addition to the `HIDDEN_IMPORTS` list in [`build/build_windows.py`](https://github.com/phillram/spindoctor/blob/main/build/build_windows.py).
 
 For everything else, see the general [Troubleshooting guide](troubleshooting.md).
 
