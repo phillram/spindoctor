@@ -17,7 +17,7 @@ Run via:
 
     spindoctor-gui                 # console-script entry point
     python -m spindoctor.gui       # module form
-    spindoctor-gui.exe             # frozen Windows binary
+    spindoctor.exe                 # frozen Windows GUI binary
 """
 from __future__ import annotations
 
