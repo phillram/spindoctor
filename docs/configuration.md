@@ -10,7 +10,7 @@ Settings live at `%USERPROFILE%\.spindoctor\config.json` (or `~/.spindoctor/conf
 spindoctor config init
 ```
 
-Prompts for every path-based setting with sensible Windows defaults. Press Enter to accept, type `-` to leave an optional path blank. Re-running uses your current values as defaults — safe to refine.
+Prompts for every path-based setting. There are no made-up default paths: type each required path, and press Enter (or type `-`) to leave an optional one blank. Re-running offers your current values as defaults — safe to refine.
 
 ## Showing and changing values
 

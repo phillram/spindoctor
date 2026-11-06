@@ -170,13 +170,13 @@ class Config:
     output_dir: str = ""
     auto_audit_export_dir: str = ""
     # Folder holding the pool of intro videos `spindoctor introvideo swap`
-    # picks from (e.g. "D:\Arcade\Media\Frontend\Video\Intro Video
+    # picks from (e.g. "<hyperspin_dir>\Media\Frontend\Video\Intro Video
     # Randomizer"). Videos live directly in this folder; a `Disabled\`
     # subfolder (created on demand) holds videos taken out of rotation via
     # `introvideo remove` and is never scanned as a candidate.
     intro_randomizer_dir: str = ""
     # Full path to the file HyperSpin actually plays on boot (e.g.
-    # "D:\Arcade\Media\Frontend\Video\Intro.mp4"). `introvideo swap`
+    # "<hyperspin_dir>\Media\Frontend\Video\Intro.mp4"). `introvideo swap`
     # overwrites this file with a randomly chosen video from
     # intro_randomizer_dir.
     intro_video_target: str = ""

@@ -3721,3 +3721,29 @@ def test_window_title_has_no_version(monkeypatch):
         assert __version__ not in app.root.title()
     finally:
         app.root.destroy()
+
+
+def test_setup_paths_start_blank_with_helper_text(monkeypatch):
+    # No made-up default paths: an unset field is blank and says so.
+    from spindoctor.config import load_config
+
+    for _key, _label, hint, _allow_blank in gui._SETUP_FIELDS:
+        assert ":\\" not in hint and ":/" not in hint
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        cfg = load_config()
+        for key, _label, _hint, allow_blank in gui._SETUP_FIELDS:
+            if getattr(cfg, key, ""):
+                continue
+            assert app._setup_vars[key].get() == "", key
+            label = app._setup_hint_labels[key]
+            assert label.winfo_manager() == "grid", key
+            text = label.cget("text")
+            assert text.startswith("Not set." if allow_blank else "Required, not set yet."), key
+        key = next(k for k, *_ in gui._SETUP_FIELDS if not getattr(cfg, k, ""))
+        app._setup_vars[key].set(r"X:\Somewhere")
+        assert app._setup_hint_labels[key].winfo_manager() == ""
+        app._setup_vars[key].set("")
+        assert app._setup_hint_labels[key].winfo_manager() == "grid"
+    finally:
+        app.root.destroy()
