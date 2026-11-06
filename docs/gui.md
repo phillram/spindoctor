@@ -49,13 +49,13 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 A single window with a grouped page list in a sidebar on the left, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom. The Output panel's header row holds **Find**, **Copy**, **Clear** and **Hide**. The status bar shows the current command and, while a command runs, a progress bar with **Stop** beside it. While the Output panel is hidden, a **Show output** button appears in the status bar. Every page scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
 
-The sidebar groups the pages as **Get started** (Setup, Diagnostics), **Library** (Systems, Games, Metadata & Media, Maintenance), **Wheels & cabinet** (Custom Wheels, Intro Video, LEDBlinky, Lightgun), **Safety** (Backup & Restore, Migration) and **Advanced** (Console, History). Ctrl+1 to Ctrl+9 jump to the first nine pages in that order.
+The sidebar groups the pages as **Get started** (Setup, Diagnostics), **Library** (Systems, Games, Metadata & Media, Maintenance), **Wheels & cabinet** (Custom Wheels, Intro Video, LEDBlinky, Lightgun), **Backup & move** (Backup & Restore, Migration) and **Advanced** (History, Console). Ctrl+1 to Ctrl+9 jump to the first nine pages in that order.
 
 The status bar text is automatically truncated when a command string is too long to fit; the progress bar, Stop and Show output stay visible regardless of command length.
 
 ### Apply changes, Verbose output, and Save log file
 
-The top of the sidebar holds four settings that apply to **every command on every page**:
+Four settings apply to **every command on every page**. **Apply changes** is the switch at the top of the sidebar; the other three are checkbuttons in the **View** menu. While **Verbose output** or **Save log file** is on, a reminder under the Apply switch says so (for example "On: Verbose output (View menu)").
 
 | Setting | Effect |
 |---|---|
@@ -72,7 +72,7 @@ The **System** dropdown in the sidebar selects a system in every section at once
 
 ## Tab tour
 
-Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally power-user escapes (Console) and the session log (History) at the very end.
+Tabs appear in new-user journey order: configure paths first (Setup), then confirm the cabinet is healthy (Diagnostics — read-only, so it's safe to explore before touching anything), then build out systems (Systems), then manage games within those systems (Games), enrich metadata (Metadata & Media), curate the library (Maintenance), manage cross-system wheels (Custom Wheels), manage the boot-video randomizer pool (Intro Video), configure hardware (LEDBlinky / Lightgun), then infrastructure (Backup & Restore → Migration), and finally the session log (History) and power-user escapes (Console) at the very end.
 
 Screenshots below show SpinDoctor's dark theme at 125% UI scale with a synthetic sample cabinet, not a real library. Your systems, paths and enabled controls will differ. Maintainers can regenerate them on Windows with `python scripts/capture_gui_screenshots.py`.
 
@@ -370,17 +370,9 @@ Six numbered steps walk through the full migration workflow.
 
 Ticking **Apply** pops a confirmation dialog before running — the wording adapts to the chosen mode. `--keep-source` shows a milder "copy to new drive, originals stay" message; the default destructive move warns explicitly that originals will be removed and points at the undo-manifest as the only recovery path.
 
-### Console
-
-![Console tab, shown with a sample cabinet](screenshots/13-console.png)
-
-Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
-
-Quoting values with spaces (e.g. `emulator-title set "Model 2" "Sega Model 2"`) works the same as on the command line — the quote characters themselves are stripped before the arguments reach the CLI, so `"Daphne"` and `Daphne` are equivalent input here.
-
 ### History
 
-![History tab, shown with a sample cabinet](screenshots/14-history.png)
+![History tab, shown with a sample cabinet](screenshots/13-history.png)
 
 Persistent timeline of every action taken since the GUI was launched, newest first. Tree on the left (Status / Started / Command); read-only viewer on the right showing the full output of the selected row. Each row tags as `DRY-RUN`, `OK`, `FAIL <code>`, or `running`. The viewer header shows `# Dry-run: Yes` (preview), `# Dry-run: No` (wrote to disk), or `# Dry-run: N/A` (read-only or write-always command where the concept does not apply). **Save selected output** exports the selected entry to a `.txt` file and appends its own log entry recording the saved path.
 
@@ -397,6 +389,14 @@ its output to a file when you need a complete verbose log.
 
 A **Browse manifests / undo** button next to Refresh/Copy/Clear (separated by a vertical Separator) signposts the menu's "Logs & Manifests" viewer for new users who land on the History tab first.
 
+### Console
+
+![Console tab, shown with a sample cabinet](screenshots/14-console.png)
+
+Anything the dedicated tabs don't cover. The entry field is an editable Combobox seeded with canonical commands organised into named sections (`─── Health & Discovery ───`, `─── LEDBlinky ───`, etc.). Every CLI command with meaningful flag variants is represented, and commands within each section are alphabetically sorted. Selecting a section header auto-advances to the first real command in that section. Default value is `--help`. Pick a preset, edit `<PLACEHOLDER>` tokens (`<SYSTEM>`, `<PATH>`, `<ROM>`, …), press Enter or click Run. Unfilled placeholders trigger a warning instead of silently shelling out.
+
+Quoting values with spaces (e.g. `emulator-title set "Model 2" "Sega Model 2"`) works the same as on the command line — the quote characters themselves are stripped before the arguments reach the CLI, so `"Daphne"` and `Daphne` are equivalent input here.
+
 ## Menubar
 
 A `File` / `View` / `Help` menubar runs across the top of the window:
@@ -407,6 +407,7 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **File → View logs & manifests** — opens a Toplevel listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. Three buttons at the bottom: **Undo this run** (runs the matching `--undo` for the selected manifest), **Show diff** (renders changes as a before/after table), **Revert just \<SYSTEM\>** (theme swaps only — one-system revert via `--revert-system`).
 - **File → Browse HyperSpin themes** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
 - **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel, as do the panel's **Hide** button and the status bar's **Show output** button. State persists across restarts via the `output_visible` config key.
+- **View → Verbose output / Save log file / Show help text** — checkbuttons for the shared run settings described in [Apply changes, Verbose output, and Save log file](#apply-changes-verbose-output-and-save-log-file). Not saved between sessions.
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
 - **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.

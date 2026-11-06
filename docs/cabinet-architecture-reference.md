@@ -226,7 +226,7 @@ J:\spindoctor\
 └── temps\      ← optional staging for targets on the same filesystem
 ```
 
-The GUI's **Save log file** checkbox (top of the sidebar) (off by default) writes a `.txt` backup of each finished command's exact output straight into `output_dir` — a saved diagnostic log, not a guarantee that other commands write there. Review it before sharing.
+The GUI's **Save log file** setting (View menu) (off by default) writes a `.txt` backup of each finished command's exact output straight into `output_dir` — a saved diagnostic log, not a guarantee that other commands write there. Review it before sharing.
 
 MAME `listxml` cache (used by `ledblinky generate`) is stored at:
 ```
