@@ -451,7 +451,7 @@ spindoctor add-pc-system "PC Games" --no-menu --no-system-media --no-game-media 
 
 Removing a PC game requires two steps: delete the XML entry (so the game disappears from the wheel) and delete the PCLauncher INI (so RocketLauncher stops finding it). `game remove --remove-pclauncher` does both in one command.
 
-> **GUI alternative:** Games tab → pick **PC Games** from the shared dropdown at the top → Step 1 **Manage the game wheel** → **Load games** → select the game row → tick **Also remove PCLauncher INI (PC systems only)** → tick **Apply** → click **Remove game**.
+> **GUI alternative:** pick **PC Games** in the sidebar → Games tab → **Manage the game wheel** → select the game row → tick **Also remove PCLauncher INI (PC systems only)** → tick **Apply** → click **Remove game**.
 
 ```bat
 :: Dry-run first

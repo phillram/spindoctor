@@ -2301,6 +2301,33 @@ class _SpinDoctorGUI:
         )
         return label
 
+    def _sidebar_system_row(self, parent, var, *, all_var=None):
+        """``System: MAME  (change it in the sidebar)`` for a section that follows the sidebar.
+
+        *var* is the section's follower var from ``_SYSTEM_FOLLOWERS``.
+        With *all_var* (an "All systems" checkbox), the label reads
+        "All systems" while it's checked, since the system is then ignored.
+        """
+        row = self.ttk.Frame(parent)
+        self.ttk.Label(row, text="System:").pack(side="left")
+        shown = var
+        if all_var is not None:
+            shown = self.tk.StringVar(master=self.root)
+
+            def _sync(*_a):
+                shown.set("All systems" if all_var.get() else var.get())
+
+            var.trace_add("write", _sync)
+            all_var.trace_add("write", _sync)
+            _sync()
+        self.ttk.Label(row, textvariable=shown, font="TkHeadingFont").pack(
+            side="left", padx=(6, 0),
+        )
+        self.ttk.Label(
+            row, text="(change it in the sidebar)", foreground=_FG_DIM,
+        ).pack(side="left", padx=(8, 0))
+        return row
+
     def _help_text(self, parent, *, text):
         """Optional guidance, shown or hidden together by the sidebar's Show help."""
         frame = self.ttk.Frame(parent)
@@ -2726,18 +2753,30 @@ class _SpinDoctorGUI:
         )
         self._system_heading.pack(anchor="w", pady=(10, 1))
         self._current_system_var = self.tk.StringVar(master=self.root, value="")
+        system_row = self.ttk.Frame(side, style="Sidebar.TFrame")
+        system_row.pack(fill="x")
         self._current_system_combo = self.ttk.Combobox(
-            side, textvariable=self._current_system_var,
-            state="readonly", width=20,
+            system_row, textvariable=self._current_system_var,
+            state="readonly", width=16,
         )
-        self._current_system_combo.pack(fill="x")
+        self._current_system_combo.pack(side="left", fill="x", expand=True)
+        refresh_btn = self.ttk.Button(
+            system_row, text="↻", width=3,
+            command=lambda: self._refresh_systems(notify=True),
+        )
+        refresh_btn.pack(side="left", padx=(4, 0))
+        _attach_tooltip(
+            refresh_btn,
+            "Reload the system list, e.g. after changing paths in Setup.",
+            self.tk,
+        )
         self._current_system_combo.bind(
             "<<ComboboxSelected>>", lambda _e: self._push_current_system(),
         )
         _attach_tooltip(
             self._current_system_combo,
-            "Selects this system in every section. A section's own "
-            "System dropdown can still pick a different one.",
+            "Selects this system in every section. The few sections "
+            "with their own System dropdown can still pick a different one.",
             self.tk,
         )
         self.ttk.Separator(side).pack(fill="x", pady=(8, 2))
@@ -2770,6 +2809,7 @@ class _SpinDoctorGUI:
                 self._nav_buttons[name] = btn
 
         nb.bind("<<NotebookTabChanged>>", self._sync_nav_to_tab, add="+")
+        nb.bind("<<NotebookTabChanged>>", self._gwm_autoload, add="+")
         self._global_apply_var.trace_add(
             "write", lambda *_a: self._refresh_apply_toggle(),
         )
@@ -5530,6 +5570,14 @@ class _SpinDoctorGUI:
     def _build_diagnostics_tab(self, parent):
         frame = self.ttk.Frame(parent, padding=12)
 
+        # Audit, Verify and Inspect all use the sidebar's System picker.
+        self._system_var = self.tk.StringVar()
+        self._verify_system_var = self.tk.StringVar()
+        self._inspect_system_var = self.tk.StringVar()
+        self._sidebar_system_row(frame, self._system_var).pack(
+            fill="x", pady=(0, 10),
+        )
+
         # ── Step 1 — Cabinet health check ────────────────────────────────────
         # The one-click "is my cab OK?" surface leads the tab: a brand-new
         # user lands here straight after Setup, and these three buttons
@@ -5560,19 +5608,8 @@ class _SpinDoctorGUI:
         audit_lf = self.ttk.LabelFrame(frame, text="Audit a system")
         audit_lf.pack(fill="x", pady=(0, 8))
 
-        self.ttk.Label(audit_lf, text="System").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
-        self._system_var = self.tk.StringVar()
-        self._system_combo = self.ttk.Combobox(
-            audit_lf, textvariable=self._system_var, state="readonly", width=40
-        )
-        self._system_combo.grid(row=0, column=1, sticky="w", padx=6, pady=(6, 2))
-        self.ttk.Button(
-            audit_lf, text="Reload list",
-            command=lambda: self._refresh_systems(notify=True),
-        ).grid(row=0, column=2, sticky="w", pady=(6, 2))
-
         btn_row = self.ttk.Frame(audit_lf)
-        btn_row.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(4, 2))
+        btn_row.grid(row=1, column=0, columnspan=3, sticky="w", padx=6, pady=(6, 2))
         self.ttk.Button(btn_row, text="Audit selected system",
                         command=self._run_audit).pack(side="left")
         self.ttk.Button(btn_row, text="Audit all systems",
@@ -5586,11 +5623,11 @@ class _SpinDoctorGUI:
             foreground=_FG_DIM,
         ).pack(side="left")
         self.ttk.Button(
-            browse_row, text="Open Media folder for selected system",
+            browse_row, text="Open Media folder",
             command=self._open_audit_media_folder,
         ).pack(side="left", padx=6)
         self.ttk.Button(
-            browse_row, text="Open ROMs folder for selected system",
+            browse_row, text="Open ROMs folder",
             command=self._open_audit_roms_folder,
         ).pack(side="left", padx=6)
 
@@ -5689,14 +5726,7 @@ class _SpinDoctorGUI:
 
         verify_row = self.ttk.Frame(sv_lf)
         verify_row.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(verify_row, text="System").pack(side="left")
-        self._verify_system_var = self.tk.StringVar()
-        self._verify_system_combo = self.ttk.Combobox(
-            verify_row, textvariable=self._verify_system_var,
-            state="readonly", width=24,
-        )
-        self._verify_system_combo.pack(side="left", padx=6)
-        self.ttk.Label(verify_row, text="DAT path").pack(side="left", padx=(8, 0))
+        self.ttk.Label(verify_row, text="DAT path").pack(side="left")
         self._verify_dat_var = self.tk.StringVar()
         _verify_entry = self.ttk.Entry(
             verify_row, textvariable=self._verify_dat_var,
@@ -5720,23 +5750,11 @@ class _SpinDoctorGUI:
         ).pack(anchor="w", padx=6, pady=(0, 4))
         self._help_text(
             sv_lf,
-            text="Pick a system. Leave ROM blank to inspect all its games.",
+            text="Leave ROM blank to inspect every game in the system.",
         ).pack(fill="x", padx=6, pady=(0, 4))
         inspect_row = self.ttk.Frame(sv_lf)
         inspect_row.pack(fill="x", padx=6, pady=(2, 8))
-        self.ttk.Label(inspect_row, text="System").pack(side="left")
-        self._inspect_system_var = self.tk.StringVar()
-        self._inspect_system_combo = self.ttk.Combobox(
-            inspect_row, textvariable=self._inspect_system_var,
-            state="readonly", width=24,
-        )
-        self._inspect_system_combo.pack(side="left", padx=6)
-        self._inspect_system_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._refresh_inspect_games(),
-        )
-        self.ttk.Label(inspect_row, text="ROM (optional)").pack(
-            side="left", padx=(8, 0),
-        )
+        self.ttk.Label(inspect_row, text="ROM (optional)").pack(side="left")
         self._inspect_rom_var = self.tk.StringVar()
         self._inspect_rom_combo = self.ttk.Combobox(
             inspect_row, textvariable=self._inspect_rom_var,
@@ -5767,14 +5785,14 @@ class _SpinDoctorGUI:
     def _open_audit_media_folder(self) -> None:
         system = self._system_var.get().strip()
         if not system:
-            self._flash_validation("Pick a system from the dropdown above first.")
+            self._flash_validation("Pick a system in the sidebar first.")
             return
         self._open_system_media_folder(system)
 
     def _open_audit_roms_folder(self) -> None:
         system = self._system_var.get().strip()
         if not system:
-            self._flash_validation("Pick a system from the dropdown above first.")
+            self._flash_validation("Pick a system in the sidebar first.")
             return
         cfg = load_config()
         if not cfg.roms_dir:
@@ -5836,17 +5854,12 @@ class _SpinDoctorGUI:
         # on the first call (tabs build lazily), so we guard with getattr.
         combos_and_vars = [
             ("_current_system_combo",  "_current_system_var",  None),
-            ("_system_combo",          "_system_var",          None),
             ("_mainmenu_system_combo", "_mainmenu_system_var", None),
-            ("_meta_system_combo",     "_meta_system_var",     None),
-            ("_verify_system_combo",   "_verify_system_var",   None),
-            ("_inspect_system_combo",  "_inspect_system_var",  None),
             ("_fav_system_combo",      "_fav_system_var",      None),
             ("_match_system_combo",    "_match_system_var",    None),
             ("_organize_system_combo", "_organize_system_var", None),
             ("_madd_system_combo",     "_madd_system_var",     None),
             ("_ovr_system_combo",      "_ovr_system_var",      None),
-            ("_curate_system_combo",   "_curate_system_var",   None),
             ("_ignore_system_combo",   "_ignore_system_var",   None),
             ("_repath_system_combo",   "_repath_system_var",   None),
             # _led_system_combo removed — Step 1 is MAME-only, hardcoded in _run_led_generate/_run_led_audit
@@ -5933,7 +5946,7 @@ class _SpinDoctorGUI:
         system = self._system_var.get().strip()
         if not system:
             self._flash_validation(
-                "Pick a system from the dropdown (or click Reload list "
+                "Pick a system in the sidebar (or click ↻ next to it "
                 "after configuring paths in the Setup tab)."
             )
             return
@@ -6788,15 +6801,33 @@ class _SpinDoctorGUI:
         self._gwm_on_system_change()
         self._refresh_rename_games()
         self._refresh_fixexe_games()
+        self._gwm_autoload()
+
+    def _gwm_autoload(self, _event=None) -> None:
+        """Load the game-wheel table when the Games page is open.
+
+        Runs on a system change and on every page switch, so a sidebar
+        pick made on another page loads when you next open Games. It
+        doesn't load in the background, which would also put "Loaded N
+        games" in the status bar while you work on a different page.
+        """
+        nb = getattr(self, "_nb", None)
+        names = getattr(self, "_tab_base_names", [])
+        if nb is None or "Games" not in names:
+            return
+        try:
+            if int(nb.index("current")) != names.index("Games"):
+                return
+        except Exception:  # noqa: BLE001 - notebook not realized yet
+            return
+        system = self._gwm_system_var.get().strip()
+        if system and system != self._gwm_loaded_system:
+            self._gwm_load()
 
     def _build_games_tab(self, parent):  # noqa: PLR0915
         frame = self.ttk.Frame(parent, padding=12)
 
         # Every section on this page uses the sidebar's System picker.
-        picker_row = self.ttk.Frame(frame)
-        picker_row.pack(fill="x", pady=(0, 10))
-        self.ttk.Label(picker_row, text="System:").pack(side="left")
-
         self._games_system_var = self.tk.StringVar()
         # Aliases so every existing handler reads the same StringVar without
         # needing individual changes — one picker drives all four steps.
@@ -6805,13 +6836,9 @@ class _SpinDoctorGUI:
         self._fixexe_system_var = self._games_system_var
         self._systems_old_var = self._games_system_var
 
-        self.ttk.Label(
-            picker_row, textvariable=self._games_system_var,
-            font="TkHeadingFont",
-        ).pack(side="left", padx=(6, 0))
-        self.ttk.Label(
-            picker_row, text="(change it in the sidebar)", foreground=_FG_DIM,
-        ).pack(side="left", padx=(8, 0))
+        self._sidebar_system_row(frame, self._games_system_var).pack(
+            fill="x", pady=(0, 10),
+        )
 
         # ── Step 1 — Manage the game wheel ───────────────────────────────────
         self._gwm_data: list[dict] = []
@@ -6824,19 +6851,24 @@ class _SpinDoctorGUI:
 
         self._help_text(
             gwm_lf,
-            text="Load games, reorder with the buttons or Alt+Up/Down, then Save order. Remove game removes the database entry, not ROMs or media. The optional PCLauncher checkbox also removes its launcher INI.",
+            text="The list loads when you open this page. Reorder with the buttons or Alt+Up/Down, then Save order. Remove game removes the database entry, not ROMs or media. The optional PCLauncher checkbox also removes its launcher INI.",
         ).pack(fill="x", padx=6, pady=(4, 2))
 
         gwm_load_row = self.ttk.Frame(gwm_lf)
         gwm_load_row.pack(fill="x", padx=6, pady=(0, 4))
-        self.ttk.Button(
-            gwm_load_row, text="Load games",
-            command=self._gwm_load,
-        ).pack(side="left")
         self._gwm_count_label = self.ttk.Label(
             gwm_load_row, text="", foreground=_FG_DIM,
         )
-        self._gwm_count_label.pack(side="left", padx=8)
+        self._gwm_count_label.pack(side="left")
+        # Reload from disk, e.g. after another tool edited the database.
+        reload_btn = self.ttk.Button(
+            gwm_load_row, text="↻", width=3, command=self._gwm_load,
+        )
+        reload_btn.pack(side="left", padx=(8, 0))
+        _attach_tooltip(
+            reload_btn, "Reload the game list from the database, "
+            "discarding unsaved order changes.", self.tk,
+        )
 
         gwm_tree_frame = self.ttk.Frame(gwm_lf)
         gwm_tree_frame.pack(fill="both", expand=True, padx=6, pady=(0, 4))
@@ -7496,7 +7528,7 @@ class _SpinDoctorGUI:
         system = self._inspect_system_var.get().strip()
         rom = self._inspect_rom_var.get().strip()
         if not system:
-            self._flash_validation("Select a system from the dropdown first.")
+            self._flash_validation("Pick a system in the sidebar first.")
             return
         args = ["inspect", "--system", system]
         if rom:
@@ -7541,16 +7573,11 @@ class _SpinDoctorGUI:
         # Shared system field — every command on this tab takes one.
         sys_row = self.ttk.Frame(frame)
         sys_row.pack(fill="x", pady=(0, 6))
-        self.ttk.Label(sys_row, text="System (or tick All systems)").pack(
-            side="left",
-        )
         self._meta_system_var = self.tk.StringVar()
-        self._meta_system_combo = self.ttk.Combobox(
-            sys_row, textvariable=self._meta_system_var,
-            state="readonly", width=30,
-        )
-        self._meta_system_combo.pack(side="left", padx=6)
         self._meta_all_var = self.tk.BooleanVar(value=False)
+        self._sidebar_system_row(
+            sys_row, self._meta_system_var, all_var=self._meta_all_var,
+        ).pack(side="left")
         self.ttk.Checkbutton(
             sys_row, text="All systems", variable=self._meta_all_var,
         ).pack(side="left", padx=6)
@@ -8270,7 +8297,7 @@ class _SpinDoctorGUI:
         system = self._meta_system_var.get().strip()
         if not system:
             self._flash_validation(
-                "Type a system name (e.g. 'MAME') or tick All systems."
+                "Pick a system in the sidebar or check All systems."
             )
             return None
         return ["--system", system]
@@ -8985,7 +9012,7 @@ class _SpinDoctorGUI:
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
-            self._flash_validation("Pick a system in the selector above first.")
+            self._flash_validation("Pick a system in the sidebar first.")
             return
         try:
             cfg = load_config()
@@ -9008,7 +9035,7 @@ class _SpinDoctorGUI:
         """
         sys_name = self._meta_system_var.get().strip()
         if not sys_name:
-            self._flash_validation("Pick a system in the selector above first.")
+            self._flash_validation("Pick a system in the sidebar first.")
             return
         try:
             cfg = load_config()
@@ -9105,16 +9132,11 @@ class _SpinDoctorGUI:
 
         cur_top = self.ttk.Frame(cur_frame)
         cur_top.pack(fill="x", padx=6, pady=2)
-        self.ttk.Label(cur_top, text="System (or tick All systems)").pack(
-            side="left",
-        )
         self._curate_system_var = self.tk.StringVar()
-        self._curate_system_combo = self.ttk.Combobox(
-            cur_top, textvariable=self._curate_system_var,
-            state="readonly", width=24,
-        )
-        self._curate_system_combo.pack(side="left", padx=6)
         self._curate_all_var = self.tk.BooleanVar(value=False)
+        self._sidebar_system_row(
+            cur_top, self._curate_system_var, all_var=self._curate_all_var,
+        ).pack(side="left")
         self.ttk.Checkbutton(
             cur_top, text="All systems", variable=self._curate_all_var,
         ).pack(side="left", padx=6)
@@ -9527,7 +9549,7 @@ class _SpinDoctorGUI:
             return ["--all"]
         system = self._curate_system_var.get().strip()
         if not system:
-            self._flash_validation("Type a system name or tick All systems first.")
+            self._flash_validation("Pick a system in the sidebar or check All systems first.")
             return None
         return ["--system", system]
 
