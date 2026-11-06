@@ -1040,15 +1040,16 @@ def test_gui_constructs_against_real_tk():
         assert abs(app._ui_scale - 1.25) < 1e-6
         app._set_ui_scale(1.0)
 
-        # Output pane toggle must flip both ways and update the button
-        # label so the status-bar control stays in sync.
+        # Output pane toggle must flip both ways; the status-bar
+        # "Show output" button exists only while the panel is hidden.
         assert app._output_visible is True
+        assert app._output_toggle_btn.winfo_manager() == ""
         app._toggle_output(False)
         assert app._output_visible is False
-        assert app._output_toggle_btn.cget("text") == "Show output"
+        assert app._output_toggle_btn.winfo_manager() == "grid"
         app._toggle_output(True)
         assert app._output_visible is True
-        assert app._output_toggle_btn.cget("text") == "Hide output"
+        assert app._output_toggle_btn.winfo_manager() == ""
 
         # Eyeball toggle: flipping must clear and restore show="*".
         # The setup tab builds the credential entries lazily, but the
@@ -2692,6 +2693,70 @@ def test_sidebar_apply_switch_is_loud_and_drives_global_apply(monkeypatch):
             if w.winfo_class() == "TCheckbutton"
         }
         assert bar_texts == set()
+    finally:
+        app.root.destroy()
+
+
+def test_output_header_holds_panel_buttons(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        header_texts = [
+            w.cget("text") for w in app._out_header.winfo_children()
+            if w.winfo_class() == "TButton"
+        ]
+        assert sorted(header_texts) == ["Clear", "Copy", "Find", "Hide"]
+        # None of the panel's buttons are left in the status bar.
+        status_texts = {
+            w.cget("text")
+            for w in app._status_right.winfo_children()
+            if w.winfo_manager()
+        }
+        assert status_texts == set()
+
+        hide = next(
+            w for w in app._out_header.winfo_children()
+            if w.winfo_class() == "TButton" and w.cget("text") == "Hide"
+        )
+        hide.invoke()
+        assert app._output_visible is False
+        app._output_toggle_btn.invoke()
+        assert app._output_visible is True
+    finally:
+        app.root.destroy()
+
+
+def test_stop_shows_beside_busy_bar_only_while_running(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app._stop_btn.winfo_manager() == ""
+        assert app._busy_bar.winfo_manager() == ""
+        app._set_busy(True)
+        assert app._stop_btn.winfo_manager() == "grid"
+        assert app._busy_bar.winfo_manager() == "grid"
+        # Busy bar sits directly left of Stop.
+        assert (
+            int(app._busy_bar.grid_info()["column"]) + 1
+            == int(app._stop_btn.grid_info()["column"])
+        )
+        app._set_busy(False)
+        assert app._stop_btn.winfo_manager() == ""
+        assert app._busy_bar.winfo_manager() == ""
+        # The emptied cluster shrinks instead of leaving a blank gap.
+        app.root.update_idletasks()
+        assert app._status_right.winfo_reqwidth() <= 1
+    finally:
+        app.root.destroy()
+
+
+def test_update_download_button_works_while_stop_is_hidden(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app._stop_btn.winfo_manager() == ""
+        app._show_update_download_button("https://example.invalid/release")
+        btn = app._update_download_btn
+        assert btn.winfo_manager() == "grid"
+        # Leftmost slot, ahead of the busy bar and Stop when they show.
+        assert int(btn.grid_info()["column"]) == 0
     finally:
         app.root.destroy()
 

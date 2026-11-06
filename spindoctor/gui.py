@@ -1900,11 +1900,15 @@ class _SpinDoctorGUI:
         finally:
             self._output_visible = bool(visible)
 
-        # Update the status-bar button label + View menu checkbox so all
-        # three entry points stay in lockstep.
+        # The status-bar "Show output" button only exists while the panel
+        # is hidden; keep it and the View menu checkbox in lockstep.
         btn = getattr(self, "_output_toggle_btn", None)
         if btn is not None:
-            btn.configure(text="Hide output" if visible else "Show output")
+            if visible:
+                btn.grid_remove()
+                self._shrink_status_right()
+            else:
+                btn.grid(row=0, column=3, padx=(6, 0))
         var = getattr(self, "_output_visible_var", None)
         if var is not None:
             var.set(bool(visible))
@@ -2414,8 +2418,26 @@ class _SpinDoctorGUI:
         # self._append_output during construction; if self._output
         # doesn't exist yet, that raises AttributeError and the GUI
         # never paints. See also the matching note at _append_output.
-        out_frame = self.ttk.LabelFrame(main_paned, text="Output")
+        out_frame = self.ttk.Frame(main_paned)
         self._out_frame = out_frame
+
+        # Header row: title on the left, the buttons that act on the
+        # panel on the right. They live here rather than in the status
+        # bar so they hide along with the panel they act on.
+        out_header = self.ttk.Frame(out_frame)
+        out_header.pack(fill="x", padx=4, pady=(2, 0))
+        self._out_header = out_header
+        # Plain label, matching the section-frame titles on every page.
+        self.ttk.Label(out_header, text="Output").pack(side="left")
+        for text, command in (
+            ("Hide", lambda: self._toggle_output(visible=False)),
+            ("Clear", self._clear_output),
+            ("Copy", self._copy_output),
+            ("Find", self._find_open),
+        ):
+            self.ttk.Button(
+                out_header, text=text, command=command, width=6,
+            ).pack(side="right", padx=(6, 0))
 
         # Find bar — hidden by default; toggled via Ctrl+F / Cmd+F.
         # Lives ABOVE the ScrolledText so showing it doesn't shrink the
@@ -2541,38 +2563,32 @@ class _SpinDoctorGUI:
             bar, textvariable=self._status_var, anchor="w", width=1,
         )
         self._status_label.pack(side="left", fill="x", expand=True)
-        # Indeterminate progress bar sits between the status text and
-        # the Stop button. Hidden by default; _run_cli starts it and
-        # _on_proc_done stops it. Without this the only visual cue that
-        # a long migrate/audit is doing work is the streaming Output
-        # panel — a hung process and a quiet one are indistinguishable.
+        # Right-hand controls sit in fixed grid columns so their order
+        # never depends on when each one was shown:
+        #   0 update Download (lazy)  1 busy bar  2 Stop  3 Show output
+        # Each is gridded only while it applies, and grid_remove() keeps
+        # its slot so showing it again needs no re-layout bookkeeping.
+        right = self.ttk.Frame(bar)
+        right.pack(side="right")
+        self._status_right = right
+        # Progress bar + Stop appear only while a command runs
+        # (_set_busy). Without the bar the only cue that a long
+        # migrate/audit is working is the streaming Output panel — a
+        # hung process and a quiet one are indistinguishable.
         self._busy_bar = self.ttk.Progressbar(
-            bar, mode="indeterminate", length=120,
+            right, mode="indeterminate", length=120,
         )
-        # _busy_bar is packed lazily by _set_busy(True) so the slot
-        # doesn't take up status-bar width while idle.
         self._stop_btn = self.ttk.Button(
-            bar, text="Stop", command=self._stop_running, state="disabled"
+            right, text="Stop", command=self._stop_running, state="disabled"
         )
-        self._stop_btn.pack(side="right")
-        self.ttk.Button(bar, text="Clear output", command=self._clear_output).pack(
-            side="right", padx=(0, 6)
-        )
-        # Copy-to-clipboard mirrors the Logs tab's copy pattern. Lives
-        # next to Clear so long audit / migrate output can be grabbed
-        # without scrolling-and-selecting.
-        self.ttk.Button(
-            bar, text="Copy output", command=self._copy_output,
-        ).pack(side="right", padx=(0, 6))
-        # Hide / Show output toggle — sits at the left of the cluster so
-        # muscle-memory positions of Copy/Clear/Stop don't shift when
-        # cabinet owners reach for the familiar buttons.
+        # Shown only while the Output panel is hidden; when it's visible
+        # its own header has a Hide button.
         self._output_toggle_btn = self.ttk.Button(
-            bar,
-            text=("Hide output" if self._output_visible else "Show output"),
-            command=self._toggle_output,
+            right, text="Show output",
+            command=lambda: self._toggle_output(visible=True),
         )
-        self._output_toggle_btn.pack(side="right", padx=(0, 6))
+        if not self._output_visible:
+            self._output_toggle_btn.grid(row=0, column=3, padx=(6, 0))
 
         # Apply / Verbose / Save Log are shared by every page and live at
         # the top of the sidebar.
@@ -3430,15 +3446,13 @@ class _SpinDoctorGUI:
             except Exception:  # noqa: BLE001 - widget race during teardown
                 pass
         btn = self.ttk.Button(
-            self._status_bar_frame
-            if hasattr(self, "_status_bar_frame")
-            else self._stop_btn.master,
+            self._status_right,
             text="Download",
             command=lambda u=url: self._open_url(u),
         )
-        # Sit immediately to the left of Stop so it's the first thing
-        # the user's eye lands on when checking the bottom bar.
-        btn.pack(side="right", padx=(0, 6), before=self._stop_btn)
+        # Leftmost slot of the right-hand cluster, so it's the first
+        # thing the eye lands on when checking the bottom bar.
+        btn.grid(row=0, column=0, padx=(6, 0))
         self._update_download_btn = btn
 
     def _manual_update_check(self) -> None:
@@ -13599,8 +13613,20 @@ class _SpinDoctorGUI:
         # 50 ms drain to deliver the DoneMarker.
         self._stop_btn.configure(state="disabled")
 
+    def _shrink_status_right(self) -> None:
+        """Let the status bar's right cluster shrink after hiding a widget.
+
+        Tk keeps a grid master at its old size once its last slave is
+        removed, which would leave a blank gap where Stop used to be.
+        Resetting the frame's own size fixes that; with slaves still
+        gridded, propagation overrides it, so it's always safe to call.
+        """
+        right = getattr(self, "_status_right", None)
+        if right is not None:
+            right.configure(width=1, height=1)
+
     def _set_busy(self, busy: bool) -> None:
-        """Show / hide the progress bar in the status bar.
+        """Show / hide the progress bar and Stop button in the status bar.
 
         Called by ``_run_cli`` when a subprocess is launched and by
         ``_on_proc_done`` when it exits. Defaults to the indeterminate
@@ -13609,16 +13635,23 @@ class _SpinDoctorGUI:
         switches to a determinate bar so the user can see "step 2 of 3"
         progress visually, not just in the status text.
 
+        Chained workflows start their next step from the done callback,
+        before the previous step's teardown, so this stays True between
+        steps and Stop doesn't flicker.
+
         Failures are swallowed because Tk widgets can race with window
         destruction during shutdown.
         """
         bar = getattr(self, "_busy_bar", None)
         if bar is None:
             return
+        stop = getattr(self, "_stop_btn", None)
         try:
             if busy:
                 chain = getattr(self, "_chain_progress", None)
-                bar.pack(side="right", padx=(0, 6))
+                bar.grid(row=0, column=1, padx=(6, 0))
+                if stop is not None:
+                    stop.grid(row=0, column=2, padx=(6, 0))
                 if chain is not None:
                     step, total = chain
                     # Determinate fill: the bar advances at the *start*
@@ -13634,7 +13667,10 @@ class _SpinDoctorGUI:
                     bar.start(80)
             else:
                 bar.stop()
-                bar.pack_forget()
+                bar.grid_remove()
+                if stop is not None:
+                    stop.grid_remove()
+                self._shrink_status_right()
         except Exception:  # noqa: BLE001 - widget race during teardown
             pass
 
