@@ -263,6 +263,44 @@ def _is_plausible_geometry(s: str) -> bool:
     return bool(_GEOMETRY_RE.match(s or ""))
 
 
+def _enable_windows_dpi_awareness() -> None:
+    """Tell Windows this process draws at the monitor's real resolution.
+
+    Without it, Windows renders the window at 96 DPI and stretches the
+    bitmap to the display's scaling (150 %, 200 % on 4K panels), which
+    makes all text blurry. Must run before the first Tk window exists;
+    calling it again later is harmless. "System aware" (1) rather than
+    per-monitor, because Tk 8.6 doesn't re-layout when moved between
+    monitors. Windows 7/8.0 lack shcore, so fall back to the older
+    user32 call there.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            return
+        except (AttributeError, OSError):
+            pass
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:  # noqa: BLE001 - cosmetic; never block startup
+        pass
+
+
+def _rescale_geometry(geom: str, factor: float) -> str:
+    """Scale every number in a Tk geometry string (``WxH+X+Y``) by *factor*.
+
+    Used when a saved window size was recorded at a different DPI scale
+    (for example, before SpinDoctor was DPI-aware, when sizes were in
+    96-DPI logical pixels).
+    """
+    if abs(factor - 1.0) < 0.01:
+        return geom
+    return re.sub(r"\d+", lambda m: str(int(round(int(m.group()) * factor))), geom)
+
+
 def _is_maximized(root) -> bool:
     """Return True when *root* is currently maximised (cross-platform)."""
     try:
@@ -1212,6 +1250,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             import tkinter as _tk_warn
             from tkinter import messagebox as _mb_warn
 
+            _enable_windows_dpi_awareness()
             _root = _tk_warn.Tk()
             _root.withdraw()
             _mb_warn.showwarning(
@@ -1246,6 +1285,10 @@ class _SpinDoctorGUI:
         self.filedialog = filedialog_mod
         self.messagebox = messagebox_mod
         self.scrolledtext = scrolledtext_mod
+
+        # Before the root window exists, or Windows bitmap-stretches the
+        # whole UI on high-DPI displays and text comes out blurry.
+        _enable_windows_dpi_awareness()
 
         # Use tkinterdnd2's TkinterDnD.Tk() when available so Setup-tab
         # path Entries can accept dragged folders from Explorer/Finder.
@@ -1285,10 +1328,21 @@ class _SpinDoctorGUI:
         self._base_tk_scaling: float = 1.0
         self._apply_ui_scale(self._ui_scale, initial=True)
 
+        # Physical pixels per 96-DPI pixel (1.0 on a 100 % display, 1.5 or
+        # 2.0 on a scaled 4K one). Fonts follow DPI on their own via tk
+        # scaling; pixel sizes such as the window size go through _px().
+        # Derived from Tk's startup scaling (pixels per point, so 96 DPI is
+        # 96/72), not from winfo_fpixels: _apply_ui_scale has already
+        # multiplied tk scaling by the UI scale, which must not count twice.
+        try:
+            self._dpi_scale = max(1.0, self._base_tk_scaling * 72.0 / 96.0)
+        except Exception:  # noqa: BLE001
+            self._dpi_scale = 1.0
+
         # Geometry honours the persisted scale so 1.5× on a small screen
         # still opens to a usable size, not a Postage-stamp.
-        base_w, base_h = 960, 720
-        min_w, min_h = 720, 540
+        base_w, base_h = self._px(960), self._px(720)
+        min_w, min_h = self._px(720), self._px(540)
         scaled_w = max(min_w, int(base_w * self._ui_scale))
         scaled_h = max(min_h, int(base_h * self._ui_scale))
         # If the user resized / moved the window last session, restore
@@ -1297,6 +1351,15 @@ class _SpinDoctorGUI:
         # config.json can't pass garbage to Tk.
         restored = False
         saved_geom = getattr(_bootstrap_cfg, "gui_window_geometry", "") or ""
+        # A size saved at another DPI scale (including every size saved
+        # before SpinDoctor was DPI-aware, which defaults to 1.0) is
+        # converted so the window keeps the same physical size.
+        try:
+            saved_dpi = float(getattr(_bootstrap_cfg, "gui_window_dpi_scale", 1.0) or 1.0)
+        except (TypeError, ValueError):
+            saved_dpi = 1.0
+        if saved_geom and _is_plausible_geometry(saved_geom):
+            saved_geom = _rescale_geometry(saved_geom, self._dpi_scale / saved_dpi)
         if saved_geom and _is_plausible_geometry(saved_geom):
             try:
                 self.root.geometry(saved_geom)
@@ -1604,7 +1667,8 @@ class _SpinDoctorGUI:
         # ── Treeview (Logs tab, Main Menu, Log viewer dialog) ────────────────
         s.configure("Treeview", background=_DARK_BG_INPUT,
                     fieldbackground=_DARK_BG_INPUT, foreground=_DARK_FG,
-                    bordercolor=_DARK_BORDER, rowheight=22)
+                    bordercolor=_DARK_BORDER)
+        self._sync_treeview_rowheight()
         s.map("Treeview",
               background=[("selected", _DARK_BG_SELECT)],
               foreground=[("selected", _DARK_FG)])
@@ -1677,6 +1741,32 @@ class _SpinDoctorGUI:
 
     # ── UI scale ──────────────────────────────────────────────────────────────
 
+    def _px(self, n: int) -> int:
+        """*n* 96-DPI pixels in physical pixels on this display."""
+        return int(round(n * getattr(self, "_dpi_scale", 1.0)))
+
+    def _sync_treeview_rowheight(self) -> None:
+        """Size Treeview rows to the current font.
+
+        ttk's rowheight is in pixels and doesn't follow the font, so a
+        fixed value clips text once the font grows: at View → UI scale
+        1.5× / 2× or on a high-DPI display. Keeps the old 22 px minimum,
+        so a 100 % display at 1.0× looks the same as before.
+        """
+        style = getattr(self, "_ttk_style", None)
+        if style is None:
+            return
+        try:
+            from tkinter import font as tkfont
+
+            line = int(tkfont.nametofont("TkDefaultFont").metrics("linespace"))
+        except Exception:  # noqa: BLE001
+            return
+        try:
+            style.configure("Treeview", rowheight=max(self._px(22), line + self._px(6)))
+        except Exception:  # noqa: BLE001
+            pass
+
     def _apply_ui_scale(self, scale: float, *, initial: bool = False) -> None:
         """Apply ``scale`` to named fonts (live) and tk scaling (initial only).
 
@@ -1730,6 +1820,7 @@ class _SpinDoctorGUI:
 
         self._ui_scale = scale
         if not initial:
+            self._sync_treeview_rowheight()
             # Force pending geometry recomputations to flush now so the
             # window resizes immediately rather than on the next event.
             try:
@@ -2074,7 +2165,7 @@ class _SpinDoctorGUI:
                 "You can change everything later from the Setup tab, "
                 "and re-open this wizard from Help → First-run setup"
             ),
-            wraplength=560, justify="left",
+            wraplength=self._px(560), justify="left",
         ).pack(anchor="w", pady=(0, 8))
 
         # ── step 1: pick the two required paths ──────────────────────────────
@@ -2089,7 +2180,7 @@ class _SpinDoctorGUI:
             text=("These two paths are required. Optional paths "
                   "(emulators, RocketLauncher, LEDBlinky) can be filled "
                   "in later from the Setup tab."),
-            wraplength=560, justify="left", foreground=_FG_DIM,
+            wraplength=self._px(560), justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 8))
 
         for key, label, hint, _allow_blank in _SETUP_FIELDS:
@@ -2110,7 +2201,7 @@ class _SpinDoctorGUI:
             ).pack(side="left")
             self.ttk.Label(
                 paths, text=hint, foreground=_FG_DIM,
-            ).pack(anchor="w", padx=(150, 0), pady=(0, 4))
+            ).pack(anchor="w", padx=(self._px(150), 0), pady=(0, 4))
 
         # ── step 2: doctor output ────────────────────────────────────────────
         doctor = self.ttk.Frame(step_holder)
@@ -2124,7 +2215,7 @@ class _SpinDoctorGUI:
             text=("Running spindoctor doctor — checks every dependency "
                   "and reports anything missing. Read the results below; "
                   "you can re-run this any time from the Audit tab."),
-            wraplength=560, justify="left", foreground=_FG_DIM,
+            wraplength=self._px(560), justify="left", foreground=_FG_DIM,
         ).pack(anchor="w", pady=(0, 6))
         doctor_txt = self._make_scrolled_text(
             doctor, height=14, wrap="word", font="TkFixedFont",
@@ -2641,7 +2732,7 @@ class _SpinDoctorGUI:
         # migrate/audit is working is the streaming Output panel — a
         # hung process and a quiet one are indistinguishable.
         self._busy_bar = self.ttk.Progressbar(
-            right, mode="indeterminate", length=120,
+            right, mode="indeterminate", length=self._px(120),
         )
         self._stop_btn = self.ttk.Button(
             right, text="Stop", command=self._stop_running, state="disabled"
@@ -3085,9 +3176,9 @@ class _SpinDoctorGUI:
         tree.heading("status", text="Status")
         tree.heading("time", text="Started")
         tree.heading("command", text="Command")
-        tree.column("status", width=90, stretch=False)
-        tree.column("time", width=140, stretch=False)
-        tree.column("command", width=420, stretch=True)
+        tree.column("status", width=self._px(90), stretch=False)
+        tree.column("time", width=self._px(140), stretch=False)
+        tree.column("command", width=self._px(420), stretch=True)
         tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
@@ -3408,7 +3499,7 @@ class _SpinDoctorGUI:
                   "SpinDoctor is a librarian, not an installer: it does "
                   "not install HyperSpin, RocketLauncher, or any "
                   "emulator, and it does not download ROMs or BIOS."),
-            wraplength=420, justify="left",
+            wraplength=self._px(420), justify="left",
         ).pack(anchor="w")
 
         link_row = self.ttk.Frame(body)
@@ -3786,7 +3877,7 @@ class _SpinDoctorGUI:
                   "media-scan, find-misplaced --apply). Each one is the "
                   "file `--undo` reads to reverse a run. Read-only — "
                   "use the file menu's 'Open ~/.spindoctor' to edit."),
-            wraplength=920, justify="left", padding=(10, 6),
+            wraplength=self._px(920), justify="left", padding=(10, 6),
         ).pack(fill="x")
 
         paned = self.ttk.PanedWindow(win, orient="horizontal")
@@ -3801,9 +3892,9 @@ class _SpinDoctorGUI:
         tree.heading("#0", text="File")
         tree.heading("modified", text="Modified")
         tree.heading("size", text="Size")
-        tree.column("#0", width=320, stretch=True)
-        tree.column("modified", width=160, stretch=False, anchor="w")
-        tree.column("size", width=80, stretch=False, anchor="e")
+        tree.column("#0", width=self._px(320), stretch=True)
+        tree.column("modified", width=self._px(160), stretch=False, anchor="w")
+        tree.column("size", width=self._px(80), stretch=False, anchor="e")
         scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -4083,10 +4174,10 @@ class _SpinDoctorGUI:
             diff_tree.heading("bucket", text="Bucket")
             diff_tree.heading("source", text="Source file")
             diff_tree.heading("target", text="Target path (overwritten)")
-            diff_tree.column("scope", width=120, stretch=False)
-            diff_tree.column("bucket", width=110, stretch=False)
-            diff_tree.column("source", width=200, stretch=False)
-            diff_tree.column("target", width=460, stretch=True)
+            diff_tree.column("scope", width=self._px(120), stretch=False)
+            diff_tree.column("bucket", width=self._px(110), stretch=False)
+            diff_tree.column("source", width=self._px(200), stretch=False)
+            diff_tree.column("target", width=self._px(460), stretch=True)
             for swap in data["swaps"]:
                 diff_tree.insert("", "end", values=(
                     swap.get("target_scope", ""),
@@ -4108,9 +4199,9 @@ class _SpinDoctorGUI:
             diff_tree.heading("component", text="Component")
             diff_tree.heading("from_path", text="From")
             diff_tree.heading("to_path", text="To")
-            diff_tree.column("component", width=120, stretch=False)
-            diff_tree.column("from_path", width=380, stretch=True)
-            diff_tree.column("to_path", width=380, stretch=True)
+            diff_tree.column("component", width=self._px(120), stretch=False)
+            diff_tree.column("from_path", width=self._px(380), stretch=True)
+            diff_tree.column("to_path", width=self._px(380), stretch=True)
             for move in data["moves"]:
                 diff_tree.insert("", "end", values=(
                     move.get("component", ""),
@@ -4126,8 +4217,8 @@ class _SpinDoctorGUI:
             )
             diff_tree.heading("key", text="Field")
             diff_tree.heading("value", text="Value")
-            diff_tree.column("key", width=180, stretch=False)
-            diff_tree.column("value", width=720, stretch=True)
+            diff_tree.column("key", width=self._px(180), stretch=False)
+            diff_tree.column("value", width=self._px(720), stretch=True)
             for k, v in data.items():
                 if isinstance(v, (list, dict)):
                     display = _json.dumps(v, indent=2)[:200]
@@ -4204,7 +4295,7 @@ class _SpinDoctorGUI:
             text=(f"Pick the system to revert from\n{path.name}.\n\n"
                   "Only that system's files will be restored from the\n"
                   "backup — all other wheels are left as-is."),
-            wraplength=350, justify="left", padding=(12, 8),
+            wraplength=self._px(350), justify="left", padding=(12, 8),
         ).pack(fill="x")
 
         lb_frame = self.ttk.Frame(dialog)
@@ -4283,7 +4374,7 @@ class _SpinDoctorGUI:
                   "(or press Enter) to open the file in your OS image "
                   "viewer. Use Filter to narrow the list — type 'xbox', "
                   "'arcade', etc."),
-            wraplength=1060, justify="left", padding=(10, 6),
+            wraplength=self._px(1060), justify="left", padding=(10, 6),
         ).pack(fill="x")
 
         # ── Filter row ────────────────────────────────────────────────
@@ -4314,12 +4405,12 @@ class _SpinDoctorGUI:
         tree.heading("kind", text="Kind")
         tree.heading("size", text="Size")
         tree.heading("modified", text="Modified")
-        tree.column("#0", width=320, stretch=True)
-        tree.column("scope", width=140, stretch=False)
-        tree.column("bucket", width=140, stretch=False)
-        tree.column("kind", width=60, stretch=False, anchor="w")
-        tree.column("size", width=80, stretch=False, anchor="e")
-        tree.column("modified", width=140, stretch=False, anchor="w")
+        tree.column("#0", width=self._px(320), stretch=True)
+        tree.column("scope", width=self._px(140), stretch=False)
+        tree.column("bucket", width=self._px(140), stretch=False)
+        tree.column("kind", width=self._px(60), stretch=False, anchor="w")
+        tree.column("size", width=self._px(80), stretch=False, anchor="e")
+        tree.column("modified", width=self._px(140), stretch=False, anchor="w")
         scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -4477,7 +4568,7 @@ class _SpinDoctorGUI:
                   "source over each match. Every overwritten file is "
                   "backed up so the run is reversible via the Logs & "
                   "Manifests viewer."),
-            wraplength=940, justify="left", padding=(10, 6),
+            wraplength=self._px(940), justify="left", padding=(10, 6),
         ).pack(fill="x")
 
         # ── Source folder picker ──────────────────────────────────────
@@ -4512,7 +4603,7 @@ class _SpinDoctorGUI:
                   "Media/Frontend/Images; a system name = that "
                   "system's Special A/B; comma-separated names = "
                   "multiple systems at once (e.g. 'MAME,Sega Naomi')."),
-            foreground=_FG_DIM, wraplength=580, justify="left",
+            foreground=_FG_DIM, wraplength=self._px(580), justify="left",
         ).pack(side="left", padx=6)
 
         # ── Plan tree ─────────────────────────────────────────────────
@@ -4526,10 +4617,10 @@ class _SpinDoctorGUI:
         tree.heading("scope", text="Scope")
         tree.heading("bucket", text="Bucket")
         tree.heading("target", text="Target path")
-        tree.column("#0", width=240, stretch=True)
-        tree.column("scope", width=140, stretch=False)
-        tree.column("bucket", width=130, stretch=False)
-        tree.column("target", width=420, stretch=True)
+        tree.column("#0", width=self._px(240), stretch=True)
+        tree.column("scope", width=self._px(140), stretch=False)
+        tree.column("bucket", width=self._px(130), stretch=False)
+        tree.column("target", width=self._px(420), stretch=True)
         tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         tscroll.pack(side="right", fill="y")
@@ -4539,7 +4630,7 @@ class _SpinDoctorGUI:
         )
         self.ttk.Label(
             win, textvariable=status_var, padding=(10, 4),
-            wraplength=940, justify="left",
+            wraplength=self._px(940), justify="left",
         ).pack(fill="x")
 
         # State carried between Plan and Apply.
@@ -6944,9 +7035,9 @@ class _SpinDoctorGUI:
         self._gwm_tree.heading("pos",  text="#",             anchor="center")
         self._gwm_tree.heading("name", text="ROM Name",      anchor="w")
         self._gwm_tree.heading("desc", text="Display Title", anchor="w")
-        self._gwm_tree.column("pos",  width=50,  stretch=False, anchor="center")
-        self._gwm_tree.column("name", width=280, stretch=True,  anchor="w")
-        self._gwm_tree.column("desc", width=320, stretch=True,  anchor="w")
+        self._gwm_tree.column("pos",  width=self._px(50),  stretch=False, anchor="center")
+        self._gwm_tree.column("name", width=self._px(280), stretch=True,  anchor="w")
+        self._gwm_tree.column("desc", width=self._px(320), stretch=True,  anchor="w")
 
         gwm_vsb = self._vertical_scrollbar(gwm_tree_frame, self._gwm_tree)
         self._gwm_tree.grid(row=0, column=0, sticky="nsew")
@@ -7482,7 +7573,7 @@ class _SpinDoctorGUI:
             text=(f"Pick a backup of {file_name} to restore. Newest "
                   f"first. The current file will be saved as a fresh "
                   f"sidecar first so you can re-restore it if needed."),
-            wraplength=680, justify="left", padding=(10, 8),
+            wraplength=self._px(680), justify="left", padding=(10, 8),
         ).pack(fill="x")
 
         list_frame = self.ttk.Frame(win, padding=(10, 4))
@@ -7494,9 +7585,9 @@ class _SpinDoctorGUI:
         tree.heading("#0", text="File")
         tree.heading("when", text="Modified")
         tree.heading("size", text="Size")
-        tree.column("#0", width=380, stretch=True)
-        tree.column("when", width=180, stretch=False, anchor="w")
-        tree.column("size", width=90, stretch=False, anchor="e")
+        tree.column("#0", width=self._px(380), stretch=True)
+        tree.column("when", width=self._px(180), stretch=False, anchor="w")
+        tree.column("size", width=self._px(90), stretch=False, anchor="e")
         vsb = self._vertical_scrollbar(list_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
@@ -8935,7 +9026,7 @@ class _SpinDoctorGUI:
                 "them sequentially; on the first failure it stops so "
                 "you can fix the cause before continuing."
             ),
-            wraplength=320, justify="left",
+            wraplength=self._px(320), justify="left",
         ).pack(anchor="w")
 
         lb_frame = self.ttk.Frame(win, padding=(12, 4))
@@ -9694,7 +9785,7 @@ class _SpinDoctorGUI:
         )
         self.ttk.Label(
             win, textvariable=status_var, padding=(10, 6),
-            wraplength=1080, justify="left",
+            wraplength=self._px(1080), justify="left",
         ).pack(fill="x")
 
         tree_frame = self.ttk.Frame(win)
@@ -9706,9 +9797,9 @@ class _SpinDoctorGUI:
         tree.heading("#0", text="Title / file")
         tree.heading("status", text="Action")
         tree.heading("reason", text="Reason")
-        tree.column("#0", width=440, stretch=True)
-        tree.column("status", width=110, stretch=False, anchor="w")
-        tree.column("reason", width=420, stretch=True)
+        tree.column("#0", width=self._px(440), stretch=True)
+        tree.column("status", width=self._px(110), stretch=False, anchor="w")
+        tree.column("reason", width=self._px(420), stretch=True)
         scrollbar = self._vertical_scrollbar(tree_frame, tree)
         tree.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
@@ -10044,7 +10135,7 @@ class _SpinDoctorGUI:
                   "system). Pick rows and click Remove selected to "
                   "un-ignore them — saves immediately to "
                   "~/.spindoctor/config.json."),
-            wraplength=680, justify="left", padding=(10, 6),
+            wraplength=self._px(680), justify="left", padding=(10, 6),
         ).pack(fill="x")
 
         # ── System picker ──────────────────────────────────────────────
@@ -10216,9 +10307,9 @@ class _SpinDoctorGUI:
         self._mm_tree.heading("pos",     text="#",       anchor="center")
         self._mm_tree.heading("system",  text="System",  anchor="w")
         self._mm_tree.heading("visible", text="Visible", anchor="center")
-        self._mm_tree.column("pos",     width=50,  stretch=False, anchor="center")
-        self._mm_tree.column("system",  width=340, stretch=True,  anchor="w")
-        self._mm_tree.column("visible", width=80,  stretch=False, anchor="center")
+        self._mm_tree.column("pos",     width=self._px(50),  stretch=False, anchor="center")
+        self._mm_tree.column("system",  width=self._px(340), stretch=True,  anchor="w")
+        self._mm_tree.column("visible", width=self._px(80),  stretch=False, anchor="center")
         self._mm_tree.tag_configure("hidden", foreground=_FG_DIMMER)
 
         vsb = self._vertical_scrollbar(tree_frame, self._mm_tree)
@@ -12846,7 +12937,7 @@ class _SpinDoctorGUI:
             self.ttk.Label(
                 frame,
                 text=f"Set {' and '.join(missing)} on the Setup tab first.",
-                foreground=_FG_DIM, wraplength=860, justify="left",
+                foreground=_FG_DIM, wraplength=self._px(860), justify="left",
             ).pack(anchor="w", pady=(0, 10))
 
         list_lf = self.ttk.LabelFrame(frame, text="Videos")
@@ -12865,9 +12956,9 @@ class _SpinDoctorGUI:
         tree.heading("#0", text="File")
         tree.heading("status", text="Status")
         tree.heading("size", text="Size")
-        tree.column("#0", width=380)
-        tree.column("status", width=100, anchor="center")
-        tree.column("size", width=90, anchor="e")
+        tree.column("#0", width=self._px(380))
+        tree.column("status", width=self._px(100), anchor="center")
+        tree.column("size", width=self._px(90), anchor="e")
         tscroll = self._vertical_scrollbar(tree_frame, tree)
         tree.grid(row=0, column=0, sticky="nsew")
         tscroll.grid(row=0, column=1, sticky="ns")
@@ -13536,15 +13627,18 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001
             tab_idx = -1
         cfg = load_config()
+        dpi = round(getattr(self, "_dpi_scale", 1.0), 3)
         if (
             getattr(cfg, "gui_window_geometry", "") == geom
             and getattr(cfg, "gui_window_maximized", False) == maximized
             and getattr(cfg, "gui_last_active_tab", -1) == tab_idx
+            and getattr(cfg, "gui_window_dpi_scale", 1.0) == dpi
         ):
             return
         cfg.gui_window_geometry = geom
         cfg.gui_window_maximized = maximized
         cfg.gui_last_active_tab = tab_idx
+        cfg.gui_window_dpi_scale = dpi
         save_config(cfg)
 
     def _on_proc_done(self, marker: "_DoneMarker") -> None:

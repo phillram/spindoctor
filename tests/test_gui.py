@@ -3747,3 +3747,45 @@ def test_setup_paths_start_blank_with_helper_text(monkeypatch):
         assert app._setup_hint_labels[key].winfo_manager() == "grid"
     finally:
         app.root.destroy()
+
+
+def test_rescale_geometry_scales_size_and_position():
+    assert gui._rescale_geometry("960x720+100+50", 1.5) == "1440x1080+150+75"
+    assert gui._rescale_geometry("960x720", 1.0) == "960x720"
+    assert gui._rescale_geometry("1440x1080-10+20", 2 / 3) == "960x720-7+13"
+
+
+def test_treeview_rows_grow_with_the_font(monkeypatch):
+    # A fixed rowheight clipped text at UI scale 1.5×/2× and on high-DPI
+    # displays; rows now follow the font.
+    from tkinter import font as tkfont
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        monkeypatch.setattr(app, "_persist_ui_pref", lambda **_k: None)
+
+        def rowheight():
+            return int(app._ttk_style.lookup("Treeview", "rowheight"))
+
+        def line():
+            return int(tkfont.nametofont("TkDefaultFont").metrics("linespace"))
+
+        assert rowheight() >= max(app._px(22), line())
+        app._set_ui_scale(2.0)
+        app.root.update_idletasks()
+        assert rowheight() >= line() + app._px(6)
+        app._set_ui_scale(1.0)
+        assert rowheight() >= max(app._px(22), line())
+    finally:
+        app.root.destroy()
+
+
+def test_saved_geometry_records_its_dpi_scale(monkeypatch):
+    from spindoctor.config import load_config
+
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app._save_gui_state()
+        assert load_config().gui_window_dpi_scale == round(app._dpi_scale, 3)
+    finally:
+        app.root.destroy()
