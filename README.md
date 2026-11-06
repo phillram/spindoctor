@@ -35,8 +35,8 @@ Then pick how you want to *use* it:
 ### Five-minute quick start (binaries)
 
 1. Grab the right zip from the [latest release](https://github.com/phillram/spindoctor/releases):
-   - **GUI:** `spindoctor-gui-win10-vX.Y.Z.zip` (Windows 10/11) or `spindoctor-gui-win7-vX.Y.Z.zip` (Windows 7 SP1 / 8 / 8.1)
-   - **CLI (optional):** `spindoctor-cli-win10-vX.Y.Z.zip` or `spindoctor-cli-win7-vX.Y.Z.zip`
+   - **GUI:** `spindoctor-gui-win10.zip` (Windows 10/11) or `spindoctor-gui-win7.zip` (Windows 7 SP1 / 8 / 8.1)
+   - **CLI (optional):** `spindoctor-cli-win10.zip` or `spindoctor-cli-win7.zip`
 2. Extract the EXE to a location of your choice (e.g. `C:\spindoctor\`). The GUI does not need the CLI. See [docs/windows-binaries.md](docs/windows-binaries.md).
 3. **Double-click `spindoctor.exe`**, fill in the Setup tab (paths + optional scraper credentials), click Save. Done. Prefer to be walked through it? Click **Run first-run wizard** at the top of that tab ([details](docs/gui.md#first-run-wizard)).
 

@@ -3711,3 +3711,13 @@ def test_short_pages_cannot_scroll_above_their_content(monkeypatch):
         assert canvas.yview() == (0.0, 1.0)
     finally:
         app.root.destroy()
+
+
+def test_window_title_has_no_version(monkeypatch):
+    # The version lives in Help → About, not the title bar.
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        assert app.root.title() == __app_name__
+        assert __version__ not in app.root.title()
+    finally:
+        app.root.destroy()

@@ -1256,7 +1256,8 @@ class _SpinDoctorGUI:
             self._tkdnd = __import__("tkinterdnd2")
         except Exception:  # noqa: BLE001 - any import failure → no DnD
             self.root = tk_mod.Tk()
-        self.root.title(f"{__app_name__} {__version__}")
+        # Version lives in Help → About, not the title bar.
+        self.root.title(__app_name__)
 
         # Load persisted GUI prefs once, before any widgets are built —
         # tk scaling and the initial geometry both have to honour the

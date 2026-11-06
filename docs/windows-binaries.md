@@ -27,8 +27,8 @@ Each release ships **four downloads**. Pick the edition (GUI or CLI) and your Wi
 
 | Edition | Windows 10/11 *(recommended)* | Windows 7 SP1+ | EXE inside |
 |---|---|---|---|
-| **GUI** (double-click) | `spindoctor-gui-win10-vX.Y.Z.zip` | `spindoctor-gui-win7-vX.Y.Z.zip` | `spindoctor.exe` |
-| **CLI** (terminal) | `spindoctor-cli-win10-vX.Y.Z.zip` | `spindoctor-cli-win7-vX.Y.Z.zip` | `spindoctor-cli.exe` |
+| **GUI** (double-click) | `spindoctor-gui-win10.zip` | `spindoctor-gui-win7.zip` | `spindoctor.exe` |
+| **CLI** (terminal) | `spindoctor-cli-win10.zip` | `spindoctor-cli-win7.zip` | `spindoctor-cli.exe` |
 
 Both EXEs embed the runtime, every command worker and all bundled media. The GUI does not need the CLI, and the CLI does not need the GUI. Download the CLI only if you want to run commands from `cmd.exe` or scripts.
 
@@ -55,8 +55,8 @@ If you'd rather download from the command line:
 
 ```bat
 :: Use whichever URL the release page shows, for example:
-curl -L -o spindoctor-gui-win10-v3.0.1.zip ^
-    https://github.com/phillram/spindoctor/releases/download/v3.0.1/spindoctor-gui-win10-v3.0.1.zip
+curl -L -o spindoctor-gui-win10.zip ^
+    https://github.com/phillram/spindoctor/releases/latest/download/spindoctor-gui-win10.zip
 ```
 
 ## Install

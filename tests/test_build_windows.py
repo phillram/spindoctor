@@ -145,10 +145,11 @@ def test_release_archives_contain_only_the_selected_executable(tmp_path, platfor
     for name in ("spindoctor.exe", "spindoctor-cli.exe", "spindoctor-gui.exe", "stale-helper.exe"):
         (dist / name).write_bytes(name.encode())
     (dist / "_internal").mkdir()
-    archives = packaging.package_windows(dist, tmp_path / "artifacts", platform, "v3.0.1")
+    archives = packaging.package_windows(dist, tmp_path / "artifacts", platform)
+    # No version in the names; the release page and Help → About carry it.
     assert [p.name for p in archives] == [
-        f"spindoctor-gui-{platform}-v3.0.1.zip",
-        f"spindoctor-cli-{platform}-v3.0.1.zip",
+        f"spindoctor-gui-{platform}.zip",
+        f"spindoctor-cli-{platform}.zip",
     ]
     for archive, executable in zip(archives, ("spindoctor.exe", "spindoctor-cli.exe")):
         with ZipFile(archive) as bundle:
@@ -165,9 +166,7 @@ def test_release_packaging_requires_both_executables_before_writing(tmp_path):
     (tmp_path / "spindoctor.exe").write_bytes(b"gui")
     output = tmp_path / "artifacts"
     with pytest.raises(FileNotFoundError):
-        packaging.package_windows(tmp_path, output, "win7", "v3.0.1")
+        packaging.package_windows(tmp_path, output, "win7")
     assert not output.exists()
     with pytest.raises(ValueError):
-        packaging.package_windows(tmp_path, output, "win7", "../bad")
-    with pytest.raises(ValueError):
-        packaging.package_windows(tmp_path, output, "other", "v3.0.1")
+        packaging.package_windows(tmp_path, output, "other")
