@@ -267,7 +267,7 @@ spindoctor game save-order --system MAME --order-file order.txt --apply :: write
 
 All write commands are dry-run without `--apply`. `--output-dir` writes outside the live HyperSpin tree.
 
-> **GUI:** Games tab → Step 1 (**Manage the game wheel**) — the sidebar's System picker, then Move Up/Down/Jump to #/Sort/Remove Game/Save Order controls. Tick **Also remove PCLauncher INI** when removing from a PC system.
+> **GUI:** Games tab → Step 1 (**Manage the game wheel**) — the sidebar's System picker, then Move up/Move down/Move to #/Remove game/Sort/Save order controls. Tick **Also remove PCLauncher INI** when removing from a PC system.
 
 Reference: [Command reference → game](commands.md#game).
 

@@ -2940,6 +2940,50 @@ def test_games_list_loads_when_games_page_is_open(monkeypatch):
         app.root.destroy()
 
 
+def test_reorder_tables_share_toolbar_layout(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        def toolbar(page):
+            # The row holding "Save order" on that page.
+            save = next(
+                w for w in _page_widgets(app, page)
+                if w.winfo_class() == "TButton" and w.cget("text") == "Save order"
+            )
+            row = save.master
+            left = [
+                w.cget("text") for w in row.pack_slaves()
+                if w.pack_info()["side"] == "left"
+                and w.winfo_class() in ("TButton", "TLabel")
+            ]
+            assert save.pack_info()["side"] == "right", page
+            return left
+
+        for page in ("Systems", "Games"):
+            assert toolbar(page)[:5] == [
+                "Move up", "Move down", "Move to #", "Go",
+                "Toggle visible" if page == "Systems" else "Remove game",
+            ], page
+        texts = {
+            w.cget("text") for w in _page_widgets(app, "Systems")
+            if w.winfo_class() in ("TButton", "TLabelframe")
+        }
+        assert {"Add or remove on main menu", "Add to main menu",
+                "Remove from main menu", "Add a new system"} <= texts
+        assert "Jump to #" not in {
+            w.cget("text") for w in _page_widgets(app, "Games")
+            if w.winfo_class() == "TLabel"
+        }
+
+        history = {
+            w.cget("text") for w in _page_widgets(app, "History")
+            if w.winfo_class() == "TButton"
+        }
+        assert {"Copy selected", "Save selected"} <= history
+        assert "Refresh" not in history
+    finally:
+        app.root.destroy()
+
+
 def test_repeated_controls_appear_once(monkeypatch):
     app, _tk = _build_gui_for_test(monkeypatch)
     try:

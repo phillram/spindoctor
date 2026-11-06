@@ -2301,6 +2301,27 @@ class _SpinDoctorGUI:
         )
         return label
 
+    def _reorder_toolbar(self, row, move_up, move_down, move_to, *, save):
+        """Fill *row* with the shared reorder controls of a table.
+
+        Left: ``Move up | Move down | Move to # [ ] Go``. Right: ``Save
+        order``, so the commit button is in the same place on every
+        reorderable table. Callers pack their row actions after this.
+        Returns the position entry's StringVar.
+        """
+        self.ttk.Button(row, text="Save order", command=save).pack(side="right")
+        self.ttk.Button(row, text="Move up", command=move_up).pack(side="left")
+        self.ttk.Button(row, text="Move down", command=move_down).pack(
+            side="left", padx=(4, 0),
+        )
+        goto = self.tk.StringVar(master=self.root)
+        self.ttk.Label(row, text="Move to #").pack(side="left", padx=(10, 2))
+        entry = self.ttk.Entry(row, textvariable=goto, width=5)
+        entry.pack(side="left", padx=(0, 2))
+        entry.bind("<Return>", lambda _e: move_to())
+        self.ttk.Button(row, text="Go", command=move_to, width=4).pack(side="left")
+        return goto
+
     def _sidebar_system_row(self, parent, var, *, all_var=None):
         """``System: MAME  (change it in the sidebar)`` for a section that follows the sidebar.
 
@@ -3030,19 +3051,15 @@ class _SpinDoctorGUI:
         """
         frame = self.ttk.Frame(parent, padding=4)
 
-        intro = self.ttk.Label(
+        # The page summary already says what this is; one line covers
+        # how to read it. Undo history is behind "Browse manifests / undo".
+        intro = self._responsive_label(
             frame,
-            text=("Every command run since the GUI was launched, newest "
-                  "first. Click a row to see its full output. "
-                  "DRY-RUN rows are previews (no --apply was passed); "
-                  "OK rows committed; FAIL rows exited non-zero. The "
-                  "buffer is in-memory only — restarting the GUI "
-                  "clears it. Manifest-based history (apply runs that "
-                  "wrote a JSON manifest under ~/.spindoctor/) lives in "
-                  "File → View logs & manifests"),
-            wraplength=900, justify="left", padding=(6, 4),
+            text=("Click a row to see its output. DRY-RUN = preview, "
+                  "OK = written, FAIL = error. Cleared when you close "
+                  "SpinDoctor."),
         )
-        intro.pack(fill="x")
+        intro.pack(fill="x", padx=6, pady=(4, 0))
 
         paned = self.ttk.PanedWindow(frame, orient="horizontal")
         paned.pack(fill="both", expand=True, padx=4, pady=4)
@@ -3106,15 +3123,14 @@ class _SpinDoctorGUI:
 
         btn_row = self.ttk.Frame(frame)
         btn_row.pack(fill="x", padx=4, pady=(0, 4))
+        # No Refresh button: the tree re-renders whenever a run starts
+        # or finishes (_refresh_logs_tab).
         self.ttk.Button(
-            btn_row, text="Refresh", command=self._refresh_logs_tab,
+            btn_row, text="Copy selected",
+            command=self._copy_selected_log,
         ).pack(side="left")
         self.ttk.Button(
-            btn_row, text="Copy selected output to clipboard",
-            command=self._copy_selected_log,
-        ).pack(side="left", padx=6)
-        self.ttk.Button(
-            btn_row, text="Save selected output",
+            btn_row, text="Save selected",
             command=self._save_selected_log,
         ).pack(side="left", padx=6)
         self.ttk.Button(
@@ -6895,50 +6911,35 @@ class _SpinDoctorGUI:
         self._gwm_tree.bind("<Alt-Up>",   lambda e: self._gwm_move_up())
         self._gwm_tree.bind("<Alt-Down>", lambda e: self._gwm_move_down())
 
-        # Reorder controls + sort buttons on one row to reduce visual noise.
+        # Same toolbar layout as Systems → Main menu order: row edits,
+        # then row actions on the left; Save order alone on the right.
         gwm_reorder_row = self.ttk.Frame(gwm_lf)
-        gwm_reorder_row.pack(anchor="w", padx=6, pady=(4, 2))
-        self.ttk.Button(
-            gwm_reorder_row, text="Move up",   command=self._gwm_move_up,
-        ).pack(side="left")
-        self.ttk.Button(
-            gwm_reorder_row, text="Move down", command=self._gwm_move_down,
-        ).pack(side="left", padx=(4, 0))
-        self._gwm_goto_var = self.tk.StringVar()
-        self.ttk.Label(gwm_reorder_row, text="Jump to #").pack(
-            side="left", padx=(10, 2),
+        gwm_reorder_row.pack(fill="x", padx=6, pady=(4, 2))
+        self._gwm_goto_var = self._reorder_toolbar(
+            gwm_reorder_row, self._gwm_move_up, self._gwm_move_down,
+            self._gwm_move_to_pos, save=self._gwm_save_order,
         )
-        self.ttk.Entry(
-            gwm_reorder_row, textvariable=self._gwm_goto_var, width=5,
-        ).pack(side="left", padx=(0, 2))
         self.ttk.Button(
-            gwm_reorder_row, text="Go", command=self._gwm_move_to_pos,
-        ).pack(side="left", padx=(0, 14))
-        self.ttk.Button(
-            gwm_reorder_row, text="Sort A→Z (by title)",
-            command=lambda: self._gwm_sort("description"),
-        ).pack(side="left", padx=(0, 4))
-        self.ttk.Button(
-            gwm_reorder_row, text="Sort A→Z (by ROM name)",
-            command=lambda: self._gwm_sort("name"),
-        ).pack(side="left")
-
-        # Remove + save on a separate row so destructive/commit buttons
-        # are visually separated from the reorder controls.
-        gwm_action_row = self.ttk.Frame(gwm_lf)
-        gwm_action_row.pack(anchor="w", padx=6, pady=(2, 8))
-        self.ttk.Button(
-            gwm_action_row, text="Remove game", command=self._gwm_remove,
-        ).pack(side="left")
+            gwm_reorder_row, text="Remove game", command=self._gwm_remove,
+        ).pack(side="left", padx=(14, 0))
         self._gwm_remove_pclauncher_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            gwm_action_row,
+            gwm_reorder_row,
             text="Also remove PCLauncher INI (PC systems only)",
             variable=self._gwm_remove_pclauncher_var,
-        ).pack(side="left", padx=(6, 16))
+        ).pack(side="left", padx=(6, 0))
+
+        # Whole-list reorders on their own row.
+        gwm_sort_row = self.ttk.Frame(gwm_lf)
+        gwm_sort_row.pack(fill="x", padx=6, pady=(2, 8))
         self.ttk.Button(
-            gwm_action_row, text="Save order", command=self._gwm_save_order,
+            gwm_sort_row, text="Sort A→Z (by title)",
+            command=lambda: self._gwm_sort("description"),
         ).pack(side="left")
+        self.ttk.Button(
+            gwm_sort_row, text="Sort A→Z (by ROM name)",
+            command=lambda: self._gwm_sort("name"),
+        ).pack(side="left", padx=(4, 0))
 
         # ── Step 2 — Rename or clone a game ──────────────────────────────────
         rc_lf = self.ttk.LabelFrame(frame, text="Rename or clone a game")
@@ -10184,35 +10185,26 @@ class _SpinDoctorGUI:
         self._mm_tree.bind("<Alt-Down>", lambda e: self._mm_move_down())
 
         # Table action buttons
+        # Same toolbar layout as the Games table: row edits, then row
+        # actions on the left; Save order alone on the right. Restore is
+        # a recovery action, so it sits apart from Save order.
         tbl_btn_row = self.ttk.Frame(mm_lf)
-        tbl_btn_row.grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(2, 8))
+        tbl_btn_row.grid(row=2, column=0, columnspan=2, sticky="ew", padx=6, pady=(2, 8))
+        self._mm_goto_var = self._reorder_toolbar(
+            tbl_btn_row, self._mm_move_up, self._mm_move_down,
+            self._mm_move_to_pos, save=self._mm_save_order,
+        )
+        self.ttk.Button(
+            tbl_btn_row, text="Toggle visible",
+            command=self._mm_toggle_visible,
+        ).pack(side="left", padx=(14, 0))
+        self.ttk.Separator(tbl_btn_row, orient="vertical").pack(
+            side="left", fill="y", padx=10,
+        )
         self.ttk.Button(
             tbl_btn_row, text="Refresh",
             command=self._mm_refresh,
         ).pack(side="left")
-        self.ttk.Button(
-            tbl_btn_row, text="Move up",
-            command=self._mm_move_up,
-        ).pack(side="left", padx=(6, 2))
-        self.ttk.Button(
-            tbl_btn_row, text="Move down",
-            command=self._mm_move_down,
-        ).pack(side="left", padx=2)
-        self._mm_goto_var = self.tk.StringVar()
-        self.ttk.Label(tbl_btn_row, text="Move to #").pack(side="left", padx=(8, 2))
-        self.ttk.Entry(tbl_btn_row, textvariable=self._mm_goto_var, width=4).pack(side="left")
-        self.ttk.Button(
-            tbl_btn_row, text="Go",
-            command=self._mm_move_to_pos,
-        ).pack(side="left", padx=(2, 0))
-        self.ttk.Button(
-            tbl_btn_row, text="Toggle visible",
-            command=self._mm_toggle_visible,
-        ).pack(side="left", padx=(6, 2))
-        self.ttk.Button(
-            tbl_btn_row, text="Save order",
-            command=self._mm_save_order,
-        ).pack(side="left", padx=(20, 0))
         self.ttk.Button(
             tbl_btn_row, text="Restore from backup",
             command=self._mm_restore_from_backup,
@@ -10235,8 +10227,9 @@ class _SpinDoctorGUI:
             sort_frame, text="Sort", command=self._run_mainmenu_sort,
         ).grid(row=0, column=2, sticky="w", padx=4, pady=4)
 
-        # Add / Remove
-        mgmt_frame = self.ttk.LabelFrame(mm_lf, text="Add / Remove system")
+        # Add / remove an existing system on the main menu (not the same
+        # as "Add a new system" below, which creates one).
+        mgmt_frame = self.ttk.LabelFrame(mm_lf, text="Add or remove on main menu")
         mgmt_frame.grid(row=4, column=0, columnspan=2, sticky="ew", padx=6, pady=(0, 8))
         mgmt_frame.columnconfigure(1, weight=1)
 
@@ -10252,7 +10245,9 @@ class _SpinDoctorGUI:
 
         mgmt_btn_row = self.ttk.Frame(mgmt_frame)
         mgmt_btn_row.grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=(0, 6))
-        for label, sub in (("Add", "add"), ("Remove", "remove")):
+        for label, sub in (
+            ("Add to main menu", "add"), ("Remove from main menu", "remove"),
+        ):
             self.ttk.Button(
                 mgmt_btn_row, text=label,
                 command=lambda s=sub: self._run_mainmenu_action(s),
