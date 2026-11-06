@@ -31,6 +31,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Sharp text on high-DPI displays.** On a 4K monitor with Windows display scaling (150 %, 200 %), the GUI was drawn at 96 DPI and stretched by Windows, so every font looked blurry. SpinDoctor now tells Windows it handles DPI itself, so text renders at the monitor's real resolution. The default window size, column widths and text wrapping scale with the display, so the window looks the same size as before. A window size saved by an earlier version is converted the first time. Displays at 100 %, such as a 1080p cabinet monitor, look exactly as before.
+- **Table rows no longer clip their text at larger UI scales.** Row height was fixed at 22 pixels, so text in the Systems, Games and History tables was cut off at **View → UI scale** 1.5× or 2× (and on high-DPI displays). Rows now size to the font.
 - **Stopping or closing the standalone GUI ends its worker, not just the one-file launcher.** End the same-named worker child first so it cannot keep changing files after Stop or window close, and let the launcher clean up its temporary extraction folder. Added Windows process regression coverage and standalone smoke checks. The helper-installation message now points to the current Custom Wheels startup controls and generated refresh batch file.
 - **GUI pages shorter than the window no longer scroll up into a blank area.**
 

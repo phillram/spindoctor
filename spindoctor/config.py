@@ -249,6 +249,11 @@ class Config:
     # to re-navigate every time. Empty string = "use the calculated
     # default geometry"; a negative tab index disables restore.
     gui_window_geometry: str = ""
+    # DPI scale (physical / 96-DPI pixels) the geometry above was saved at,
+    # so the window keeps its physical size if the display scale changes.
+    # Configs saved before SpinDoctor was DPI-aware hold 96-DPI sizes,
+    # which is what the 1.0 default means.
+    gui_window_dpi_scale: float = 1.0
     gui_window_maximized: bool = False
     gui_last_active_tab: int = -1
     # Last-selected system per tab, keyed by tab label. Saved when the
