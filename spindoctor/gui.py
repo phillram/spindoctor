@@ -2242,6 +2242,10 @@ class _SpinDoctorGUI:
                     "Could not save config", str(exc),
                 )
                 return
+            if not skip:
+                self._sync_setup_form(
+                    {k: v.get().strip() for k, v in state["path_vars"].items()},
+                )
             try:
                 win.destroy()
             except Exception:  # noqa: BLE001
@@ -2286,6 +2290,12 @@ class _SpinDoctorGUI:
             self.root.after(0, _doctor_done, text, report.overall())
 
         def _doctor_done(text: str, _overall) -> None:
+            # The wizard may have been closed while the check ran.
+            try:
+                if not doctor_txt.winfo_exists():
+                    return
+            except Exception:  # noqa: BLE001
+                return
             doctor_txt.configure(state="normal")
             doctor_txt.delete("1.0", "end")
             doctor_txt.insert("end", text)
@@ -2338,6 +2348,9 @@ class _SpinDoctorGUI:
                     "Could not save config", str(exc),
                 )
                 return
+            self._sync_setup_form(
+                {k: v.get().strip() for k, v in state["path_vars"].items()},
+            )
             show_step(2)
             threading.Thread(target=_run_doctor_async, daemon=True).start()
 
@@ -4080,6 +4093,8 @@ class _SpinDoctorGUI:
         if not self.messagebox.askyesno(
             "Confirm undo",
             f"Run the matching `--undo` command for {path.name}?\n\n"
+            "This restores files right away, even with Apply changes "
+            "off: undo has no preview. "
             "Output streams to the panel below the tree window. "
             "Most undos are themselves reversible by re-running the "
             "original apply, but back up first if you're unsure.",
@@ -5197,6 +5212,25 @@ class _SpinDoctorGUI:
         if btn is not None:
             btn.configure(text="Save configuration *")
 
+    def _sync_setup_form(self, values: dict) -> None:
+        """Show values just saved elsewhere (the first-run wizard) on the Setup page.
+
+        Without this the page kept the old values, and its next Save
+        configuration wrote them back over what the wizard saved. The
+        unsaved-edits marker is cleared only if the page had no other
+        unsaved edits.
+        """
+        setup_vars = getattr(self, "_setup_vars", None)
+        if not setup_vars:
+            return
+        was_dirty = bool(getattr(self, "_setup_dirty", False))
+        for key, value in values.items():
+            var = setup_vars.get(key)
+            if var is not None and var.get() != value:
+                var.set(value)
+        if not was_dirty:
+            self._setup_mark_clean()
+
     def _setup_mark_clean(self) -> None:
         """Clear the unsaved-edits indicator after a successful save."""
         self._setup_dirty = False
@@ -5518,7 +5552,8 @@ class _SpinDoctorGUI:
             ("Most Played",      ["mainmenu", "add", "Most Played"]     + apply_flag),
         ]
         total = len(steps)
-        self._chain_start(total)
+        if not self._chain_start(total):
+            return
 
         def run_next(remaining, rc: int) -> None:
             if rc != 0:
@@ -5645,7 +5680,8 @@ class _SpinDoctorGUI:
             ("audit --all", ["audit", "--all"]),
         ]
         total = len(steps)
-        self._chain_start(total)
+        if not self._chain_start(total):
+            return
         results: list[tuple[str, int]] = []
 
         self._append_output(
@@ -5969,11 +6005,6 @@ class _SpinDoctorGUI:
                 _wheel = {e.system.lower() for e in _mm.entries}
             except Exception:  # noqa: BLE001
                 pass
-        display_systems = [
-            s if s.lower() in _wheel else s + _NOT_IN_WHEEL_SUFFIX
-            for s in systems
-        ]
-
         # Apply the optional quick-filter (toggled by Ctrl+Shift+F).
         # Case-insensitive substring match against the system name.
         # When the filter is empty, every system shows — matches the
@@ -5992,6 +6023,15 @@ class _SpinDoctorGUI:
                     f"System filter: {filter_pattern!r} → "
                     f"{len(systems)} of {unfiltered_count} systems shown."
                 )
+
+        # Built after the filter, so the dropdowns actually narrow. "Main
+        # Menu" is HyperSpin's own database folder, never a wheel entry,
+        # so it isn't badged as missing from the wheel.
+        display_systems = [
+            s if (not _wheel or s.lower() in _wheel or s.lower() == "main menu")
+            else s + _NOT_IN_WHEEL_SUFFIX
+            for s in systems
+        ]
 
         # Every tab that has a system picker. Attributes may not exist yet
         # on the first call (tabs build lazily), so we guard with getattr.
@@ -6014,6 +6054,7 @@ class _SpinDoctorGUI:
         # calls (tabs build lazily, so combos may be created mid-session).
         _badge_bound: set[str] = getattr(self, "_system_badge_bound", set())
         self._system_badge_bound = _badge_bound
+        followers = {var_attr for var_attr, _refresh in _SYSTEM_FOLLOWERS}
 
         for combo_attr, var_attr, default in combos_and_vars:
             combo = getattr(self, combo_attr, None)
@@ -6023,7 +6064,10 @@ class _SpinDoctorGUI:
             var = getattr(self, var_attr, None)
             if var is None:
                 continue
-            if systems and not var.get():
+            if systems and not var.get() and var_attr not in followers:
+                # Sidebar-following vars are left to _push_current_system
+                # below, which also runs their refresher (game lists);
+                # setting them here made it skip them.
                 # If a default is supplied AND that default is in the list,
                 # use it. Otherwise fall back to systems[0] — never set the
                 # var to a value that isn't in the dropdown, or the user
@@ -6057,7 +6101,7 @@ class _SpinDoctorGUI:
         fd_combo = getattr(self, "_fd_system_combo", None)
         if fd_combo is not None:
             fd_combo["values"] = display_systems
-            if fd_combo not in _badge_bound:
+            if "_fd_system_combo" not in _badge_bound:
                 _badge_bound.add("_fd_system_combo")
                 _fd_var = getattr(self, "_fd_system_var", None)
                 if _fd_var is not None:
@@ -7520,18 +7564,42 @@ class _SpinDoctorGUI:
         chosen = self._ask_pick_sidecar(target.name, backups)
         if chosen is None:
             return
-        if not self.messagebox.askyesno(
-            "Confirm restore",
-            f"Replace {target.name} with the contents of "
-            f"{Path(chosen).name}?\n\nThe current file will itself be "
-            f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
-            f"action is undoable via the same Restore button.",
-        ):
+        applying = bool(self._global_apply_var.get())
+        if applying:
+            confirmed = self.messagebox.askyesno(
+                "Confirm restore",
+                f"Replace {target.name} with the contents of "
+                f"{Path(chosen).name}?\n\nThe current file will itself be "
+                f"backed up as a new .YYYYMMDD_HHMMSS.bak first, so this "
+                f"action is undoable via the same Restore button.",
+            )
+        else:
+            confirmed = self.messagebox.askyesno(
+                "Preview restore",
+                f"Apply changes is off, so this only previews restoring "
+                f"{target.name} from {Path(chosen).name}. Nothing is "
+                f"replaced.\n\nPreview it?",
+            )
+        if not confirmed:
             return
         args = ["backup", "sidecar", "restore", str(target), "--from", str(chosen)]
-        if self._global_apply_var.get():
+        if applying:
             args.append("--apply")
-        self._run_cli("spindoctor", args, on_complete=on_complete)
+
+        def _done(rc: int) -> None:
+            # A preview changes nothing, so the page's "restored"
+            # follow-up (refresh + success message) mustn't run.
+            if not applying:
+                if rc == 0:
+                    self._flash_status(
+                        "Preview only. Turn on Apply changes to restore "
+                        f"{target.name}."
+                    )
+                return
+            if on_complete is not None:
+                on_complete(rc)
+
+        self._run_cli("spindoctor", args, on_complete=_done)
 
     def _mm_restore_from_backup(self) -> None:
         """Pick a sidecar ``.YYYYMMDD_HHMMSS.bak`` of Main Menu.xml and restore it."""
@@ -9231,7 +9299,8 @@ class _SpinDoctorGUI:
             ("update-db",   update_db_args),
         ]
         total = len(step_defs)
-        self._chain_start(total)
+        if not self._chain_start(total):
+            return
 
         def run_next(remaining: list[tuple[str, list[str]]], rc: int) -> None:
             if rc != 0:
@@ -10732,6 +10801,10 @@ class _SpinDoctorGUI:
         self._run_cli("spindoctor", ["organize", sys_, "--undo"])
 
     def _load_games_for_system(self, system: str) -> list:
+        # A section's own <<ComboboxSelected>> refresher can run before the
+        # binding that strips "(Not in wheel)" from its var.
+        if system.endswith(_NOT_IN_WHEEL_SUFFIX):
+            system = system[:-len(_NOT_IN_WHEEL_SUFFIX)]
         try:
             cfg = load_config()
             db = load_database(system, cfg.databases_dir)
@@ -13288,7 +13361,17 @@ class _SpinDoctorGUI:
         on_complete: Optional[Callable[[int], None]] = None,
     ) -> None:
         """Spawn `binary args…` in the background and stream output to the panel."""
-        if self._proc is not None and self._proc.poll() is None:
+        # A chained step started from the done callback of a run the user
+        # stopped: end the chain here instead of running the next step.
+        if getattr(self, "_in_stopped_callback", False):
+            self._chain_end()
+            self._set_status("Stopped. The remaining steps were skipped.")
+            return
+        # _proc stays set until _on_proc_done finalises the run, so this
+        # also covers a process that has exited while its output and done
+        # marker are still queued; starting another run then would let
+        # the old marker finalise the new one.
+        if self._proc is not None:
             self.messagebox.showinfo(
                 "Busy",
                 "Another command is still running. Wait for it to finish or "
@@ -13312,6 +13395,7 @@ class _SpinDoctorGUI:
                 "• Source install: re-run `pip install -e .` from the "
                 "repo root so the console scripts get registered.",
             )
+            self._chain_end()
             return
 
         # Heuristic: anything without `--apply` is a dry-run for our
@@ -13328,7 +13412,14 @@ class _SpinDoctorGUI:
         # The --apply check runs first so commands that are read-only
         # *without* the flag but write *with* it (doctor --apply,
         # lightgun detect --apply) are still recorded as actual writes.
-        if "--apply" in args or (args and args[0] == "self-doctor" and "--fix" in args):
+        # --undo restores files immediately in every CLI command that has
+        # it (curate, media-scan, theme-apply, migrate, batch-edit,
+        # rename, organize); none of them wait for --apply.
+        if (
+            "--apply" in args
+            or "--undo" in args
+            or (args and args[0] == "self-doctor" and "--fix" in args)
+        ):
             is_dry_run: Optional[bool] = False
         elif _is_read_only_invocation(tuple(args)):
             is_dry_run = None
@@ -13410,9 +13501,17 @@ class _SpinDoctorGUI:
             # "OK in N s" elapsed.
             self._run_started_monotonic = None
             self._run_label = ""
+            # The record was already added to History; don't leave it
+            # showing "running" forever.
+            if self._current_run is not None:
+                self._current_run.exit_code = 1
+                self._current_run = None
+                self._refresh_logs_tab()
+            self._chain_end()
             self._set_status("Ready.")
             return
 
+        self._proc_on_complete = on_complete
         self._reader_thread = threading.Thread(
             target=self._pump_output,
             args=(self._proc, on_complete),
@@ -13432,7 +13531,7 @@ class _SpinDoctorGUI:
         # NoneType iteration below would otherwise throw a confusing
         # AttributeError into the worker.
         if proc.stdout is None:
-            self._line_queue.put(_DoneMarker(proc.wait(), on_complete))
+            self._line_queue.put(_DoneMarker(proc.wait(), on_complete, proc))
             return
         try:
             while True:
@@ -13445,7 +13544,7 @@ class _SpinDoctorGUI:
             self._line_queue.put(f"\n[exit code {rc}]\n")
             # Sentinel — the queue drain handler uses this to flip UI state
             # back to idle and fire the optional completion callback.
-            self._line_queue.put(_DoneMarker(rc, on_complete))
+            self._line_queue.put(_DoneMarker(rc, on_complete, proc))
 
     def _drain_queue(self) -> None:
         # CRITICAL: this loop is the only path that transitions the GUI
@@ -13556,7 +13655,12 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001
             pass
         try:
-            self._on_proc_done(_DoneMarker(rc, None))
+            # Keep the run's callback, or a chained workflow loses its
+            # next step; the real marker, if it still arrives, is then
+            # ignored as stale.
+            self._on_proc_done(
+                _DoneMarker(rc, getattr(self, "_proc_on_complete", None), proc),
+            )
         except Exception:  # noqa: BLE001
             pass
 
@@ -13658,7 +13762,10 @@ class _SpinDoctorGUI:
         # no DoneMarker ever arriving.  Snapshot self._proc here; the
         # finally block only tears down state when self._proc is still the
         # same object (i.e. the callback did NOT start a new process).
+        if marker.proc is not None and marker.proc is not self._proc:
+            return  # stale: that run was already finalised
         old_proc = self._proc
+        stopped = bool(getattr(self, "_stop_requested", False))
         try:
             # Stamp the exit code on the run record + emit a closing
             # banner for dry-runs so the user always sees "preview done,
@@ -13711,6 +13818,12 @@ class _SpinDoctorGUI:
             except Exception:  # noqa: BLE001 — widget race
                 pass
 
+            # Cleared first so a chained step's _run_cli isn't refused as
+            # Busy. After Stop, _stop_requested makes that _run_cli end the
+            # chain instead of starting the next step.
+            self._proc = None
+            self._proc_on_complete = None
+            self._in_stopped_callback = stopped
             if marker.callback is not None:
                 try:
                     marker.callback(marker.rc)
@@ -13726,12 +13839,15 @@ class _SpinDoctorGUI:
         finally:
             # The stuck-checker is per-subprocess; always reset it.
             self._stuck_check_since = None
+            self._in_stopped_callback = False
+            if stopped:
+                self._stop_requested = False
             # Only tear down the running state when the callback did NOT
-            # start a new process.  If self._proc changed, _run_cli has
-            # already set up fresh state (new _RunRecord, busy=True, etc.)
-            # and we must leave it intact so the next subprocess gets its
-            # own DoneMarker.
-            chain_started = self._proc is not old_proc
+            # start a new process.  If it did, _run_cli has already set up
+            # fresh state (new _RunRecord, busy=True, etc.) and we must
+            # leave it intact so the next subprocess gets its own
+            # DoneMarker. (_proc was cleared before the callback.)
+            chain_started = self._proc is not None and self._proc is not old_proc
             if not chain_started:
                 # Guarantee the GUI leaves the running state regardless of
                 # what raised above. Each of these is individually guarded
@@ -13787,6 +13903,10 @@ class _SpinDoctorGUI:
         # Off the Tk thread: stop_worker waits briefly for a one-file
         # launcher to clean up after its worker is ended.
         threading.Thread(target=stop_worker, args=(self._proc,), daemon=True).start()
+        # Chained workflows (Preflight, Full metadata refresh, wheel
+        # refreshes) start their next step from the done callback; this
+        # makes that start end the chain instead.
+        self._stop_requested = True
         self._set_status("Stopping")
         # Disable Stop immediately so a frantic double-click doesn't
         # land on the next process before it's even spawned. The
@@ -13856,14 +13976,27 @@ class _SpinDoctorGUI:
         except Exception:  # noqa: BLE001 - widget race during teardown
             pass
 
-    def _chain_start(self, total: int) -> None:
+    def _chain_start(self, total: int) -> bool:
         """Open a chained-workflow progress session.
 
         Records the total step count so subsequent `_run_cli` calls
         in the chain render a determinate progress bar instead of an
         indeterminate spinner. Cleared by `_chain_end`.
+
+        Returns False (and starts nothing) while another command runs;
+        otherwise the first step's _run_cli was refused as Busy and the
+        progress state stayed set for every later command.
         """
+        if self._proc is not None:
+            self.messagebox.showinfo(
+                "Busy",
+                "Another command is still running. Wait for it to finish or "
+                "click Stop in the bottom bar.",
+            )
+            return False
+        self._stop_requested = False
         self._chain_progress = (0, max(1, total))
+        return True
 
     def _chain_advance(self, step: int) -> None:
         """Move the chained progress bar to *step* / total."""
@@ -13934,14 +14067,19 @@ class _SpinDoctorGUI:
         exists — matches the find-on-selection idiom of every text
         editor since the 90s.
         """
-        try:
-            self._toggle_output(visible=True)
-        except Exception:  # noqa: BLE001 - toggle_output is defensive enough
-            pass
+        # Only reveal a hidden panel: re-showing a visible one moved the
+        # divider the user had dragged and rewrote config.json.
+        if not self._output_visible:
+            try:
+                self._toggle_output(visible=True)
+            except Exception:  # noqa: BLE001 - toggle_output is defensive enough
+                pass
         if not self._find_bar.winfo_ismapped():
+            # Before the text's outer frame (text + scrollbar), not the
+            # text itself, or the bar lands beside the scrollbar.
             self._find_bar.pack(
                 fill="x", padx=4, pady=(4, 0),
-                before=self._output,
+                before=getattr(self._output, "_spindoctor_outer_frame", self._output),
             )
         try:
             seed = self._output.get("sel.first", "sel.last")
@@ -14214,11 +14352,20 @@ class _SpinDoctorGUI:
 class _DoneMarker:
     """Sentinel pushed onto the line queue when a subprocess exits."""
 
-    __slots__ = ("rc", "callback")
+    __slots__ = ("rc", "callback", "proc")
 
-    def __init__(self, rc: int, callback: Optional[Callable[[int], None]]) -> None:
+    def __init__(
+        self,
+        rc: int,
+        callback: Optional[Callable[[int], None]],
+        proc: Optional[object] = None,
+    ) -> None:
         self.rc = rc
         self.callback = callback
+        # The process this marker finishes. _on_proc_done ignores a marker
+        # for any process other than the current one (a stale marker from
+        # a run that was already finalised).
+        self.proc = proc
 
 
 class _RunRecord:
