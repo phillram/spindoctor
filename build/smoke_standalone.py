@@ -63,10 +63,10 @@ def check_media(hs, label, wheel):
     print(f"{'PASS' if ok else 'FAIL'} {label}", flush=True)
 
 
-for name in ("spindoctor", "spindoctor-gui"):
+for name in ("spindoctor-cli", "spindoctor"):
     exe = isolate(name)
     hs, env = make_home(name)
-    pre = [exe] if name == "spindoctor" else [exe, "--run-tool", "spindoctor"]
+    pre = [exe] if name == "spindoctor-cli" else [exe, "--run-tool", "spindoctor"]
     run(f"{name}: --version", [exe, "--version"], env, needle="version")
     run(f"{name}: cli --version", pre + ["--version"], env, needle="version")
     for tool in ("spindoctor-fav", "spindoctor-recent", "spindoctor-stats"):
@@ -88,13 +88,13 @@ for name in ("spindoctor", "spindoctor-gui"):
         f'start "" /B /WAIT "{exe}" --run-tool calc\r\n'
         "exit /b %errorlevel%\r\n", encoding="utf-8")
     run(f"{name}: bat waits + propagates exit", ["cmd", "/c", bat], env, expect=2, needle="version")
-    if name == "spindoctor-gui":
+    if name == "spindoctor":
         gui = subprocess.Popen([str(exe)], env=env)
         time.sleep(20)
         alive = gui.poll() is None
         stop_worker(gui, timeout=30)
-        results["spindoctor-gui: window stays open"] = {"ok": alive}
-        print(f"{'PASS' if alive else 'FAIL'} spindoctor-gui: window stays open", flush=True)
+        results["spindoctor: window stays open"] = {"ok": alive}
+        print(f"{'PASS' if alive else 'FAIL'} spindoctor: window stays open", flush=True)
     # Stop must end the real worker behind the one-file launcher, and the
     # launcher must then remove its temporary extraction folder.
     temp = Path(tempfile.gettempdir())

@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **Separate GUI and CLI downloads.** Each release now ships four zips: `spindoctor-gui-win10`, `spindoctor-gui-win7`, `spindoctor-cli-win10` and `spindoctor-cli-win7`, each containing one standalone EXE. The GUI is now `spindoctor.exe` and the CLI is `spindoctor-cli.exe`; neither needs the other. After upgrading, reinstall refresh helpers and re-enable auto-run tasks so saved paths point at the renamed EXE.
+
 ### Fixed
 
 - **Stopping or closing the standalone GUI ends its worker, not just the one-file launcher.** End the same-named worker child first so it cannot keep changing files after Stop or window close, and let the launcher clean up its temporary extraction folder. Added Windows process regression coverage and standalone smoke checks. The helper-installation message now points to the current Custom Wheels startup controls and generated refresh batch file.
