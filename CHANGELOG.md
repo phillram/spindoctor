@@ -6,6 +6,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **`doctor` finds wheels that HyperSpin's ROMs-only filter shows empty, and game names that start or end with a space.** A new **HyperSpin ROMs only** check reads each Main Menu wheel's `<hyperspin_dir>\Settings\<System>.ini`, which RocketLauncher never reads. With `[filters] roms_only=true`, HyperSpin lists only the games it finds as `<rompath>\<name>.<ext>` (`rompath` and the comma-separated `romextension` from `[exe info]`), so after a ROM-drive move a `rompath` still on the old drive (`J:\Games\AAE`) empties the wheel, while RocketLauncher's `Rom_Path` and the **ROM paths** check are fine. A `rompath` that is empty, doesn't exist or holds none of the wheel's games is a WARN. The fix line names the file and key, a folder that holds the games when there is one (the wheel's RocketLauncher `Rom_Path`, the same folder under `roms_dir`, or `<roms_dir>\<System>`), the extensions to add when the games are there with others, and `roms_only=false`. A relative `rompath` is resolved from the HyperSpin folder. A new **Spaces in game names** check lists names such as `<game name="Some Hack V2 ">`. RocketLauncher and HyperSpin both use them as written, so HyperSpin looks for `Some Hack V2 .png` while scrapers and SpinDoctor's media downloads save `Some Hack V2.png`, and the game shows its name as text and plays no video. It's a WARN per wheel listing the names, noting games whose media exists only under the trimmed name, with the database XML to edit and the ROM file to rename. Both checks report wheels switched off on the Main Menu as INFO only, and are diagnosis only. Covered by `tests/test_doctor_hyperspin_wheels.py`.
+
 ## [3.0.0] - 2026-11-05
 
 ### Changed

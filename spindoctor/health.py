@@ -22,7 +22,7 @@ from typing import Optional
 from .config import Config, get_systems
 from .database import find_database, load_database
 # The RocketLauncher Rom_Path lookup behind check_rom_paths, shared with `audit`.
-from .rl_rom_paths import _RomLookup, _RomSource, _wheel_games
+from .rl_rom_paths import _RomLookup, _RomSource, _raw_game_names, _wheel_games
 from .rocketlauncher import _read_rl_ini, _read_windows_text
 
 
@@ -1425,6 +1425,346 @@ def _cap_at_info(check: Check) -> None:
         _cap_at_info(child)
 
 
+# ─── what HyperSpin itself shows ─────────────────────────────────────────────
+#
+# HyperSpin reads <hyperspin_dir>\Settings\<System>.ini and looks up media on
+# its own; RocketLauncher reads neither, so every RocketLauncher check can pass
+# while a wheel shows no games, or a game shows its name as text.
+
+# Media HyperSpin looks up under a game's database name exactly as written:
+# (what, folder under Media\<System>, extensions).  The video folder can be
+# redirected by [video defaults] path= in the wheel's Settings INI.
+_HS_GAME_MEDIA = (
+    ("wheel art", ("Images", "Wheel"), (".png",)),
+    ("video", ("Video",), (".mp4", ".flv", ".png")),
+    ("theme", ("Themes",), (".zip",)),
+)
+
+# Names listed per wheel before "and N more".
+_SPACED_NAMES_SHOWN = 5
+
+
+def _hs_rom_index(folder: Path, recursive: bool) -> Optional[tuple[set[str], dict[str, set[str]]]]:
+    """``(lower-cased names, {lower-cased stem: extensions})`` of the files and
+    folders in *folder*, and in its subfolders when *recursive*; None when it
+    can't be listed."""
+    names: set[str] = set()
+    try:
+        if recursive:
+            for _root, dirs, files in os.walk(folder):
+                names.update(n.lower() for n in dirs)
+                names.update(n.lower() for n in files)
+        else:
+            with os.scandir(folder) as it:
+                names.update(entry.name.lower() for entry in it)
+    except OSError:
+        return None
+    stems: dict[str, set[str]] = {}
+    for n in names:
+        stem, ext = os.path.splitext(n)
+        stems.setdefault(stem, set()).add(ext[1:])
+    return names, stems
+
+
+def _hs_found(index: tuple[set[str], dict[str, set[str]]], names: list[str], exts: list[str]) -> bool:
+    """Whether HyperSpin's ROMs-only filter finds a game under any of *names*:
+    ``<name>.<ext>`` for an extension in *exts*, or any extension when it's empty."""
+    listed, stems = index
+    for name in names:
+        low = name.lower()
+        if exts:
+            if any(f"{low}.{ext}" in listed for ext in exts):
+                return True
+        elif low in stems:
+            return True
+    return False
+
+
+def _wheel_roms_only(
+    system: str,
+    ini: Path,
+    exe: dict[str, str],
+    config: Config,
+    look: Optional[_RomLookup],
+    index,
+) -> Check:
+    """One roms_only=true wheel's node for :func:`check_hyperspin_roms_only`."""
+    node = Check(name=system, status=Status.OK)
+    games, raw = _wheel_games(system, config.databases_dir)
+    if not games:
+        node.status = Status.INFO
+        node.detail = "roms_only=true; no games in database"
+        return node
+    n = len(games)
+    value = exe.get("rompath", "").strip().strip('"').strip()
+    exts = [e.strip().lstrip(".").lower() for e in exe.get("romextension", "").split(",") if e.strip()]
+    recursive = exe.get("searchsubfolders", "").strip().lower() == "true"
+
+    def found(folder: Path) -> int:
+        idx = index(folder, recursive)
+        return 0 if idx is None else sum(
+            1 for g in games if _hs_found(idx, [raw.get(g, g), g], exts))
+
+    folder = _setting_folder(value, ini.parent.parent, False) if value else None
+    if value and folder is None:
+        node.status = Status.INFO
+        node.detail = f"roms_only=true; rompath={value} can't be checked on this OS"
+        return node
+    steps: list[str] = []
+    if folder is not None and _dir_exists(folder):
+        idx = index(folder, recursive)
+        if idx is None:
+            node.status = Status.INFO
+            node.detail = f"roms_only=true; can't list the rompath folder {value}"
+            return node
+        k = found(folder)
+        if k:
+            node.detail = f"roms_only=true: {k} of {n} games found in {value}"
+            if k < n:
+                node.detail += f" (HyperSpin hides the other {n - k})"
+            return node
+        with_ext = f"romextension={','.join(exts)}" if exts else "any extension"
+        problem = f"rompath={value} holds none of its {n} games with {with_ext}"
+        # The right folder with the wrong extensions?
+        other: dict[str, int] = {}
+        for g in games:
+            for ext in set().union(*(idx[1].get(nm.lower(), set()) for nm in (raw.get(g, g), g))):
+                if ext:
+                    other[ext] = other.get(ext, 0) + 1
+        if other:
+            top = sorted(other, key=lambda e: (-other[e], e))[:3]
+            steps.append(f"add {','.join(top)} to romextension= under [exe info] "
+                         f"(the games there are .{', .'.join(top)} files)")
+    elif value:
+        problem = f"rompath={value} doesn't exist"
+    else:
+        problem = "rompath is empty"
+
+    # A folder that does hold the games: RocketLauncher's Rom_Path for the
+    # wheel, the same folder under roms_dir, or <roms_dir>\<System>.
+    candidates: list[Path] = []
+    if look is not None:
+        src = look.source(system)
+        if src is not None:
+            candidates += [f for _el, f in src.folders if f is not None]
+    if folder is not None:
+        rebased = _rebased_setting(value, folder, config.roms_dir, False)
+        if rebased:
+            candidates.append(Path(rebased))
+    if config.roms_dir:
+        candidates.append(Path(config.roms_dir) / system)
+    seen = {os.path.normcase(os.path.normpath(str(folder)))} if folder is not None else set()
+    sep = os.sep if value.endswith(("\\", "/")) else ""
+    for cand in candidates:
+        key = os.path.normcase(os.path.normpath(str(cand)))
+        if key in seen or not _dir_exists(cand):
+            continue
+        seen.add(key)
+        k = found(cand)
+        if k:
+            new = str(cand).rstrip("\\/") + sep
+            steps.insert(0, f"set rompath={new} under [exe info] (it holds {k} of the {n} games)")
+            break
+    if not steps:
+        steps.append("point rompath under [exe info] at the folder holding this wheel's games")
+    node.status = Status.WARN
+    node.detail = f"roms_only=true, but {problem}, so HyperSpin lists no games"
+    node.fix = (f"In {ini}, " + "; or ".join(steps)
+                + "; or set roms_only=false under [filters] to list every game")
+    return node
+
+
+def check_hyperspin_roms_only(config: Config) -> Check:
+    """Wheels whose HyperSpin "ROMs only" filter hides every game.
+
+    With ``[filters] roms_only=true`` in ``<hyperspin_dir>\\Settings\\<System>.ini``,
+    HyperSpin lists only the database games it finds as
+    ``<[exe info] rompath>\\<name>.<ext>``, for an extension in the
+    comma-separated ``romextension`` (counted anywhere below ``rompath`` with
+    ``searchsubfolders=true``).  RocketLauncher never reads that file, so its
+    ``Rom_Path`` (what ``generate-config`` writes and the ROM paths check reads)
+    can be right while ``rompath`` still names an old drive after a ROM-drive
+    move, and the wheel opens empty.  A relative ``rompath`` resolves from the
+    HyperSpin folder, HyperSpin's working folder (``..\\Arcade\\<System>\\``).
+
+    Per Main Menu wheel with roms_only=true: a WARN when ``rompath`` is empty,
+    doesn't exist or holds none of the wheel's games, with a fix naming the
+    file and key (a folder that holds the games, when one is found: the
+    wheel's RocketLauncher ``Rom_Path``, the same folder under ``roms_dir`` or
+    ``<roms_dir>\\<System>``).  Wheels switched off on the Main Menu are only
+    INFO; wheels without roms_only=true aren't listed.  Diagnosis only.
+    """
+    name = "HyperSpin ROMs only"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+    hs_dir = Path(config.hyperspin_dir)
+    mm_path = hs_dir / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        return Check(name=name, status=Status.INFO, detail="no wheels on the Main Menu")
+    hidden = _hidden_main_menu_wheels(mm_path)
+    look = _RomLookup(Path(config.rocketlauncher_dir)) if config.rocketlauncher_dir else None
+    indexes: dict[tuple[str, bool], Optional[tuple[set[str], dict[str, set[str]]]]] = {}
+
+    def index(folder: Path, recursive: bool):
+        """:func:`_hs_rom_index`, once per folder per run (wheels share folders)."""
+        key = (os.path.normcase(os.path.normpath(str(folder))), recursive)
+        if key not in indexes:
+            indexes[key] = _hs_rom_index(folder, recursive)
+        return indexes[key]
+
+    parent = Check(name=name, status=Status.OK)
+    for system in wheels:
+        ini = hs_dir / "Settings" / f"{system}.ini"
+        data = _read_rl_ini(ini)  # the one INI reader: any case, BOM, ANSI / UTF-16
+        if data.get("filters", {}).get("roms_only", "").strip().lower() != "true":
+            continue
+        node = _wheel_roms_only(system, ini, data.get("exe info", {}), config, look, index)
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    n = len(parent.children)
+    warned = sum(1 for c in parent.children if c.status == Status.WARN)
+    with_filter = f"wheel{'s' if n != 1 else ''} with roms_only=true"
+    if not n:
+        parent.detail = "no Main Menu wheel uses roms_only=true: HyperSpin lists every database game"
+    elif warned:
+        parent.detail = f"{warned} of {n} {with_filter} show{'s' if warned == 1 else ''} no games in HyperSpin"
+    else:
+        parent.detail = f"{n} {with_filter}; see each for what it shows"
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
+def _wheel_name_spaces(
+    system: str,
+    raw: dict[str, str],
+    config: Config,
+    look: Optional[_RomLookup],
+) -> Check:
+    """One wheel's node for :func:`check_game_name_spaces`."""
+    from ._utils import win_safe_stem
+
+    hs_dir = Path(config.hyperspin_dir)
+    xml = find_database(system, config.databases_dir)
+    spaced = sorted(raw.items(), key=lambda kv: kv[0].lower())  # (trimmed, as written)
+    media = config.media_dir / system
+    redirect = _read_rl_ini(hs_dir / "Settings" / f"{system}.ini").get(
+        "video defaults", {}).get("path", "").strip().strip('"')
+    redirected = _setting_folder(redirect, hs_dir, False) if redirect else None
+
+    def has(dirs: list[Path], stem: str, exts) -> bool:
+        for d in dirs:
+            for ext in exts:
+                try:
+                    if (d / f"{stem}{ext}").is_file():
+                        return True
+                except (OSError, ValueError):
+                    continue
+        return False
+
+    trimmed_only: dict[str, int] = {}  # media kind -> games with it under the trimmed name only
+    lost_games = 0
+    as_written_media = 0
+    for trimmed, as_written in spaced:
+        lost = False
+        for what, sub, exts in _HS_GAME_MEDIA:
+            dirs = [media.joinpath(*sub)]
+            if what == "video" and redirected is not None:
+                dirs.append(redirected)
+            if has(dirs, as_written, exts):
+                as_written_media += 1
+            elif has(dirs, win_safe_stem(trimmed), exts):
+                trimmed_only[what] = trimmed_only.get(what, 0) + 1
+                lost = True
+        if lost:
+            lost_games += 1
+
+    count = len(spaced)
+    shown = ", ".join(f'"{r}"' for _t, r in spaced[:_SPACED_NAMES_SHOWN])
+    more = f", and {count - _SPACED_NAMES_SHOWN} more" if count > _SPACED_NAMES_SHOWN else ""
+    names = "game name starts or ends" if count == 1 else "game names start or end"
+    detail = (f"{count} {names} with a space: {shown}{more}; "
+              "HyperSpin looks up wheel art, video and theme under the name as written")
+    if lost_games:
+        kinds = ", ".join(w for w, _s, _e in _HS_GAME_MEDIA if w in trimmed_only)
+        detail += (f", but {lost_games} of them {'has' if lost_games == 1 else 'have'} "
+                   f"{kinds} only under the trimmed name")
+
+    example = ""
+    if look is not None:
+        src = look.source(system)
+        for trimmed, as_written in spaced:
+            rom = look.find(src, [as_written]) if src is not None else None
+            if rom is not None:
+                example = f' (e.g. "{rom.name}" to "{trimmed}{rom.suffix}")'
+                break
+    if xml is None:
+        xml = config.databases_dir / system / f"{system}.xml"
+    fix = (f'In {xml}, remove the spaces around each name="..." and its <description>, '
+           f"then rename the ROM file to match{example}")
+    if as_written_media:
+        # find-orphan-media matches media to trimmed names, so it lists these.
+        fix += ", and any media saved under the name as written (find-orphan-media lists it as orphaned)"
+    return Check(name=system, status=Status.WARN, detail=detail, fix=fix)
+
+
+def check_game_name_spaces(config: Config) -> Check:
+    """Database game names with leading or trailing spaces.
+
+    ``load_database`` strips names, but RocketLauncher and HyperSpin both get a
+    ``<game name="...">`` attribute exactly as written: RocketLauncher launches
+    ``Some Hack V2 .nes`` for ``name="Some Hack V2 "`` (which the ROM paths
+    check finds), and HyperSpin looks for
+    ``Media\\<System>\\Images\\Wheel\\Some Hack V2 .png``, its video and its
+    theme.  Media is usually saved under the trimmed name, by scrapers and by
+    SpinDoctor's own downloads (Windows-safe names are trimmed), and
+    ``audit`` looks the trimmed name up, so everything looks present while
+    HyperSpin shows the game's name as text and plays no video.
+
+    One WARN row per visible Main Menu wheel listing the names (the first
+    five, then "and N more"), noting games whose media exists only under the
+    trimmed name.  Wheels switched off on the Main Menu are only INFO.
+    Diagnosis only: the fix is an edit to the database XML and a ROM rename.
+    """
+    name = "Spaces in game names"
+    if not config.hyperspin_dir or not Path(config.hyperspin_dir).is_dir():
+        return Check(name=name, status=Status.INFO,
+                     detail="hyperspin_dir not configured; skipping")
+    mm_path = Path(config.hyperspin_dir) / "Databases" / "Main Menu" / "Main Menu.xml"
+    wheels = _main_menu_wheels(mm_path)
+    if not wheels:
+        return Check(name=name, status=Status.INFO, detail="no wheels on the Main Menu")
+    hidden = _hidden_main_menu_wheels(mm_path)
+    look = _RomLookup(Path(config.rocketlauncher_dir)) if config.rocketlauncher_dir else None
+
+    parent = Check(name=name, status=Status.OK)
+    total = 0
+    for system in wheels:
+        raw = _raw_game_names(system, config.databases_dir)
+        if not raw:
+            continue
+        total += len(raw)
+        node = _wheel_name_spaces(system, raw, config, look)
+        if system in hidden:
+            node.name = f"{system} (hidden on the Main Menu)"
+            _cap_at_info(node)
+        parent.children.append(node)
+
+    if not parent.children:
+        parent.detail = (f"no game name starts or ends with a space on the Main Menu's "
+                         f"{len(wheels)} wheel{'s' if len(wheels) != 1 else ''}")
+    else:
+        n = len(parent.children)
+        parent.detail = (f"{total} game name{'s' if total != 1 else ''} on {n} wheel"
+                         f"{'s' if n != 1 else ''} start or end with a space")
+    parent.status = _worst(c.status for c in parent.children)
+    return parent
+
+
 def check_lightguns(config: Config) -> Check:
     """Verify DemulShooter wiring for every system marked ``lightgun: true``.
 
@@ -2345,6 +2685,8 @@ def run_health_checks(config: Config, fix: bool = False) -> HealthReport:
     _safe("Wheel wiring", lambda: check_wheel_wiring(config, fix, report.fixes_applied))
     _safe("PC games", lambda: check_pc_launchability(config))
     _safe("ROM paths", lambda: check_rom_paths(config))
+    _safe("HyperSpin ROMs only", lambda: check_hyperspin_roms_only(config))
+    _safe("Spaces in game names", lambda: check_game_name_spaces(config))
     _safe("Match cache", lambda: check_match_cache(config, fix, report.fixes_applied))
     _safe("Global Emulators.ini", lambda: check_global_emulators(config, fix, report.fixes_applied))
     _safe("RocketLauncher settings", lambda: check_rocketlauncher_settings(config))
