@@ -649,6 +649,55 @@ when the game exits. **Fix (Supermodel):** add a `KEY_` to `InputCoin1` /
 line so `[ Global ]` applies. Back the files up first; a device that comes
 back later needs its old bindings.
 
+### A wheel shows no games, but RocketLauncher's ROM checks pass
+
+The wheel opens empty in HyperSpin (or shows only a few of its games), though
+its database lists them, and `doctor`'s **ROM paths** check and `audit` find
+every ROM.
+
+**Cause:** HyperSpin's own **ROMs only** filter. With `roms_only=true` under
+`[filters]` in `<hyperspin_dir>\Settings\<System>.ini`, HyperSpin lists only
+the games it finds as `<rompath>\<name>.<ext>`, using `rompath` and
+`romextension` (comma-separated) from `[exe info]` of the same file.
+RocketLauncher never reads that file: it launches from its own `Rom_Path`. So
+after a ROM-drive move, `generate-config` puts RocketLauncher's `Rom_Path` on
+the new drive, while `rompath` still names the old one (`J:\Games\AAE` instead
+of `E:\Games\AAE`) and HyperSpin finds no games at all. A `romextension` that
+doesn't match the files (`zip` while the games are `.7z`) does the same.
+
+**Find it:** run `spindoctor doctor`. Its **HyperSpin ROMs only** check lists
+each wheel with `roms_only=true` whose `rompath` is empty, missing or holds
+none of its games. The `fix:` line names the file and gives a folder that holds
+the games when it finds one.
+
+**Fix:** in `<hyperspin_dir>\Settings\<System>.ini`, set `rompath=` under
+`[exe info]` to the wheel's real ROM folder (and correct `romextension=` if
+needed), or set `roms_only=false` under `[filters]` to list every database
+game (HyperHQ edits the same file). A relative `rompath` is read from the
+HyperSpin folder.
+
+### One game shows text instead of its wheel logo (and plays no video)
+
+Every other game on the wheel has its logo, and the game's wheel image is in
+`Media\<System>\Images\Wheel\`, yet HyperSpin shows its name as text, plays no
+video and uses the default theme. The game still launches.
+
+**Cause:** its name in the wheel's database starts or ends with a space, for
+example `<game name="Some Hack V2 ">`. HyperSpin looks up the wheel art
+(`Some Hack V2 .png`), video and theme under the name exactly as written, but
+the media was saved under the trimmed name (`Some Hack V2.png`), as scrapers
+and SpinDoctor's own media downloads do. RocketLauncher uses the name as
+written too, so the ROM is named `Some Hack V2 .nes` and launches fine.
+
+**Find it:** run `spindoctor doctor`. Its **Spaces in game names** check lists
+those names per wheel, and says which games have media only under the trimmed
+name.
+
+**Fix:** with HyperSpin closed, remove the spaces around the name (and its
+`<description>`) in `Databases\<System>\<System>.xml`, then rename the ROM file
+to match (`Some Hack V2 .nes` → `Some Hack V2.nes`), and any media saved under
+the old name. Back up the XML first.
+
 ## Intro Video Randomizer
 
 ### `introvideo` commands fail with "intro_randomizer_dir is not set" / "intro_video_target is not set"

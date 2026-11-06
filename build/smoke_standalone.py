@@ -14,6 +14,9 @@ import time
 ROOT = Path(__file__).resolve().parent.parent
 DIST = Path(sys.argv[1]).resolve() if len(sys.argv) > 1 else ROOT / "dist"
 ASSETS = ROOT / "spindoctor" / "assets"
+sys.path.insert(0, str(ROOT))
+from spindoctor._runtime import _child_pids, stop_worker  # noqa: E402
+
 work = Path(tempfile.mkdtemp(prefix="v3-smoke-"))
 results = {}
 
@@ -60,10 +63,10 @@ def check_media(hs, label, wheel):
     print(f"{'PASS' if ok else 'FAIL'} {label}", flush=True)
 
 
-for name in ("spindoctor", "spindoctor-gui"):
+for name in ("spindoctor-cli", "spindoctor"):
     exe = isolate(name)
     hs, env = make_home(name)
-    pre = [exe] if name == "spindoctor" else [exe, "--run-tool", "spindoctor"]
+    pre = [exe] if name == "spindoctor-cli" else [exe, "--run-tool", "spindoctor"]
     run(f"{name}: --version", [exe, "--version"], env, needle="version")
     run(f"{name}: cli --version", pre + ["--version"], env, needle="version")
     for tool in ("spindoctor-fav", "spindoctor-recent", "spindoctor-stats"):
@@ -85,14 +88,27 @@ for name in ("spindoctor", "spindoctor-gui"):
         f'start "" /B /WAIT "{exe}" --run-tool calc\r\n'
         "exit /b %errorlevel%\r\n", encoding="utf-8")
     run(f"{name}: bat waits + propagates exit", ["cmd", "/c", bat], env, expect=2, needle="version")
-    if name == "spindoctor-gui":
+    if name == "spindoctor":
         gui = subprocess.Popen([str(exe)], env=env)
         time.sleep(20)
         alive = gui.poll() is None
-        gui.kill()
-        gui.wait(timeout=30)
-        results["spindoctor-gui: window stays open"] = {"ok": alive}
-        print(f"{'PASS' if alive else 'FAIL'} spindoctor-gui: window stays open", flush=True)
+        stop_worker(gui, timeout=30)
+        results["spindoctor: window stays open"] = {"ok": alive}
+        print(f"{'PASS' if alive else 'FAIL'} spindoctor: window stays open", flush=True)
+    # Stop must end the real worker behind the one-file launcher, and the
+    # launcher must then remove its temporary extraction folder.
+    temp = Path(tempfile.gettempdir())
+    before = {p.name for p in temp.glob("_MEI*")}
+    worker = subprocess.Popen([str(a) for a in pre + ["config", "init"]], stdin=subprocess.PIPE,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=env)
+    time.sleep(10)
+    stop_worker(worker, timeout=30)
+    time.sleep(2)
+    orphans = _child_pids(worker.pid, exe.name)
+    leaked = sorted({p.name for p in temp.glob("_MEI*")} - before)
+    ok = worker.poll() is not None and not orphans and not leaked
+    results[f"{name}: Stop ends worker and cleans up"] = {"ok": ok, "orphans": orphans, "leaked": leaked}
+    print(f"{'PASS' if ok else 'FAIL'} {name}: Stop ends worker and cleans up {orphans} {leaked}", flush=True)
     leftovers = sorted(p.name for p in exe.parent.iterdir() if p.name not in (exe.name, "t.bat"))
     results[f"{name}: no files created beside exe"] = {"ok": not leftovers, "extra": leftovers}
     print(f"{'FAIL' if leftovers else 'PASS'} {name}: no files beside exe {leftovers}", flush=True)
