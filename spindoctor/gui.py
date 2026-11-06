@@ -170,6 +170,20 @@ _LWA_LEAVE_UNCHANGED = "(leave unchanged)"
 # thumb reads as "obviously the grabby part" without yelling.
 _DARK_SCROLL_THUMB        = "#6a6a6e"  # rests well above _DARK_BG_RAISE trough
 _DARK_SCROLL_THUMB_ACTIVE = "#8a8a8e"  # hover / pressed
+_APPLY_ON_BG        = "#b34700"  # Apply switch while changes will be written
+_APPLY_ON_BG_ACTIVE = "#cc5a10"
+_APPLY_ON_HINT_FG   = "#ffb070"
+_PREVIEW_FG         = "#8fd18f"  # Apply switch while in safe preview mode
+
+# Sidebar pages follow notebook order, so Ctrl+1..9 and the saved
+# gui_last_active_tab index keep pointing at the same pages.
+_SIDEBAR_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Get started", ("Setup", "Diagnostics")),
+    ("Library", ("Systems", "Games", "Metadata & Media", "Maintenance")),
+    ("Wheels & cabinet", ("Custom Wheels", "Intro Video", "LEDBlinky", "Lightgun")),
+    ("Safety", ("Backup & Restore", "Migration")),
+    ("Advanced", ("Console", "History")),
+)
 
 
 # Suffix appended to system names in all dropdowns when the system exists on
@@ -1274,6 +1288,7 @@ class _SpinDoctorGUI:
         # direct `foreground=` constructor kwarg, per the ttk widget rule
         # above; toggle back to plain "TLabel" to reset to theme default.
         self._ttk_style.configure("Warn.TLabel", foreground="#c07000")
+        self._configure_sidebar_styles()
 
         self._proc: Optional[subprocess.Popen] = None
         self._line_queue = queue.Queue(maxsize=_OUTPUT_QUEUE_ITEMS)
@@ -1350,6 +1365,44 @@ class _SpinDoctorGUI:
         # status bar, and the Setup tab is the natural starting point.
 
     # ── Dark theme ────────────────────────────────────────────────────────────
+
+    def _configure_sidebar_styles(self) -> None:
+        s = self._ttk_style
+        s.configure("Sidebar.TFrame", background=_DARK_BG_RAISE)
+        s.configure("SidebarGroup.TLabel", background=_DARK_BG_RAISE,
+                    foreground=_FG_DIMMER, font="TkSmallCaptionFont")
+        s.configure("SidebarHint.TLabel", background=_DARK_BG_RAISE,
+                    foreground=_FG_DIM)
+        s.configure("SidebarHintOn.TLabel", background=_DARK_BG_RAISE,
+                    foreground=_APPLY_ON_HINT_FG)
+        s.configure("Sidebar.TCheckbutton", background=_DARK_BG_RAISE,
+                    foreground=_DARK_FG)
+        s.map("Sidebar.TCheckbutton", background=[("active", _DARK_BG_RAISE)])
+        s.configure("Nav.Toolbutton", background=_DARK_BG_RAISE,
+                    foreground=_FG_DIM, anchor="w", padding=(12, 4),
+                    relief="flat", borderwidth=0)
+        s.map("Nav.Toolbutton",
+              background=[("selected", _DARK_BG_SELECT),
+                          ("active", _DARK_BG_ACTIVE)],
+              foreground=[("selected", _DARK_FG), ("active", _DARK_FG)])
+        s.configure("ApplyOff.TButton", background=_DARK_BG_BUTTON,
+                    foreground=_PREVIEW_FG, lightcolor=_DARK_BG_BUTTON,
+                    darkcolor=_DARK_BG_BUTTON, font="TkHeadingFont",
+                    padding=(8, 8))
+        s.map("ApplyOff.TButton", background=[("active", _DARK_BG_ACTIVE)])
+        s.configure("ApplyOn.TButton", background=_APPLY_ON_BG,
+                    foreground="#ffffff", lightcolor=_APPLY_ON_BG,
+                    darkcolor=_APPLY_ON_BG, font="TkHeadingFont",
+                    padding=(8, 8))
+        s.map("ApplyOn.TButton",
+              background=[("active", _APPLY_ON_BG_ACTIVE),
+                          ("pressed", _APPLY_ON_BG_ACTIVE)])
+        # The sidebar replaces the tab strip; the notebook still owns the pages.
+        try:
+            s.layout("Sidebar.TNotebook.Tab", [])
+            s.configure("Sidebar.TNotebook", tabmargins="0", borderwidth=0)
+        except self.tk.TclError:
+            pass
 
     def _apply_dark_theme(self) -> None:
         """Apply the dark palette to ttk styles and tk widget defaults.
@@ -2231,14 +2284,15 @@ class _SpinDoctorGUI:
         # smaller displays. Grid separates the concerns completely.
         self.root.rowconfigure(0, weight=1)   # main_paned grows/shrinks
         self.root.rowconfigure(1, weight=0)   # bar: fixed height, never hidden
-        self.root.columnconfigure(0, weight=1)
+        self.root.columnconfigure(0, weight=0)   # sidebar
+        self.root.columnconfigure(1, weight=1)
 
         # Vertical PanedWindow splits the tab notebook (top) from the
         # Output panel (bottom). ttk.PanedWindow picks up the dark
         # ``TPanedwindow`` / ``Sash`` style so the sash matches the rest
         # of the theme instead of rendering with native Win7 chrome.
         main_paned = self.ttk.PanedWindow(self.root, orient="vertical")
-        main_paned.grid(row=0, column=0, sticky="nsew", padx=8, pady=(8, 4))
+        main_paned.grid(row=0, column=1, sticky="nsew", padx=8, pady=(8, 4))
         # Stash the paned window so _toggle_output can forget/add the
         # output pane and restore the sash on demand.
         self._main_paned = main_paned
@@ -2281,7 +2335,7 @@ class _SpinDoctorGUI:
             "<Escape>", lambda _e: self._toggle_system_filter(),
         )
 
-        nb = self.ttk.Notebook(main_paned)
+        nb = self.ttk.Notebook(main_paned, style="Sidebar.TNotebook")
         self._nb = nb
 
         # StringVar backing the status bar label — created early so
@@ -2407,7 +2461,7 @@ class _SpinDoctorGUI:
         # NB: self._status_var is created earlier in this method so
         # tab builders can call _set_status() during construction.
         bar = self.ttk.Frame(self.root)
-        bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
+        bar.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
         self._status_bar_frame = bar
         # width=1 prevents the label from demanding wide space when the
         # status text is long (e.g. a full CLI command string). fill="x"
@@ -2451,25 +2505,12 @@ class _SpinDoctorGUI:
         )
         self._output_toggle_btn.pack(side="right", padx=(0, 6))
 
-        # Global Apply / Verbose / Save Log checkboxes — shared across all
-        # tabs. Packed side="right" AFTER the other right-side buttons so
-        # they appear to the left of Hide/Copy/Clear/Stop in the status
-        # bar. Pack order below (Save Log, then Verbose, then Apply) is
-        # deliberate: each side="right" pack lands to the *left* of the
-        # previous one, so packing last-to-first-visually gives the
-        # requested left-to-right reading order of Apply, Verbose, Save Log.
+        # Apply / Verbose / Save Log are shared by every page and live at
+        # the top of the sidebar.
         self._global_apply_var = self.tk.BooleanVar(value=False)
         self._global_verbose_var = self.tk.BooleanVar(value=False)
         self._global_savelog_var = self.tk.BooleanVar(value=False)
-        self.ttk.Checkbutton(
-            bar, text="Save Log", variable=self._global_savelog_var,
-        ).pack(side="right", padx=(6, 0))
-        self.ttk.Checkbutton(
-            bar, text="Verbose", variable=self._global_verbose_var,
-        ).pack(side="right", padx=(6, 0))
-        self.ttk.Checkbutton(
-            bar, text="Apply", variable=self._global_apply_var,
-        ).pack(side="right", padx=(6, 0))
+        self._build_sidebar(nb)
 
         # Ctrl+1..9 jump to notebook tabs by 1-based index. Cabinet
         # owners on touchscreens benefit from a keyboard fallback, and
@@ -2572,6 +2613,92 @@ class _SpinDoctorGUI:
                 self._nb.select(self._restore_tab_idx)
             except Exception:  # noqa: BLE001 - guard against teardown races
                 pass
+
+    def _build_sidebar(self, nb) -> None:
+        side = self.ttk.Frame(self.root, style="Sidebar.TFrame", padding=8)
+        side.grid(row=0, column=0, sticky="ns", padx=(8, 0), pady=(8, 4))
+        self._sidebar = side
+
+        self._apply_toggle_btn = self.ttk.Button(
+            side, command=self._toggle_apply_mode,
+        )
+        self._apply_toggle_btn.pack(fill="x")
+        _attach_tooltip(
+            self._apply_toggle_btn,
+            "Off: buttons only preview what would change. "
+            "On: buttons write changes to disk.",
+            self.tk,
+        )
+        self._apply_hint = self._responsive_label(side, text="")
+        self._apply_hint.pack(fill="x", pady=(4, 6))
+        for label, var in (
+            ("Verbose output", self._global_verbose_var),
+            ("Save log file", self._global_savelog_var),
+        ):
+            self.ttk.Checkbutton(
+                side, text=label, variable=var, style="Sidebar.TCheckbutton",
+            ).pack(anchor="w")
+        self.ttk.Separator(side).pack(fill="x", pady=(8, 2))
+
+        index_of = {name: i for i, name in enumerate(self._tab_base_names)}
+        groups = [
+            (title, [n for n in names if n in index_of])
+            for title, names in _SIDEBAR_GROUPS
+        ]
+        grouped = {n for _title, names in groups for n in names}
+        leftover = [n for n in self._tab_base_names if n not in grouped]
+        if leftover:
+            groups.append(("More", leftover))
+
+        self._nav_var = self.tk.IntVar(master=self.root, value=0)
+        self._nav_buttons: dict[str, object] = {}
+        for title, names in groups:
+            if not names:
+                continue
+            self.ttk.Label(
+                side, text=title.upper(), style="SidebarGroup.TLabel",
+            ).pack(anchor="w", pady=(8, 1))
+            for name in names:
+                btn = self.ttk.Radiobutton(
+                    side, text=name, value=index_of[name],
+                    variable=self._nav_var, style="Nav.Toolbutton",
+                    command=lambda: self._nb.select(self._nav_var.get()),
+                )
+                btn.pack(fill="x")
+                self._nav_buttons[name] = btn
+
+        nb.bind("<<NotebookTabChanged>>", self._sync_nav_to_tab, add="+")
+        self._global_apply_var.trace_add(
+            "write", lambda *_a: self._refresh_apply_toggle(),
+        )
+        self._refresh_apply_toggle()
+
+    def _sync_nav_to_tab(self, _event=None) -> None:
+        try:
+            self._nav_var.set(int(self._nb.index("current")))
+        except Exception:  # noqa: BLE001 - widget race during teardown
+            pass
+
+    def _toggle_apply_mode(self) -> None:
+        self._global_apply_var.set(not self._global_apply_var.get())
+
+    def _refresh_apply_toggle(self) -> None:
+        if self._global_apply_var.get():
+            self._apply_toggle_btn.configure(
+                text="Apply changes: ON", style="ApplyOn.TButton",
+            )
+            self._apply_hint.configure(
+                text="Buttons write changes to disk.",
+                style="SidebarHintOn.TLabel",
+            )
+        else:
+            self._apply_toggle_btn.configure(
+                text="Apply changes: OFF", style="ApplyOff.TButton",
+            )
+            self._apply_hint.configure(
+                text="Preview only. Nothing on disk changes.",
+                style="SidebarHint.TLabel",
+            )
 
     def _safe_bind_all(self, sequence: str, callback) -> bool:
         """Best-effort ``root.bind_all`` that never crashes startup.
@@ -3087,7 +3214,7 @@ class _SpinDoctorGUI:
         ).pack(anchor="w", pady=(0, 8))
 
         shortcuts = [
-            ("Ctrl+1 – Ctrl+9", "Jump to notebook tab 1–9"),
+            ("Ctrl+1 – Ctrl+9", "Jump to sidebar page 1–9"),
             ("Ctrl+=  /  Ctrl++", "Zoom in (larger UI)"),
             ("Ctrl+-", "Zoom out (smaller UI)"),
             ("Ctrl+0", "Reset zoom to 1.0×"),
@@ -5677,7 +5804,7 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self._help_text(
             frame,
-            text="Choose components and a destination to back up, or select a backup to restore. All components are selected by default. Tick Apply to write changes.",
+            text="Choose components and a destination to back up, or select a backup to restore. All components are selected by default. Turn on Apply changes to write.",
         ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Target folder & components ─────────────────────────────
@@ -6127,7 +6254,7 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self._help_text(
             frame,
-            text="Move or copy selected library components to a new drive. Tick Apply to execute. Applied migrations create an undo manifest.",
+            text="Move or copy selected library components to a new drive. Turn on Apply changes to run it. Applied migrations create an undo manifest.",
         ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Current configuration ───────────────────────────────────
@@ -6351,7 +6478,7 @@ class _SpinDoctorGUI:
         ).grid(row=1, column=0, sticky="w", padx=6, pady=(0, 6))
         self.ttk.Label(
             post_frame,
-            text="Tip: tick Apply (top toolbar) to write the updated INIs.",
+            text="Tip: turn on Apply changes (top left) to write the updated INIs.",
             foreground=_FG_DIM,
         ).grid(row=1, column=1, sticky="w", padx=6, pady=(0, 6))
 
@@ -7842,7 +7969,7 @@ class _SpinDoctorGUI:
         madd_frame.pack(fill="x", pady=(4, 4))
         self._responsive_label(
             madd_frame,
-            text="Copies one file into HyperSpin media. Always writes, even with Apply off. Move also removes the source.",
+            text="Copies one file into HyperSpin media. Always writes, even with Apply changes off. Move also removes the source.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         madd_row1 = self.ttk.Frame(madd_frame)
@@ -7914,7 +8041,7 @@ class _SpinDoctorGUI:
         fill_frame.pack(fill="x", pady=(4, 4))
         self._help_text(
             fill_frame,
-            text="Install blank themes to play videos full-screen. Fill missing game themes adds one per video; Fill console default theme provides the fallback. Existing themes are preserved. Tick Apply to write.",
+            text="Install blank themes to play videos full-screen. Fill missing game themes adds one per video; Fill console default theme provides the fallback. Existing themes are preserved. Turn on Apply changes to write.",
         ).pack(fill="x", padx=6, pady=(4, 4))
         fill_btns = self.ttk.Frame(fill_frame)
         fill_btns.pack(anchor="w", padx=6, pady=(0, 6))
@@ -10077,7 +10204,7 @@ class _SpinDoctorGUI:
         org_frame.pack(fill="x", pady=(4, 4))
         self._help_text(
             org_frame,
-            text="Sort wheels group games by genre, year, letter or manufacturer without moving ROMs. Optional Restructure moves games into folders and creates an undo manifest; tick Apply to execute.",
+            text="Sort wheels group games by genre, year, letter or manufacturer without moving ROMs. Optional Restructure moves games into folders and creates an undo manifest; turn on Apply changes to run it.",
         ).pack(fill="x", padx=6, pady=(2, 4))
 
         org_row = self.ttk.Frame(org_frame)
@@ -10507,7 +10634,7 @@ class _SpinDoctorGUI:
             extra = " + PCLauncher INI" if rm_pc else ""
             self._set_status(
                 f"[DRY RUN] Would remove '{game_name}' from {system}{extra}. "
-                "Tick Apply and click Remove Game again to commit."
+                "Turn on Apply changes and click Remove Game again to commit."
             )
             dry_flags = "--remove-pclauncher " if rm_pc else ""
             self._append_output(
@@ -10560,7 +10687,7 @@ class _SpinDoctorGUI:
         if not apply_:
             self._set_status(
                 f"[DRY RUN] Would save new game order for {system} "
-                f"({len(names)} games). Tick Apply and click Save Order to commit."
+                f"({len(names)} games). Turn on Apply changes and click Save Order to commit."
             )
             self._append_output(
                 f"[DRY RUN] game save-order --system {system!r}\n"

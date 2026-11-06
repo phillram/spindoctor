@@ -8,7 +8,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
-- **Compact GUI help.** Longer explanations on every tab are collapsed behind **Show help** buttons and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
+- **GUI pages move to a grouped sidebar.** The 14 tabs across the top are replaced by a page list on the left, grouped as Get started, Library, Wheels & cabinet, Safety and Advanced. Page order, Ctrl+1 to Ctrl+9 and the remembered last page are unchanged. **Apply**, **Verbose** and **Save Log** move from the bottom status bar to the top of the sidebar; Apply is now a large **Apply changes: OFF / ON** switch that turns orange while changes will be written.- **Compact GUI help.** Longer explanations on every tab are collapsed behind **Show help** buttons and wrap to the window width instead of a fixed pixel width. Repetitive tips were removed and remaining text shortened. Delete, overwrite and always-writes warnings stay visible.
 
 ## [3.0.0] - 2026-11-05
 

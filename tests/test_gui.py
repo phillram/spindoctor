@@ -2636,6 +2636,51 @@ def test_tab_labels_carry_no_status_glyphs(monkeypatch):
         app.root.destroy()
 
 
+def test_sidebar_lists_every_page_once_and_tracks_selection(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        app.root.update_idletasks()
+        assert sorted(app._nav_buttons) == sorted(app._tab_base_names)
+        assert app._nb.tab(0, "text") == "Setup"
+        tab_layout = app._ttk_style.layout("Sidebar.TNotebook.Tab")
+        assert all(element == "null" for element, _opts in tab_layout)
+
+        app._nav_buttons["LEDBlinky"].invoke()
+        assert app._nb.index("current") == app._tab_base_names.index("LEDBlinky")
+
+        app._select_tab(1)
+        app.root.update()
+        assert app._nav_var.get() == 1
+    finally:
+        app.root.destroy()
+
+
+def test_sidebar_apply_switch_is_loud_and_drives_global_apply(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        btn = app._apply_toggle_btn
+        assert app._global_apply_var.get() is False
+        assert btn.cget("text") == "Apply changes: OFF"
+        assert btn.cget("style") == "ApplyOff.TButton"
+
+        btn.invoke()
+        assert app._global_apply_var.get() is True
+        assert btn.cget("text") == "Apply changes: ON"
+        assert btn.cget("style") == "ApplyOn.TButton"
+        assert app._apply_hint.cget("style") == "SidebarHintOn.TLabel"
+
+        app._global_apply_var.set(False)
+        assert btn.cget("style") == "ApplyOff.TButton"
+
+        bar_texts = {
+            w.cget("text") for w in app._status_bar_frame.winfo_children()
+            if w.winfo_class() == "TCheckbutton"
+        }
+        assert bar_texts == set()
+    finally:
+        app.root.destroy()
+
+
 # ─── audit 2026-06-11: preset validity + dry-run classification ───────────────
 
 

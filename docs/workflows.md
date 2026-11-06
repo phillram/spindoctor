@@ -271,7 +271,7 @@ spindoctor generate-config --apply
 spindoctor doctor
 ```
 
-GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, check Apply, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
+GUI path: **Migration tab** → set Target root to `J:\`, uncheck everything except `roms`, turn on **Apply changes** in the sidebar, click **Start Migration**. When it finishes, scroll down to **Step 5 — Update RocketLauncher after migration** → tick Apply → click **Update RocketLauncher INIs**.
 
 > **Why the extra step?** `migrate` moves files and updates SpinDoctor's own `config.json`, but RocketLauncher keeps its own per-system settings at `<RocketLauncher>\Settings\<SystemName>.ini`. Each of those files contains a hardcoded `Rom_Path=D:\Arcade\Games\<SystemName>`. `generate-config --apply` rewrites them all in one shot with the new path. Without this step RocketLauncher can't find your games and HyperSpin will show an empty wheel.
 
