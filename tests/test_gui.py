@@ -1408,6 +1408,21 @@ def _build_gui_for_test(monkeypatch):
     return app, tk
 
 
+def test_custom_wheels_has_no_manual_setup_panel(monkeypatch):
+    app, _tk = _build_gui_for_test(monkeypatch)
+    try:
+        def descendants(widget):
+            for child in widget.winfo_children():
+                yield child
+                yield from descendants(child)
+
+        frames = [w for w in descendants(app._nb) if w.winfo_class() == "TLabelframe"]
+        assert any("Auto-refresh on cabinet startup" in str(w.cget("text")) for w in frames)
+        assert not any("Manual setup" in str(w.cget("text")) for w in frames)
+    finally:
+        app.root.destroy()
+
+
 def test_output_widget_trims_chars_lines_and_invalidates_find_indices(monkeypatch):
     monkeypatch.setattr(gui, "_WIDGET_OUTPUT_CHARS", 200)
     monkeypatch.setattr(gui, "_WIDGET_OUTPUT_LINES", 10)
