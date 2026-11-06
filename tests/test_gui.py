@@ -2734,12 +2734,12 @@ def test_repeated_controls_appear_once(monkeypatch):
 
         health = [
             name for name in app._tab_base_names
-            if "Run Health Check" in page_buttons(name)
+            if "Run health check" in page_buttons(name)
         ]
         assert health == ["Diagnostics"]
         assert page_buttons("Metadata & Media").count("Restore DB backup") == 1
         led = page_buttons("LEDBlinky")
-        assert not any(t.endswith("Normalize Colors.ini") and not t.startswith("3b") for t in led)
+        assert led.count("Normalize Colors.ini") == 1
         assert "Create backup now" not in page_buttons("Migration")
         assert "Open Backup & Restore" in page_buttons("Migration")
         assert not hasattr(app, "_games_system_combo")

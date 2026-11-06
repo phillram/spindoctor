@@ -5437,7 +5437,7 @@ class _SpinDoctorGUI:
         # need no inputs at all. The per-system audit (which needs a
         # system picked first) follows as Step 2.
         health_lf = self.ttk.LabelFrame(
-            frame, text="Step 1 — Cabinet health check (no inputs needed)",
+            frame, text="Cabinet health check",
         )
         health_lf.pack(fill="x", pady=(0, 8))
         self._help_text(
@@ -5447,18 +5447,18 @@ class _SpinDoctorGUI:
         health_row = self.ttk.Frame(health_lf)
         health_row.pack(anchor="w", padx=6, pady=(0, 6))
         self.ttk.Button(
-            health_row, text="✈  Preflight check",
+            health_row, text="Preflight check",
             command=self._run_preflight,
         ).pack(side="left")
-        self.ttk.Button(health_row, text="Run Health Check",
+        self.ttk.Button(health_row, text="Run health check",
                         command=lambda: self._run_cli("spindoctor", ["doctor"])
                         ).pack(side="left", padx=6)
-        self.ttk.Button(health_row, text="Check Installed Tools",
+        self.ttk.Button(health_row, text="Check installed tools",
                         command=lambda: self._run_cli("spindoctor", ["tools-audit"])
                         ).pack(side="left", padx=6)
 
         # ── Step 2 — Audit a system ──────────────────────────────────────────
-        audit_lf = self.ttk.LabelFrame(frame, text="Step 2 — Audit a system")
+        audit_lf = self.ttk.LabelFrame(frame, text="Audit a system")
         audit_lf.pack(fill="x", pady=(0, 8))
 
         self.ttk.Label(audit_lf, text="System").grid(row=0, column=0, sticky="w", padx=6, pady=(6, 2))
@@ -5522,7 +5522,7 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=10)
 
         # ── Step 3 — Library-wide scans ──────────────────────────────────────
-        scans_lf = self.ttk.LabelFrame(frame, text="Step 3 — Library-wide scans")
+        scans_lf = self.ttk.LabelFrame(frame, text="Library-wide scans")
         scans_lf.pack(fill="x", pady=(0, 8))
 
 
@@ -5555,7 +5555,7 @@ class _SpinDoctorGUI:
             ).grid(row=r, column=c, sticky="w", padx=4, pady=2)
 
         # ── Step 4 — Search & verify ─────────────────────────────────────────
-        sv_lf = self.ttk.LabelFrame(frame, text="Step 4 — Search & verify")
+        sv_lf = self.ttk.LabelFrame(frame, text="Search and verify")
         sv_lf.pack(fill="x", pady=(0, 8))
 
         # Global search
@@ -5871,7 +5871,7 @@ class _SpinDoctorGUI:
 
         # ── Step 1 — Target folder & components ─────────────────────────────
         cfg_frame = self.ttk.LabelFrame(
-            frame, text="Step 1 — Target folder & components",
+            frame, text="Backup folder and components",
         )
         cfg_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
         cfg_frame.columnconfigure(1, weight=1)
@@ -5940,7 +5940,7 @@ class _SpinDoctorGUI:
         )
 
         # ── Step 2 — Create backup ────────────────────────────────────────────
-        create_frame = self.ttk.LabelFrame(frame, text="Step 2 — Create backup")
+        create_frame = self.ttk.LabelFrame(frame, text="Create a backup")
         create_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         create_frame.columnconfigure(1, weight=1)
 
@@ -5965,7 +5965,7 @@ class _SpinDoctorGUI:
 
         # ── (removed standalone List section — now a button inside Step 2) ──
         # ── Step 3 — Restore from a backup ───────────────────────────────────
-        restore_frame = self.ttk.LabelFrame(frame, text="Step 3 — Restore from a backup")
+        restore_frame = self.ttk.LabelFrame(frame, text="Restore from a backup")
         restore_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         restore_frame.columnconfigure(1, weight=1)
 
@@ -6467,7 +6467,7 @@ class _SpinDoctorGUI:
         )
 
         self.ttk.Button(
-            mig_frame, text="Start Migration", command=self._run_migrate,
+            mig_frame, text="Start migration", command=self._run_migrate,
         ).grid(row=_comp_row_end + 8, column=0, columnspan=4,
                sticky="w", padx=6, pady=(4, 6))
 
@@ -6727,19 +6727,19 @@ class _SpinDoctorGUI:
         self._gwm_loaded_system: str = ""
 
         gwm_lf = self.ttk.LabelFrame(
-            frame, text="Step 1 — Manage the game wheel",
+            frame, text="Manage the game wheel",
         )
         gwm_lf.pack(fill="x", pady=(0, 8))
 
         self._help_text(
             gwm_lf,
-            text="Load games, reorder with the buttons or Alt+Up/Down, then Save Order. Remove Game removes the database entry, not ROMs or media. The optional PCLauncher checkbox also removes its launcher INI.",
+            text="Load games, reorder with the buttons or Alt+Up/Down, then Save order. Remove game removes the database entry, not ROMs or media. The optional PCLauncher checkbox also removes its launcher INI.",
         ).pack(fill="x", padx=6, pady=(4, 2))
 
         gwm_load_row = self.ttk.Frame(gwm_lf)
         gwm_load_row.pack(fill="x", padx=6, pady=(0, 4))
         self.ttk.Button(
-            gwm_load_row, text="Load Games",
+            gwm_load_row, text="Load games",
             command=self._gwm_load,
         ).pack(side="left")
         self._gwm_count_label = self.ttk.Label(
@@ -6776,10 +6776,10 @@ class _SpinDoctorGUI:
         gwm_reorder_row = self.ttk.Frame(gwm_lf)
         gwm_reorder_row.pack(anchor="w", padx=6, pady=(4, 2))
         self.ttk.Button(
-            gwm_reorder_row, text="Move Up",   command=self._gwm_move_up,
+            gwm_reorder_row, text="Move up",   command=self._gwm_move_up,
         ).pack(side="left")
         self.ttk.Button(
-            gwm_reorder_row, text="Move Down", command=self._gwm_move_down,
+            gwm_reorder_row, text="Move down", command=self._gwm_move_down,
         ).pack(side="left", padx=(4, 0))
         self._gwm_goto_var = self.tk.StringVar()
         self.ttk.Label(gwm_reorder_row, text="Jump to #").pack(
@@ -6805,7 +6805,7 @@ class _SpinDoctorGUI:
         gwm_action_row = self.ttk.Frame(gwm_lf)
         gwm_action_row.pack(anchor="w", padx=6, pady=(2, 8))
         self.ttk.Button(
-            gwm_action_row, text="Remove Game", command=self._gwm_remove,
+            gwm_action_row, text="Remove game", command=self._gwm_remove,
         ).pack(side="left")
         self._gwm_remove_pclauncher_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -6814,11 +6814,11 @@ class _SpinDoctorGUI:
             variable=self._gwm_remove_pclauncher_var,
         ).pack(side="left", padx=(6, 16))
         self.ttk.Button(
-            gwm_action_row, text="Save Order", command=self._gwm_save_order,
+            gwm_action_row, text="Save order", command=self._gwm_save_order,
         ).pack(side="left")
 
         # ── Step 2 — Rename or clone a game ──────────────────────────────────
-        rc_lf = self.ttk.LabelFrame(frame, text="Step 2 — Rename or clone a game")
+        rc_lf = self.ttk.LabelFrame(frame, text="Rename or clone a game")
         rc_lf.pack(fill="x", pady=(0, 8))
 
         self._help_text(
@@ -6850,17 +6850,17 @@ class _SpinDoctorGUI:
         rc_btns = self.ttk.Frame(rc_lf)
         rc_btns.pack(anchor="w", padx=6, pady=(4, 8))
         self.ttk.Button(
-            rc_btns, text="Rename Game",
+            rc_btns, text="Rename game",
             command=lambda: self._run_rename_or_clone("rename"),
         ).pack(side="left")
         self.ttk.Button(
-            rc_btns, text="Clone Game",
+            rc_btns, text="Clone game",
             command=lambda: self._run_rename_or_clone("clone"),
         ).pack(side="left", padx=6)
 
         # ── Step 3 — Add new PC games / refresh ──────────────────────────────
         pc_lf = self.ttk.LabelFrame(
-            frame, text="Step 3 — Add new PC games / refresh the wheel",
+            frame, text="Add new PC games",
         )
         pc_lf.pack(fill="x", pady=(0, 8))
 
@@ -6876,20 +6876,20 @@ class _SpinDoctorGUI:
         self._pc_overwrite_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
             pc_lf,
-            text="Overwrite existing PCLauncher INIs (--overwrite-pclauncher)",
+            text="Overwrite existing PCLauncher INIs",
             variable=self._pc_overwrite_var,
         ).pack(anchor="w", padx=6, pady=(2, 2))
 
         pc_btns = self.ttk.Frame(pc_lf)
         pc_btns.pack(anchor="w", padx=6, pady=(4, 8))
         self.ttk.Button(
-            pc_btns, text="Scan & add new games",
+            pc_btns, text="Scan and add new games",
             command=self._run_pc_rename,
         ).pack(side="left")
 
         # ── Step 4 — Fix a game's executable ─────────────────────────────────
         fixexe_lf = self.ttk.LabelFrame(
-            frame, text="Step 4 — Fix a game that launches the wrong executable",
+            frame, text="Fix a game that launches the wrong program",
         )
         fixexe_lf.pack(fill="x", pady=(0, 8))
 
@@ -7679,7 +7679,7 @@ class _SpinDoctorGUI:
         steam_apply_row = self.ttk.Frame(gameovr_frame)
         steam_apply_row.pack(anchor="w", padx=6, pady=(2, 8))
         self.ttk.Button(
-            steam_apply_row, text="▶  Apply selected",
+            steam_apply_row, text="Apply selected",
             command=self._apply_steam_selection,
         ).pack(side="left")
         self.ttk.Checkbutton(
@@ -7695,7 +7695,7 @@ class _SpinDoctorGUI:
 
         # ── Step 1 — Full metadata refresh ───────────────────────────────────
         full_frame = self.ttk.LabelFrame(
-            frame, text="Step 1 — Full metadata refresh",
+            frame, text="Full metadata refresh",
         )
         full_frame.pack(fill="x", pady=(4, 4))
         self._help_text(
@@ -7705,7 +7705,7 @@ class _SpinDoctorGUI:
         full_chain_row = self.ttk.Frame(full_frame)
         full_chain_row.pack(anchor="w", padx=6, pady=(2, 6))
         self.ttk.Button(
-            full_chain_row, text="▶  Full metadata refresh",
+            full_chain_row, text="Run full metadata refresh",
             command=self._run_full_metadata_refresh,
         ).pack(side="left")
         self.ttk.Label(
@@ -7715,7 +7715,7 @@ class _SpinDoctorGUI:
         ).pack(side="left")
 
         # ── Step 2 — Fetch metadata ──────────────────────────────────────────
-        meta_frame = self.ttk.LabelFrame(frame, text="Step 2 — Fetch metadata")
+        meta_frame = self.ttk.LabelFrame(frame, text="Fetch metadata")
         meta_frame.pack(fill="x", pady=(4, 4))
         # Defaults to True: the GUI cannot drive an interactive `input()`
         # prompt, so the alternative used to be a frozen subprocess. The
@@ -7814,16 +7814,16 @@ class _SpinDoctorGUI:
         meta_run_row = self.ttk.Frame(meta_frame)
         meta_run_row.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            meta_run_row, text="Download Game Info",
+            meta_run_row, text="Download game info",
             command=self._run_fetch_meta,
         ).pack(side="left")
         self.ttk.Button(
-            meta_run_row, text="Download for Selected Systems",
+            meta_run_row, text="Download for selected systems",
             command=self._run_fetch_meta_subset,
         ).pack(side="left", padx=6)
 
         # ── fetch-media ──────────────────────────────────────────────────────
-        media_frame = self.ttk.LabelFrame(frame, text="Step 3 — Fetch media")
+        media_frame = self.ttk.LabelFrame(frame, text="Fetch media")
         media_frame.pack(fill="x", pady=(4, 4))
         self.ttk.Label(
             media_frame,
@@ -7859,12 +7859,12 @@ class _SpinDoctorGUI:
             variable=self._meta_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
-            media_frame, text="Download Media Files",
+            media_frame, text="Download media files",
             command=self._run_fetch_media,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
         # ── media-scan ───────────────────────────────────────────────────────
-        scan_frame = self.ttk.LabelFrame(frame, text="Step 4 — Scan local media folder")
+        scan_frame = self.ttk.LabelFrame(frame, text="Scan a local media folder")
         scan_frame.pack(fill="x", pady=(4, 4))
         scan_row = self.ttk.Frame(scan_frame)
         scan_row.pack(fill="x", padx=6, pady=2)
@@ -7893,12 +7893,12 @@ class _SpinDoctorGUI:
             variable=self._meta_scan_overwrite_var,
         ).pack(anchor="w", padx=6, pady=2)
         self.ttk.Button(
-            scan_frame, text="Import Local Media",
+            scan_frame, text="Import local media",
             command=self._run_media_scan,
         ).pack(anchor="w", padx=6, pady=(4, 6))
 
         # ── update-db ────────────────────────────────────────────────────────
-        db_frame = self.ttk.LabelFrame(frame, text="Step 5 — Sync database to ROMs")
+        db_frame = self.ttk.LabelFrame(frame, text="Sync database to ROMs")
         db_frame.pack(fill="x", pady=(4, 4))
         self._meta_remove_orphans_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
@@ -7919,7 +7919,7 @@ class _SpinDoctorGUI:
         btn_row = self.ttk.Frame(db_frame)
         btn_row.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            btn_row, text="Sync Database to ROMs",
+            btn_row, text="Sync database to ROMs",
             command=self._run_update_db,
         ).pack(side="left")
         self.ttk.Button(
@@ -7974,7 +7974,7 @@ class _SpinDoctorGUI:
         be_grid.columnconfigure(1, weight=1)
 
         self.ttk.Button(
-            be_frame, text="Run Bulk Edit",
+            be_frame, text="Run bulk edit",
             command=self._run_batch_edit,
         ).pack(anchor="w", padx=6, pady=(2, 6))
 
@@ -9017,7 +9017,7 @@ class _SpinDoctorGUI:
         ).pack(fill="x", pady=(0, 10))
 
         # ── Step 1 — Curate region/revision variants ─────────────────────────
-        cur_frame = self.ttk.LabelFrame(frame, text="Step 1 — Curate region/revision variants")
+        cur_frame = self.ttk.LabelFrame(frame, text="Remove duplicate region and revision variants")
         cur_frame.pack(fill="x", pady=(4, 4))
 
         cur_top = self.ttk.Frame(cur_frame)
@@ -9086,8 +9086,7 @@ class _SpinDoctorGUI:
         cur_flags.pack(fill="x", padx=6, pady=2)
         self._curate_proto_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            cur_flags, text="Treat prototypes as candidates "
-                              "(--include-proto)",
+            cur_flags, text="Treat prototypes as candidates",
             variable=self._curate_proto_var,
         ).pack(side="left")
         self.ttk.Label(cur_flags, text="Action").pack(side="left", padx=(20, 0))
@@ -9119,7 +9118,7 @@ class _SpinDoctorGUI:
             command=self._show_curate_preview,
         ).pack(side="left")
         self.ttk.Button(
-            cur_btns, text="Archive / Delete Duplicates", command=self._run_curate,
+            cur_btns, text="Archive or delete duplicates", command=self._run_curate,
         ).pack(side="left", padx=6)
         self.ttk.Button(
             cur_btns, text="Undo most recent curate",
@@ -9190,11 +9189,11 @@ class _SpinDoctorGUI:
         cln_btns = self.ttk.Frame(cln_frame)
         cln_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            cln_btns, text="Check Cache Status",
+            cln_btns, text="Check cache status",
             command=lambda: self._run_cli("spindoctor", ["cleanup", "audit"]),
         ).pack(side="left")
         self.ttk.Button(
-            cln_btns, text="Clean Up Caches",
+            cln_btns, text="Clean up caches",
             command=self._run_cleanup,
         ).pack(side="left", padx=6)
 
@@ -9609,7 +9608,7 @@ class _SpinDoctorGUI:
                     f"No multi-variant titles found for {system}. "
                     "Either every title has only one variant, or your "
                     "filters retired everything (try toggling "
-                    "--include-proto).",
+                    "Treat prototypes as candidates).",
                 )
                 return
             total_retire = sum(len(g.retire) for g in groups)
@@ -10048,12 +10047,12 @@ class _SpinDoctorGUI:
         # is exactly what caused the previous Main Menu corruption bug.
         self._mm_data: list[dict] = []  # [{system, enabled}]
 
-        mm_lf = self.ttk.LabelFrame(frame, text="Step 1 — Main menu carousel")
+        mm_lf = self.ttk.LabelFrame(frame, text="Main menu order")
         mm_lf.pack(fill="x", pady=(0, 8))
 
         self._help_text(
             mm_lf,
-            text="Refresh to load Main Menu.xml. Reorder with buttons, Alt+Up/Down or a position number. Toggle Visible hides or shows a system. Save Order writes the changes.",
+            text="Refresh to load Main Menu.xml. Reorder with buttons, Alt+Up/Down or a position number. Toggle visible hides or shows a system. Save order writes the changes.",
         ).grid(row=0, column=0, columnspan=2, sticky="ew", padx=6, pady=(6, 8))
 
         # Treeview
@@ -10091,11 +10090,11 @@ class _SpinDoctorGUI:
             command=self._mm_refresh,
         ).pack(side="left")
         self.ttk.Button(
-            tbl_btn_row, text="Move Up",
+            tbl_btn_row, text="Move up",
             command=self._mm_move_up,
         ).pack(side="left", padx=(6, 2))
         self.ttk.Button(
-            tbl_btn_row, text="Move Down",
+            tbl_btn_row, text="Move down",
             command=self._mm_move_down,
         ).pack(side="left", padx=2)
         self._mm_goto_var = self.tk.StringVar()
@@ -10106,11 +10105,11 @@ class _SpinDoctorGUI:
             command=self._mm_move_to_pos,
         ).pack(side="left", padx=(2, 0))
         self.ttk.Button(
-            tbl_btn_row, text="Toggle Visible",
+            tbl_btn_row, text="Toggle visible",
             command=self._mm_toggle_visible,
         ).pack(side="left", padx=(6, 2))
         self.ttk.Button(
-            tbl_btn_row, text="Save Order",
+            tbl_btn_row, text="Save order",
             command=self._mm_save_order,
         ).pack(side="left", padx=(20, 0))
         self.ttk.Button(
@@ -10167,7 +10166,7 @@ class _SpinDoctorGUI:
         self.root.after_idle(self._mm_refresh)
 
         # ── Step 2 — Add a new system ────────────────────────────────────────
-        add_frame = self.ttk.LabelFrame(frame, text="Step 2 — Add a new system")
+        add_frame = self.ttk.LabelFrame(frame, text="Add a new system")
         add_frame.pack(fill="x", pady=(4, 4))
         add_row = self.ttk.Frame(add_frame)
         add_row.pack(fill="x", padx=6, pady=2)
@@ -10198,11 +10197,11 @@ class _SpinDoctorGUI:
         add_btns = self.ttk.Frame(add_frame)
         add_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            add_btns, text="Add Arcade System",
+            add_btns, text="Add arcade system",
             command=lambda: self._run_add_system(False),
         ).pack(side="left")
         self.ttk.Button(
-            add_btns, text="Add PC System",
+            add_btns, text="Add PC system",
             command=lambda: self._run_add_system(True),
         ).pack(side="left", padx=6)
         self._help_text(
@@ -10218,7 +10217,7 @@ class _SpinDoctorGUI:
         # ROM restructuring with an undo manifest. Restructure honours
         # the tab-level Apply checkbox.
         org_frame = self.ttk.LabelFrame(
-            frame, text="Step 3 — Organize a system (sort wheels + optional restructure)",
+            frame, text="Organize a system",
         )
         org_frame.pack(fill="x", pady=(4, 4))
         self._help_text(
@@ -10254,7 +10253,7 @@ class _SpinDoctorGUI:
         org_btns = self.ttk.Frame(org_frame)
         org_btns.pack(anchor="w", padx=6, pady=(4, 6))
         self.ttk.Button(
-            org_btns, text="Build Sort Wheels",
+            org_btns, text="Build sort wheels",
             command=self._run_organize,
         ).pack(side="left")
         self.ttk.Button(
@@ -10637,7 +10636,7 @@ class _SpinDoctorGUI:
 
         self._gwm_data.sort(key=_sort_key)
         self._gwm_repopulate_tree()
-        self._set_status(f"Sorted {len(self._gwm_data)} games A→Z by {label}. Click Save Order to write.")
+        self._set_status(f"Sorted {len(self._gwm_data)} games A→Z by {label}. Click Save order to write.")
 
     def _gwm_remove(self) -> None:
         idx = self._gwm_selected_index()
@@ -10653,7 +10652,7 @@ class _SpinDoctorGUI:
             extra = " + PCLauncher INI" if rm_pc else ""
             self._set_status(
                 f"[DRY RUN] Would remove '{game_name}' from {system}{extra}. "
-                "Turn on Apply changes and click Remove Game again to commit."
+                "Turn on Apply changes and click Remove game again to commit."
             )
             dry_flags = "--remove-pclauncher " if rm_pc else ""
             self._append_output(
@@ -10697,7 +10696,7 @@ class _SpinDoctorGUI:
             self._set_status("Load a system's games first.")
             return
         if not self._gwm_data:
-            self._set_status("No games loaded — click Load Games first.")
+            self._set_status("No games loaded — click Load games first.")
             return
 
         apply_ = self._global_apply_var.get()
@@ -10706,7 +10705,7 @@ class _SpinDoctorGUI:
         if not apply_:
             self._set_status(
                 f"[DRY RUN] Would save new game order for {system} "
-                f"({len(names)} games). Turn on Apply changes and click Save Order to commit."
+                f"({len(names)} games). Turn on Apply changes and click Save order to commit."
             )
             self._append_output(
                 f"[DRY RUN] game save-order --system {system!r}\n"
@@ -10850,19 +10849,19 @@ class _SpinDoctorGUI:
         frame = self.ttk.Frame(parent, padding=12)
         self._help_text(
             frame,
-            text="Steps 1–2 configure LEDBlinky once. Use the remaining sections to manage game colors, brightness, the palette, backups and animations.",
+            text="Overlay hook fix and Settings.ini are one-time setup. The other sections manage game colors, brightness, the palette, backups and animations.",
         ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 10))
 
         # ── Step 3 — MAME: Generate, Normalize & Sync Players ────────────────
         gen_frame = self.ttk.LabelFrame(
-            frame, text="Step 3 — MAME: Generate, Normalize & Sync Players",
+            frame, text="MAME controls and colors",
         )
         gen_frame.grid(row=3, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         gen_frame.columnconfigure(1, weight=1)
 
         self._help_text(
             gen_frame,
-            text="Full MAME Setup generates missing wheel-game entries and syncs player colors. Existing entries stay unless Overwrite is checked. Normalize (3b) is only for legacy hex Colors.ini files. Re-run setup after adding games; Prune archives entries absent from every wheel. Writes are backed up automatically. Audit shows missing control data.",
+            text="Full MAME Setup generates missing wheel-game entries and syncs player colors. Existing entries stay unless Overwrite is checked. Normalize Colors.ini is only for legacy hex Colors.ini files. Re-run setup after adding games; Prune archives entries absent from every wheel. Writes are backed up automatically. Audit shows missing control data.",
         ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(6, 4))
 
         self._led_overwrite_var = self.tk.BooleanVar(value=False)
@@ -10872,7 +10871,7 @@ class _SpinDoctorGUI:
         ).grid(row=1, column=0, columnspan=2, sticky="w", padx=6, pady=2)
         self._led_all_roms_var = self.tk.BooleanVar(value=False)
         self.ttk.Checkbutton(
-            gen_frame, text="Every MAME ROM file, not just wheel games (--all-roms)",
+            gen_frame, text="Every MAME ROM file, not just wheel games",
             variable=self._led_all_roms_var,
         ).grid(row=1, column=2, columnspan=2, sticky="w", padx=6, pady=2)
 
@@ -10881,7 +10880,7 @@ class _SpinDoctorGUI:
         gen_chain_row.grid(row=2, column=0, columnspan=4, sticky="w",
                            padx=6, pady=(6, 2))
         self.ttk.Button(
-            gen_chain_row, text="▶  Run Full MAME Setup (3a + 3c)",
+            gen_chain_row, text="Run full MAME setup",
             command=self._run_led_setup,
         ).pack(side="left")
 
@@ -10890,15 +10889,15 @@ class _SpinDoctorGUI:
         gen_btn_row.grid(row=3, column=0, columnspan=4, sticky="w",
                          padx=6, pady=(2, 4))
         self.ttk.Button(
-            gen_btn_row, text="3a. Generate (controls + colors)",
+            gen_btn_row, text="Generate controls and colors",
             command=self._run_led_generate,
         ).pack(side="left")
         self.ttk.Button(
-            gen_btn_row, text="3b. Normalize Colors.ini",
+            gen_btn_row, text="Normalize Colors.ini",
             command=self._run_color_normalize,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
-            gen_btn_row, text="3c. Sync player colors",
+            gen_btn_row, text="Sync player colors",
             command=self._run_led_sync_players,
         ).pack(side="left", padx=(8, 0))
         self.ttk.Button(
@@ -10927,7 +10926,7 @@ class _SpinDoctorGUI:
 
         # ── Fill Defaults ────────────────────────────────────────────────────
         fd_frame = self.ttk.LabelFrame(
-            frame, text="Step 4 — Fill Default Colors (any console)",
+            frame, text="Fill default colors (any console)",
         )
         fd_frame.grid(row=4, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         fd_frame.columnconfigure(1, weight=1)
@@ -11045,18 +11044,18 @@ class _SpinDoctorGUI:
         ).grid(row=1, column=1, sticky="w")
 
         self.ttk.Button(
-            fd_frame, text="Fill Default Colors",
+            fd_frame, text="Fill default colors",
             command=self._run_fill_defaults,
         ).grid(row=7, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 3 — Randomize Entry Colors ─────────────────────────────────
-        rz_frame = self.ttk.LabelFrame(frame, text="Step 5 — Randomize Entry Colors")
+        rz_frame = self.ttk.LabelFrame(frame, text="Randomize colors")
         rz_frame.grid(row=5, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         rz_frame.columnconfigure(1, weight=1)
 
         self._help_text(
             rz_frame,
-            text="Randomize existing button/joystick colors per game, with separate coin/start colors. Unmapped buttons stay dark. If entries are skipped, run Normalize Colors.ini (3b). Leave Seed blank for a new shuffle, or use an integer to repeat it.",
+            text="Randomize existing button/joystick colors per game, with separate coin/start colors. Unmapped buttons stay dark. If entries are skipped, run Normalize Colors.ini in the MAME section. Leave Seed blank for a new shuffle, or use an integer to repeat it.",
         ).grid(row=0, column=0, columnspan=3, sticky="ew", padx=6, pady=(6, 4))
 
         self.ttk.Label(rz_frame, text="Seed (optional)").grid(
@@ -11068,7 +11067,7 @@ class _SpinDoctorGUI:
         ).grid(row=1, column=1, sticky="w", padx=6, pady=2)
 
         self.ttk.Button(
-            rz_frame, text="Randomize Entry Colors",
+            rz_frame, text="Randomize colors",
             command=self._run_randomize_entry_colors,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
@@ -11080,7 +11079,7 @@ class _SpinDoctorGUI:
         # — it had no in-game effect. The `ledblinky admin-buttons set` CLI
         # command still exists for cabinets that do map admin to a player slot.)
         ab_frame = self.ttk.LabelFrame(
-            frame, text="Step 6 — In-Game Admin Buttons (Exit / Pause / Select)",
+            frame, text="In-game admin buttons (Exit / Pause / Select)",
         )
         ab_frame.grid(row=6, column=0, columnspan=4, sticky="ew", pady=(12, 0))
 
@@ -11147,7 +11146,7 @@ class _SpinDoctorGUI:
         ).grid(row=5, column=0, columnspan=4, sticky="w", padx=6, pady=(6, 8))
 
         # ── Step 5 — Brightness ───────────────────────────────────────────────
-        br2_frame = self.ttk.LabelFrame(frame, text="Step 7 — Brightness")
+        br2_frame = self.ttk.LabelFrame(frame, text="Brightness")
         br2_frame.grid(row=7, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br2_frame.columnconfigure(1, weight=1)
 
@@ -11171,14 +11170,14 @@ class _SpinDoctorGUI:
         self._led_brightness_label.grid(row=1, column=2, sticky="w", padx=(0, 6))
 
         self.ttk.Button(
-            br2_frame, text="Scale Brightness",
+            br2_frame, text="Scale brightness",
             command=self._run_led_brightness,
         ).grid(row=2, column=0, columnspan=2, sticky="w", padx=6, pady=(4, 8))
 
         # ── Step 6 — Settings.ini Patch ───────────────────────────────────────
         _led_cfg = load_config()
 
-        sp_frame = self.ttk.LabelFrame(frame, text="Step 2 — Settings.ini (one-time setup)")
+        sp_frame = self.ttk.LabelFrame(frame, text="Settings.ini (one-time setup)")
         sp_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         sp_frame.columnconfigure(1, weight=1)
 
@@ -11245,7 +11244,7 @@ class _SpinDoctorGUI:
 
         # ── Overlay Hooks (one-time fix) ──────────────────────────────────────
         oh_frame = self.ttk.LabelFrame(
-            frame, text="Step 1 — Overlay Hook Fix (one-time setup)",
+            frame, text="Overlay hook fix (one-time setup)",
         )
         oh_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 0))
         oh_frame.columnconfigure(0, weight=1)
@@ -11270,7 +11269,7 @@ class _SpinDoctorGUI:
         self._color_original_hex: str = ""   # set when a row is selected
 
         cd_frame = self.ttk.LabelFrame(
-            frame, text="Step 8 — Color Definitions (Color-RGB.ini)",
+            frame, text="Color definitions (Color-RGB.ini)",
         )
         cd_frame.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         cd_frame.columnconfigure(0, weight=1)
@@ -11346,7 +11345,7 @@ class _SpinDoctorGUI:
         ).pack(side="left", padx=(0, 8))
 
         self.ttk.Button(
-            cd_btn_row, text="Update & Rename",
+            cd_btn_row, text="Update and rename",
             command=self._run_color_edit,
         ).pack(side="left")
 
@@ -11356,7 +11355,7 @@ class _SpinDoctorGUI:
         # ── Backup / Restore ─────────────────────────────────────────────────
         _led_backup_default = getattr(_led_cfg, "backup_dir", "") or ""
 
-        br_frame = self.ttk.LabelFrame(frame, text="Step 9 — Backup / Restore")
+        br_frame = self.ttk.LabelFrame(frame, text="Back up and restore LEDBlinky files")
         br_frame.grid(row=9, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         br_frame.columnconfigure(1, weight=1)
 
@@ -11404,14 +11403,14 @@ class _SpinDoctorGUI:
 
         # ── Step 10 — LED Animations (.lwax) ─────────────────────────────────
         anim_frame = self.ttk.LabelFrame(
-            frame, text="Step 10 — LED Animations (.lwax)",
+            frame, text="LED animations (.lwax)",
         )
         anim_frame.grid(row=10, column=0, columnspan=4, sticky="ew", pady=(12, 0))
         anim_frame.columnconfigure(1, weight=1)
 
         self._help_text(
             anim_frame,
-            text="Generate the animation library or a custom fade into ~/Downloads/spindoctor-lwax-patterns/. Use these files in Step 2 after signing them.",
+            text="Generate the animation library or a custom fade into ~/Downloads/spindoctor-lwax-patterns/. Use these files in the Settings.ini section after signing them.",
         ).grid(row=0, column=0, columnspan=4, sticky="ew", padx=6, pady=(6, 4))
 
         anim_btn_row = self.ttk.Frame(anim_frame)
@@ -11905,7 +11904,7 @@ class _SpinDoctorGUI:
         ).grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 12))
 
         # ── Step 1 — Detect & audit ──────────────────────────────────────────
-        det_frame = self.ttk.LabelFrame(frame, text="Step 1 — Detect & audit")
+        det_frame = self.ttk.LabelFrame(frame, text="Detect and audit")
         det_frame.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(0, 4))
 
         btn_row = self.ttk.Frame(det_frame)
@@ -11923,7 +11922,7 @@ class _SpinDoctorGUI:
 
         # ── Step 2 — Configure one system ───────────────────────────────────
         cfg_frame = self.ttk.LabelFrame(
-            frame, text="Step 2 — Configure one system",
+            frame, text="Configure one system",
         )
         cfg_frame.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(8, 4))
         cfg_frame.columnconfigure(1, weight=1)
@@ -12014,7 +12013,7 @@ class _SpinDoctorGUI:
         # (after the rebuild) while its own tooltip said "run this before
         # Refresh selected" — the layout contradicted the instructions.
         sync_lf = self.ttk.LabelFrame(
-            frame, text="Step 1 — Import HyperSpin favorites (optional)",
+            frame, text="Import HyperSpin favorites (optional)",
         )
         sync_lf.pack(fill="x", pady=(0, 8))
         self._help_text(
@@ -12036,7 +12035,7 @@ class _SpinDoctorGUI:
 
         # ── Step 2 — Refresh custom wheels ───────────────────────────────────
         rebuild_lf = self.ttk.LabelFrame(
-            frame, text="Step 2 — Refresh custom wheels",
+            frame, text="Refresh custom wheels",
         )
         rebuild_lf.pack(fill="x", pady=(0, 8))
 
@@ -12066,7 +12065,7 @@ class _SpinDoctorGUI:
 
         # ── Step 3 — Register in HyperSpin main menu ─────────────────────────
         register_lf = self.ttk.LabelFrame(
-            frame, text="Step 3 — Register in HyperSpin main menu",
+            frame, text="Add to the HyperSpin main menu",
         )
         register_lf.pack(fill="x", pady=(0, 8))
 
@@ -12084,7 +12083,7 @@ class _SpinDoctorGUI:
 
         # ── Step 4 — Manage favorites ─────────────────────────────────────────
         fav_lf = self.ttk.LabelFrame(
-            frame, text="Step 4 — Manage favorites",
+            frame, text="Manage favorites",
         )
         fav_lf.pack(fill="x", pady=(0, 8))
 

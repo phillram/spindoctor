@@ -33,7 +33,7 @@ The command examples below use pip console-script names. For v3 Windows binaries
 
 Hard requirements: either the standalone Windows binaries, or Python 3.8+ with `lxml` and the `spindoctor` package importable.
 
-> **Want a windowed alternative to the `.bat` files?** The **Custom Wheels** tab in `spindoctor-gui` (Step 2 — Refresh custom wheels) has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
+> **Want a windowed alternative to the `.bat` files?** The **Custom Wheels** tab in `spindoctor-gui` (Refresh custom wheels) has checkboxes for Favorites, Recently Played, and Most Played (all pre-ticked) plus a **Refresh selected** button — same outcome as `Refresh All.bat` when all three are checked, or any subset when you untick some, and no `cmd.exe` required. The `.bat` files remain the right answer for HyperSpin Tools menu entries and Windows Startup tasks; the GUI is the right answer for ad-hoc manual refreshes.
 
 ## `spindoctor-fav`
 

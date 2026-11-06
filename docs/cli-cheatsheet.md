@@ -224,7 +224,7 @@ Use this when you only want to fix or regenerate `.ini` files without changing w
 
 Reference: [Command reference → pc-rename](commands.md#pc-rename).
 
-> **GUI:** Games tab → Step 3 (**Add new PC games / refresh the wheel**) — select the PC system using the shared picker at the top, tick **Overwrite existing PCLauncher INIs** if needed, then click **Scan & add new games**.
+> **GUI:** Games tab → Step 3 (**Add new PC games / refresh the wheel**) — select the PC system using the shared picker at the top, tick **Overwrite existing PCLauncher INIs** if needed, then click **Scan and add new games**.
 
 ### `pc-fix-exe` — fix a PC game launching the wrong executable
 
