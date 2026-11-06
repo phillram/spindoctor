@@ -1459,6 +1459,6 @@ See [GUI walkthrough → Menubar](gui.md#menubar) for the canonical list of File
 By default the window opens at 960×720 (minsize 720×540), which is fine on most 1080p / 1200p panels but tight on 720p with the Output panel mounted. Two new controls in the GUI fix this without resizing the window:
 
 - **`View → UI scale → 0.9×`** (or press `Ctrl+-` once) shrinks fonts and widget metrics across the board so a full tab fits without scrolling. `Ctrl++` zooms back in, `Ctrl+0` resets. The chosen scale persists across restarts via the `ui_scale` config key. Range is `0.6`–`2.0`.
-- **`Hide output`** (status-bar button, `View → Show output pane`, or `Ctrl+`` `) collapses the bottom panel and gives the active tab the full window height. Re-show with the same control. Persisted across restarts via the `output_visible` config key.
+- **`Hide`** (in the Output panel's header, or `View → Show output pane`, or `Ctrl+`` `) collapses the bottom panel and gives the active tab the full window height. Re-show it with the status bar's **Show output** button or the same menu item or shortcut. Persisted across restarts via the `output_visible` config key.
 
 The two together typically clear another 200–300 vertical pixels on a 720p cabinet display.

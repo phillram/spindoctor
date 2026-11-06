@@ -47,11 +47,11 @@ Existing installs and re-runs use the same dialog. There is no auto-open behavio
 
 ## Layout primer
 
-A single window with a grouped page list in a sidebar on the left, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom showing the current command, Stop, and the output buttons. Every page scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
+A single window with a grouped page list in a sidebar on the left, a shared **Output** panel along the bottom (resizable via a draggable sash), and a status bar at the very bottom. The Output panel's header row holds **Find**, **Copy**, **Clear** and **Hide**. The status bar shows the current command and, while a command runs, a progress bar with **Stop** beside it. While the Output panel is hidden, a **Show output** button appears in the status bar. Every page scrolls vertically with an always-visible scrollbar so cabinet owners on 1024×768 / 1280×720 displays can still reach widgets that overflow.
 
 The sidebar groups the pages as **Get started** (Setup, Diagnostics), **Library** (Systems, Games, Metadata & Media, Maintenance), **Wheels & cabinet** (Custom Wheels, Intro Video, LEDBlinky, Lightgun), **Safety** (Backup & Restore, Migration) and **Advanced** (Console, History). Ctrl+1 to Ctrl+9 jump to the first nine pages in that order.
 
-The status bar text is automatically truncated when a command string is too long to fit; the right-side buttons are always visible regardless of command length.
+The status bar text is automatically truncated when a command string is too long to fit; the progress bar, Stop and Show output stay visible regardless of command length.
 
 ### Apply changes, Verbose output, and Save log file
 
@@ -406,7 +406,7 @@ A `File` / `View` / `Help` menubar runs across the top of the window:
 - **File → Open HyperSpin folder** / **Open ROMs folder** — same, for the paths set in `config.json`.
 - **File → View logs & manifests** — opens a Toplevel listing every per-run JSON manifest under `~/.spindoctor/{migrations,curation,edits,renames,media_imports,themes,misplaced}/` with a tree on the left and a read-only JSON viewer on the right. Three buttons at the bottom: **Undo this run** (runs the matching `--undo` for the selected manifest), **Show diff** (renders changes as a before/after table), **Revert just \<SYSTEM\>** (theme swaps only — one-system revert via `--revert-system`).
 - **File → Browse HyperSpin themes** — opens a Toplevel inventorying every overlay file under `Media/Frontend/Images/` and per-system `Media/<system>/Images/{Special A,Special B}/`.
-- **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel. State persists across restarts via the `output_visible` config key.
+- **View → Show output pane** — checkbutton (also bound to `Ctrl+`` ` ``) that collapses or restores the bottom Output panel, as do the panel's **Hide** button and the status bar's **Show output** button. State persists across restarts via the `output_visible` config key.
 - **View → UI scale** — radio submenu with presets `0.8×` / `0.9×` / `1.0×` / `1.1×` / `1.25×` / `1.5×`. `Ctrl++` / `Ctrl+-` step by 0.1; `Ctrl+0` resets. Persisted via the `ui_scale` config key.
 - **Help → About SpinDoctor** — version, description, and links to GitHub project / latest release / CHANGELOG. Shows the app icon next to the title when the bundled PNG icon is available.
 - **Help → Keyboard shortcuts** — opens an in-app reference for the shortcut map listed below.
@@ -430,7 +430,7 @@ The same table is reachable in-app via **Help → Keyboard shortcuts**.
 
 ## Find bar
 
-Press `Ctrl+F` (`Cmd+F` on macOS) to open a slim search bar above the Output panel. Type to highlight every case-insensitive match in the buffer; **Next** / `Enter` jumps to the next match, **Prev** / `Shift+Enter` to the previous, `Esc` closes the bar. A match count ("3 of 17") shows next to the controls. Selected text pre-seeds the search field on open. The global binding works regardless of current focus — useful for scanning long audit / migrate output for a game name.
+Press `Ctrl+F` (`Cmd+F` on macOS), or click **Find** in the Output panel's header, to open a slim search bar above the Output panel. Type to highlight every case-insensitive match in the buffer; **Next** / `Enter` jumps to the next match, **Prev** / `Shift+Enter` to the previous, `Esc` closes the bar. A match count ("3 of 17") shows next to the controls. Selected text pre-seeds the search field on open. The global binding works regardless of current focus — useful for scanning long audit / migrate output for a game name.
 
 ## System quick-filter
 
@@ -495,7 +495,7 @@ Every `Entry` / `Text` / `ScrolledText` widget in the GUI — Setup paths, scrap
 
 ## Stopping a long-running command
 
-The **Stop** button in the bottom-right of the window terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
+The **Stop** button, next to the progress bar at the bottom of the window and shown while a command runs, terminates the current subprocess (sends `SIGTERM` / Windows `TerminateProcess`). The GUI re-enables the Run buttons once the child exits.
 
 **Stop is not a rollback or a guarantee of a recovery manifest.** In particular,
 Windows `TerminateProcess` can prevent Python cleanup and interrupt handlers from
