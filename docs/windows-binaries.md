@@ -159,7 +159,7 @@ Writes the bats and per-game PCLauncher INIs under `<RocketLauncher>\Modules\PCL
 
 1. Download the new zip from [Releases](https://github.com/phillram/spindoctor/releases/latest).
 2. Replace the `.exe` files in your install folder with the newly extracted ones.
-3. Re-run `spindoctor-cli --version` (or relaunch `spindoctor.exe` and check the title bar) to confirm the new build.
+3. Re-run `spindoctor-cli --version` (or open **Help → About SpinDoctor** in the GUI) to confirm the new build.
 
 Your config (`%USERPROFILE%\.spindoctor\config.json`), favorites, ignore lists, and caches are untouched — they live in `%USERPROFILE%\.spindoctor\` and persist across upgrades.
 

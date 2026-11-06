@@ -459,7 +459,9 @@ def _attach_tooltip(widget, text: str, tk_mod) -> None:
                 tip, text=text, justify="left",
                 background="#2d2d30", foreground="#dcdcdc",
                 relief="solid", borderwidth=1,
-                padx=6, pady=3, wraplength=360,
+                padx=6, pady=3,
+                # 360 px at 96 DPI; tk scaling is pixels per point (96/72).
+                wraplength=int(360 * max(1.0, float(tip.tk.call("tk", "scaling")) * 72 / 96)),
             )
             lbl.pack()
             state["tip"] = tip
@@ -1358,7 +1360,9 @@ class _SpinDoctorGUI:
             saved_dpi = float(getattr(_bootstrap_cfg, "gui_window_dpi_scale", 1.0) or 1.0)
         except (TypeError, ValueError):
             saved_dpi = 1.0
-        if saved_geom and _is_plausible_geometry(saved_geom):
+        # Only Windows stretched non-DPI-aware windows; elsewhere Tk sizes
+        # were always physical pixels, so there is nothing to convert.
+        if sys.platform == "win32" and saved_geom and _is_plausible_geometry(saved_geom):
             saved_geom = _rescale_geometry(saved_geom, self._dpi_scale / saved_dpi)
         if saved_geom and _is_plausible_geometry(saved_geom):
             try:
@@ -1979,7 +1983,7 @@ class _SpinDoctorGUI:
                 def _restore_sash():
                     try:
                         h = paned.winfo_height()
-                        pos = target if target is not None else max(200, h - 160)
+                        pos = target if target is not None else max(self._px(200), h - self._px(160))
                         paned.sashpos(0, pos)
                     except self.tk.TclError:
                         pass
@@ -2711,8 +2715,8 @@ class _SpinDoctorGUI:
         def _place_initial_sash():
             try:
                 h = main_paned.winfo_height()
-                if h > 300:
-                    main_paned.sashpos(0, max(200, h - 160))
+                if h > self._px(300):
+                    main_paned.sashpos(0, max(self._px(200), h - self._px(160)))
             except Exception:  # noqa: BLE001 - widget race during teardown
                 pass
         self.root.after(100, _place_initial_sash)
@@ -5079,7 +5083,7 @@ class _SpinDoctorGUI:
                 # line up across every credential row. Without this,
                 # the username row's Clear button sits where password
                 # rows' Show button sits, and the layout looks ragged.
-                spacer = self.ttk.Frame(ctrl_cell, width=48, height=1)
+                spacer = self.ttk.Frame(ctrl_cell, width=self._px(48), height=1)
                 spacer.pack(side="left", padx=(6, 0))
                 spacer.pack_propagate(False)
 
@@ -5468,7 +5472,8 @@ class _SpinDoctorGUI:
                 f"Credential test failed (exit {rc})."
             )
 
-        self._run_cli("spindoctor", args, on_complete=_on_done)
+        if not self._run_cli("spindoctor", args, on_complete=_on_done):
+            btn.configure(state="normal", text="Test credentials")
 
     def _save_setup(self) -> None:
         cfg = load_config()
@@ -6009,6 +6014,18 @@ class _SpinDoctorGUI:
         # Case-insensitive substring match against the system name.
         # When the filter is empty, every system shows — matches the
         # behaviour before the filter existed.
+        def _badged(names):
+            # "Main Menu" is HyperSpin's own database folder, never a wheel
+            # entry, so it isn't badged as missing from the wheel.
+            return [
+                s if (not _wheel or s.lower() in _wheel or s.lower() == "main menu")
+                else s + _NOT_IN_WHEEL_SUFFIX
+                for s in names
+            ]
+
+        # Migration picks systems to move, so its list ignores the filter.
+        all_display_systems = _badged(systems)
+
         filter_pattern = ""
         try:
             filter_pattern = self._system_filter_var.get().strip().lower()
@@ -6024,14 +6041,8 @@ class _SpinDoctorGUI:
                     f"{len(systems)} of {unfiltered_count} systems shown."
                 )
 
-        # Built after the filter, so the dropdowns actually narrow. "Main
-        # Menu" is HyperSpin's own database folder, never a wheel entry,
-        # so it isn't badged as missing from the wheel.
-        display_systems = [
-            s if (not _wheel or s.lower() in _wheel or s.lower() == "main menu")
-            else s + _NOT_IN_WHEEL_SUFFIX
-            for s in systems
-        ]
+        # Built after the filter, so the dropdowns actually narrow.
+        display_systems = _badged(systems)
 
         # Every tab that has a system picker. Attributes may not exist yet
         # on the first call (tabs build lazily), so we guard with getattr.
@@ -6115,7 +6126,7 @@ class _SpinDoctorGUI:
         lb = getattr(self, "_migrate_systems_lb", None)
         if lb is not None:
             lb.delete(0, self.tk.END)
-            for s in display_systems:
+            for s in all_display_systems:
                 lb.insert(self.tk.END, s)
 
         if notify:
@@ -11043,7 +11054,8 @@ class _SpinDoctorGUI:
 
         args = ["game", "save-order", "--system", system,
                 "--order-file", tmp_path, "--apply"]
-        self._run_cli("spindoctor", args, on_complete=_cleanup)
+        if not self._run_cli("spindoctor", args, on_complete=_cleanup):
+            _cleanup(1)
 
     def _refresh_rename_games(self) -> None:
         system = self._rename_system_var.get().strip()
@@ -13359,14 +13371,19 @@ class _SpinDoctorGUI:
         binary: str,
         args: Sequence[str],
         on_complete: Optional[Callable[[int], None]] = None,
-    ) -> None:
-        """Spawn `binary args…` in the background and stream output to the panel."""
+    ) -> bool:
+        """Spawn `binary args…` in the background and stream output to the panel.
+
+        Returns True if the command started. On False (busy, CLI missing,
+        launch failed) *on_complete* never runs, so callers that set
+        something up for it must undo that themselves.
+        """
         # A chained step started from the done callback of a run the user
         # stopped: end the chain here instead of running the next step.
         if getattr(self, "_in_stopped_callback", False):
             self._chain_end()
             self._set_status("Stopped. The remaining steps were skipped.")
-            return
+            return False
         # _proc stays set until _on_proc_done finalises the run, so this
         # also covers a process that has exited while its output and done
         # marker are still queued; starting another run then would let
@@ -13377,7 +13394,7 @@ class _SpinDoctorGUI:
                 "Another command is still running. Wait for it to finish or "
                 "click Stop in the bottom bar.",
             )
-            return
+            return False
         try:
             argv = resolve_cli_command(binary) + list(args)
         except CliNotFoundError as exc:
@@ -13396,7 +13413,7 @@ class _SpinDoctorGUI:
                 "repo root so the console scripts get registered.",
             )
             self._chain_end()
-            return
+            return False
 
         # Heuristic: anything without `--apply` is a dry-run for our
         # apply-mode commands. Tag the run so the Logs tab can label
@@ -13509,7 +13526,7 @@ class _SpinDoctorGUI:
                 self._refresh_logs_tab()
             self._chain_end()
             self._set_status("Ready.")
-            return
+            return False
 
         self._proc_on_complete = on_complete
         self._reader_thread = threading.Thread(
@@ -13518,6 +13535,7 @@ class _SpinDoctorGUI:
             daemon=True,
         )
         self._reader_thread.start()
+        return True
 
     def _pump_output(
         self,
@@ -14337,8 +14355,10 @@ class _SpinDoctorGUI:
         """
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        w = min(ideal_w, sw - 40)
-        h = min(ideal_h, sh - 80)
+        # Callers pass 96-DPI sizes; on a scaled display the content
+        # inside is scaled (_px, fonts), so the dialog must be too.
+        w = min(self._px(ideal_w), sw - self._px(40))
+        h = min(self._px(ideal_h), sh - self._px(80))
         win.geometry(f"{w}x{h}")
         try:
             win.bind("<Escape>", lambda _e, _w=win: _w.destroy())
