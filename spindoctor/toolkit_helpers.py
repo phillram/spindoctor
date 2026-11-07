@@ -96,6 +96,9 @@ HELPERS: tuple = (
     Helper("Shut Down Cabinet", "count down 5 seconds (Esc cancels), close HyperSpin, then shut Windows down",
            _toolkit("shutdown", "Shut Down Cabinet: a 5-second countdown (Esc cancels), "
                                 "then HyperSpin closes and Windows shuts down.")),
+    Helper("Restart Cabinet", "count down 5 seconds (Esc cancels), close HyperSpin, then restart Windows",
+           _toolkit("restart", "Restart Cabinet: a 5-second countdown (Esc cancels), "
+                               "then HyperSpin closes and Windows restarts.")),
 )
 
 #: Names older versions wrote and this one never does, with the helper that
