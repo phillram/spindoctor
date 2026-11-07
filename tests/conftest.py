@@ -23,6 +23,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 if "spindoctor.config" in sys.modules:  # pragma: no cover - import-order guard
     raise RuntimeError(
         "spindoctor was imported before tests/conftest.py could re-home it; "
@@ -42,3 +44,17 @@ os.environ["HOMEPATH"] = _tail or os.sep
 @atexit.register
 def _remove_fake_home():
     shutil.rmtree(FAKE_HOME, ignore_errors=True)
+
+
+@pytest.fixture
+def home(tmp_path, monkeypatch):
+    """``~/.spindoctor`` inside the test's folder, so the run pointer
+    (``tests/active.json``) and ``config.json`` never leave it."""
+    import spindoctor.config as config_mod
+
+    h = tmp_path / "home"
+    monkeypatch.setattr(config_mod, "CONFIG_DIR", h)
+    monkeypatch.setattr(config_mod, "CONFIG_FILE", h / "config.json")
+    config_mod.reset_override_cache()
+    yield h
+    config_mod.reset_override_cache()

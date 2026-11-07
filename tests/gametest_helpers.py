@@ -14,27 +14,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-import pytest
-
 from spindoctor._win32 import ProcInfo, Shot, WinInfo
 from spindoctor.config import Config
 
 WORKER_PID = 4000
-
-
-@pytest.fixture
-def home(tmp_path, monkeypatch):
-    """``~/.spindoctor`` inside the test's folder, so the run pointer
-    (``tests/active.json``) and ``config.json`` never leave it.  Import it
-    into a test module to use it."""
-    import spindoctor.config as config_mod
-
-    h = tmp_path / "home"
-    monkeypatch.setattr(config_mod, "CONFIG_DIR", h)
-    monkeypatch.setattr(config_mod, "CONFIG_FILE", h / "config.json")
-    config_mod.reset_override_cache()
-    yield h
-    config_mod.reset_override_cache()
 
 
 def _write(path: Path, text: str = "") -> Path:
