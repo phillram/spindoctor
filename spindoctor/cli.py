@@ -4450,6 +4450,7 @@ def install_tools(tools, output_dir, add_to_system, apply_changes):
       • restart-cabinet         → spindoctor toolkit restart
       • exit-to-windows         → spindoctor toolkit exit-to-windows
       • reset-button-lights     → spindoctor toolkit reset-button-lights
+      • set-windows-resolution  → spindoctor toolkit set-resolution
 
     Drop them into HyperSpin's Tools folder (or point HyperSpin at the
     output directory) so users can refresh the wheels from the cabinet
@@ -5008,6 +5009,52 @@ def toolkit_reset_button_lights(dll_path, no_note):
 
         note(result.note)
     sys.exit(1 if result.error else 0)
+
+
+@toolkit_group.command("set-resolution")
+@click.option("--width", type=click.IntRange(320, 16384), default=None,
+              help="Width to set. Default: HyperSpin's [Resolution] Width.")
+@click.option("--height", type=click.IntRange(200, 16384), default=None,
+              help="Height to set. Default: HyperSpin's [Resolution] Height.")
+@click.option("--no-note", is_flag=True,
+              help="Don't show the 3-second note at the top of the screen.")
+def toolkit_set_resolution(width, height, no_note):
+    """Put Windows back to HyperSpin's resolution.
+
+    \b
+    A game that crashes, or an emulator that doesn't restore the display,
+    can leave Windows at its own resolution, and HyperSpin then starts
+    stretched or in a corner. This sets the primary display to HyperSpin's
+    Settings\\Settings.ini [Resolution] Width x Height (or --width/--height),
+    after testing that the display supports it, and saves it so it sticks
+    after a restart. Colour depth and refresh rate are left to Windows.
+    """
+    if sys.platform != "win32":
+        err_console.print("[red]spindoctor toolkit set-resolution runs on Windows only.[/red]")
+        sys.exit(1)
+    from . import cabinet_power, display_mode
+
+    if (width is None) != (height is None):
+        err_console.print("[red]Pass both --width and --height, or neither.[/red]")
+        sys.exit(2)
+    if width is None:
+        size = display_mode.hyperspin_resolution(_cfg())
+        if size is None:
+            err_console.print(
+                "[red]No resolution to set:[/red] HyperSpin's Settings\\Settings.ini has no "
+                "[Resolution] Width and Height (is hyperspin_dir set?). "
+                "Pass --width and --height."
+            )
+            sys.exit(1)
+        width, height = size
+    outcome = display_mode.set_resolution(width, height)
+    cabinet_power.log_to_file(outcome.line())
+    (console if outcome.code == 0 else err_console).print(outcome.line(), markup=False, highlight=False)
+    if not no_note:
+        from .toolkit_screen import note
+
+        note(outcome.note)
+    sys.exit(0 if outcome.code == 0 else 1)
 
 
 # ─── ignore ───────────────────────────────────────────────────────────────────

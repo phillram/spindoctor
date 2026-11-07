@@ -105,6 +105,9 @@ HELPERS: tuple = (
     Helper("Reset Button Lights", "stop PAC-LED64 boards flashing on their own (LEDBlinky keeps running)",
            _toolkit("reset-button-lights", "Reset Button Lights: zero the PAC-LED64 flash speeds; "
                                            "colours stay with LEDBlinky.")),
+    Helper("Set Windows Resolution", "put Windows back to HyperSpin's resolution (Settings.ini [Resolution])",
+           _toolkit("set-resolution", "Set Windows Resolution: back to HyperSpin's "
+                                      "Settings.ini [Resolution] Width x Height.")),
 )
 
 #: Names older versions wrote and this one never does, with the helper that
