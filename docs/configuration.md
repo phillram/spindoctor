@@ -79,6 +79,9 @@ Settings that hold a mapping (`system_overrides`, `game_overrides`, `ignore_list
 | `test_per_system` | How many random games per wheel when no `--all`, `--count` or `--game` is given (default `3`). |
 | `test_screenshot_width` | Width of the screenshot saved per game, in pixels (default `480`). |
 | `test_results_dir` | Where test run folders go (blank = `%USERPROFILE%\.spindoctor\tests`). |
+| `test_hyperspin_timeout` | With `spindoctor test --with-hyperspin`: seconds to wait for HyperSpin to log `wheel loaded successfully` (default `180`). |
+| `test_ignore_hyperspin_log` | Harmless HyperSpin `log.txt` lines, as case-insensitive substrings (list, default `[]`). |
+| `test_skip_intro_video` | Skip HyperSpin's intro video with a key press when the test opens it (bool, default `true`; `--play-intro` plays it for one run). |
 
 Apply / dry-run toggles for destructive operations (backup restore, migrate, curate apply, etc.) are deliberately NOT persisted across launches — those re-arm to OFF on every GUI startup so cabinet owners always make an explicit per-run opt-in.
 

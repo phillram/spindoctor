@@ -291,6 +291,9 @@ def config_set(key: str, value: str):
       test_per_system           Games per wheel when no count is given (default 3)
       test_screenshot_width     Screenshot width in pixels (default 480)
       test_results_dir          Where test runs go (blank = ~/.spindoctor/tests)
+      test_hyperspin_timeout    Seconds to wait for HyperSpin's Main Menu (default 180)
+      test_ignore_hyperspin_log Harmless HyperSpin log.txt lines (substrings)
+      test_skip_intro_video     true | false (default true): skip HyperSpin's intro
     """
     config = _cfg()
     if not hasattr(config, key) or key in (
@@ -313,6 +316,7 @@ def config_set(key: str, value: str):
         "test_cooldown": (0, 600),
         "test_per_system": (1, 100000),
         "test_screenshot_width": (64, 3840),
+        "test_hyperspin_timeout": (10, 3600),
     }
     current = getattr(config, key)
     _metadata_sources = ("auto", "screenscraper", "thegamesdb", "both")
@@ -7681,6 +7685,8 @@ def _print_test_plan(plan, verbose: bool) -> None:
             console.print(f"  [dim]skip[/dim]   {escape(g.system)} > {escape(g.game)}: {escape(g.reason)}")
             if verbose and g.fix:
                 console.print(f"         [dim]fix:[/dim] {escape(g.fix)}")
+        for note in filter(None, g.doctor.split("; ")):
+            console.print(f"         [yellow]doctor:[/yellow] {escape(note)}")
     if len(show) < len(plan.games):
         per: dict[str, list[int]] = {}
         for g in plan.games:
@@ -7691,12 +7697,13 @@ def _print_test_plan(plan, verbose: bool) -> None:
         console.print("[dim]Add --verbose to list every game.[/dim]")
 
 
-def _print_test_recovery(report) -> None:
-    console.print(f"[yellow]Finished an interrupted test run:[/yellow] {escape(str(report.run_dir))}")
+def _print_test_recovery(report, out=None) -> None:
+    out = out or console
+    out.print(f"[yellow]Finished an interrupted test run:[/yellow] {escape(str(report.run_dir))}")
     if report.closed:
-        console.print(f"  Closed: {escape(', '.join(report.closed))}")
+        out.print(f"  Closed: {escape(', '.join(report.closed))}")
     for msg in report.messages:
-        console.print(f"  {escape(msg)}")
+        out.print(f"  {escape(msg)}")
 
 
 @cli.command("test")
@@ -7726,11 +7733,17 @@ def _print_test_recovery(report) -> None:
 @click.option("--list-runs", is_flag=True, help="List past runs, newest first.")
 @click.option("--json", "as_json", is_flag=True, help="Print the plan or the results as JSON.")
 @click.option("--verbose", "-v", is_flag=True, help="List every picked game.")
+@click.option("--with-hyperspin", is_flag=True,
+              help="Open HyperSpin first and judge its startup; close it at the end.")
+@click.option("--play-intro", is_flag=True,
+              help="With --with-hyperspin: let HyperSpin's intro video play instead of skipping it.")
+@click.option("--leave-hyperspin-open", is_flag=True,
+              help="With --with-hyperspin: don't close HyperSpin when the run ends.")
 @click.option("--apply", "apply_changes", is_flag=True,
               help="Launch the games. Without it, only list them with their file check.")
 def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_system, seed,
                   include_skipped, seconds, resume, only_failed, recover_only, list_runs,
-                  as_json, verbose, apply_changes):
+                  as_json, verbose, with_hyperspin, play_intro, leave_hyperspin_open, apply_changes):
     """Launch games through RocketLauncher, the way HyperSpin does, and judge them.
 
     Each game runs for --seconds, then SpinDoctor looks for what went wrong:
@@ -7749,7 +7762,11 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
       spindoctor test --system "Nintendo Entertainment System" --all
       spindoctor test --genre Shooter --count 8 --apply
       spindoctor test --all-systems --per-system 3 --apply
+      spindoctor test --all-systems --per-system 3 --with-hyperspin --apply
       spindoctor test --resume --apply
+
+    Each run folder has a report.html; --with-hyperspin opens HyperSpin first
+    and judges its startup.
     """
     from . import _testrun, gametest
     from .playtime import format_duration
@@ -7866,7 +7883,7 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         sys.exit(1)
     if report is not None:
-        _print_test_recovery(report)
+        _print_test_recovery(report, err_console if as_json else console)
     if gametest.rocketlauncher_running(platform):
         err_console.print("[red]RocketLauncher is already running (a game is open).[/red] "
                           "Close it and run the test again.")
@@ -7896,9 +7913,20 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
             f"[dim]({result.seconds}s, {format_duration(int(left))} left)[/dim]"
         )
 
+    def show_hyperspin(hs):
+        if as_json:
+            return
+        style = _TEST_STYLE.get(hs["status"], "")
+        console.print(f"HyperSpin: [{style}]{hs['status']}[/{style}]  {escape(hs['reason'])}")
+        for line in hs["details"][:5]:
+            console.print(f"  [dim]log:[/dim] {escape(line)}")
+
     try:
         summary = gametest.run_plan(config, plan, settings, platform, run_dir=run_dir,
-                                    selection=selection, on_result=show)
+                                    selection=selection, on_result=show,
+                                    with_hyperspin=with_hyperspin, play_intro=play_intro,
+                                    leave_hyperspin_open=leave_hyperspin_open,
+                                    on_hyperspin=show_hyperspin)
     except KeyboardInterrupt:
         err_console.print("\n[yellow]Stopped.[/yellow] The play statistics are back; "
                           "[cyan]spindoctor test --resume --apply[/cyan] carries on.")
@@ -7919,6 +7947,7 @@ def game_test_cmd(systems, all_systems, genres, games, all_games, count, per_sys
         if not summary.finished:
             console.print("The run stopped early. [cyan]spindoctor test --resume --apply[/cyan] carries on.")
         console.print(f"Results: {escape(str(summary.run_dir))}")
+        console.print(f"Report:  {escape(str(summary.run_dir / 'report.html'))}")
     if summary.counts.get("FAIL"):
         sys.exit(2)
 

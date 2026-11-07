@@ -776,6 +776,21 @@ The same recovery runs at the start of every `spindoctor test --apply`.
   `test_skip_systems`, and PCLauncher games are skipped by default
   (`test_skip_pclauncher`).
 
+### `spindoctor test --with-hyperspin` says HyperSpin didn't load, or didn't skip the intro
+
+- **"didn't finish loading the Main Menu within 180 seconds"**: SpinDoctor waits
+  for `wheel loaded successfully` in `<hyperspin_dir>\log.txt`. A long intro video
+  that isn't skipped can take most of that; raise `test_hyperspin_timeout`, or
+  check the log copy (`HyperSpin log.txt` in the run folder) for where it stopped.
+- **"HyperSpin ignored the key press meant to skip its intro video"**: HyperSpin
+  only stops the intro on a key press with `Stop_On_Keypress=true` under
+  `[IntroVideo]` in its `Settings\Settings.ini`.
+- **"the intro video wasn't skipped: HyperSpin's window couldn't be brought to the
+  front"**: another window kept the focus. Close it, or run with `--play-intro`.
+- **"its log has N error line(s)"** for a line that is harmless on your cabinet
+  (for example a joystick that isn't plugged in): add a piece of it to
+  `test_ignore_hyperspin_log`.
+
 ## Light guns
 
 ### Model 3: player 2's gun does nothing, or both guns move one crosshair
