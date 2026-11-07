@@ -20,8 +20,8 @@ from spindoctor import _testrun, gametest
 from spindoctor.cli import cli
 from spindoctor.config import save_config
 
-from tests.gametest_helpers import (  # noqa: F401 - home is a fixture
-    WORKER_PID, FakeWindows, GameBehaviour, Recorder, build_cabinet, home,
+from tests.gametest_helpers import (
+    WORKER_PID, FakeWindows, GameBehaviour, Recorder, build_cabinet,
 )
 
 FAST = dict(game_seconds=5, launch_timeout=20, close_timeout=5, cooldown=1)

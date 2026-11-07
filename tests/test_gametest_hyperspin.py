@@ -11,8 +11,8 @@ from pathlib import Path
 
 from spindoctor import _testrun, gametest, gametest_hyperspin
 
-from tests.gametest_helpers import (  # noqa: F401 - home is a fixture
-    WORKER_PID, FakeWindows, GameBehaviour, HyperSpinBehaviour, build_cabinet, home,
+from tests.gametest_helpers import (
+    WORKER_PID, FakeWindows, GameBehaviour, HyperSpinBehaviour, build_cabinet,
 )
 
 
