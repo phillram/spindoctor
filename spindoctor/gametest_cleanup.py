@@ -215,12 +215,18 @@ class Cleanup:
         return self._handle(candidates, label)
 
     def finish(self, label: str = "end of run") -> int:
-        """A full listing of every watched folder; stops the watchers."""
+        """A full listing of every watched folder; stops the watchers.
+
+        What the watchers saw since the last game is handled too: the
+        listing skips any folder ``os.walk`` cannot read, and a watcher may
+        still have seen a file appear there."""
+        candidates: set[str] = set()
         for w in self.watchers:
             try:
                 added, _over = w.drain()
+                candidates.update(added)
             except OSError:
-                added = set()
+                pass
             finally:
                 try:
                     w.close()
@@ -231,7 +237,8 @@ class Cleanup:
             self.baseline = Baseline.load(self.run_dir)
             if self.baseline is None:
                 return 0  # no baseline: nothing can be told apart from what existed
-        return self._handle(set(self._listing()), label)
+        candidates.update(self._listing())
+        return self._handle(candidates, label)
 
     def summary(self) -> dict:
         """The whole run's figures, from ``cleanup.csv``, so they also count a

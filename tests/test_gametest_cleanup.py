@@ -142,6 +142,34 @@ def test_a_missed_file_is_caught_at_the_end(tmp_path, home):
     assert [r["After"] for r in _rows(summary)] == ["end of run"]
 
 
+def test_the_end_of_run_check_keeps_what_the_watchers_saw(tmp_path, home, monkeypatch):
+    # The listing skips folders os.walk cannot read; a file a watcher saw
+    # there must still be found at the end of the run.
+    cfg = build_cabinet(tmp_path)
+    run_dir = tmp_path / "runs" / "r1"
+    run_dir.mkdir(parents=True)
+    save = tmp_path / SAVE
+
+    class SeesTheSave:
+        def __init__(self, _root):
+            pass
+
+        def drain(self):
+            return ({str(save)} if save.exists() else set()), False
+
+        def close(self):
+            pass
+
+    roots = gametest_cleanup.watched_roots(cfg)
+    cleanup = gametest_cleanup.Cleanup(cfg, run_dir, "report", roots, [], time.time(),
+                                       watcher_factory=SeesTheSave)
+    cleanup.start()
+    save.write_text("made in a folder the listing cannot read", encoding="utf-8")
+    monkeypatch.setattr(cleanup, "_listing", lambda: iter(()))
+    assert cleanup.finish() == 1
+    assert [os.path.normcase(r["Path"]) for r in gametest.read_csv(run_dir / "cleanup.csv")] == [os.path.normcase(str(save))]
+
+
 def test_without_a_watcher_every_cleanup_lists_the_folders(tmp_path, home):
     cfg = build_cabinet(tmp_path)
     fake = FakeWindows(Path(cfg.rocketlauncher_dir), [GameBehaviour(creates=(SAVE,))])
