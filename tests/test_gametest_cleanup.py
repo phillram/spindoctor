@@ -19,7 +19,7 @@ from spindoctor import _testrun, gametest, gametest_cleanup
 from spindoctor.cli import cli
 from spindoctor.config import save_config
 
-from tests.gametest_helpers import FakeWindows, GameBehaviour, build_cabinet, home  # noqa: F401
+from tests.gametest_helpers import FakeWindows, GameBehaviour, build_cabinet
 
 SAVE = "emu/saves/Alpha.srm"
 BEZEL = "rl/Settings/NES/Alpha/Bezel.ini"
