@@ -21,6 +21,7 @@ explorer %USERPROFILE%\.spindoctor
 %USERPROFILE%\.spindoctor\scraper.log
 %USERPROFILE%\.spindoctor\scraper.log.1
 %USERPROFILE%\.spindoctor\scraper.log.2
+%USERPROFILE%\.spindoctor\toolkit.log
 %USERPROFILE%\.spindoctor\metadata_cache\
 %USERPROFILE%\.spindoctor\match_cache\
 %USERPROFILE%\.spindoctor\mame_listxml_cache\
@@ -127,6 +128,20 @@ Log prefixes by call site:
 | `thegamesdb.images` | `Games/Images?games_id=<id>` — image fetch |
 
 **When to check this file:** any time `fetch-meta`, `fetch-media`, or a credential test returns unexpected results. See [Troubleshooting → Metadata / scraping](troubleshooting.md#metadata--scraping).
+
+### `toolkit.log`
+
+**One line per step of the [`toolkit`](commands.md#toolkit) cabinet actions** (Shut Down Cabinet and the other helpers that leave HyperSpin), which run without a console: when the countdown started or was cancelled, whether HyperSpin closed by itself or was forced, whether LEDBlinky was told to quit and how long it took, the `shutdown.exe` command and its exit code. Created on first use. When it passes 256 KB it is renamed `toolkit.log.1` (replacing the previous one) and a new file starts. It holds program paths, so check it before sharing.
+
+```
+2026-11-06 21:10:02  shutdown: countdown started (5 s)
+2026-11-06 21:10:07  shutdown: closing HyperSpin
+2026-11-06 21:10:08    HyperSpin closed
+2026-11-06 21:10:08    sent LEDBlinky its quit (LEDBlinky.exe 2)
+2026-11-06 21:10:18    LEDBlinky quit (waited 10.1 s)
+2026-11-06 21:10:18  shutdown: running shutdown.exe /s /f /t 0
+2026-11-06 21:10:18  shutdown: Windows accepted it
+```
 
 ### `metadata_cache\`
 
@@ -350,6 +365,7 @@ C:\Users\<YourWindowsUsername>\.spindoctor\    ← SpinDoctor app data (always h
 ├── scraper.log                         ← API request log (current)
 ├── scraper.log.1                       ← API request log (previous rotation)
 ├── scraper.log.2                       ← API request log (oldest rotation)
+├── toolkit.log                         ← cabinet actions (toolkit shutdown, …)
 ├── metadata_cache\                     ← scraped metadata cache (30-day TTL)
 │   ├── screenscraper\<System>\*.json
 │   ├── thegamesdb\<System>\*.json
